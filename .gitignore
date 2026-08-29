@@ -1,0 +1,17 @@
+# dependencies
+node_modules/
+
+# builds
+.next/
+out/
+.turbo/
+
+# misc
+*.log
+.DS_Store
+
+# env
+.env*
+
+# typescript
+next-env.d.ts
