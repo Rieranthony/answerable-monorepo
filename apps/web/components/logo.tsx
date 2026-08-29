@@ -100,6 +100,21 @@ export function Logo(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+/** A square from the logo's frame, on its own canvas. */
+export function SquareMark(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 48 48"
+      fill="currentColor"
+      aria-hidden="true"
+      xmlns="http://www.w3.org/2000/svg"
+      {...props}
+    >
+      <rect width="48" height="48" />
+    </svg>
+  )
+}
+
 /** The comma from the logo's bottom-right corner, on its own 2:3 canvas. */
 export function CommaMark(props: SVGProps<SVGSVGElement>) {
   return (

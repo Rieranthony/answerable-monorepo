@@ -38,10 +38,12 @@ export function ThemeToggle() {
             aria-label={label}
             onClick={() => setTheme(value)}
             className={cn(
+              // Contrast alone marks the selection — a filled chip would be
+              // the only boxed element on an otherwise borderless page.
               "flex size-6 items-center justify-center transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
               active
-                ? "bg-muted text-foreground"
-                : "text-muted-foreground hover:text-foreground"
+                ? "text-foreground"
+                : "text-muted-foreground/40 hover:text-muted-foreground"
             )}
           >
             <Icon className="size-3" />
