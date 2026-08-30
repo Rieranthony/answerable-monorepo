@@ -20,7 +20,7 @@ export default function Page() {
           tagline sits below the fold. */}
       <div className="relative flex min-h-svh flex-col lg:flex-row">
         <div className="flex w-full max-w-lg flex-col px-6">
-          <header className="flex h-16 shrink-0 items-center">
+          <header className="flex shrink-0 pt-6">
             <Logo className="h-8 w-auto" />
           </header>
 

@@ -14,6 +14,7 @@ All photos are from Unsplash, used under the
 | `wesley-eland-j9K2_EWlArI-unsplash.jpg` | Wesley Eland | <https://unsplash.com/photos/j9K2_EWlArI> |
 | `good-faces-p1E9zC5eSTE-unsplash.jpg` | Good Faces | <https://unsplash.com/photos/p1E9zC5eSTE> |
 | `teah-rushing-hCQljvkt9Ek-unsplash.jpg` | Teah Rushing | <https://unsplash.com/photos/hCQljvkt9Ek> |
+| `annie-spratt-MChSQHxGZrQ-unsplash.jpg` | Annie Spratt | <https://unsplash.com/photos/MChSQHxGZrQ> |
 
 Quadrant mapping (see `scripts/build-mosaic.ts`): p1 top-left = jonathan-borba,
 p2 top-right = magnus-andersson, p3 bottom-left = wesley-eland, p4 bottom-right

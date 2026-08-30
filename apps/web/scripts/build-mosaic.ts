@@ -31,6 +31,7 @@ const PHOTOS = [
   // Painterly texture compresses poorly; the lower quality is invisible at
   // tile scale and keeps the default photo inside the budget.
   { src: "teah-rushing-hCQljvkt9Ek-unsplash.jpg", out: "p5.webp", quality: 55 },
+  { src: "annie-spratt-MChSQHxGZrQ-unsplash.jpg", out: "p6.webp" },
 ]
 
 await mkdir(OUT, { recursive: true })
