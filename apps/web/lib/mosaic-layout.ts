@@ -54,10 +54,11 @@ export const MOSAIC_PHOTOS = [
   "/mosaic/p4.webp", // good-faces
   "/mosaic/p5.webp", // teah-rushing (baroque ceiling fresco)
   "/mosaic/p6.webp", // annie-spratt (team around a table)
+  "/mosaic/p7.webp", // davide-valerio (aerial London, the Thames)
 ] as const
 
 /** The mosaic shows one photo at a time; switch it here. */
-export const ACTIVE_PHOTO: (typeof MOSAIC_PHOTOS)[number] = MOSAIC_PHOTOS[5]
+export const ACTIVE_PHOTO: (typeof MOSAIC_PHOTOS)[number] = MOSAIC_PHOTOS[6]
 
 export type Rot = 0 | 90 | 180 | 270
 

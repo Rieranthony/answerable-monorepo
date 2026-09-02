@@ -15,7 +15,13 @@ All photos are from Unsplash, used under the
 | `good-faces-p1E9zC5eSTE-unsplash.jpg` | Good Faces | <https://unsplash.com/photos/p1E9zC5eSTE> |
 | `teah-rushing-hCQljvkt9Ek-unsplash.jpg` | Teah Rushing | <https://unsplash.com/photos/hCQljvkt9Ek> |
 | `annie-spratt-MChSQHxGZrQ-unsplash.jpg` | Annie Spratt | <https://unsplash.com/photos/MChSQHxGZrQ> |
+| `davide-valerio-EzFizzT3AfM-unsplash.jpg` | Davide Valerio | <https://unsplash.com/photos/EzFizzT3AfM> |
+| `aerial-halftone.png` | Davide Valerio (halftone treatment) | derived from `davide-valerio-EzFizzT3AfM-unsplash.jpg` |
 
 Quadrant mapping (see `scripts/build-mosaic.ts`): p1 top-left = jonathan-borba,
 p2 top-right = magnus-andersson, p3 bottom-left = wesley-eland, p4 bottom-right
 = good-faces.
+
+`aerial-halftone.png` is supplied pre-screened: `build-mosaic.ts` marks it
+`preScreened` and copies it through losslessly at its own resolution, since
+resampling or lossy encoding would destroy the halftone dots.

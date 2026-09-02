@@ -32,16 +32,23 @@ const PHOTOS = [
   // tile scale and keeps the default photo inside the budget.
   { src: "teah-rushing-hCQljvkt9Ek-unsplash.jpg", out: "p5.webp", quality: 55 },
   { src: "annie-spratt-MChSQHxGZrQ-unsplash.jpg", out: "p6.webp" },
+  // Supplied already screened; passes through untouched (see preScreened).
+  { src: "aerial-halftone.png", out: "p7.webp", preScreened: true },
 ]
 
 await mkdir(OUT, { recursive: true })
 
-for (const { src, out, quality = QUALITY } of PHOTOS) {
-  const info = await sharp(join(SRC, src))
-    .rotate() // honor EXIF orientation
-    .resize(WIDTH, HEIGHT, { fit: "cover", position: "centre" })
-    .webp({ quality, effort: 6 })
-    .toFile(join(OUT, out))
+for (const { src, out, quality = QUALITY, preScreened } of PHOTOS) {
+  // A pre-screened source is finished artwork: resampling it would beat the
+  // halftone dots into moiré and lossy encoding would smear them into grey,
+  // so it ships at its own resolution, lossless, exactly as supplied.
+  const pipeline = preScreened
+    ? sharp(join(SRC, src)).webp({ lossless: true, effort: 6 })
+    : sharp(join(SRC, src))
+        .rotate() // honor EXIF orientation
+        .resize(WIDTH, HEIGHT, { fit: "cover", position: "centre" })
+        .webp({ quality, effort: 6 })
+  const info = await pipeline.toFile(join(OUT, out))
   const kb = info.size / 1024
   console.log(
     `${out}  ${kb.toFixed(0)} KB  (${src})${kb > BUDGET_KB ? ` — over the ${BUDGET_KB} KB budget, lower QUALITY` : ""}`,
