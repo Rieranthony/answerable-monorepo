@@ -3,6 +3,8 @@ node_modules/
 
 # builds
 .next/
+coverage/
+dist/
 out/
 .turbo/
 
@@ -15,3 +17,6 @@ out/
 
 # typescript
 next-env.d.ts
+
+# keep the environment template tracked
+!.env.example

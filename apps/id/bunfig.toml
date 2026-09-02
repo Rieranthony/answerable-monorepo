@@ -1,0 +1,9 @@
+[test]
+root = "src"
+coverage = true
+coverageSkipTestFiles = true
+coverageThreshold = { lines = 1, functions = 1 }
+coverageReporter = ["text", "lcov"]
+coverageDir = "coverage"
+coveragePathIgnorePatterns = ["src/**/*.test.ts", "src/__tests__/**", "src/server.ts"]
+timeout = 15000
