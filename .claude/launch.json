@@ -10,6 +10,18 @@
       ],
       "port": 3000,
       "autoPort": true
+    },
+    {
+      "name": "web-only",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": [
+        "run",
+        "--filter",
+        "web",
+        "dev"
+      ],
+      "port": 3000,
+      "autoPort": true
     }
   ]
 }
