@@ -43,7 +43,12 @@ export const MOSAIC = {
 } as const
 
 /** Bounding box of COMMA_PATH in the logo's own coordinates. */
-export const COMMA_BOX = { x: 1103.79, y: 215.998, w: 48.21, h: 72.002 } as const
+export const COMMA_BOX = {
+  x: 1103.79,
+  y: 215.998,
+  w: 48.21,
+  h: 72.002,
+} as const
 /** Normalizes the comma to a 48-unit-wide, cell-local shape (undistorted). */
 export const COMMA_SCALE = 48 / COMMA_BOX.w
 
@@ -55,10 +60,56 @@ export const MOSAIC_PHOTOS = [
   "/mosaic/p5.webp", // teah-rushing (baroque ceiling fresco)
   "/mosaic/p6.webp", // annie-spratt (team around a table)
   "/mosaic/p7.webp", // davide-valerio (aerial London, the Thames)
+  "/mosaic/p8.webp", // AI Leaders Discussion 2026 (Answerable event)
 ] as const
 
 /** The mosaic shows one photo at a time; switch it here. */
-export const ACTIVE_PHOTO: (typeof MOSAIC_PHOTOS)[number] = MOSAIC_PHOTOS[6]
+export const ACTIVE_PHOTO: (typeof MOSAIC_PHOTOS)[number] = MOSAIC_PHOTOS[7]
+
+/**
+ * Runtime dithering (see components/mosaic-dither). The photos ship
+ * untouched and the halftone is applied by a shader on the client, so these
+ * are live knobs rather than baked-in pixels — which is what lets the screen
+ * differ between light and dark.
+ *
+ * `size` is the dot grid in REAL pixels, so it is independent of how large
+ * the mosaic is drawn; it only tracks the capture resolution.
+ */
+export type DitherType = "random" | "2x2" | "4x4" | "8x8"
+
+export interface DitherSettings {
+  type: DitherType
+  size: number // 0.5–20
+  colorSteps: number // 1–7
+  inverted: boolean
+  /** WebGL needs resolved values, so these are literals, not CSS vars. */
+  colorFront: string
+  colorBack: string
+  colorHighlight: string
+}
+
+export const MOSAIC_DITHER: Record<"light" | "dark", DitherSettings> = {
+  light: {
+    type: "8x8",
+    size: 2,
+    colorSteps: 2,
+    inverted: false,
+    colorFront: "#111111",
+    colorBack: "#ffffff",
+    colorHighlight: "#111111",
+  },
+  // Tuned separately: on black the screen wants a finer grid and an extra
+  // tone step to keep the dark half of the image from filling in solid.
+  dark: {
+    type: "8x8",
+    size: 1,
+    colorSteps: 3,
+    inverted: false,
+    colorFront: "#e6e6e6",
+    colorBack: "#000000",
+    colorHighlight: "#e6e6e6",
+  },
+}
 
 export type Rot = 0 | 90 | 180 | 270
 
@@ -125,15 +176,14 @@ export function computeMosaicLayout(): Mark[] {
   // fill-opacity for a solid mark `dist` columns left of the boundary.
   const fadeAt = (dist: number) => {
     const t = Math.min(1, Math.max(0, dist - 1) / (MOSAIC.maxStart - 1))
-    return Math.round((MOSAIC.fadeNear + (MOSAIC.fadeFar - MOSAIC.fadeNear) * t) * 100) / 100
+    return (
+      Math.round(
+        (MOSAIC.fadeNear + (MOSAIC.fadeFar - MOSAIC.fadeNear) * t) * 100,
+      ) / 100
+    )
   }
 
-  function placeComma(
-    r: number,
-    c: number,
-    fill: "image" | "solid",
-    fade = 1,
-  ) {
+  function placeComma(r: number, c: number, fill: "image" | "solid", fade = 1) {
     const rots = ([0, 90, 180, 270] as Rot[])
       .map((rot) => ({ rot, sort: rand() }))
       .sort((a, b) => a.sort - b.sort)
@@ -188,7 +238,11 @@ export function computeMosaicLayout(): Mark[] {
   // 3. Ragged band at the boundary: squares, comma-clipped tiles, holes.
   // Band cells left of the photo's edge fall back to solid marks.
   for (let r = 0; r < rows; r++)
-    for (let c = start[r]; c < Math.min(start[r] + MOSAIC.boundaryBand, cols); c++) {
+    for (
+      let c = start[r];
+      c < Math.min(start[r] + MOSAIC.boundaryBand, cols);
+      c++
+    ) {
       const fill = c >= photoStart ? "image" : "solid"
       const u = rand()
       if (u < MOSAIC.boundaryKeep && free(2 * r, 2 * c, 2, 2)) {
