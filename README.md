@@ -6,7 +6,7 @@ Monorepo for Answerable's products, program documentation, and the local environ
 
 | Workspace | What it is | Status |
 | --- | --- | --- |
-| `apps/web` | Public waitlist one-pager (Next.js 16) | Live |
+| `apps/web` | Public waitlist one-pager (Next.js 16); signups are upserted into Attio | Live |
 | `apps/id` | **Answerable ID** — identity broker for client orgs, OIDC login provider for our apps, OAuth 2.1 authorization server for hosted MCP servers | Schema foundation built — design in [`docs/03-answerable-id.md`](docs/03-answerable-id.md) |
 | `apps/community-mcp` | The tutor MCP (the Omni Accelerator community inside OmniChat) | **Parked** until Answerable ID ships — its docs and Circle mocks stay in that folder, out of the plan |
 
@@ -32,12 +32,14 @@ cp .env.example .env
 bun dev
 ```
 
+`apps/web` reads its own env file: `cp apps/web/.env.example apps/web/.env.local`. `ATTIO_API_KEY` is optional locally (without it the waitlist form logs the address to the terminal and reports success) and required in production, where the form returns an error if it is missing. The file explains how to create the token and find the list.
+
 | Service | Host port | Purpose |
 | --- | --- | --- |
 | `postgres` | 47432 | `answerable_id`, plus `answerable_id_test` for the test suite |
 | `redis` | 47379 | Session read-cache — later; unused by v1 code |
 
-Uncommon host ports so nothing clashes with other local projects. Answerable ID itself runs on the host at `http://localhost:47300`. Other commands: `bun run env:down` · `bun run env:reset` (wipes data) · `bun run test` · `bun run build` · `bun run lint`.
+Uncommon host ports so nothing clashes with other local projects. Answerable ID itself runs on the host at `http://localhost:47300`. Other commands: `bun run env:down` · `bun run env:reset` (wipes data) · `bun run test` (Answerable ID against Postgres, plus the web unit tests) · `bun run build` · `bun run lint`.
 
 ## How we build
 

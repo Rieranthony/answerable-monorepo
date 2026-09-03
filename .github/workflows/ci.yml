@@ -43,6 +43,9 @@ jobs:
       - name: Build
         run: bun run build
 
+      - name: Test web
+        run: bun --filter web test
+
       - name: Test with coverage
         run: bun --filter @answerable/id test:coverage
 
