@@ -72,32 +72,31 @@ export function Mosaic({ className }: { className?: string }) {
     useState<(typeof MOSAIC_PHOTOS)[number]>(ACTIVE_PHOTO)
   const [tuning, setTuning] = useState<Tuning>(initialTuning)
   const { scheme, settings } = useDitherSettings(DEV ? tuning : undefined)
-  // The screened bitmap, tagged with the inputs it was produced from. Until
-  // one exists (and without WebGL) the SVG shows the plain photo, so it is
-  // never blank.
-  const [capture, setCapture] = useState<{ key: string; url: string } | null>(
-    null,
-  )
+  // The screened bitmap. Deliberately kept on screen when the photo or the
+  // settings change: the replacement lands within a frame or two, and
+  // briefly showing the previous screen beats flashing back to the raw
+  // photo every time the theme is toggled.
+  const [dithered, setDithered] = useState<string | null>(null)
+  const onCapture = useCallback((url: string) => setDithered(url), [])
 
-  // A new photo or new settings invalidate the last capture. Comparing keys
-  // during render beats resetting state from an effect: no extra pass, and
-  // no frame where a stale dither is shown against the wrong input.
-  const key = `${photo}|${JSON.stringify(settings)}`
-  const dithered = capture?.key === key ? capture.url : null
-
-  const onCapture = useCallback(
-    (url: string) => setCapture({ key, url }),
-    [key],
-  )
-
-  // Sole owner of the object URL: this cleanup runs when `capture` is
+  // Sole owner of the object URL: this cleanup runs when `dithered` is
   // replaced and on unmount, so every URL we mint is released exactly once.
   useEffect(
     () => () => {
-      if (capture) URL.revokeObjectURL(capture.url)
+      if (dithered) URL.revokeObjectURL(dithered)
     },
-    [capture],
+    [dithered],
   )
+
+  // Nothing is drawn until there is a screened frame to draw, so the raw
+  // photograph is never shown first and then swapped — the entrance
+  // animation plays once, already dithered. The escape hatch is the
+  // renderer telling us it cannot produce one (no WebGL, or the shader
+  // never drew): a blind timer would just relocate the flash to whenever
+  // it happened to fire.
+  const [unavailable, setUnavailable] = useState(false)
+  const onUnavailable = useCallback(() => setUnavailable(true), [])
+  const revealed = dithered !== null || unavailable
 
   // Emits one <link rel="preload"> in <head>; the mosaic renders on every
   // viewport, so the photo is always worth fetching early.
@@ -129,7 +128,12 @@ export function Mosaic({ className }: { className?: string }) {
 
   return (
     <>
-      <MosaicDither photo={photo} settings={settings} onCapture={onCapture} />
+      <MosaicDither
+        photo={photo}
+        settings={settings}
+        onCapture={onCapture}
+        onUnavailable={onUnavailable}
+      />
       {DEV && (
         <MosaicTuner scheme={scheme} tuning={tuning} onChange={setTuning} />
       )}
@@ -150,64 +154,73 @@ export function Mosaic({ className }: { className?: string }) {
             </clipPath>
           ))}
         </defs>
-        {MARKS.map((m, i) => {
-          const x = m.col * MOSAIC.cell
-          const y = m.row * MOSAIC.cell
-          const style = { animationDelay: `${m.delayMs}ms` }
+        {revealed &&
+          MARKS.map((m, i) => {
+            const x = m.col * MOSAIC.cell
+            const y = m.row * MOSAIC.cell
+            const style = { animationDelay: `${m.delayMs}ms` }
 
-          if (m.shape === "semicolon")
+            if (m.shape === "semicolon")
+              return (
+                <g
+                  key={i}
+                  className="mosaic-tile fill-mosaic-mark"
+                  fillOpacity={m.fade}
+                  style={style}
+                >
+                  <rect
+                    x={x + INSET}
+                    y={y + INSET}
+                    width={TILE}
+                    height={TILE}
+                  />
+                  <g transform={`translate(${x} ${y + 72})`}>
+                    <path d={COMMA_PATH} transform={commaTransform(0)} />
+                  </g>
+                </g>
+              )
+
+            if (m.fill === "solid")
+              return (
+                <g
+                  key={i}
+                  className="mosaic-tile fill-mosaic-mark"
+                  fillOpacity={m.fade}
+                  style={style}
+                >
+                  <g transform={`translate(${x} ${y})`}>
+                    {m.shape === "square" ? (
+                      <rect x={INSET} y={INSET} width={TILE} height={TILE} />
+                    ) : (
+                      <path d={COMMA_PATH} transform={commaTransform(m.rot)} />
+                    )}
+                  </g>
+                </g>
+              )
+
+            // Image tile: the full photo sits under a cell-local clip window,
+            // so fragments align perfectly across tiles and every tile reuses
+            // the same single decoded bitmap.
+            const clip = m.shape === "square" ? "mz-sq" : `mz-c${m.rot}`
             return (
-              <g
-                key={i}
-                className="mosaic-tile fill-mosaic-mark"
-                fillOpacity={m.fade}
-                style={style}
-              >
-                <rect x={x + INSET} y={y + INSET} width={TILE} height={TILE} />
-                <g transform={`translate(${x} ${y + 72})`}>
-                  <path d={COMMA_PATH} transform={commaTransform(0)} />
+              <g key={i} className="mosaic-tile" style={style}>
+                <g
+                  transform={`translate(${x} ${y})`}
+                  clipPath={`url(#${clip})`}
+                >
+                  <image
+                    href={dithered ?? photo}
+                    x={PHOTO_X - x}
+                    y={-y}
+                    width={PW}
+                    height={H}
+                    className={m.gray ? "grayscale" : undefined}
+                    {...({ loading: "lazy" } as object)}
+                  />
                 </g>
               </g>
             )
-
-          if (m.fill === "solid")
-            return (
-              <g
-                key={i}
-                className="mosaic-tile fill-mosaic-mark"
-                fillOpacity={m.fade}
-                style={style}
-              >
-                <g transform={`translate(${x} ${y})`}>
-                  {m.shape === "square" ? (
-                    <rect x={INSET} y={INSET} width={TILE} height={TILE} />
-                  ) : (
-                    <path d={COMMA_PATH} transform={commaTransform(m.rot)} />
-                  )}
-                </g>
-              </g>
-            )
-
-          // Image tile: the full photo sits under a cell-local clip window,
-          // so fragments align perfectly across tiles and every tile reuses
-          // the same single decoded bitmap.
-          const clip = m.shape === "square" ? "mz-sq" : `mz-c${m.rot}`
-          return (
-            <g key={i} className="mosaic-tile" style={style}>
-              <g transform={`translate(${x} ${y})`} clipPath={`url(#${clip})`}>
-                <image
-                  href={dithered ?? photo}
-                  x={PHOTO_X - x}
-                  y={-y}
-                  width={PW}
-                  height={H}
-                  className={m.gray ? "grayscale" : undefined}
-                  {...({ loading: "lazy" } as object)}
-                />
-              </g>
-            </g>
-          )
-        })}
+          })}
       </svg>
     </>
   )

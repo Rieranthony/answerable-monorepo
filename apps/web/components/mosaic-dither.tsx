@@ -24,13 +24,21 @@ const CAPTURE_W = MOSAIC.photoCols * MOSAIC.cell * 2 // 1152
 const CAPTURE_H = MOSAIC.rows * MOSAIC.cell * 2 // 1728
 
 /**
- * Poll interval and budget for spotting the shader's frame. A timer rather
+ * Poll interval and budgets for spotting the shader's frame. A timer rather
  * than requestAnimationFrame on purpose: rAF is suspended while the document
  * is hidden (background tab, or a preview pane that is not on screen), which
  * would leave the capture permanently pending.
+ *
+ * Two budgets, because "no frame yet" means different things depending on
+ * whether anyone is looking. On screen it means the shader is broken, so
+ * concede quickly and let the caller show the plain photo. Hidden, it just
+ * means the page is not being painted — so keep waiting, since conceding
+ * would hand the viewer the raw photo and then swap it the moment they look.
+ * The hard cap stops that patience becoming a permanently empty mosaic.
  */
 const POLL_MS = 100
-const POLL_ATTEMPTS = 60
+const CONCEDE_MS = 6_000
+const HARD_CAP_MS = 20_000
 
 const emptySubscribe = () => () => {}
 
@@ -93,12 +101,15 @@ interface MosaicDitherProps {
   settings: DitherSettings
   /** Receives an object URL for the screened bitmap. */
   onCapture: (url: string) => void
+  /** Called when no frame can be produced, so the caller can stop waiting. */
+  onUnavailable: () => void
 }
 
 export function MosaicDither({
   photo,
   settings,
   onCapture,
+  onUnavailable,
 }: MosaicDitherProps) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const lastCaptured = useRef<string | null>(null)
@@ -127,7 +138,7 @@ export function MosaicDither({
     }
     const start = () => {
       stop()
-      let attempts = 0
+      const startedAt = Date.now()
       timer = window.setInterval(() => {
         const canvas = hostRef.current?.querySelector("canvas")
         const signature = canvas ? probe(canvas) : null
@@ -136,7 +147,14 @@ export function MosaicDither({
           capture(signature)
           return
         }
-        if (++attempts >= POLL_ATTEMPTS) stop()
+        const waited = Date.now() - startedAt
+        if (
+          waited >= HARD_CAP_MS ||
+          (waited >= CONCEDE_MS && !document.hidden)
+        ) {
+          stop()
+          onUnavailable()
+        }
       }, POLL_MS)
     }
 
@@ -144,8 +162,8 @@ export function MosaicDither({
 
     // A hidden document does not run the rendering steps that deliver the
     // shader's ResizeObserver callbacks, so its canvas stays 0x0 and never
-    // draws — a page opened in a background tab would otherwise be stuck on
-    // the fallback for good. Re-arm the poll when the page comes into view.
+    // draws. Restart the clock when the page comes into view, so the
+    // "concede quickly when visible" budget is measured from that moment.
     const onVisibility = () => {
       if (!document.hidden) start()
     }
@@ -154,7 +172,7 @@ export function MosaicDither({
       stop()
       document.removeEventListener("visibilitychange", onVisibility)
     }
-  }, [photo, settings, capture])
+  }, [photo, settings, capture, onUnavailable])
 
   return (
     <div
