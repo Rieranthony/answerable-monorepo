@@ -1,8 +1,8 @@
-import { BulletSquare } from "@/components/bullet-square";
-import { CommaMark, Logo, SquareMark } from "@/components/logo";
-import { Mosaic } from "@/components/mosaic";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { WaitlistForm } from "@/components/waitlist-form";
+import { BulletSquare } from "@/components/bullet-square"
+import { CommaMark, Logo, SquareMark } from "@/components/logo"
+import { Mosaic } from "@/components/mosaic"
+import { ThemeToggle } from "@/components/theme-toggle"
+import { WaitlistForm } from "@/components/waitlist-form"
 
 const VALUES = [
   "We hold ourselves answerable for our work.",
@@ -11,7 +11,7 @@ const VALUES = [
   "We respect the intellectual and creative work of others.",
   "We protect the information entrusted to us.",
   "We use AI to strengthen our professions, not to diminish them.",
-];
+]
 
 export default function Page() {
   return (
@@ -20,15 +20,18 @@ export default function Page() {
           tagline sits below the fold. */}
       <div className="relative flex min-h-svh flex-col lg:flex-row">
         <div className="flex w-full max-w-lg flex-col px-6">
-          <header className="flex shrink-0 pt-6">
-            <Logo className="h-8 w-auto" />
+          {/* The logotype spans the column, so it sets the width the text
+              below is measured against. Its corner marks sit flush to the
+              SVG edges, giving it the same 24px gutter as everything else. */}
+          <header className="shrink-0 pt-6">
+            <Logo className="h-auto w-full" />
           </header>
 
-          <main className="grow pt-8">
+          <main className="grow pt-12">
             <h1 className="text-xl/6 font-bold text-balance">
               AI can do the work. It can&apos;t answer for it.
             </h1>
-            <p className="mt-2 text-sm/6 text-muted-foreground">
+            <p className="text-muted-foreground mt-2 text-sm/6">
               Answerable is a public declaration for professional practices: six
               plain commitments for using AI with care, competence, and
               accountability.
@@ -42,7 +45,7 @@ export default function Page() {
                 {VALUES.map((value) => (
                   <li key={value} className="flex gap-2">
                     <BulletSquare />
-                    <p className="text-sm/6 text-foreground/75">{value}</p>
+                    <p className="text-foreground/75 text-sm/6">{value}</p>
                   </li>
                 ))}
               </ul>
@@ -52,7 +55,7 @@ export default function Page() {
               <h2 id="waitlist-heading" className="text-sm/6 font-bold">
                 Commit your practice.
               </h2>
-              <p className="mt-2 text-sm/6 text-muted-foreground">
+              <p className="text-muted-foreground mt-2 text-sm/6">
                 Leave your email. Be first to sign when the declaration opens.
               </p>
               <div className="mt-4">
@@ -73,10 +76,10 @@ export default function Page() {
       </div>
 
       {/* Tagline stretched to the full width of the page gutter. */}
-      <div aria-hidden="true" className="w-full px-6 pb-6 mt-32">
+      <div aria-hidden="true" className="mt-32 w-full px-6 pb-6">
         <svg
           viewBox="0 2 1000 66"
-          className="block w-full text-primary/[0.05] dark:text-primary/[0.10]"
+          className="text-primary/[0.05] dark:text-primary/[0.10] block w-full"
           xmlns="http://www.w3.org/2000/svg"
         >
           <text
@@ -94,17 +97,17 @@ export default function Page() {
       </div>
 
       <footer className="flex items-center gap-4 px-6 pb-6">
-        <p className="text-xs/4 text-muted-foreground">
+        <p className="text-muted-foreground text-xs/4">
           © 2026 Answerable · answerable.org
         </p>
         {/* The toggle sits between a square and a comma, as in the logo,
             framed like the waitlist field. */}
-        <div className="flex items-center gap-2 border border-border px-2 py-1 transition-colors focus-within:border-ring">
+        <div className="border-border focus-within:border-ring flex items-center gap-2 border px-2 py-1 transition-colors">
           <SquareMark className="size-2" />
           <ThemeToggle />
           <CommaMark className="h-3 w-2" />
         </div>
       </footer>
     </div>
-  );
+  )
 }
