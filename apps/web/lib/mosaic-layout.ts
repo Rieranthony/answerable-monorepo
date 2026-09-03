@@ -32,6 +32,16 @@ export const MOSAIC = {
   commaWeight: 0.6, // comma vs square among scattered marks
   imageReach: 1, // cols past the band where marks still show photo fragments
   semicolons: 3,
+  // Share of the photo mass restruck as solid punctuation, so the comma
+  // motif carries across the image instead of only dissolving off its left
+  // edge. Applied last, so raising it cannot reshuffle anything above.
+  massCommaRate: 0.05,
+  // The mass only frays on its left edge; the other three end on a hard
+  // rectangle. These lift the strike rate near the top, bottom and right
+  // so the image breaks up into punctuation there too, decaying inward.
+  edgeFrayBand: 3, // cells from an edge that get the lift
+  edgeFrayMax: 0.2, // added probability at the outermost cell
+  edgeFrayFalloff: 0.5,
   // Solid scattered marks fade with distance from the boundary (fill-opacity
   // from fadeNear at dist 1 to fadeFar at the far edge of the scatter zone).
   fadeNear: 0.85,
@@ -118,7 +128,8 @@ export interface Mark {
   col: number
   row: number
   rot: Rot // squares and semicolons are always 0
-  fill: "image" | "solid"
+  /** "cutout" paints the page colour, so the mark reads as a hole. */
+  fill: "image" | "solid" | "cutout"
   fade: number // fill-opacity; 1 for the mass, graded down in the scatter
   gray: boolean
   delayMs: number
@@ -310,5 +321,35 @@ export function computeMosaicLayout(): Mark[] {
       }
     }
 
-  return marks
+  // 6. Punctuation struck through the mass itself. These replace an image
+  // tile rather than claiming new space — the grid is already full here —
+  // and are appended last so they draw over their neighbours, letting a
+  // comma's tail break the gutter the way the scattered ones do.
+  const struck = new Set<Mark>()
+  for (const mark of marks) {
+    if (mark.fill !== "image" || mark.shape !== "square") continue
+    if (mark.col < photoStart + MOSAIC.boundaryBand) continue // leave the boundary band as tuned
+    // Distance to the nearest hard edge — top, bottom or right. The left is
+    // excluded: it already dissolves through the boundary band and scatter.
+    const toEdge = Math.min(rows - 1 - mark.row, mark.row, cols - 1 - mark.col)
+    const lift =
+      toEdge < MOSAIC.edgeFrayBand
+        ? MOSAIC.edgeFrayMax * Math.pow(MOSAIC.edgeFrayFalloff, toEdge)
+        : 0
+    if (rand() >= MOSAIC.massCommaRate + lift) continue
+    mark.shape = "comma"
+    // Always a cutout inside the mass: painted in the page colour it bites
+    // into the photograph, where brand grey would just sit on top of it.
+    // The scattered marks outside the image stay grey.
+    mark.fill = "cutout"
+    mark.fade = 1
+    mark.rot = ([0, 90, 180, 270] as Rot[])[Math.floor(rand() * 4)]
+    struck.add(mark)
+  }
+
+  // A comma is one and a half cells tall, so its tail reaches into the
+  // neighbouring tile. Painted in place it would be overdrawn by whichever
+  // mass tile comes later in the list; lifted to the end it lands on top and
+  // takes a bite out of the photograph.
+  return [...marks.filter((mark) => !struck.has(mark)), ...struck]
 }

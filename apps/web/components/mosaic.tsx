@@ -180,11 +180,18 @@ export function Mosaic({ className }: { className?: string }) {
                 </g>
               )
 
-            if (m.fill === "solid")
+            if (m.fill !== "image")
               return (
                 <g
                   key={i}
-                  className="mosaic-tile fill-mosaic-mark"
+                  className={cn(
+                    "mosaic-tile",
+                    // A cutout is painted in the page colour, so it reads as
+                    // a hole bitten out of the photo beneath it.
+                    m.fill === "cutout"
+                      ? "fill-background"
+                      : "fill-mosaic-mark",
+                  )}
                   fillOpacity={m.fade}
                   style={style}
                 >
