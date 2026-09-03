@@ -45,10 +45,10 @@ export async function submitWaitlist(
   const config = parseAttioConfig(env)
   if (!config) {
     if (env.NODE_ENV === "production") {
-      log.error("[waitlist] attio_not_configured", { email })
+      log.error(line("attio_not_configured", { email }))
       return { status: "error", message: MESSAGES.failed }
     }
-    log.info("[waitlist] attio_not_configured, signup logged only", { email })
+    log.info(line("attio_not_configured_signup_logged_only", { email }))
     return { status: "success", email }
   }
 
@@ -57,35 +57,43 @@ export async function submitWaitlist(
     const result = await attio.addToWaitlist({ email })
     if (!result.listed && result.listError) {
       log.error(
-        "[waitlist] attio_list_entry_failed",
-        describe(result.listError, email),
+        line("attio_list_entry_failed", describe(result.listError, email)),
       )
     }
     return { status: "success", email }
   } catch (error) {
     if (error instanceof AttioError) {
       if (error.kind === "invalid_input") {
-        log.warn("[waitlist] attio_rejected_email", describe(error, email))
+        log.warn(line("attio_rejected_email", describe(error, email)))
         return { status: "error", message: MESSAGES.invalid }
       }
       if (error.kind === "multiple_matches") {
         // Duplicate people already exist for this address, so the signup is
         // known. Merge them in Attio before the list step can succeed.
-        log.warn("[waitlist] attio_multiple_matches", describe(error, email))
+        log.warn(line("attio_multiple_matches", describe(error, email)))
         return { status: "success", email }
       }
-      log.error("[waitlist] attio_failed", describe(error, email))
+      log.error(line("attio_failed", describe(error, email)))
     } else {
-      log.error("[waitlist] attio_failed", {
-        email,
-        message: error instanceof Error ? error.message : String(error),
-      })
+      log.error(
+        line("attio_failed", {
+          email,
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      )
     }
     return { status: "error", message: MESSAGES.failed }
   }
 }
 
-function describe(error: AttioError, email: string) {
+type LogFields = Record<string, string | number | undefined>
+
+/** One line per event, JSON fields, so any log sink keeps the address. */
+function line(event: string, fields: LogFields): string {
+  return `[waitlist] ${event} ${JSON.stringify(fields)}`
+}
+
+function describe(error: AttioError, email: string): LogFields {
   return {
     email,
     kind: error.kind,

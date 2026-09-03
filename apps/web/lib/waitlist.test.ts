@@ -22,20 +22,18 @@ function harness(
 ) {
   const { fetch, calls } = fakeFetch(responses)
   const log = {
-    error: mock(() => {}),
-    warn: mock(() => {}),
-    info: mock(() => {}),
+    error: mock<(line: string) => void>(() => {}),
+    warn: mock<(line: string) => void>(() => {}),
+    info: mock<(line: string) => void>(() => {}),
   }
   const submit = (email: string) =>
     submitWaitlist(email, { env, fetch, log, sleep })
   const body = (index: number) => JSON.parse(String(calls[index]?.init.body))
+  const lines = (level: keyof typeof log) =>
+    log[level].mock.calls.map((call) => String(call[0]))
   const logged = () =>
-    JSON.stringify([
-      log.error.mock.calls,
-      log.warn.mock.calls,
-      log.info.mock.calls,
-    ])
-  return { submit, calls, log, body, logged }
+    [...lines("error"), ...lines("warn"), ...lines("info")].join("\n")
+  return { submit, calls, log, body, lines, logged }
 }
 
 describe("unit: waitlist", () => {
@@ -83,44 +81,47 @@ describe("unit: waitlist", () => {
   })
 
   test("logs and succeeds without a key outside production", async () => {
-    const { submit, calls, log } = harness([], { NODE_ENV: "development" })
+    const { submit, calls, log, lines } = harness([], {
+      NODE_ENV: "development",
+    })
 
     expect(await submit("a@b.com")).toEqual({
       status: "success",
       email: "a@b.com",
     })
     expect(calls).toHaveLength(0)
-    expect(log.info).toHaveBeenCalledTimes(1)
+    expect(lines("info")).toEqual([
+      '[waitlist] attio_not_configured_signup_logged_only {"email":"a@b.com"}',
+    ])
     expect(log.error).not.toHaveBeenCalled()
   })
 
   test("fails loudly without a key in production", async () => {
-    const { submit, calls, log } = harness([], { NODE_ENV: "production" })
+    const { submit, calls, lines } = harness([], { NODE_ENV: "production" })
 
     expect(await submit("a@b.com")).toEqual({
       status: "error",
       message: MESSAGES.failed,
     })
     expect(calls).toHaveLength(0)
-    expect(log.error).toHaveBeenCalledWith("[waitlist] attio_not_configured", {
-      email: "a@b.com",
-    })
+    expect(lines("error")).toEqual([
+      '[waitlist] attio_not_configured {"email":"a@b.com"}',
+    ])
   })
 
   test("upserts the person and the list entry", async () => {
-    const { submit, calls, log } = harness([personUpserted, entryUpserted])
+    const { submit, calls, logged } = harness([personUpserted, entryUpserted])
 
     expect(await submit("a@b.com")).toEqual({
       status: "success",
       email: "a@b.com",
     })
     expect(calls).toHaveLength(2)
-    expect(log.error).not.toHaveBeenCalled()
-    expect(log.warn).not.toHaveBeenCalled()
+    expect(logged()).toBe("")
   })
 
   test("maps an Attio input rejection to the invalid-email message", async () => {
-    const { submit, log } = harness([
+    const { submit, lines } = harness([
       json(400, { code: "validation_type", message: "invalid email domain" }),
     ])
 
@@ -128,19 +129,13 @@ describe("unit: waitlist", () => {
       status: "error",
       message: MESSAGES.invalid,
     })
-    expect(log.warn).toHaveBeenCalledWith(
-      "[waitlist] attio_rejected_email",
-      expect.objectContaining({
-        email: "a@b.zz",
-        kind: "invalid_input",
-        status: 400,
-        message: "invalid email domain",
-      }),
-    )
+    expect(lines("warn")).toEqual([
+      '[waitlist] attio_rejected_email {"email":"a@b.zz","kind":"invalid_input","status":400,"code":"validation_type","message":"invalid email domain"}',
+    ])
   })
 
   test("treats duplicate matches as already known", async () => {
-    const { submit, log } = harness([
+    const { submit, lines } = harness([
       json(409, { code: "MULTIPLE_MATCH_RESULTS", message: "dupes" }),
     ])
 
@@ -148,31 +143,25 @@ describe("unit: waitlist", () => {
       status: "success",
       email: "a@b.com",
     })
-    expect(log.warn).toHaveBeenCalledWith(
-      "[waitlist] attio_multiple_matches",
-      expect.objectContaining({ email: "a@b.com", kind: "multiple_matches" }),
-    )
+    expect(lines("warn")).toHaveLength(1)
+    expect(lines("warn")[0]).toStartWith("[waitlist] attio_multiple_matches ")
+    expect(lines("warn")[0]).toContain('"kind":"multiple_matches"')
   })
 
   test("returns the generic error on Attio failure and logs the details", async () => {
-    const { submit, log } = harness([json(500, {}), json(500, {})])
+    const { submit, lines } = harness([json(500, {}), json(500, {})])
 
     expect(await submit("a@b.com")).toEqual({
       status: "error",
       message: MESSAGES.failed,
     })
-    expect(log.error).toHaveBeenCalledWith(
-      "[waitlist] attio_failed",
-      expect.objectContaining({
-        email: "a@b.com",
-        kind: "server",
-        status: 500,
-      }),
-    )
+    expect(lines("error")).toEqual([
+      '[waitlist] attio_failed {"email":"a@b.com","kind":"server","status":500,"message":"{}"}',
+    ])
   })
 
   test("still succeeds when only the list step fails", async () => {
-    const { submit, log } = harness([
+    const { submit, lines } = harness([
       personUpserted,
       json(404, { code: "not_found", message: "List not found" }),
     ])
@@ -181,14 +170,13 @@ describe("unit: waitlist", () => {
       status: "success",
       email: "a@b.com",
     })
-    expect(log.error).toHaveBeenCalledWith(
-      "[waitlist] attio_list_entry_failed",
-      expect.objectContaining({ kind: "not_found", status: 404 }),
-    )
+    expect(lines("error")).toEqual([
+      '[waitlist] attio_list_entry_failed {"email":"a@b.com","kind":"not_found","status":404,"code":"not_found","message":"List not found"}',
+    ])
   })
 
   test("logs failures that are not Attio errors", async () => {
-    const { submit, log } = harness(
+    const { submit, lines } = harness(
       [json(500, {})],
       productionEnv,
       async () => {
@@ -200,10 +188,9 @@ describe("unit: waitlist", () => {
       status: "error",
       message: MESSAGES.failed,
     })
-    expect(log.error).toHaveBeenCalledWith("[waitlist] attio_failed", {
-      email: "a@b.com",
-      message: "boom",
-    })
+    expect(lines("error")).toEqual([
+      '[waitlist] attio_failed {"email":"a@b.com","message":"boom"}',
+    ])
   })
 
   test("never logs the API key", async () => {
@@ -216,6 +203,8 @@ describe("unit: waitlist", () => {
     await submit("a@b.com")
     await submit("a@b.com")
 
+    expect(logged()).toContain('"kind":"auth"')
+    expect(logged()).toContain('"kind":"network"')
     expect(logged()).not.toContain("test-key")
   })
 })
