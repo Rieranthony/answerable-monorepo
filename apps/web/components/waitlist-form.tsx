@@ -9,7 +9,10 @@ import { Input } from "@/components/ui/input"
 const initialState: WaitlistState = { status: "idle" }
 
 export function WaitlistForm() {
-  const [state, formAction, pending] = useActionState(joinWaitlist, initialState)
+  const [state, formAction, pending] = useActionState(
+    joinWaitlist,
+    initialState,
+  )
   const inputRef = useRef<HTMLInputElement>(null)
 
   // React does not reapply `autoFocus` to server-rendered markup during
@@ -22,8 +25,8 @@ export function WaitlistForm() {
   if (state.status === "success") {
     return (
       <p className="text-sm/6">
-        You&apos;re on the list. We&apos;ll email {state.email} when signing
-        opens.
+        You&apos;re on the list. We&apos;ll email {state.email} the programme
+        details when enrolment opens.
       </p>
     )
   }
@@ -32,7 +35,7 @@ export function WaitlistForm() {
     <div className="flex flex-col gap-2">
       <form
         action={formAction}
-        className="flex w-full max-w-sm items-center border border-border p-1 transition-colors focus-within:border-ring"
+        className="border-border focus-within:border-ring flex w-full max-w-sm items-center border p-1 transition-colors"
       >
         <Input
           ref={inputRef}
@@ -49,7 +52,7 @@ export function WaitlistForm() {
           disabled={pending}
           className="h-9 gap-1.5 px-3 text-sm"
         >
-          {pending ? "Joining…" : "Join waitlist"}
+          {pending ? "Registering…" : "Register your interest"}
           <span
             aria-hidden="true"
             className="font-system text-primary-foreground/60"

@@ -10,7 +10,7 @@ const publicSans = Public_Sans({ subsets: ["latin"], variable: "--font-sans" })
 export const metadata: Metadata = {
   title: "Answerable",
   description:
-    "A public declaration for professional practices: six plain commitments for using AI with the care our professions have always stood for.",
+    "Answerable trains, equips and accredits the AI Lead: the named professional who answers for how AI is used in high-stakes professional work.",
 }
 
 export default function RootLayout({
