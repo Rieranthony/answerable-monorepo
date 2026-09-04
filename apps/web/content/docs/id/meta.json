@@ -1,4 +1,4 @@
 {
   "title": "Answerable ID",
-  "pages": ["index", "sign-in"]
+  "pages": ["index", "sign-in", "api"]
 }
