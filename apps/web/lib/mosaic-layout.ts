@@ -36,6 +36,10 @@ export const MOSAIC = {
   // motif carries across the image instead of only dissolving off its left
   // edge. Applied last, so raising it cannot reshuffle anything above.
   massCommaRate: 0.05,
+  // Minimum clear cells between two struck commas. Cutouts are the page
+  // colour, so a neighbouring pair merges into one shapeless void instead of
+  // reading as two marks — a gap of one keeps each glyph legible.
+  commaMinGap: 1,
   // The mass only frays on its left edge; the other three end on a hard
   // rectangle. These lift the strike rate near the top, bottom and right
   // so the image breaks up into punctuation there too, decaying inward.
@@ -343,10 +347,19 @@ export function computeMosaicLayout(): Mark[] {
     r <= fRow + clearMargin
 
   const struck = new Set<Mark>()
+  const struckCells = new Set<string>()
+  const crowded = (c: number, r: number) => {
+    const gap = MOSAIC.commaMinGap
+    for (let dc = -gap; dc <= gap; dc++)
+      for (let dr = -gap; dr <= gap; dr++)
+        if (struckCells.has(`${c + dc},${r + dr}`)) return true
+    return false
+  }
   for (const mark of marks) {
     if (mark.fill !== "image" || mark.shape !== "square") continue
     if (mark.col < photoStart + MOSAIC.boundaryBand) continue // leave the boundary band as tuned
     if (nearFocus(mark.col, mark.row)) continue // one comma there, not two
+    if (crowded(mark.col, mark.row)) continue
     // Distance to the nearest hard edge — top, bottom or right. The left is
     // excluded: it already dissolves through the boundary band and scatter.
     const toEdge = Math.min(rows - 1 - mark.row, mark.row, cols - 1 - mark.col)
@@ -363,6 +376,7 @@ export function computeMosaicLayout(): Mark[] {
     mark.fade = 1
     mark.rot = ([0, 90, 180, 270] as Rot[])[Math.floor(rand() * 4)]
     struck.add(mark)
+    struckCells.add(`${mark.col},${mark.row}`)
   }
 
   // A comma is one and a half cells tall, so its tail reaches into the
