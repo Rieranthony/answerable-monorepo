@@ -6,6 +6,7 @@ import {
   pgTable,
   text,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -119,6 +120,8 @@ export const accounts = pgTable(
     id: id(),
     issuer: text("issuer").notNull(),
     accountId: text("account_id").notNull(),
+    directoryId: text("directory_id"),
+    directoryUserId: text("directory_user_id"),
     providerId: text("provider_id").notNull(),
     userId: uuid("user_id")
       .notNull()
@@ -137,6 +140,9 @@ export const accounts = pgTable(
       table.issuer,
       table.accountId,
     ),
+    uniqueIndex("accounts_issuer_directory_user_id_idx")
+      .on(table.issuer, table.directoryUserId)
+      .where(sql`${table.directoryUserId} is not null`),
     index("accounts_user_id_idx").on(table.userId),
   ],
 );

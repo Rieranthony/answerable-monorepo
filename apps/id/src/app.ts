@@ -1,5 +1,6 @@
 import { Scalar } from "@scalar/hono-api-reference";
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { describeRoute, openAPIRouteHandler, resolver } from "hono-openapi";
 import { z } from "zod";
 
@@ -35,6 +36,11 @@ export function createApp(services: AppServices) {
 
     await next();
   });
+
+  app.use(
+    "/auth/*",
+    cors({ origin: services.environment.trustedOrigins, credentials: true }),
+  );
 
   app.get(
     "/healthz",

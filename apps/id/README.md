@@ -4,7 +4,7 @@ Identity and authorization service for Answerable. This first milestone contains
 
 ## HTTP surface
 
-- Better Auth: `/auth/*` (explicit allowlist; currently only `/auth/ok`). The organization, JWT, and OAuth provider plugins are registered, so OAuth 2.1, OIDC discovery, and JWKS routes exist under `/auth` but stay unreachable until allowlisted. The provider's admin endpoints also require a session and privilege hooks that deny by default; client administration is designed with the admin API
+- Better Auth: `/auth/*` behind an explicit allowlist: `GET /auth/ok`, `POST /auth/sign-in/sso`, `GET /auth/sso/callback`, `GET /auth/get-session`, and `POST /auth/sign-out`. Every SSO administration/SAML route and every OAuth-provider route remains unreachable until a later milestone. The provider's admin endpoints also require a session and privilege hooks that deny by default; client administration is designed with the admin API
 - Admin OpenAPI: `/api/admin/openapi.json`
 - Admin docs: `/api/admin/docs` in development and test only
 - Liveness: `/healthz` (no database query)
@@ -12,7 +12,7 @@ Identity and authorization service for Answerable. This first milestone contains
 
 Production uses `https://id.answerable.org` as `BETTER_AUTH_URL`; Better Auth's separate `basePath` is `/auth`. Local development keeps `BETTER_AUTH_URL=http://localhost:47300`.
 
-`src/env.ts` validates `Bun.env` once during startup and returns a typed configuration object. `DATABASE_URL`, `BETTER_AUTH_URL`, and `BETTER_AUTH_SECRET` are required and produce a named startup error when absent. Runtime settings such as `PORT` and pool limits declare their defaults in the same schema; see [`.env.example`](../../.env.example).
+`src/env.ts` validates `Bun.env` once during startup and returns a typed configuration object. `DATABASE_URL`, `BETTER_AUTH_URL`, and `BETTER_AUTH_SECRET` are required and produce a named startup error when absent. `BETTER_AUTH_TRUSTED_ORIGINS` is a comma-separated browser/IdP origin allowlist (defaults to `AUTH_PAGES_URL` when unset), and `AUTH_PAGES_URL` is the absolute login/consent-page origin (default `http://localhost:47100`). Runtime settings such as `PORT` and pool limits declare their defaults in the same schema; see [`.env.example`](../../.env.example).
 
 ## Commands
 

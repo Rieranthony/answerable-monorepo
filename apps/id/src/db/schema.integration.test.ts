@@ -25,6 +25,7 @@ import {
   findOrganizationByDomain,
 } from "./queries/organization-domains.ts";
 import { retireUserEmail } from "./queries/users.ts";
+import { createSsoProvider } from "./queries/sso-providers.ts";
 import {
   accounts,
   entitlements,
@@ -43,6 +44,7 @@ import {
   organizationDomains,
   organizations,
   sessions,
+  ssoProviders,
   users,
   verifications,
 } from "./schema/index.ts";
@@ -61,6 +63,7 @@ beforeEach(async () => {
       group_members,
       groups,
       organization_domains,
+      sso_providers,
       oauth_client_assertions,
       oauth_access_tokens,
       oauth_refresh_tokens,
@@ -174,6 +177,7 @@ const allTables = [
   groups,
   groupMembers,
   entitlements,
+  ssoProviders,
 ];
 
 describe("integration: PostgreSQL schema", () => {
@@ -251,6 +255,8 @@ describe("integration: PostgreSQL schema", () => {
         "id uuid",
         "issuer text",
         "account_id text",
+        "directory_id text null",
+        "directory_user_id text null",
         "provider_id text",
         "user_id uuid",
         "access_token text null",
@@ -262,6 +268,17 @@ describe("integration: PostgreSQL schema", () => {
         "password text null",
         created,
         updated,
+      ],
+      sso_providers: [
+        "id uuid",
+        "issuer text",
+        "oidc_config text null",
+        "saml_config text null",
+        "user_id uuid null",
+        "provider_id text",
+        "organization_id uuid",
+        "domain text",
+        created,
       ],
       verifications: [
         "id text",
@@ -520,6 +537,14 @@ describe("integration: PostgreSQL schema", () => {
         "accounts_pkey PRIMARY KEY (id)",
         `accounts_user_id_users_id_fk ${cascadeUser}`,
       ],
+      sso_providers: [
+        "sso_providers_domain_normalized_check CHECK ((domain ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'::text))",
+        `sso_providers_organization_id_organizations_id_fk ${cascadeOrganization}`,
+        "sso_providers_organization_id_unique UNIQUE (organization_id)",
+        "sso_providers_pkey PRIMARY KEY (id)",
+        "sso_providers_provider_id_unique UNIQUE (provider_id)",
+        "sso_providers_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL",
+      ],
       verifications: ["verifications_pkey PRIMARY KEY (id)"],
       members: [
         "members_organization_id_id_unique UNIQUE (organization_id, id)",
@@ -626,7 +651,10 @@ describe("integration: PostgreSQL schema", () => {
         "sessions_expires_at_idx (expires_at)",
         "sessions_user_id_idx (user_id)",
       ],
-      accounts: ["accounts_user_id_idx (user_id)"],
+      accounts: [
+        "accounts_issuer_directory_user_id_idx unique (issuer, directory_user_id) WHERE (directory_user_id IS NOT NULL)",
+        "accounts_user_id_idx (user_id)",
+      ],
       verifications: [
         "verifications_expires_at_idx (expires_at)",
         "verifications_identifier_idx (identifier)",
@@ -1043,6 +1071,115 @@ describe("integration: PostgreSQL schema", () => {
       connection.db
         .insert(accounts)
         .values({ ...first, id: createId() })
+        .execute(),
+    ).rejects.toThrow();
+  });
+
+  test("keys accounts by directory user id per issuer", async () => {
+    const user = await insertUser();
+    const account = {
+      issuer: "https://issuer.example.com",
+      accountId: "subject-one",
+      providerId: "example",
+      userId: user.id,
+      directoryUserId: "directory-user",
+    };
+
+    await connection.db
+      .insert(accounts)
+      .values({ id: createId(), ...account });
+    await expect(
+      connection.db
+        .insert(accounts)
+        .values({
+          id: createId(),
+          ...account,
+          accountId: "subject-two",
+        })
+        .execute(),
+    ).rejects.toThrow();
+    await connection.db.insert(accounts).values([
+      {
+        id: createId(),
+        ...account,
+        issuer: "https://other-issuer.example.com",
+        accountId: "subject-three",
+      },
+      {
+        id: createId(),
+        ...account,
+        accountId: "subject-four",
+        directoryUserId: null,
+      },
+      {
+        id: createId(),
+        ...account,
+        accountId: "subject-five",
+        directoryUserId: null,
+      },
+    ]);
+  });
+
+  test("binds one SSO provider per organization", async () => {
+    const first = await insertOrganization("first");
+    const second = await insertOrganization("second");
+    const firstProvider = await createSsoProvider(connection.db, {
+      organizationId: first.id,
+      providerId: first.slug,
+      issuer: "https://issuer.example.com",
+      domain: "example.com",
+      oidc: { clientId: "client" },
+    });
+
+    expect(isUuidV7(firstProvider.id)).toBe(true);
+    expect(JSON.parse(firstProvider.oidcConfig!)).toEqual({
+      issuer: "https://issuer.example.com",
+      clientId: "client",
+      discoveryEndpoint:
+        "https://issuer.example.com/.well-known/openid-configuration",
+      tokenEndpointAuthentication: "client_secret_post",
+      pkce: true,
+      overrideUserInfo: false,
+    });
+    const providerGraph = await connection.db.query.ssoProviders.findFirst({
+      where: eq(ssoProviders.id, firstProvider.id),
+      with: { organization: true, user: true },
+    });
+    const organizationGraph = await connection.db.query.organizations.findFirst({
+      where: eq(organizations.id, first.id),
+      with: { ssoProvider: true },
+    });
+    expect(providerGraph?.organization.id).toBe(first.id);
+    expect(providerGraph?.user).toBeNull();
+    expect(organizationGraph?.ssoProvider?.id).toBe(firstProvider.id);
+    await expect(
+      createSsoProvider(connection.db, {
+        organizationId: first.id,
+        providerId: "first-two",
+        issuer: "https://issuer-two.example.com",
+        domain: "example.com",
+        oidc: { clientId: "client-two" },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      createSsoProvider(connection.db, {
+        organizationId: second.id,
+        providerId: first.slug,
+        issuer: "https://issuer-three.example.com",
+        domain: "second.example.com",
+        oidc: { clientId: "client-three" },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      connection.db
+        .insert(ssoProviders)
+        .values({
+          id: createId(),
+          organizationId: second.id,
+          providerId: "second",
+          issuer: "https://issuer.example.com",
+          domain: "Bad Domain",
+        })
         .execute(),
     ).rejects.toThrow();
   });

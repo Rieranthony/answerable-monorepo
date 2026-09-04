@@ -15,9 +15,20 @@ afterAll(async () => {
 });
 
 test("never links an upstream identity to an existing user by email", async () => {
-  const auth = createAuth(connection.db, testEnvironment());
+  const environment = testEnvironment({
+    trustedOrigins: ["https://chat.example.com"],
+    authPagesUrl: "https://pages.example.com",
+  });
+  const auth = createAuth(connection.db, environment);
 
   expect(auth.options.account?.accountLinking?.enabled).toBe(false);
-  await auth.$context;
-  // The behavioral login test belongs to the federation milestone.
+  expect(auth.options.trustedOrigins).toEqual(environment.trustedOrigins);
+  const context = await auth.$context;
+  expect(typeof context.adapter.options?.adapterConfig.transaction).toBe(
+    "function",
+  );
+
+  const schema = await auth.api.generateOpenAPISchema();
+  expect(Object.keys(schema.paths)).toContain("/sign-in/sso");
+  expect(Object.keys(schema.paths)).toContain("/sso/callback");
 });

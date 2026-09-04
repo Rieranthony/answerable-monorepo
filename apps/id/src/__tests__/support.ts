@@ -21,6 +21,8 @@ export function testEnvironment(
     databaseUrl: testDatabaseUrl,
     betterAuthUrl: "http://localhost:47300",
     betterAuthSecret: "test-secret-that-is-at-least-32-characters",
+    trustedOrigins: [],
+    authPagesUrl: "http://localhost:47100",
     databasePoolMax: 1,
     databasePoolIdleTimeoutMs: 1_000,
     databaseConnectionTimeoutMs: 1_000,

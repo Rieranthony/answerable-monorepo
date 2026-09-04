@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+/** Browser origins Better Auth trusts; the pages origin when none is set. */
+const parseTrustedOrigins = (value: string, fallback: string) => {
+  const origins = value
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  return origins.length > 0 ? origins : [fallback];
+};
+
 const environmentSchema = z
   .object({
     NODE_ENV: z
@@ -9,6 +18,8 @@ const environmentSchema = z
     DATABASE_URL: z.url(),
     BETTER_AUTH_URL: z.url(),
     BETTER_AUTH_SECRET: z.string().min(32),
+    BETTER_AUTH_TRUSTED_ORIGINS: z.string().default(""),
+    AUTH_PAGES_URL: z.url().default("http://localhost:47100"),
     DATABASE_POOL_MAX: z.coerce.number().int().min(1).optional(),
     DATABASE_POOL_IDLE_TIMEOUT_MS: z.coerce
       .number()
@@ -28,6 +39,11 @@ const environmentSchema = z
     databaseUrl: environment.DATABASE_URL,
     betterAuthUrl: environment.BETTER_AUTH_URL,
     betterAuthSecret: environment.BETTER_AUTH_SECRET,
+    trustedOrigins: parseTrustedOrigins(
+      environment.BETTER_AUTH_TRUSTED_ORIGINS,
+      environment.AUTH_PAGES_URL,
+    ),
+    authPagesUrl: environment.AUTH_PAGES_URL,
     databasePoolMax:
       environment.DATABASE_POOL_MAX ??
       (environment.NODE_ENV === "test" ? 1 : 5),

@@ -29,6 +29,8 @@ describe("unit: environment", () => {
       databaseUrl: requiredEnvironment.DATABASE_URL,
       betterAuthUrl: requiredEnvironment.BETTER_AUTH_URL,
       betterAuthSecret: requiredEnvironment.BETTER_AUTH_SECRET,
+      trustedOrigins: ["http://localhost:47100"],
+      authPagesUrl: "http://localhost:47100",
       databasePoolMax: 5,
       databasePoolIdleTimeoutMs: 10_000,
       databaseConnectionTimeoutMs: 5_000,
@@ -59,6 +61,9 @@ describe("unit: environment", () => {
       DATABASE_POOL_IDLE_TIMEOUT_MS: "2000",
       DATABASE_CONNECTION_TIMEOUT_MS: "3000",
       OPENAPI_ENABLED: "false",
+      BETTER_AUTH_TRUSTED_ORIGINS:
+        "https://chat.example.com, https://admin.example.com",
+      AUTH_PAGES_URL: "https://auth.example.com",
     });
 
     expect(environment).toMatchObject({
@@ -68,6 +73,11 @@ describe("unit: environment", () => {
       databasePoolIdleTimeoutMs: 2_000,
       databaseConnectionTimeoutMs: 3_000,
       openApiEnabled: false,
+      trustedOrigins: [
+        "https://chat.example.com",
+        "https://admin.example.com",
+      ],
+      authPagesUrl: "https://auth.example.com",
     });
   });
 

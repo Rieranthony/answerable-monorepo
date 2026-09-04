@@ -22,6 +22,7 @@ import {
   oauthRefreshTokens,
   oauthResources,
 } from "./oauth.ts";
+import { ssoProviders } from "./federation.ts";
 
 // One-side relations are named after the Better Auth model they point at,
 // which is the key its adapter looks for when it joins.
@@ -57,14 +58,29 @@ export const accountsRelations = relations(accounts, ({ one }) => ({
   }),
 }));
 
-export const organizationsRelations = relations(organizations, ({ many }) => ({
-  sessions: many(sessions),
-  members: many(members),
-  invitations: many(invitations),
-  domains: many(organizationDomains),
-  groups: many(groups),
-  entitlements: many(entitlements),
-  oauthClients: many(oauthClients),
+export const organizationsRelations = relations(
+  organizations,
+  ({ many, one }) => ({
+    sessions: many(sessions),
+    members: many(members),
+    invitations: many(invitations),
+    domains: many(organizationDomains),
+    groups: many(groups),
+    entitlements: many(entitlements),
+    oauthClients: many(oauthClients),
+    ssoProvider: one(ssoProviders),
+  }),
+);
+
+export const ssoProvidersRelations = relations(ssoProviders, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [ssoProviders.organizationId],
+    references: [organizations.id],
+  }),
+  user: one(users, {
+    fields: [ssoProviders.userId],
+    references: [users.id],
+  }),
 }));
 
 export const membersRelations = relations(members, ({ many, one }) => ({

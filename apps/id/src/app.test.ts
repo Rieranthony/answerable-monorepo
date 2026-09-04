@@ -132,11 +132,71 @@ describe("unit: Hono application", () => {
     });
 
     expect(isAllowedAuthRoute("get", "/auth/ok")).toBe(true);
+    expect(isAllowedAuthRoute("post", "/auth/sign-in/sso")).toBe(true);
+    expect(isAllowedAuthRoute("get", "/auth/sso/callback")).toBe(true);
+    expect(isAllowedAuthRoute("get", "/auth/get-session")).toBe(true);
+    expect(isAllowedAuthRoute("post", "/auth/sign-out")).toBe(true);
     expect(isAllowedAuthRoute("POST", "/auth/organization/create")).toBe(false);
     expect((await app.request("/auth/ok")).status).toBe(200);
     expect((await app.request("/auth/organization/create", { method: "POST" })).status).toBe(
       404,
     );
+  });
+
+  test("answers trusted SSO preflights without reflecting untrusted origins", async () => {
+    const app = createApp({
+      auth: stubAuth(),
+      db: stubDatabase(),
+      environment: testEnvironment({
+        trustedOrigins: ["https://chat.example.com"],
+      }),
+    });
+    const preflight = (origin: string) =>
+      app.request("/auth/sign-in/sso", {
+        method: "OPTIONS",
+        headers: {
+          Origin: origin,
+          "Access-Control-Request-Method": "POST",
+        },
+      });
+
+    const trusted = await preflight("https://chat.example.com");
+    const untrusted = await preflight("https://evil.example.com");
+    expect(trusted.status).toBe(204);
+    expect(trusted.headers.get("access-control-allow-origin")).toBe(
+      "https://chat.example.com",
+    );
+    expect(trusted.headers.get("access-control-allow-credentials")).toBe("true");
+    expect(untrusted.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  test("blocks every unapproved SSO and OAuth provider endpoint", async () => {
+    const app = createApp({
+      auth: stubAuth(),
+      db: stubDatabase(),
+      environment: testEnvironment(),
+    });
+    const blocked = [
+      ["POST", "/auth/sso/register"],
+      ["GET", "/auth/sso/providers"],
+      ["GET", "/auth/sso/get-provider"],
+      ["POST", "/auth/sso/update-provider"],
+      ["POST", "/auth/sso/delete-provider"],
+      ["POST", "/auth/sso/request-domain-verification"],
+      ["POST", "/auth/sso/verify-domain"],
+      ["GET", "/auth/sso/saml2/sp/metadata"],
+      ["POST", "/auth/sso/saml2/sp/acs/x"],
+      ["POST", "/auth/sso/saml2/sp/slo/x"],
+      ["POST", "/auth/sso/saml2/logout/x"],
+      ["GET", "/auth/sso/callback/x"],
+      ["GET", "/auth/oauth2/authorize"],
+      ["POST", "/auth/oauth2/consent"],
+      ["GET", "/auth/oauth2/continue"],
+    ] as const;
+
+    for (const [method, path] of blocked) {
+      expect((await app.request(path, { method })).status).toBe(404);
+    }
   });
 
   test("returns structured JSON for unknown routes", async () => {
