@@ -8,7 +8,7 @@
         "run",
         "dev"
       ],
-      "port": 3000,
+      "port": 47100,
       "autoPort": true
     },
     {
@@ -20,8 +20,20 @@
         "web",
         "dev"
       ],
-      "port": 3000,
+      "port": 47100,
       "autoPort": true
+    },
+    {
+      "name": "id",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": [
+        "--env-file=.env",
+        "run",
+        "--filter",
+        "@answerable/id",
+        "dev"
+      ],
+      "port": 47300
     }
   ]
 }

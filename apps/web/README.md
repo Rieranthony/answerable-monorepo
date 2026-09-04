@@ -1,21 +1,16 @@
-# Next.js template
+# Answerable web
 
-This is a Next.js template with shadcn/ui.
+The Next.js app serves the public Answerable site and the browser-facing Answerable ID login, consent, and error pages. The identity service itself remains an API in `apps/id`.
 
-## Adding components
+## Local development
 
-To add components to your app, run the following command:
+From the repository root, copy `apps/web/.env.example` to `apps/web/.env.local`, then run `bun dev`. The local services use:
 
-```bash
-npx shadcn@latest add button
-```
+| Service | Port |
+| --- | ---: |
+| Web | 47100 |
+| Answerable ID | 47300 |
+| PostgreSQL | 47432 |
+| Redis | 47379 |
 
-This will place the ui components in the `components` directory.
-
-## Using components
-
-To use the components in your app, import them as follows:
-
-```tsx
-import { Button } from "@/components/ui/button";
-```
+Set `PORT` to override the web port for a preview. Next.js reads the web environment files from this directory, not the repository root.

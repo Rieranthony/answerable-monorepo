@@ -24,7 +24,7 @@ Every doc opens with a three-bullet TL;DR (*Decides / Rule / Not here*). Dates l
 
 ## Local environment
 
-`bun dev` starts Docker (Postgres + Redis) first, then the apps. Requirements: Docker Desktop (Compose v2) and Bun 1.3.1.
+`bun dev` starts Docker (Postgres + Redis) first, then the apps. Requirements: Docker Desktop (Compose v2) and Bun 1.3.1. The web app runs at `http://localhost:47100` and Answerable ID at `http://localhost:47300`.
 
 ```bash
 bun install
@@ -36,6 +36,8 @@ bun dev
 
 | Service | Host port | Purpose |
 | --- | --- | --- |
+| `web` | 47100 | Public site and Answerable ID browser pages |
+| `id` | 47300 | Answerable ID API |
 | `postgres` | 47432 | `answerable_id`, plus `answerable_id_test` for the test suite |
 | `redis` | 47379 | Session read-cache — later; unused by v1 code |
 
