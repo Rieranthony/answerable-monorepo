@@ -6,7 +6,7 @@ Monorepo for Answerable's products, program documentation, and the local environ
 
 | Workspace | What it is | Status |
 | --- | --- | --- |
-| `apps/web` | Public waitlist one-pager (Next.js 16); signups are upserted into Attio | Live |
+| `apps/web` | Public site (Next.js 16): the waitlist one-pager, the Answerable ID browser pages, and the docs at `/docs` (Fumadocs, Markdown for agents at `.md` and `/llms.txt`) | Live |
 | `apps/id` | **Answerable ID** — identity broker for client orgs, OIDC login provider for our apps, OAuth 2.1 authorization server for hosted MCP servers | Schema foundation built — design in [`docs/03-answerable-id.md`](docs/03-answerable-id.md) |
 | `apps/community-mcp` | The tutor MCP (the Omni Accelerator community inside OmniChat) | **Parked** until Answerable ID ships — its docs and Circle mocks stay in that folder, out of the plan |
 
