@@ -5,6 +5,7 @@ Identity and authorization service for Answerable. This first milestone contains
 ## HTTP surface
 
 - Better Auth: `/auth/*` behind an explicit allowlist: `GET /auth/ok`, `POST /auth/sign-in/sso`, `GET /auth/sso/callback`, `GET /auth/get-session`, and `POST /auth/sign-out`. Every SSO administration/SAML route and every OAuth-provider route remains unreachable until a later milestone. The provider's admin endpoints also require a session and privilege hooks that deny by default; client administration is designed with the admin API
+- Public OpenAPI contract: `/openapi.json` — the reachable routes only; regenerate the committed snapshot with `bun run openapi:export`
 - Admin OpenAPI: `/api/admin/openapi.json`
 - Admin docs: `/api/admin/docs` in development and test only
 - Liveness: `/healthz` (no database query)

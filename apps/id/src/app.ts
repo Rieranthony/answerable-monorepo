@@ -9,6 +9,7 @@ import type { Database } from "./db/client.ts";
 import type { Environment } from "./env.ts";
 import { isAllowedAuthRoute } from "./http/auth-allowlist.ts";
 import type { AppEnvironment } from "./http/context.ts";
+import { buildPublicOpenApiDocument } from "./http/openapi.ts";
 import { createId } from "./lib/id.ts";
 import { checkReadiness } from "./services/readiness.ts";
 
@@ -45,6 +46,9 @@ export function createApp(services: AppServices) {
   app.get(
     "/healthz",
     describeRoute({
+      operationId: "getHealth",
+      summary: "Liveness check",
+      tags: ["Health"],
       description: "Process liveness check",
       responses: {
         200: {
@@ -59,6 +63,9 @@ export function createApp(services: AppServices) {
   app.get(
     "/readyz",
     describeRoute({
+      operationId: "getReadiness",
+      summary: "Readiness check",
+      tags: ["Health"],
       description: "PostgreSQL readiness check",
       responses: {
         200: {
@@ -84,6 +91,15 @@ export function createApp(services: AppServices) {
   );
 
   if (services.environment.openApiEnabled) {
+    app.get("/openapi.json", async (context) =>
+      context.json(
+        await buildPublicOpenApiDocument({
+          app,
+          auth: context.get("auth"),
+          environment: services.environment,
+        }),
+      ),
+    );
     app.get(
       "/api/admin/openapi.json",
       openAPIRouteHandler(app, {

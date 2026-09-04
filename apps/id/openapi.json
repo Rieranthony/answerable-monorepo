@@ -1,0 +1,1816 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "Answerable ID API",
+    "version": "0.0.0",
+    "description": "The routes Answerable ID exposes today. Better Auth endpoints that are not listed here return 404."
+  },
+  "servers": [
+    {
+      "url": "https://id.answerable.org"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Health",
+      "description": "Service liveness and readiness checks."
+    },
+    {
+      "name": "Sign-in",
+      "description": "Start and complete authentication."
+    },
+    {
+      "name": "Session",
+      "description": "Inspect and end the current session."
+    }
+  ],
+  "components": {
+    "schemas": {
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "emailVerified": {
+            "type": "boolean",
+            "default": false,
+            "readOnly": true
+          },
+          "image": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": [
+              "inert",
+              "active",
+              "disabled"
+            ],
+            "default": "inert",
+            "readOnly": true
+          },
+          "disabledAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "retiredEmail": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email",
+          "emailVerified",
+          "createdAt",
+          "updatedAt",
+          "status"
+        ]
+      },
+      "Session": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "token": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ipAddress": {
+            "type": "string"
+          },
+          "userAgent": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "activeOrganizationId": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "id",
+          "expiresAt",
+          "token",
+          "createdAt",
+          "updatedAt",
+          "userId"
+        ]
+      },
+      "Account": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "accountId": {
+            "type": "string"
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "accessToken": {
+            "type": "string"
+          },
+          "refreshToken": {
+            "type": "string"
+          },
+          "idToken": {
+            "type": "string"
+          },
+          "accessTokenExpiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "refreshTokenExpiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "directoryId": {
+            "type": "string",
+            "readOnly": true
+          },
+          "directoryUserId": {
+            "type": "string",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "id",
+          "issuer",
+          "accountId",
+          "providerId",
+          "userId",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "Verification": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "identifier": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "identifier",
+          "value",
+          "expiresAt",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "OrganizationDomain": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "organizationId",
+          "domain",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "Organization": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "logo": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "metadata": {
+            "type": "string"
+          },
+          "status": {
+            "type": [
+              "active",
+              "disabled"
+            ],
+            "default": "active",
+            "readOnly": true
+          },
+          "disabledAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "createdAt",
+          "status"
+        ]
+      },
+      "Member": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "default": "member"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "validFrom": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "id",
+          "organizationId",
+          "userId",
+          "role",
+          "createdAt"
+        ]
+      },
+      "Invitation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "default": "pending"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "inviterId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organizationId",
+          "email",
+          "status",
+          "expiresAt",
+          "createdAt",
+          "inviterId"
+        ]
+      },
+      "Jwks": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "publicKey": {
+            "type": "string"
+          },
+          "privateKey": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "alg": {
+            "type": "string"
+          },
+          "crv": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "publicKey",
+          "privateKey",
+          "createdAt"
+        ]
+      },
+      "SsoProvider": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "oidcConfig": {
+            "type": "string"
+          },
+          "samlConfig": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "issuer",
+          "providerId",
+          "domain"
+        ]
+      },
+      "OauthClient": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "clientId": {
+            "type": "string"
+          },
+          "clientSecret": {
+            "type": "string"
+          },
+          "clientDiscoveryId": {
+            "type": "string"
+          },
+          "disabled": {
+            "type": "boolean",
+            "default": false
+          },
+          "skipConsent": {
+            "type": "boolean"
+          },
+          "enableEndSession": {
+            "type": "boolean"
+          },
+          "subjectType": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "clientCredentialsScopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "userId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "name": {
+            "type": "string"
+          },
+          "uri": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "contacts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tos": {
+            "type": "string"
+          },
+          "policy": {
+            "type": "string"
+          },
+          "softwareId": {
+            "type": "string"
+          },
+          "softwareVersion": {
+            "type": "string"
+          },
+          "softwareStatement": {
+            "type": "string"
+          },
+          "redirectUris": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "postLogoutRedirectUris": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "backchannelLogoutUri": {
+            "type": "string"
+          },
+          "backchannelLogoutSessionRequired": {
+            "type": "boolean"
+          },
+          "tokenEndpointAuthMethod": {
+            "type": "string"
+          },
+          "applicationType": {
+            "type": "string"
+          },
+          "jwks": {
+            "type": "string"
+          },
+          "jwksUri": {
+            "type": "string"
+          },
+          "grantTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "responseTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "requirePKCE": {
+            "type": "boolean"
+          },
+          "dpopBoundAccessTokens": {
+            "type": "boolean",
+            "default": false
+          },
+          "referenceId": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "json"
+          }
+        },
+        "required": [
+          "id",
+          "clientId",
+          "redirectUris"
+        ]
+      },
+      "OauthResource": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "identifier": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "accessTokenTtl": {
+            "type": "number"
+          },
+          "refreshTokenTtl": {
+            "type": "number"
+          },
+          "signingAlgorithm": {
+            "type": "string"
+          },
+          "signingKeyId": {
+            "type": "string"
+          },
+          "allowedScopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "customClaims": {
+            "type": "json"
+          },
+          "dpopBoundAccessTokensRequired": {
+            "type": "boolean",
+            "default": false
+          },
+          "disabled": {
+            "type": "boolean",
+            "default": false
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "policyVersion": {
+            "type": "number",
+            "default": 1
+          },
+          "metadata": {
+            "type": "json"
+          }
+        },
+        "required": [
+          "id",
+          "identifier",
+          "name"
+        ]
+      },
+      "OauthClientResource": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "clientId": {
+            "type": "string"
+          },
+          "resourceId": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "json"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "clientId",
+          "resourceId"
+        ]
+      },
+      "OauthRefreshToken": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "token": {
+            "type": "string"
+          },
+          "clientId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "referenceId": {
+            "type": "string"
+          },
+          "authorizationCodeId": {
+            "type": "string"
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "requestedUserInfoClaims": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revoked": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "rotatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "rotationReplayResponse": {
+            "type": "string"
+          },
+          "rotationReplayExpiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "authTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "confirmation": {
+            "type": "json"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "token",
+          "clientId",
+          "userId",
+          "scopes"
+        ]
+      },
+      "OauthAccessToken": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "token": {
+            "type": "string"
+          },
+          "clientId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "referenceId": {
+            "type": "string"
+          },
+          "authorizationCodeId": {
+            "type": "string"
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "requestedUserInfoClaims": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "refreshId": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revoked": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "confirmation": {
+            "type": "json"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "clientId",
+          "scopes"
+        ]
+      },
+      "OauthConsent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "clientId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "referenceId": {
+            "type": "string"
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "requestedUserInfoClaims": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "clientId",
+          "scopes"
+        ]
+      },
+      "OauthClientAssertion": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "expiresAt"
+        ]
+      }
+    },
+    "securitySchemes": {
+      "apiKeyCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "apiKeyCookie",
+        "description": "API Key authentication via cookie"
+      },
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Bearer token authentication"
+      }
+    }
+  },
+  "paths": {
+    "/auth/get-session": {
+      "get": {
+        "tags": [
+          "Session"
+        ],
+        "description": "Get the current session",
+        "operationId": "getSession",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "session": {
+                      "$ref": "#/components/schemas/Session"
+                    },
+                    "user": {
+                      "$ref": "#/components/schemas/User"
+                    }
+                  },
+                  "required": [
+                    "session",
+                    "user"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ]
+                }
+              }
+            },
+            "description": "Bad Request. Usually due to missing parameters, or invalid parameters."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ]
+                }
+              }
+            },
+            "description": "Unauthorized. Due to missing or invalid authentication."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Forbidden. You do not have permission to access this resource or to perform this action."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not Found. The requested resource was not found."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Too Many Requests. You have exceeded the rate limit. Try again later."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Internal Server Error. This is a problem with the server that you cannot fix."
+          }
+        },
+        "summary": "Read the current session"
+      }
+    },
+    "/auth/ok": {
+      "get": {
+        "tags": [
+          "Session"
+        ],
+        "description": "Check if the API is working",
+        "operationId": "ok",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "API is working",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "description": "Indicates if the API is working"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ]
+                }
+              }
+            },
+            "description": "Bad Request. Usually due to missing parameters, or invalid parameters."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ]
+                }
+              }
+            },
+            "description": "Unauthorized. Due to missing or invalid authentication."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Forbidden. You do not have permission to access this resource or to perform this action."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not Found. The requested resource was not found."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Too Many Requests. You have exceeded the rate limit. Try again later."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Internal Server Error. This is a problem with the server that you cannot fix."
+          }
+        },
+        "summary": "Check that Answerable ID is reachable"
+      }
+    },
+    "/auth/sign-in/sso": {
+      "post": {
+        "tags": [
+          "Sign-in"
+        ],
+        "description": "This endpoint is used to sign in with an SSO provider. It redirects to the provider's authorization URL",
+        "operationId": "signInWithSso",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "description": "The email address to sign in with. Used to resolve the provider via the email domain; optional if providerId, domain, or organizationSlug is provided."
+                  },
+                  "organizationSlug": {
+                    "type": "string",
+                    "description": "The slug of the organization to sign in with."
+                  },
+                  "providerId": {
+                    "type": "string",
+                    "description": "The ID of the provider to sign in with. Can be provided instead of email."
+                  },
+                  "domain": {
+                    "type": "string",
+                    "description": "The email domain of the provider. Can be provided instead of email."
+                  },
+                  "callbackURL": {
+                    "type": "string",
+                    "description": "The URL to redirect to after successful sign-in."
+                  },
+                  "errorCallbackURL": {
+                    "type": "string",
+                    "description": "The URL to redirect to if the sign-in flow fails."
+                  },
+                  "newUserCallbackURL": {
+                    "type": "string",
+                    "description": "The URL to redirect to after sign-in if the user is newly registered."
+                  },
+                  "scopes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Scopes to request from the provider."
+                  },
+                  "loginHint": {
+                    "type": "string",
+                    "description": "Login hint to send to the identity provider (e.g., email or identifier). If supported, sent as 'login_hint'."
+                  },
+                  "additionalParams": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "description": "Extra query parameters to append to the OIDC provider authorization URL. RFC 6749 reserved keys (state, client_id, redirect_uri, response_type, code_challenge, code_challenge_method, scope) are rejected. Not supported for SAML providers."
+                  },
+                  "requestSignUp": {
+                    "type": "boolean",
+                    "description": "Explicitly request sign-up. Useful when disableImplicitSignUp is true for this provider."
+                  },
+                  "providerType": {
+                    "type": "string",
+                    "enum": [
+                      "oidc",
+                      "saml"
+                    ],
+                    "description": "The provider protocol to sign in with."
+                  }
+                },
+                "required": [
+                  "callbackURL"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authorization URL generated successfully for SSO sign-in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "The authorization URL to redirect the user to for SSO sign-in"
+                    },
+                    "redirect": {
+                      "type": "boolean",
+                      "description": "Indicates that the client should redirect to the provided URL",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "url",
+                    "redirect"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ]
+                }
+              }
+            },
+            "description": "Bad Request. Usually due to missing parameters, or invalid parameters."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ]
+                }
+              }
+            },
+            "description": "Unauthorized. Due to missing or invalid authentication."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Forbidden. You do not have permission to access this resource or to perform this action."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not Found. The requested resource was not found."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Too Many Requests. You have exceeded the rate limit. Try again later."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Internal Server Error. This is a problem with the server that you cannot fix."
+          }
+        },
+        "summary": "Start sign-in through the organisation's identity provider"
+      }
+    },
+    "/auth/sign-out": {
+      "post": {
+        "tags": [
+          "Session"
+        ],
+        "description": "Sign out the current user",
+        "operationId": "signOut",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "callbackURL": {
+                    "type": "string",
+                    "description": "The URL to redirect to after provider logout"
+                  },
+                  "disableRedirect": {
+                    "type": "boolean",
+                    "description": "Return the provider logout URL without redirecting"
+                  },
+                  "state": {
+                    "type": "string",
+                    "description": "State to pass to the provider logout endpoint"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "url": {
+                      "type": "string",
+                      "description": "Provider logout URL when RP-initiated logout is available"
+                    },
+                    "redirect": {
+                      "type": "boolean",
+                      "description": "Whether the client should redirect to the provider logout URL"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ]
+                }
+              }
+            },
+            "description": "Bad Request. Usually due to missing parameters, or invalid parameters."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ]
+                }
+              }
+            },
+            "description": "Unauthorized. Due to missing or invalid authentication."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Forbidden. You do not have permission to access this resource or to perform this action."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not Found. The requested resource was not found."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Too Many Requests. You have exceeded the rate limit. Try again later."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Internal Server Error. This is a problem with the server that you cannot fix."
+          }
+        },
+        "summary": "End the current session"
+      }
+    },
+    "/auth/sso/callback": {
+      "get": {
+        "tags": [
+          "Sign-in"
+        ],
+        "description": "This endpoint is used as a shared callback URL for all SSO providers when `redirectURI` is configured. The provider is identified via the OAuth state parameter.",
+        "operationId": "ssoCallback",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "error_description",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirects to the callback URL"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ]
+                }
+              }
+            },
+            "description": "Bad Request. Usually due to missing parameters, or invalid parameters."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ]
+                }
+              }
+            },
+            "description": "Unauthorized. Due to missing or invalid authentication."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Forbidden. You do not have permission to access this resource or to perform this action."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not Found. The requested resource was not found."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Too Many Requests. You have exceeded the rate limit. Try again later."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Internal Server Error. This is a problem with the server that you cannot fix."
+          }
+        },
+        "summary": "Complete sign-in after the identity provider redirects back"
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Liveness check",
+        "tags": [
+          "Health"
+        ],
+        "description": "Process liveness check",
+        "responses": {
+          "200": {
+            "description": "The process is alive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "const": "ok"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "getReadiness",
+        "summary": "Readiness check",
+        "tags": [
+          "Health"
+        ],
+        "description": "PostgreSQL readiness check",
+        "responses": {
+          "200": {
+            "description": "The service is ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "const": "ok"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "PostgreSQL is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "const": "unavailable"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

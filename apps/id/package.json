@@ -11,6 +11,7 @@
     "lint": "eslint src scripts drizzle.config.ts drizzle.test.config.ts --max-warnings 0",
     "test": "bun run db:test:push && bun run test:coverage",
     "test:coverage": "bun test",
+    "openapi:export": "bun scripts/export-openapi.ts",
     "db:test:push": "bun scripts/reset-test-schema.ts && drizzle-kit push --config drizzle.test.config.ts --force"
   },
   "dependencies": {

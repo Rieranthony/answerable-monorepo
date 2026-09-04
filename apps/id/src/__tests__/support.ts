@@ -34,6 +34,104 @@ export function testEnvironment(
 export function stubAuth(): Auth {
   return {
     handler: () => Response.json({ status: "ok" }),
+    api: {
+      generateOpenAPISchema: async () => ({
+        openapi: "3.1.1",
+        info: {
+          title: "Better Auth",
+          description: "Authentication endpoints",
+          version: "1.1.0",
+        },
+        servers: [{ url: "http://localhost:47300/auth" }],
+        tags: [
+          { name: "Sso", description: "Single sign-on endpoints" },
+          { name: "Organization", description: "Organization endpoints" },
+        ],
+        security: [{ apiKeyCookie: [], bearerAuth: [] }],
+        components: {
+          schemas: {
+            Session: {
+              type: "object",
+              properties: { id: { type: "string" } },
+              required: ["id"],
+            },
+          },
+          securitySchemes: {
+            apiKeyCookie: {
+              type: "apiKey",
+              in: "cookie",
+              name: "better-auth.session_token",
+              description: "Session cookie",
+            },
+            bearerAuth: {
+              type: "http",
+              scheme: "bearer",
+              description: "Bearer token",
+            },
+          },
+        },
+        paths: {
+          "/ok": {
+            get: {
+              operationId: "betterAuthOk",
+              responses: { "200": { description: "OK" } },
+            },
+          },
+          "/sign-in/sso": {
+            post: {
+              operationId: "betterAuthSignInSso",
+              tags: ["Sso"],
+              responses: { "200": { description: "OK" } },
+            },
+          },
+          "/sso/callback": {
+            get: {
+              operationId: "betterAuthSsoCallback",
+              responses: { "200": { description: "OK" } },
+            },
+          },
+          "/get-session": {
+            get: {
+              operationId: "betterAuthGetSession",
+              responses: {
+                "200": {
+                  description: "Current session",
+                  content: {
+                    "application/json": {
+                      schema: { $ref: "#/components/schemas/Session" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "/sign-out": {
+            post: {
+              operationId: "betterAuthSignOut",
+              responses: { "200": { description: "OK" } },
+            },
+          },
+          "/organization/create": {
+            post: {
+              operationId: "createOrganization",
+              responses: { "200": { description: "OK" } },
+            },
+          },
+          "/oauth2/token": {
+            post: {
+              operationId: "oauthToken",
+              responses: { "200": { description: "OK" } },
+            },
+          },
+          "/sso/register": {
+            post: {
+              operationId: "registerSsoProvider",
+              responses: { "200": { description: "OK" } },
+            },
+          },
+        },
+      }),
+    },
   } as unknown as Auth;
 }
 
