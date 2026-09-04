@@ -1,0 +1,21 @@
+---
+title: MCP servers
+description: "Hosted MCP servers will authenticate through Answerable ID. Not yet available."
+---
+
+## Status
+
+Not yet. MCP servers arrive after the OIDC provider and entitlements described in [Answerable ID](/docs/id).
+
+## What they will be
+
+- Each server will be an OAuth resource server of Answerable ID.
+- Each server will publish RFC 9728 metadata naming Answerable ID as its authorization server.
+- Tokens will be bound to one server with the RFC 8707 `resource` parameter, live for 5 to 15 minutes, and be verified locally against Answerable ID's JSON Web Key Set (JWKS).
+- External tools such as Claude Code and Claude Desktop will connect with PKCE and exact redirect URIs. CIMD will be preferred over dynamic client registration.
+
+## The first server
+
+Not yet. The community tutor is parked until Answerable ID ships.
+
+It will search the community, list and read courses and lessons, and run server-graded lesson checks. Those checks will use authored questions and can record a completed lesson under each course's policy.

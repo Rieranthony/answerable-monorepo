@@ -1,0 +1,39 @@
+---
+title: Answerable ID
+description: "One sign-in for every Answerable app and MCP server, backed by your organisation's own directory."
+---
+
+## What it does
+
+1. **Identity broker.** Connect your organisation's Microsoft Entra ID or Google Workspace directory once.
+2. **Login provider for Answerable apps.** Not yet. Apps will use standard OpenID Connect (OIDC).
+3. **Authorization server for hosted MCP servers.** Not yet. MCP servers will use OAuth 2.1.
+
+## Who it is for
+
+**IT admins.** Give admin consent once. You do not need a registration for each app or client secrets to rotate.
+
+**People at client organisations.** Sign in with the work account you already have. Guest and personal accounts are refused.
+
+**Developers.** Not yet. Standard OIDC for apps and OAuth 2.1 for MCP servers come after organisation sign-in.
+
+## The one rule
+
+`sub` is the only identifier to join on. Email is display data.
+
+## Today and next
+
+| Order | Capability |
+| --- | --- |
+| Today | Organisation sign-in through your identity provider, sessions, and health endpoints |
+| Next | OIDC for apps, then entitlements, then OAuth 2.1 for MCP servers |
+
+This is an order, not a timeline.
+
+## Endpoints
+
+The base URL is `https://id.answerable.org`.
+
+Better Auth routes live under `/auth`. The service exposes `/healthz` for liveness and `/readyz` for readiness.
+
+Start an organisation sign-in from the [sign-in page](https://answerable.org/login), or read [how sign-in works](/docs/id/sign-in).
