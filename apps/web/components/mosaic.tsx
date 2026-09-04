@@ -160,6 +160,27 @@ export function Mosaic({ className }: { className?: string }) {
             const y = m.row * MOSAIC.cell
             const style = { animationDelay: `${m.delayMs}ms` }
 
+            // Centred on a tile corner rather than placed in a cell, and
+            // scaled by height so the glyph keeps its own proportions.
+            if (m.shape === "focus-comma") {
+              const scale =
+                (MOSAIC.focusComma.cellsTall * MOSAIC.cell) / COMMA_BOX.h
+              return (
+                <g
+                  key={i}
+                  className="mosaic-tile fill-background"
+                  style={style}
+                >
+                  <g transform={`translate(${x} ${y})`}>
+                    <path
+                      d={COMMA_PATH}
+                      transform={`scale(${scale}) translate(${-(COMMA_BOX.x + COMMA_BOX.w / 2)} ${-(COMMA_BOX.y + COMMA_BOX.h / 2)})`}
+                    />
+                  </g>
+                </g>
+              )
+            }
+
             if (m.shape === "semicolon")
               return (
                 <g

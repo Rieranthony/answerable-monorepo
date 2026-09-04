@@ -42,6 +42,13 @@ export const MOSAIC = {
   edgeFrayBand: 3, // cells from an edge that get the lift
   edgeFrayMax: 0.2, // added probability at the outermost cell
   edgeFrayFalloff: 0.5,
+  /**
+   * One hand-placed comma, centred on the point where four tiles meet so it
+   * reads as deliberate rather than another random strike. `col`/`row` are
+   * that shared CORNER, not a cell index — (11, 10) lands on the speaker's
+   * head in the current photograph. Retune if the photo changes.
+   */
+  focusComma: { col: 11, row: 10, cellsTall: 2, clearMargin: 1 },
   // Solid scattered marks fade with distance from the boundary (fill-opacity
   // from fadeNear at dist 1 to fadeFar at the far edge of the scatter zone).
   fadeNear: 0.85,
@@ -124,7 +131,7 @@ export const MOSAIC_DITHER: Record<"light" | "dark", DitherSettings> = {
 export type Rot = 0 | 90 | 180 | 270
 
 export interface Mark {
-  shape: "square" | "comma" | "semicolon"
+  shape: "square" | "comma" | "semicolon" | "focus-comma"
   col: number
   row: number
   rot: Rot // squares and semicolons are always 0
@@ -325,10 +332,21 @@ export function computeMosaicLayout(): Mark[] {
   // tile rather than claiming new space — the grid is already full here —
   // and are appended last so they draw over their neighbours, letting a
   // comma's tail break the gutter the way the scattered ones do.
+  // The hand-placed comma straddles the four tiles meeting at its corner,
+  // so a random strike landing beside it reads as a stray duplicate rather
+  // than as part of the scatter. Keep that neighbourhood clear.
+  const { col: fCol, row: fRow, clearMargin } = MOSAIC.focusComma
+  const nearFocus = (c: number, r: number) =>
+    c >= fCol - 1 - clearMargin &&
+    c <= fCol + clearMargin &&
+    r >= fRow - 1 - clearMargin &&
+    r <= fRow + clearMargin
+
   const struck = new Set<Mark>()
   for (const mark of marks) {
     if (mark.fill !== "image" || mark.shape !== "square") continue
     if (mark.col < photoStart + MOSAIC.boundaryBand) continue // leave the boundary band as tuned
+    if (nearFocus(mark.col, mark.row)) continue // one comma there, not two
     // Distance to the nearest hard edge — top, bottom or right. The left is
     // excluded: it already dissolves through the boundary band and scatter.
     const toEdge = Math.min(rows - 1 - mark.row, mark.row, cols - 1 - mark.col)
@@ -351,5 +369,17 @@ export function computeMosaicLayout(): Mark[] {
   // neighbouring tile. Painted in place it would be overdrawn by whichever
   // mass tile comes later in the list; lifted to the end it lands on top and
   // takes a bite out of the photograph.
-  return [...marks.filter((mark) => !struck.has(mark)), ...struck]
+  // Appended last of all, so it sits over every tile it crosses.
+  const focus: Mark = {
+    shape: "focus-comma",
+    col: MOSAIC.focusComma.col,
+    row: MOSAIC.focusComma.row,
+    rot: 0,
+    fill: "cutout",
+    fade: 1,
+    gray: false,
+    delayMs: MOSAIC.staggerMs,
+  }
+
+  return [...marks.filter((mark) => !struck.has(mark)), ...struck, focus]
 }
