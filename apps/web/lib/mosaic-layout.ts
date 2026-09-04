@@ -52,7 +52,14 @@ export const MOSAIC = {
    * that shared CORNER, not a cell index — (11, 10) lands on the speaker's
    * head in the current photograph. Retune if the photo changes.
    */
-  focusComma: { col: 11, row: 10, cellsTall: 2, clearMargin: 1 },
+  focusCommas: [
+    { col: 11, row: 10 }, // the speaker's head
+    // Her face is smaller and sits a little up-left of the corner, so this
+    // one is scaled down until it covers her without dominating the frame.
+    { col: 14, row: 12, cellsTall: 1.75 }, // the seated listener's face
+  ],
+  focusCommaCellsTall: 2, // default when an entry does not set its own
+  focusClearMargin: 1,
   // Solid scattered marks fade with distance from the boundary (fill-opacity
   // from fadeNear at dist 1 to fadeFar at the far edge of the scatter zone).
   fadeNear: 0.85,
@@ -141,6 +148,8 @@ export interface Mark {
   rot: Rot // squares and semicolons are always 0
   /** "cutout" paints the page colour, so the mark reads as a hole. */
   fill: "image" | "solid" | "cutout"
+  /** focus-comma only: its height in cells. */
+  cellsTall?: number
   fade: number // fill-opacity; 1 for the mass, graded down in the scatter
   gray: boolean
   delayMs: number
@@ -339,12 +348,15 @@ export function computeMosaicLayout(): Mark[] {
   // The hand-placed comma straddles the four tiles meeting at its corner,
   // so a random strike landing beside it reads as a stray duplicate rather
   // than as part of the scatter. Keep that neighbourhood clear.
-  const { col: fCol, row: fRow, clearMargin } = MOSAIC.focusComma
+  const margin = MOSAIC.focusClearMargin
   const nearFocus = (c: number, r: number) =>
-    c >= fCol - 1 - clearMargin &&
-    c <= fCol + clearMargin &&
-    r >= fRow - 1 - clearMargin &&
-    r <= fRow + clearMargin
+    MOSAIC.focusCommas.some(
+      (f) =>
+        c >= f.col - 1 - margin &&
+        c <= f.col + margin &&
+        r >= f.row - 1 - margin &&
+        r <= f.row + margin,
+    )
 
   const struck = new Set<Mark>()
   const struckCells = new Set<string>()
@@ -383,17 +395,22 @@ export function computeMosaicLayout(): Mark[] {
   // neighbouring tile. Painted in place it would be overdrawn by whichever
   // mass tile comes later in the list; lifted to the end it lands on top and
   // takes a bite out of the photograph.
-  // Appended last of all, so it sits over every tile it crosses.
-  const focus: Mark = {
+  // Appended last of all, so they sit over every tile they cross.
+  const focusMarks: Mark[] = MOSAIC.focusCommas.map((f) => ({
     shape: "focus-comma",
-    col: MOSAIC.focusComma.col,
-    row: MOSAIC.focusComma.row,
+    col: f.col,
+    row: f.row,
+    cellsTall: "cellsTall" in f ? f.cellsTall : MOSAIC.focusCommaCellsTall,
     rot: 0,
     fill: "cutout",
     fade: 1,
     gray: false,
     delayMs: MOSAIC.staggerMs,
-  }
+  }))
 
-  return [...marks.filter((mark) => !struck.has(mark)), ...struck, focus]
+  return [
+    ...marks.filter((mark) => !struck.has(mark)),
+    ...struck,
+    ...focusMarks,
+  ]
 }

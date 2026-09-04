@@ -164,7 +164,8 @@ export function Mosaic({ className }: { className?: string }) {
             // scaled by height so the glyph keeps its own proportions.
             if (m.shape === "focus-comma") {
               const scale =
-                (MOSAIC.focusComma.cellsTall * MOSAIC.cell) / COMMA_BOX.h
+                ((m.cellsTall ?? MOSAIC.focusCommaCellsTall) * MOSAIC.cell) /
+                COMMA_BOX.h
               return (
                 <g
                   key={i}
