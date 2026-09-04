@@ -5,7 +5,7 @@
 > - **Rule:** order, not time — nothing ships without a failing test first and full coverage; the design doc is canonical, this page is the build sheet.
 > - **Not here:** the design ([`03-answerable-id.md`](03-answerable-id.md)); the parked tutor MCP (`apps/community-mcp/`).
 
-Last updated 2026-09-02. This is the only file that carries dates.
+Last updated 2026-09-04. This is the only file that carries dates.
 
 ## How we build
 
@@ -29,8 +29,8 @@ Dependency order with exit criteria; no dates. Steps map to the design doc's §R
 | 0 | **Decisions + procurement** | Code location resolved to `apps/id`; `Q-PUBLISHER-VERIFICATION` started now; `Q-SECRET-STORE` chosen; Better Auth pinned |
 | 1 | **Schema foundation** | Bun + Hono + Better Auth 1.7.2 + Drizzle skeleton; UUIDv7 schema in [`04-answerable-id-schema.md`](04-answerable-id-schema.md); `/healthz`, `/readyz`, admin OpenAPI infrastructure, disposable-database schema push, full-coverage tests, and a deny-by-default Better Auth HTTP allowlist. Production migration and admin write routes follow schema approval |
 | 2 | **Organizations + upstream federation** | SSO plugin; per-org tenant-scoped issuer rows; against the in-test IdP stub: own org accepted, foreign directory rejected (issuer + `tid`), guests rejected by default, personal Google (no `hd`) rejected; ambiguous email-domain mapping fails closed; multi-org users choose at login and the token carries exactly one org |
-| 3 | **OIDC provider for apps** | First-party clients with `private_key_jwt`; the extra-param that routes a login to the org's IdP; auto-redirect; discovery + JWKS conformance tests; a stub "cell" logs in end to end |
-| 4 | **Entitlements** | The `{org, group or user, client or resource, scopes, status}` table from [`04-answerable-id-schema.md`](04-answerable-id-schema.md); the single policy runs at authorize, refresh, and client-credentials; negative tests for cross-org access, audience swapping, unentitled clients, registration-granted scopes |
+| 3 | **OIDC provider for apps** | First-party clients with `private_key_jwt`; the extra-param that routes a login to the org's IdP; login routing override by email domain for Answerable staff; auto-redirect; discovery + JWKS conformance tests; a stub "cell" logs in end to end |
+| 4 | **Entitlements** | The `{org, group or user, client or resource, scopes, status}` table from [`04-answerable-id-schema.md`](04-answerable-id-schema.md); the single policy runs at authorize, refresh, and client-credentials; the effective-window predicate is part of the policy, with boundary tests for expired and future rows; negative tests for cross-org access, audience swapping, unentitled clients, registration-granted scopes |
 | 5 | **OAuth 2.1 AS for MCP servers** | RFC 8707 `resource` binding; RFC 9728 metadata for resource servers; registration policy (three client classes, CIMD preferred, DCR restricted, PKCE S256 everywhere, exact redirect URIs, loopback for CLIs, hardened CIMD fetching, consent screen shows name + origin verbatim); a stub resource server verifies tokens via `packages/auth`; `Q-RESOURCE-PARAM` + `Q-FORK-PATCHES` answered against the fork |
 | 6 | **Identity linking + migration** | Bulk import as inert records; binding on `(tid, oid)` / `(issuer, sub)` at first login; duplicates/changed emails fail closed; `legacyOpenidId` preserved; rollback = environment change, tested |
 | 7 | **Lifecycle** | Bounded sessions; upstream re-check as a **top-level redirect** (not an iframe — `Q-AID-RECHECK`); refresh rotation with reuse detection (family kill); back-channel logout emission; admin kill switch (`ocadmin deactivate-users`); background delegation that outlives the browser session and re-checks at every renewal; audit log + "token after deprovision" alert; the offboarding targets (no new tokens ≤ 5 min, all access expired ≤ 15–30 min) as tests |
@@ -51,7 +51,8 @@ Stable IDs; never renumber. Resolve into the design doc or this page and delete 
 | `Q-PUBLISHER-VERIFICATION` | Microsoft publisher verification for the multi-tenant app — weeks of process | The validation spike's first bullet | Start now (MPN + domain verification) |
 | `Q-BUN-BETTER-AUTH` | Better Auth + its OAuth-provider, SSO, JWT, and organization plugins run correctly on Bun | Step 1 | First tests in the skeleton |
 | `Q-AID-LISTENER` | The design says the tailnet-only listener handles per-user MCP connect, but connect is a browser bounce — `/authorize` + callback must be public; only `/token`/refresh can be tailnet | Steps 5, 9 | Decide in the skeleton's route layout |
-| `Q-JWT-CONTRACT` | The claim contract for resource servers: `sub` is `public` (not pairwise); `email_verified` present; the entitlement claim name; whether back-channel logout reaches resource servers | Step 5 | Write it down in the design doc |
+| `Q-JWT-CONTRACT` | The claim contract for resource servers: `sub` is `public` (not pairwise); org (slug + id) is on every token, including machine tokens; resource servers and cells accept org ∈ {own, answerable}; `email_verified` is Answerable's own decision (true once the federation domain rule passed), display data, never an authorization input; the entitlement claim name; whether back-channel logout reaches resource servers | Step 5 | Write it down in the design doc |
+| `Q-MACHINE-GRANTS` | docs/03 §Entitlements says the check includes grant type and runs at machine grants; docs/04 says machine callers bypass entitlements. Recommended: the policy runs at every grant, but for `client_credentials` its inputs are the ceiling, the links and the owning organisation; entitlements govern grants with a member behind them | Steps 4–5 | Resolve into docs/03 when step 4 starts |
 | `Q-RESOURCE-PARAM` | Does the fork's MCP OAuth client send RFC 8707 `resource`? | Step 5 | Spike against the fork; else default the audience from the client↔server link |
 | `Q-FORK-PATCHES` | The living inventory of fork patches: extra-params, back-channel-logout receiver, refresh-grant fallback, whatever `Q-RESOURCE-PARAM` adds | Rebase burden visibility | List in the fork repo; link here |
 | `Q-AID-RECHECK` | Hidden-iframe `prompt=none` re-checks fail under third-party-cookie blocking (Safari/Firefox) → top-level redirect, or upstream refresh-token probes (`offline_access`; Entra RT redemption fails `AADSTS50057` for disabled accounts) | Step 7 | Decide before step 7 |
@@ -68,7 +69,7 @@ RFC 8693 token exchange (built off the critical path, contributed upstream) · S
 
 ## Do not re-propose
 
-- Email as a join key between systems — `sub` only.
+- Email as a join key between systems, or as a linking key at login (account linking is off) — `sub` / `(issuer, sub)` only.
 - Identity inside the fork's database — apps consume identity through standard OIDC.
 - Per-app registrations in client directories — one multi-tenant app, one consent per org.
 - A standalone identity appliance (Keycloak) or a hosted IdP of record — Better Auth in our own service, our own Postgres.

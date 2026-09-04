@@ -13,11 +13,13 @@ import {
 
 import { members, organizations } from "./auth.ts";
 import {
+  effectiveWindow,
   id,
   slugCheck,
   timestampColumn,
   timestamps,
   vocabularyCheck,
+  windowCheck,
 } from "./columns.ts";
 import { oauthClients, oauthResources } from "./oauth.ts";
 import { lifecycleStatuses } from "./vocabulary.ts";
@@ -112,6 +114,7 @@ export const groupMembers = pgTable(
     organizationId: uuid("organization_id").notNull(),
     groupId: uuid("group_id").notNull(),
     memberId: uuid("member_id").notNull(),
+    ...effectiveWindow(),
     createdAt: timestampColumn("created_at").defaultNow().notNull(),
   },
   (table) => [
@@ -130,6 +133,11 @@ export const groupMembers = pgTable(
       foreignColumns: [members.organizationId, members.id],
     }).onDelete("cascade"),
     index("group_members_member_id_idx").on(table.memberId),
+    windowCheck(
+      "group_members_window_check",
+      table.validFrom,
+      table.validUntil,
+    ),
   ],
 );
 
@@ -161,6 +169,7 @@ export const entitlements = pgTable(
     status: text("status", { enum: lifecycleStatuses })
       .default("active")
       .notNull(),
+    ...effectiveWindow(),
     ...timestamps(),
   },
   (table) => [
@@ -199,6 +208,11 @@ export const entitlements = pgTable(
       "entitlements_status_check",
       table.status,
       lifecycleStatuses,
+    ),
+    windowCheck(
+      "entitlements_window_check",
+      table.validFrom,
+      table.validUntil,
     ),
     check(
       "entitlements_scopes_check",

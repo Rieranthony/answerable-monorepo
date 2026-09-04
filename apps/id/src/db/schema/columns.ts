@@ -23,6 +23,17 @@ export const timestamps = () => ({
     .$onUpdate(() => new Date()),
 });
 
+export const effectiveWindow = () => ({
+  validFrom: timestampColumn("valid_from"),
+  validUntil: timestampColumn("valid_until"),
+});
+
+export const windowCheck = (
+  name: string,
+  validFrom: PgColumn,
+  validUntil: PgColumn,
+) => check(name, sql`${validFrom} < ${validUntil}`);
+
 const quoteLiteral = (value: string) => `'${value.replaceAll("'", "''")}'`;
 
 /**

@@ -64,6 +64,7 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   domains: many(organizationDomains),
   groups: many(groups),
   entitlements: many(entitlements),
+  oauthClients: many(oauthClients),
 }));
 
 export const membersRelations = relations(members, ({ many, one }) => ({
@@ -124,6 +125,10 @@ export const oauthClientsRelations = relations(oauthClients, ({ many, one }) => 
   user: one(users, {
     fields: [oauthClients.userId],
     references: [users.id],
+  }),
+  organization: one(organizations, {
+    fields: [oauthClients.organizationId],
+    references: [organizations.id],
   }),
   oauthClientResources: many(oauthClientResources),
   oauthRefreshTokens: many(oauthRefreshTokens),

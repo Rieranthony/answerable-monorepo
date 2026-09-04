@@ -17,9 +17,14 @@ import { createDatabase, type DatabaseConnection } from "./client.ts";
 import { createEntitlement } from "./queries/entitlements.ts";
 import { addGroupMember, createGroup } from "./queries/groups.ts";
 import {
+  assignClientOrganization,
+  OAuthClientNotFoundError,
+} from "./queries/oauth-clients.ts";
+import {
   createOrganizationDomain,
   findOrganizationByDomain,
 } from "./queries/organization-domains.ts";
+import { retireUserEmail } from "./queries/users.ts";
 import {
   accounts,
   entitlements,
@@ -216,6 +221,7 @@ describe("integration: PostgreSQL schema", () => {
         "image text null",
         "status text default 'inert'::text",
         "disabled_at timestamptz null",
+        "retired_email text null",
         created,
         updated,
       ],
@@ -270,6 +276,8 @@ describe("integration: PostgreSQL schema", () => {
         "organization_id uuid",
         "user_id uuid",
         "role text default 'member'::text",
+        "valid_from timestamptz null",
+        "valid_until timestamptz null",
         created,
       ],
       invitations: [
@@ -325,6 +333,7 @@ describe("integration: PostgreSQL schema", () => {
         "enable_end_session boolean null",
         "disabled boolean default false",
         "user_id uuid null",
+        "organization_id uuid null",
         "metadata jsonb null",
         created,
         updated,
@@ -424,6 +433,8 @@ describe("integration: PostgreSQL schema", () => {
         "organization_id uuid",
         "group_id uuid",
         "member_id uuid",
+        "valid_from timestamptz null",
+        "valid_until timestamptz null",
         created,
       ],
       entitlements: [
@@ -435,6 +446,8 @@ describe("integration: PostgreSQL schema", () => {
         "resource text null",
         "scopes text[]",
         active,
+        "valid_from timestamptz null",
+        "valid_until timestamptz null",
         created,
         updated,
       ],
@@ -486,6 +499,7 @@ describe("integration: PostgreSQL schema", () => {
         "users_email_normalized_check CHECK ((email = lower(btrim(email))))",
         "users_email_unique UNIQUE (email)",
         "users_pkey PRIMARY KEY (id)",
+        "users_retired_email_check CHECK ((((retired_email IS NULL) OR (status = 'disabled'::text)) AND ((retired_email IS NOT NULL) = (email = ((id)::text || '@retired.invalid'::text)))))",
         "users_status_check CHECK ((status = ANY (ARRAY['inert'::text, 'active'::text, 'disabled'::text])))",
       ],
       organizations: [
@@ -513,6 +527,7 @@ describe("integration: PostgreSQL schema", () => {
         "members_organization_id_user_id_unique UNIQUE (organization_id, user_id)",
         "members_pkey PRIMARY KEY (id)",
         `members_user_id_users_id_fk ${cascadeUser}`,
+        "members_window_check CHECK ((valid_from < valid_until))",
       ],
       invitations: [
         "invitations_inviter_id_users_id_fk FOREIGN KEY (inviter_id) REFERENCES users(id) ON DELETE CASCADE",
@@ -523,6 +538,7 @@ describe("integration: PostgreSQL schema", () => {
       jwks: ["jwks_pkey PRIMARY KEY (id)"],
       oauth_clients: [
         "oauth_clients_client_id_unique UNIQUE (client_id)",
+        "oauth_clients_organization_id_organizations_id_fk FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT",
         "oauth_clients_pkey PRIMARY KEY (id)",
         `oauth_clients_user_id_users_id_fk ${cascadeUser}`,
       ],
@@ -576,6 +592,7 @@ describe("integration: PostgreSQL schema", () => {
         "group_members_organization_id_group_id_fk FOREIGN KEY (organization_id, group_id) REFERENCES groups(organization_id, id) ON DELETE CASCADE",
         "group_members_organization_id_member_id_fk FOREIGN KEY (organization_id, member_id) REFERENCES members(organization_id, id) ON DELETE CASCADE",
         "group_members_pkey PRIMARY KEY (group_id, member_id)",
+        "group_members_window_check CHECK ((valid_from < valid_until))",
       ],
       entitlements: [
         "entitlements_client_id_oauth_clients_client_id_fk FOREIGN KEY (client_id) REFERENCES oauth_clients(client_id) ON DELETE RESTRICT",
@@ -589,6 +606,7 @@ describe("integration: PostgreSQL schema", () => {
         "entitlements_scopes_check CHECK (((cardinality(scopes) > 0) AND (array_position(scopes, ''::text) IS NULL)))",
         `entitlements_status_check ${lifecycle}`,
         "entitlements_target_check CHECK ((num_nonnulls(client_id, resource) = 1))",
+        "entitlements_window_check CHECK ((valid_from < valid_until))",
       ],
     });
 
@@ -619,7 +637,10 @@ describe("integration: PostgreSQL schema", () => {
         "invitations_inviter_id_idx (inviter_id)",
         "invitations_organization_id_idx (organization_id)",
       ],
-      oauth_clients: ["oauth_clients_user_id_idx (user_id)"],
+      oauth_clients: [
+        "oauth_clients_organization_id_idx (organization_id)",
+        "oauth_clients_user_id_idx (user_id)",
+      ],
       oauth_client_resources: [
         "oauth_client_resources_resource_id_idx (resource_id)",
       ],
@@ -671,7 +692,8 @@ describe("integration: PostgreSQL schema", () => {
 
   test("Better Auth creates core records with UUIDv7 and the inert default", async () => {
     const auth = createAuth(connection.db, environment);
-    const adapter = (await auth.$context).internalAdapter;
+    const context = await auth.$context;
+    const adapter = context.internalAdapter;
     const user = await adapter.createUser(
       { name: "Better Auth User", email: "better-auth@example.com" },
       { method: "admin" },
@@ -696,6 +718,20 @@ describe("integration: PostgreSQL schema", () => {
       .from(members)
       .where(eq(members.organizationId, organization!.id));
     expect(isUuidV7(membership!.id)).toBe(true);
+    expect(membership!.validFrom).toBeNull();
+    expect(membership!.validUntil).toBeNull();
+
+    const validUntil = new Date(Date.now() + 86_400_000);
+    await context.adapter.update({
+      model: "member",
+      where: [{ field: "id", value: membership!.id }],
+      update: { validUntil },
+    });
+    const [updatedMembership] = await connection.db
+      .select()
+      .from(members)
+      .where(eq(members.id, membership!.id));
+    expect(updatedMembership!.validUntil).toEqual(validUntil);
 
     const openApi = await auth.api.generateOpenAPISchema();
     expect(Object.keys(openApi.paths)).toContain("/organization/create");
@@ -765,6 +801,50 @@ describe("integration: PostgreSQL schema", () => {
       .delete(oauthClients)
       .where(eq(oauthClients.clientId, clientId));
     expect(await connection.db.select().from(oauthClientResources)).toHaveLength(0);
+  });
+
+  test("keeps a machine client inside its owning organization", async () => {
+    const auth = createAuth(connection.db, environment);
+    const { clientId } = await registerTutor(auth);
+    const organization = await insertOrganization();
+
+    await assignClientOrganization(connection.db, {
+      clientId,
+      organizationId: organization.id,
+    });
+
+    const owningOrganization =
+      await connection.db.query.organizations.findFirst({
+        where: eq(organizations.id, organization.id),
+        with: { oauthClients: true },
+      });
+    const ownedClient = await connection.db.query.oauthClients.findFirst({
+      where: eq(oauthClients.clientId, clientId),
+      with: { organization: true },
+    });
+    expect(
+      owningOrganization?.oauthClients.map((client) => client.clientId),
+    ).toEqual([clientId]);
+    expect(ownedClient?.organization?.id).toBe(organization.id);
+
+    await expect(
+      connection.db
+        .delete(organizations)
+        .where(eq(organizations.id, organization.id))
+        .execute(),
+    ).rejects.toThrow();
+    await expect(
+      assignClientOrganization(connection.db, {
+        clientId,
+        organizationId: createId(),
+      }),
+    ).rejects.toThrow();
+    await expect(
+      assignClientOrganization(connection.db, {
+        clientId: "unknown-client",
+        organizationId: organization.id,
+      }),
+    ).rejects.toBeInstanceOf(OAuthClientNotFoundError);
   });
 
   test("accepts the client assertion ids Better Auth computes itself", async () => {
@@ -883,6 +963,62 @@ describe("integration: PostgreSQL schema", () => {
           email: "invalid-status@example.com",
           status: "unknown" as "active",
         })
+        .execute(),
+    ).rejects.toThrow();
+  });
+
+  test("ties the email tombstone to retirement", async () => {
+    await expect(
+      connection.db
+        .insert(users)
+        .values({
+          id: createId(),
+          name: "Invalid",
+          email: "active-retired@example.com",
+          status: "active",
+          retiredEmail: "former@example.com",
+        })
+        .execute(),
+    ).rejects.toThrow();
+    await expect(
+      connection.db
+        .insert(users)
+        .values({
+          id: createId(),
+          name: "Invalid",
+          email: "disabled-normal@example.com",
+          status: "disabled",
+          disabledAt: new Date(),
+          retiredEmail: "former@example.com",
+        })
+        .execute(),
+    ).rejects.toThrow();
+
+    const tombstonedWithoutRetirement = createId();
+    await expect(
+      connection.db
+        .insert(users)
+        .values({
+          id: tombstonedWithoutRetirement,
+          name: "Invalid",
+          email: `${tombstonedWithoutRetirement}@retired.invalid`,
+          status: "disabled",
+          disabledAt: new Date(),
+        })
+        .execute(),
+    ).rejects.toThrow();
+
+    const user = await insertUser("retire-check@example.com");
+    await connection.db
+      .update(users)
+      .set({ status: "disabled", disabledAt: new Date() })
+      .where(eq(users.id, user.id));
+    await retireUserEmail(connection.db, user.id);
+    await expect(
+      connection.db
+        .update(users)
+        .set({ status: "active", disabledAt: null })
+        .where(eq(users.id, user.id))
         .execute(),
     ).rejects.toThrow();
   });
@@ -1090,6 +1226,98 @@ describe("integration: PostgreSQL schema", () => {
 
     await connection.db.delete(members).where(eq(members.id, firstMember.id));
     expect(await connection.db.select().from(groupMembers)).toHaveLength(0);
+  });
+
+  test("orders effective windows", async () => {
+    const auth = createAuth(connection.db, environment);
+    const { resource } = await registerTutor(auth);
+    const organization = await insertOrganization();
+    const user = await insertUser();
+    const member = await insertMember(organization.id, user.id);
+    const reversedMemberUser = await insertUser("reversed-member@example.com");
+    const group = await createGroup(connection.db, {
+      organizationId: organization.id,
+      slug: "windowed",
+      name: "Windowed",
+    });
+    const earlier = new Date("2026-01-01T00:00:00Z");
+    const later = new Date("2026-01-02T00:00:00Z");
+
+    await expect(
+      connection.db
+        .insert(members)
+        .values({
+          id: createId(),
+          organizationId: organization.id,
+          userId: reversedMemberUser.id,
+          validFrom: later,
+          validUntil: earlier,
+        })
+        .execute(),
+    ).rejects.toThrow();
+    const equalMemberUser = await insertUser("equal-member@example.com");
+    await expect(
+      connection.db
+        .insert(members)
+        .values({
+          id: createId(),
+          organizationId: organization.id,
+          userId: equalMemberUser.id,
+          validFrom: earlier,
+          validUntil: earlier,
+        })
+        .execute(),
+    ).rejects.toThrow();
+    const boundedMemberUser = await insertUser("bounded-member@example.com");
+    await connection.db.insert(members).values({
+      id: createId(),
+      organizationId: organization.id,
+      userId: boundedMemberUser.id,
+      validFrom: earlier,
+    });
+
+    const groupMembership = {
+      organizationId: organization.id,
+      groupId: group.id,
+      memberId: member.id,
+    };
+    await expect(
+      connection.db
+        .insert(groupMembers)
+        .values({ ...groupMembership, validFrom: later, validUntil: earlier })
+        .execute(),
+    ).rejects.toThrow();
+    await expect(
+      connection.db
+        .insert(groupMembers)
+        .values({ ...groupMembership, validFrom: earlier, validUntil: earlier })
+        .execute(),
+    ).rejects.toThrow();
+    await connection.db
+      .insert(groupMembers)
+      .values({ ...groupMembership, validUntil: later });
+
+    const entitlement = {
+      id: createId(),
+      organizationId: organization.id,
+      resource,
+      scopes: ["tutor:read"],
+    };
+    await expect(
+      connection.db
+        .insert(entitlements)
+        .values({ ...entitlement, validFrom: later, validUntil: earlier })
+        .execute(),
+    ).rejects.toThrow();
+    await expect(
+      connection.db
+        .insert(entitlements)
+        .values({ ...entitlement, validFrom: earlier, validUntil: earlier })
+        .execute(),
+    ).rejects.toThrow();
+    await connection.db
+      .insert(entitlements)
+      .values({ ...entitlement, validUntil: later });
   });
 
   test("enforces entitlement principals, targets, uniqueness, and organization binding", async () => {

@@ -22,6 +22,11 @@ export function createAuth(db: Database, environment: Environment) {
       schema,
       usePlural: true,
     }),
+    account: {
+      accountLinking: {
+        enabled: false,
+      },
+    },
     user: {
       additionalFields: {
         // Every user Better Auth creates starts inert, including one created
@@ -34,6 +39,11 @@ export function createAuth(db: Database, environment: Environment) {
         },
         disabledAt: {
           type: "date",
+          required: false,
+          input: false,
+        },
+        retiredEmail: {
+          type: "string",
           required: false,
           input: false,
         },
@@ -63,6 +73,20 @@ export function createAuth(db: Database, environment: Environment) {
                 input: false,
               },
               updatedAt: {
+                type: "date",
+                required: false,
+                input: false,
+              },
+            },
+          },
+          member: {
+            additionalFields: {
+              validFrom: {
+                type: "date",
+                required: false,
+                input: false,
+              },
+              validUntil: {
                 type: "date",
                 required: false,
                 input: false,

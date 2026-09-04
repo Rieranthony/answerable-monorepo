@@ -10,7 +10,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-import { sessions, users } from "./auth.ts";
+import { organizations, sessions, users } from "./auth.ts";
 import { id, timestampColumn, timestamps } from "./columns.ts";
 
 // Tables in this file are owned by Better Auth's JWT plugin and by
@@ -73,10 +73,17 @@ export const oauthClients = pgTable(
     userId: uuid("user_id").references(() => users.id, {
       onDelete: "cascade",
     }),
+    organizationId: uuid("organization_id").references(
+      () => organizations.id,
+      { onDelete: "restrict" },
+    ),
     metadata: jsonb("metadata"),
     ...timestamps(),
   },
-  (table) => [index("oauth_clients_user_id_idx").on(table.userId)],
+  (table) => [
+    index("oauth_clients_user_id_idx").on(table.userId),
+    index("oauth_clients_organization_id_idx").on(table.organizationId),
+  ],
 );
 
 /** A protected resource (an MCP server) with its own token policy. */

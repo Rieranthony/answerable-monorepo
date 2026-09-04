@@ -24,6 +24,7 @@ erDiagram
     organizations ||--o{ invitations : issues
     organizations ||--o{ organization_domains : routes
     organizations ||--o{ groups : defines
+    organizations ||--o{ oauth_clients : owns
     groups ||--o{ group_members : gathers
     members ||--o{ group_members : belongs
     organizations ||--o{ entitlements : holds
@@ -52,11 +53,13 @@ erDiagram
 
 The vocabulary is OAuth's. A **client** is anything that requests tokens: an app users log into (an OmniChat cell, Circle) or a tool such as Claude Code. A **resource** is a protected resource the server issues access tokens for, identified by its RFC 8707 resource indicator, which is also the `aud` claim; MCP servers are resources, each with its own token policy (lifetime, allowed scopes, signing key). `oauth_client_resources` is the server-owned link deciding which clients may request tokens for which resources; a registering client can never grant itself one.
 
+`oauth_clients.organization_id` is Answerable's column on a plugin table. The plugin's registration endpoints never set it: the adapter drops fields the plugin does not declare. Client ownership is administered only through the admin API and `src/db/queries/oauth-clients.ts`.
+
 A **group** is a set of members within one organization. It either mirrors an upstream directory group (`external_id` set; membership is synced from the directory, never edited by hand) or is managed in Answerable ID.
 
 An **entitlement** says who may obtain tokens for what, with which scopes. Its principal is the whole organization, one group, or one member. Its target is exactly one of a client (may these people use this app or tool) or a resource (may these people reach this MCP server). Grants are additive: a person is entitled when any active row matches them for the target, and scopes are the union of the matching rows. There are no deny rows; access is removed by disabling a row or leaving a group.
 
-Better Auth columns beyond its own field set (`users.status`, `users.disabled_at`, `organizations.status`, `organizations.disabled_at`, `organizations.updated_at`) are declared as additional fields in `src/auth.ts` and are never client input. Plugin tables keep the plugins' own property names; only physical names follow the conventions below. One consequence: `oauth_client_resources.resource_id` holds the resource identifier, not its row id.
+Better Auth columns beyond its own field set (`users.status`, `users.disabled_at`, `users.retired_email`, `organizations.status`, `organizations.disabled_at`, `organizations.updated_at`, `members.valid_from`, `members.valid_until`) are declared as additional fields in `src/auth.ts` and are never client input. Plugin tables keep the plugins' own property names; only physical names follow the conventions below. One consequence: `oauth_client_resources.resource_id` holds the resource identifier, not its row id.
 
 ## Conventions
 
@@ -70,6 +73,7 @@ Better Auth columns beyond its own field set (`users.status`, `users.disabled_at
 ## Invariants
 
 - User emails are unique, trimmed, and lowercase. A disabled user has `disabled_at`; other states do not.
+- A retired email exists only while the user is disabled. The login email is `<user id>@retired.invalid` if and only if `retired_email` is set; retirement is terminal.
 - External accounts are unique by `(issuer, account_id)`, matching Better Auth 1.7's issuer-scoped account keys.
 - Organization slugs are unique and match `^[a-z0-9]+(-[a-z0-9]+)*$`, the Omni-Weaver tenant ID grammar. Better Auth itself only checks that a slug is non-empty. Group slugs follow the same grammar and are unique per organization.
 - Membership is unique by `(organization_id, user_id)`. `(organization_id, id)` is also unique on `members` and on `groups` so group membership and entitlements can reference both at once. `members.role` is Better Auth state, may hold a comma-separated list, and confers no authority in Answerable ID; entitlements do.
@@ -77,6 +81,8 @@ Better Auth columns beyond its own field set (`users.status`, `users.disabled_at
 - Domains are stored lowercase as ASCII host names with at least two labels (internationalized names as punycode). A domain has at most one **active** organization and appears at most once per organization. Moving a domain means disabling the old row, then adding the new one; `findOrganizationByDomain` therefore returns one organization or null, and ambiguity cannot exist in the data.
 - An entitlement has at most one of `member_id` and `group_id`, and exactly one of `client_id` and `resource`. It is unique by `(organization_id, member_id, group_id, client_id, resource)` with `NULLS NOT DISTINCT`, so the organization-wide row is unique too. Scopes are non-empty and contain no empty string. Member- and group-specific rows use composite foreign keys with the organization, so they cannot point across organizations. A client or resource referenced by an entitlement cannot be deleted; disable it instead.
 - Client ids and resource identifiers are globally unique. Deleting a client removes its links, tokens, and consents; deleting a resource removes its links. Sessions detach from tokens (`set null`); users take their tokens and consents with them.
+- Client ownership is nullable and deletion-restricted. A client without an owning `organization_id` cannot obtain machine tokens.
+- Members, group memberships, and entitlements have nullable effective windows with `valid_from < valid_until`. Windows are half-open: `valid_from` is inclusive, `valid_until` is exclusive, and NULL is unbounded. A row is effective when its status is active where present and `now()` is inside the window.
 - `sessions.active_organization_id` is organization-plugin state for Better Auth's own routes. It is never an authorization input; the token's organization comes from membership.
 - `invitations` stays because the organization plugin deletes members and invitations when an organization is deleted through it. Its `status` is constrained to Better Auth's vocabulary. Invitations are not an Answerable administrative capability in this milestone.
 
@@ -88,12 +94,18 @@ Better Auth columns beyond its own field set (`users.status`, `users.disabled_at
 | Organization, domain, group, and entitlement status | `active`, `disabled` |
 | Invitation status (Better Auth) | `pending`, `accepted`, `rejected`, `canceled` |
 | Client and resource | the plugins' `disabled` flag |
+| Effective windows | nullable `valid_from` / `valid_until`; half-open, NULL unbounded |
+| Email retirement | terminal transition after `disabled` |
 
 `inert` means imported and not yet bound to an upstream identity. Better Auth creates every user as `inert`, including one created by a successful upstream login, because the status field is not client input and the default is fail-closed. Activating that user is an explicit step in the federation milestone (a `databaseHooks.user.create.before` hook on authenticated creation) with its own tests; the import path sets `inert` on purpose.
 
+`retired.invalid` is never a login email or an organization domain.
+
 ## How the policy reads the schema
 
-At every grant the policy resolves the caller to a member row, collects that member's groups, and looks for active entitlements in the organization whose principal is the organization, one of those groups, or the member, and whose target is the requesting client (at login) or the requested resource (at an MCP token request). Whether the requesting client may ask for that resource at all is the plugin's own `oauth_client_resources` check. Machine callers using `client_credentials` are authorized by the plugin's per-client scope ceiling and resource links, never by an entitlement, because there is no member behind them.
+At every grant the policy applies `isEffective` to the member, group-membership, and entitlement rows. For a grant with a member, it collects that member's effective groups and effective entitlements in the organization whose principal is the organization, one of those groups, or the member, and whose target is the requesting client (at login) or the requested resource (at an MCP token request).
+
+Machine callers are authorized by the per-client scope ceiling and `oauth_client_resources`. Their token's organization claim comes from `oauth_clients.organization_id`; NULL denies `client_credentials`.
 
 ## Contract test
 
@@ -104,6 +116,8 @@ At every grant the policy resolves the caller to a member row, collects that mem
 - **Group sync from directories.** The federation milestone maps the upstream `groups` claim (Entra object ids, Google groups) onto `groups.external_id` and refreshes `group_members` at login; SCIM comes later.
 - **Encrypting upstream IdP tokens.** `accounts.access_token`, `refresh_token`, and `id_token` are stored as Better Auth writes them. Enable `account.encryptOAuthTokens` before the first real login so no plaintext token row ever exists; it binds those rows to `BETTER_AUTH_SECRET`, which the key-custody milestone must account for. The same milestone decides how `jwks.private_key`, encrypted with the same secret today, moves to a KMS or a separate key-encryption key.
 - **Domain verification** (`verified_at`). Domains are operator-seeded from tenant configuration; verification becomes mandatory the day organization admins can add their own.
+- An index on `users.retired_email`.
+- A CHECK excluding `.invalid` from `organization_domains`.
 - The login and consent pages the provider redirects to, the SSO-provider table, audit, legacy-import, SCIM, DPoP, token-exchange, outbox, and Redis tables do not exist yet. Creating the first production migration and implementing `/api/admin` write routes are separate milestones after schema approval.
 
 The disposable test schema is built with Drizzle push only. No migration directory or migration file belongs to this milestone.

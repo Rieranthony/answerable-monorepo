@@ -11,11 +11,13 @@ import {
 
 import {
   disabledCheck,
+  effectiveWindow,
   id,
   slugCheck,
   timestampColumn,
   timestamps,
   vocabularyCheck,
+  windowCheck,
 } from "./columns.ts";
 import {
   invitationStatuses,
@@ -37,6 +39,7 @@ export const users = pgTable(
     image: text("image"),
     status: text("status", { enum: userStatuses }).default("inert").notNull(),
     disabledAt: timestampColumn("disabled_at"),
+    retiredEmail: text("retired_email"),
     ...timestamps(),
   },
   (table) => [
@@ -46,6 +49,10 @@ export const users = pgTable(
       sql`${table.email} = lower(btrim(${table.email}))`,
     ),
     disabledCheck("users_disabled_check", table.status, table.disabledAt),
+    check(
+      "users_retired_email_check",
+      sql`(${table.retiredEmail} is null or ${table.status} = 'disabled') and ((${table.retiredEmail} is not null) = (${table.email} = ${table.id}::text || '@retired.invalid'))`,
+    ),
   ],
 );
 
@@ -164,6 +171,7 @@ export const members = pgTable(
     // Better Auth role state; may hold a comma-separated list. Confers no
     // authority in Answerable ID, where entitlements decide access.
     role: text("role").default("member").notNull(),
+    ...effectiveWindow(),
     createdAt: timestampColumn("created_at").defaultNow().notNull(),
   },
   (table) => [
@@ -178,6 +186,7 @@ export const members = pgTable(
       table.id,
     ),
     index("members_user_id_idx").on(table.userId),
+    windowCheck("members_window_check", table.validFrom, table.validUntil),
   ],
 );
 
