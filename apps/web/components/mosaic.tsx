@@ -13,7 +13,6 @@ import {
   computeMosaicLayout,
   MOSAIC,
   MOSAIC_DITHER,
-  MOSAIC_PHOTOS,
 } from "@/lib/mosaic-layout"
 import { cn } from "@/lib/utils"
 
@@ -21,8 +20,6 @@ import { cn } from "@/lib/utils"
  * The hero mosaic: one photo clipped into the logo's shapes on one inline
  * SVG, so it scales to any band height. The seeded layout is deterministic,
  * so the server-prerendered markup and the client hydration always match.
- * Pressing Space cycles through the candidate photos (try-out helper; the
- * default is ACTIVE_PHOTO).
  *
  * Transform composition is deliberate: the animated wrapper <g> carries NO
  * transform attribute (the CSS entrance animation would replace it), the
@@ -68,11 +65,9 @@ const commaTransform = (rot: number) =>
   `${rot ? `rotate(${rot} 24 24) ` : ""}translate(24 24) scale(${TILE_SCALE}) translate(-24 -24) scale(${COMMA_SCALE}) translate(${-COMMA_BOX.x} ${-COMMA_BOX.y})`
 
 export function Mosaic({ className }: { className?: string }) {
-  const [photo, setPhoto] =
-    useState<(typeof MOSAIC_PHOTOS)[number]>(ACTIVE_PHOTO)
   const [tuning, setTuning] = useState<Tuning>(initialTuning)
   const { scheme, settings } = useDitherSettings(DEV ? tuning : undefined)
-  // The screened bitmap. Deliberately kept on screen when the photo or the
+  // The screened bitmap. Deliberately kept on screen when the
   // settings change: the replacement lands within a frame or two, and
   // briefly showing the previous screen beats flashing back to the raw
   // photo every time the theme is toggled.
@@ -100,36 +95,12 @@ export function Mosaic({ className }: { className?: string }) {
 
   // Emits one <link rel="preload"> in <head>; the mosaic renders on every
   // viewport, so the photo is always worth fetching early.
-  preload(photo, { as: "image", type: "image/webp" })
-
-  // Space cycles through the candidate photos, except while typing in a
-  // form field. The other sprites are pre-warmed so the swap is instant.
-  useEffect(() => {
-    for (const candidate of MOSAIC_PHOTOS)
-      preload(candidate, { as: "image", type: "image/webp" })
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.code !== "Space" && event.key !== " ") return
-      if (
-        event.target instanceof Element &&
-        event.target.closest("input, textarea, select, [contenteditable]")
-      )
-        return
-      event.preventDefault()
-      setPhoto(
-        (current) =>
-          MOSAIC_PHOTOS[
-            (MOSAIC_PHOTOS.indexOf(current) + 1) % MOSAIC_PHOTOS.length
-          ],
-      )
-    }
-    window.addEventListener("keydown", onKeyDown)
-    return () => window.removeEventListener("keydown", onKeyDown)
-  }, [])
+  preload(ACTIVE_PHOTO, { as: "image", type: "image/webp" })
 
   return (
     <>
       <MosaicDither
-        photo={photo}
+        photo={ACTIVE_PHOTO}
         settings={settings}
         onCapture={onCapture}
         onUnavailable={onUnavailable}
@@ -238,7 +209,7 @@ export function Mosaic({ className }: { className?: string }) {
                   clipPath={`url(#${clip})`}
                 >
                   <image
-                    href={dithered ?? photo}
+                    href={dithered ?? ACTIVE_PHOTO}
                     x={PHOTO_X - x}
                     y={-y}
                     width={PW}

@@ -80,19 +80,7 @@ export const COMMA_BOX = {
 /** Normalizes the comma to a 48-unit-wide, cell-local shape (undistorted). */
 export const COMMA_SCALE = 48 / COMMA_BOX.w
 
-export const MOSAIC_PHOTOS = [
-  "/mosaic/p1.webp", // jonathan-borba
-  "/mosaic/p2.webp", // magnus-andersson
-  "/mosaic/p3.webp", // wesley-eland
-  "/mosaic/p4.webp", // good-faces
-  "/mosaic/p5.webp", // teah-rushing (baroque ceiling fresco)
-  "/mosaic/p6.webp", // annie-spratt (team around a table)
-  "/mosaic/p7.webp", // davide-valerio (aerial London, the Thames)
-  "/mosaic/p8.webp", // AI Leaders Discussion 2026 (Answerable event)
-] as const
-
-/** The mosaic shows one photo at a time; switch it here. */
-export const ACTIVE_PHOTO: (typeof MOSAIC_PHOTOS)[number] = MOSAIC_PHOTOS[7]
+export const ACTIVE_PHOTO = "/mosaic/p8.webp"
 
 /**
  * Runtime dithering (see components/mosaic-dither). The photos ship
