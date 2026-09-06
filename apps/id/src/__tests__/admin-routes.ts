@@ -74,13 +74,16 @@ export function describeAdminRoutes(
         (event) => !before.has(event.id),
       );
       expect(events).toHaveLength(1);
+      // The path's organisation is attributed by id only when the principal
+      // holds a grant there; otherwise it is kept in data (see authorize.ts).
+      const names = route.path.includes(":organizationId");
+      const known = names && !hidden;
       expect(events[0]).toMatchObject({
         targetId: route.operationId,
         targetType: "route",
         outcome: "denied",
-        organizationId:
-          route.orgScope && !hidden ? f.tenant.organizationId : null,
-        ...(hidden
+        organizationId: known ? f.tenant.organizationId : null,
+        ...(names && !known
           ? { data: { organizationId: f.tenant.organizationId } }
           : {}),
       });

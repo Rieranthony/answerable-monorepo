@@ -8,10 +8,12 @@ import {
 } from "../principal.ts";
 import { problem, ProblemError } from "../problem.ts";
 import * as me from "./me.ts";
+import * as organizations from "./organizations.ts";
 import type { AdminRouteTable } from "./route-table.ts";
 
 const families = new Map<AdminRouteTable, typeof me.register>([
   [me.routes, me.register],
+  [organizations.routes, organizations.register],
 ]);
 export const adminRouteTables: AdminRouteTable[] = [...families.keys()];
 

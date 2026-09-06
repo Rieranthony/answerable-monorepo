@@ -142,7 +142,13 @@ describe("unit: Hono application", () => {
 
     expect(schemaResponse.status).toBe(200);
     expect(schema.openapi).toStartWith("3.");
-    expect(Object.keys(schema.paths)).toEqual(["/api/admin/v1/me"]);
+    expect(Object.keys(schema.paths)).toEqual([
+      "/api/admin/v1/me",
+      "/api/admin/v1/organizations",
+      "/api/admin/v1/organizations/{organizationId}",
+      "/api/admin/v1/organizations/{organizationId}/disable",
+      "/api/admin/v1/organizations/{organizationId}/enable",
+    ]);
     expect(schema.paths["/api/admin/v1/me"]).toMatchObject({
       get: {
         security: [{ cookieAuth: [] }, { bearerAuth: [] }],
