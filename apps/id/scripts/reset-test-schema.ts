@@ -11,6 +11,7 @@ const pool = new Pool({ connectionString: testDatabaseUrl, max: 1 });
 
 try {
   await pool.query("drop schema public cascade");
+  await pool.query("drop schema if exists drizzle cascade");
   await pool.query("create schema public");
 } finally {
   await pool.end();

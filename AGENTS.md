@@ -39,7 +39,7 @@ Here's how we write documentation:
 
 ## Repo card
 
-- Gates, from the root: `bun run typecheck` · `bun run lint` · `bun run build` · `bun --filter web test` · `bun --filter @answerable/id test:coverage` (needs Postgres: `bun run env:up`, then `bun --filter @answerable/id db:test:push`). CI runs the same.
+- Gates, from the root: `bun run typecheck` · `bun run lint` · `bun run build` · `bun --filter web test` · `bun --filter @answerable/id test:coverage` (needs Postgres: `bun run env:up`, then `bun --filter @answerable/id db:test:migrate`). CI runs the same.
 - Ports: web 47100 · id 47300 · postgres 47432 · redis 47379.
 - Style: Prettier without semicolons in `apps/web`, with semicolons in `apps/id`. Tests are colocated `*.test.ts`; `apps/id` enforces 100% line and function coverage, integration tests end in `.integration.test.ts`.
 - OpenAPI: `bun --env-file=.env run --filter @answerable/id openapi:export` regenerates `apps/id/openapi.json`; a test fails when it drifts.

@@ -8,11 +8,13 @@
     "start": "bun src/server.ts",
     "build": "bun build src/server.ts --outdir dist --target bun",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src scripts drizzle.config.ts drizzle.test.config.ts --max-warnings 0",
-    "test": "bun run db:test:push && bun run test:coverage",
+    "lint": "eslint src scripts drizzle.config.ts --max-warnings 0",
+    "test": "bun run db:test:migrate && bun run test:coverage",
     "test:coverage": "bun test",
     "openapi:export": "bun scripts/export-openapi.ts",
-    "db:test:push": "bun scripts/reset-test-schema.ts && drizzle-kit push --config drizzle.test.config.ts --force"
+    "db:generate": "drizzle-kit generate --config drizzle.config.ts",
+    "db:migrate": "bun scripts/migrate.ts",
+    "db:test:migrate": "bun scripts/reset-test-schema.ts && bun scripts/migrate.ts --test"
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "1.7.2",

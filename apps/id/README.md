@@ -1,6 +1,6 @@
 # Answerable ID
 
-Identity and authorization service for Answerable. This first milestone contains the runtime skeleton and the schema contract; production migrations and administrative write routes intentionally come later.
+Identity and authorization service for Answerable. The schema contract and its migrations are in place; administrative write routes arrive with the admin API milestone.
 
 ## HTTP surface
 
@@ -22,14 +22,14 @@ From the repository root:
 ```bash
 bun install
 docker compose up -d --wait postgres
-bun --filter @answerable/id db:test:push
+bun --filter @answerable/id db:test:migrate
 bun --filter @answerable/id typecheck
 bun --filter @answerable/id lint
 bun --filter @answerable/id build
 bun --filter @answerable/id test
 ```
 
-`db:test:push` recreates the `public` schema and then uses `drizzle-kit push --force`. Both safety gates refuse any database whose name is not exactly `answerable_id_test`; data in that explicitly disposable database is not recoverable after a run. There is deliberately no migration directory.
+`db:generate` generates migrations in `apps/id/drizzle` without a database connection. `db:migrate` applies committed migrations to `DATABASE_URL`. `db:test:migrate` drops the `public` and `drizzle` schemas, recreates `public`, and applies the committed migrations, so the catalog contract test guards them. Both safety gates refuse any database whose name is not exactly `answerable_id_test`; data in that explicitly disposable database is not recoverable after a run.
 
 Coverage thresholds require 100% of application lines and functions. Tests, fixtures, generated output, and the composition-only `src/server.ts` process entry are excluded; its runtime behavior lives in the fully tested `src/runtime.ts`.
 

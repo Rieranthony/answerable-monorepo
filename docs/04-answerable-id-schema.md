@@ -3,7 +3,7 @@
 > **TL;DR**
 > - **Decides:** the approved first schema, ownership boundaries, identifiers, naming conventions, and invariants.
 > - **Rule:** identifiers are application-generated UUIDv7 stored as PostgreSQL `uuid`, with two named exceptions; administrative changes go through the Hono API.
-> - **Not here:** production migrations, admin write routes, the login and consent page implementation, audit, and the other deferred capabilities.
+> - **Not here:** admin write routes, the login and consent page implementation, audit, and the other deferred capabilities.
 
 ## Service contract
 
@@ -122,6 +122,6 @@ Machine callers are authorized by the per-client scope ceiling and `oauth_client
 - **Domain verification** (`verified_at`). Domains are operator-seeded from tenant configuration; verification becomes mandatory the day organization admins can add their own.
 - An index on `users.retired_email`.
 - A CHECK excluding `.invalid` from `organization_domains`.
-- The login and consent pages the provider redirects to, audit, legacy-import tooling, SCIM, DPoP, token-exchange, outbox, and Redis tables do not exist yet. Creating the first production migration and implementing `/api/admin` write routes are separate milestones after schema approval.
+- The login and consent pages the provider redirects to, audit, legacy-import tooling, SCIM, DPoP, token-exchange, outbox, and Redis tables do not exist yet. Implementing `/api/admin` write routes remains deferred.
 
-The disposable test schema is built with Drizzle push only. No migration directory or migration file belongs to this milestone.
+Migrations live in `apps/id/drizzle` and are generated with `bun run db:generate` from `apps/id`. The disposable test database is built from the committed migrations; a drift test fails when the schema and migrations disagree.
