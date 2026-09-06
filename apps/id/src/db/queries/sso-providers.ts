@@ -7,7 +7,7 @@ import { ssoProviders } from "../schema/index.ts";
 type TokenEndpointAuthentication =
   "client_secret_post" | "client_secret_basic" | "private_key_jwt";
 
-type CreateSsoProviderInput = {
+export type CreateSsoProviderInput = {
   organizationId: string;
   providerId: string;
   issuer: string;
@@ -96,4 +96,41 @@ export async function updateSsoProvider(
     .where(eq(ssoProviders.id, id))
     .returning();
   return provider!;
+}
+
+export async function deleteSsoProvider(
+  executor: Executor,
+  organizationId: string,
+) {
+  const [row] = await executor
+    .delete(ssoProviders)
+    .where(eq(ssoProviders.organizationId, organizationId))
+    .returning();
+  return row ?? null;
+}
+
+export function redactSsoProvider(row: typeof ssoProviders.$inferSelect) {
+  const config = JSON.parse(
+    row.oidcConfig ?? "{}",
+  ) as CreateSsoProviderInput["oidc"];
+  return {
+    id: row.id,
+    organizationId: row.organizationId,
+    providerId: row.providerId,
+    issuer: row.issuer,
+    domain: row.domain,
+    oidc: {
+      clientId: config.clientId,
+      tokenEndpointAuthentication: config.tokenEndpointAuthentication,
+      discoveryEndpoint: config.discoveryEndpoint,
+      authorizationEndpoint: config.authorizationEndpoint,
+      tokenEndpoint: config.tokenEndpoint,
+      jwksEndpoint: config.jwksEndpoint,
+      scopes: config.scopes,
+      pkce: config.pkce,
+      hasClientSecret: Boolean(config.clientSecret),
+    },
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
 }

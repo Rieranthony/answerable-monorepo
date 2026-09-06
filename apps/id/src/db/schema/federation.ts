@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { check, pgTable, text, unique, uuid } from "drizzle-orm/pg-core";
 
 import { organizations, users } from "./auth.ts";
-import { id, timestampColumn } from "./columns.ts";
+import { id, timestamps } from "./columns.ts";
 
 // Persisted configuration owned by @better-auth/sso. The organization and
 // normalized domain constraints are Answerable's tenant-boundary additions.
@@ -21,7 +21,7 @@ export const ssoProviders = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     domain: text("domain").notNull(),
-    createdAt: timestampColumn("created_at").defaultNow().notNull(),
+    ...timestamps(),
   },
   (table) => [
     unique("sso_providers_organization_id_unique").on(table.organizationId),

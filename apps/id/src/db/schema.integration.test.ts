@@ -282,6 +282,7 @@ describe("integration: PostgreSQL schema", () => {
         "organization_id uuid",
         "domain text",
         created,
+        updated,
       ],
       verifications: [
         "id text",

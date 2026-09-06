@@ -7,12 +7,16 @@ import {
   createPrincipalMiddleware,
 } from "../principal.ts";
 import { problem, ProblemError } from "../problem.ts";
+import * as domains from "./domains.ts";
+import * as ssoProviders from "./sso-providers.ts";
 import * as me from "./me.ts";
 import * as organizations from "./organizations.ts";
 import type { AdminRouteTable } from "./route-table.ts";
 
 const families = new Map<AdminRouteTable, typeof me.register>([
   [me.routes, me.register],
+  [domains.routes, domains.register],
+  [ssoProviders.routes, ssoProviders.register],
   [organizations.routes, organizations.register],
 ]);
 export const adminRouteTables: AdminRouteTable[] = [...families.keys()];
