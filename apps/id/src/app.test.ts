@@ -144,6 +144,14 @@ describe("unit: Hono application", () => {
     expect(schema.openapi).toStartWith("3.");
     expect(Object.keys(schema.paths)).toEqual([
       "/api/admin/v1/me",
+      "/api/admin/v1/users",
+      "/api/admin/v1/users/{userId}",
+      "/api/admin/v1/users/{userId}/disable",
+      "/api/admin/v1/users/{userId}/enable",
+      "/api/admin/v1/users/{userId}/retire-email",
+      "/api/admin/v1/users/{userId}/sessions",
+      "/api/admin/v1/users/{userId}/sessions/{sessionId}",
+      "/api/admin/v1/organizations/{organizationId}/members/{memberId}/sessions",
       "/api/admin/v1/organizations/{organizationId}/entitlements",
       "/api/admin/v1/organizations/{organizationId}/entitlements/{entitlementId}",
       "/api/admin/v1/organizations/{organizationId}/entitlements/{entitlementId}/disable",

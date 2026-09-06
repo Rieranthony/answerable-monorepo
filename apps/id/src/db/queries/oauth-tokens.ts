@@ -4,7 +4,7 @@ import { oauthRefreshTokens, oauthAccessTokens } from "../schema/index.ts";
 
 async function revokeTokens(
   executor: Executor,
-  field: "userId" | "clientId",
+  field: "userId" | "clientId" | "sessionId",
   ids: string[],
 ) {
   if (!ids.length) return { refreshTokens: 0, accessTokens: 0 };
@@ -37,4 +37,8 @@ export function revokeUserTokens(executor: Executor, userIds: string[]) {
 
 export function revokeClientTokens(executor: Executor, clientIds: string[]) {
   return revokeTokens(executor, "clientId", clientIds);
+}
+
+export function revokeSessionTokens(executor: Executor, sessionIds: string[]) {
+  return revokeTokens(executor, "sessionId", sessionIds);
 }

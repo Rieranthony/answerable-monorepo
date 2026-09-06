@@ -40,3 +40,52 @@ test("deletes all selected users' sessions, preserving other users and counting 
     await db.select().from(sessions).where(eq(sessions.userId, ids[2])),
   ).toHaveLength(2);
 });
+
+import {
+  listUserSessions,
+  deleteSession,
+  findMemberUserId,
+  findUserSession,
+} from "./sessions.ts";
+import { members, organizations } from "../schema/index.ts";
+
+test("session queries paginate, hide tokens and enforce user and organisation ownership", async () => {
+  const db = connection.db;
+  const userId = createId();
+  const otherId = createId();
+  for (const id of [userId, otherId])
+    await db
+      .insert(users)
+      .values({ id, name: "User", email: id + "@example.com" });
+  const ids = [createId(), createId(), createId()].sort().reverse();
+  for (const id of ids)
+    await db.insert(sessions).values({
+      id,
+      userId,
+      token: id,
+      expiresAt: new Date(Date.now() + 60000),
+    });
+  const page = await listUserSessions(db, userId, { limit: 1 });
+  expect(page.map((r) => r.id)).toEqual(ids.slice(0, 2));
+  expect(page[0]).not.toHaveProperty("token");
+  expect(
+    (await listUserSessions(db, userId, { limit: 1, cursor: ids[1] })).map(
+      (r) => r.id,
+    ),
+  ).toEqual(ids.slice(2));
+  expect(await listUserSessions(db, otherId, { limit: 10 })).toEqual([]);
+  expect(await findUserSession(db, userId, ids[0])).toEqual(page[0]!);
+  expect(await findUserSession(db, otherId, ids[0])).toBeNull();
+  expect(await deleteSession(db, otherId, ids[0])).toBeNull();
+  expect(await deleteSession(db, userId, ids[0])).toEqual(page[0]!);
+  expect(await deleteSession(db, userId, ids[0])).toBeNull();
+  const organizationId = createId();
+  const memberId = createId();
+  await db
+    .insert(organizations)
+    .values({ id: organizationId, slug: organizationId, name: "Org" });
+  await db.insert(members).values({ id: memberId, organizationId, userId });
+  expect(await findMemberUserId(db, organizationId, memberId)).toBe(userId);
+  expect(await findMemberUserId(db, createId(), memberId)).toBeNull();
+  expect(await findMemberUserId(db, organizationId, createId())).toBeNull();
+});
