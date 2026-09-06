@@ -24,3 +24,7 @@ export function createDatabase(environment: Environment) {
 
 export type Database = ReturnType<typeof createDatabase>["db"];
 export type DatabaseConnection = ReturnType<typeof createDatabase>;
+
+/** A database or the handle supplied to a database transaction. */
+export type Executor =
+  Database | Parameters<Parameters<Database["transaction"]>[0]>[0];

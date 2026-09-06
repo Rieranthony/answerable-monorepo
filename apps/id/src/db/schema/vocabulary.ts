@@ -17,3 +17,11 @@ export const invitationStatuses = [
   "canceled",
 ] as const;
 export type InvitationStatus = (typeof invitationStatuses)[number];
+
+/** The principal responsible for an audit event. */
+export const auditActorTypes = ["user", "client", "system"] as const;
+export type AuditActorType = (typeof auditActorTypes)[number];
+
+/** `denied`: an authenticated principal was refused by authorisation. */
+export const auditOutcomes = ["success", "failure", "denied"] as const;
+export type AuditOutcome = (typeof auditOutcomes)[number];

@@ -3,7 +3,7 @@
 > **TL;DR**
 > - **Decides:** the approved first schema, ownership boundaries, identifiers, naming conventions, and invariants.
 > - **Rule:** identifiers are application-generated UUIDv7 stored as PostgreSQL `uuid`, with two named exceptions; administrative changes go through the Hono API.
-> - **Not here:** admin write routes, the login and consent page implementation, audit, and the other deferred capabilities.
+> - **Not here:** admin write routes, the login and consent page implementation, and the other deferred capabilities.
 
 ## Service contract
 
@@ -30,6 +30,7 @@ erDiagram
     groups ||--o{ group_members : gathers
     members ||--o{ group_members : belongs
     organizations ||--o{ entitlements : holds
+    organizations o|--o{ audit_events : concerns
     groups o|--o{ entitlements : narrows
     members o|--o{ entitlements : narrows
     oauth_clients o|--o{ entitlements : targets
@@ -52,7 +53,7 @@ erDiagram
 | Better Auth JWT plugin | `jwks` | Token-signing keys; the row id is the `kid` |
 | `@better-auth/sso` | `sso_providers` | One upstream OIDC provider configuration bound to each federated organization |
 | `@better-auth/oauth-provider` | `oauth_clients`, `oauth_resources`, `oauth_client_resources`, `oauth_refresh_tokens`, `oauth_access_tokens`, `oauth_consents`, `oauth_client_assertions` | OIDC provider for our apps and OAuth 2.1 authorization server for MCP servers |
-| Answerable | `organization_domains`, plus Answerable columns on `accounts` and `sso_providers`, `groups`, `group_members`, `entitlements` | Tenant routing, immutable directory identity, groups, and the authorization policy that runs at every token grant |
+| Answerable | `organization_domains`, plus Answerable columns on `accounts` and `sso_providers`, `groups`, `group_members`, `entitlements`, `audit_events` | Tenant routing, immutable directory identity, groups, authorisation policy at every token grant, and audit records |
 
 The vocabulary is OAuth's. A **client** is anything that requests tokens: an app users log into (an OmniChat cell, Circle) or a tool such as Claude Code. A **resource** is a protected resource the server issues access tokens for, identified by its RFC 8707 resource indicator, which is also the `aud` claim; MCP servers are resources, each with its own token policy (lifetime, allowed scopes, signing key). `oauth_client_resources` is the server-owned link deciding which clients may request tokens for which resources; a registering client can never grant itself one.
 
@@ -75,6 +76,7 @@ Better Auth columns beyond its own field set (`users.status`, `users.disabled_at
 
 ## Invariants
 
+- **Audit events** are append-only: application code never updates or deletes rows. Organisation erasure sets `organization_id` to NULL; `target_id` keeps erased ids as text. Actor (`user`, `client`, `system`) and outcome (`success`, `failure`, `denied`) vocabularies are CHECK-constrained; `denied` means an authenticated principal was refused by authorisation.
 - User emails are unique, trimmed, and lowercase. A disabled user has `disabled_at`; other states do not.
 - A retired email exists only while the user is disabled. The login email is `<user id>@retired.invalid` if and only if `retired_email` is set; retirement is terminal.
 - External accounts are unique by `(issuer, account_id)`, matching Better Auth 1.7's issuer-scoped account keys. When present, `directory_user_id` is also unique per issuer; `directory_id` stores Entra `tid` or Google `hd`, while `directory_user_id` stores Entra `oid` or the provider `sub`.
@@ -100,6 +102,7 @@ Better Auth columns beyond its own field set (`users.status`, `users.disabled_at
 | Client and resource | the plugins' `disabled` flag |
 | Effective windows | nullable `valid_from` / `valid_until`; half-open, NULL unbounded |
 | Email retirement | terminal transition after `disabled` |
+| Audit | actor: `user`, `client`, `system` · outcome: `success`, `failure`, `denied` |
 
 `inert` means imported and not yet bound to an upstream identity. The SSO user-resolution hook owns activation and every federation write inside the login transaction; Better Auth's implicit create-user path is unreachable. A new verified identity is created active, while an imported identity becomes active only when its immutable directory key matches. The Entra placeholder account uses `account_id = 'import:<oid>'` and `directory_user_id = <oid>` (with `directory_id = tid`) until first login rewrites `account_id` to the verified `sub`.
 
@@ -122,6 +125,6 @@ Machine callers are authorized by the per-client scope ceiling and `oauth_client
 - **Domain verification** (`verified_at`). Domains are operator-seeded from tenant configuration; verification becomes mandatory the day organization admins can add their own.
 - An index on `users.retired_email`.
 - A CHECK excluding `.invalid` from `organization_domains`.
-- The login and consent pages the provider redirects to, audit, legacy-import tooling, SCIM, DPoP, token-exchange, outbox, and Redis tables do not exist yet. Implementing `/api/admin` write routes remains deferred.
+- The login and consent pages the provider redirects to, legacy-import tooling, SCIM, DPoP, token-exchange, outbox, and Redis tables do not exist yet. Implementing `/api/admin` write routes remains deferred.
 
 Migrations live in `apps/id/drizzle` and are generated with `bun run db:generate` from `apps/id`. The disposable test database is built from the committed migrations; a drift test fails when the schema and migrations disagree.

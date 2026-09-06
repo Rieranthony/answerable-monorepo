@@ -8,6 +8,13 @@
       "when": 1788692289461,
       "tag": "0000_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788692748904,
+      "tag": "0001_audit-events",
+      "breakpoints": true
     }
   ]
 }

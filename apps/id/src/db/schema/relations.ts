@@ -1,5 +1,7 @@
 import { relations } from "drizzle-orm";
 
+import { auditEvents } from "./audit.ts";
+
 import {
   accounts,
   invitations,
@@ -65,6 +67,7 @@ export const organizationsRelations = relations(
     members: many(members),
     invitations: many(invitations),
     domains: many(organizationDomains),
+    auditEvents: many(auditEvents),
     groups: many(groups),
     entitlements: many(entitlements),
     oauthClients: many(oauthClients),
@@ -137,26 +140,32 @@ export const groupMembersRelations = relations(groupMembers, ({ one }) => ({
   }),
 }));
 
-export const oauthClientsRelations = relations(oauthClients, ({ many, one }) => ({
-  user: one(users, {
-    fields: [oauthClients.userId],
-    references: [users.id],
+export const oauthClientsRelations = relations(
+  oauthClients,
+  ({ many, one }) => ({
+    user: one(users, {
+      fields: [oauthClients.userId],
+      references: [users.id],
+    }),
+    organization: one(organizations, {
+      fields: [oauthClients.organizationId],
+      references: [organizations.id],
+    }),
+    oauthClientResources: many(oauthClientResources),
+    oauthRefreshTokens: many(oauthRefreshTokens),
+    oauthAccessTokens: many(oauthAccessTokens),
+    oauthConsents: many(oauthConsents),
+    entitlements: many(entitlements),
   }),
-  organization: one(organizations, {
-    fields: [oauthClients.organizationId],
-    references: [organizations.id],
-  }),
-  oauthClientResources: many(oauthClientResources),
-  oauthRefreshTokens: many(oauthRefreshTokens),
-  oauthAccessTokens: many(oauthAccessTokens),
-  oauthConsents: many(oauthConsents),
-  entitlements: many(entitlements),
-}));
+);
 
-export const oauthResourcesRelations = relations(oauthResources, ({ many }) => ({
-  oauthClientResources: many(oauthClientResources),
-  entitlements: many(entitlements),
-}));
+export const oauthResourcesRelations = relations(
+  oauthResources,
+  ({ many }) => ({
+    oauthClientResources: many(oauthClientResources),
+    entitlements: many(entitlements),
+  }),
+);
 
 export const oauthClientResourcesRelations = relations(
   oauthClientResources,
@@ -244,5 +253,12 @@ export const entitlementsRelations = relations(entitlements, ({ one }) => ({
   oauthResource: one(oauthResources, {
     fields: [entitlements.resource],
     references: [oauthResources.identifier],
+  }),
+}));
+
+export const auditEventsRelations = relations(auditEvents, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [auditEvents.organizationId],
+    references: [organizations.id],
   }),
 }));

@@ -28,6 +28,7 @@ import { retireUserEmail } from "./queries/users.ts";
 import { createSsoProvider } from "./queries/sso-providers.ts";
 import {
   accounts,
+  auditEvents,
   entitlements,
   groupMembers,
   groups,
@@ -59,6 +60,7 @@ beforeAll(() => {
 beforeEach(async () => {
   await connection.db.execute(sql`
     truncate table
+      audit_events,
       entitlements,
       group_members,
       groups,
@@ -178,6 +180,7 @@ const allTables = [
   groupMembers,
   entitlements,
   ssoProviders,
+  auditEvents,
 ];
 
 describe("integration: PostgreSQL schema", () => {
@@ -468,6 +471,22 @@ describe("integration: PostgreSQL schema", () => {
         created,
         updated,
       ],
+      audit_events: [
+        "id uuid",
+        "occurred_at timestamptz default now()",
+        "actor_type text",
+        "actor_id text",
+        "organization_id uuid null",
+        "action text",
+        "target_type text",
+        "target_id text null",
+        "outcome text",
+        "reason text null",
+        "request_id text null",
+        "ip text null",
+        "user_agent text null",
+        "data jsonb null",
+      ],
     });
   });
 
@@ -597,7 +616,9 @@ describe("integration: PostgreSQL schema", () => {
         "oauth_consents_pkey PRIMARY KEY (id)",
         `oauth_consents_user_id_users_id_fk ${cascadeUser}`,
       ],
-      oauth_client_assertions: ["oauth_client_assertions_pkey PRIMARY KEY (id)"],
+      oauth_client_assertions: [
+        "oauth_client_assertions_pkey PRIMARY KEY (id)",
+      ],
       organization_domains: [
         "organization_domains_domain_normalized_check CHECK ((domain ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'::text))",
         "organization_domains_organization_id_domain_unique UNIQUE (organization_id, domain)",
@@ -632,6 +653,12 @@ describe("integration: PostgreSQL schema", () => {
         `entitlements_status_check ${lifecycle}`,
         "entitlements_target_check CHECK ((num_nonnulls(client_id, resource) = 1))",
         "entitlements_window_check CHECK ((valid_from < valid_until))",
+      ],
+      audit_events: [
+        "audit_events_actor_type_check CHECK ((actor_type = ANY (ARRAY['user'::text, 'client'::text, 'system'::text])))",
+        "audit_events_organization_id_organizations_id_fk FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE SET NULL",
+        "audit_events_outcome_check CHECK ((outcome = ANY (ARRAY['success'::text, 'failure'::text, 'denied'::text])))",
+        "audit_events_pkey PRIMARY KEY (id)",
       ],
     });
 
@@ -702,6 +729,11 @@ describe("integration: PostgreSQL schema", () => {
       entitlements: [
         "entitlements_client_id_idx (client_id)",
         "entitlements_resource_idx (resource)",
+      ],
+      audit_events: [
+        "audit_events_actor_id_idx (actor_id)",
+        "audit_events_organization_id_id_idx (organization_id, id)",
+        "audit_events_target_type_target_id_idx (target_type, target_id)",
       ],
     });
   });
@@ -828,7 +860,9 @@ describe("integration: PostgreSQL schema", () => {
     await connection.db
       .delete(oauthClients)
       .where(eq(oauthClients.clientId, clientId));
-    expect(await connection.db.select().from(oauthClientResources)).toHaveLength(0);
+    expect(
+      await connection.db.select().from(oauthClientResources),
+    ).toHaveLength(0);
   });
 
   test("keeps a machine client inside its owning organization", async () => {
@@ -894,7 +928,9 @@ describe("integration: PostgreSQL schema", () => {
         forceAllowId: true,
       }),
     ).rejects.toThrow();
-    expect(await connection.db.select().from(oauthClientAssertions)).toHaveLength(1);
+    expect(
+      await connection.db.select().from(oauthClientAssertions),
+    ).toHaveLength(1);
   });
 
   test("advances updated_at on Better Auth and Drizzle updates", async () => {
@@ -1085,9 +1121,7 @@ describe("integration: PostgreSQL schema", () => {
       directoryUserId: "directory-user",
     };
 
-    await connection.db
-      .insert(accounts)
-      .values({ id: createId(), ...account });
+    await connection.db.insert(accounts).values({ id: createId(), ...account });
     await expect(
       connection.db
         .insert(accounts)
@@ -1145,10 +1179,12 @@ describe("integration: PostgreSQL schema", () => {
       where: eq(ssoProviders.id, firstProvider.id),
       with: { organization: true, user: true },
     });
-    const organizationGraph = await connection.db.query.organizations.findFirst({
-      where: eq(organizations.id, first.id),
-      with: { ssoProvider: true },
-    });
+    const organizationGraph = await connection.db.query.organizations.findFirst(
+      {
+        where: eq(organizations.id, first.id),
+        with: { ssoProvider: true },
+      },
+    );
     expect(providerGraph?.organization.id).toBe(first.id);
     expect(providerGraph?.user).toBeNull();
     expect(organizationGraph?.ssoProvider?.id).toBe(firstProvider.id);
@@ -1191,7 +1227,12 @@ describe("integration: PostgreSQL schema", () => {
 
     await expect(insertOrganization()).rejects.toThrow();
     await expect(insertMember(organization.id, user.id)).rejects.toThrow();
-    for (const slug of ["Contoso", "contoso corp", "-contoso", "contoso--ltd"]) {
+    for (const slug of [
+      "Contoso",
+      "contoso corp",
+      "-contoso",
+      "contoso--ltd",
+    ]) {
       await expect(insertOrganization(slug)).rejects.toThrow();
     }
     await expect(
@@ -1223,7 +1264,11 @@ describe("integration: PostgreSQL schema", () => {
     await expect(
       connection.db
         .insert(invitations)
-        .values({ id: createId(), ...invitation, status: "expired" as "pending" })
+        .values({
+          id: createId(),
+          ...invitation,
+          status: "expired" as "pending",
+        })
         .execute(),
     ).rejects.toThrow();
   });
@@ -1241,7 +1286,9 @@ describe("integration: PostgreSQL schema", () => {
     expect(
       await findOrganizationByDomain(connection.db, " EXAMPLE.com "),
     ).toEqual({ id: first.id, slug: "first" });
-    expect(await findOrganizationByDomain(connection.db, "other.example")).toBeNull();
+    expect(
+      await findOrganizationByDomain(connection.db, "other.example"),
+    ).toBeNull();
 
     await expect(
       createOrganizationDomain(connection.db, {
@@ -1255,7 +1302,12 @@ describe("integration: PostgreSQL schema", () => {
         domain: "example.com",
       }),
     ).rejects.toThrow();
-    for (const invalid of ["not normalized.example", "localhost", "under_score.example", "-dash.example"]) {
+    for (const invalid of [
+      "not normalized.example",
+      "localhost",
+      "under_score.example",
+      "-dash.example",
+    ]) {
       await expect(
         connection.db
           .insert(organizationDomains)
@@ -1284,7 +1336,9 @@ describe("integration: PostgreSQL schema", () => {
       organizationId: second.id,
       domain: "example.com",
     });
-    expect(await findOrganizationByDomain(connection.db, "example.com")).toEqual({
+    expect(
+      await findOrganizationByDomain(connection.db, "example.com"),
+    ).toEqual({
       id: second.id,
       slug: "second",
     });
@@ -1293,7 +1347,9 @@ describe("integration: PostgreSQL schema", () => {
       .update(organizations)
       .set({ status: "disabled", disabledAt: new Date() })
       .where(eq(organizations.id, second.id));
-    expect(await findOrganizationByDomain(connection.db, "example.com")).toBeNull();
+    expect(
+      await findOrganizationByDomain(connection.db, "example.com"),
+    ).toBeNull();
   });
 
   test("keeps groups inside their organization", async () => {
@@ -1481,16 +1537,27 @@ describe("integration: PostgreSQL schema", () => {
     };
 
     // The three principal shapes coexist and are each unique.
-    const organizationWide = await createEntitlement(connection.db, forResource);
+    const organizationWide = await createEntitlement(
+      connection.db,
+      forResource,
+    );
     expect(isUuidV7(organizationWide.id)).toBe(true);
-    await createEntitlement(connection.db, { ...forResource, groupId: group.id });
-    await createEntitlement(connection.db, { ...forResource, memberId: member.id });
+    await createEntitlement(connection.db, {
+      ...forResource,
+      groupId: group.id,
+    });
+    await createEntitlement(connection.db, {
+      ...forResource,
+      memberId: member.id,
+    });
     await createEntitlement(connection.db, {
       organizationId: first.id,
       clientId,
       scopes: ["openid", "profile", "email"],
     });
-    await expect(createEntitlement(connection.db, forResource)).rejects.toThrow();
+    await expect(
+      createEntitlement(connection.db, forResource),
+    ).rejects.toThrow();
     await expect(
       createEntitlement(connection.db, { ...forResource, groupId: group.id }),
     ).rejects.toThrow();
@@ -1557,7 +1624,11 @@ describe("integration: PostgreSQL schema", () => {
     await expect(
       connection.db
         .insert(entitlements)
-        .values({ id: createId(), ...forResource, status: "unknown" as "active" })
+        .values({
+          id: createId(),
+          ...forResource,
+          status: "unknown" as "active",
+        })
         .execute(),
     ).rejects.toThrow();
 
@@ -1643,7 +1714,9 @@ describe("integration: PostgreSQL schema", () => {
     expect(await connection.db.select().from(members)).toHaveLength(0);
     expect(await connection.db.select().from(groups)).toHaveLength(0);
     expect(await connection.db.select().from(groupMembers)).toHaveLength(0);
-    expect(await connection.db.select().from(organizationDomains)).toHaveLength(0);
+    expect(await connection.db.select().from(organizationDomains)).toHaveLength(
+      0,
+    );
     expect(await connection.db.select().from(entitlements)).toHaveLength(0);
     expect(await connection.db.select().from(oauthClients)).toHaveLength(1);
     expect(await connection.db.select().from(oauthResources)).toHaveLength(1);
