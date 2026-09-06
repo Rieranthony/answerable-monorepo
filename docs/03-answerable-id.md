@@ -97,6 +97,8 @@ Bespoke MCP servers that only talk to their own client's OmniChat cell are deplo
 
 **Tokens.** Answerable ID issues JWTs (JSON Web Tokens) and publishes its signing public keys (JWKS) so apps and MCP servers can verify tokens locally without calling back to Answerable ID on every request. Each token carries: the user ID (`sub`), the organization (slug and ID), the intended audience (`aud`, which is one specific app or MCP server), resource-specific authorization data, and the user's name and email. **All access tokens are short-lived**: 5 to 15 minutes for MCP audiences, up to 30 minutes for apps. There are no long-lived bearer tokens, even for "low-sensitivity" servers. Consumers cache tokens and re-obtain them when they expire. We'll also evaluate DPoP (RFC 9449, a standard for binding tokens to a specific client) for external MCP connections.
 
+**Addendum (build).** The issuer (`iss`) is the bare origin `https://id.answerable.org`, pinned in the JWT plugin; the `/auth` mount is not part of the issuer, so discovery documents are served at the root.
+
 **Provisioning events.** We'll add a transactional outbox (a pattern where events are written to the database in the same transaction as the change, then delivered reliably) when there's a consumer that needs it. For now, offboarding (the most urgent lifecycle concern) is handled by the mechanisms in the next section.
 
 ## Lifecycle: Joiners, Movers, Leavers
@@ -221,6 +223,8 @@ The fleet already runs on a headscale tailnet (a private, encrypted mesh network
 - **Audit log** of all token issuance, refresh, and connect events, retained at least 90 days. Alerts on: per-cell volume anomalies, tokens issued after a deprovision event, registration anomalies.
 - **Threat scenarios** with containment plans (compromised Answerable ID, compromised cell, compromised MCP server, malicious external client, malicious tenant admin, leaked downstream credential, leaked signing key) are documented in the implementation plan.
 - Each cell and Circle can **roll back** to its old issuer independently. This requires the old Entra app registrations to stay alive, tracked per tenant, not assumed.
+
+**Addendum (build).** The admin API lives at `/api/admin/v1` in two tiers. Platform-tier routes (Answerable staff managing every organisation) stay tailnet-only as above. Tenant-tier routes let an organisation manage itself and are public, protected by the organisation's own SSO, an entitlement to the admin API resource carrying `org:*` scopes, and rate limits. Every route carries its tier in the OpenAPI document (`x-tier`); the ingress enforces the split. Authority is never a role: it is an effective membership plus an entitlement, re-read on every request, and every write and denial is in the audit log.
 
 ## Omni Accelerator / Circle Consolidation
 
