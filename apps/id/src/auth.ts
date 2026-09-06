@@ -115,7 +115,12 @@ export function createAuth(db: Database, environment: Environment) {
       }),
       // Token-signing keys for ID tokens and JWT access tokens. The model is
       // named in the singular so the plural table is `jwks`, not `jwkss`.
-      jwt({ schema: { jwks: { modelName: "jwk" } } }),
+      // The issuer is the bare origin (id.answerable.org), not the /auth
+      // mount; discovery is served at the root in the provider milestone.
+      jwt({
+        jwt: { issuer: environment.betterAuthUrl },
+        schema: { jwks: { modelName: "jwk" } },
+      }),
       sso({
         redirectURI: "/sso/callback",
         providersLimit: 0,

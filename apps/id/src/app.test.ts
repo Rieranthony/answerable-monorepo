@@ -190,6 +190,7 @@ describe("unit: Hono application", () => {
     expect(schema.servers).toEqual([{ url: environment.betterAuthUrl }]);
     expect(Object.keys(schema.paths)).toEqual([
       "/auth/get-session",
+      "/auth/oauth2/token",
       "/auth/ok",
       "/auth/sign-in/sso",
       "/auth/sign-out",
@@ -217,7 +218,14 @@ describe("unit: Hono application", () => {
       tags: ["Health"],
     });
     expect(schema.paths["/auth/organization/create"]).toBeUndefined();
-    expect(schema.paths["/auth/oauth2/token"]).toBeUndefined();
+    const tokenRoute = publicAuthRoutes.find(
+      (route) => route.operationId === "issueToken",
+    )!;
+    expect(schema.paths["/auth/oauth2/token"]?.post).toMatchObject({
+      description: tokenRoute.description,
+      requestBody: tokenRoute.requestBody,
+      tags: ["Token"],
+    });
     expect(schema.paths["/auth/sso/register"]).toBeUndefined();
     expect(schema.components.securitySchemes).toHaveProperty("apiKeyCookie");
     expect(schema.components.securitySchemes).toHaveProperty("bearerAuth");
@@ -243,6 +251,10 @@ describe("unit: Hono application", () => {
       servers: [{ url: "https://id.example.com" }],
     });
 
+    expect(document.tags).toContainEqual({
+      name: "Token",
+      description: "Machine access with client credentials",
+    });
     expect(document.servers).toEqual([{ url: "https://id.example.com" }]);
     expect(Object.keys(document.paths["/healthz"]!)).toEqual(["get", "post"]);
   });
@@ -468,4 +480,45 @@ test("mounted me returns a client verified through the default dependencies", as
       },
     ],
   });
+});
+
+test("token requests guard grants and preserve bodies for Better Auth", async () => {
+  const auth = stubAuth();
+  const received: string[] = [];
+  auth.handler = async (request: Request) => {
+    received.push(await request.text());
+    return Response.json({ handled: true });
+  };
+  const app = createApp({
+    auth,
+    db: stubDatabase(),
+    environment: testEnvironment(),
+  });
+  for (const [contentType, body] of [
+    ["application/x-www-form-urlencoded", "grant_type=client_credentials"],
+    ["application/json", '{"grant_type":"authorization_code"}'],
+    ["application/x-www-form-urlencoded", "resource=https%3A%2F%2Fexample.com"],
+  ] as const) {
+    const response = await app.request("/auth/oauth2/token", {
+      method: "POST",
+      headers: { "Content-Type": contentType },
+      body,
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ handled: true });
+    expect(received.at(-1)).toBe(body);
+  }
+  const rejected = await app.request("/auth/oauth2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "grant_type=authorization_code",
+  });
+  expect(rejected.status).toBe(400);
+  expect(rejected.headers.get("cache-control")).toBe("no-store");
+  expect(await rejected.json()).toEqual({
+    error: "unsupported_grant_type",
+    error_description: "Only client_credentials is available.",
+  });
+  expect((await app.request("/auth/oauth2/token")).status).toBe(404);
+  expect(received).toHaveLength(3);
 });

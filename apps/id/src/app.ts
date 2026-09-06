@@ -9,7 +9,10 @@ import type { Database } from "./db/client.ts";
 import type { Environment } from "./env.ts";
 import { createAdminApp } from "./http/admin/index.ts";
 import { adminSecuritySchemes, adminTags } from "./http/admin/openapi.ts";
-import { isAllowedAuthRoute } from "./http/auth-allowlist.ts";
+import {
+  inspectTokenRequest,
+  isAllowedAuthRoute,
+} from "./http/auth-allowlist.ts";
 import type { AppEnvironment } from "./http/context.ts";
 import { buildPublicOpenApiDocument } from "./http/openapi.ts";
 import { problemHandler } from "./http/problem.ts";
@@ -142,11 +145,15 @@ export function createApp(services: AppServices) {
     }
   }
 
-  app.all("/auth/*", (context) => {
+  app.all("/auth/*", async (context) => {
     if (!isAllowedAuthRoute(context.req.method, context.req.path)) {
       return context.notFound();
     }
 
+    if (context.req.path === "/auth/oauth2/token") {
+      const rejection = await inspectTokenRequest(context.req.raw);
+      if (rejection) return rejection;
+    }
     return context.get("auth").handler(context.req.raw);
   });
 

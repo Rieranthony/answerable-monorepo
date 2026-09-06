@@ -107,6 +107,12 @@ export async function buildPublicOpenApiDocument(input: {
           operationId: route.operationId,
           summary: route.summary,
           tags: [route.tag],
+          ...(route.description !== undefined
+            ? { description: route.description }
+            : {}),
+          ...(route.requestBody !== undefined
+            ? { requestBody: route.requestBody }
+            : {}),
         },
       };
     }
@@ -144,6 +150,7 @@ export async function buildPublicOpenApiDocument(input: {
     },
     servers: input.servers ?? [{ url: input.environment.betterAuthUrl }],
     tags: [
+      { name: "Token", description: "Machine access with client credentials" },
       {
         name: "Health",
         description: "Service liveness and readiness checks.",

@@ -4,7 +4,7 @@ Identity and authorization service for Answerable. The schema contract and its m
 
 ## HTTP surface
 
-- Better Auth: `/auth/*` behind an explicit allowlist: `GET /auth/ok`, `POST /auth/sign-in/sso`, `GET /auth/sso/callback`, `GET /auth/get-session`, and `POST /auth/sign-out`. Every SSO administration/SAML route and every OAuth-provider route remains unreachable until a later milestone. The provider's admin endpoints also require a session and privilege hooks that deny by default; client administration is designed with the admin API
+- Better Auth: `/auth/*` behind an explicit allowlist: `GET /auth/ok`, `POST /auth/sign-in/sso`, `GET /auth/sso/callback`, `GET /auth/get-session`, and `POST /auth/sign-out`; it also exposes `POST /auth/oauth2/token` for `client_credentials` only. Every SSO administration/SAML route and every other OAuth-provider route remains unreachable until a later milestone. The provider's admin endpoints also require a session and privilege hooks that deny by default; client administration is designed with the admin API
 - Public OpenAPI contract: `/openapi.json` — the reachable routes only; regenerate the committed snapshot with `bun run openapi:export`
 - Admin OpenAPI: `/api/admin/openapi.json`
 - Admin docs: `/api/admin/docs` in development and test only

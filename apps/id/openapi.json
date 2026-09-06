@@ -12,6 +12,10 @@
   ],
   "tags": [
     {
+      "name": "Token",
+      "description": "Machine access with client credentials"
+    },
+    {
       "name": "Health",
       "description": "Service liveness and readiness checks."
     },
@@ -1075,6 +1079,210 @@
           }
         },
         "summary": "Read the current session"
+      }
+    },
+    "/auth/oauth2/token": {
+      "post": {
+        "tags": [
+          "Token"
+        ],
+        "description": "Only grant_type=client_credentials is accepted. Authenticate the client with HTTP Basic (client_secret_basic) and send resource= to receive a JWT bound to that resource. Other grant types open with the OIDC provider milestone.",
+        "operationId": "issueToken",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "DPoP",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "RFC 9449 DPoP proof JWT for issuing DPoP-bound tokens"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "grant_type",
+                  "resource"
+                ],
+                "properties": {
+                  "grant_type": {
+                    "type": "string",
+                    "enum": [
+                      "client_credentials"
+                    ]
+                  },
+                  "resource": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "scope": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Access token response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "access_token": {
+                      "type": "string",
+                      "description": "The access token issued by the authorization server"
+                    },
+                    "token_type": {
+                      "type": "string",
+                      "description": "The type of the token issued",
+                      "enum": [
+                        "Bearer",
+                        "DPoP"
+                      ]
+                    },
+                    "expires_in": {
+                      "type": "number",
+                      "description": "Lifetime in seconds of the access token"
+                    },
+                    "refresh_token": {
+                      "type": "string",
+                      "description": "Refresh token, if issued"
+                    },
+                    "scope": {
+                      "type": "string",
+                      "description": "Scopes granted by the access token"
+                    },
+                    "id_token": {
+                      "type": "string",
+                      "description": "ID Token (if OpenID Connect)"
+                    }
+                  },
+                  "required": [
+                    "access_token",
+                    "token_type",
+                    "expires_in"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or error response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "error_description": {
+                      "type": "string"
+                    },
+                    "error_uri": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ]
+                }
+              }
+            },
+            "description": "Unauthorized. Due to missing or invalid authentication."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Forbidden. You do not have permission to access this resource or to perform this action."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not Found. The requested resource was not found."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Too Many Requests. You have exceeded the rate limit. Try again later."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Internal Server Error. This is a problem with the server that you cannot fix."
+          }
+        },
+        "summary": "Obtain an access token with client credentials"
       }
     },
     "/auth/ok": {
