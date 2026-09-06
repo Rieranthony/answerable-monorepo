@@ -80,15 +80,13 @@ export async function buildPublicOpenApiDocument(input: {
         /^\/openapi\.json$/,
         /^\/api\/admin\/openapi\.json$/,
         /^\/api\/admin\/docs$/,
+        /^\/api\/admin\//,
       ],
     }),
     input.auth.api.generateOpenAPISchema(),
   ]);
   const routeByMethodAndPath = new Map(
-    publicAuthRoutes.map((route) => [
-      `${route.method} ${route.path}`,
-      route,
-    ]),
+    publicAuthRoutes.map((route) => [`${route.method} ${route.path}`, route]),
   );
   const authPaths: Record<string, OpenApiPathItem> = {};
 

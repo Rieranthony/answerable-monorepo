@@ -7,6 +7,8 @@ import { z } from "zod";
 import type { Auth } from "./auth.ts";
 import type { Database } from "./db/client.ts";
 import type { Environment } from "./env.ts";
+import { createAdminApp } from "./http/admin/index.ts";
+import { adminSecuritySchemes, adminTags } from "./http/admin/openapi.ts";
 import { isAllowedAuthRoute } from "./http/auth-allowlist.ts";
 import type { AppEnvironment } from "./http/context.ts";
 import { buildPublicOpenApiDocument } from "./http/openapi.ts";
@@ -31,6 +33,7 @@ export function createApp(services: AppServices) {
   app.use("*", async (context, next) => {
     const requestId = context.req.header("x-request-id") ?? createId();
 
+    context.set("environment", services.environment);
     context.set("auth", services.auth);
     context.set("db", services.db);
     context.set("requestId", requestId);
@@ -43,6 +46,16 @@ export function createApp(services: AppServices) {
     "/auth/*",
     cors({ origin: services.environment.trustedOrigins, credentials: true }),
   );
+
+  app.use(
+    "/api/admin/*",
+    cors({
+      origin: services.environment.trustedOrigins,
+      credentials: true,
+      allowHeaders: ["Authorization", "Content-Type"],
+    }),
+  );
+  app.route("/api/admin/v1", createAdminApp(services));
 
   app.get(
     "/healthz",
@@ -108,10 +121,12 @@ export function createApp(services: AppServices) {
         documentation: {
           info: {
             title: "Answerable ID Admin API",
-            version: "0.0.0",
+            version: "1.0.0",
             description:
-              "Administrative API contract. Write operations are intentionally deferred until the schema is approved.",
+              "Administrative API. Platform-tier routes are for Answerable staff; tenant-tier routes let an organisation manage itself.",
           },
+          components: { securitySchemes: adminSecuritySchemes },
+          tags: adminTags,
           servers: [{ url: services.environment.betterAuthUrl }],
         },
       }),

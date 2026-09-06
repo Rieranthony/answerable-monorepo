@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { exportJWK, generateKeyPair, SignJWT } from "jose";
+import type { Database } from "./db/client.ts";
 
 import { ProblemError } from "./http/problem.ts";
 import { createApp } from "./app.ts";
@@ -114,7 +116,24 @@ describe("unit: Hono application", () => {
         openapi: z.string().startsWith("3."),
         info: z.object({
           title: z.literal("Answerable ID Admin API"),
-          version: z.string(),
+          version: z.literal("1.0.0"),
+          description: z.literal(
+            "Administrative API. Platform-tier routes are for Answerable staff; tenant-tier routes let an organisation manage itself.",
+          ),
+        }),
+        components: z.object({
+          securitySchemes: z.object({
+            cookieAuth: z.object({
+              type: z.literal("apiKey"),
+              in: z.literal("cookie"),
+              name: z.literal("better-auth.session_token"),
+            }),
+            bearerAuth: z.object({
+              type: z.literal("http"),
+              scheme: z.literal("bearer"),
+              bearerFormat: z.literal("JWT"),
+            }),
+          }),
         }),
         paths: z.record(z.string(), z.unknown()),
       })
@@ -123,7 +142,13 @@ describe("unit: Hono application", () => {
 
     expect(schemaResponse.status).toBe(200);
     expect(schema.openapi).toStartWith("3.");
-    expect(Object.keys(schema.paths)).toEqual([]);
+    expect(Object.keys(schema.paths)).toEqual(["/api/admin/v1/me"]);
+    expect(schema.paths["/api/admin/v1/me"]).toMatchObject({
+      get: {
+        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        "x-tier": "tenant",
+      },
+    });
     expect(docsResponse.status).toBe(200);
     expect(await docsResponse.text()).toContain("Answerable ID Admin API");
   });
@@ -334,5 +359,113 @@ describe("unit: Hono application", () => {
 
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: "not_found" });
+  });
+});
+
+test("admin CORS allows trusted preflights", async () => {
+  const app = createApp({
+    auth: stubAuth(),
+    db: stubDatabase(),
+    environment: testEnvironment({ trustedOrigins: ["https://admin.example"] }),
+  });
+  for (const origin of ["https://admin.example", "https://evil.example"]) {
+    const response = await app.request("/api/admin/v1/me", {
+      method: "OPTIONS",
+      headers: {
+        Origin: origin,
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "Authorization,Content-Type",
+      },
+    });
+    expect(response.status).toBe(204);
+    expect(response.headers.get("access-control-allow-origin")).toBe(
+      origin === "https://admin.example" ? origin : null,
+    );
+    expect(response.headers.get("access-control-allow-credentials")).toBe(
+      "true",
+    );
+    expect(response.headers.get("access-control-allow-headers")).toBe(
+      "Authorization,Content-Type",
+    );
+  }
+});
+
+test("unknown admin routes return a problem without requiring credentials", async () => {
+  const app = createApp({
+    auth: stubAuth(),
+    db: stubDatabase(),
+    environment: testEnvironment(),
+  });
+  const response = await app.request("/api/admin/v1/unknown");
+  expect(response.status).toBe(404);
+  expect(response.headers.get("content-type")).toBe("application/problem+json");
+  expect(await response.json()).toMatchObject({ code: "not_found" });
+});
+
+test("mounted me runs principal resolution and the root problem handler", async () => {
+  const auth = stubAuth();
+  const calls: unknown[] = [];
+  auth.api.getSession = (async (input: unknown) => {
+    calls.push(input);
+    return null;
+  }) as typeof auth.api.getSession;
+  const app = createApp({
+    auth,
+    db: stubDatabase(),
+    environment: testEnvironment(),
+  });
+  const response = await app.request("/api/admin/v1/me");
+  expect(response.status).toBe(401);
+  expect(response.headers.get("content-type")).toBe("application/problem+json");
+  expect(response.headers.get("www-authenticate")).toBe(
+    'Bearer realm="answerable-id-admin"',
+  );
+  expect(await response.json()).toMatchObject({ code: "unauthenticated" });
+  expect(calls).toHaveLength(1);
+});
+
+test("mounted me returns a client verified through the default dependencies", async () => {
+  const { privateKey, publicKey } = await generateKeyPair("RS256");
+  const jwk = { ...(await exportJWK(publicKey)), kid: "admin-test" };
+  const auth = stubAuth();
+  auth.api.getJwks = (async () => ({ keys: [jwk] })) as typeof auth.api.getJwks;
+  const client = {
+    clientId: "client",
+    disabled: false,
+    clientCredentialsScopes: ["org:read"],
+    organizationId: "own",
+    organization: { id: "own", slug: "tenant", status: "active" },
+  };
+  const db = {
+    select: () => ({
+      from: () => ({
+        leftJoin: () => ({ where: () => ({ limit: async () => [client] }) }),
+      }),
+    }),
+  } as unknown as Database;
+  const environment = testEnvironment();
+  const app = createApp({ auth, db, environment });
+  const token = await new SignJWT({
+    azp: "client",
+    scope: "org:read org:write",
+  })
+    .setProtectedHeader({ alg: "RS256", typ: "at+jwt", kid: jwk.kid })
+    .setIssuer(environment.betterAuthUrl)
+    .setAudience(environment.adminResourceIdentifier)
+    .setExpirationTime("5m")
+    .sign(privateKey);
+  const response = await app.request("/api/admin/v1/me", {
+    headers: { Authorization: `bearer ${token}` },
+  });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({
+    principal: { type: "client", clientId: "client", organizationId: "own" },
+    grants: [
+      {
+        organizationId: "own",
+        organizationSlug: "tenant",
+        scopes: ["org:read"],
+      },
+    ],
   });
 });

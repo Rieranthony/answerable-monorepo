@@ -1,0 +1,157 @@
+import { expect, mock, test } from "bun:test";
+import { Hono } from "hono";
+import type { Database } from "../db/client.ts";
+import type { AuditEventInput } from "../db/queries/audit.ts";
+import { testEnvironment } from "../__tests__/support.ts";
+import { authorize, authorizeAny } from "./authorize.ts";
+import type { AppEnvironment } from "./context.ts";
+import type { Principal } from "./principal.ts";
+import { problemHandler } from "./problem.ts";
+
+const own = {
+  organizationId: "own",
+  organizationSlug: "tenant",
+  scopes: ["org:read"],
+};
+const platform = {
+  organizationId: "staff",
+  organizationSlug: "answerable",
+  scopes: ["platform:read"],
+};
+function setup(
+  grants: Principal["grants"],
+  options: {
+    client?: boolean;
+    org?: boolean;
+    any?: boolean;
+    path?: string;
+  } = {},
+) {
+  const rows: AuditEventInput[] = [];
+  const insert = mock(() => ({
+    values: (row: AuditEventInput) => {
+      rows.push(row);
+      return { returning: async () => [row] };
+    },
+  }));
+  const app = new Hono<AppEnvironment>();
+  app.use("*", async (c, next) => {
+    c.set("db", { insert } as unknown as Database);
+    c.set("environment", testEnvironment());
+    c.set("requestId", "request");
+    c.set("operationId", "testOperation");
+    c.set(
+      "principal",
+      options.client
+        ? { type: "client", clientId: "client", organizationId: "own", grants }
+        : {
+            type: "user",
+            userId: "user",
+            email: "person@example.com",
+            sessionId: "session",
+            grants,
+          },
+    );
+    await next();
+  });
+  app.get(
+    options.path ?? "/:organizationId",
+    options.any
+      ? authorizeAny()
+      : authorize({
+          platform: "platform:read",
+          org: options.org ? "org:read" : undefined,
+        }),
+    (c) => c.json({ tier: c.get("tier") }),
+  );
+  app.onError(problemHandler);
+  return { app, rows, insert };
+}
+test("platform grants take precedence and set tier", async () => {
+  const { app, rows } = setup([own, platform], { org: true });
+  expect(await (await app.request("/other")).json()).toEqual({
+    tier: "platform",
+  });
+  expect(rows).toEqual([]);
+});
+test("own organisation scope sets tenant tier", async () => {
+  const { app, rows } = setup([own], { org: true });
+  expect(await (await app.request("/own")).json()).toEqual({ tier: "tenant" });
+  expect(rows).toEqual([]);
+});
+test.each([
+  { grants: [own], org: false, path: "/own", code: "insufficient_scope" },
+  { grants: [own], org: true, path: "/other", code: "not_found" },
+  {
+    grants: [{ ...own, scopes: ["org:write"] }],
+    org: true,
+    path: "/own",
+    code: "insufficient_scope",
+  },
+  { grants: [], org: false, path: "/own", code: "insufficient_scope" },
+  {
+    grants: [{ ...platform, scopes: ["platform:write"] }],
+    org: false,
+    path: "/own",
+    code: "insufficient_scope",
+  },
+])("denies and audits %#", async ({ grants, org, path, code }) => {
+  for (const client of [false, true]) {
+    const { app, rows, insert } = setup(grants, { org, client });
+    const response = await app.request(path, {
+      headers: {
+        "x-forwarded-for": " 192.0.2.1, 192.0.2.2",
+        "user-agent": "test-agent",
+      },
+    });
+    const status = code === "not_found" ? 404 : 403;
+    expect(response.status).toBe(status);
+    expect(await response.json()).toMatchObject({ code });
+    expect(response.headers.get("www-authenticate")).toBe(
+      client && status === 403 ? 'Bearer error="insufficient_scope"' : null,
+    );
+    expect(insert).toHaveBeenCalledTimes(1);
+    expect(rows).toHaveLength(1);
+    const known = grants.some(
+      (grant) => grant.organizationId === path.slice(1),
+    );
+    expect(rows[0]).toMatchObject({
+      actorType: client ? "client" : "user",
+      actorId: client ? "client" : "user",
+      organizationId: known ? path.slice(1) : undefined,
+      data: known ? undefined : { organizationId: path.slice(1) },
+      action: "admin.denied",
+      outcome: "denied",
+      targetType: "route",
+      targetId: "testOperation",
+      reason: code,
+      requestId: "request",
+      ip: "192.0.2.1",
+      userAgent: "test-agent",
+    });
+  }
+});
+test("an org scope without an organisation parameter cannot authorise", async () => {
+  const { app, rows } = setup([own], { org: true, path: "/" });
+  expect((await app.request("/")).status).toBe(403);
+  expect(rows[0]).toMatchObject({
+    organizationId: undefined,
+    ip: undefined,
+    userAgent: undefined,
+  });
+});
+test("authorizeAny accepts a grant with no required scope", async () => {
+  const { app, rows } = setup([{ ...own, scopes: [] }], { any: true });
+  expect(await (await app.request("/own")).json()).toEqual({ tier: "tenant" });
+  expect(rows).toEqual([]);
+});
+test("authorizeAny denies an empty grant list and audits", async () => {
+  const { app, rows } = setup([], { any: true });
+  const response = await app.request("/own");
+  expect(response.status).toBe(403);
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
+    reason: "insufficient_scope",
+    targetId: "testOperation",
+  });
+});

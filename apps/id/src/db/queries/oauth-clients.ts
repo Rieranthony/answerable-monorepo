@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 
-import type { Database } from "../client.ts";
-import { oauthClients } from "../schema/index.ts";
+import type { Database, Executor } from "../client.ts";
+import { oauthClients, organizations } from "../schema/index.ts";
 
 export class OAuthClientNotFoundError extends Error {
   constructor(clientId: string) {
@@ -24,3 +24,30 @@ export async function assignClientOrganization(
 
   return client;
 }
+
+export async function findClientPrincipal(
+  executor: Executor,
+  clientId: string,
+) {
+  const [client] = await executor
+    .select({
+      clientId: oauthClients.clientId,
+      disabled: oauthClients.disabled,
+      clientCredentialsScopes: oauthClients.clientCredentialsScopes,
+      organizationId: oauthClients.organizationId,
+      organization: {
+        id: organizations.id,
+        slug: organizations.slug,
+        status: organizations.status,
+      },
+    })
+    .from(oauthClients)
+    .leftJoin(organizations, eq(organizations.id, oauthClients.organizationId))
+    .where(eq(oauthClients.clientId, clientId))
+    .limit(1);
+  return client ?? null;
+}
+
+export type ClientPrincipalRow = NonNullable<
+  Awaited<ReturnType<typeof findClientPrincipal>>
+>;

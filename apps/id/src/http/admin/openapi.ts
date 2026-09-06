@@ -1,0 +1,49 @@
+import type { MiddlewareHandler } from "hono";
+import { describeRoute, type DescribeRouteOptions } from "hono-openapi";
+import type { AppEnvironment } from "../context.ts";
+import { problemResponses } from "../problem.ts";
+import { tierOf, type AdminRoute } from "./route-table.ts";
+
+export const adminSecuritySchemes = {
+  cookieAuth: {
+    type: "apiKey",
+    in: "cookie",
+    name: "better-auth.session_token",
+  },
+  bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+} as const;
+export const adminTags = [
+  { name: "Me", description: "Current principal and effective grants" },
+];
+
+export function standardResponses(
+  route: Pick<AdminRoute, "orgScope">,
+  success: DescribeRouteOptions["responses"],
+) {
+  return {
+    ...success,
+    ...problemResponses(401, 403),
+    ...(route.orgScope ? problemResponses(404) : {}),
+  };
+}
+
+export function adminRoute(route: AdminRoute) {
+  const described = describeRoute({
+    operationId: route.operationId,
+    summary: route.summary,
+    tags: [route.tag],
+    responses: standardResponses(route, route.responses),
+    parameters: route.parameters,
+    requestBody: route.requestBody,
+    security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+    "x-tier": tierOf(route),
+  } as DescribeRouteOptions);
+  const middleware: MiddlewareHandler<AppEnvironment> = async (
+    context,
+    next,
+  ) => {
+    context.set("operationId", route.operationId);
+    await described(context, next);
+  };
+  return Object.assign(middleware, described);
+}

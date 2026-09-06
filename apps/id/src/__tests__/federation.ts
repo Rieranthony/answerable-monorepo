@@ -25,13 +25,22 @@ export async function signInThroughIdp(app: App, input: SignInInput) {
     },
     body: JSON.stringify(input),
   });
-  const { url } = (await start.json()) as { url: string };
+  const started = (await start.json()) as { url?: string };
+  if (!started.url) {
+    throw new Error(
+      `Sign-in did not start (${start.status}): ${JSON.stringify(started)}`,
+    );
+  }
+  const { url } = started;
   const stateCookie = cookieHeader(start.headers);
   const authorization = await fetch(url, { redirect: "manual" });
   const callback = new URL(authorization.headers.get("location")!);
-  const completed = await app.request(`${callback.pathname}${callback.search}`, {
-    headers: { Cookie: stateCookie },
-  });
+  const completed = await app.request(
+    `${callback.pathname}${callback.search}`,
+    {
+      headers: { Cookie: stateCookie },
+    },
+  );
 
   return {
     location: completed.headers.get("location"),
