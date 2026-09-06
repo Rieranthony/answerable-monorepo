@@ -112,6 +112,8 @@ Better Auth columns beyond its own field set (`users.status`, `users.disabled_at
 
 At every grant the policy applies `isEffective` to the member, group-membership, and entitlement rows. For a grant with a member, it collects that member's effective groups and effective entitlements in the organization whose principal is the organization, one of those groups, or the member, and whose target is the requesting client (at login) or the requested resource (at an MCP token request).
 
+`effectiveGrants` in `src/db/queries/grants.ts` implements this computation for resource targets and returns per-organisation scope unions.
+
 Machine callers are authorized by the per-client scope ceiling and `oauth_client_resources`. Their token's organization claim comes from `oauth_clients.organization_id`; NULL denies `client_credentials`.
 
 ## Contract test
