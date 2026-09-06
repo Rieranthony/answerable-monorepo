@@ -14,9 +14,13 @@ import * as organizations from "./organizations.ts";
 import type { AdminRouteTable } from "./route-table.ts";
 import * as resources from "./resources.ts";
 import * as clients from "./clients.ts";
+import * as groups from "./groups.ts";
+import * as members from "./members.ts";
 
 const families = new Map<AdminRouteTable, typeof me.register>([
   [me.routes, me.register],
+  [groups.routes, groups.register],
+  [members.routes, members.register],
   [resources.routes, resources.register],
   [clients.routes, clients.register],
   [domains.routes, domains.register],

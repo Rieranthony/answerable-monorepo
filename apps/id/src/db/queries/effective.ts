@@ -8,5 +8,9 @@ export function isEffective(table: {
 }): SQL {
   const window = sql`(${table.validFrom} is null or ${table.validFrom} <= now()) and (${table.validUntil} is null or ${table.validUntil} > now())`;
 
-  return table.status ? sql`${table.status} = 'active' and ${window}` : window;
+  // Parenthesised so callers can negate or combine it without precedence
+  // surprises (`not (a and b)`, `x or (a and b)`).
+  return table.status
+    ? sql`(${table.status} = 'active' and ${window})`
+    : sql`(${window})`;
 }
