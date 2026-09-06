@@ -2,11 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 
+import { ProblemError } from "./http/problem.ts";
 import { createApp } from "./app.ts";
-import {
-  isAllowedAuthRoute,
-  publicAuthRoutes,
-} from "./http/auth-allowlist.ts";
+import { isAllowedAuthRoute, publicAuthRoutes } from "./http/auth-allowlist.ts";
 import { buildPublicOpenApiDocument } from "./http/openapi.ts";
 import {
   isUuidV7,
@@ -34,6 +32,29 @@ describe("unit: Hono application", () => {
     expect(await response.json()).toEqual({ status: "ok" });
     expect(checks).toBe(0);
     expect(isUuidV7(requestId)).toBe(true);
+  });
+
+  test("uses the problem handler for thrown route errors", async () => {
+    const app = createApp({
+      auth: stubAuth(),
+      db: stubDatabase(),
+      environment: testEnvironment(),
+    });
+    app.get("/boom", () => {
+      throw new ProblemError(418, "teapot", "Teapot");
+    });
+    const response = await app.request("/boom");
+    expect(response.status).toBe(418);
+    expect(response.headers.get("content-type")).toBe(
+      "application/problem+json",
+    );
+    expect(await response.json()).toEqual({
+      type: "about:blank",
+      title: "Teapot",
+      status: 418,
+      code: "teapot",
+      request_id: response.headers.get("x-request-id"),
+    });
   });
 
   test("preserves a caller-provided request id", async () => {
@@ -128,10 +149,7 @@ describe("unit: Hono application", () => {
         openapi: z.string().startsWith("3.1"),
         info: z.object({ title: z.literal("Answerable ID API") }).loose(),
         servers: z.array(z.object({ url: z.string() })),
-        paths: z.record(
-          z.string(),
-          z.record(z.string(), operationSchema),
-        ),
+        paths: z.record(z.string(), z.record(z.string(), operationSchema)),
         components: z.object({
           securitySchemes: z.object({
             apiKeyCookie: z.unknown(),
@@ -155,13 +173,13 @@ describe("unit: Hono application", () => {
       "/readyz",
     ]);
     for (const route of publicAuthRoutes) {
-      expect(schema.paths[route.path]?.[route.method.toLowerCase()]).toMatchObject(
-        {
-          operationId: route.operationId,
-          summary: route.summary,
-          tags: [route.tag],
-        },
-      );
+      expect(
+        schema.paths[route.path]?.[route.method.toLowerCase()],
+      ).toMatchObject({
+        operationId: route.operationId,
+        summary: route.summary,
+        tags: [route.tag],
+      });
     }
     expect(schema.paths["/auth/sign-in/sso"]?.post).toMatchObject({
       operationId: "signInWithSso",
@@ -242,9 +260,10 @@ describe("unit: Hono application", () => {
     expect(isAllowedAuthRoute("post", "/auth/sign-out")).toBe(true);
     expect(isAllowedAuthRoute("POST", "/auth/organization/create")).toBe(false);
     expect((await app.request("/auth/ok")).status).toBe(200);
-    expect((await app.request("/auth/organization/create", { method: "POST" })).status).toBe(
-      404,
-    );
+    expect(
+      (await app.request("/auth/organization/create", { method: "POST" }))
+        .status,
+    ).toBe(404);
   });
 
   test("answers trusted SSO preflights without reflecting untrusted origins", async () => {
@@ -270,7 +289,9 @@ describe("unit: Hono application", () => {
     expect(trusted.headers.get("access-control-allow-origin")).toBe(
       "https://chat.example.com",
     );
-    expect(trusted.headers.get("access-control-allow-credentials")).toBe("true");
+    expect(trusted.headers.get("access-control-allow-credentials")).toBe(
+      "true",
+    );
     expect(untrusted.headers.get("access-control-allow-origin")).toBeNull();
   });
 

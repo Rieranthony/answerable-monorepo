@@ -10,6 +10,7 @@ import type { Environment } from "./env.ts";
 import { isAllowedAuthRoute } from "./http/auth-allowlist.ts";
 import type { AppEnvironment } from "./http/context.ts";
 import { buildPublicOpenApiDocument } from "./http/openapi.ts";
+import { problemHandler } from "./http/problem.ts";
 import { createId } from "./lib/id.ts";
 import { checkReadiness } from "./services/readiness.ts";
 
@@ -133,6 +134,8 @@ export function createApp(services: AppServices) {
 
     return context.get("auth").handler(context.req.raw);
   });
+
+  app.onError(problemHandler);
 
   app.notFound((context) => context.json({ error: "not_found" }, 404));
 

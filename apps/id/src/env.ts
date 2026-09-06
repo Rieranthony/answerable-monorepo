@@ -19,6 +19,13 @@ const environmentSchema = z
     BETTER_AUTH_URL: z.url(),
     BETTER_AUTH_SECRET: z.string().min(32),
     BETTER_AUTH_TRUSTED_ORIGINS: z.string().default(""),
+    /** The platform organisation is the one whose members may hold platform:* scopes. */
+    PLATFORM_ORGANIZATION_SLUG: z
+      .string()
+      .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/)
+      .default("answerable"),
+    /** The RFC 8707 resource indicator (aud) of the admin API itself. */
+    ADMIN_RESOURCE_IDENTIFIER: z.url().optional(),
     AUTH_PAGES_URL: z.url().default("http://localhost:47100"),
     DATABASE_POOL_MAX: z.coerce.number().int().min(1).optional(),
     DATABASE_POOL_IDLE_TIMEOUT_MS: z.coerce
@@ -43,6 +50,11 @@ const environmentSchema = z
       environment.BETTER_AUTH_TRUSTED_ORIGINS,
       environment.AUTH_PAGES_URL,
     ),
+    platformOrganizationSlug: environment.PLATFORM_ORGANIZATION_SLUG,
+    adminResourceIdentifier: (
+      environment.ADMIN_RESOURCE_IDENTIFIER ??
+      `${environment.BETTER_AUTH_URL.replace(/\/+$/, "")}/api/admin`
+    ).replace(/\/+$/, ""),
     authPagesUrl: environment.AUTH_PAGES_URL,
     databasePoolMax:
       environment.DATABASE_POOL_MAX ??
@@ -57,7 +69,9 @@ export type Environment = z.output<typeof environmentSchema>;
 export class EnvironmentValidationError extends Error {
   constructor(error: z.ZodError) {
     const details = error.issues
-      .map((issue) => `${issue.path.join(".") || "environment"}: ${issue.message}`)
+      .map(
+        (issue) => `${issue.path.join(".") || "environment"}: ${issue.message}`,
+      )
       .join("; ");
 
     super(`Invalid environment variables: ${details}`);

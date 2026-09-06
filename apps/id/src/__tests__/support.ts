@@ -27,6 +27,8 @@ export function testEnvironment(
     databasePoolIdleTimeoutMs: 1_000,
     databaseConnectionTimeoutMs: 1_000,
     openApiEnabled: true,
+    platformOrganizationSlug: "answerable",
+    adminResourceIdentifier: "http://localhost:47300/api/admin",
     ...overrides,
   };
 }

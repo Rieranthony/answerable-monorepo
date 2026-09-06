@@ -7,7 +7,8 @@ import {
 } from "./env.ts";
 
 const requiredEnvironment = {
-  DATABASE_URL: "postgres://answerable:answerable@localhost:47432/answerable_id",
+  DATABASE_URL:
+    "postgres://answerable:answerable@localhost:47432/answerable_id",
   BETTER_AUTH_URL: "http://localhost:47300",
   BETTER_AUTH_SECRET: "a-secret-that-is-definitely-32-characters",
 };
@@ -35,6 +36,8 @@ describe("unit: environment", () => {
       databasePoolIdleTimeoutMs: 10_000,
       databaseConnectionTimeoutMs: 5_000,
       openApiEnabled: true,
+      platformOrganizationSlug: "answerable",
+      adminResourceIdentifier: "http://localhost:47300/api/admin",
     });
   });
 
@@ -61,6 +64,8 @@ describe("unit: environment", () => {
       DATABASE_POOL_IDLE_TIMEOUT_MS: "2000",
       DATABASE_CONNECTION_TIMEOUT_MS: "3000",
       OPENAPI_ENABLED: "false",
+      PLATFORM_ORGANIZATION_SLUG: "platform-org",
+      ADMIN_RESOURCE_IDENTIFIER: "https://admin.example.com/api/admin/",
       BETTER_AUTH_TRUSTED_ORIGINS:
         "https://chat.example.com, https://admin.example.com",
       AUTH_PAGES_URL: "https://auth.example.com",
@@ -73,12 +78,34 @@ describe("unit: environment", () => {
       databasePoolIdleTimeoutMs: 2_000,
       databaseConnectionTimeoutMs: 3_000,
       openApiEnabled: false,
-      trustedOrigins: [
-        "https://chat.example.com",
-        "https://admin.example.com",
-      ],
+      platformOrganizationSlug: "platform-org",
+      adminResourceIdentifier: "https://admin.example.com/api/admin",
+      trustedOrigins: ["https://chat.example.com", "https://admin.example.com"],
       authPagesUrl: "https://auth.example.com",
     });
+  });
+
+  test("normalises the default resource URL and rejects invalid admin configuration", () => {
+    expect(
+      parseEnvironment({
+        ...requiredEnvironment,
+        BETTER_AUTH_URL: "https://id.example.com/",
+      }).adminResourceIdentifier,
+    ).toBe("https://id.example.com/api/admin");
+    for (const slug of ["Bad", "-bad", "bad-", "bad--slug", "bad_slug", ""]) {
+      expect(() =>
+        parseEnvironment({
+          ...requiredEnvironment,
+          PLATFORM_ORGANIZATION_SLUG: slug,
+        }),
+      ).toThrow(EnvironmentValidationError);
+    }
+    expect(() =>
+      parseEnvironment({
+        ...requiredEnvironment,
+        ADMIN_RESOURCE_IDENTIFIER: "bad",
+      }),
+    ).toThrow(EnvironmentValidationError);
   });
 
   test("rejects invalid configuration", () => {
@@ -95,6 +122,8 @@ describe("unit: environment", () => {
 
   test("loads configuration from the process environment", () => {
     Object.assign(process.env, requiredEnvironment, { NODE_ENV: "test" });
-    expect(loadEnvironment().databaseUrl).toBe(requiredEnvironment.DATABASE_URL);
+    expect(loadEnvironment().databaseUrl).toBe(
+      requiredEnvironment.DATABASE_URL,
+    );
   });
 });
