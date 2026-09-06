@@ -17,8 +17,13 @@ import * as clients from "./clients.ts";
 import * as groups from "./groups.ts";
 import * as members from "./members.ts";
 
+import * as entitlements from "./entitlements.ts";
+import * as access from "./access.ts";
+
 const families = new Map<AdminRouteTable, typeof me.register>([
   [me.routes, me.register],
+  [entitlements.routes, entitlements.register],
+  [access.routes, access.register],
   [groups.routes, groups.register],
   [members.routes, members.register],
   [resources.routes, resources.register],

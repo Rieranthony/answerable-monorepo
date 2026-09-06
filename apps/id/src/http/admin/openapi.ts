@@ -13,6 +13,11 @@ export const adminSecuritySchemes = {
   bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
 } as const;
 export const adminTags = [
+  {
+    name: "Entitlements",
+    description: "Organisation entitlement administration",
+  },
+  { name: "Access", description: "Effective access reviews" },
   { name: "Groups", description: "Organisation group administration" },
   { name: "Members", description: "Organisation member administration" },
   { name: "Resources", description: "OAuth resource administration" },
