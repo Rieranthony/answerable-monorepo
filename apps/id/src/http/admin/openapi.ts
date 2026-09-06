@@ -13,6 +13,8 @@ export const adminSecuritySchemes = {
   bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
 } as const;
 export const adminTags = [
+  { name: "Resources", description: "OAuth resource administration" },
+  { name: "Clients", description: "OAuth client administration" },
   { name: "Domains", description: "Organisation domain administration" },
   {
     name: "SSO provider",

@@ -12,9 +12,13 @@ import * as ssoProviders from "./sso-providers.ts";
 import * as me from "./me.ts";
 import * as organizations from "./organizations.ts";
 import type { AdminRouteTable } from "./route-table.ts";
+import * as resources from "./resources.ts";
+import * as clients from "./clients.ts";
 
 const families = new Map<AdminRouteTable, typeof me.register>([
   [me.routes, me.register],
+  [resources.routes, resources.register],
+  [clients.routes, clients.register],
   [domains.routes, domains.register],
   [ssoProviders.routes, ssoProviders.register],
   [organizations.routes, organizations.register],
