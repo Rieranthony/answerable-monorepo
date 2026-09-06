@@ -4,6 +4,7 @@ import type { Database } from "../db/client.ts";
 import type { AuditEventInput } from "../db/queries/audit.ts";
 import { testEnvironment } from "../__tests__/support.ts";
 import { authorize, authorizeAny } from "./authorize.ts";
+import type { AdminScope } from "./admin/scopes.ts";
 import type { AppEnvironment } from "./context.ts";
 import type { Principal } from "./principal.ts";
 import { problemHandler } from "./problem.ts";
@@ -25,6 +26,7 @@ function setup(
     org?: boolean;
     any?: boolean;
     path?: string;
+    platform?: AdminScope;
   } = {},
 ) {
   const rows: AuditEventInput[] = [];
@@ -59,7 +61,7 @@ function setup(
     options.any
       ? authorizeAny()
       : authorize({
-          platform: "platform:read",
+          platform: options.platform ?? "platform:read",
           org: options.org ? "org:read" : undefined,
         }),
     (c) => c.json({ tier: c.get("tier") }),
@@ -83,6 +85,13 @@ test.each([
   { grants: [own], org: false, path: "/own", code: "insufficient_scope" },
   { grants: [own], org: true, path: "/other", code: "not_found" },
   {
+    grants: [platform],
+    org: true,
+    platform: "platform:write" as const,
+    path: "/other",
+    code: "insufficient_scope",
+  },
+  {
     grants: [{ ...own, scopes: ["org:write"] }],
     org: true,
     path: "/own",
@@ -95,9 +104,9 @@ test.each([
     path: "/own",
     code: "insufficient_scope",
   },
-])("denies and audits %#", async ({ grants, org, path, code }) => {
+])("denies and audits %#", async ({ grants, org, path, code, platform }) => {
   for (const client of [false, true]) {
-    const { app, rows, insert } = setup(grants, { org, client });
+    const { app, rows, insert } = setup(grants, { org, client, platform });
     const response = await app.request(path, {
       headers: {
         "x-forwarded-for": " 192.0.2.1, 192.0.2.2",

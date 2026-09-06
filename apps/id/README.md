@@ -37,6 +37,8 @@ Coverage thresholds require 100% of application lines and functions. Tests, fixt
 
 ## Boundaries
 
+Admin route families export their route table; `src/__tests__/admin-routes.ts` generates the negative suite for every table entry, while `src/http/admin/routes.test.ts` compares the tables to the OpenAPI document.
+
 `src/db/client.ts` owns the one process-wide pool and Drizzle construction. Database operations live in `src/db/queries`, grouped by domain. Vocabularies live once in `src/db/schema/vocabulary.ts`, and `src/db/schema/columns.ts` carries the identifier, timestamp, and CHECK conventions. The integration test freezes the PostgreSQL catalog, so a schema change is a deliberate edit to that snapshot. HTTP routes receive `db`, `auth`, and request metadata through typed Hono context. Future administrative routes call services, and services call these query modules—routes never contain Drizzle or SQL.
 
 The default pool maximum is five connections per process and one in tests. Timeouts and the maximum are configurable through the environment. Session resolution remains route-scoped; liveness and public metadata do not resolve a session.

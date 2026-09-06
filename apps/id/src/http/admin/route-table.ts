@@ -17,9 +17,13 @@ export type AdminRoute = {
   responses: DescribeRouteOptions["responses"];
   parameters?: DescribeRouteOptions["parameters"];
   requestBody?: DescribeRouteOptions["requestBody"];
+  paginated?: true;
+  example?: { body?: unknown; query?: Record<string, string> };
   /** Only /me accepts any effective grant. */
   anyGrant?: true;
 };
+
+export type AdminRouteTable = Record<string, AdminRoute>;
 
 export function tierOf(route: Pick<AdminRoute, "orgScope" | "anyGrant">) {
   return route.orgScope || route.anyGrant ? "tenant" : "platform";

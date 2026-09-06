@@ -7,7 +7,13 @@ import {
   createPrincipalMiddleware,
 } from "../principal.ts";
 import { problem, ProblemError } from "../problem.ts";
-import { register } from "./me.ts";
+import * as me from "./me.ts";
+import type { AdminRouteTable } from "./route-table.ts";
+
+const families = new Map<AdminRouteTable, typeof me.register>([
+  [me.routes, me.register],
+]);
+export const adminRouteTables: AdminRouteTable[] = [...families.keys()];
 
 export function createAdminApp(services: AppServices) {
   const app = new Hono<AppEnvironment>();
@@ -20,7 +26,7 @@ export function createAdminApp(services: AppServices) {
     await next();
   });
   app.use("*", createPrincipalMiddleware(createDefaultPrincipalDeps(services)));
-  register(app);
+  for (const table of adminRouteTables) families.get(table)!(app);
   app.notFound(notFound);
   // Hono does not carry a sub-app's notFound handler across app.route().
   app.all("*", notFound);

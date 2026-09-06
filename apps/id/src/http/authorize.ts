@@ -67,11 +67,13 @@ export function authorize({
       const grant = grants.find(
         (grant) => grant.organizationId === organizationId,
       );
-      if (!grant) return deny(context, "not_found");
-      if (grant.scopes.includes(org)) {
+      if (grant?.scopes.includes(org)) {
         context.set("tier", "tenant");
         return next();
       }
+      // Staff can read every organisation, so a platform grant without the
+      // required scope is a scope problem, never a hidden organisation.
+      if (!grant && !platformGrant) return deny(context, "not_found");
     }
     return deny(context, "insufficient_scope");
   };
