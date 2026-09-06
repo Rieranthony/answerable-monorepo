@@ -1,13 +1,13 @@
 import { and, eq } from "drizzle-orm";
 
 import { createId } from "../../lib/id.ts";
-import type { Database } from "../client.ts";
+import type { Database, Executor } from "../client.ts";
 import { organizationDomains, organizations } from "../schema/index.ts";
 
 const normalizeDomain = (domain: string) => domain.trim().toLowerCase();
 
 export async function createOrganizationDomain(
-  db: Database,
+  db: Executor,
   input: { organizationId: string; domain: string },
 ) {
   const [domain] = await db

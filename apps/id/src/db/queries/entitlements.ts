@@ -1,5 +1,5 @@
 import { createId } from "../../lib/id.ts";
-import type { Database } from "../client.ts";
+import type { Executor } from "../client.ts";
 import { entitlements } from "../schema/index.ts";
 
 export type CreateEntitlementInput = {
@@ -14,7 +14,7 @@ export type CreateEntitlementInput = {
 };
 
 export async function createEntitlement(
-  db: Database,
+  db: Executor,
   input: CreateEntitlementInput,
 ) {
   const [entitlement] = await db

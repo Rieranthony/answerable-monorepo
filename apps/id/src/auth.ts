@@ -127,6 +127,8 @@ export function createAuth(db: Database, environment: Environment) {
       // servers. The login and consent pages arrive with the federation and
       // provider milestones; until then no OAuth route is allowlisted.
       oauthProvider({
+        // hashClientSecret mirrors this digest for bootstrap clients.
+        storeClientSecret: "hashed",
         loginPage: `${environment.authPagesUrl}/login`,
         consentPage: `${environment.authPagesUrl}/consent`,
       }),

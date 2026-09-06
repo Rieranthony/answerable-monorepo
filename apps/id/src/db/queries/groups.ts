@@ -1,5 +1,5 @@
 import { createId } from "../../lib/id.ts";
-import type { Database } from "../client.ts";
+import type { Database, Executor } from "../client.ts";
 import { groupMembers, groups } from "../schema/index.ts";
 
 export type CreateGroupInput = {
@@ -10,7 +10,7 @@ export type CreateGroupInput = {
   externalId?: string;
 };
 
-export async function createGroup(db: Database, input: CreateGroupInput) {
+export async function createGroup(db: Executor, input: CreateGroupInput) {
   const [group] = await db
     .insert(groups)
     .values({ id: createId(), ...input })

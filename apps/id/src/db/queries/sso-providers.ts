@@ -1,11 +1,11 @@
+import { eq } from "drizzle-orm";
+
 import { createId } from "../../lib/id.ts";
-import type { Database } from "../client.ts";
+import type { Executor } from "../client.ts";
 import { ssoProviders } from "../schema/index.ts";
 
 type TokenEndpointAuthentication =
-  | "client_secret_post"
-  | "client_secret_basic"
-  | "private_key_jwt";
+  "client_secret_post" | "client_secret_basic" | "private_key_jwt";
 
 type CreateSsoProviderInput = {
   organizationId: string;
@@ -25,11 +25,10 @@ type CreateSsoProviderInput = {
   };
 };
 
-export async function createSsoProvider(
-  db: Database,
-  input: CreateSsoProviderInput,
-) {
-  const oidcConfig = JSON.stringify({
+export function serializeSsoProviderConfig(
+  input: Pick<CreateSsoProviderInput, "issuer" | "oidc">,
+): string {
+  return JSON.stringify({
     issuer: input.issuer,
     clientId: input.oidc.clientId,
     clientSecret: input.oidc.clientSecret,
@@ -49,6 +48,12 @@ export async function createSsoProvider(
     userInfoEndpoint: undefined,
     overrideUserInfo: false,
   });
+}
+
+export async function createSsoProvider(
+  db: Executor,
+  input: CreateSsoProviderInput,
+) {
   const [provider] = await db
     .insert(ssoProviders)
     .values({
@@ -57,9 +62,38 @@ export async function createSsoProvider(
       providerId: input.providerId,
       issuer: input.issuer,
       domain: input.domain.trim().toLowerCase(),
-      oidcConfig,
+      oidcConfig: serializeSsoProviderConfig(input),
     })
     .returning();
 
+  return provider!;
+}
+
+export async function findSsoProviderByOrganization(
+  db: Executor,
+  organizationId: string,
+) {
+  const [provider] = await db
+    .select()
+    .from(ssoProviders)
+    .where(eq(ssoProviders.organizationId, organizationId))
+    .limit(1);
+  return provider ?? null;
+}
+
+export async function updateSsoProvider(
+  db: Executor,
+  id: string,
+  input: Pick<CreateSsoProviderInput, "issuer" | "domain" | "oidc">,
+) {
+  const [provider] = await db
+    .update(ssoProviders)
+    .set({
+      issuer: input.issuer,
+      domain: input.domain.trim().toLowerCase(),
+      oidcConfig: serializeSsoProviderConfig(input),
+    })
+    .where(eq(ssoProviders.id, id))
+    .returning();
   return provider!;
 }
