@@ -185,6 +185,8 @@ describe("unit: Hono application", () => {
       "/api/admin/v1/organizations/{organizationId}",
       "/api/admin/v1/organizations/{organizationId}/disable",
       "/api/admin/v1/organizations/{organizationId}/enable",
+      "/api/admin/v1/audit-events",
+      "/api/admin/v1/organizations/{organizationId}/audit-events",
     ]);
     expect(schema.paths["/api/admin/v1/me"]).toMatchObject({
       get: {
@@ -564,4 +566,44 @@ test("token requests guard grants and preserve bodies for Better Auth", async ()
   });
   expect((await app.request("/auth/oauth2/token")).status).toBe(404);
   expect(received).toHaveLength(3);
+});
+
+test("auth catch-all propagates request ids and audits rejection redirects", async () => {
+  for (const requestId of [undefined, "ingress-id"]) {
+    const rows: unknown[] = [];
+    let received: string | null = null;
+    const auth = stubAuth();
+    auth.handler = async (request: Request) => {
+      received = request.headers.get("x-request-id");
+      return Response.redirect(
+        "https://example.com/error?error=directory_mismatch&error_description=x",
+        302,
+      );
+    };
+    const db = {
+      insert: () => ({
+        values: (row: unknown) => {
+          rows.push(row);
+          return { returning: async () => [row] };
+        },
+      }),
+    } as unknown as Database;
+    const app = createApp({ auth, db, environment: testEnvironment() });
+    const response = await app.request("/auth/sso/callback", {
+      headers: requestId ? { "x-request-id": requestId } : {},
+    });
+    expect(response.status).toBe(302);
+    expect(received as string | null).toBe(
+      response.headers.get("x-request-id"),
+    );
+    expect(received).toBeTruthy();
+    expect(rows).toEqual([
+      expect.objectContaining({
+        action: "auth.signin.rejected",
+        reason: "directory_mismatch",
+        requestId: received,
+        data: { errorDescription: "x" },
+      }),
+    ]);
+  }
 });

@@ -23,6 +23,8 @@ import * as access from "./access.ts";
 import * as users from "./users.ts";
 import * as sessions from "./sessions.ts";
 
+import * as auditEvents from "./audit-events.ts";
+
 const families = new Map<AdminRouteTable, typeof me.register>([
   [me.routes, me.register],
   [users.routes, users.register],
@@ -36,6 +38,7 @@ const families = new Map<AdminRouteTable, typeof me.register>([
   [domains.routes, domains.register],
   [ssoProviders.routes, ssoProviders.register],
   [organizations.routes, organizations.register],
+  [auditEvents.routes, auditEvents.register],
 ]);
 export const adminRouteTables: AdminRouteTable[] = [...families.keys()];
 

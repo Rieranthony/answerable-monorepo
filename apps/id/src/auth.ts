@@ -6,6 +6,8 @@ import { openAPI } from "better-auth/plugins";
 import { jwt } from "better-auth/plugins/jwt";
 import { organization } from "better-auth/plugins/organization";
 
+import { sessionAuditHooks } from "./auth/audit-hooks.ts";
+import { signInAudit } from "./auth/signin-audit-plugin.ts";
 import type { Database } from "./db/client.ts";
 import { answerableSchema } from "./auth/answerable-schema.ts";
 import * as schema from "./db/schema/index.ts";
@@ -26,6 +28,7 @@ export function createAuth(db: Database, environment: Environment) {
       usePlural: true,
       transaction: true,
     }),
+    databaseHooks: { session: sessionAuditHooks(db) },
     trustedOrigins: environment.trustedOrigins,
     account: {
       accountLinking: {
@@ -138,6 +141,9 @@ export function createAuth(db: Database, environment: Environment) {
         consentPage: `${environment.authPagesUrl}/consent`,
       }),
       openAPI({ disableDefaultReference: true }),
+      // Listed last so its after-hook runs once the SSO plugin has provisioned
+      // the membership.
+      signInAudit(db),
     ],
   });
 }

@@ -21,6 +21,7 @@ import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import { createOrganizationDomain } from "../db/queries/organization-domains.ts";
 import { createSsoProvider } from "../db/queries/sso-providers.ts";
 import {
+  auditEvents,
   accounts,
   members,
   organizations,
@@ -157,7 +158,23 @@ describe("integration: federated sign-in", () => {
     const organization = await seedProvider();
     issuer.enqueue(entraClaims());
 
-    const result = await signIn();
+    const auditedApp = new Proxy(app, {
+      get(target, property, receiver) {
+        if (property === "request")
+          return (input: string, init?: RequestInit) => {
+            const headers = new Headers(init?.headers);
+            headers.set("x-forwarded-for", "192.0.2.1");
+            headers.set("user-agent", "federation-audit-test");
+            return target.request(input, { ...init, headers });
+          };
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const result = await signInThroughIdp(auditedApp, {
+      providerId: "contoso",
+      callbackURL,
+      errorCallbackURL,
+    });
     const [user] = await connection.db.select().from(users);
     const allAccounts = await connection.db.select().from(accounts);
     const [account] = allAccounts;
@@ -171,6 +188,38 @@ describe("integration: federated sign-in", () => {
       status: "active",
     });
     expect(isUuidV7(user!.id)).toBe(true);
+    const successes = await connection.db
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.action, "auth.signin.succeeded"));
+    expect(successes).toHaveLength(1);
+    expect(successes[0]).toMatchObject({
+      actorId: user!.id,
+      ip: "192.0.2.1",
+      userAgent: "federation-audit-test",
+      outcome: "success",
+    });
+    const signedOut = await app.request("/auth/sign-out", {
+      method: "POST",
+      headers: {
+        Cookie: result.cookies
+          .map((value) => value.split(";", 1)[0])
+          .join("; "),
+        Origin: new URL(callbackURL).origin,
+      },
+    });
+    expect(signedOut.status).toBe(200);
+    const signouts = await connection.db
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.action, "auth.signout"));
+    expect(signouts).toHaveLength(1);
+    expect(signouts[0]).toMatchObject({
+      actorId: user!.id,
+      targetId: successes[0]!.targetId,
+      ip: "192.0.2.1",
+      userAgent: "federation-audit-test",
+    });
     expect(account).toMatchObject({
       userId: user!.id,
       issuer: entraIssuer,
@@ -194,9 +243,9 @@ describe("integration: federated sign-in", () => {
 
     const result = await signIn();
     expect(errorCode(result.location)).toBe("invalid_provider");
-    expect(new URL(result.location!).searchParams.get("error_description")).toBe(
-      "token_not_verified",
-    );
+    expect(
+      new URL(result.location!).searchParams.get("error_description"),
+    ).toBe("token_not_verified");
     expect(await connection.db.select().from(users)).toHaveLength(0);
   });
 
@@ -210,15 +259,18 @@ describe("integration: federated sign-in", () => {
 
     const result = await signIn();
     expect(errorCode(result.location)).toBe(code);
+    const rejected = await connection.db
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.action, "auth.signin.rejected"));
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]).toMatchObject({ reason: code, outcome: "failure" });
     expect(await connection.db.select().from(users)).toHaveLength(0);
   });
 
   test.each([
     ["personal_account", { email_verified: true }],
-    [
-      "hosted_domain_mismatch",
-      { hd: "other.example", email_verified: true },
-    ],
+    ["hosted_domain_mismatch", { hd: "other.example", email_verified: true }],
     ["email_unverified", { hd: "contoso.com", email_verified: false }],
   ] as const)("rejects Google claim policy: %s", async (code, claims) => {
     await seedProvider({ providerIssuer: "https://accounts.google.com" });
@@ -278,7 +330,10 @@ describe("integration: federated sign-in", () => {
       .from(users)
       .where(eq(users.id, user.id));
     const boundAccounts = await connection.db.select().from(accounts);
-    expect(updatedUser).toMatchObject({ status: "active", emailVerified: true });
+    expect(updatedUser).toMatchObject({
+      status: "active",
+      emailVerified: true,
+    });
     expect(boundAccounts).toHaveLength(1);
     expect(boundAccounts[0]!.accountId).toBe("entra-subject");
   });

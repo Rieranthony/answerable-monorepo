@@ -16,6 +16,7 @@ import {
 import type { AppEnvironment } from "./http/context.ts";
 import { buildPublicOpenApiDocument } from "./http/openapi.ts";
 import { problemHandler } from "./http/problem.ts";
+import { recordRejectedSignIn } from "./http/signin-audit.ts";
 import { createId } from "./lib/id.ts";
 import { checkReadiness } from "./services/readiness.ts";
 
@@ -154,7 +155,14 @@ export function createApp(services: AppServices) {
       const rejection = await inspectTokenRequest(context.req.raw);
       if (rejection) return rejection;
     }
-    return context.get("auth").handler(context.req.raw);
+    const headers = new Headers(context.req.raw.headers);
+    if (!headers.has("x-request-id"))
+      headers.set("x-request-id", context.get("requestId"));
+    const response = await context
+      .get("auth")
+      .handler(new Request(context.req.raw, { headers }));
+    await recordRejectedSignIn(context, response);
+    return response;
   });
 
   app.onError(problemHandler);
