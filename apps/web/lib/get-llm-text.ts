@@ -2,12 +2,14 @@ import type { InferPageType } from "fumadocs-core/source"
 
 import type { docs, source } from "@/lib/source"
 
-const CONTRACT_URL = "https://id.answerable.org/openapi.json"
-
 export async function getLLMText(page: InferPageType<typeof source>) {
   const heading = `# ${page.data.title} (${page.url})`
 
   if (page.type === "openapi") {
+    const contractUrl =
+      page.slugs[1] === "admin-api"
+        ? "https://id.answerable.org/api/admin/openapi.json"
+        : "https://id.answerable.org/openapi.json"
     const { bundled } = page.data.getSchema()
     const { operations = [] } = page.data.getOpenAPIPageProps()
     const sections = operations.map((operation) => {
@@ -20,7 +22,7 @@ export async function getLLMText(page: InferPageType<typeof source>) {
       heading,
       page.data.description,
       ...sections,
-      `Schemas referenced by \`$ref\` are in the full contract: ${CONTRACT_URL}`,
+      `Schemas referenced by \`$ref\` are in the full contract: ${contractUrl}`,
     ]
       .filter(Boolean)
       .join("\n\n")

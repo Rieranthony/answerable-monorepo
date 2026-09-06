@@ -1,12 +1,13 @@
 # Answerable ID
 
-Identity and authorization service for Answerable. The schema contract and its migrations are in place; administrative write routes arrive with the admin API milestone.
+Identity and authorization service for Answerable. The schema, organisation sign-in, machine access and administrative read and write routes are implemented.
 
 ## HTTP surface
 
-- Better Auth: `/auth/*` behind an explicit allowlist: `GET /auth/ok`, `POST /auth/sign-in/sso`, `GET /auth/sso/callback`, `GET /auth/get-session`, and `POST /auth/sign-out`; it also exposes `POST /auth/oauth2/token` for `client_credentials` only. Every SSO administration/SAML route and every other OAuth-provider route remains unreachable until a later milestone. The provider's admin endpoints also require a session and privilege hooks that deny by default; client administration is designed with the admin API
-- Public OpenAPI contract: `/openapi.json` — the reachable routes only; regenerate the committed snapshot with `bun run openapi:export`
-- Admin OpenAPI: `/api/admin/openapi.json`
+- Better Auth: `/auth/*` behind an explicit allowlist: `GET /auth/ok`, `POST /auth/sign-in/sso`, `GET /auth/sso/callback`, `GET /auth/get-session`, and `POST /auth/sign-out`; it also exposes `POST /auth/oauth2/token` for `client_credentials` only. Every SSO administration/SAML route and every other OAuth-provider route remains unreachable until a later milestone. The provider's admin endpoints also require a session and privilege hooks that deny by default; client administration uses the admin API
+- Admin API: `/api/admin/v1` — caller, organisations, domains, SSO provider, users, sessions, members, groups and group members, clients and their owners/resource links, resources, entitlements, access views and audit events
+- Public OpenAPI contract: `/openapi.json` — the reachable routes only; snapshot: `apps/id/openapi.json`
+- Admin OpenAPI: `/api/admin/openapi.json` — snapshot: `apps/id/openapi.admin.json`; regenerate both snapshots with `bun run openapi:export`
 - Admin docs: `/api/admin/docs` in development and test only
 - Liveness: `/healthz` (no database query)
 - Readiness: `/readyz` (one `select 1`)
@@ -39,7 +40,7 @@ Coverage thresholds require 100% of application lines and functions. Tests, fixt
 
 Admin route families export their route table; `src/__tests__/admin-routes.ts` generates the negative suite for every table entry, while `src/http/admin/routes.test.ts` compares the tables to the OpenAPI document.
 
-`src/db/client.ts` owns the one process-wide pool and Drizzle construction. Database operations live in `src/db/queries`, grouped by domain. Vocabularies live once in `src/db/schema/vocabulary.ts`, and `src/db/schema/columns.ts` carries the identifier, timestamp, and CHECK conventions. The integration test freezes the PostgreSQL catalog, so a schema change is a deliberate edit to that snapshot. HTTP routes receive `db`, `auth`, and request metadata through typed Hono context. Future administrative routes call services, and services call these query modules—routes never contain Drizzle or SQL.
+`src/db/client.ts` owns the one process-wide pool and Drizzle construction. Database operations live in `src/db/queries`, grouped by domain. Vocabularies live once in `src/db/schema/vocabulary.ts`, and `src/db/schema/columns.ts` carries the identifier, timestamp, and CHECK conventions. The integration test freezes the PostgreSQL catalog, so a schema change is a deliberate edit to that snapshot. HTTP routes receive `db`, `auth`, and request metadata through typed Hono context. Administrative routes call services, and services call these query modules—routes never contain Drizzle or SQL.
 
 The default pool maximum is five connections per process and one in tests. Timeouts and the maximum are configurable through the environment. Session resolution remains route-scoped; liveness and public metadata do not resolve a session.
 

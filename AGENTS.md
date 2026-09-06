@@ -4,7 +4,7 @@ Answerable monorepo. Bun 1.3.1, Turborepo. Two apps: `apps/web` (Next.js 16: the
 
 ## Documentation
 
-Docs are MDX in `apps/web/content/docs`, rendered with Fumadocs at `/docs`. The API reference is generated from `apps/id/openapi.json`. Never edit that file by hand; run `bun run openapi:export` in `apps/id`.
+Docs are MDX in `apps/web/content/docs`, rendered with Fumadocs at `/docs`. The API reference is generated from `apps/id/openapi.json` and `apps/id/openapi.admin.json`. Never edit those files by hand; run `bun run openapi:export` in `apps/id`.
 
 Here's how we write documentation:
 
@@ -43,5 +43,5 @@ Here's how we write documentation:
 - First run: `bun --env-file=.env run --filter @answerable/id bootstrap`, then `bun --env-file=.env run --filter @answerable/id staff:add <email>` after signing in once.
 - Ports: web 47100 · id 47300 · postgres 47432 · redis 47379.
 - Style: Prettier without semicolons in `apps/web`, with semicolons in `apps/id`. Tests are colocated `*.test.ts`; `apps/id` enforces 100% line and function coverage, integration tests end in `.integration.test.ts`.
-- OpenAPI: `bun --env-file=.env run --filter @answerable/id openapi:export` regenerates `apps/id/openapi.json`; a test fails when it drifts.
+- OpenAPI: `bun --env-file=.env run --filter @answerable/id openapi:export` regenerates `apps/id/openapi.json` and `apps/id/openapi.admin.json`; tests fail when either drifts.
 - Commits: imperative, sentence case, no prefix, no trailing period.

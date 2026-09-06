@@ -20,7 +20,7 @@
     },
     "web#build": {
       "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", "../id/openapi.json"],
+      "inputs": ["$TURBO_DEFAULT$", "../id/openapi.json", "../id/openapi.admin.json"],
       "outputs": [".next/**", "!.next/cache/**"]
     },
     "dev": {

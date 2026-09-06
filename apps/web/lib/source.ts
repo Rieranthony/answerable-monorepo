@@ -3,7 +3,7 @@ import { pageSchema } from "fumadocs-core/source/schema"
 import { defineDocs } from "fumadocs-mdx/macro"
 import { z } from "zod"
 
-import { openapi } from "@/lib/openapi"
+import { adminOpenapi, openapi } from "@/lib/openapi"
 
 export const docs = defineDocs({
   dir: "content/docs",
@@ -16,11 +16,34 @@ export const docs = defineDocs({
 export const source = loader(
   {
     docs: docs.toFumadocsSource(),
-    openapi: await openapi.staticSource({
-      baseDir: "id/api",
-      per: "operation",
-      groupBy: "tag",
-    }),
+    openapi: {
+      files: [
+        ...(
+          await openapi.staticSource({
+            baseDir: "id/api",
+            per: "operation",
+            groupBy: "tag",
+          })
+        ).files,
+        ...(
+          await adminOpenapi.staticSource({
+            baseDir: "id/admin-api",
+            per: "operation",
+            groupBy: "tag",
+          })
+        ).files.map((file) =>
+          file.type === "page"
+            ? {
+                ...file,
+                data: {
+                  ...file.data,
+                  description: file.data.description ?? `${file.data.title}.`,
+                },
+              }
+            : file,
+        ),
+      ],
+    },
   },
   { baseUrl: "/docs", plugins: [openapi.loaderPlugin()] },
 )

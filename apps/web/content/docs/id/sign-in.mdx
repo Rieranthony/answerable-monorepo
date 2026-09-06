@@ -44,33 +44,33 @@ Sign out ends the current session and updates the cookie jar.
 
 ## What is checked
 
-| Check | Requirement |
-| --- | --- |
-| Issuer | The organisation's tenant-scoped issuer |
-| Microsoft directory | The Entra `tid` matches the organisation |
-| Google hosted domain | The Google `hd` matches the organisation and email domain |
-| Email | `email_verified` is `true` |
-| Account type | A member account, not a guest or personal account |
-| Email domain | Enabled for the organisation |
-| Answerable ID account | Active |
+| Check                 | Requirement                                               |
+| --------------------- | --------------------------------------------------------- |
+| Issuer                | The organisation's tenant-scoped issuer                   |
+| Microsoft directory   | The Entra `tid` matches the organisation                  |
+| Google hosted domain  | The Google `hd` matches the organisation and email domain |
+| Email                 | `email_verified` is `true`                                |
+| Account type          | A member account, not a guest or personal account         |
+| Email domain          | Enabled for the organisation                              |
+| Answerable ID account | Active                                                    |
 
 ## When sign-in is refused
 
 The code arrives on the error page as `?error=<code>`.
 
-| Code | Meaning | What to do |
-| --- | --- | --- |
-| `provider_not_found` | No company sign-in was found for the email address. | Check the address. Ask your IT team whether your organisation uses Answerable ID. |
-| `organization_disabled` | Sign-in has been paused for your organisation. | Ask your IT team for help. |
-| `directory_mismatch` | The account belongs to a different company directory. | Use the work account provided by your organisation. |
-| `guest_account` | The account is a guest in your organisation's directory. | Use a member account or ask your IT team for help. |
-| `personal_account` | Personal accounts cannot sign in. | Use the account provided by your organisation. |
-| `email_unverified` | The provider has not confirmed the email address. | Verify the address with the provider, then try again. |
-| `domain_not_allowed` | The email domain is not enabled for Answerable ID. | Ask your IT team or use another work email. |
-| `hosted_domain_mismatch` | The account is managed by a different organisation. | Use your company account. |
-| `user_disabled` | The Answerable ID account is disabled. | Ask your IT team for help. |
-| `identity_conflict` | The company account is connected to another Answerable ID account. | Ask your IT team for help. |
-| `email_conflict` | The email address belongs to another Answerable ID account. | Ask your IT team for help. |
+| Code                     | Meaning                                                            | What to do                                                                        |
+| ------------------------ | ------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| `provider_not_found`     | No company sign-in was found for the email address.                | Check the address. Ask your IT team whether your organisation uses Answerable ID. |
+| `organization_disabled`  | Sign-in has been paused for your organisation.                     | Ask your IT team for help.                                                        |
+| `directory_mismatch`     | The account belongs to a different company directory.              | Use the work account provided by your organisation.                               |
+| `guest_account`          | The account is a guest in your organisation's directory.           | Use a member account or ask your IT team for help.                                |
+| `personal_account`       | Personal accounts cannot sign in.                                  | Use the account provided by your organisation.                                    |
+| `email_unverified`       | The provider has not confirmed the email address.                  | Verify the address with the provider, then try again.                             |
+| `domain_not_allowed`     | The email domain is not enabled for Answerable ID.                 | Ask your IT team or use another work email.                                       |
+| `hosted_domain_mismatch` | The account is managed by a different organisation.                | Use your company account.                                                         |
+| `user_disabled`          | The Answerable ID account is disabled.                             | Ask your IT team for help.                                                        |
+| `identity_conflict`      | The company account is connected to another Answerable ID account. | Ask your IT team for help.                                                        |
+| `email_conflict`         | The email address belongs to another Answerable ID account.        | Ask your IT team for help.                                                        |
 
 ## Sessions
 
@@ -79,3 +79,21 @@ Sessions use cookies. Browser calls from another origin need `credentials: "incl
 Signing out ends the session.
 
 Sign-in for apps through OIDC is [not yet available](/docs/id#today-and-next).
+
+## Machine access
+
+```bash
+curl https://id.answerable.org/auth/oauth2/token \
+  --user "$CLIENT_ID:$CLIENT_SECRET" \
+  --data-urlencode 'grant_type=client_credentials' \
+  --data-urlencode 'resource=https://id.answerable.org/api/admin' \
+  --data-urlencode 'scope=org:read'
+```
+
+**Machine token.** HTTP Basic authenticates the client. The returned JWT is bound to one resource; it represents the client, not a signed-in user. Ask Answerable staff for credentials and the required grants, then follow [Manage your organisation](/docs/id/manage).
+
+| Code                     | Meaning                                              | What to do                                                                                 |
+| ------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `unsupported_grant_type` | Only `client_credentials` is supported today.        | Use that grant; user-facing OIDC grants: [Not yet.](/docs/id#today-and-next)               |
+| `invalid_client`         | Client authentication or client eligibility failed.  | Check credentials, client status, organisation ownership and the resource link with staff. |
+| `invalid_scope`          | Requested scopes exceed the client's allowed scopes. | Request only granted scopes or ask staff to review them.                                   |

@@ -49,3 +49,20 @@ test("the public OpenAPI snapshot matches the served document", async () => {
     }
   }
 });
+
+test("the admin OpenAPI snapshot matches the served document", async () => {
+  const environment = testEnvironment();
+  const auth = createAuth(connection.db, environment);
+  const app = createApp({ auth, db: connection.db, environment });
+  const response = await app.request("/api/admin/openapi.json");
+  const document = await response.json();
+  const snapshot = await Bun.file(
+    new URL("../openapi.admin.json", import.meta.url),
+  ).json();
+
+  expect(response.status).toBe(200);
+  expect(
+    withoutServers(document),
+    "Admin OpenAPI snapshot drifted; run `bun run openapi:export` from apps/id.",
+  ).toEqual(withoutServers(snapshot));
+});

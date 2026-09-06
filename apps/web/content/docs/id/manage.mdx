@@ -1,0 +1,176 @@
+---
+title: Manage your organisation
+description: "Use the admin API to read your organisation's access and audit log, manage members, and revoke sessions."
+---
+
+**Organisation IT admins.** Use this API for your own organisation. Answerable staff use the same API with platform scopes.
+
+## Get a token
+
+```bash
+curl https://id.answerable.org/auth/oauth2/token \
+  --user "$CLIENT_ID:$CLIENT_SECRET" \
+  --data-urlencode 'grant_type=client_credentials' \
+  --data-urlencode 'resource=https://id.answerable.org/api/admin' \
+  --data-urlencode 'scope=org:read'
+```
+
+**Credentials.** Ask Answerable staff for a client owned by your organisation, with a link to the admin API resource and the required scopes. Requesting a scope does not grant it: session authority comes from entitlements to that resource; machine authority is limited by the client's allowed scopes and resource link.
+
+**Token.** Set `TOKEN` to the response's `access_token`. This bearer JWT is bound to the admin API resource.
+
+**Browser session.** The [sign-in session cookie](/docs/id/sign-in#sessions) works too. Send a trusted `Origin`; browser calls across origins need `credentials: "include"`.
+
+## Scopes
+
+| Scope            | Allows                                                                                               |
+| ---------------- | ---------------------------------------------------------------------------------------------------- |
+| `platform:read`  | Staff: read across organisations, including users, sessions and audit events.                        |
+| `platform:users` | Staff: manage users, member windows, removals and session revocation.                                |
+| `platform:write` | Staff: manage organisations, domains, SSO, groups, clients, resources and entitlements.              |
+| `org:read`       | Read your organisation, domains, SSO, members, groups, entitlements, target access and audit events. |
+| `org:users`      | Change member windows, remove members, read member access, and list or revoke member sessions.       |
+| `org:write`      | Reserved for organisation configuration; self-service writes: [Not yet.](/docs/id#today-and-next)    |
+
+**Route tiers.** `x-tier: platform` means staff only; `x-tier: tenant` permits an organisation to reach the route for itself. Scopes are separate: request each scope you need. Every write is audited.
+
+## Read your authority
+
+```bash
+curl https://id.answerable.org/api/admin/v1/me \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Grants.** The response identifies the caller and their organisation IDs and scopes. Set `ORGANIZATION_ID` to your organisation's ID.
+
+## List members
+
+```bash
+curl "https://id.answerable.org/api/admin/v1/organizations/$ORGANIZATION_ID/members?limit=50" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Member IDs.** Set `MEMBER_ID` to an ID from `items` to read that member's access.
+
+## Read a member's access
+
+```bash
+curl https://id.answerable.org/auth/oauth2/token \
+  --user "$CLIENT_ID:$CLIENT_SECRET" \
+  --data-urlencode 'grant_type=client_credentials' \
+  --data-urlencode 'resource=https://id.answerable.org/api/admin' \
+  --data-urlencode 'scope=org:read org:users'
+
+# Set TOKEN to the new access_token before this request.
+curl "https://id.answerable.org/api/admin/v1/organizations/$ORGANIZATION_ID/members/$MEMBER_ID/access" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Required scope.** This view needs `org:users`. It returns the member's effective access through their current grants.
+
+## List audit events
+
+```bash
+curl "https://id.answerable.org/api/admin/v1/organizations/$ORGANIZATION_ID/audit-events?from=2026-09-01T00:00:00Z" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Time filter.** `from` accepts a UTC timestamp. The response contains only your organisation's events.
+
+## What you can do today
+
+Paths below start at `/api/admin/v1`; `{org}` means your organisation ID.
+
+| Family          | Tenant-tier routes                                                                                                                  | Scope                     |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| Caller          | `GET /me`                                                                                                                           | Any effective admin grant |
+| Organisation    | `GET /organizations/{org}`                                                                                                          | `org:read`                |
+| Domains         | `GET /organizations/{org}/domains`                                                                                                  | `org:read`                |
+| SSO provider    | `GET /organizations/{org}/sso-provider` (secret redacted)                                                                           | `org:read`                |
+| Members         | `GET /organizations/{org}/members`, `GET /organizations/{org}/members/{memberId}`                                                   | `org:read`                |
+| Member changes  | `PATCH /organizations/{org}/members/{memberId}` (window), `DELETE /organizations/{org}/members/{memberId}`                          | `org:users`               |
+| Member sessions | `GET` and `DELETE /organizations/{org}/members/{memberId}/sessions`                                                                 | `org:users`               |
+| Groups          | `GET /organizations/{org}/groups`, `GET /organizations/{org}/groups/{groupId}`, `GET /organizations/{org}/groups/{groupId}/members` | `org:read`                |
+| Entitlements    | `GET /organizations/{org}/entitlements`, `GET /organizations/{org}/entitlements/{entitlementId}`                                    | `org:read`                |
+| Member access   | `GET /organizations/{org}/members/{memberId}/access`                                                                                | `org:users`               |
+| Target access   | `GET /organizations/{org}/access?client=…` or `?resource=…`                                                                         | `org:read`                |
+| Audit events    | `GET /organizations/{org}/audit-events`                                                                                             | `org:read`                |
+
+## Self-service
+
+| Capability                        | Status                              | Workaround                                                               |
+| --------------------------------- | ----------------------------------- | ------------------------------------------------------------------------ |
+| Add or verify domains             | [Not yet.](/docs/id#today-and-next) | Ask Answerable staff to configure domains.                               |
+| Configure your own SSO            | [Not yet.](/docs/id#today-and-next) | Ask Answerable staff to configure the provider.                          |
+| Manage groups or group membership | [Not yet.](/docs/id#today-and-next) | Ask Answerable staff; directory-managed groups cannot be edited by hand. |
+| Assign apps through entitlements  | [Not yet.](/docs/id#today-and-next) | Ask Answerable staff to change entitlements.                             |
+| Manage users beyond your members  | [Not yet.](/docs/id#today-and-next) | Ask Answerable staff for account changes.                                |
+
+## Errors
+
+```json
+{
+  "type": "about:blank",
+  "title": "Insufficient scope",
+  "status": 403,
+  "code": "insufficient_scope",
+  "request_id": "request-id"
+}
+```
+
+**Format.** Admin errors use RFC 9457 `application/problem+json`. Branch on the stable `code`; optional `detail` and extra fields give context. Keep `request_id` when asking for help.
+
+| Code                    | Meaning                                                        | What to do                                                             |
+| ----------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `unauthenticated`       | No valid session or bearer credentials.                        | Sign in or obtain a token.                                             |
+| `invalid_token`         | The bearer token is invalid, expired or for another resource.  | Obtain a fresh token for the admin API resource.                       |
+| `insufficient_scope`    | The caller lacks the route's required authority.               | Check `/me`; ask staff for the required grant, then request its scope. |
+| `not_found`             | The record is absent or outside your organisation's authority. | Check the IDs and your organisation.                                   |
+| `validation_failed`     | A parameter or body failed validation.                         | Correct the fields identified in the response.                         |
+| `conflict`              | A record already exists with a unique value.                   | Read the existing record and use a different value or update it.       |
+| `user_disabled`         | The session's user account is disabled.                        | Ask Answerable staff to review the account.                            |
+| `origin_required`       | Cookie-authenticated writes need an `Origin`.                  | Send the trusted browser origin or use a bearer token.                 |
+| `untrusted_origin`      | The origin is not allowed.                                     | Use an approved origin; ask staff to check the allowlist.              |
+| `client_unowned`        | The client has no owning organisation.                         | Ask staff to assign its owner, then obtain a new token.                |
+| `organization_disabled` | The client's organisation is disabled.                         | Ask staff to review the organisation.                                  |
+| `reference_violation`   | A related record is missing or still referenced.               | Check related IDs and remove dependencies before erasure.              |
+| `constraint_violation`  | A value breaks a data constraint.                              | Check the field requirements and effective windows.                    |
+| `http_error`            | The request failed an HTTP check.                              | Check the status and detail, then correct the request.                 |
+| `internal_error`        | The service could not complete the request.                    | Retry; report the request ID if it persists.                           |
+
+**Staff lifecycle errors.** These apply to platform writes.
+
+| Code                            | Meaning                                         | What to do                                         |
+| ------------------------------- | ----------------------------------------------- | -------------------------------------------------- |
+| `organization_already_active`   | Organisation is already enabled.                | Keep its current state.                            |
+| `organization_already_disabled` | Organisation is already disabled.               | Keep its current state.                            |
+| `organization_has_clients`      | Owned clients prevent erasure.                  | Reassign the clients before erasure.               |
+| `domain_already_active`         | Domain is already enabled.                      | Keep its current state.                            |
+| `domain_already_disabled`       | Domain is already disabled.                     | Keep its current state.                            |
+| `group_already_active`          | Group is already enabled.                       | Keep its current state.                            |
+| `group_already_disabled`        | Group is already disabled.                      | Keep its current state.                            |
+| `group_directory_managed`       | Group membership comes from a directory.        | Change membership in the upstream directory.       |
+| `entitlement_already_active`    | Entitlement is already enabled.                 | Keep its current state.                            |
+| `entitlement_already_disabled`  | Entitlement is already disabled.                | Keep its current state.                            |
+| `client_already_active`         | Client is already enabled.                      | Keep its current state.                            |
+| `client_already_disabled`       | Client is already disabled.                     | Keep its current state.                            |
+| `client_has_no_secret`          | Client does not use a shared secret.            | Check the client's authentication method.          |
+| `resource_already_active`       | Resource is already enabled.                    | Keep its current state.                            |
+| `resource_already_disabled`     | Resource is already disabled.                   | Keep its current state.                            |
+| `resource_protected`            | The admin resource cannot be changed this way.  | Leave the protected resource in place.             |
+| `resource_has_entitlements`     | Entitlements prevent resource erasure.          | Remove those entitlements first.                   |
+| `user_already_active`           | User is already active.                         | Keep its current state.                            |
+| `user_already_disabled`         | User is already disabled.                       | Keep its current state.                            |
+| `user_inert`                    | The imported user has not signed in.            | Let the user activate through their first sign-in. |
+| `user_not_disabled`             | Email retirement requires a disabled user.      | Disable the user first.                            |
+| `user_email_retired`            | Email retirement is terminal.                   | Do not try to re-enable this account.              |
+| `user_email_already_retired`    | Email is already retired.                       | Keep its current state.                            |
+| `confirmation_mismatch`         | Erasure confirmation does not match the target. | Check the target and send its exact identifier.    |
+
+## Pagination
+
+**Lists** accept `limit` (1–200, default 50) and an optional `cursor`.
+Pass the returned `nextCursor` as `cursor` on the next request, keeping the same filters.
+Stop when `nextCursor` is `null`.
+
+See the [admin API reference](/docs/id/admin-api) for request and response schemas.

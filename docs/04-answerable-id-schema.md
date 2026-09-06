@@ -3,13 +3,26 @@
 > **TL;DR**
 > - **Decides:** the approved first schema, ownership boundaries, identifiers, naming conventions, and invariants.
 > - **Rule:** identifiers are application-generated UUIDv7 stored as PostgreSQL `uuid`, with two named exceptions; administrative changes go through the Hono API.
-> - **Not here:** admin write routes, the login and consent page implementation, and the other deferred capabilities.
+> - **Not here:** the detailed HTTP reference (generated from the public and admin contracts), OIDC grants for apps, and OAuth 2.1 for MCP servers.
 
 ## Service contract
 
-Answerable ID lives in `apps/id`. Better Auth is mounted at `/auth/*` under `https://id.answerable.org`; the browser-facing login, consent, and error pages live in `apps/web` and are addressed by `AUTH_PAGES_URL`. The custom administrative contract lives under `/api/admin/*`; staff read audit events at `/api/admin/v1/audit-events`, and organisation admins read their slice at `/api/admin/v1/organizations/:organizationId/audit-events`. The generated contract is `/api/admin/openapi.json`, with interactive docs at `/api/admin/docs` outside production. The public contract is `/openapi.json`: exactly the routes the allowlist exposes, snapshotted in `apps/id/openapi.json`.
+Answerable ID lives in `apps/id`. Better Auth is mounted at `/auth/*` under `https://id.answerable.org`; the browser login, consent and error pages live in `apps/web` and use `AUTH_PAGES_URL`.
 
-Better Auth HTTP routes are deny-by-default through an application allowlist. It currently exposes exactly `POST /auth/sign-in/sso`, `GET /auth/sso/callback`, `GET /auth/get-session`, and `POST /auth/sign-out`; it also exposes `POST /auth/oauth2/token` for `client_credentials` only. The OAuth provider and JWT plugins are registered, but the remaining OAuth provider routes open only in the provider milestone. Better Auth's organization and client mutation endpoints are internal implementation tools, not the supported administration API. The provider's own client and resource endpoints additionally require a Better Auth session and its `clientPrivileges` and `resourcePrivileges` hooks, which deny by default; clients, resources, groups, members, entitlements, users and sessions are administered through `/api/admin/v1/clients`, `/api/admin/v1/resources`, `/api/admin/v1/organizations/:organizationId/groups`, `/api/admin/v1/organizations/:organizationId/members`, `/api/admin/v1/organizations/:organizationId/entitlements`, `/api/admin/v1/users` and `/api/admin/v1/users/:userId/sessions`. Organisation, domain, SSO provider, group, member, client, resource, entitlement, user and session operations are versioned Hono routes backed by services and grouped query modules.
+The admin API lives under `/api/admin/v1`, with versioned Hono routes calling services and grouped query modules:
+
+- **Caller.** `/me` returns the authenticated principal and effective grants.
+- **Organisation configuration.** Organisations support list, create, read, update, disable, enable and erase; nested domains and the SSO provider support configuration and reads.
+- **People.** Users support list, read, disable, enable, email retirement and erase; members support reads, window changes and removal, with user- and member-scoped session listing and revocation.
+- **Access configuration.** Groups and group members, clients (including secret rotation, ownership and resource links), resources and entitlements have administrative routes.
+- **Access reviews.** `…/members/{memberId}/access` and `…/access?client=|resource=` expose effective access.
+- **Audit.** Staff read `/audit-events`; organisation admins read `/organizations/{organizationId}/audit-events`. Every administrative write is audited.
+
+Authentication accepts a Better Auth session cookie with a trusted origin or a bearer JWT for the admin resource. Entitlements grant the six `platform:*` and `org:*` scopes; `x-tier` marks staff-only (`platform`) and organisation-scoped (`tenant`) operations. Tenant admins can read their organisation's configuration and access, change member windows, remove members, and list or revoke member sessions; self-service configuration writes are not yet available.
+
+**Contracts.** `/openapi.json` describes reachable public routes and is snapshotted in `apps/id/openapi.json`; `/api/admin/openapi.json` describes admin routes and is snapshotted in `apps/id/openapi.admin.json`. `bun run openapi:export` from `apps/id` generates both. The web docs publish both references; `/api/admin/docs` also provides interactive admin docs outside production.
+
+Better Auth HTTP routes are deny-by-default. The allowlist exposes `GET /auth/ok`, `POST /auth/sign-in/sso`, `GET /auth/sso/callback`, `GET /auth/get-session`, `POST /auth/sign-out` and `POST /auth/oauth2/token` for `client_credentials` only. The OAuth provider and JWT plugins are registered; other OAuth provider routes are not yet exposed. Better Auth's organisation and client mutation endpoints are internal tools, not the supported administration API. Its client and resource endpoints additionally require a session and privilege hooks that deny by default.
 
 ## Entity relationship diagram
 
@@ -110,7 +123,7 @@ Better Auth columns beyond its own field set (`users.status`, `users.disabled_at
 
 ## How the policy reads the schema
 
-At every grant the policy applies `isEffective` to the member, group-membership, and entitlement rows. For a grant with a member, it collects that member's effective groups and effective entitlements in the organization whose principal is the organization, one of those groups, or the member, and whose target is the requesting client (at login) or the requested resource (at an MCP token request).
+For implemented admin access checks, the policy applies `isEffective` to the member, group-membership, and entitlement rows. For a session, it collects the member's effective groups and entitlements for the admin resource, where the principal is the organisation, one of those groups, or the member. Applying entitlements at every app or MCP token grant is not yet implemented; see [`02-plan.md`](02-plan.md).
 
 `effectiveGrants` in `src/db/queries/grants.ts` implements this computation for resource targets and returns per-organisation scope unions. The admin API’s access views (`…/members/{memberId}/access` and `…/access?client=|resource=`) expose this computation for access reviews.
 
@@ -124,9 +137,9 @@ Machine callers are authorized by the per-client scope ceiling and `oauth_client
 
 - **Group sync from directories.** The federation milestone maps the upstream `groups` claim (Entra object ids, Google groups) onto `groups.external_id` and refreshes `group_members` at login; SCIM comes later.
 - **Encrypting upstream IdP tokens.** `accounts.access_token`, `refresh_token`, and `id_token` are stored as Better Auth writes them. Enable `account.encryptOAuthTokens` before the first real login so no plaintext token row ever exists; it binds those rows to `BETTER_AUTH_SECRET`, which the key-custody milestone must account for. The same milestone decides how `jwks.private_key`, encrypted with the same secret today, moves to a KMS or a separate key-encryption key.
-- **Domain verification** (`verified_at`). Domains are operator-seeded from tenant configuration; verification becomes mandatory the day organization admins can add their own.
+- **Domain verification** (`verified_at`). Domains are configured by staff through the admin API; verification becomes mandatory the day organization admins can add their own.
 - An index on `users.retired_email`.
 - A CHECK excluding `.invalid` from `organization_domains`.
-- The login and consent pages the provider redirects to, legacy-import tooling, SCIM, DPoP, token-exchange, outbox, and Redis tables do not exist yet. Organisations are administered through `/api/admin/v1/organizations`.
+- OIDC consent grants, legacy-import tooling, SCIM, DPoP, token-exchange, outbox, and Redis tables do not exist yet. The browser login, consent and error pages exist; OIDC grants for apps are not yet available.
 
 Migrations live in `apps/id/drizzle` and are generated with `bun run db:generate` from `apps/id`. The disposable test database is built from the committed migrations; a drift test fails when the schema and migrations disagree.
