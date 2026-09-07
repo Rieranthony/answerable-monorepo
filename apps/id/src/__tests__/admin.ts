@@ -3,8 +3,10 @@ import { and, eq, gte, sql } from "drizzle-orm";
 import { generateKeyPair, SignJWT } from "jose";
 import { createApp } from "../app.ts";
 import { createAuth } from "../auth.ts";
-import { addStaff, bootstrap, platformScopes } from "../bootstrap.ts";
+import { bootstrap, platformScopes, systemActor } from "../bootstrap.ts";
 import { createDatabase } from "../db/client.ts";
+import { upsertGroupMember } from "../db/queries/groups.ts";
+import { createClient, linkResource } from "../services/clients.ts";
 import { createOrganizationDomain } from "../db/queries/organization-domains.ts";
 import { createSsoProvider } from "../db/queries/sso-providers.ts";
 import {
@@ -65,34 +67,44 @@ export async function createAdminFixture() {
       db,
       environment,
     });
-    const bootstrapped = await bootstrap(db, {
+    const bootstrapped = await bootstrap(db, systemActor("fixture"), {
       platformOrganizationSlug: environment.platformOrganizationSlug,
       platformOrganizationName: "Answerable",
-      platformDomain: "answerable.example.com",
-      sso: {
-        issuer: issuer.origin,
-        clientId: "platform-sso",
-        clientSecret: "secret",
-      },
       adminResourceIdentifier: environment.adminResourceIdentifier,
-      bootstrapClientId: "answerable-bootstrap",
     });
-    expect(bootstrapped.client.clientSecret).toBeString();
+    const client = await createClient(db, systemActor("fixture"), {
+      clientId: "answerable-bootstrap",
+      name: "Admin fixture",
+      organizationId: bootstrapped.organization.id,
+      grantTypes: ["client_credentials"],
+      tokenEndpointAuthMethod: "client_secret_basic",
+      redirectUris: [],
+      clientCredentialsScopes: [...platformScopes],
+    });
+    await linkResource(
+      db,
+      systemActor("fixture"),
+      client.clientId,
+      environment.adminResourceIdentifier,
+    );
+    expect(client.clientSecret).toBeString();
     const platform = {
       organizationId: bootstrapped.organization.id,
       slug: bootstrapped.organization.slug,
+      groupId: bootstrapped.group.id,
       adminResource: environment.adminResourceIdentifier,
       client: {
-        clientId: bootstrapped.client.clientId,
-        secret: bootstrapped.client.clientSecret!,
+        clientId: client.clientId,
+        secret: client.clientSecret!,
       },
     };
-    async function organization(slug: string) {
-      const organizationId = createId();
+    async function organization(slug: string, seededId?: string) {
+      const organizationId = seededId ?? createId();
       const domain = `${slug}.example.com`;
-      await db
-        .insert(organizations)
-        .values({ id: organizationId, slug, name: slug });
+      if (!seededId)
+        await db
+          .insert(organizations)
+          .values({ id: organizationId, slug, name: slug });
       await createOrganizationDomain(db, { organizationId, domain });
       await createSsoProvider(db, {
         organizationId,
@@ -109,6 +121,7 @@ export async function createAdminFixture() {
       });
       return { organizationId, slug };
     }
+    await organization(platform.slug, platform.organizationId);
     const tenant = await organization("tenant");
     const outsider = await organization("outsider");
     const principals = {} as Record<Name, FixturePrincipal>;
@@ -207,7 +220,11 @@ export async function createAdminFixture() {
           .join("; "),
       };
       if (name === "platformAdmin") {
-        await addStaff(db, { platformOrganizationSlug: platform.slug, email });
+        await upsertGroupMember(db, {
+          organizationId: platform.organizationId,
+          groupId: platform.groupId,
+          memberId: member!.memberId,
+        });
       }
       if (scopes.length) {
         await db.insert(entitlements).values({

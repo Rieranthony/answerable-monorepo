@@ -30,6 +30,7 @@ export function testEnvironment(
     rootAdminBreakGlass: false,
     openApiEnabled: true,
     platformOrganizationSlug: "answerable",
+    platformOrganizationName: "Answerable",
     adminResourceIdentifier: "http://localhost:47300/api/admin",
     ...overrides,
   };

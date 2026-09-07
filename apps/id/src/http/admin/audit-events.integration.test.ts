@@ -37,7 +37,7 @@ test("staff filter all audit events and walk pages without gaps", async () => {
   const all = await read("/audit-events", { limit: "200" });
   for (const action of [
     "bootstrap.applied",
-    "staff.added",
+    "client.created",
     "auth.signin.succeeded",
     "admin.denied",
   ])

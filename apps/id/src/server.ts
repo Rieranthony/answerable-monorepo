@@ -2,7 +2,7 @@ import { loadEnvironment } from "./env.ts";
 import { startRuntime } from "./runtime.ts";
 
 const environment = loadEnvironment();
-const runtime = startRuntime(environment);
+const runtime = await startRuntime(environment);
 
 process.once("SIGINT", runtime.shutdown);
 process.once("SIGTERM", runtime.shutdown);

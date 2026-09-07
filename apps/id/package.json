@@ -11,8 +11,6 @@
     "lint": "eslint src scripts drizzle.config.ts --max-warnings 0",
     "test": "bun run db:test:migrate && bun run test:coverage",
     "test:coverage": "bun test",
-    "bootstrap": "bun scripts/bootstrap.ts",
-    "staff:add": "bun scripts/staff-add.ts",
     "openapi:export": "bun scripts/export-openapi.ts",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "bun scripts/migrate.ts",

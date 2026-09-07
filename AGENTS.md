@@ -40,7 +40,7 @@ Here's how we write documentation. These are Lee Robinson's ten principles (http
 ## Repo card
 
 - Gates, from the root: `bun run typecheck` · `bun run lint` · `bun run build` · `bun --filter web test` · `bun --filter @answerable/id test:coverage` (needs Postgres: `bun run env:up`, then `bun --filter @answerable/id db:test:migrate`). CI runs the same.
-- First run: `bun --env-file=.env run --filter @answerable/id bootstrap`, then `bun --env-file=.env run --filter @answerable/id staff:add <email>` after signing in once.
+- First run: Set `ROOT_ADMIN_SECRET`, start the service (the platform organisation is seeded at boot), then with the root bearer add the platform domain and SSO provider, sign in once, and add yourself to the `platform-admins` group; root locks itself afterwards.
 - Ports: web 47100 · id 47300 · postgres 47432 · redis 47379.
 - Style: Prettier without semicolons in `apps/web`, with semicolons in `apps/id`. Tests are colocated `*.test.ts`; `apps/id` enforces 100% line and function coverage, integration tests end in `.integration.test.ts`.
 - OpenAPI: `bun --env-file=.env run --filter @answerable/id openapi:export` regenerates `apps/id/openapi.json` and `apps/id/openapi.admin.json`; tests fail when either drifts.

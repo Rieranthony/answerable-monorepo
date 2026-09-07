@@ -2,7 +2,12 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import { createApp } from "../app.ts";
 import { createAuth } from "../auth.ts";
-import { addStaff, bootstrap } from "../bootstrap.ts";
+import {
+  bootstrap,
+  platformAdminsGroupSlug,
+  platformScopes,
+  systemActor,
+} from "../bootstrap.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import { auditEvents } from "../db/schema/index.ts";
 import { signInThroughIdp } from "../__tests__/federation.ts";
@@ -94,19 +99,41 @@ test("integration: root locks after a human administrator and supports break-gla
     .where(eq(auditEvents.action, "organization.created"));
   expect(writes).toHaveLength(1);
   expect(writes[0]).toMatchObject({ actorType: "system", actorId: "root" });
-  await bootstrap(db, {
+  await bootstrap(db, systemActor("startup"), {
     platformOrganizationSlug: environment.platformOrganizationSlug,
     platformOrganizationName: "Answerable",
-    platformDomain: "answerable.example.com",
-    sso: {
-      issuer: issuer.origin,
-      clientId: "platform-sso",
-      clientSecret: "secret",
-    },
     adminResourceIdentifier: environment.adminResourceIdentifier,
-    bootstrapClientId: "answerable-bootstrap",
   });
   expect((await app.request(me, { headers })).status).toBe(200);
+  const organisationsResponse = await app.request(
+    `/api/admin/v1/organizations?q=${environment.platformOrganizationSlug}`,
+    { headers },
+  );
+  expect(organisationsResponse.status).toBe(200);
+  const organisations = (await organisationsResponse.json()) as {
+    items: { id: string; slug: string }[];
+  };
+  const platform = organisations.items.find(
+    (row) => row.slug === environment.platformOrganizationSlug,
+  )!;
+  expect(platform).toBeDefined();
+  const platformPath = `/api/admin/v1/organizations/${platform.id}`;
+  const domain = await app.request(`${platformPath}/domains`, {
+    method: "POST",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({ domain: "answerable.example.com" }),
+  });
+  expect(domain.status).toBe(201);
+  const provider = await app.request(`${platformPath}/sso-provider`, {
+    method: "PUT",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      issuer: issuer.origin,
+      domain: "answerable.example.com",
+      oidc: { clientId: "platform-sso", clientSecret: "secret" },
+    }),
+  });
+  expect(provider.status).toBe(201);
   const email = "admin@answerable.example.com";
   issuer.enqueue({
     sub: "root-test-admin",
@@ -122,9 +149,54 @@ test("integration: root locks after a human administrator and supports break-gla
   expect(signedIn.location).toBe(callbackURL);
   expect(signedIn.cookies.length).toBeGreaterThan(0);
   expect((await app.request(me, { headers })).status).toBe(200);
-  await addStaff(db, {
-    platformOrganizationSlug: environment.platformOrganizationSlug,
-    email,
+  const groupsResponse = await app.request(`${platformPath}/groups`, {
+    headers,
+  });
+  expect(groupsResponse.status).toBe(200);
+  const groups = (await groupsResponse.json()) as {
+    items: { id: string; slug: string }[];
+  };
+  const group = groups.items.find(
+    (row) => row.slug === platformAdminsGroupSlug,
+  )!;
+  expect(group).toBeDefined();
+  const membersResponse = await app.request(
+    `${platformPath}/members?q=${encodeURIComponent(email)}`,
+    { headers },
+  );
+  expect(membersResponse.status).toBe(200);
+  const members = (await membersResponse.json()) as {
+    items: { id: string; email: string }[];
+  };
+  expect(members.items).toHaveLength(1);
+  expect(members.items[0]!.email).toBe(email);
+  const staff = await app.request(
+    `${platformPath}/groups/${group.id}/members/${members.items[0]!.id}`,
+    {
+      method: "PUT",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: "{}",
+    },
+  );
+  expect(staff.status).toBe(201);
+  const human = await app.request(me, {
+    headers: {
+      Cookie: signedIn.cookies
+        .map((value) => value.split(";", 1)[0])
+        .join("; "),
+      Origin: "https://console.example.com",
+    },
+  });
+  expect(human.status).toBe(200);
+  expect(await human.json()).toMatchObject({
+    principal: { type: "user", email },
+    grants: [
+      {
+        organizationId: platform.id,
+        organizationSlug: platform.slug,
+        scopes: [...platformScopes],
+      },
+    ],
   });
   const before = new Set(
     (await db.select().from(auditEvents)).map((row) => row.id),

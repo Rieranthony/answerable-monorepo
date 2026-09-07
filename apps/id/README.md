@@ -30,7 +30,7 @@ bun --filter @answerable/id build
 bun --filter @answerable/id test
 ```
 
-**First run.** Set the bootstrap variables in `.env`, then run `bun --env-file=.env run --filter @answerable/id bootstrap` (over the tailnet in production). Store the printed client secret. Sign in once at the login page, then run `bun --env-file=.env run --filter @answerable/id staff:add you@answerable.org` to join the platform admins group. Bootstrap is safe to re-run; existing client secrets are preserved.
+**First run.** Set `ROOT_ADMIN_SECRET`, start the service (the platform organisation is seeded at boot), then with the root bearer add the platform domain and SSO provider, sign in once, and add yourself to the `platform-admins` group; root locks itself afterwards.
 
 `db:generate` generates migrations in `apps/id/drizzle` without a database connection. `db:migrate` applies committed migrations to `DATABASE_URL`. `db:test:migrate` drops the `public` and `drizzle` schemas, recreates `public`, and applies the committed migrations, so the catalog contract test guards them. Both safety gates refuse any database whose name is not exactly `answerable_id_test`; data in that explicitly disposable database is not recoverable after a run.
 

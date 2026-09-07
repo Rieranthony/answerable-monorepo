@@ -9,6 +9,8 @@
 
 Answerable ID lives in `apps/id`. Better Auth is mounted at `/auth/*` under `https://id.answerable.org`; the browser login, consent and error pages live in `apps/web` and use `AUTH_PAGES_URL`.
 
+The platform organisation, admin API resource, `platform-admins` staff group and its entitlement are seeded at startup. Configure the platform domain, SSO provider and first staff member through the admin API using the root bearer.
+
 The admin API lives under `/api/admin/v1`, with versioned Hono routes calling services and grouped query modules:
 
 - **Caller.** `/me` returns the authenticated principal and effective grants.

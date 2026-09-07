@@ -39,6 +39,7 @@ describe("unit: environment", () => {
       rootAdminBreakGlass: false,
       openApiEnabled: true,
       platformOrganizationSlug: "answerable",
+      platformOrganizationName: "Answerable",
       adminResourceIdentifier: "http://localhost:47300/api/admin",
     });
   });
@@ -67,6 +68,7 @@ describe("unit: environment", () => {
       DATABASE_CONNECTION_TIMEOUT_MS: "3000",
       OPENAPI_ENABLED: "false",
       PLATFORM_ORGANIZATION_SLUG: "platform-org",
+      PLATFORM_ORGANIZATION_NAME: " Custom platform ",
       ADMIN_RESOURCE_IDENTIFIER: "https://admin.example.com/api/admin/",
       BETTER_AUTH_TRUSTED_ORIGINS:
         "https://chat.example.com, https://admin.example.com",
@@ -81,6 +83,7 @@ describe("unit: environment", () => {
       databaseConnectionTimeoutMs: 3_000,
       openApiEnabled: false,
       platformOrganizationSlug: "platform-org",
+      platformOrganizationName: "Custom platform",
       adminResourceIdentifier: "https://admin.example.com/api/admin",
       trustedOrigins: ["https://chat.example.com", "https://admin.example.com"],
       authPagesUrl: "https://auth.example.com",
@@ -108,6 +111,17 @@ describe("unit: environment", () => {
         ADMIN_RESOURCE_IDENTIFIER: "bad",
       }),
     ).toThrow(EnvironmentValidationError);
+  });
+
+  test("rejects blank platform names", () => {
+    for (const name of ["", "   "]) {
+      expect(() =>
+        parseEnvironment({
+          ...requiredEnvironment,
+          PLATFORM_ORGANIZATION_NAME: name,
+        }),
+      ).toThrow(EnvironmentValidationError);
+    }
   });
 
   test("rejects invalid configuration", () => {

@@ -5,7 +5,13 @@ import { startOidcIssuer, type OidcIssuer } from "../__tests__/oidc-issuer.ts";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createApp, type App } from "../app.ts";
 import { createAuth } from "../auth.ts";
-import { bootstrap, type BootstrapResult } from "../bootstrap.ts";
+import {
+  bootstrap,
+  platformScopes,
+  systemActor,
+  type BootstrapResult,
+} from "../bootstrap.ts";
+import { createClient, linkResource } from "../services/clients.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import {
   oauthClients,
@@ -19,6 +25,7 @@ let issuer: OidcIssuer;
 let connection: DatabaseConnection;
 let app: App;
 let bootstrapped: BootstrapResult;
+const clientId = "token-bootstrap";
 let secret: string;
 const environment = testEnvironment();
 const scopes = ["platform:read", "platform:users", "platform:write"];
@@ -34,20 +41,28 @@ beforeAll(async () => {
     db: connection.db,
     environment,
   });
-  bootstrapped = await bootstrap(connection.db, {
+  bootstrapped = await bootstrap(connection.db, systemActor("token-test"), {
     platformOrganizationSlug: environment.platformOrganizationSlug,
     platformOrganizationName: "Answerable",
-    platformDomain: "answerable.example.com",
-    sso: {
-      issuer: issuer.origin,
-      clientId: "platform-sso",
-      clientSecret: "issuer-secret",
-    },
     adminResourceIdentifier: environment.adminResourceIdentifier,
-    bootstrapClientId: "token-bootstrap",
   });
-  expect(bootstrapped.client.clientSecret).toBeString();
-  secret = bootstrapped.client.clientSecret!;
+  const client = await createClient(connection.db, systemActor("token-test"), {
+    clientId,
+    name: "Token test",
+    organizationId: bootstrapped.organization.id,
+    grantTypes: ["client_credentials"],
+    tokenEndpointAuthMethod: "client_secret_basic",
+    redirectUris: [],
+    clientCredentialsScopes: [...platformScopes],
+  });
+  await linkResource(
+    connection.db,
+    systemActor("token-test"),
+    clientId,
+    environment.adminResourceIdentifier,
+  );
+  expect(client.clientSecret).toBeString();
+  secret = client.clientSecret!;
 });
 
 afterAll(async () => {
@@ -56,7 +71,7 @@ afterAll(async () => {
 });
 
 function mint({
-  clientId = bootstrapped.client.clientId,
+  clientId: mintClientId = clientId,
   secret: clientSecret = secret,
   body,
 }: {
@@ -67,7 +82,7 @@ function mint({
   return app.request("/auth/oauth2/token", {
     method: "POST",
     headers: {
-      Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+      Authorization: `Basic ${Buffer.from(`${mintClientId}:${clientSecret}`).toString("base64")}`,
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body: new URLSearchParams(body),
@@ -117,8 +132,8 @@ test("integration: a bootstrapped client mints a resource JWT and calls the admi
   expect(decodeJwt(result.access_token)).toMatchObject({
     iss: environment.betterAuthUrl,
     aud: environment.adminResourceIdentifier,
-    sub: bootstrapped.client.clientId,
-    azp: bootstrapped.client.clientId,
+    sub: clientId,
+    azp: clientId,
     scope: scopes.join(" "),
   });
   const admin = await me(result.access_token);
@@ -126,7 +141,7 @@ test("integration: a bootstrapped client mints a resource JWT and calls the admi
   expect(await admin.json()).toEqual({
     principal: {
       type: "client",
-      clientId: bootstrapped.client.clientId,
+      clientId: clientId,
       organizationId: bootstrapped.organization.id,
     },
     grants: [
@@ -173,7 +188,7 @@ test("integration: disabling a client revokes admin access and prevents minting"
   await connection.db
     .update(oauthClients)
     .set({ disabled: true })
-    .where(eq(oauthClients.clientId, bootstrapped.client.clientId));
+    .where(eq(oauthClients.clientId, clientId));
   try {
     await expectProblem(token, 401, "invalid_token");
     const response = await mint({ body: tokenBody() });
@@ -183,7 +198,7 @@ test("integration: disabling a client revokes admin access and prevents minting"
     await connection.db
       .update(oauthClients)
       .set({ disabled: false })
-      .where(eq(oauthClients.clientId, bootstrapped.client.clientId));
+      .where(eq(oauthClients.clientId, clientId));
   }
 });
 

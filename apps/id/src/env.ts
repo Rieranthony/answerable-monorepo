@@ -24,6 +24,8 @@ const environmentSchema = z
       .string()
       .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/)
       .default("answerable"),
+    /** Display name of the platform organisation seeded at startup. */
+    PLATFORM_ORGANIZATION_NAME: z.string().trim().min(1).default("Answerable"),
     /** The RFC 8707 resource indicator (aud) of the admin API itself. */
     ADMIN_RESOURCE_IDENTIFIER: z.url().optional(),
     /** Break-glass principal satisfying every platform scope; stops working once a human holds platform:write unless break-glass is set. */
@@ -61,6 +63,7 @@ const environmentSchema = z
       environment.AUTH_PAGES_URL,
     ),
     platformOrganizationSlug: environment.PLATFORM_ORGANIZATION_SLUG,
+    platformOrganizationName: environment.PLATFORM_ORGANIZATION_NAME,
     adminResourceIdentifier: (
       environment.ADMIN_RESOURCE_IDENTIFIER ??
       `${environment.BETTER_AUTH_URL.replace(/\/+$/, "")}/api/admin`
