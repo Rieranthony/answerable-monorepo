@@ -3,27 +3,49 @@ title: Onboard an organisation
 description: "How Answerable staff create an organisation, connect its directory, register its apps, grant or withhold access, and offboard it."
 ---
 
-**Answerable staff.** This page is the operator's runbook. Organisation admins have their own page, [Manage your organisation](/docs/id/manage). Everything below is `curl` against the admin API; the [reference](/docs/id/admin-api) has every field.
+**Answerable staff.** This page is for us. It covers setting the service up for the first time, then creating and looking after client organisations. Organisation admins have their own page, [Manage your organisation](/docs/id/manage). Every step is a `curl` command against the admin API; the [reference](/docs/id/admin-api) lists every field.
+
+## Words used on this page
+
+| Word             | Meaning                                                                                                                                      |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Organisation** | A company that uses Answerable. Answerable itself is one too, called the **platform organisation**. The service creates it by itself.        |
+| **Member**       | A person's place in an organisation. It appears the first time they sign in.                                                                 |
+| **Group**        | A named set of members inside an organisation. `platform-admins` is the group of Answerable staff.                                           |
+| **Scope**        | One permission, written as a word such as `platform:read`. A session or token carries a list of them.                                        |
+| **Resource**     | Something people and apps get tokens for, named by a URL. The admin API is one; MCP servers are the others.                                  |
+| **Entitlement**  | A rule saying who may use which resource with which scopes. Members of `platform-admins` get every platform scope on the admin API this way. |
+| **Client**       | An app or script that asks for tokens. It has a `clientId` and a secret.                                                                     |
+| **Root secret**  | A one-off password for the first setup. It locks itself as soon as a person holds admin rights.                                              |
 
 ## First run
 
+A new service has no accounts at all. You get in with the root secret, sign in with your work account, give that account admin rights, and the root secret locks itself. Seven steps.
+
+**Before you start.** Make the secret and keep it somewhere safe for the next hour:
+
 ```bash
-export ROOT_ADMIN_SECRET="$(openssl rand -base64 48)"
-# With DATABASE_URL and the other deployment settings configured:
-bun --filter @answerable/id db:migrate
+openssl rand -base64 48
 ```
 
-1. **Deploy.** Apply migrations, pass this secret to the service and start it. From an empty database, startup seeds the platform organisation, admin API resource, `platform-admins` group and its platform-scope entitlement. `PLATFORM_ORGANIZATION_NAME` sets the organisation name (default `Answerable`). There are no seed accounts or administration CLIs.
-2. **Read the seeded IDs.** Root satisfies every platform scope:
+1. **Start the service with the secret.** Set `ROOT_ADMIN_SECRET` to that value next to the usual settings, apply the migrations, then start the service the way you deploy it. On an empty database it creates the platform organisation, the admin API resource and the `platform-admins` group on its own. `PLATFORM_ORGANIZATION_NAME` names the organisation; the default is `Answerable`.
 
    ```bash
+   bun --filter @answerable/id db:migrate
+   ```
+
+2. **Write down two IDs.** The secret works as a bearer token. Ask the service for its summary and copy `platform.organizationId` into `PLATFORM_ORG` and `platform.groupId` into `PLATFORM_GROUP`; the next steps use both.
+
+   ```bash
+   export ROOT_ADMIN_SECRET="paste the secret here"
+
    curl https://id.answerable.org/api/admin/v1/platform/summary \
      -H "Authorization: Bearer $ROOT_ADMIN_SECRET"
    ```
 
-   Set `PLATFORM_ORG` to `platform.organizationId` and `PLATFORM_GROUP` to `platform.groupId`.
+3. **Say which work accounts are staff.** Two calls. The first says that emails on our domain belong to the platform organisation. The second says which directory checks those accounts: Google Workspace or Microsoft Entra, with the app credentials that directory gave us. A third call checks that the directory answers.
 
-3. **Connect the staff directory.** Set `STAFF_DOMAIN`, `STAFF_ISSUER`, `SSO_CLIENT_ID` and `SSO_CLIENT_SECRET` to the work directory's settings. For Entra, use the tenant-specific issuer shown in [Connect the directory](#connect-the-directory).
+   Set `STAFF_DOMAIN` (for example `answerable.org`), `STAFF_ISSUER` (the directory's issuer URL from the [table below](#connect-the-directory)), `SSO_CLIENT_ID` and `SSO_CLIENT_SECRET` first.
 
    ```bash
    curl "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/domains" \
@@ -40,39 +62,39 @@ bun --filter @answerable/id db:migrate
      -H "Authorization: Bearer $ROOT_ADMIN_SECRET"
    ```
 
-   Resolve any reported `problems`; [the test](#test-an-sso-configuration) does not validate credentials or consent.
+   An empty `problems` list means the directory is reachable. The test cannot check the credentials themselves; the next step does that.
 
-4. **Sign in** at [the login page](https://answerable.org/login) with your work account. This creates your user and membership, without admin grants.
-5. **Add yourself to the staff group.** Set `STAFF_EMAIL` to your email, then `STAFF_MEMBER` to the returned member's `id`:
+4. **Sign in.** Open [the login page](https://answerable.org/login) and sign in with your work account. This creates your user and your membership of the platform organisation. You have no admin rights yet.
+
+5. **Give yourself admin rights.** Find your member record by email, copy its `id` into `STAFF_MEMBER`, then add it to the `platform-admins` group. The group already carries every platform scope, so joining it is all it takes.
 
    ```bash
    curl --get "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/members" \
      -H "Authorization: Bearer $ROOT_ADMIN_SECRET" \
-     --data-urlencode "email=$STAFF_EMAIL"
+     --data-urlencode "email=you@answerable.org"
 
-   # Set STAFF_MEMBER from items before this request.
    curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/groups/$PLATFORM_GROUP/members/$STAFF_MEMBER" \
      -H "Authorization: Bearer $ROOT_ADMIN_SECRET" \
      -H "Content-Type: application/json" \
      -d '{}'
    ```
 
-6. **Check your authority.** Set `SESSION_COOKIE` to the Cookie header from your authenticated browser request:
+6. **Check it worked.** In your browser's developer tools, copy the `Cookie` header from any request to `id.answerable.org` into `SESSION_COOKIE`. Then ask the service who you are:
 
    ```bash
    curl https://id.answerable.org/api/admin/v1/me \
-     -H "Cookie: $SESSION_COOKIE" \
-     -H "Origin: https://answerable.org"
-
-   curl https://id.answerable.org/api/admin/v1/platform/summary \
-     -H "Authorization: Bearer $ROOT_ADMIN_SECRET"
+     -H "Cookie: $SESSION_COOKIE"
    ```
 
-   Your session's grants now contain `platform:read`, `platform:users` and `platform:write`. The root request returns `403 root_locked`: a human holds `platform:write`. `/me` also works for an authenticated principal with zero grants.
+   The answer lists `platform:read`, `platform:users` and `platform:write` among your scopes. Now repeat the summary call from step 2 with the root secret: it is refused with `403 root_locked`. That is the point. A person holds `platform:write`, so the secret has locked itself.
 
-7. **Seal root.** Unset `ROOT_ADMIN_SECRET` in the deployment, or store it securely with `ROOT_ADMIN_BREAK_GLASS=false`. For emergency recovery when staff cannot administer the service, temporarily deploy with the secret and `ROOT_ADMIN_BREAK_GLASS=true`, repair access, then turn it off. Every root request, including reads and locked attempts, records `admin.root_request` as actor `system`/`root`; root's writes also use that actor.
+7. **Put the secret away.** Remove `ROOT_ADMIN_SECRET` from the deployment, or keep it in your secret store with `ROOT_ADMIN_BREAK_GLASS=false`. If one day no staff member can administer the service, deploy with the secret and `ROOT_ADMIN_BREAK_GLASS=true`, repair access, then turn it off again. Every use of the secret, allowed or refused, is written to the audit log as `admin.root_request`.
+
+**The next staff member.** They sign in once (step 4). You repeat step 5 for them with your own browser session instead of the root secret, adding `-H "Origin: https://answerable.org"` because writes from a browser session must name the site they come from. Nothing else is needed.
 
 ## Get a staff token
+
+Your browser session is enough for commands you type by hand. For scripts and agents, create a client owned by the platform organisation, allow it to use the admin API, and swap its secret for a token.
 
 ```bash
 curl https://id.answerable.org/api/admin/v1/clients \
@@ -100,9 +122,9 @@ curl https://id.answerable.org/auth/oauth2/token \
   --data-urlencode 'scope=platform:read platform:users platform:write'
 ```
 
-**Credentials.** Use the staff browser session from first run to create and link the machine client. Use its `clientId`, not its database `id`, in client paths. Save the secret when it is returned; set `TOKEN` to the token response's `access_token`. The owning organisation must be the platform organisation for platform authority.
+**The secret is shown once.** Save `clientSecret` when the first call returns it; it cannot be read back. Use `clientId`, not the record's `id`, in client URLs. The third call returns `access_token`; set `TOKEN` to it. Every command below uses `TOKEN`, but your browser cookie plus the `Origin` header works just as well.
 
-**People.** Your browser session also works directly; send a trusted `Origin` on writes. A colleague can add later staff members through the same group-membership route after their first sign-in.
+**Why the platform organisation.** A client acts for the organisation that owns it. Only a client owned by the platform organisation gets platform scopes; one owned by a client organisation only ever acts for that organisation, whatever scopes it lists.
 
 ## Read the platform
 
