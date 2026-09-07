@@ -127,7 +127,7 @@ export function createApp(services: AppServices) {
             title: "Answerable ID Admin API",
             version: "1.0.0",
             description:
-              "Administrative API. Platform-tier routes are for Answerable staff; tenant-tier routes let an organisation manage itself.",
+              "Platform-tier operations serve Answerable staff and tenant-tier operations serve an organisation, as indicated by x-tier. The six scopes are platform:read, platform:users, platform:write, org:read, org:users and org:write; x-scopes identifies the required platform or organisation scope. The x-kind extension marks read, write and erase operations; erase requires confirm equal to the target id, and operation ids are the tool names.",
           },
           components: { securitySchemes: adminSecuritySchemes },
           tags: adminTags,

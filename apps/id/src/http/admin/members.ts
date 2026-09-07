@@ -1,6 +1,13 @@
+import {
+  json,
+  body,
+  pathParameter,
+  uuidParam,
+  windowSchema,
+  windowDates,
+} from "./schemas.ts";
 import * as service from "../../services/members.ts";
 import type { Hono } from "hono";
-import { resolver } from "hono-openapi";
 import { z } from "zod";
 import { actorFromContext } from "../../services/actor.ts";
 import type { AppEnvironment } from "../context.ts";
@@ -10,44 +17,9 @@ import { validate } from "../validation.ts";
 import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 import { userStatuses } from "../../db/schema/vocabulary.ts";
-const windowSchema = z.object({
-  validFrom: z.iso.datetime().nullable().optional(),
-  validUntil: z.iso.datetime().nullable().optional(),
-});
-function windowDates(input: z.output<typeof windowSchema>) {
-  return {
-    validFrom:
-      input.validFrom === undefined
-        ? undefined
-        : input.validFrom === null
-          ? null
-          : new Date(input.validFrom),
-    validUntil:
-      input.validUntil === undefined
-        ? undefined
-        : input.validUntil === null
-          ? null
-          : new Date(input.validUntil),
-  };
-}
-const json = (schema: z.ZodType) => ({
-  "application/json": { schema: resolver(schema) },
-});
-const body = (schema: z.ZodType) =>
-  ({
-    required: true,
-    content: { "application/json": { schema: z.toJSONSchema(schema) } },
-  }) as AdminRoute["requestBody"];
-const parameters = (names: string[]) =>
-  names.map((name) => ({
-    in: "path" as const,
-    name,
-    required: true,
-    schema: { type: "string" as const, format: "uuid" },
-  }));
 const page = (schema: z.ZodType) =>
   z.object({ items: z.array(schema), nextCursor: z.uuid().nullable() });
-const orgParams = z.object({ organizationId: z.uuid() });
+const orgParams = uuidParam("organizationId");
 export const memberSchema = z.object({
   id: z.uuid(),
   organizationId: z.uuid(),
@@ -86,12 +58,13 @@ export const routes = {
     path: "/organizations/:organizationId/members",
     operationId: "listMembers",
     summary: "List organisation members",
+    description:
+      "Return a cursor page of organisation members, without changing state. Prefer getMember for one target and use limit and cursor to continue through results; validation_failed rejects invalid filters or cursors and not_found means the organisation or parent is unavailable.",
     tag: "Members",
     platformScope: "platform:read",
     kind: "read",
-    parameters: parameters(["organizationId"]),
+    parameters: ["organizationId"].map((name) => pathParameter(name, "uuid")),
     orgScope: "org:read",
-    paginated: true,
     responses: standardResponses(
       { orgScope: "org:read" },
       {
@@ -105,10 +78,14 @@ export const routes = {
     path: "/organizations/:organizationId/members/:memberId",
     operationId: "getMember",
     summary: "Get an organisation member",
+    description:
+      "Return an organisation member with group memberships without changing state. Prefer getUser for the global user record; validation_failed rejects malformed ids and not_found means the member or organisation is unavailable.",
     tag: "Members",
     platformScope: "platform:read",
     kind: "read",
-    parameters: parameters(["organizationId", "memberId"]),
+    parameters: ["organizationId", "memberId"].map((name) =>
+      pathParameter(name, "uuid"),
+    ),
     orgScope: "org:read",
     responses: standardResponses(
       { orgScope: "org:read" },
@@ -123,10 +100,14 @@ export const routes = {
     path: "/organizations/:organizationId/members/:memberId",
     operationId: "updateMember",
     summary: "Update a member window",
+    description:
+      "Change a member’s validity window and return the member with group memberships, affecting when organisation access is effective. Prefer removeMember for offboarding; validation_failed rejects an empty or malformed patch, not_found means the member or organisation is unavailable, and constraint_violation rejects an invalid validity window.",
     tag: "Members",
     platformScope: "platform:users",
     kind: "write",
-    parameters: parameters(["organizationId", "memberId"]),
+    parameters: ["organizationId", "memberId"].map((name) =>
+      pathParameter(name, "uuid"),
+    ),
     orgScope: "org:users",
     requestBody: body(patchSchema),
     example: { body: { validUntil: null } },
@@ -143,10 +124,14 @@ export const routes = {
     path: "/organizations/:organizationId/members/:memberId",
     operationId: "removeMember",
     summary: "Remove an organisation member",
+    description:
+      "Remove an organisation member and return no content, removing access supplied by that record. Prefer updateMember to change its validity or scopes; validation_failed rejects malformed ids and not_found means the target is unavailable.",
     tag: "Members",
     platformScope: "platform:users",
     kind: "write",
-    parameters: parameters(["organizationId", "memberId"]),
+    parameters: ["organizationId", "memberId"].map((name) =>
+      pathParameter(name, "uuid"),
+    ),
     orgScope: "org:users",
     responses: standardResponses(
       { orgScope: "org:users" },

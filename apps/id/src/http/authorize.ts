@@ -41,18 +41,27 @@ async function deny(
   );
 }
 
-async function admitRoot(context: Context<AppEnvironment>) {
-  const organizationId = context.req.param("organizationId");
-  await recordAuditEvent(context.get("db"), {
-    ...actorFromContext(context),
-    organizationId: undefined,
-    action: "admin.root_request",
-    outcome: "success",
-    targetType: "route",
-    targetId: context.get("operationId"),
-    data: organizationId ? { organizationId } : undefined,
-  });
-  context.set("tier", "platform");
+/**
+ * Runs before authorisation on every route, open ones included, so each root
+ * request leaves exactly one `admin.root_request` row. Non-root principals
+ * pass through untouched.
+ */
+export function admitRoot(): MiddlewareHandler<AppEnvironment> {
+  return async (context, next) => {
+    if (context.get("principal")!.type !== "root") return next();
+    const organizationId = context.req.param("organizationId");
+    await recordAuditEvent(context.get("db"), {
+      ...actorFromContext(context),
+      organizationId: undefined,
+      action: "admin.root_request",
+      outcome: "success",
+      targetType: "route",
+      targetId: context.get("operationId"),
+      data: organizationId ? { organizationId } : undefined,
+    });
+    context.set("tier", "platform");
+    await next();
+  };
 }
 
 export function authorize({
@@ -64,7 +73,7 @@ export function authorize({
 }): MiddlewareHandler<AppEnvironment> {
   return async (context, next) => {
     if (context.get("principal")!.type === "root") {
-      await admitRoot(context);
+      context.set("tier", "platform");
       return next();
     }
     const grants = context.get("principal")!.grants;
@@ -91,19 +100,5 @@ export function authorize({
       if (!grant && !platformGrant) return deny(context, "not_found");
     }
     return deny(context, "insufficient_scope");
-  };
-}
-
-/** /me requires an effective grant, with no particular scope or organisation. */
-export function authorizeAny(): MiddlewareHandler<AppEnvironment> {
-  return async (context, next) => {
-    if (context.get("principal")!.type === "root") {
-      await admitRoot(context);
-      return next();
-    }
-    if (!context.get("principal")!.grants.length)
-      return deny(context, "insufficient_scope");
-    context.set("tier", "tenant");
-    await next();
   };
 }

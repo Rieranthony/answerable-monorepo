@@ -1,6 +1,6 @@
+import { json, pathParameter, uuidParam } from "./schemas.ts";
 import * as service from "../../services/access.ts";
 import type { Hono } from "hono";
-import { resolver } from "hono-openapi";
 import { z } from "zod";
 import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
@@ -8,13 +8,14 @@ import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
 import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
-const orgParams = z.object({ organizationId: z.uuid() });
+const orgParams = uuidParam("organizationId");
 const memberParams = orgParams.extend({ memberId: z.uuid() });
 const querySchema = pageQuerySchema
-  .extend({ client: z.string().optional(), resource: z.url().optional() })
+  .extend({ clientId: z.string().optional(), resource: z.url().optional() })
   .refine(
-    (input) => (input.client !== undefined) !== (input.resource !== undefined),
-    "Exactly one of client and resource is required",
+    (input) =>
+      (input.clientId !== undefined) !== (input.resource !== undefined),
+    "Exactly one of clientId and resource is required",
   );
 const memberAccessSchema = z.object({
   effective: z.boolean(),
@@ -45,27 +46,21 @@ const targetAccessSchema = z.object({
   ),
   nextCursor: z.uuid().nullable(),
 });
-const parameters = (names: string[]) =>
-  names.map((name) => ({
-    in: "path" as const,
-    name,
-    required: true,
-    schema: { type: "string" as const, format: "uuid" },
-  }));
-const json = (schema: z.ZodType) => ({
-  "application/json": { schema: resolver(schema) },
-});
 export const routes = {
   getMemberAccess: {
     method: "get",
     path: "/organizations/:organizationId/members/:memberId/access",
     operationId: "getMemberAccess",
     summary: "Get a member's effective access",
+    description:
+      "Return a member’s effective targets, scopes and entitlement sources without changing access. Prefer listTargetAccess to find all members for one clientId or resource; validation_failed rejects malformed ids and not_found means the member or organisation is unavailable.",
     tag: "Access",
     platformScope: "platform:read",
     orgScope: "org:users",
     kind: "read",
-    parameters: parameters(["organizationId", "memberId"]),
+    parameters: ["organizationId", "memberId"].map((name) =>
+      pathParameter(name, "uuid"),
+    ),
     responses: standardResponses(
       { orgScope: "org:users" },
       {
@@ -79,12 +74,20 @@ export const routes = {
     path: "/organizations/:organizationId/access",
     operationId: "listTargetAccess",
     summary: "List members with effective access to a target",
+    description:
+      "Return a cursor page of members with effective access to exactly one clientId or resource without changing grants. Prefer getMemberAccess to inspect one member across targets; validation_failed rejects missing or competing targets and not_found means the organisation is unavailable.",
     tag: "Access",
     platformScope: "platform:read",
     orgScope: "org:read",
     kind: "read",
-    paginated: true,
-    parameters: parameters(["organizationId"]),
+    parameters: [
+      pathParameter("organizationId", "uuid"),
+      {
+        in: "query",
+        name: "resource",
+        schema: { type: "string", format: "uri" },
+      },
+    ],
     example: { query: { resource: "https://none.example" } },
     responses: standardResponses(
       { orgScope: "org:read" },
@@ -121,8 +124,8 @@ export function register(app: Hono<AppEnvironment>) {
         await service.listTargetAccess(
           context.get("db"),
           context.req.param("organizationId")!,
-          query.client !== undefined
-            ? { clientId: query.client }
+          query.clientId !== undefined
+            ? { clientId: query.clientId }
             : { resource: query.resource! },
           query,
         ),

@@ -1,6 +1,4 @@
-import type { MiddlewareHandler } from "hono";
 import { describeRoute, type DescribeRouteOptions } from "hono-openapi";
-import type { AppEnvironment } from "../context.ts";
 import { problemResponses } from "../problem.ts";
 import { tierOf, type AdminRoute } from "./route-table.ts";
 
@@ -52,22 +50,42 @@ export function standardResponses(
 }
 
 export function adminRoute(route: AdminRoute) {
-  const described = describeRoute({
+  return describeRoute({
     operationId: route.operationId,
     summary: route.summary,
+    description: route.description,
     tags: [route.tag],
     responses: standardResponses(route, route.responses),
-    parameters: route.parameters,
-    requestBody: route.requestBody,
+    parameters: route.parameters?.map((parameter) => {
+      if (
+        "in" in parameter &&
+        parameter.in === "query" &&
+        route.example?.query?.[parameter.name] !== undefined
+      )
+        return { ...parameter, example: route.example.query[parameter.name] };
+      return parameter;
+    }),
+    requestBody:
+      route.requestBody &&
+      "content" in route.requestBody &&
+      route.example?.body !== undefined
+        ? {
+            ...route.requestBody,
+            content: {
+              ...route.requestBody.content,
+              "application/json": {
+                ...route.requestBody.content["application/json"],
+                example: route.example.body,
+              },
+            },
+          }
+        : route.requestBody,
     security: [{ cookieAuth: [] }, { bearerAuth: [] }],
     "x-tier": tierOf(route),
+    "x-kind": route.kind,
+    "x-scopes": {
+      platform: route.platformScope,
+      ...(route.orgScope ? { org: route.orgScope } : {}),
+    },
   } as DescribeRouteOptions);
-  const middleware: MiddlewareHandler<AppEnvironment> = async (
-    context,
-    next,
-  ) => {
-    context.set("operationId", route.operationId);
-    await described(context, next);
-  };
-  return Object.assign(middleware, described);
 }

@@ -327,7 +327,7 @@ test("client filter, foreign references, tenant isolation and request validation
   const clientRow = await created.json();
   const filtered = await request(
     id,
-    `?client=${fixture.platform.client.clientId}`,
+    `?clientId=${fixture.platform.client.clientId}`,
   );
   expect(
     (await filtered.json()).items.map((row: { id: string }) => row.id),

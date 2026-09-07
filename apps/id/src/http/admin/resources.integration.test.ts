@@ -26,6 +26,15 @@ function request(
   body?: unknown,
   kind: Parameters<AdminFixture["headers"]>[0] = "platformAdmin",
 ) {
+  if (
+    method === "DELETE" &&
+    typeof body === "object" &&
+    body !== null &&
+    "confirm" in body
+  ) {
+    path += "?" + new URLSearchParams({ confirm: String(body.confirm) });
+    body = undefined;
+  }
   const headers = fixture.headers(kind);
   headers.set("x-request-id", "resources-http-test");
   if (body !== undefined) headers.set("content-type", "application/json");
@@ -207,4 +216,35 @@ test("resource cursor pages have no gaps", async () => {
     cursor = page.nextCursor;
   } while (cursor);
   expect(seen).toEqual(ids.reverse());
+});
+
+test("erase requires a query confirmation and checks existence before mismatch", async () => {
+  const id = "https://missing-confirm.example/mcp";
+  const path = `/api/admin/v1/resources/${encodeURIComponent(id)}`;
+  for (const [query, status, code] of [
+    ["", 400, "validation_failed"],
+    ["?confirm=invalid", 400, "validation_failed"],
+    ["?" + new URLSearchParams({ confirm: id }), 404, "not_found"],
+    [
+      "?" + new URLSearchParams({ confirm: "https://different.example/mcp" }),
+      404,
+      "not_found",
+    ],
+  ] as const) {
+    const response = await fixture.app.request(path + query, {
+      method: "DELETE",
+      headers: fixture.headers("platformAdmin"),
+    });
+    expect(response.status).toBe(status);
+    expect(await response.json()).toMatchObject({ code });
+  }
+  const headers = fixture.headers("platformAdmin");
+  headers.set("content-type", "application/json");
+  const response = await fixture.app.request(path, {
+    method: "DELETE",
+    headers,
+    body: JSON.stringify({ confirm: id }),
+  });
+  expect(response.status).toBe(400);
+  expect(await response.json()).toMatchObject({ code: "validation_failed" });
 });

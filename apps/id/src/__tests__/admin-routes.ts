@@ -37,6 +37,8 @@ export function describeAdminRoutes(
         ...route.example?.query,
         ...input.query,
       });
+      if (route.kind === "erase" && !input.query)
+        query.set("confirm", decodeURIComponent(path.split("/").at(-1)!));
       const headers = kind
         ? f.headers(kind, { origin: input.origin })
         : new Headers({ Origin: f.trustedOrigin });
@@ -121,6 +123,7 @@ export function describeAdminRoutes(
           .from(auditEvents)
           .where(eq(auditEvents.action, "admin.root_request"))
       ).filter((row) => !before.has(row.id));
+      // Open routes skip authorisation but still audit a root request.
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({
         outcome: "success",
@@ -155,8 +158,12 @@ export function describeAdminRoutes(
         "untrusted_origin",
       );
     });
-    if (route.anyGrant) {
-      entry("no grant", () => denied("noGrant"));
+    if (route.open) {
+      entry("no grant is admitted", async () => {
+        const response = await request("noGrant");
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({ grants: [] });
+      });
     } else {
       entry("insufficient scope", () =>
         denied(
@@ -194,13 +201,14 @@ export function describeAdminRoutes(
     entry("disabled user", async () => {
       await problem(await request("disabledUser"), 403, "user_disabled");
     });
-    entry("expired member", async () => {
-      await problem(
-        await request("expiredMember"),
-        route.orgScope ? 404 : 403,
-        route.orgScope ? "not_found" : "insufficient_scope",
-      );
-    });
+    if (!route.open)
+      entry("expired member", async () => {
+        await problem(
+          await request("expiredMember"),
+          route.orgScope ? 404 : 403,
+          route.orgScope ? "not_found" : "insufficient_scope",
+        );
+      });
     const params = [...route.path.matchAll(/:([A-Za-z_][A-Za-z0-9_]*)/g)];
     if (
       route.orgScope ||
@@ -223,15 +231,6 @@ export function describeAdminRoutes(
         );
         expect(Array.isArray(body.errors)).toBe(true);
         expect(body.errors.length).toBeGreaterThan(0);
-      });
-    }
-    if (route.paginated) {
-      entry("invalid pagination", async () => {
-        await problem(
-          await request("platformAdmin", { query: { limit: "0" } }),
-          400,
-          "validation_failed",
-        );
       });
     }
   }

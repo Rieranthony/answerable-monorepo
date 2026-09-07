@@ -1,5 +1,5 @@
+import { json, pathParameter, uuidParam } from "./schemas.ts";
 import type { Hono } from "hono";
-import { resolver } from "hono-openapi";
 import { z } from "zod";
 import { actorFromContext } from "../../services/actor.ts";
 import type { AppEnvironment } from "../context.ts";
@@ -8,18 +8,8 @@ import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
 import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
-const json = (schema: z.ZodType) => ({
-  "application/json": { schema: resolver(schema) },
-});
 const page = (schema: z.ZodType) =>
   z.object({ items: z.array(schema), nextCursor: z.uuid().nullable() });
-const parameters = (names: string[]) =>
-  names.map((name) => ({
-    in: "path" as const,
-    name,
-    required: true,
-    schema: { type: "string" as const, format: "uuid" },
-  }));
 import * as service from "../../services/sessions.ts";
 const sessionSchema = z.object({
   id: z.uuid(),
@@ -31,7 +21,7 @@ const sessionSchema = z.object({
   activeOrganizationId: z.uuid().nullable(),
 });
 const revokedSchema = z.object({ revoked: z.number().int() });
-const userParams = z.object({ userId: z.uuid() });
+const userParams = uuidParam("userId");
 const sessionParams = userParams.extend({ sessionId: z.uuid() });
 const memberParams = z.object({ organizationId: z.uuid(), memberId: z.uuid() });
 export const routes = {
@@ -40,11 +30,12 @@ export const routes = {
     path: "/users/:userId/sessions",
     operationId: "listUserSessions",
     summary: "List user sessions",
+    description:
+      "Return a cursor page of the user’s sessions without changing state. Prefer listMemberSessions when working through an organisation membership; validation_failed rejects invalid ids or pagination and not_found means the user is missing.",
     tag: "Sessions",
     platformScope: "platform:read",
     kind: "read",
-    parameters: parameters(["userId"]),
-    paginated: true,
+    parameters: ["userId"].map((name) => pathParameter(name, "uuid")),
     responses: standardResponses(
       {},
       {
@@ -58,10 +49,12 @@ export const routes = {
     path: "/users/:userId/sessions",
     operationId: "revokeUserSessions",
     summary: "Revoke user sessions",
+    description:
+      "Revoke all of the user’s sessions and tokens and return an object containing the revoked session count. Prefer revokeUserSession to end only one session; validation_failed rejects malformed ids and not_found means the user is missing.",
     tag: "Sessions",
     platformScope: "platform:users",
     kind: "write",
-    parameters: parameters(["userId"]),
+    parameters: ["userId"].map((name) => pathParameter(name, "uuid")),
     responses: standardResponses(
       {},
       {
@@ -75,10 +68,14 @@ export const routes = {
     path: "/users/:userId/sessions/:sessionId",
     operationId: "revokeUserSession",
     summary: "Revoke user session",
+    description:
+      "Revoke one user session and its associated tokens and return no content. Prefer revokeUserSessions to revoke every session and token for that user; validation_failed rejects malformed ids and not_found means the user or session is missing.",
     tag: "Sessions",
     platformScope: "platform:users",
     kind: "write",
-    parameters: parameters(["userId", "sessionId"]),
+    parameters: ["userId", "sessionId"].map((name) =>
+      pathParameter(name, "uuid"),
+    ),
     responses: standardResponses(
       {},
       { 204: { description: "Success" }, ...problemResponses(400, 404) },
@@ -89,12 +86,15 @@ export const routes = {
     path: "/organizations/:organizationId/members/:memberId/sessions",
     operationId: "listMemberSessions",
     summary: "List member sessions",
+    description:
+      "Return a cursor page of the member’s underlying user sessions across organisations without changing state. Prefer listUserSessions when you have the global user id; validation_failed rejects invalid ids or pagination and not_found means the member is unavailable.",
     tag: "Sessions",
     platformScope: "platform:read",
     kind: "read",
-    parameters: parameters(["organizationId", "memberId"]),
+    parameters: ["organizationId", "memberId"].map((name) =>
+      pathParameter(name, "uuid"),
+    ),
     orgScope: "org:users",
-    paginated: true,
     responses: standardResponses(
       { orgScope: "org:users" },
       {
@@ -108,10 +108,14 @@ export const routes = {
     path: "/organizations/:organizationId/members/:memberId/sessions",
     operationId: "revokeMemberSessions",
     summary: "Revoke member sessions",
+    description:
+      "Revoke all sessions and tokens for the member’s underlying user across organisations and return an object containing the revoked session count. Prefer removeMember to offboard only from this organisation; validation_failed rejects malformed ids and not_found means the member is unavailable.",
     tag: "Sessions",
     platformScope: "platform:users",
     kind: "write",
-    parameters: parameters(["organizationId", "memberId"]),
+    parameters: ["organizationId", "memberId"].map((name) =>
+      pathParameter(name, "uuid"),
+    ),
     orgScope: "org:users",
     responses: standardResponses(
       { orgScope: "org:users" },

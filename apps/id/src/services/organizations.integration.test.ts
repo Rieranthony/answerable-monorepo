@@ -181,9 +181,9 @@ test("erase rejects confirmation and clients, cascades members and domains and r
     slug: "erase",
     name: "Erase",
   });
-  expect(() =>
+  await expect(
     service.eraseOrganization(db, actor, row.id, createId()),
-  ).toThrow("Confirmation");
+  ).rejects.toMatchObject({ status: 400, code: "confirmation_mismatch" });
   const userId = createId();
   await db
     .insert(users)

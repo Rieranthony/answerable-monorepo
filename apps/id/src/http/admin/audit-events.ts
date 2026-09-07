@@ -1,5 +1,5 @@
+import { json, pathParameter, uuidParam } from "./schemas.ts";
 import type { Hono } from "hono";
-import { resolver } from "hono-openapi";
 import { z } from "zod";
 import { auditActorTypes, auditOutcomes } from "../../db/schema/vocabulary.ts";
 import * as service from "../../services/audit.ts";
@@ -11,7 +11,7 @@ import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 
 const querySchema = pageQuerySchema.extend({
-  actor: z.string().optional(),
+  actorId: z.string().optional(),
   action: z.string().optional(),
   targetType: z.string().optional(),
   targetId: z.string().optional(),
@@ -19,9 +19,9 @@ const querySchema = pageQuerySchema.extend({
   to: z.iso.datetime().optional(),
 });
 const platformQuerySchema = querySchema.extend({
-  organization: z.uuid().optional(),
+  organizationId: z.uuid().optional(),
 });
-const params = z.object({ organizationId: z.uuid() });
+const params = uuidParam("organizationId");
 const auditSchema = z.object({
   id: z.uuid(),
   occurredAt: z.iso.datetime(),
@@ -43,16 +43,12 @@ const responses = standardResponses(
   {
     200: {
       description: "Success",
-      content: {
-        "application/json": {
-          schema: resolver(
-            z.object({
-              items: z.array(auditSchema),
-              nextCursor: z.uuid().nullable(),
-            }),
-          ),
-        },
-      },
+      content: json(
+        z.object({
+          items: z.array(auditSchema),
+          nextCursor: z.uuid().nullable(),
+        }),
+      ),
     },
     ...problemResponses(400),
   },
@@ -63,10 +59,11 @@ export const routes = {
     path: "/audit-events",
     operationId: "listAuditEvents",
     summary: "List audit events",
+    description:
+      "Return a cursor page of audit events, without changing state. Prefer listOrganizationAuditEvents for one organisation and use limit and cursor to continue through results; validation_failed rejects invalid filters or cursors.",
     tag: "Audit",
     platformScope: "platform:read",
     kind: "read",
-    paginated: true,
     responses,
   },
   listOrganizationAuditEvents: {
@@ -74,26 +71,20 @@ export const routes = {
     path: "/organizations/:organizationId/audit-events",
     operationId: "listOrganizationAuditEvents",
     summary: "List organisation audit events",
+    description:
+      "Return a cursor page of organisation audit events, without changing state. Prefer listAuditEvents for a platform-wide review and use limit and cursor to continue through results; validation_failed rejects invalid filters or cursors and not_found means the organisation or parent is unavailable.",
     tag: "Audit",
     platformScope: "platform:read",
     orgScope: "org:read",
     kind: "read",
-    paginated: true,
     responses: { ...responses, ...problemResponses(404) },
-    parameters: [
-      {
-        in: "path",
-        name: "organizationId",
-        required: true,
-        schema: { type: "string", format: "uuid" },
-      },
-    ],
+    parameters: [pathParameter("organizationId", "uuid")],
   },
 } satisfies Record<string, AdminRoute>;
 function filters(query: z.output<typeof platformQuerySchema>) {
   return {
-    organizationId: query.organization,
-    actorId: query.actor,
+    organizationId: query.organizationId,
+    actorId: query.actorId,
     action: query.action,
     targetType: query.targetType,
     targetId: query.targetId,

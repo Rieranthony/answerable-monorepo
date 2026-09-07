@@ -21,7 +21,33 @@ test("admin route tables equal the OpenAPI operation union", async () => {
       string,
       Record<
         string,
-        { operationId?: string; security?: unknown; "x-tier"?: string }
+        {
+          operationId?: string;
+          description?: string;
+          security?: unknown;
+          "x-tier"?: string;
+          "x-kind"?: string;
+          "x-scopes"?: unknown;
+          parameters?: {
+            in: string;
+            name: string;
+            required?: boolean;
+            example?: unknown;
+          }[];
+          requestBody?: {
+            content: { "application/json": { example?: unknown } };
+          };
+          responses: Record<
+            string,
+            {
+              content?: {
+                "application/json"?: {
+                  schema?: { properties?: Record<string, unknown> };
+                };
+              };
+            }
+          >;
+        }
       >
     >;
   };
@@ -45,6 +71,7 @@ test("admin route tables equal the OpenAPI operation union", async () => {
   for (const table of adminRouteTables) {
     for (const route of Object.values(table)) {
       const label = route.operationId;
+      if (route.open) expect(label).toBe("getAdminMe");
       expect(ids.has(label), `${label}: duplicate operationId`).toBe(false);
       ids.add(label);
       const path = `/api/admin/v1${route.path.replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, "{$1}")}`;
@@ -62,7 +89,56 @@ test("admin route tables equal the OpenAPI operation union", async () => {
         { bearerAuth: [] },
       ]);
       expect(operation?.["x-tier"], `${label}: tier`).toBe(tierOf(route));
+      expect(operation?.description?.trim().length, label).toBeGreaterThan(0);
+      expect(operation?.description, label).toBe(route.description);
+      expect(["read", "write", "erase"], label).toContain(
+        operation?.["x-kind"] ?? "",
+      );
+      expect(operation?.["x-kind"], label).toBe(route.kind);
+      expect(operation?.["x-scopes"], label).toEqual({
+        platform: route.platformScope,
+        ...(route.orgScope ? { org: route.orgScope } : {}),
+      });
+      const query =
+        operation?.parameters?.filter(
+          (parameter) => parameter.in === "query",
+        ) ?? [];
+      if (
+        operation?.responses["200"]?.content?.["application/json"]?.schema
+          ?.properties?.nextCursor
+      ) {
+        expect(
+          query.map((parameter) => parameter.name),
+          label,
+        ).toEqual(expect.arrayContaining(["limit", "cursor"]));
+      }
+      if (route.kind === "erase") {
+        expect(query, label).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ name: "confirm", required: true }),
+          ]),
+        );
+        expect(operation?.requestBody, label).toBeUndefined();
+      }
+      for (const [name, example] of Object.entries(
+        route.example?.query ?? {},
+      )) {
+        expect(
+          query.find((parameter) => parameter.name === name)?.example,
+          label,
+        ).toEqual(example);
+      }
+      if (operation?.requestBody) {
+        expect(
+          operation.requestBody.content["application/json"].example,
+          label,
+        ).not.toBeUndefined();
+      }
       if (route.requestBody) {
+        expect(
+          operation?.requestBody?.content["application/json"].example,
+          label,
+        ).toEqual(route.example?.body);
         expect(
           route.example?.body,
           `${label}: requestBody requires example.body`,

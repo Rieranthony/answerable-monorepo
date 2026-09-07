@@ -45,7 +45,7 @@ test("staff filter all audit events and walk pages without gaps", async () => {
   const target = all.items.find((row) => row.targetId !== null)!;
   for (const [query, predicate] of [
     [
-      { organization: fixture.tenant.organizationId },
+      { organizationId: fixture.tenant.organizationId },
       (row: AuditEvent) => row.organizationId === fixture.tenant.organizationId,
     ],
     [
@@ -53,7 +53,7 @@ test("staff filter all audit events and walk pages without gaps", async () => {
       (row: AuditEvent) => row.action === "auth.signin.succeeded",
     ],
     [
-      { actor: fixture.principals.tenantReader.userId },
+      { actorId: fixture.principals.tenantReader.userId },
       (row: AuditEvent) =>
         row.actorId === fixture.principals.tenantReader.userId,
     ],

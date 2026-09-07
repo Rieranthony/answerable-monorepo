@@ -155,7 +155,7 @@ test("tenant users review all three sources, readers review resource and client 
       ).scopes,
     ).toEqual(["tutor:admin", "tutor:read", "tutor:write"]);
     const clientResponse = await read(
-      `/access?client=${fixture.platform.client.clientId}`,
+      `/access?clientId=${fixture.platform.client.clientId}`,
       kind,
     );
     expect(clientResponse.status).toBe(200);
@@ -184,9 +184,9 @@ test("tenant users review all three sources, readers review resource and client 
   expect(await expired.json()).toEqual({ effective: false, targets: [] });
   for (const suffix of [
     "/access",
-    `/access?client=x&resource=${encodeURIComponent(resource)}`,
+    `/access?clientId=x&resource=${encodeURIComponent(resource)}`,
     "/access?resource=bad",
-    "/access?client=x&limit=0",
+    "/access?clientId=x&limit=0",
     "/members/bad/access",
   ]) {
     const response = await read(suffix, "platformReader");
@@ -194,7 +194,7 @@ test("tenant users review all three sources, readers review resource and client 
     expect(await response.json()).toMatchObject({ code: "validation_failed" });
   }
   for (const suffix of [
-    "/access?client=missing",
+    "/access?clientId=missing",
     "/access?resource=https://none.example",
     `/members/${createId()}/access`,
     `/members/${fixture.principals.outsider.memberId}/access`,

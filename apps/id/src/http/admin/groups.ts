@@ -1,6 +1,14 @@
+import {
+  json,
+  body,
+  pathParameter,
+  uuidParam,
+  windowSchema,
+  windowDates,
+  confirmQuery,
+} from "./schemas.ts";
 import * as service from "../../services/groups.ts";
 import type { Hono } from "hono";
-import { resolver } from "hono-openapi";
 import { z } from "zod";
 import { actorFromContext } from "../../services/actor.ts";
 import type { AppEnvironment } from "../context.ts";
@@ -10,44 +18,9 @@ import { validate } from "../validation.ts";
 import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 import { lifecycleStatuses } from "../../db/schema/vocabulary.ts";
-const windowSchema = z.object({
-  validFrom: z.iso.datetime().nullable().optional(),
-  validUntil: z.iso.datetime().nullable().optional(),
-});
-function windowDates(input: z.output<typeof windowSchema>) {
-  return {
-    validFrom:
-      input.validFrom === undefined
-        ? undefined
-        : input.validFrom === null
-          ? null
-          : new Date(input.validFrom),
-    validUntil:
-      input.validUntil === undefined
-        ? undefined
-        : input.validUntil === null
-          ? null
-          : new Date(input.validUntil),
-  };
-}
-const json = (schema: z.ZodType) => ({
-  "application/json": { schema: resolver(schema) },
-});
-const body = (schema: z.ZodType) =>
-  ({
-    required: true,
-    content: { "application/json": { schema: z.toJSONSchema(schema) } },
-  }) as AdminRoute["requestBody"];
-const parameters = (names: string[]) =>
-  names.map((name) => ({
-    in: "path" as const,
-    name,
-    required: true,
-    schema: { type: "string" as const, format: "uuid" },
-  }));
 const page = (schema: z.ZodType) =>
   z.object({ items: z.array(schema), nextCursor: z.uuid().nullable() });
-const orgParams = z.object({ organizationId: z.uuid() });
+const orgParams = uuidParam("organizationId");
 export const groupSchema = z.object({
   id: z.uuid(),
   organizationId: z.uuid(),
@@ -93,7 +66,7 @@ const patchSchema = z
     (input) => Object.keys(input).length > 0,
     "At least one field is required",
   );
-const eraseSchema = z.object({ confirm: z.uuid() });
+const eraseSchema = uuidParam("confirm");
 const groupParams = orgParams.extend({ groupId: z.uuid() });
 const memberParams = groupParams.extend({ memberId: z.uuid() });
 export const routes = {
@@ -102,12 +75,13 @@ export const routes = {
     path: "/organizations/:organizationId/groups",
     operationId: "listGroups",
     summary: "List organisation groups",
+    description:
+      "Return a cursor page of organisation groups, without changing state. Prefer getGroup for one target and use limit and cursor to continue through results; validation_failed rejects invalid filters or cursors and not_found means the organisation or parent is unavailable.",
     tag: "Groups",
     platformScope: "platform:read",
     kind: "read",
-    parameters: parameters(["organizationId"]),
+    parameters: ["organizationId"].map((name) => pathParameter(name, "uuid")),
     orgScope: "org:read",
-    paginated: true,
     responses: standardResponses(
       { orgScope: "org:read" },
       {
@@ -121,10 +95,12 @@ export const routes = {
     path: "/organizations/:organizationId/groups",
     operationId: "createGroup",
     summary: "Create an organisation group",
+    description:
+      "Create an organisation group and return the created record, recording the change in the audit log. Prefer getGroup to inspect existing state; validation_failed rejects malformed input, not_found identifies missing parents or targets, and conflict or reference_violation identifies conflicting records.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
-    parameters: parameters(["organizationId"]),
+    parameters: ["organizationId"].map((name) => pathParameter(name, "uuid")),
     requestBody: body(createSchema),
     example: { body: { slug: "finance", name: "Finance" } },
     responses: standardResponses(
@@ -140,10 +116,14 @@ export const routes = {
     path: "/organizations/:organizationId/groups/:groupId",
     operationId: "getGroup",
     summary: "Get an organisation group",
+    description:
+      "Return an organisation group without changing state. Prefer listGroups to discover its id; validation_failed rejects malformed ids and not_found means the target is unavailable.",
     tag: "Groups",
     platformScope: "platform:read",
     kind: "read",
-    parameters: parameters(["organizationId", "groupId"]),
+    parameters: ["organizationId", "groupId"].map((name) =>
+      pathParameter(name, "uuid"),
+    ),
     orgScope: "org:read",
     responses: standardResponses(
       { orgScope: "org:read" },
@@ -158,10 +138,14 @@ export const routes = {
     path: "/organizations/:organizationId/groups/:groupId",
     operationId: "updateGroup",
     summary: "Update an organisation group",
+    description:
+      "Update an organisation group and return the updated record, recording the change in the audit log. Prefer getGroup to inspect existing state; validation_failed rejects malformed input, not_found identifies missing parents or targets, and conflict or reference_violation identifies conflicting records.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
-    parameters: parameters(["organizationId", "groupId"]),
+    parameters: ["organizationId", "groupId"].map((name) =>
+      pathParameter(name, "uuid"),
+    ),
     requestBody: body(patchSchema),
     example: { body: { name: "Finance team" } },
     responses: standardResponses(
@@ -177,10 +161,14 @@ export const routes = {
     path: "/organizations/:organizationId/groups/:groupId/disable",
     operationId: "disableGroup",
     summary: "Disable an organisation group",
+    description:
+      "Disable an organisation group and return the updated record. Prefer enableGroup for the opposite transition; not_found means the target is missing and group_already_disabled means no transition is needed.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
-    parameters: parameters(["organizationId", "groupId"]),
+    parameters: ["organizationId", "groupId"].map((name) =>
+      pathParameter(name, "uuid"),
+    ),
     responses: standardResponses(
       {},
       {
@@ -194,10 +182,14 @@ export const routes = {
     path: "/organizations/:organizationId/groups/:groupId/enable",
     operationId: "enableGroup",
     summary: "Enable an organisation group",
+    description:
+      "Enable an organisation group and return the updated record. Prefer disableGroup for the opposite transition; not_found means the target is missing and group_already_active means no transition is needed.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
-    parameters: parameters(["organizationId", "groupId"]),
+    parameters: ["organizationId", "groupId"].map((name) =>
+      pathParameter(name, "uuid"),
+    ),
     responses: standardResponses(
       {},
       {
@@ -211,12 +203,18 @@ export const routes = {
     path: "/organizations/:organizationId/groups/:groupId",
     operationId: "eraseGroup",
     summary: "Erase an organisation group",
+    description:
+      "Permanently erase the group and return no content; related group memberships and entitlements are also deleted. The confirm query parameter must equal the target id. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableGroup for reversible offboarding.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "erase",
-    parameters: parameters(["organizationId", "groupId"]),
-    requestBody: body(eraseSchema),
-    example: { body: { confirm: "00000000-0000-4000-8000-000000000001" } },
+    parameters: [
+      ...["organizationId", "groupId"].map((name) =>
+        pathParameter(name, "uuid"),
+      ),
+      confirmQuery(eraseSchema.shape.confirm),
+    ],
+    example: { query: { confirm: "00000000-0000-4000-8000-000000000001" } },
     responses: standardResponses(
       {},
       { 204: { description: "Success" }, ...problemResponses(400, 404, 409) },
@@ -227,12 +225,15 @@ export const routes = {
     path: "/organizations/:organizationId/groups/:groupId/members",
     operationId: "listGroupMembers",
     summary: "List group members",
+    description:
+      "Return a cursor page of group members, without changing state. Prefer getMemberAccess for one target and use limit and cursor to continue through results; validation_failed rejects invalid filters or cursors and not_found means the organisation or parent is unavailable.",
     tag: "Groups",
     platformScope: "platform:read",
     kind: "read",
-    parameters: parameters(["organizationId", "groupId"]),
+    parameters: ["organizationId", "groupId"].map((name) =>
+      pathParameter(name, "uuid"),
+    ),
     orgScope: "org:read",
-    paginated: true,
     responses: standardResponses(
       { orgScope: "org:read" },
       {
@@ -246,10 +247,14 @@ export const routes = {
     path: "/organizations/:organizationId/groups/:groupId/members/:memberId",
     operationId: "putGroupMember",
     summary: "Add or update a group member",
+    description:
+      "Create or update a manual group membership validity window and return the membership, with 201 for creation and 200 for an update. Prefer removeGroupMember to end membership; validation_failed rejects malformed input, not_found means a parent is missing, and group_directory_managed prevents manual changes to directory groups.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
-    parameters: parameters(["organizationId", "groupId", "memberId"]),
+    parameters: ["organizationId", "groupId", "memberId"].map((name) =>
+      pathParameter(name, "uuid"),
+    ),
     requestBody: body(windowSchema),
     example: { body: {} },
     responses: standardResponses(
@@ -269,10 +274,14 @@ export const routes = {
     path: "/organizations/:organizationId/groups/:groupId/members/:memberId",
     operationId: "removeGroupMember",
     summary: "Remove a group member",
+    description:
+      "Remove a manual group membership and return no content, removing access inherited through that membership. Prefer putGroupMember to change its validity window; not_found means a parent or membership is missing and group_directory_managed prevents manual changes to directory groups.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
-    parameters: parameters(["organizationId", "groupId", "memberId"]),
+    parameters: ["organizationId", "groupId", "memberId"].map((name) =>
+      pathParameter(name, "uuid"),
+    ),
     responses: standardResponses(
       {},
       { 204: { description: "Success" }, ...problemResponses(400, 404, 409) },
@@ -382,14 +391,14 @@ export function register(app: Hono<AppEnvironment>) {
     app,
     routes.eraseGroup,
     validate("param", groupParams),
-    validate("json", eraseSchema),
+    validate("query", eraseSchema),
     async (context) => {
       await service.eraseGroup(
         context.get("db"),
         actorFromContext(context),
         context.req.param("organizationId")!,
         context.req.param("groupId")!,
-        eraseSchema.parse(await context.req.json()).confirm,
+        eraseSchema.parse(context.req.query()).confirm,
       );
       return context.body(null, 204);
     },

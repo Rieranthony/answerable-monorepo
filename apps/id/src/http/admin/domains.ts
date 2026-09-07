@@ -1,5 +1,5 @@
+import { json, body, pathParameter, uuidParam } from "./schemas.ts";
 import type { Hono } from "hono";
-import { resolver } from "hono-openapi";
 import { z } from "zod";
 import { actorFromContext } from "../../services/actor.ts";
 import type { AppEnvironment } from "../context.ts";
@@ -28,32 +28,14 @@ const createSchema = z.object({ domain: hostSchema });
 const querySchema = pageQuerySchema.extend({
   status: z.enum(lifecycleStatuses).optional(),
 });
-const paramSchema = z.object({ organizationId: z.uuid() });
+const paramSchema = uuidParam("organizationId");
 const parameters = [
-  {
-    in: "path",
-    name: "organizationId",
-    required: true,
-    schema: { type: "string", format: "uuid" },
-  },
+  pathParameter("organizationId", "uuid"),
 ] satisfies AdminRoute["parameters"];
-const json = (schema: z.ZodType) => ({
-  "application/json": { schema: resolver(schema) },
-});
-const body = (schema: z.ZodType) =>
-  ({
-    required: true,
-    content: { "application/json": { schema: z.toJSONSchema(schema) } },
-  }) as AdminRoute["requestBody"];
 const domainParams = paramSchema.extend({ domainId: z.uuid() });
 const domainParameters = [
   ...parameters,
-  {
-    in: "path",
-    name: "domainId",
-    required: true,
-    schema: { type: "string", format: "uuid" },
-  },
+  pathParameter("domainId", "uuid"),
 ] satisfies AdminRoute["parameters"];
 
 export const routes = {
@@ -62,12 +44,13 @@ export const routes = {
     path: "/organizations/:organizationId/domains",
     operationId: "listOrganizationDomains",
     summary: "List organisation domains",
+    description:
+      "Return all domains assigned to an organisation without changing state. Use createOrganizationDomain to add a sign-in domain; validation_failed rejects malformed ids and not_found means the organisation is unavailable.",
     tag: "Domains",
     platformScope: "platform:read",
     kind: "read",
     parameters,
     orgScope: "org:read",
-    paginated: true,
     responses: standardResponses(
       { orgScope: "org:read" },
       {
@@ -89,6 +72,8 @@ export const routes = {
     path: "/organizations/:organizationId/domains",
     operationId: "createOrganizationDomain",
     summary: "Create an organisation domain",
+    description:
+      "Add an email domain to an organisation and return the created domain, enabling domain-based sign-in discovery. Prefer listOrganizationDomains to inspect existing assignments; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict means the domain is already assigned.",
     tag: "Domains",
     platformScope: "platform:write",
     kind: "write",
@@ -108,6 +93,8 @@ export const routes = {
     path: "/organizations/:organizationId/domains/:domainId/disable",
     operationId: "disableOrganizationDomain",
     summary: "Disable an organisation domain",
+    description:
+      "Disable an organisation domain and return the updated record. Prefer enableOrganizationDomain for the opposite transition; not_found means the target is missing and domain_already_disabled means no transition is needed.",
     tag: "Domains",
     platformScope: "platform:write",
     kind: "write",
@@ -125,6 +112,8 @@ export const routes = {
     path: "/organizations/:organizationId/domains/:domainId/enable",
     operationId: "enableOrganizationDomain",
     summary: "Enable an organisation domain",
+    description:
+      "Enable an organisation domain and return the updated record. Prefer disableOrganizationDomain for the opposite transition; not_found means the target is missing and domain_already_active means no transition is needed.",
     tag: "Domains",
     platformScope: "platform:write",
     kind: "write",

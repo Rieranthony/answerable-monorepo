@@ -1,11 +1,10 @@
+import { json } from "./schemas.ts";
 import type { Hono } from "hono";
-import { resolver } from "hono-openapi";
 import { z } from "zod";
-import { authorizeAny } from "../authorize.ts";
 import type { AppEnvironment } from "../context.ts";
-import { adminRoute, standardResponses } from "./openapi.ts";
+import { standardResponses } from "./openapi.ts";
 import { adminScopes } from "./scopes.ts";
-import type { AdminRoute } from "./route-table.ts";
+import { registerRoute, type AdminRoute } from "./route-table.ts";
 
 export const meSchema = z.object({
   principal: z.discriminatedUnion("type", [
@@ -37,16 +36,18 @@ export const routes = {
     path: "/me",
     operationId: "getAdminMe",
     summary: "Get the current principal and grants",
+    description:
+      "Return the authenticated principal and effective grants, including an empty grants array when no scopes are held; this read changes nothing. Use this before choosing an operation and its required scope; unauthenticated or invalid_token means authentication must be renewed.",
     tag: "Me",
     platformScope: "platform:read",
     kind: "read",
-    anyGrant: true,
+    open: true,
     responses: standardResponses(
       {},
       {
         200: {
           description: "Current principal and effective grants",
-          content: { "application/json": { schema: resolver(meSchema) } },
+          content: json(meSchema),
         },
       },
     ),
@@ -54,7 +55,7 @@ export const routes = {
 } satisfies Record<string, AdminRoute>;
 
 export function register(app: Hono<AppEnvironment>) {
-  app.get(routes.me.path, adminRoute(routes.me), authorizeAny(), (context) => {
+  registerRoute(app, routes.me, (context) => {
     const { grants, ...principal } = context.get("principal")!;
     if (principal.type === "root")
       return context.json({

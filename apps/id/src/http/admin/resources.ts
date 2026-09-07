@@ -1,5 +1,5 @@
+import { json, body, pathParameter, confirmQuery } from "./schemas.ts";
 import type { Hono } from "hono";
-import { resolver } from "hono-openapi";
 import { z } from "zod";
 import { actorFromContext } from "../../services/actor.ts";
 import * as service from "../../services/resources.ts";
@@ -9,14 +9,6 @@ import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
 import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
-const json = (schema: z.ZodType) => ({
-  "application/json": { schema: resolver(schema) },
-});
-const body = (schema: z.ZodType) =>
-  ({
-    required: true,
-    content: { "application/json": { schema: z.toJSONSchema(schema) } },
-  }) as AdminRoute["requestBody"];
 export const resourceSchema = z.object({
   id: z.uuid(),
   identifier: z.url(),
@@ -59,12 +51,7 @@ const querySchema = pageQuerySchema.extend({
 });
 const paramSchema = z.object({ resource: z.url() });
 const parameters = [
-  {
-    in: "path",
-    name: "resource",
-    required: true,
-    schema: { type: "string", format: "uri" },
-  },
+  pathParameter("resource", "uri"),
 ] satisfies AdminRoute["parameters"];
 
 export const routes = {
@@ -73,10 +60,11 @@ export const routes = {
     path: "/resources",
     operationId: "listResources",
     summary: "List resources",
+    description:
+      "Return a cursor page of resources, without changing state. Prefer getResource for one target and use limit and cursor to continue through results; validation_failed rejects invalid filters or cursors.",
     tag: "Resources",
     platformScope: "platform:read",
     kind: "read",
-    paginated: true,
     responses: standardResponses(
       {},
       {
@@ -98,6 +86,8 @@ export const routes = {
     path: "/resources",
     operationId: "createResource",
     summary: "Create resource",
+    description:
+      "Create an OAuth resource and return its generated id, URL identifier and configuration, recording the creation in the audit log. Prefer updateResource for an existing URL identifier; validation_failed rejects malformed input and conflict means the identifier already exists.",
     tag: "Resources",
     platformScope: "platform:write",
     kind: "write",
@@ -122,6 +112,8 @@ export const routes = {
     path: "/resources/:resource",
     operationId: "getResource",
     summary: "Get resource (URL-encode {resource})",
+    description:
+      "Return the OAuth resource configuration without changing state. The {resource} URL must be percent-encoded in the path; prefer listResources to discover its identifier, and validation_failed or not_found identifies malformed input or a missing resource.",
     tag: "Resources",
     platformScope: "platform:read",
     kind: "read",
@@ -139,6 +131,8 @@ export const routes = {
     path: "/resources/:resource",
     operationId: "updateResource",
     summary: "Update resource (URL-encode {resource})",
+    description:
+      "Change the resource configuration and return the updated record, recording the change in the audit log. The {resource} URL must be percent-encoded in the path; prefer getResource to inspect settings, and validation_failed or not_found identifies malformed input or a missing resource.",
     tag: "Resources",
     platformScope: "platform:write",
     kind: "write",
@@ -158,6 +152,8 @@ export const routes = {
     path: "/resources/:resource/disable",
     operationId: "disableResource",
     summary: "Disable resource (URL-encode {resource})",
+    description:
+      "Disable the resource for future token grants and return its updated configuration. The {resource} URL must be percent-encoded in the path; prefer enableResource to restore use, and validation_failed, not_found, resource_already_disabled or resource_protected identifies malformed input, a missing resource, an unchanged state or the protected admin resource.",
     tag: "Resources",
     platformScope: "platform:write",
     kind: "write",
@@ -178,6 +174,8 @@ export const routes = {
     path: "/resources/:resource/enable",
     operationId: "enableResource",
     summary: "Enable resource (URL-encode {resource})",
+    description:
+      "Enable resource and return the updated record. Prefer disableResource for the opposite transition; not_found means the target is missing and resource_already_active means no transition is needed; the {resource} URL must be percent-encoded in the path.",
     tag: "Resources",
     platformScope: "platform:write",
     kind: "write",
@@ -195,12 +193,13 @@ export const routes = {
     path: "/resources/:resource",
     operationId: "eraseResource",
     summary: "Erase resource (URL-encode {resource})",
+    description:
+      "Permanently erase the resource and return no content; resource_has_entitlements requires removing entitlements first; resource_protected prevents erasing the admin resource. The confirm query parameter must equal the target id; the {resource} URL must be percent-encoded in the path, and confirm is the decoded resource identifier. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableResource for reversible offboarding.",
     tag: "Resources",
     platformScope: "platform:write",
     kind: "erase",
-    parameters,
-    requestBody: body(eraseSchema),
-    example: { body: { confirm: "https://none.example" } },
+    parameters: [...parameters, confirmQuery(eraseSchema.shape.confirm)],
+    example: { query: { confirm: "https://none.example" } },
     responses: standardResponses(
       {},
       {
@@ -307,9 +306,9 @@ export function register(app: Hono<AppEnvironment>) {
     app,
     routes.eraseResource,
     validate("param", paramSchema),
-    validate("json", eraseSchema),
+    validate("query", eraseSchema),
     async (context) => {
-      const input = eraseSchema.parse(await context.req.json());
+      const input = eraseSchema.parse(context.req.query());
       await service.eraseResource(
         context.get("db"),
         actorFromContext(context),

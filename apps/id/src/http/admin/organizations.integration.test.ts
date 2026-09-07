@@ -34,6 +34,15 @@ function request(
   body?: unknown,
   kind: Parameters<AdminFixture["headers"]>[0] = "platformAdmin",
 ) {
+  if (
+    method === "DELETE" &&
+    typeof body === "object" &&
+    body !== null &&
+    "confirm" in body
+  ) {
+    path += "?" + new URLSearchParams({ confirm: String(body.confirm) });
+    body = undefined;
+  }
   const headers = fixture.headers(kind);
   headers.set("x-request-id", "organizations-http-test");
   headers.set("x-forwarded-for", "192.0.2.1, 198.51.100.1");
@@ -337,4 +346,35 @@ test("organisation paths validate UUIDs and platform writes return 404 for missi
   ]) {
     expect((await request("", "POST", body)).status).toBe(400);
   }
+});
+
+test("erase requires a query confirmation and checks existence before mismatch", async () => {
+  const id = crypto.randomUUID();
+  const path = `/api/admin/v1/organizations/${id}`;
+  for (const [query, status, code] of [
+    ["", 400, "validation_failed"],
+    ["?confirm=invalid", 400, "validation_failed"],
+    ["?" + new URLSearchParams({ confirm: id }), 404, "not_found"],
+    [
+      "?" + new URLSearchParams({ confirm: crypto.randomUUID() }),
+      404,
+      "not_found",
+    ],
+  ] as const) {
+    const response = await fixture.app.request(path + query, {
+      method: "DELETE",
+      headers: fixture.headers("platformAdmin"),
+    });
+    expect(response.status).toBe(status);
+    expect(await response.json()).toMatchObject({ code });
+  }
+  const headers = fixture.headers("platformAdmin");
+  headers.set("content-type", "application/json");
+  const response = await fixture.app.request(path, {
+    method: "DELETE",
+    headers,
+    body: JSON.stringify({ confirm: id }),
+  });
+  expect(response.status).toBe(400);
+  expect(await response.json()).toMatchObject({ code: "validation_failed" });
 });

@@ -116,15 +116,15 @@ export function eraseResource(
   confirm: string,
   environment: Pick<Environment, "adminResourceIdentifier">,
 ) {
-  if (confirm !== identifier)
-    throw new ProblemError(
-      400,
-      "confirmation_mismatch",
-      "Confirmation must match the resource identifier",
-    );
-  protect(identifier, environment);
   return db.transaction(async (tx) => {
     requireResource(await queries.lockResource(tx, identifier));
+    if (confirm !== identifier)
+      throw new ProblemError(
+        400,
+        "confirmation_mismatch",
+        "Confirmation must match the resource identifier",
+      );
+    protect(identifier, environment);
     if (await queries.countResourceEntitlements(tx, identifier))
       throw new ProblemError(
         409,

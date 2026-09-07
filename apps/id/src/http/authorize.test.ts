@@ -1,9 +1,10 @@
+import { register as registerMe } from "./admin/me.ts";
 import { expect, mock, test } from "bun:test";
 import { Hono } from "hono";
 import type { Database } from "../db/client.ts";
 import type { AuditEventInput } from "../db/queries/audit.ts";
 import { testEnvironment } from "../__tests__/support.ts";
-import { authorize, authorizeAny } from "./authorize.ts";
+import { admitRoot, authorize } from "./authorize.ts";
 import type { AdminScope } from "./admin/scopes.ts";
 import type { AppEnvironment } from "./context.ts";
 import type { Principal } from "./principal.ts";
@@ -25,7 +26,6 @@ function setup(
     root?: boolean;
     client?: boolean;
     org?: boolean;
-    any?: boolean;
     path?: string;
     platform?: AdminScope;
   } = {},
@@ -66,12 +66,11 @@ function setup(
   });
   app.get(
     options.path ?? "/:organizationId",
-    options.any
-      ? authorizeAny()
-      : authorize({
-          platform: options.platform ?? "platform:read",
-          org: options.org ? "org:read" : undefined,
-        }),
+    admitRoot(),
+    authorize({
+      platform: options.platform ?? "platform:read",
+      org: options.org ? "org:read" : undefined,
+    }),
     (c) => c.json({ tier: c.get("tier") }),
   );
   app.onError(problemHandler);
@@ -157,21 +156,6 @@ test("an org scope without an organisation parameter cannot authorise", async ()
     userAgent: undefined,
   });
 });
-test("authorizeAny accepts a grant with no required scope", async () => {
-  const { app, rows } = setup([{ ...own, scopes: [] }], { any: true });
-  expect(await (await app.request("/own")).json()).toEqual({ tier: "tenant" });
-  expect(rows).toEqual([]);
-});
-test("authorizeAny denies an empty grant list and audits", async () => {
-  const { app, rows } = setup([], { any: true });
-  const response = await app.request("/own");
-  expect(response.status).toBe(403);
-  expect(rows).toHaveLength(1);
-  expect(rows[0]).toMatchObject({
-    reason: "insufficient_scope",
-    targetId: "testOperation",
-  });
-});
 
 test.each([
   {
@@ -181,7 +165,6 @@ test.each([
     data: { organizationId: "other" },
   },
   { path: "/", request: "/", data: undefined },
-  { any: true, path: "/", request: "/", data: undefined },
 ])("root is audited and admitted at platform tier %#", async (options) => {
   const { app, rows } = setup([], { ...options, root: true });
   expect(
@@ -208,4 +191,13 @@ test.each([
     ip: "192.0.2.1",
     userAgent: "test-agent",
   });
+});
+
+test("a zero-grants principal reaches an open admin route", async () => {
+  const { app, rows } = setup([], { path: "/protected" });
+  registerMe(app);
+  const response = await app.request("/me");
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ grants: [] });
+  expect(rows).toEqual([]);
 });

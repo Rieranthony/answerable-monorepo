@@ -1,5 +1,5 @@
+import { json, body, pathParameter } from "./schemas.ts";
 import type { Hono } from "hono";
-import { resolver } from "hono-openapi";
 import { z } from "zod";
 import { actorFromContext } from "../../services/actor.ts";
 import * as service from "../../services/clients.ts";
@@ -9,14 +9,6 @@ import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
 import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
-const json = (schema: z.ZodType) => ({
-  "application/json": { schema: resolver(schema) },
-});
-const body = (schema: z.ZodType) =>
-  ({
-    required: true,
-    content: { "application/json": { schema: z.toJSONSchema(schema) } },
-  }) as AdminRoute["requestBody"];
 export const clientSchema = z.object({
   id: z.uuid(),
   clientId: z.string(),
@@ -104,22 +96,17 @@ const patchSchema = z
 const ownerSchema = z.object({ organizationId: z.uuid().nullable() });
 const querySchema = pageQuerySchema.extend({
   q: z.string().trim().min(1).max(100).optional(),
-  organization: z.uuid().optional(),
+  organizationId: z.uuid().optional(),
   disabled: z.enum(["true", "false"]).optional(),
 });
 const paramSchema = z.object({ clientId: z.string().min(1) });
 const resourceParams = paramSchema.extend({ resource: z.url() });
 const parameters = [
-  { in: "path", name: "clientId", required: true, schema: { type: "string" } },
+  pathParameter("clientId"),
 ] satisfies AdminRoute["parameters"];
 const resourceParameters = [
   ...parameters,
-  {
-    in: "path",
-    name: "resource",
-    required: true,
-    schema: { type: "string", format: "uri" },
-  },
+  pathParameter("resource", "uri"),
 ] satisfies AdminRoute["parameters"];
 
 export const routes = {
@@ -128,10 +115,11 @@ export const routes = {
     path: "/clients",
     operationId: "listClients",
     summary: "List clients",
+    description:
+      "Return a cursor page of clients, without changing state. Prefer getClient for one target and use limit and cursor to continue through results; validation_failed rejects invalid filters or cursors.",
     tag: "Clients",
     platformScope: "platform:read",
     kind: "read",
-    paginated: true,
     responses: standardResponses(
       {},
       {
@@ -153,6 +141,8 @@ export const routes = {
     path: "/clients",
     operationId: "createClient",
     summary: "Create client",
+    description:
+      "Create an OAuth client and return its registration, with a secret shown only once for client_secret_basic; save that secret immediately. Prefer updateClient for an existing registration; validation_failed rejects incompatible OAuth settings, not_found means the owner is missing, and conflict means a registration already exists.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
@@ -185,6 +175,8 @@ export const routes = {
     path: "/clients/:clientId",
     operationId: "getClient",
     summary: "Get client",
+    description:
+      "Return the OAuth client registration without revealing a secret or changing state. Prefer listClients to discover a clientId; validation_failed rejects malformed ids and not_found means the client is missing.",
     tag: "Clients",
     platformScope: "platform:read",
     kind: "read",
@@ -202,6 +194,8 @@ export const routes = {
     path: "/clients/:clientId",
     operationId: "updateClient",
     summary: "Update client",
+    description:
+      "Update client and return the updated record, recording the change in the audit log. Prefer getClient to inspect existing state; validation_failed rejects malformed input, not_found identifies missing parents or targets, and conflict or reference_violation identifies conflicting records.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
@@ -221,6 +215,8 @@ export const routes = {
     path: "/clients/:clientId/disable",
     operationId: "disableClient",
     summary: "Disable client",
+    description:
+      "Disable the client, revoke its tokens and return the updated registration. Prefer enableClient to restore future use; not_found means it is missing and client_already_disabled means no transition is needed.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
@@ -241,6 +237,8 @@ export const routes = {
     path: "/clients/:clientId/enable",
     operationId: "enableClient",
     summary: "Enable client",
+    description:
+      "Enable client and return the updated record. Prefer disableClient for the opposite transition; not_found means the target is missing and client_already_active means no transition is needed.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
@@ -258,6 +256,8 @@ export const routes = {
     path: "/clients/:clientId/rotate-secret",
     operationId: "rotateClientSecret",
     summary: "Rotate client secret",
+    description:
+      "Replace the client secret immediately and return the new secret once, invalidating the old credential. Prefer getClient to inspect the registration without rotation; not_found means the client is missing and client_has_no_secret rejects clients using another authentication method.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
@@ -281,6 +281,8 @@ export const routes = {
     path: "/clients/:clientId/owner",
     operationId: "setClientOwner",
     summary: "Set client owner",
+    description:
+      "Change the client’s owning organisation and return the updated registration, affecting which organisation controls it. Prefer updateClient for OAuth settings; validation_failed rejects malformed ids and not_found means the client or new owner is missing.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
@@ -305,6 +307,8 @@ export const routes = {
     path: "/clients/:clientId/resources/:resource",
     operationId: "linkClientResource",
     summary: "Link client resource (URL-encode {resource})",
+    description:
+      "Link an OAuth client to a resource and return the link, with 201 on creation and 200 when it already exists. The {resource} URL must be percent-encoded in the path; prefer unlinkClientResource to remove the link, and validation_failed or not_found identifies malformed input or a missing target.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
@@ -329,6 +333,8 @@ export const routes = {
     path: "/clients/:clientId/resources/:resource",
     operationId: "unlinkClientResource",
     summary: "Unlink client resource (URL-encode {resource})",
+    description:
+      "Remove the client-to-resource link and return no content. The {resource} URL must be percent-encoded in the path; prefer linkClientResource to add a link, and validation_failed or not_found identifies malformed input or a missing target.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
@@ -352,7 +358,6 @@ export function register(app: Hono<AppEnvironment>) {
       return context.json(
         await service.listClients(context.get("db"), {
           ...query,
-          organizationId: query.organization,
           disabled:
             query.disabled === undefined
               ? undefined

@@ -26,6 +26,15 @@ async function request(
   action?: string,
   targetId?: string,
 ) {
+  if (
+    method === "DELETE" &&
+    typeof body === "object" &&
+    body !== null &&
+    "confirm" in body
+  ) {
+    suffix += "?" + new URLSearchParams({ confirm: String(body.confirm) });
+    body = undefined;
+  }
   const headers = fixture.headers(kind);
   const requestId = createId();
   headers.set("x-request-id", requestId);
@@ -401,4 +410,35 @@ test("group validation, filters and membership cursors", async () => {
   expect((await request(id, `?limit=1&cursor=${page.nextCursor}`)).status).toBe(
     200,
   );
+});
+
+test("erase requires a query confirmation and checks existence before mismatch", async () => {
+  const id = crypto.randomUUID();
+  const path = `/api/admin/v1/organizations/${fixture.tenant.organizationId}/groups/${id}`;
+  for (const [query, status, code] of [
+    ["", 400, "validation_failed"],
+    ["?confirm=invalid", 400, "validation_failed"],
+    ["?" + new URLSearchParams({ confirm: id }), 404, "not_found"],
+    [
+      "?" + new URLSearchParams({ confirm: crypto.randomUUID() }),
+      404,
+      "not_found",
+    ],
+  ] as const) {
+    const response = await fixture.app.request(path + query, {
+      method: "DELETE",
+      headers: fixture.headers("platformAdmin"),
+    });
+    expect(response.status).toBe(status);
+    expect(await response.json()).toMatchObject({ code });
+  }
+  const headers = fixture.headers("platformAdmin");
+  headers.set("content-type", "application/json");
+  const response = await fixture.app.request(path, {
+    method: "DELETE",
+    headers,
+    body: JSON.stringify({ confirm: id }),
+  });
+  expect(response.status).toBe(400);
+  expect(await response.json()).toMatchObject({ code: "validation_failed" });
 });

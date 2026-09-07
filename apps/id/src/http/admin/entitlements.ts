@@ -1,6 +1,13 @@
+import {
+  json,
+  body,
+  pathParameter,
+  uuidParam,
+  windowSchema,
+  windowDates,
+} from "./schemas.ts";
 import * as service from "../../services/entitlements.ts";
 import type { Hono } from "hono";
-import { resolver } from "hono-openapi";
 import { z } from "zod";
 import { actorFromContext } from "../../services/actor.ts";
 import type { AppEnvironment } from "../context.ts";
@@ -10,44 +17,9 @@ import { validate } from "../validation.ts";
 import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 import { lifecycleStatuses } from "../../db/schema/vocabulary.ts";
-const windowSchema = z.object({
-  validFrom: z.iso.datetime().nullable().optional(),
-  validUntil: z.iso.datetime().nullable().optional(),
-});
-function windowDates(input: z.output<typeof windowSchema>) {
-  return {
-    validFrom:
-      input.validFrom === undefined
-        ? undefined
-        : input.validFrom === null
-          ? null
-          : new Date(input.validFrom),
-    validUntil:
-      input.validUntil === undefined
-        ? undefined
-        : input.validUntil === null
-          ? null
-          : new Date(input.validUntil),
-  };
-}
-const json = (schema: z.ZodType) => ({
-  "application/json": { schema: resolver(schema) },
-});
-const body = (schema: z.ZodType) =>
-  ({
-    required: true,
-    content: { "application/json": { schema: z.toJSONSchema(schema) } },
-  }) as AdminRoute["requestBody"];
-const parameters = (names: string[]) =>
-  names.map((name) => ({
-    in: "path" as const,
-    name,
-    required: true,
-    schema: { type: "string" as const, format: "uuid" },
-  }));
 const page = (schema: z.ZodType) =>
   z.object({ items: z.array(schema), nextCursor: z.uuid().nullable() });
-const orgParams = z.object({ organizationId: z.uuid() });
+const orgParams = uuidParam("organizationId");
 export const entitlementSchema = z.object({
   id: z.uuid(),
   organizationId: z.uuid(),
@@ -63,7 +35,7 @@ export const entitlementSchema = z.object({
   updatedAt: z.iso.datetime(),
 });
 const querySchema = pageQuerySchema.extend({
-  client: z.string().optional(),
+  clientId: z.string().optional(),
   resource: z.url().optional(),
   memberId: z.uuid().optional(),
   groupId: z.uuid().optional(),
@@ -90,12 +62,13 @@ export const routes = {
     path: "/organizations/:organizationId/entitlements",
     operationId: "listEntitlements",
     summary: "List organisation entitlements",
+    description:
+      "Return a cursor page of organisation entitlements, without changing state. Prefer getEntitlement for one target and use limit and cursor to continue through results; validation_failed rejects invalid filters or cursors and not_found means the organisation or parent is unavailable.",
     tag: "Entitlements",
     platformScope: "platform:read",
     kind: "read",
-    parameters: parameters(["organizationId"]),
+    parameters: ["organizationId"].map((name) => pathParameter(name, "uuid")),
     orgScope: "org:read",
-    paginated: true,
     responses: standardResponses(
       { orgScope: "org:read" },
       {
@@ -109,10 +82,12 @@ export const routes = {
     path: "/organizations/:organizationId/entitlements",
     operationId: "createEntitlement",
     summary: "Create an organisation entitlement",
+    description:
+      "Create an organisation, group or member entitlement to exactly one clientId or resource and return the entitlement, granting access during its validity window. Prefer updateEntitlement to change existing scopes or dates; validation_failed rejects invalid targets or scopes, not_found means a referenced parent or target is missing, and conflict or constraint_violation rejects duplicate or inconsistent grants.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
-    parameters: parameters(["organizationId"]),
+    parameters: ["organizationId"].map((name) => pathParameter(name, "uuid")),
     requestBody: body(createSchema),
     example: {
       body: { resource: "https://none.example", scopes: ["tutor:read"] },
@@ -130,10 +105,14 @@ export const routes = {
     path: "/organizations/:organizationId/entitlements/:entitlementId",
     operationId: "getEntitlement",
     summary: "Get an organisation entitlement",
+    description:
+      "Return an organisation entitlement without changing state. Prefer listEntitlements to discover its id; validation_failed rejects malformed ids and not_found means the target is unavailable.",
     tag: "Entitlements",
     platformScope: "platform:read",
     kind: "read",
-    parameters: parameters(["organizationId", "entitlementId"]),
+    parameters: ["organizationId", "entitlementId"].map((name) =>
+      pathParameter(name, "uuid"),
+    ),
     orgScope: "org:read",
     responses: standardResponses(
       { orgScope: "org:read" },
@@ -148,10 +127,14 @@ export const routes = {
     path: "/organizations/:organizationId/entitlements/:entitlementId",
     operationId: "updateEntitlement",
     summary: "Update an organisation entitlement",
+    description:
+      "Change an entitlement’s scopes or validity window and return the updated entitlement, affecting subsequent access decisions. Prefer createEntitlement to select a different principal or target; validation_failed rejects invalid scopes or an empty patch, not_found means the entitlement is missing, and constraint_violation rejects an invalid window.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
-    parameters: parameters(["organizationId", "entitlementId"]),
+    parameters: ["organizationId", "entitlementId"].map((name) =>
+      pathParameter(name, "uuid"),
+    ),
     requestBody: body(patchSchema),
     example: { body: { scopes: ["tutor:read"] } },
     responses: standardResponses(
@@ -167,10 +150,14 @@ export const routes = {
     path: "/organizations/:organizationId/entitlements/:entitlementId/disable",
     operationId: "disableEntitlement",
     summary: "Disable an organisation entitlement",
+    description:
+      "Disable an organisation entitlement and return the updated record. Prefer enableEntitlement for the opposite transition; not_found means the target is missing and entitlement_already_disabled means no transition is needed.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
-    parameters: parameters(["organizationId", "entitlementId"]),
+    parameters: ["organizationId", "entitlementId"].map((name) =>
+      pathParameter(name, "uuid"),
+    ),
     responses: standardResponses(
       {},
       {
@@ -184,10 +171,14 @@ export const routes = {
     path: "/organizations/:organizationId/entitlements/:entitlementId/enable",
     operationId: "enableEntitlement",
     summary: "Enable an organisation entitlement",
+    description:
+      "Enable an organisation entitlement and return the updated record. Prefer disableEntitlement for the opposite transition; not_found means the target is missing and entitlement_already_active means no transition is needed.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
-    parameters: parameters(["organizationId", "entitlementId"]),
+    parameters: ["organizationId", "entitlementId"].map((name) =>
+      pathParameter(name, "uuid"),
+    ),
     responses: standardResponses(
       {},
       {
@@ -201,10 +192,14 @@ export const routes = {
     path: "/organizations/:organizationId/entitlements/:entitlementId",
     operationId: "removeEntitlement",
     summary: "Remove an organisation entitlement",
+    description:
+      "Remove an organisation entitlement and return no content, removing access supplied by that record. Prefer updateEntitlement to change its validity or scopes; validation_failed rejects malformed ids and not_found means the target is unavailable.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
-    parameters: parameters(["organizationId", "entitlementId"]),
+    parameters: ["organizationId", "entitlementId"].map((name) =>
+      pathParameter(name, "uuid"),
+    ),
     responses: standardResponses(
       {},
       { 204: { description: "Success" }, ...problemResponses(400, 404, 409) },
@@ -223,7 +218,7 @@ export function register(app: Hono<AppEnvironment>) {
         await service.listEntitlements(
           context.get("db"),
           context.req.param("organizationId")!,
-          { ...query, clientId: query.client },
+          query,
         ),
         200,
       );

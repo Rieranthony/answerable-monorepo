@@ -112,7 +112,7 @@ test("missing resources, confirmation mismatch, protected resource and entitleme
       code: "not_found",
     });
   expect(await db.select().from(auditEvents)).toHaveLength(0);
-  expect(() =>
+  await expect(
     service.eraseResource(
       db,
       actor,
@@ -120,9 +120,7 @@ test("missing resources, confirmation mismatch, protected resource and entitleme
       "https://wrong.example",
       environment,
     ),
-  ).toThrow(
-    expect.objectContaining({ status: 400, code: "confirmation_mismatch" }),
-  );
+  ).rejects.toMatchObject({ status: 404, code: "not_found" });
   await service.createResource(db, actor, {
     ...input,
     identifier: environment.adminResourceIdentifier,
@@ -144,10 +142,21 @@ test("missing resources, confirmation mismatch, protected resource and entitleme
         environment,
       ),
   ])
-    expect(run).toThrow(
-      expect.objectContaining({ status: 409, code: "resource_protected" }),
-    );
+    await expect(
+      Promise.resolve().then(async () => {
+        await run();
+      }),
+    ).rejects.toMatchObject({ status: 409, code: "resource_protected" });
   const row = await service.createResource(db, actor, input);
+  await expect(
+    service.eraseResource(
+      db,
+      actor,
+      row.identifier,
+      "https://wrong.example",
+      environment,
+    ),
+  ).rejects.toMatchObject({ status: 400, code: "confirmation_mismatch" });
   const organizationId = createId();
   await db
     .insert(organizations)

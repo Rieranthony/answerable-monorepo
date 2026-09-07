@@ -1,5 +1,5 @@
+import { json, pathParameter, uuidParam, confirmQuery } from "./schemas.ts";
 import type { Hono } from "hono";
-import { resolver } from "hono-openapi";
 import { z } from "zod";
 import { actorFromContext } from "../../services/actor.ts";
 import type { AppEnvironment } from "../context.ts";
@@ -8,18 +8,8 @@ import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
 import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
-const json = (schema: z.ZodType) => ({
-  "application/json": { schema: resolver(schema) },
-});
 const page = (schema: z.ZodType) =>
   z.object({ items: z.array(schema), nextCursor: z.uuid().nullable() });
-const parameters = (names: string[]) =>
-  names.map((name) => ({
-    in: "path" as const,
-    name,
-    required: true,
-    schema: { type: "string" as const, format: "uuid" },
-  }));
 import * as service from "../../services/users.ts";
 import { userStatuses } from "../../db/schema/vocabulary.ts";
 const userSchema = z.object({
@@ -58,21 +48,22 @@ const detailSchema = userSchema.extend({
 const querySchema = pageQuerySchema.extend({
   q: z.string().trim().min(1).max(100).optional(),
   status: z.enum(userStatuses).optional(),
-  organization: z.uuid().optional(),
+  organizationId: z.uuid().optional(),
 });
-const userParams = z.object({ userId: z.uuid() });
-const eraseSchema = z.object({ confirm: z.uuid() });
+const userParams = uuidParam("userId");
+const eraseSchema = uuidParam("confirm");
 export const routes = {
   listUsers: {
     method: "get",
     path: "/users",
     operationId: "listUsers",
     summary: "List users",
+    description:
+      "Return a cursor page of users, without changing state. Prefer getUser for one target and use limit and cursor to continue through results; validation_failed rejects invalid filters or cursors.",
     tag: "Users",
     platformScope: "platform:read",
     kind: "read",
-    parameters: parameters([]),
-    paginated: true,
+    parameters: [],
     responses: standardResponses(
       {},
       {
@@ -86,10 +77,12 @@ export const routes = {
     path: "/users/:userId",
     operationId: "getUser",
     summary: "Get user",
+    description:
+      "Return the user, organisation memberships, identity-provider accounts and session count without changing state. Prefer listUsers to discover an id; validation_failed rejects malformed ids and not_found means the user is missing.",
     tag: "Users",
     platformScope: "platform:read",
     kind: "read",
-    parameters: parameters(["userId"]),
+    parameters: ["userId"].map((name) => pathParameter(name, "uuid")),
     responses: standardResponses(
       {},
       {
@@ -103,10 +96,12 @@ export const routes = {
     path: "/users/:userId/disable",
     operationId: "disableUser",
     summary: "Disable user",
+    description:
+      "Disable the user, revoke sessions and tokens and return the updated user. Prefer removeMember to offboard from only one organisation; not_found means the user is missing and user_already_disabled means no transition is needed.",
     tag: "Users",
     platformScope: "platform:users",
     kind: "write",
-    parameters: parameters(["userId"]),
+    parameters: ["userId"].map((name) => pathParameter(name, "uuid")),
     responses: standardResponses(
       {},
       {
@@ -120,10 +115,12 @@ export const routes = {
     path: "/users/:userId/enable",
     operationId: "enableUser",
     summary: "Enable user",
+    description:
+      "Enable a disabled user and return the updated user without restoring revoked sessions. Prefer getUser to inspect blockers; not_found, user_already_active, user_email_retired and user_inert identify missing users or states that cannot be enabled.",
     tag: "Users",
     platformScope: "platform:users",
     kind: "write",
-    parameters: parameters(["userId"]),
+    parameters: ["userId"].map((name) => pathParameter(name, "uuid")),
     responses: standardResponses(
       {},
       {
@@ -137,10 +134,12 @@ export const routes = {
     path: "/users/:userId/retire-email",
     operationId: "retireUserEmail",
     summary: "Retire user email",
+    description:
+      "Replace a disabled user’s email with a tombstone and return the updated user, freeing the original email for reuse. Prefer disableUser for reversible offboarding; not_found, user_not_disabled and user_email_already_retired identify missing users or invalid lifecycle states.",
     tag: "Users",
     platformScope: "platform:users",
     kind: "write",
-    parameters: parameters(["userId"]),
+    parameters: ["userId"].map((name) => pathParameter(name, "uuid")),
     responses: standardResponses(
       {},
       {
@@ -154,15 +153,16 @@ export const routes = {
     path: "/users/:userId",
     operationId: "eraseUser",
     summary: "Erase user",
+    description:
+      "Permanently erase the user and return no content; related identity records are also deleted. The confirm query parameter must equal the target id. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableUser for reversible offboarding.",
     tag: "Users",
     platformScope: "platform:write",
     kind: "erase",
-    parameters: parameters(["userId"]),
-    requestBody: {
-      required: true,
-      content: { "application/json": { schema: z.toJSONSchema(eraseSchema) } },
-    } as AdminRoute["requestBody"],
-    example: { body: { confirm: "00000000-0000-7000-8000-000000000000" } },
+    parameters: [
+      ...["userId"].map((name) => pathParameter(name, "uuid")),
+      confirmQuery(eraseSchema.shape.confirm),
+    ],
+    example: { query: { confirm: "00000000-0000-7000-8000-000000000000" } },
     responses: standardResponses(
       {},
       { 204: { description: "Success" }, ...problemResponses(400, 404) },
@@ -177,10 +177,7 @@ export function register(app: Hono<AppEnvironment>) {
     async (context) => {
       const query = querySchema.parse(context.req.query());
       return context.json(
-        await service.listUsers(context.get("db"), {
-          ...query,
-          organizationId: query.organization,
-        }),
+        await service.listUsers(context.get("db"), query),
         200,
       );
     },
@@ -245,13 +242,13 @@ export function register(app: Hono<AppEnvironment>) {
     app,
     routes.eraseUser,
     validate("param", userParams),
-    validate("json", eraseSchema),
+    validate("query", eraseSchema),
     async (context) => {
       await service.eraseUser(
         context.get("db"),
         actorFromContext(context),
         context.req.param("userId")!,
-        eraseSchema.parse(await context.req.json()).confirm,
+        eraseSchema.parse(context.req.query()).confirm,
       );
       return context.body(null, 204);
     },

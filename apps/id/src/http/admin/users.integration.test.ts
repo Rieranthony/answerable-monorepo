@@ -37,6 +37,15 @@ async function request(
     data?: Record<string, unknown>;
   },
 ) {
+  if (
+    method === "DELETE" &&
+    typeof body === "object" &&
+    body !== null &&
+    "confirm" in body
+  ) {
+    path += "?" + new URLSearchParams({ confirm: String(body.confirm) });
+    body = undefined;
+  }
   const headers = fixture.headers(kind);
   const requestId = createId();
   headers.set("x-request-id", requestId);
@@ -147,7 +156,7 @@ test("platform admin and machine administer a fresh user through revocation, dis
       ...(data ? { data } : {}),
     });
     const filtered = await request(
-      `/users?q=${fresh.subject.toUpperCase()}&status=active&organization=${fixture.tenant.organizationId}`,
+      `/users?q=${fresh.subject.toUpperCase()}&status=active&organizationId=${fixture.tenant.organizationId}`,
       "GET",
       undefined,
       kind,
@@ -317,7 +326,7 @@ test("user pagination, platform reader access, validation and lifecycle conflict
   expect((await request(path, "GET", undefined, "platformReader")).status).toBe(
     200,
   );
-  for (const suffix of ["?status=bad", "?organization=bad", "?q=", "/bad-id"])
+  for (const suffix of ["?status=bad", "?organizationId=bad", "?q=", "/bad-id"])
     expect((await request("/users" + suffix)).status).toBe(400);
   expect((await request(path, "DELETE", {})).status).toBe(400);
   for (const [suffix, code] of [
@@ -390,4 +399,35 @@ test("user pagination, platform reader access, validation and lifecycle conflict
       .sort()
       .reverse(),
   );
+});
+
+test("erase requires a query confirmation and checks existence before mismatch", async () => {
+  const id = crypto.randomUUID();
+  const path = `/api/admin/v1/users/${id}`;
+  for (const [query, status, code] of [
+    ["", 400, "validation_failed"],
+    ["?confirm=invalid", 400, "validation_failed"],
+    ["?" + new URLSearchParams({ confirm: id }), 404, "not_found"],
+    [
+      "?" + new URLSearchParams({ confirm: crypto.randomUUID() }),
+      404,
+      "not_found",
+    ],
+  ] as const) {
+    const response = await fixture.app.request(path + query, {
+      method: "DELETE",
+      headers: fixture.headers("platformAdmin"),
+    });
+    expect(response.status).toBe(status);
+    expect(await response.json()).toMatchObject({ code });
+  }
+  const headers = fixture.headers("platformAdmin");
+  headers.set("content-type", "application/json");
+  const response = await fixture.app.request(path, {
+    method: "DELETE",
+    headers,
+    body: JSON.stringify({ confirm: id }),
+  });
+  expect(response.status).toBe(400);
+  expect(await response.json()).toMatchObject({ code: "validation_failed" });
 });

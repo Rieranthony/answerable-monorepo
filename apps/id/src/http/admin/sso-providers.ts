@@ -1,5 +1,5 @@
+import { json, body, pathParameter, uuidParam } from "./schemas.ts";
 import type { Hono } from "hono";
-import { resolver } from "hono-openapi";
 import { z } from "zod";
 import { actorFromContext } from "../../services/actor.ts";
 import type { AppEnvironment } from "../context.ts";
@@ -10,23 +10,10 @@ import { registerRoute, type AdminRoute } from "./route-table.ts";
 import * as service from "../../services/sso-providers.ts";
 import { hostSchema } from "./domains.ts";
 
-const paramSchema = z.object({ organizationId: z.uuid() });
+const paramSchema = uuidParam("organizationId");
 const parameters = [
-  {
-    in: "path",
-    name: "organizationId",
-    required: true,
-    schema: { type: "string", format: "uuid" },
-  },
+  pathParameter("organizationId", "uuid"),
 ] satisfies AdminRoute["parameters"];
-const json = (schema: z.ZodType) => ({
-  "application/json": { schema: resolver(schema) },
-});
-const body = (schema: z.ZodType) =>
-  ({
-    required: true,
-    content: { "application/json": { schema: z.toJSONSchema(schema) } },
-  }) as AdminRoute["requestBody"];
 const oidcSchema = z.object({
   clientId: z.string().min(1),
   clientSecret: z.string().min(1).optional(),
@@ -63,6 +50,8 @@ export const routes = {
     path: "/organizations/:organizationId/sso-provider",
     operationId: "getSsoProvider",
     summary: "Get the SSO provider",
+    description:
+      "Return the organisation’s SSO provider with credentials redacted, without changing state. Use putSsoProvider to configure or replace it; validation_failed rejects malformed ids and not_found means the organisation or provider is missing.",
     tag: "SSO provider",
     platformScope: "platform:read",
     kind: "read",
@@ -81,6 +70,8 @@ export const routes = {
     path: "/organizations/:organizationId/sso-provider",
     operationId: "putSsoProvider",
     summary: "Put the SSO provider",
+    description:
+      "Create or replace the organisation’s SSO configuration and return the provider with credentials redacted. Prefer getSsoProvider to inspect configuration; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict indicates a duplicate provider.",
     tag: "SSO provider",
     platformScope: "platform:write",
     kind: "write",
@@ -110,6 +101,8 @@ export const routes = {
     path: "/organizations/:organizationId/sso-provider",
     operationId: "deleteSsoProvider",
     summary: "Delete the SSO provider",
+    description:
+      "Delete the organisation’s SSO configuration and return no content, preventing future sign-in through that provider. Prefer putSsoProvider to replace its configuration; validation_failed rejects malformed ids and not_found means the organisation or provider is missing.",
     tag: "SSO provider",
     platformScope: "platform:write",
     kind: "write",

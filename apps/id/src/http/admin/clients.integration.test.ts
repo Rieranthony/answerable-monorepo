@@ -99,7 +99,7 @@ for (const machine of [false, true])
     expect(get.status).toBe(200);
     expect(await get.json()).not.toHaveProperty("clientSecret");
     const pageResponse = await request(
-      `?q=${client.clientId}&organization=${fixture.tenant.organizationId}&disabled=false`,
+      `?q=${client.clientId}&organizationId=${fixture.tenant.organizationId}&disabled=false`,
       "GET",
       undefined,
       kind,

@@ -120,14 +120,14 @@ export function eraseOrganization(
   id: string,
   confirm: string,
 ) {
-  if (confirm !== id)
-    throw new ProblemError(
-      400,
-      "confirmation_mismatch",
-      "Confirmation must match the organisation ID",
-    );
   return db.transaction(async (tx) => {
     requireOrganization(await queries.lockOrganization(tx, id));
+    if (confirm !== id)
+      throw new ProblemError(
+        400,
+        "confirmation_mismatch",
+        "Confirmation must match the organisation ID",
+      );
     if (await queries.countOrganizationClients(tx, id))
       throw new ProblemError(
         409,
