@@ -9,20 +9,23 @@
 
 Answerable ID lives in `apps/id`. Better Auth is mounted at `/auth/*` under `https://id.answerable.org`; the browser login, consent and error pages live in `apps/web` and use `AUTH_PAGES_URL`.
 
-The platform organisation, admin API resource, `platform-admins` staff group and its entitlement are seeded at startup. Configure the platform domain, SSO provider and first staff member through the admin API using the root bearer.
+The platform organisation, admin API resource, `platform-admins` staff group and its entitlement are seeded at startup by `src/bootstrap.ts`, awaited by `src/runtime.ts` before serving requests. `PLATFORM_ORGANIZATION_NAME` supplies the organisation name. There are no seed accounts or administration CLIs. Configure the platform domain, SSO provider and first staff member through the admin API using the root bearer.
 
 The admin API lives under `/api/admin/v1`, with versioned Hono routes calling services and grouped query modules:
 
-- **Summaries.** `/platform/summary` reports fleet counts and 24-hour sign-ins and denials; `/organizations/{organizationId}/summary` reports organisation counts and seven-day successful sign-ins.
-- **Diagnostics.** `…/sign-in-diagnosis?email=` diagnoses database sign-in checks and membership windows; `…/sso-provider/test` checks outbound discovery and JWKS connectivity without sending credentials.
-- **Caller.** `/me` returns the authenticated principal and effective grants.
+- **Summaries.** `getPlatformSummary` at `/platform/summary` reports fleet counts and 24-hour sign-ins and denials; `getOrganizationSummary` at `/organizations/{organizationId}/summary` reports organisation counts and seven-day successful sign-ins.
+- **Diagnostics.** `diagnoseSignIn` at `…/sign-in-diagnosis?email=` diagnoses database sign-in checks and membership windows; `testSsoProvider` at `…/sso-provider/test` checks outbound discovery and JWKS connectivity without sending credentials.
+- **Caller.** `/me` returns the authenticated principal and effective grants, including zero grants.
 - **Organisation configuration.** Organisations support list, create, read, update, disable, enable and erase; nested domains and the SSO provider support configuration and reads.
-- **People.** Users support list, read, disable, enable, email retirement and erase; members support reads, window changes and removal, with user- and member-scoped session listing and revocation.
-- **Access configuration.** Groups and group members, clients (including secret rotation, ownership and resource links), resources and entitlements have administrative routes; clients can be erased when no entitlement references them, and domains can be deleted.
-- **Access reviews.** `…/members/{memberId}/access` and `…/access?client=|resource=` expose effective access.
-- **Audit.** Staff read `/audit-events`; organisation admins read `/organizations/{organizationId}/audit-events`. Every administrative write is audited.
+- **People.** Users support list, read, disable, enable, email retirement and erase; members support reads, window changes and removal, with user- and member-scoped session listing and revocation; `listUsers` and `listMembers` accept exact, lowercase-normalised `email` filters.
+- **Access configuration.** Groups and group members, clients (including secret rotation, ownership and resource links), resources and entitlements have administrative routes; `eraseClient` requires removing every referencing entitlement first (`client_has_entitlements` otherwise); `getClient` includes `resources`, `getResource` includes `clients`, and `deleteOrganizationDomain` removes routing without confirmation.
+- **Entitlement inventory.** `listAllEntitlements` at `/entitlements?clientId=&resource=` lists recorded grants across organisations with organisation IDs and slugs; status and pagination filters are supported.
+- **Access reviews.** `…/members/{memberId}/access` and `…/access?clientId=|resource=` expose effective access.
+- **Audit.** Staff read `/audit-events`; organisation admins read `/organizations/{organizationId}/audit-events`. `listUserAuditEvents` at `/users/{userId}/audit-events` finds events by the user as actor or their user, membership or session as target. Audit lists accept `outcome`; platform filters use `organizationId` and `actorId`. Every administrative write is audited. Rejected sign-ins have no organisation, so no per-organisation rejection counts are offered.
 
-The admin API authenticates a Better Auth session cookie with a trusted origin, a bearer JWT for the admin resource, or the root admin secret (a break-glass principal audited as actor `system`/`root`, locked once a human holds `platform:write` unless break-glass is enabled). Entitlements grant the six `platform:*` and `org:*` scopes; `x-tier` marks staff-only (`platform`) and organisation-scoped (`tenant`) operations. Tenant admins can read their organisation's configuration and access, change member windows, remove members, and list or revoke member sessions; self-service configuration writes are not yet available.
+The admin API authenticates a Better Auth session cookie with a trusted origin, a bearer JWT for the admin resource, or the root admin secret (a break-glass principal audited as actor `system`/`root`, locked once a human holds `platform:write` unless `ROOT_ADMIN_BREAK_GLASS=true`). Root authenticates with `Authorization: Bearer $ROOT_ADMIN_SECRET`, satisfies every platform scope and records every request as `admin.root_request`, including denied `403 root_locked` attempts. Entitlements grant the six `platform:*` and `org:*` scopes; `x-tier` marks staff-only (`platform`) and organisation-scoped (`tenant`) operations. Tenant admins can read their organisation's configuration and access, change member windows, remove members, and list or revoke member sessions; self-service configuration writes are **Not yet.** See [`02-plan.md`](02-plan.md).
+
+**Agent contract.** Every operation has an agent-facing description; the document includes parameter, request and response examples. Operation IDs are tool names; `x-kind` is `read`, `write` or `erase`, and `x-scopes` names `{ platform, org? }` authority. The document’s `info.description` explains tiers, scopes and confirmation. Operations marked `erase` require the `confirm` query parameter equal to the target identifier; DELETE requests have no body. Other DELETE operations marked `write`, including domain deletion, need no confirmation. Query names follow fields: `organizationId`, `clientId`, `actorId`.
 
 **Contracts.** `/openapi.json` describes reachable public routes and is snapshotted in `apps/id/openapi.json`; `/api/admin/openapi.json` describes admin routes and is snapshotted in `apps/id/openapi.admin.json`. `bun run openapi:export` from `apps/id` generates both. The web docs publish both references; `/api/admin/docs` also provides interactive admin docs outside production.
 
@@ -70,13 +73,15 @@ erDiagram
 | Better Auth JWT plugin | `jwks` | Token-signing keys; the row id is the `kid` |
 | `@better-auth/sso` | `sso_providers` | One upstream OIDC provider configuration bound to each federated organization |
 | `@better-auth/oauth-provider` | `oauth_clients`, `oauth_resources`, `oauth_client_resources`, `oauth_refresh_tokens`, `oauth_access_tokens`, `oauth_consents`, `oauth_client_assertions` | OIDC provider for our apps and OAuth 2.1 authorization server for MCP servers |
-| Answerable | `organization_domains`, plus Answerable columns on `accounts` and `sso_providers`, `groups`, `group_members`, `entitlements`, `audit_events` | Tenant routing, immutable directory identity, groups, authorisation policy at every token grant, and audit records |
+| Answerable | `organization_domains`, plus Answerable columns on `accounts` and `sso_providers`, `groups`, `group_members`, `entitlements`, `audit_events` | Tenant routing, immutable directory identity, groups, recorded entitlements, admin authorisation policy, and audit records |
 
 The vocabulary is OAuth's. A **client** is anything that requests tokens: an app users log into (an OmniChat cell, Circle) or a tool such as Claude Code. A **resource** is a protected resource the server issues access tokens for, identified by its RFC 8707 resource indicator, which is also the `aud` claim; MCP servers are resources, each with its own token policy (lifetime, allowed scopes, signing key). `oauth_client_resources` is the server-owned link deciding which clients may request tokens for which resources; a registering client can never grant itself one.
 
 `oauth_clients.organization_id` is Answerable's column on a plugin table. The plugin's registration endpoints never set it: the adapter drops fields the plugin does not declare. Client ownership is administered only through the admin API and `src/db/queries/oauth-clients.ts`.
 
-A **group** is a set of members within one organization. It either mirrors an upstream directory group (`external_id` set; membership is synced from the directory, never edited by hand) or is managed in Answerable ID.
+App and MCP entitlements are recorded. Enforcement at token grant: **Not yet.** See [`02-plan.md`](02-plan.md). Entitlements to the admin API resource authorise session access today; machine authority uses client scope ceilings and resource links.
+
+A **group** is a set of members within one organization. It either mirrors an upstream directory group (`external_id` set; membership cannot be edited by hand; directory sync is deferred) or is managed in Answerable ID.
 
 An **entitlement** says who may obtain tokens for what, with which scopes. Its principal is the whole organization, one group, or one member. Its target is exactly one of a client (may these people use this app or tool) or a resource (may these people reach this MCP server). Grants are additive: a person is entitled when any active row matches them for the target, and scopes are the union of the matching rows. There are no deny rows; access is removed by disabling a row or leaving a group.
 
@@ -101,7 +106,7 @@ Better Auth columns beyond its own field set (`users.status`, `users.disabled_at
 - Organization slugs are unique and match `^[a-z0-9]+(-[a-z0-9]+)*$`, the Omni-Weaver tenant ID grammar. Better Auth itself only checks that a slug is non-empty. Group slugs follow the same grammar and are unique per organization.
 - Membership is unique by `(organization_id, user_id)`. `(organization_id, id)` is also unique on `members` and on `groups` so group membership and entitlements can reference both at once. `members.role` is Better Auth state, may hold a comma-separated list, and confers no authority in Answerable ID; entitlements do.
 - A group's `external_id` is unique per organization when set. Group membership is keyed by `(group_id, member_id)`; both composite foreign keys carry the organization, so a group cannot contain another organization's member. Removing a member removes their group memberships and member-specific grants; removing a group removes its memberships and grants.
-- Domains are stored lowercase as ASCII host names with at least two labels (internationalized names as punycode). A domain has at most one **active** organization and appears at most once per organization. Moving a domain means disabling the old row, then adding the new one; `findOrganizationByDomain` therefore returns one organization or null, and ambiguity cannot exist in the data.
+- Domains are stored lowercase as ASCII host names with at least two labels (internationalized names as punycode). A domain has at most one **active** organization and appears at most once per organization. Moving a domain means disabling or deleting the old row, then adding the new one; `findOrganizationByDomain` therefore returns one organization or null, and ambiguity cannot exist in the data.
 - An entitlement has at most one of `member_id` and `group_id`, and exactly one of `client_id` and `resource`. It is unique by `(organization_id, member_id, group_id, client_id, resource)` with `NULLS NOT DISTINCT`, so the organization-wide row is unique too. Scopes are non-empty and contain no empty string. Member- and group-specific rows use composite foreign keys with the organization, so they cannot point across organizations. A client or resource referenced by an entitlement cannot be deleted; disable it instead.
 - Client ids and resource identifiers are globally unique. Deleting a client removes its links, tokens, and consents; deleting a resource removes its links. Sessions detach from tokens (`set null`); users take their tokens and consents with them.
 - Client ownership is nullable and deletion-restricted. A client without an owning `organization_id` cannot obtain machine tokens.
@@ -127,9 +132,9 @@ Better Auth columns beyond its own field set (`users.status`, `users.disabled_at
 
 ## How the policy reads the schema
 
-For implemented admin access checks, the policy applies `isEffective` to the member, group-membership, and entitlement rows. For a session, it collects the member's effective groups and entitlements for the admin resource, where the principal is the organisation, one of those groups, or the member. Applying entitlements at every app or MCP token grant is not yet implemented; see [`02-plan.md`](02-plan.md).
+For implemented admin access checks, the policy applies `isEffective` to the member, group-membership, and entitlement rows. For a session, it collects the member's effective groups and entitlements for the admin resource, where the principal is the organisation, one of those groups, or the member. Enforcement at every app or MCP token grant: **Not yet.** See [`02-plan.md`](02-plan.md).
 
-`effectiveGrants` in `src/db/queries/grants.ts` implements this computation for resource targets and returns per-organisation scope unions. The admin API’s access views (`…/members/{memberId}/access` and `…/access?client=|resource=`) expose this computation for access reviews.
+`effectiveGrants` in `src/db/queries/grants.ts` implements this computation for resource targets and returns per-organisation scope unions. The admin API’s access views (`…/members/{memberId}/access` and `…/access?clientId=|resource=`) expose this computation for access reviews.
 
 Machine callers are authorized by the per-client scope ceiling and `oauth_client_resources`. Their token's organization claim comes from `oauth_clients.organization_id`; NULL denies `client_credentials`.
 
@@ -138,6 +143,8 @@ Machine callers are authorized by the per-client scope ceiling and `oauth_client
 `src/db/schema.integration.test.ts` freezes the PostgreSQL catalog: every column with its type, nullability, and default; every constraint with its definition; every index. It also drives Better Auth and the OAuth provider through their own APIs against the schema. A schema change is a deliberate edit to that snapshot, reviewed against this document.
 
 ## Deferred
+
+**Not yet.** The capabilities below remain in [`02-plan.md`](02-plan.md).
 
 - **Group sync from directories.** The federation milestone maps the upstream `groups` claim (Entra object ids, Google groups) onto `groups.external_id` and refreshes `group_members` at login; SCIM comes later.
 - **Encrypting upstream IdP tokens.** `accounts.access_token`, `refresh_token`, and `id_token` are stored as Better Auth writes them. Enable `account.encryptOAuthTokens` before the first real login so no plaintext token row ever exists; it binds those rows to `BETTER_AUTH_SECRET`, which the key-custody milestone must account for. The same milestone decides how `jwks.private_key`, encrypted with the same secret today, moves to a KMS or a separate key-encryption key.

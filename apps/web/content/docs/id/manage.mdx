@@ -41,7 +41,7 @@ curl https://id.answerable.org/api/admin/v1/me \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-**Grants.** The response identifies the caller and their organisation IDs and scopes. Set `ORGANIZATION_ID` to your organisation's ID.
+**Grants.** This endpoint works even with zero grants. The response identifies the caller and their organisation IDs and scopes. Set `ORGANIZATION_ID` to your organisation's ID.
 
 ## List members
 
@@ -49,6 +49,8 @@ curl https://id.answerable.org/api/admin/v1/me \
 curl "https://id.answerable.org/api/admin/v1/organizations/$ORGANIZATION_ID/members?limit=50" \
   -H "Authorization: Bearer $TOKEN"
 ```
+
+**Exact email.** Add `email=person%40example.com` to find one address; the filter is normalised to lowercase.
 
 **Member IDs.** Set `MEMBER_ID` to an ID from `items` to read that member's access.
 
@@ -75,26 +77,40 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORGANIZATION_ID/audi
   -H "Authorization: Bearer $TOKEN"
 ```
 
+**Filters.** Use `actorId`, `action`, `targetType`, `targetId` and `outcome` (`success`, `failure`, `denied`). Rejected sign-ins carry no organisation and do not appear in this organisation-scoped list.
+
 **Time filter.** `from` accepts a UTC timestamp. The response contains only your organisation's events.
 
 ## What you can do today
 
 Paths below start at `/api/admin/v1`; `{org}` means your organisation ID.
 
-| Family          | Tenant-tier routes                                                                                                                  | Scope                     |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| Caller          | `GET /me`                                                                                                                           | Any effective admin grant |
-| Organisation    | `GET /organizations/{org}`                                                                                                          | `org:read`                |
-| Domains         | `GET /organizations/{org}/domains`                                                                                                  | `org:read`                |
-| SSO provider    | `GET /organizations/{org}/sso-provider` (secret redacted)                                                                           | `org:read`                |
-| Members         | `GET /organizations/{org}/members`, `GET /organizations/{org}/members/{memberId}`                                                   | `org:read`                |
-| Member changes  | `PATCH /organizations/{org}/members/{memberId}` (window), `DELETE /organizations/{org}/members/{memberId}`                          | `org:users`               |
-| Member sessions | `GET` and `DELETE /organizations/{org}/members/{memberId}/sessions`                                                                 | `org:users`               |
-| Groups          | `GET /organizations/{org}/groups`, `GET /organizations/{org}/groups/{groupId}`, `GET /organizations/{org}/groups/{groupId}/members` | `org:read`                |
-| Entitlements    | `GET /organizations/{org}/entitlements`, `GET /organizations/{org}/entitlements/{entitlementId}`                                    | `org:read`                |
-| Member access   | `GET /organizations/{org}/members/{memberId}/access`                                                                                | `org:users`               |
-| Target access   | `GET /organizations/{org}/access?client=…` or `?resource=…`                                                                         | `org:read`                |
-| Audit events    | `GET /organizations/{org}/audit-events`                                                                                             | `org:read`                |
+| Family            | Tenant-tier routes                                                                                                                  | Scope                       |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| Caller            | `GET /me`                                                                                                                           | Any authenticated principal |
+| Organisation      | `GET /organizations/{org}`                                                                                                          | `org:read`                  |
+| Summary           | `GET /organizations/{org}/summary`                                                                                                  | `org:read`                  |
+| Sign-in diagnosis | `GET /organizations/{org}/sign-in-diagnosis?email=…`                                                                                | `org:users`                 |
+| Domains           | `GET /organizations/{org}/domains`                                                                                                  | `org:read`                  |
+| SSO provider      | `GET /organizations/{org}/sso-provider` (secret redacted)                                                                           | `org:read`                  |
+| Members           | `GET /organizations/{org}/members`, `GET /organizations/{org}/members/{memberId}`                                                   | `org:read`                  |
+| Member changes    | `PATCH /organizations/{org}/members/{memberId}` (window), `DELETE /organizations/{org}/members/{memberId}`                          | `org:users`                 |
+| Member sessions   | `GET` and `DELETE /organizations/{org}/members/{memberId}/sessions`                                                                 | `org:users`                 |
+| Groups            | `GET /organizations/{org}/groups`, `GET /organizations/{org}/groups/{groupId}`, `GET /organizations/{org}/groups/{groupId}/members` | `org:read`                  |
+| Entitlements      | `GET /organizations/{org}/entitlements`, `GET /organizations/{org}/entitlements/{entitlementId}`                                    | `org:read`                  |
+| Member access     | `GET /organizations/{org}/members/{memberId}/access`                                                                                | `org:users`                 |
+| Target access     | `GET /organizations/{org}/access?clientId=…` or `?resource=…`                                                                       | `org:read`                  |
+| Audit events      | `GET /organizations/{org}/audit-events`                                                                                             | `org:read`                  |
+
+See the staff runbook for [summary fields](/docs/id/onboard#read-an-organisation) and [diagnosis verdicts](/docs/id/onboard#why-cant-someone-sign-in).
+
+## Use it from an agent
+
+**Contract.** Load [the admin OpenAPI document](https://id.answerable.org/api/admin/openapi.json). Operation IDs are tool names; `x-kind` marks `read`, `write` and `erase`, and `x-scopes` names the platform scope and optional organisation scope a tool needs. `/me` is available to any authenticated principal even with no grants. Erasures require `confirm` equal to the target identifier.
+
+Every [operation page](/docs/id/admin-api) has a Markdown twin: append `.md` to its URL or send `Accept: text/markdown`. [/llms.txt](/llms.txt) indexes the docs and [/llms-full.txt](/llms-full.txt) contains them.
+
+**Acting for a person.** An agent needs a user-delegated token, which is [Not yet.](/docs/id#today-and-next). Until then, an agent runs as a machine client and the audit trail names the client.
 
 ## Self-service
 
@@ -118,11 +134,14 @@ Paths below start at `/api/admin/v1`; `{org}` means your organisation ID.
 }
 ```
 
+**Confirming erasure.** Operations marked `x-kind: erase` require a `confirm` query parameter equal to the target ID, with no DELETE body. Membership removal, session revocation and other DELETE operations marked `write` do not require it.
+
 **Format.** Admin errors use RFC 9457 `application/problem+json`. Branch on the stable `code`; optional `detail` and extra fields give context. Keep `request_id` when asking for help.
 
 | Code                    | Meaning                                                        | What to do                                                             |
 | ----------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | `unauthenticated`       | No valid session or bearer credentials.                        | Sign in or obtain a token.                                             |
+| `root_locked`           | Root is locked because a platform administrator exists.        | Use your own credentials or break-glass.                               |
 | `invalid_token`         | The bearer token is invalid, expired or for another resource.  | Obtain a fresh token for the admin API resource.                       |
 | `insufficient_scope`    | The caller lacks the route's required authority.               | Check `/me`; ask staff for the required grant, then request its scope. |
 | `not_found`             | The record is absent or outside your organisation's authority. | Check the IDs and your organisation.                                   |
@@ -144,7 +163,7 @@ Paths below start at `/api/admin/v1`; `{org}` means your organisation ID.
 | ------------------------------- | ----------------------------------------------- | -------------------------------------------------- |
 | `organization_already_active`   | Organisation is already enabled.                | Keep its current state.                            |
 | `organization_already_disabled` | Organisation is already disabled.               | Keep its current state.                            |
-| `organization_has_clients`      | Owned clients prevent erasure.                  | Reassign the clients before erasure.               |
+| `organization_has_clients`      | Owned clients prevent erasure.                  | Reassign or erase the clients before erasure.      |
 | `domain_already_active`         | Domain is already enabled.                      | Keep its current state.                            |
 | `domain_already_disabled`       | Domain is already disabled.                     | Keep its current state.                            |
 | `group_already_active`          | Group is already enabled.                       | Keep its current state.                            |
@@ -154,6 +173,8 @@ Paths below start at `/api/admin/v1`; `{org}` means your organisation ID.
 | `entitlement_already_disabled`  | Entitlement is already disabled.                | Keep its current state.                            |
 | `client_already_active`         | Client is already enabled.                      | Keep its current state.                            |
 | `client_already_disabled`       | Client is already disabled.                     | Keep its current state.                            |
+| `client_has_entitlements`       | Entitlements prevent client erasure.            | Remove all referencing entitlements first.         |
+| `provider_not_found`            | No provider exists for the SSO test.            | Ask staff to configure the provider.               |
 | `client_has_no_secret`          | Client does not use a shared secret.            | Check the client's authentication method.          |
 | `resource_already_active`       | Resource is already enabled.                    | Keep its current state.                            |
 | `resource_already_disabled`     | Resource is already disabled.                   | Keep its current state.                            |

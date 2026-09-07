@@ -5,9 +5,94 @@ description: "How Answerable staff create an organisation, connect its directory
 
 **Answerable staff.** This page is the operator's runbook. Organisation admins have their own page, [Manage your organisation](/docs/id/manage). Everything below is `curl` against the admin API; the [reference](/docs/id/admin-api) has every field.
 
+## First run
+
+```bash
+export ROOT_ADMIN_SECRET="$(openssl rand -base64 48)"
+# With DATABASE_URL and the other deployment settings configured:
+bun --filter @answerable/id db:migrate
+```
+
+1. **Deploy.** Apply migrations, pass this secret to the service and start it. From an empty database, startup seeds the platform organisation, admin API resource, `platform-admins` group and its platform-scope entitlement. `PLATFORM_ORGANIZATION_NAME` sets the organisation name (default `Answerable`). There are no seed accounts or administration CLIs.
+2. **Read the seeded IDs.** Root satisfies every platform scope:
+
+   ```bash
+   curl https://id.answerable.org/api/admin/v1/platform/summary \
+     -H "Authorization: Bearer $ROOT_ADMIN_SECRET"
+   ```
+
+   Set `PLATFORM_ORG` to `platform.organizationId` and `PLATFORM_GROUP` to `platform.groupId`.
+
+3. **Connect the staff directory.** Set `STAFF_DOMAIN`, `STAFF_ISSUER`, `SSO_CLIENT_ID` and `SSO_CLIENT_SECRET` to the work directory's settings. For Entra, use the tenant-specific issuer shown in [Connect the directory](#connect-the-directory).
+
+   ```bash
+   curl "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/domains" \
+     -H "Authorization: Bearer $ROOT_ADMIN_SECRET" \
+     -H "Content-Type: application/json" \
+     -d '{"domain":"'"$STAFF_DOMAIN"'"}'
+
+   curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/sso-provider" \
+     -H "Authorization: Bearer $ROOT_ADMIN_SECRET" \
+     -H "Content-Type: application/json" \
+     -d '{"issuer":"'"$STAFF_ISSUER"'","domain":"'"$STAFF_DOMAIN"'","oidc":{"clientId":"'"$SSO_CLIENT_ID"'","clientSecret":"'"$SSO_CLIENT_SECRET"'"}}'
+
+   curl "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/sso-provider/test" \
+     -H "Authorization: Bearer $ROOT_ADMIN_SECRET"
+   ```
+
+   Resolve any reported `problems`; [the test](#test-an-sso-configuration) does not validate credentials or consent.
+
+4. **Sign in** at [the login page](https://answerable.org/login) with your work account. This creates your user and membership, without admin grants.
+5. **Add yourself to the staff group.** Set `STAFF_EMAIL` to your email, then `STAFF_MEMBER` to the returned member's `id`:
+
+   ```bash
+   curl --get "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/members" \
+     -H "Authorization: Bearer $ROOT_ADMIN_SECRET" \
+     --data-urlencode "email=$STAFF_EMAIL"
+
+   # Set STAFF_MEMBER from items before this request.
+   curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/groups/$PLATFORM_GROUP/members/$STAFF_MEMBER" \
+     -H "Authorization: Bearer $ROOT_ADMIN_SECRET" \
+     -H "Content-Type: application/json" \
+     -d '{}'
+   ```
+
+6. **Check your authority.** Set `SESSION_COOKIE` to the Cookie header from your authenticated browser request:
+
+   ```bash
+   curl https://id.answerable.org/api/admin/v1/me \
+     -H "Cookie: $SESSION_COOKIE" \
+     -H "Origin: https://answerable.org"
+
+   curl https://id.answerable.org/api/admin/v1/platform/summary \
+     -H "Authorization: Bearer $ROOT_ADMIN_SECRET"
+   ```
+
+   Your session's grants now contain `platform:read`, `platform:users` and `platform:write`. The root request returns `403 root_locked`: a human holds `platform:write`. `/me` also works for an authenticated principal with zero grants.
+
+7. **Seal root.** Unset `ROOT_ADMIN_SECRET` in the deployment, or store it securely with `ROOT_ADMIN_BREAK_GLASS=false`. For emergency recovery when staff cannot administer the service, temporarily deploy with the secret and `ROOT_ADMIN_BREAK_GLASS=true`, repair access, then turn it off. Every root request, including reads and locked attempts, records `admin.root_request` as actor `system`/`root`; root's writes also use that actor.
+
 ## Get a staff token
 
 ```bash
+curl https://id.answerable.org/api/admin/v1/clients \
+  -H "Cookie: $SESSION_COOKIE" \
+  -H "Origin: https://answerable.org" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Staff automation",
+    "organizationId": "'"$PLATFORM_ORG"'",
+    "tokenEndpointAuthMethod": "client_secret_basic",
+    "grantTypes": ["client_credentials"],
+    "redirectUris": [],
+    "clientCredentialsScopes": ["platform:read", "platform:users", "platform:write"]
+  }'
+
+# Save clientId as CLIENT_ID and the one-time clientSecret as CLIENT_SECRET.
+curl -X PUT "https://id.answerable.org/api/admin/v1/clients/$CLIENT_ID/resources/https%3A%2F%2Fid.answerable.org%2Fapi%2Fadmin" \
+  -H "Cookie: $SESSION_COOKIE" \
+  -H "Origin: https://answerable.org"
+
 curl https://id.answerable.org/auth/oauth2/token \
   --user "$CLIENT_ID:$CLIENT_SECRET" \
   --data-urlencode 'grant_type=client_credentials' \
@@ -15,9 +100,70 @@ curl https://id.answerable.org/auth/oauth2/token \
   --data-urlencode 'scope=platform:read platform:users platform:write'
 ```
 
-**Credentials.** The bootstrap command prints the first machine client's id and secret once. Set `TOKEN` to the response's `access_token`.
+**Credentials.** Use the staff browser session from first run to create and link the machine client. Use its `clientId`, not its database `id`, in client paths. Save the secret when it is returned; set `TOKEN` to the token response's `access_token`. The owning organisation must be the platform organisation for platform authority.
 
-**People.** Sign in once at `https://answerable.org/login` with your work account, then a colleague runs `bun run staff:add you@answerable.org`. Your browser session then carries the platform scopes; send a trusted `Origin` on writes.
+**People.** Your browser session also works directly; send a trusted `Origin` on writes. A colleague can add later staff members through the same group-membership route after their first sign-in.
+
+## Read the platform
+
+```bash
+curl https://id.answerable.org/api/admin/v1/platform/summary \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+[getPlatformSummary](/docs/id/admin-api/platform/getPlatformSummary) returns organisation and user counts by status, clients (including disabled and unowned), resources, active sessions, and sign-ins and admin denials over the trailing 24 hours. `platform` contains the seeded organisation and group IDs. Rejected sign-ins have no organisation, so rejection counts are available only across the platform.
+
+## Read an organisation
+
+```bash
+curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/summary" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Set `ORG` to an organisation ID from creation or the organisations list. [getOrganizationSummary](/docs/id/admin-api/organizations/getOrganizationSummary) returns the organisation, domain and SSO configuration summary, member counts and effective windows, groups, entitlement targets, owned clients, active sessions and successful sign-ins over the trailing seven days. Status counts include stored rows; entitlement target counts include disabled and out-of-window rows. Sessions belong to any member, regardless of membership window. There is no per-organisation rejection count.
+
+## Why can't someone sign in
+
+```bash
+curl --get "https://id.answerable.org/api/admin/v1/organizations/$ORG/sign-in-diagnosis" \
+  -H "Authorization: Bearer $TOKEN" \
+  --data-urlencode "email=$EMAIL"
+```
+
+[diagnoseSignIn](/docs/id/admin-api/diagnostics/diagnoseSignIn) checks database state without changing it. `verdict.checked` lists checks evaluated in resolver order; `verdict.code` is the first applicable result.
+
+| Verdict                     | Meaning                                   | What to do                                        |
+| --------------------------- | ----------------------------------------- | ------------------------------------------------- |
+| `provider_not_found`        | No SSO provider is configured.            | Configure the provider.                           |
+| `organization_disabled`     | Organisation is disabled.                 | Review whether to enable it.                      |
+| `domain_not_allowed`        | Email domain does not route here.         | Check its active domain assignment.               |
+| `new_user_would_be_created` | No user has this email.                   | Complete a real sign-in to verify identity.       |
+| `user_disabled`             | The user is disabled.                     | Review the account before enabling it.            |
+| `identity_conflict`         | Existing accounts all use another issuer. | Review the stored identity and intended provider. |
+| `would_sign_in`             | Database checks found no blocker.         | Try a real sign-in; token checks still apply.     |
+
+**A real IdP token is required** for `directory_mismatch`, `guest_account`, `personal_account`, `hosted_domain_mismatch` and `email_unverified` checks, listed in `verdict.requiresToken`. An email diagnosis cannot prove the token subject or account collisions. A non-effective membership does not prevent sign-in, but stops grants. See [sign-in checks](/docs/id/sign-in#what-is-checked).
+
+## Test an SSO configuration
+
+```bash
+curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/sso-provider/test" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+[testSsoProvider](/docs/id/admin-api/diagnostics/testSsoProvider) fetches discovery and JWKS without sending credentials or changing state. It reports reachability, exact issuer equality, key count and elapsed time. It does not prove client credentials, consent, a usable signing key or a person's ability to sign in; complete a real sign-in for those checks.
+
+| Problem code            | Meaning                                                                              | What to do                                                |
+| ----------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| `insecure_issuer`       | A fetched endpoint or issuer is not an absolute HTTPS URL.                           | Correct the configured URLs.                              |
+| `private_host`          | A host is private or resolves to a private address.                                  | Use public provider endpoints.                            |
+| `discovery_unreachable` | Discovery failed, timed out or returned a non-success status; redirects are refused. | Check the discovery URL and connectivity.                 |
+| `discovery_invalid`     | Discovery JSON is missing required URLs or exceeds the size limit.                   | Correct the provider's discovery document.                |
+| `issuer_mismatch`       | Discovery issuer differs from the configured issuer.                                 | Use the exact tenant issuer.                              |
+| `jwks_unreachable`      | JWKS failed, timed out or returned a non-success status; redirects are refused.      | Check the discovery document's JWKS URL and connectivity. |
+| `jwks_invalid`          | JWKS is invalid or exceeds the size limit.                                           | Correct the provider's key document.                      |
+
+No provider returns HTTP `404 provider_not_found`; configure it first. Other failed checks appear in `problems` on a successful HTTP response.
 
 ## Create the organisation
 
@@ -39,7 +185,14 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/domains" \
   -d '{"domain":"contoso.com"}'
 ```
 
-**One owner.** A domain routes to at most one active organisation. To move it, disable the old row first, then add the new one. Sign-in with an email outside the organisation's active domains is refused. Domain verification by DNS: [Not yet.](/docs/id#today-and-next)
+**One owner.** A domain routes to at most one active organisation. To move it, disable or delete the old row first, then add the new one. Sign-in with an email outside the organisation's active domains is refused. Domain verification by DNS: [Not yet.](/docs/id#today-and-next)
+
+```bash
+curl -X DELETE "https://id.answerable.org/api/admin/v1/organizations/$ORG/domains/$DOMAIN" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Delete an assignment.** Set `DOMAIN` to its domain row ID. [deleteOrganizationDomain](/docs/id/admin-api/domains/deleteOrganizationDomain) removes sign-in routing and records `domain.deleted`. No `confirm` is required; disable the assignment for a reversible suspension.
 
 ## Connect the directory
 
@@ -89,6 +242,21 @@ curl https://id.answerable.org/api/admin/v1/clients \
 
 **Links.** A client may only request tokens for resources it is linked to: `PUT /clients/{clientId}/resources/{resource}` with the resource URL encoded. A registering client can never link itself. Sign-in through a client (OIDC for apps): [Not yet.](/docs/id#today-and-next)
 
+```bash
+curl "https://id.answerable.org/api/admin/v1/clients/$CLIENT_ID" \
+  -H "Authorization: Bearer $TOKEN"
+
+curl "https://id.answerable.org/api/admin/v1/resources/https%3A%2F%2Ftutor.answerable.org" \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -X DELETE "https://id.answerable.org/api/admin/v1/clients/$CLIENT_ID?confirm=$CLIENT_ID" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Inspect links.** [getClient](/docs/id/admin-api/clients/getClient) includes `resources`; [getResource](/docs/id/admin-api/resources/getResource) includes `clients`. Resource path values are percent-encoded URLs.
+
+**Erase a client.** [eraseClient](/docs/id/admin-api/clients/eraseClient) removes its resource links, tokens and consents. Remove every referencing entitlement first, including disabled rows, or it returns `client_has_entitlements`. Prefer `POST /clients/{clientId}/disable` to suspend use reversibly. Erasures require a `confirm` query parameter equal to the target identifier, with no DELETE body.
+
 ## Grant access
 
 An **entitlement** says who may obtain tokens for what, with which scopes. Its principal is the whole organisation, one group, or one member. Grants add up; there are no deny rows.
@@ -121,7 +289,7 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/entitlements" \
 
 **Withhold access.** Do not create the row. **Remove access.** `POST …/entitlements/{id}/disable`, or `DELETE` it. **Time-bound access.** Every membership, group membership and entitlement takes `validFrom` and `validUntil`; outside the window it does not count.
 
-**Where entitlements apply today.** Entitlements to the admin API resource decide who may call this API. Entitlements to apps and MCP servers are recorded and readable, but the check at every token grant: [Not yet.](/docs/id#today-and-next)
+**Where entitlements apply today.** Entitlements to the admin API resource authorise browser sessions today. Machine clients use their scope ceiling and resource link; root satisfies every platform scope. Entitlements to apps and MCP servers are recorded and readable, but the check at every token grant: [Not yet.](/docs/id#today-and-next)
 
 ## Let the organisation manage itself
 
@@ -143,28 +311,67 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/access?resource=
   -H "Authorization: Bearer $TOKEN"
 ```
 
-**Two views.** `…/access?resource=` or `?client=` lists the members who can reach a target with their scopes. `…/members/{memberId}/access` lists a member's targets and which rows grant them. Both apply the same rules as the grant check.
+**Two views.** `…/access?resource=` or `?clientId=` lists the members who can reach a target with their scopes. `…/members/{memberId}/access` lists a member's targets and which rows grant them. Both compute effective grants for access reviews; app and MCP token-grant enforcement is still [Not yet.](/docs/id#today-and-next).
 
 ## Offboard
 
-| Situation                        | Do this                                                                             | Effect                                                            |
-| -------------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| A person leaves the organisation | `PATCH …/members/{memberId}` with `validUntil` now, or `DELETE` the membership      | Their grants in that organisation stop; other memberships stay    |
-| A person must be cut off at once | `POST /users/{userId}/disable`                                                      | Every session ends and every token is revoked, in one transaction |
-| Their address will be reused     | `POST /users/{userId}/retire-email` after disabling                                 | The address is released; the old account keeps a tombstone        |
-| The organisation leaves          | `POST /organizations/{org}/disable`                                                 | Sign-in refuses; every member's sessions and tokens end           |
-| Data must be erased              | `DELETE /users/{userId}` or `DELETE /organizations/{org}` with `{"confirm":"<id>"}` | Cascades; the audit rows stay with the erased id                  |
+| Situation                        | Do this                                                                                    | Effect                                                                                                                         |
+| -------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| A person leaves the organisation | `PATCH …/members/{memberId}` with `validUntil` now, or `DELETE` the membership             | Their admin grants in that organisation stop; other memberships stay. App/MCP enforcement: [Not yet.](/docs/id#today-and-next) |
+| A person must be cut off at once | `POST /users/{userId}/disable`                                                             | Every session ends and every token is revoked, in one transaction                                                              |
+| Their address will be reused     | `POST /users/{userId}/retire-email` after disabling                                        | The address is released; the old account keeps a tombstone                                                                     |
+| The organisation leaves          | `POST /organizations/{org}/disable`                                                        | Sign-in refuses; every member's sessions and tokens end                                                                        |
+| An app is retired                | `DELETE /clients/{clientId}?confirm={clientId}` after removing its entitlements            | Links, tokens and consents are erased; audit rows remain                                                                       |
+| A domain no longer belongs here  | `DELETE /organizations/{org}/domains/{domainId}`                                           | Sign-in routing is removed; no confirmation needed                                                                             |
+| Data must be erased              | `DELETE /users/{userId}` or `DELETE /organizations/{org}` with `?confirm=<id>` and no body | Cascades; audit rows keep erased IDs. Reassign or erase owned clients before organisation erasure                              |
 
 **Bulk import of an existing cell's users.** [Not yet.](/docs/id#today-and-next)
+
+## Who may use an app or server
+
+```bash
+curl --get https://id.answerable.org/api/admin/v1/entitlements \
+  -H "Authorization: Bearer $TOKEN" \
+  --data-urlencode "clientId=$CLIENT_ID"
+
+curl --get https://id.answerable.org/api/admin/v1/entitlements \
+  -H "Authorization: Bearer $TOKEN" \
+  --data-urlencode 'resource=https://tutor.answerable.org'
+```
+
+[listAllEntitlements](/docs/id/admin-api/entitlements/listAllEntitlements) lists recorded grants across organisations with each organisation's ID and slug. Filter by `clientId`, `resource` or `status`; paginate with `limit` and `cursor`. These rows are not proof of current effective access: check status and windows, or use the access views above. Token-grant enforcement for apps and MCP servers is [Not yet.](/docs/id#today-and-next).
+
+## One person's trail
+
+```bash
+curl --get https://id.answerable.org/api/admin/v1/users \
+  -H "Authorization: Bearer $TOKEN" \
+  --data-urlencode "email=$EMAIL"
+
+# Set USER_ID to the returned user's id.
+curl "https://id.answerable.org/api/admin/v1/users/$USER_ID/audit-events?outcome=success" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Find the person.** [listUsers](/docs/id/admin-api/users/listUsers) and `listMembers` accept an exact `email` filter, normalised to lowercase. [listUserAuditEvents](/docs/id/admin-api/audit/listUserAuditEvents) returns events where the person is the actor or the target is their user, membership or session. Filter by `action`, `outcome`, `from` or `to`; use `limit` and `cursor` to page. Omit `outcome` to include every outcome.
 
 ## Read the trail
 
 ```bash
-curl "https://id.answerable.org/api/admin/v1/audit-events?organization=$ORG&from=2026-09-01T00:00:00Z" \
+curl "https://id.answerable.org/api/admin/v1/audit-events?organizationId=$ORG&outcome=denied&from=2026-09-01T00:00:00Z" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-Every write, every denied attempt, every sign-in success, rejection and sign-out is a row. Filter by `action`, `actor`, `targetType` and `targetId`; send an `x-request-id` header on writes to find them again.
+Every write, every denied attempt, every sign-in success, rejection and sign-out is a row. Filter by `action`, `actorId`, `targetType`, `targetId` and `outcome` (`success`, `failure`, `denied`); send an `x-request-id` header on writes to find them again.
+
+## Errors
+
+| Code                      | Meaning                                                       | What to do                                                              |
+| ------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `root_locked`             | Root is locked because a human platform administrator exists. | Use your own credentials, or enable break-glass for emergency recovery. |
+| `client_has_entitlements` | Entitlements still reference the client.                      | Remove all referencing entitlements before erasure.                     |
+
+See [all admin error codes](/docs/id/manage#errors), including confirmation and lifecycle errors. SSO test problems and sign-in verdicts are listed above.
 
 ## Not yet
 

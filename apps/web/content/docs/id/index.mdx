@@ -6,8 +6,8 @@ description: "One sign-in for every Answerable app and MCP server, backed by you
 ## What it does
 
 1. **Identity broker.** Connect your organisation's Microsoft Entra ID or Google Workspace directory once.
-2. **Login provider for Answerable apps.** Not yet. Apps will use standard OpenID Connect (OIDC).
-3. **Authorization server for hosted MCP servers.** Not yet. MCP servers will use OAuth 2.1.
+2. **Login provider for Answerable apps.** [Not yet.](/docs/id#today-and-next) Apps will use standard OpenID Connect (OIDC).
+3. **Authorization server for hosted MCP servers.** [Not yet.](/docs/id#today-and-next) MCP servers will use OAuth 2.1.
 
 ## Who it is for
 
@@ -19,7 +19,7 @@ description: "One sign-in for every Answerable app and MCP server, backed by you
 
 **People at client organisations.** Sign in with the work account you already have. Guest and personal accounts are refused.
 
-**Developers.** Not yet. Standard OIDC for apps and OAuth 2.1 for MCP servers come after organisation sign-in.
+**Developers.** [Not yet.](/docs/id#today-and-next) Standard OIDC for apps and OAuth 2.1 for MCP servers come after organisation sign-in.
 
 ## The one rule
 
@@ -27,10 +27,10 @@ description: "One sign-in for every Answerable app and MCP server, backed by you
 
 ## Today and next
 
-| Order | Capability                                                                                                                                                 |
-| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Today | Organisation sign-in through your identity provider, sessions, health endpoints, the admin API (platform tier), and machine access with client credentials |
-| Next  | OIDC for apps, then entitlements at every grant, then OAuth 2.1 for MCP servers, then self-service                                                         |
+| Order | Capability                                                                                                                                                                                                                 |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Today | Organisation sign-in through your identity provider, sessions, health endpoints, the admin API (platform and tenant reads, member management, summaries and sign-in diagnosis), and machine access with client credentials |
+| Next  | OIDC for apps, then entitlements at every grant, then OAuth 2.1 for MCP servers, then self-service                                                                                                                         |
 
 This is an order, not a timeline.
 
@@ -38,12 +38,13 @@ This is an order, not a timeline.
 
 The base URL is `https://id.answerable.org`.
 
-| Endpoint             | Purpose                                     |
-| -------------------- | ------------------------------------------- |
-| `/auth`              | Better Auth sign-in and session routes      |
-| `/auth/oauth2/token` | Machine tokens through `client_credentials` |
-| `/api/admin/v1`      | [Admin API](/docs/id/admin-api)             |
-| `/healthz`           | Liveness                                    |
-| `/readyz`            | Readiness                                   |
+| Endpoint                         | Purpose                                                                               |
+| -------------------------------- | ------------------------------------------------------------------------------------- |
+| `/auth`                          | Better Auth sign-in and session routes                                                |
+| `/auth/oauth2/token`             | Machine tokens through `client_credentials`                                           |
+| `/api/admin/v1`                  | [Admin API](/docs/id/admin-api)                                                       |
+| `/api/admin/v1/platform/summary` | [Platform counts and recent sign-ins](/docs/id/admin-api/platform/getPlatformSummary) |
+| `/healthz`                       | Liveness                                                                              |
+| `/readyz`                        | Readiness                                                                             |
 
 Start an organisation sign-in from the [sign-in page](https://answerable.org/login), or read [how sign-in works](/docs/id/sign-in).
