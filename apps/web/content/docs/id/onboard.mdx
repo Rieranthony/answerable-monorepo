@@ -1,0 +1,179 @@
+---
+title: Onboard an organisation
+description: "How Answerable staff create an organisation, connect its directory, register its apps, grant or withhold access, and offboard it."
+---
+
+**Answerable staff.** This page is the operator's runbook. Organisation admins have their own page, [Manage your organisation](/docs/id/manage). Everything below is `curl` against the admin API; the [reference](/docs/id/admin-api) has every field.
+
+## Get a staff token
+
+```bash
+curl https://id.answerable.org/auth/oauth2/token \
+  --user "$CLIENT_ID:$CLIENT_SECRET" \
+  --data-urlencode 'grant_type=client_credentials' \
+  --data-urlencode 'resource=https://id.answerable.org/api/admin' \
+  --data-urlencode 'scope=platform:read platform:users platform:write'
+```
+
+**Credentials.** The bootstrap command prints the first machine client's id and secret once. Set `TOKEN` to the response's `access_token`.
+
+**People.** Sign in once at `https://answerable.org/login` with your work account, then a colleague runs `bun run staff:add you@answerable.org`. Your browser session then carries the platform scopes; send a trusted `Origin` on writes.
+
+## Create the organisation
+
+```bash
+curl https://id.answerable.org/api/admin/v1/organizations \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"slug":"contoso","name":"Contoso"}'
+```
+
+**Slug.** Lowercase labels joined by single hyphens, the same grammar as the Omni-Weaver tenant id. It cannot change later. Set `ORG` to the returned `id`.
+
+## Route its email domains
+
+```bash
+curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/domains" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"domain":"contoso.com"}'
+```
+
+**One owner.** A domain routes to at most one active organisation. To move it, disable the old row first, then add the new one. Sign-in with an email outside the organisation's active domains is refused. Domain verification by DNS: [Not yet.](/docs/id#today-and-next)
+
+## Connect the directory
+
+```bash
+curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$ORG/sso-provider" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "issuer": "https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0",
+    "domain": "contoso.com",
+    "oidc": { "clientId": "'"$ENTRA_APP_ID"'", "clientSecret": "'"$ENTRA_APP_SECRET"'" }
+  }'
+```
+
+| Directory        | `issuer`                                                | What is pinned                                        |
+| ---------------- | ------------------------------------------------------- | ----------------------------------------------------- |
+| Microsoft Entra  | `https://login.microsoftonline.com/<directory-id>/v2.0` | The directory id; guests and other directories refuse |
+| Google Workspace | `https://accounts.google.com`                           | The hosted domain; personal accounts refuse           |
+
+**One row per organisation.** `PUT` creates or replaces it; omit `clientSecret` on an update to keep the stored one. `GET` never returns the secret. The consent the client's IT gives is to Answerable's single multi-tenant app; nothing is registered per app. What each sign-in checks is on the [sign-in page](/docs/id/sign-in#what-is-checked). Guest opt-in per organisation: [Not yet.](/docs/id#today-and-next)
+
+## Register what they may use
+
+**Resources** are MCP servers, identified by the URL that becomes the token audience. **Clients** are apps and tools that request tokens.
+
+```bash
+curl https://id.answerable.org/api/admin/v1/resources \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"identifier":"https://tutor.answerable.org","name":"Tutor","allowedScopes":["tutor:read"]}'
+```
+
+```bash
+curl https://id.answerable.org/api/admin/v1/clients \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "clientId": "omnichat-contoso",
+    "name": "OmniChat Contoso",
+    "organizationId": "'"$ORG"'",
+    "tokenEndpointAuthMethod": "private_key_jwt",
+    "grantTypes": ["authorization_code", "refresh_token"],
+    "redirectUris": ["https://contoso.omnichat.example/oauth/callback"],
+    "jwksUri": "https://contoso.omnichat.example/.well-known/jwks.json"
+  }'
+```
+
+**Links.** A client may only request tokens for resources it is linked to: `PUT /clients/{clientId}/resources/{resource}` with the resource URL encoded. A registering client can never link itself. Sign-in through a client (OIDC for apps): [Not yet.](/docs/id#today-and-next)
+
+## Grant access
+
+An **entitlement** says who may obtain tokens for what, with which scopes. Its principal is the whole organisation, one group, or one member. Grants add up; there are no deny rows.
+
+```bash
+curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/entitlements" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"resource":"https://tutor.answerable.org","scopes":["tutor:read"]}'
+```
+
+**Narrow it to a group.** Create the group, add members, and grant the group instead of the organisation:
+
+```bash
+curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/groups" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"slug":"finance","name":"Finance"}'
+
+curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$ORG/groups/$GROUP/members/$MEMBER" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"validUntil":"2026-12-31T00:00:00Z"}'
+
+curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/entitlements" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"groupId":"'"$GROUP"'","resource":"https://tutor.answerable.org","scopes":["tutor:read"]}'
+```
+
+**Withhold access.** Do not create the row. **Remove access.** `POST …/entitlements/{id}/disable`, or `DELETE` it. **Time-bound access.** Every membership, group membership and entitlement takes `validFrom` and `validUntil`; outside the window it does not count.
+
+**Where entitlements apply today.** Entitlements to the admin API resource decide who may call this API. Entitlements to apps and MCP servers are recorded and readable, but the check at every token grant: [Not yet.](/docs/id#today-and-next)
+
+## Let the organisation manage itself
+
+Once one of their admins has signed in, grant them scopes on the admin API. Set `MEMBER` from the members list.
+
+```bash
+curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/entitlements" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"memberId":"'"$MEMBER"'","resource":"https://id.answerable.org/api/admin","scopes":["org:read","org:users"]}'
+```
+
+They can then follow [Manage your organisation](/docs/id/manage). `org:write` exists but self-service configuration is [Not yet.](/docs/id#today-and-next)
+
+## Check who can reach what
+
+```bash
+curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/access?resource=https%3A%2F%2Ftutor.answerable.org" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Two views.** `…/access?resource=` or `?client=` lists the members who can reach a target with their scopes. `…/members/{memberId}/access` lists a member's targets and which rows grant them. Both apply the same rules as the grant check.
+
+## Offboard
+
+| Situation                        | Do this                                                                             | Effect                                                            |
+| -------------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| A person leaves the organisation | `PATCH …/members/{memberId}` with `validUntil` now, or `DELETE` the membership      | Their grants in that organisation stop; other memberships stay    |
+| A person must be cut off at once | `POST /users/{userId}/disable`                                                      | Every session ends and every token is revoked, in one transaction |
+| Their address will be reused     | `POST /users/{userId}/retire-email` after disabling                                 | The address is released; the old account keeps a tombstone        |
+| The organisation leaves          | `POST /organizations/{org}/disable`                                                 | Sign-in refuses; every member's sessions and tokens end           |
+| Data must be erased              | `DELETE /users/{userId}` or `DELETE /organizations/{org}` with `{"confirm":"<id>"}` | Cascades; the audit rows stay with the erased id                  |
+
+**Bulk import of an existing cell's users.** [Not yet.](/docs/id#today-and-next)
+
+## Read the trail
+
+```bash
+curl "https://id.answerable.org/api/admin/v1/audit-events?organization=$ORG&from=2026-09-01T00:00:00Z" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Every write, every denied attempt, every sign-in success, rejection and sign-out is a row. Filter by `action`, `actor`, `targetType` and `targetId`; send an `x-request-id` header on writes to find them again.
+
+## Not yet
+
+| Capability                                | Plan                                |
+| ----------------------------------------- | ----------------------------------- |
+| Domain verification by DNS                | [Not yet.](/docs/id#today-and-next) |
+| Organisations configuring their own SSO   | [Not yet.](/docs/id#today-and-next) |
+| Guest accounts, opted in per organisation | [Not yet.](/docs/id#today-and-next) |
+| Sign-in through registered apps (OIDC)    | [Not yet.](/docs/id#today-and-next) |
+| Entitlements checked at every token grant | [Not yet.](/docs/id#today-and-next) |
+| Bulk import of existing users             | [Not yet.](/docs/id#today-and-next) |
+| SCIM provisioning                         | [Not yet.](/docs/id#today-and-next) |

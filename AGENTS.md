@@ -6,7 +6,7 @@ Answerable monorepo. Bun 1.3.1, Turborepo. Two apps: `apps/web` (Next.js 16: the
 
 Docs are MDX in `apps/web/content/docs`, rendered with Fumadocs at `/docs`. The API reference is generated from `apps/id/openapi.json` and `apps/id/openapi.admin.json`. Never edit those files by hand; run `bun run openapi:export` in `apps/id`.
 
-Here's how we write documentation:
+Here's how we write documentation. These are Lee Robinson's ten principles (https://leerob.com/docs), adapted to this repo; read that page before writing a docs page, and keep the numbering below in step with it. Not adopted yet: a feedback widget, a broken-link check on push, an Ask AI sidebar, and shipping the docs as an MCP server.
 
 1. Fast
    - Every docs page is static. No client-side data fetching, no runtime calls to Answerable ID.
