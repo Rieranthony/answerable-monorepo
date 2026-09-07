@@ -14,5 +14,7 @@ export function baseOptions(): BaseLayoutProps {
       url: "/docs",
     },
     links: [{ text: "Home", url: "/" }],
+    // The docs are forced dark by the root ThemeProvider; a switch would lie.
+    themeSwitch: { enabled: false },
   }
 }

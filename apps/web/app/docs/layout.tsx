@@ -1,4 +1,4 @@
-import { DocsLayout } from "fumadocs-ui/layouts/docs"
+import { DocsLayout } from "fumadocs-ui/layouts/notebook"
 import { RootProvider } from "fumadocs-ui/provider/next"
 
 import { baseOptions } from "@/lib/layout.shared"
@@ -11,14 +11,13 @@ export const metadata = {
   },
 }
 
+// Theme is owned by next-themes in the root layout, which forces dark on /docs.
 export default function Layout({ children }: LayoutProps<"/docs">) {
   return (
     <RootProvider theme={{ enabled: false }}>
-      <div className="flex min-h-screen flex-col">
-        <DocsLayout tree={source.getPageTree()} {...baseOptions()}>
-          {children}
-        </DocsLayout>
-      </div>
+      <DocsLayout tree={source.getPageTree()} {...baseOptions()}>
+        {children}
+      </DocsLayout>
     </RootProvider>
   )
 }
