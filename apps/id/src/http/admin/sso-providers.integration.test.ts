@@ -205,3 +205,55 @@ test("machine token creates, updates and deletes the provider", async () => {
     });
   expectRedacted(events);
 });
+
+import { createSsoProvider } from "../../db/queries/sso-providers.ts";
+import { ssoTestSchema } from "./sso-providers.ts";
+test("platform admins, readers and a machine test the in-process SSO issuer", async () => {
+  for (const kind of [
+    "platformAdmin",
+    "platformReader",
+    { bearer: await fixture.mintMachineToken(["platform:read"]) },
+  ] as const) {
+    const response = await request(
+      fixture.tenant.organizationId,
+      "/test",
+      "GET",
+      undefined,
+      kind,
+    );
+    expect(response.status).toBe(200);
+    const result = ssoTestSchema.parse(await response.json());
+    expect(result.discovery).toMatchObject({
+      reachable: true,
+      issuerMatches: true,
+    });
+    expect(result.jwks.reachable).toBe(true);
+    expect(result.jwks.keys).toBeGreaterThanOrEqual(1);
+    expect(result.problems).toEqual([]);
+  }
+});
+test("SSO test reports a missing provider and an unreachable issuer", async () => {
+  const org = await createOrganization(fixture.db, {
+    slug: "test-provider",
+    name: "Test provider",
+  });
+  const missing = await request(org.id, "/test");
+  expect(missing.status).toBe(404);
+  expect(await missing.json()).toMatchObject({ code: "provider_not_found" });
+  expect((await request(createId(), "/test")).status).toBe(404);
+  expect((await request("bad-id", "/test")).status).toBe(400);
+  await createSsoProvider(fixture.db, {
+    organizationId: org.id,
+    providerId: org.slug,
+    issuer: "http://127.0.0.1:1",
+    domain: "test.example.com",
+    oidc: { clientId: "test" },
+  });
+  const unreachable = await request(org.id, "/test");
+  expect(unreachable.status).toBe(200);
+  expect(
+    ssoTestSchema
+      .parse(await unreachable.json())
+      .problems.map((problem) => problem.code),
+  ).toEqual(["discovery_unreachable"]);
+});

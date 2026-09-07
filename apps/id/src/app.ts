@@ -28,6 +28,7 @@ export type AppServices = {
   db: Database;
   environment: Environment;
   readinessCheck?: typeof checkReadiness;
+  ssoTest?: { allowPrivateHosts: boolean };
 };
 
 export function createApp(services: AppServices) {
@@ -40,6 +41,7 @@ export function createApp(services: AppServices) {
     context.set("environment", services.environment);
     context.set("auth", services.auth);
     context.set("db", services.db);
+    context.set("ssoTest", services.ssoTest);
     context.set("requestId", requestId);
     context.header("x-request-id", requestId);
 

@@ -64,6 +64,7 @@ export async function createAdminFixture() {
     `);
     const app = createApp({
       auth: createAuth(db, environment),
+      ssoTest: { allowPrivateHosts: true },
       db,
       environment,
     });

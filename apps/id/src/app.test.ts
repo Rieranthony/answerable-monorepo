@@ -143,6 +143,7 @@ describe("unit: Hono application", () => {
     expect(schemaResponse.status).toBe(200);
     expect(schema.openapi).toStartWith("3.");
     expect(Object.keys(schema.paths)).toEqual([
+      "/api/admin/v1/organizations/{organizationId}/sign-in-diagnosis",
       "/api/admin/v1/platform/summary",
       "/api/admin/v1/me",
       "/api/admin/v1/users",
@@ -183,6 +184,7 @@ describe("unit: Hono application", () => {
       "/api/admin/v1/organizations/{organizationId}/domains",
       "/api/admin/v1/organizations/{organizationId}/domains/{domainId}/disable",
       "/api/admin/v1/organizations/{organizationId}/domains/{domainId}/enable",
+      "/api/admin/v1/organizations/{organizationId}/sso-provider/test",
       "/api/admin/v1/organizations/{organizationId}/sso-provider",
       "/api/admin/v1/organizations/{organizationId}/summary",
       "/api/admin/v1/organizations",

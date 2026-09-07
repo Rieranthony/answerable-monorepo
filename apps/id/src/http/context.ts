@@ -8,6 +8,7 @@ export type AppEnvironment = {
   Variables: {
     auth: Auth;
     db: Database;
+    ssoTest?: { allowPrivateHosts: boolean };
     requestId: string;
     environment: Environment;
     principal?: Principal;

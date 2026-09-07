@@ -14,6 +14,7 @@ The platform organisation, admin API resource, `platform-admins` staff group and
 The admin API lives under `/api/admin/v1`, with versioned Hono routes calling services and grouped query modules:
 
 - **Summaries.** `/platform/summary` reports fleet counts and 24-hour sign-ins and denials; `/organizations/{organizationId}/summary` reports organisation counts and seven-day successful sign-ins.
+- **Diagnostics.** `…/sign-in-diagnosis?email=` diagnoses database sign-in checks and membership windows; `…/sso-provider/test` checks outbound discovery and JWKS connectivity without sending credentials.
 - **Caller.** `/me` returns the authenticated principal and effective grants.
 - **Organisation configuration.** Organisations support list, create, read, update, disable, enable and erase; nested domains and the SSO provider support configuration and reads.
 - **People.** Users support list, read, disable, enable, email retirement and erase; members support reads, window changes and removal, with user- and member-scoped session listing and revocation.

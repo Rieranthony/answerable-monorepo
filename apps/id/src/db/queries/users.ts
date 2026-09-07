@@ -164,3 +164,12 @@ export async function deleteUser(executor: Executor, userId: string) {
     .returning();
   return row ?? null;
 }
+
+export async function findUserByEmail(executor: Executor, email: string) {
+  const [row] = await executor
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.email, email.toLowerCase()))
+    .limit(1);
+  return row ? findUser(executor, row.id) : null;
+}

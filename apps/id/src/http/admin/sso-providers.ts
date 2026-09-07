@@ -1,3 +1,4 @@
+import { testSsoProvider, ssoProblemCodes } from "../../services/sso-test.ts";
 import { json, body, pathParameter, uuidParam } from "./schemas.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
@@ -44,7 +45,50 @@ export const ssoProviderSchema = z.object({
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
+export const ssoTestSchema = z.object({
+  issuer: z.string(),
+  kind: z.enum(["entra", "google", "oidc"]),
+  discovery: z.object({
+    url: z.string(),
+    reachable: z.boolean(),
+    status: z.number().nullable(),
+    issuerMatches: z.boolean().nullable(),
+    authorizationEndpoint: z.string().nullable(),
+    tokenEndpoint: z.string().nullable(),
+    jwksUri: z.string().nullable(),
+  }),
+  jwks: z.object({
+    reachable: z.boolean(),
+    keys: z.number().int().nonnegative().nullable(),
+  }),
+  elapsedMs: z.number().nonnegative(),
+  problems: z.array(
+    z.object({ code: z.enum(ssoProblemCodes), detail: z.string() }),
+  ),
+});
 export const routes = {
+  testSsoProvider: {
+    method: "get",
+    path: "/organizations/:organizationId/sso-provider/test",
+    operationId: "testSsoProvider",
+    summary: "Test SSO connectivity",
+    description:
+      "Perform an outbound request to discovery and JWKS endpoints without changing state or sending credentials. Report reachability, issuer equality and key count; problems explain failed checks. Credentials are only provable by a real sign-in. Private hosts, insecure URLs and redirects are refused. Use diagnoseSignIn for database checks for an email. validation_failed rejects malformed ids; provider_not_found returns 404 when no provider exists.",
+    tag: "Diagnostics",
+    platformScope: "platform:read",
+    kind: "read",
+    parameters,
+    responses: standardResponses(
+      {},
+      {
+        200: {
+          description: "SSO connectivity diagnosis",
+          content: json(ssoTestSchema),
+        },
+        ...problemResponses(400, 404),
+      },
+    ),
+  },
   getSsoProvider: {
     method: "get",
     path: "/organizations/:organizationId/sso-provider",
@@ -118,6 +162,19 @@ export const routes = {
 } satisfies Record<string, AdminRoute>;
 
 export function register(app: Hono<AppEnvironment>) {
+  registerRoute(
+    app,
+    routes.testSsoProvider,
+    validate("param", paramSchema),
+    async (context) =>
+      context.json(
+        await testSsoProvider(
+          context.get("db"),
+          context.req.param("organizationId")!,
+          context.get("ssoTest"),
+        ),
+      ),
+  );
   registerRoute(
     app,
     routes.getSsoProvider,

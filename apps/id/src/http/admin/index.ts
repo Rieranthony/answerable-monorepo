@@ -27,7 +27,10 @@ import * as auditEvents from "./audit-events.ts";
 
 import * as platform from "./platform.ts";
 
+import * as diagnostics from "./diagnostics.ts";
+
 const families = [
+  diagnostics,
   platform,
   me,
   users,
