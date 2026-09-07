@@ -17,6 +17,7 @@ export const adminSecuritySchemes = {
   },
 } as const;
 export const adminTags = [
+  { name: "Platform", description: "Fleet analysis summaries" },
   { name: "Audit", description: "Audit event reads" },
   { name: "Users", description: "User administration" },
   { name: "Sessions", description: "Session administration" },

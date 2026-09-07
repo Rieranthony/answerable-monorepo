@@ -25,7 +25,10 @@ import * as sessions from "./sessions.ts";
 
 import * as auditEvents from "./audit-events.ts";
 
+import * as platform from "./platform.ts";
+
 const families = [
+  platform,
   me,
   users,
   sessions,

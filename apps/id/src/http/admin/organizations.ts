@@ -9,6 +9,7 @@ import type { Hono } from "hono";
 import { z } from "zod";
 import { lifecycleStatuses } from "../../db/schema/vocabulary.ts";
 import { actorFromContext } from "../../services/actor.ts";
+import { getOrganizationSummary } from "../../services/summary.ts";
 import * as service from "../../services/organizations.ts";
 import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
@@ -27,6 +28,38 @@ export const organizationSchema = z.object({
   disabledAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
+});
+const counter = z.number().int().nonnegative();
+const statusCounts = z.object({ active: counter, disabled: counter });
+export const organizationSummarySchema = z.object({
+  organization: organizationSchema,
+  domains: statusCounts,
+  ssoProvider: z.object({
+    configured: z.boolean(),
+    kind: z.enum(["entra", "google", "oidc"]).nullable(),
+    issuer: z.string().nullable(),
+  }),
+  members: z.object({
+    total: counter,
+    effective: counter,
+    byStatus: statusCounts.extend({ inert: counter }),
+  }),
+  groups: statusCounts,
+  entitlements: statusCounts.extend({
+    targets: z.array(
+      z.object({
+        kind: z.enum(["client", "resource"]),
+        id: z.string(),
+        rows: counter,
+      }),
+    ),
+  }),
+  clients: z.object({ owned: counter }),
+  sessions: z.object({ active: counter }),
+  signIns7d: z.object({
+    succeeded: counter,
+    lastSucceededAt: z.iso.datetime().nullable(),
+  }),
 });
 const querySchema = pageQuerySchema.extend({
   q: z.string().trim().min(1).max(100).optional(),
@@ -59,6 +92,29 @@ const success = {
 };
 
 export const routes = {
+  getOrganizationSummary: {
+    method: "get",
+    path: "/organizations/:organizationId/summary",
+    operationId: "getOrganizationSummary",
+    summary: "Summarise an organisation",
+    description:
+      "Read an organisation and its counts without paging or changing state. Domains, groups and entitlements use stored status; entitlement targets count all rows, including disabled or out-of-window grants, by client id or resource identifier. Members.total includes every membership, effective counts windows with an inclusive start and exclusive end at the current instant, and byStatus counts the linked users regardless of window. Owned clients include disabled clients. Active sessions are unexpired sessions belonging to any member, regardless of membership window or active session organisation. SSO reports the configured issuer and its kind. Successful sign-ins cover the trailing seven days in UTC, including the cutoff instant; lastSucceededAt is the latest success in that window, or null. Rejections carry no organisation and cannot be counted per organisation; use getPlatformSummary for fleet rejections. validation_failed rejects malformed ids; not_found means the organisation is missing or unavailable.",
+    tag: "Organizations",
+    platformScope: "platform:read",
+    orgScope: "org:read",
+    kind: "read",
+    parameters,
+    responses: standardResponses(
+      { orgScope: "org:read" },
+      {
+        200: {
+          description: "Organisation summary",
+          content: json(organizationSummarySchema),
+        },
+        ...problemResponses(400),
+      },
+    ),
+  },
   listOrganizations: {
     method: "get",
     path: "/organizations",
@@ -198,6 +254,18 @@ export const routes = {
 } satisfies Record<string, AdminRoute>;
 
 export function register(app: Hono<AppEnvironment>) {
+  registerRoute(
+    app,
+    routes.getOrganizationSummary,
+    validate("param", paramSchema),
+    async (context) =>
+      context.json(
+        await getOrganizationSummary(
+          context.get("db"),
+          context.req.param("organizationId")!,
+        ),
+      ),
+  );
   registerRoute(
     app,
     routes.listOrganizations,
