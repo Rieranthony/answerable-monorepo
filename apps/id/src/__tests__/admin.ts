@@ -43,6 +43,8 @@ export async function createAdminFixture() {
   const trustedOrigin = "https://console.example.com";
   const environment = testEnvironment({
     trustedOrigins: [issuer.origin, trustedOrigin],
+    rootAdminSecret: "fixture-root-secret-at-least-32-characters",
+    rootAdminBreakGlass: true,
   });
   const connection = createDatabase(environment);
   const { db } = connection;
@@ -227,6 +229,32 @@ export async function createAdminFixture() {
         );
       }
     }
+    // Keep existing human/client fixture helpers typed to their supported principals.
+    function headers(
+      kind: Name | "root" | { bearer: string },
+      extra?: { origin?: boolean | string },
+    ): Headers;
+    function headers(
+      kind: Name | { bearer: string },
+      extra?: { origin?: boolean | string },
+    ): Headers;
+    function headers(
+      kind: Name | "root" | { bearer: string },
+      extra: { origin?: boolean | string } = {},
+    ) {
+      const headers = new Headers();
+      if (kind === "root")
+        headers.set("Authorization", `Bearer ${environment.rootAdminSecret}`);
+      else if (typeof kind === "string")
+        headers.set("Cookie", principals[kind].cookie);
+      else headers.set("Authorization", `Bearer ${kind.bearer}`);
+      if (extra.origin !== false)
+        headers.set(
+          "Origin",
+          typeof extra.origin === "string" ? extra.origin : trustedOrigin,
+        );
+      return headers;
+    }
     return {
       app,
       db,
@@ -275,21 +303,7 @@ export async function createAdminFixture() {
           .setExpirationTime("5m")
           .sign(privateKey);
       },
-      headers(
-        kind: Name | { bearer: string },
-        extra: { origin?: boolean | string } = {},
-      ) {
-        const headers = new Headers();
-        if (typeof kind === "string")
-          headers.set("Cookie", principals[kind].cookie);
-        else headers.set("Authorization", `Bearer ${kind.bearer}`);
-        if (extra.origin !== false)
-          headers.set(
-            "Origin",
-            typeof extra.origin === "string" ? extra.origin : trustedOrigin,
-          );
-        return headers;
-      },
+      headers,
       deniedEvents(since?: Date) {
         return db
           .select()

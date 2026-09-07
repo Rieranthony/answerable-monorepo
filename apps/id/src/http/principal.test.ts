@@ -7,6 +7,7 @@ import {
   SignJWT,
   type JWTPayload,
 } from "jose";
+import type { AuditEventInput } from "../db/queries/audit.ts";
 import type { Auth } from "../auth.ts";
 import {
   stubAuth,
@@ -40,6 +41,7 @@ const grants = [
 ];
 function setup(overrides: Partial<PrincipalDeps> = {}) {
   const deps: PrincipalDeps = {
+    hasPlatformWriter: mock(async () => false),
     getSession: mock(async () => session),
     verifyBearer: mock(async () => ({
       clientId: "client",
@@ -49,7 +51,15 @@ function setup(overrides: Partial<PrincipalDeps> = {}) {
     findClient: mock(async () => client),
     ...overrides,
   };
-  const db = stubDatabase();
+  const rows: AuditEventInput[] = [];
+  const db = Object.assign(stubDatabase(), {
+    insert: () => ({
+      values: (row: AuditEventInput) => {
+        rows.push(row);
+        return { returning: async () => [row] };
+      },
+    }),
+  });
   const environment = testEnvironment({
     trustedOrigins: ["https://trusted.example"],
   });
@@ -63,7 +73,7 @@ function setup(overrides: Partial<PrincipalDeps> = {}) {
   app.use("*", createPrincipalMiddleware(deps));
   app.all("/", (c) => c.json(c.get("principal")));
   app.onError(problemHandler);
-  return { app, deps, db, environment };
+  return { app, deps, db, environment, rows };
 }
 async function assertProblem(response: Response, status: number, code: string) {
   expect(response.status).toBe(status);
@@ -350,4 +360,96 @@ describe("unit: bearer verification and JWKS", () => {
       query: { disableRefresh: true },
     });
   });
+});
+
+const rootSecret = "test-root-secret-at-least-32-characters";
+test.each(["GET", "POST"])(
+  "root bearer skips JWT, session and CSRF on %s",
+  async (method) => {
+    const { app, deps, db, environment } = setup();
+    environment.rootAdminSecret = rootSecret;
+    const response = await app.request("/", {
+      method,
+      headers: { Authorization: `Bearer ${rootSecret}` },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ type: "root", grants: [] });
+    expect(deps.hasPlatformWriter).toHaveBeenCalledWith(db, {
+      organizationSlug: environment.platformOrganizationSlug,
+      resource: environment.adminResourceIdentifier,
+    });
+    expect(deps.verifyBearer).not.toHaveBeenCalled();
+    expect(deps.findClient).not.toHaveBeenCalled();
+    expect(deps.getSession).not.toHaveBeenCalled();
+    expect(deps.loadGrants).not.toHaveBeenCalled();
+  },
+);
+test.each([undefined, rootSecret])(
+  "non-root bearer uses JWT with configured secret %s",
+  async (configured) => {
+    const verifyBearer = mock(async () => {
+      throw new Error("bad JWT");
+    });
+    const { app, environment, deps } = setup({ verifyBearer });
+    environment.rootAdminSecret = configured;
+    const token = configured ? "wrong-secret" : rootSecret;
+    await assertProblem(
+      await app.request("/", { headers: { Authorization: `Bearer ${token}` } }),
+      401,
+      "invalid_token",
+    );
+    expect(verifyBearer).toHaveBeenCalledWith(token);
+    expect(deps.hasPlatformWriter).not.toHaveBeenCalled();
+  },
+);
+test("root lockout is audited once without credentials", async () => {
+  const { app, environment, rows, deps } = setup({
+    hasPlatformWriter: mock(async () => true),
+  });
+  environment.rootAdminSecret = rootSecret;
+  const response = await app.request("/", {
+    headers: {
+      Authorization: `Bearer ${rootSecret}`,
+      "x-forwarded-for": "192.0.2.1, 192.0.2.2",
+      "user-agent": "test",
+    },
+  });
+  expect(response.headers.get("content-type")).toContain(
+    "application/problem+json",
+  );
+  expect(response.status).toBe(403);
+  const body = await response.json();
+  expect(body).toMatchObject({
+    code: "root_locked",
+    detail:
+      "A platform administrator exists. Set ROOT_ADMIN_BREAK_GLASS=true to use the root secret.",
+  });
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
+    actorType: "system",
+    actorId: "root",
+    action: "admin.root_request",
+    outcome: "denied",
+    reason: "root_locked",
+    targetType: "route",
+    targetId: "/",
+    requestId: "request",
+    ip: "192.0.2.1",
+    userAgent: "test",
+  });
+  expect(JSON.stringify({ rows, body })).not.toContain(rootSecret);
+  expect(deps.verifyBearer).not.toHaveBeenCalled();
+});
+test("break-glass skips the writer lookup", async () => {
+  const { app, environment, deps } = setup();
+  environment.rootAdminSecret = rootSecret;
+  environment.rootAdminBreakGlass = true;
+  expect(
+    await (
+      await app.request("/", {
+        headers: { Authorization: `Bearer ${rootSecret}` },
+      })
+    ).json(),
+  ).toEqual({ type: "root", grants: [] });
+  expect(deps.hasPlatformWriter).not.toHaveBeenCalled();
 });

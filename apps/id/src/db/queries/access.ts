@@ -1,15 +1,14 @@
-import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Executor } from "../client.ts";
 import {
   entitlements,
-  groupMembers,
-  groups,
   members,
   organizations,
   users,
 } from "../schema/index.ts";
 import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
 import { isEffective } from "./effective.ts";
+import { matchingEntitlements } from "./grants.ts";
 
 export type AccessTarget = { clientId: string } | { resource: string };
 export type MemberAccess = {
@@ -25,31 +24,6 @@ export type MemberAccess = {
     }>;
   }>;
 };
-// Keep the principal match identical to effectiveGrants: grants are additive.
-function matchingEntitlements(executor: Executor) {
-  return and(
-    eq(entitlements.organizationId, members.organizationId),
-    isEffective(entitlements),
-    or(
-      and(isNull(entitlements.memberId), isNull(entitlements.groupId)),
-      eq(entitlements.memberId, members.id),
-      inArray(
-        entitlements.groupId,
-        executor
-          .select({ groupId: groupMembers.groupId })
-          .from(groupMembers)
-          .innerJoin(groups, eq(groups.id, groupMembers.groupId))
-          .where(
-            and(
-              eq(groupMembers.memberId, members.id),
-              eq(groups.status, "active"),
-              isEffective(groupMembers),
-            ),
-          ),
-      ),
-    ),
-  );
-}
 const activeOrganization = and(
   eq(organizations.id, members.organizationId),
   eq(organizations.status, "active"),

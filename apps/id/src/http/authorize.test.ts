@@ -22,6 +22,7 @@ const platform = {
 function setup(
   grants: Principal["grants"],
   options: {
+    root?: boolean;
     client?: boolean;
     org?: boolean;
     any?: boolean;
@@ -44,15 +45,22 @@ function setup(
     c.set("operationId", "testOperation");
     c.set(
       "principal",
-      options.client
-        ? { type: "client", clientId: "client", organizationId: "own", grants }
-        : {
-            type: "user",
-            userId: "user",
-            email: "person@example.com",
-            sessionId: "session",
-            grants,
-          },
+      options.root
+        ? { type: "root", grants: [] }
+        : options.client
+          ? {
+              type: "client",
+              clientId: "client",
+              organizationId: "own",
+              grants,
+            }
+          : {
+              type: "user",
+              userId: "user",
+              email: "person@example.com",
+              sessionId: "session",
+              grants,
+            },
     );
     await next();
   });
@@ -162,5 +170,42 @@ test("authorizeAny denies an empty grant list and audits", async () => {
   expect(rows[0]).toMatchObject({
     reason: "insufficient_scope",
     targetId: "testOperation",
+  });
+});
+
+test.each([
+  {
+    org: true,
+    path: "/:organizationId",
+    request: "/other",
+    data: { organizationId: "other" },
+  },
+  { path: "/", request: "/", data: undefined },
+  { any: true, path: "/", request: "/", data: undefined },
+])("root is audited and admitted at platform tier %#", async (options) => {
+  const { app, rows } = setup([], { ...options, root: true });
+  expect(
+    await (
+      await app.request(options.request, {
+        headers: {
+          "x-forwarded-for": " 192.0.2.1, 192.0.2.2",
+          "user-agent": "test-agent",
+        },
+      })
+    ).json(),
+  ).toEqual({ tier: "platform" });
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
+    actorType: "system",
+    actorId: "root",
+    organizationId: undefined,
+    action: "admin.root_request",
+    outcome: "success",
+    targetType: "route",
+    targetId: "testOperation",
+    data: options.data,
+    requestId: "request",
+    ip: "192.0.2.1",
+    userAgent: "test-agent",
   });
 });

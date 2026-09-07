@@ -10,7 +10,13 @@ export const adminSecuritySchemes = {
     in: "cookie",
     name: "better-auth.session_token",
   },
-  bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+  bearerAuth: {
+    type: "http",
+    scheme: "bearer",
+    bearerFormat: "JWT",
+    description:
+      "A JWT for the admin API resource, or the root admin secret while it is enabled.",
+  },
 } as const;
 export const adminTags = [
   { name: "Audit", description: "Audit event reads" },

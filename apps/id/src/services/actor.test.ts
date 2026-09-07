@@ -5,6 +5,7 @@ import type { Principal } from "../http/principal.ts";
 import { actorFromContext } from "./actor.ts";
 
 for (const principal of [
+  { type: "root", grants: [] },
   {
     type: "user",
     userId: "user",
@@ -22,8 +23,8 @@ for (const principal of [
       return context.json(actorFromContext(context));
     });
     expect(await (await app.request("/")).json()).toEqual({
-      actorType: principal.type,
-      actorId: principal.type === "user" ? "user" : "client",
+      actorType: principal.type === "root" ? "system" : principal.type,
+      actorId: principal.type,
       requestId: "request",
     });
     expect(

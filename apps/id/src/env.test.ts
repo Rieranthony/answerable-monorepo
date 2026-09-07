@@ -35,6 +35,8 @@ describe("unit: environment", () => {
       databasePoolMax: 5,
       databasePoolIdleTimeoutMs: 10_000,
       databaseConnectionTimeoutMs: 5_000,
+      rootAdminSecret: undefined,
+      rootAdminBreakGlass: false,
       openApiEnabled: true,
       platformOrganizationSlug: "answerable",
       adminResourceIdentifier: "http://localhost:47300/api/admin",
@@ -125,5 +127,30 @@ describe("unit: environment", () => {
     expect(loadEnvironment().databaseUrl).toBe(
       requiredEnvironment.DATABASE_URL,
     );
+  });
+});
+
+test("validates root configuration", () => {
+  expect(() =>
+    parseEnvironment({
+      ...requiredEnvironment,
+      ROOT_ADMIN_SECRET: "x".repeat(31),
+    }),
+  ).toThrow(EnvironmentValidationError);
+  expect(() =>
+    parseEnvironment({
+      ...requiredEnvironment,
+      ROOT_ADMIN_BREAK_GLASS: "true",
+    }),
+  ).toThrow("ROOT_ADMIN_BREAK_GLASS requires ROOT_ADMIN_SECRET");
+  expect(
+    parseEnvironment({
+      ...requiredEnvironment,
+      ROOT_ADMIN_SECRET: "x".repeat(32),
+      ROOT_ADMIN_BREAK_GLASS: "true",
+    }),
+  ).toMatchObject({
+    rootAdminSecret: "x".repeat(32),
+    rootAdminBreakGlass: true,
   });
 });

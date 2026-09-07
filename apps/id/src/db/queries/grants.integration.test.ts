@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { testEnvironment } from "../../__tests__/support.ts";
 import { createId } from "../../lib/id.ts";
@@ -14,7 +14,7 @@ import {
   organizations,
   users,
 } from "../schema/index.ts";
-import { effectiveGrants } from "./grants.ts";
+import { effectiveGrants, hasPlatformWriter } from "./grants.ts";
 
 const resource = "https://id.test/api/admin";
 const otherResource = "https://id.test/api/other";
@@ -303,3 +303,84 @@ test("integration: accepts a transaction handle", async () => {
     { organizationId, organizationSlug: "example", scopes: ["read"] },
   ]);
 });
+
+test("integration: root lockout follows effective group grants", async () => {
+  const { db } = connection;
+  const input = { organizationSlug: "example", resource };
+  expect(await hasPlatformWriter(db, input)).toBe(false);
+  const organizationId = await insertOrganization();
+  const memberId = await insertMember(organizationId, await insertUser());
+  expect(await hasPlatformWriter(db, input)).toBe(false);
+  const groupId = await insertGroup(organizationId);
+  await insertEntitlement(organizationId, {
+    groupId,
+    scopes: ["platform:write"],
+  });
+  expect(await hasPlatformWriter(db, input)).toBe(false);
+  await insertGroupMember(organizationId, groupId, memberId);
+  expect(await hasPlatformWriter(db, input)).toBe(true);
+  expect(
+    await hasPlatformWriter(db, { ...input, resource: otherResource }),
+  ).toBe(false);
+  expect(
+    await hasPlatformWriter(db, { ...input, organizationSlug: "other" }),
+  ).toBe(false);
+  await db
+    .update(members)
+    .set({ validUntil: new Date(Date.now() - day) })
+    .where(eq(members.id, memberId));
+  expect(await hasPlatformWriter(db, input)).toBe(false);
+  await db
+    .update(members)
+    .set({ validUntil: null })
+    .where(eq(members.id, memberId));
+  await db
+    .update(groupMembers)
+    .set({ validUntil: new Date(Date.now() - day) })
+    .where(eq(groupMembers.memberId, memberId));
+  expect(await hasPlatformWriter(db, input)).toBe(false);
+  await db
+    .update(groupMembers)
+    .set({ validUntil: null })
+    .where(eq(groupMembers.memberId, memberId));
+  await db.update(entitlements).set({ status: "disabled" });
+  expect(await hasPlatformWriter(db, input)).toBe(false);
+  await db.update(entitlements).set({ status: "active" });
+  await db
+    .update(organizations)
+    .set({ status: "disabled", disabledAt: new Date() })
+    .where(eq(organizations.id, organizationId));
+  expect(await hasPlatformWriter(db, input)).toBe(false);
+  await db
+    .update(organizations)
+    .set({ status: "active", disabledAt: null })
+    .where(eq(organizations.id, organizationId));
+  await db
+    .update(groups)
+    .set({ status: "disabled" })
+    .where(eq(groups.id, groupId));
+  expect(await hasPlatformWriter(db, input)).toBe(false);
+  await db
+    .update(groups)
+    .set({ status: "active" })
+    .where(eq(groups.id, groupId));
+  expect(await hasPlatformWriter(db, input)).toBe(true);
+});
+
+test.each(["organization", "member"] as const)(
+  "integration: root lockout recognises %s entitlements",
+  async (target) => {
+    const organizationId = await insertOrganization();
+    const memberId = await insertMember(organizationId, await insertUser());
+    await insertEntitlement(organizationId, {
+      memberId: target === "member" ? memberId : undefined,
+      scopes: ["platform:read"],
+    });
+    const input = { organizationSlug: "example", resource };
+    expect(await hasPlatformWriter(connection.db, input)).toBe(false);
+    await connection.db
+      .update(entitlements)
+      .set({ scopes: ["platform:write"] });
+    expect(await hasPlatformWriter(connection.db, input)).toBe(true);
+  },
+);

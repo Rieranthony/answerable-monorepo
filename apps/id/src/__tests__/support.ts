@@ -26,6 +26,8 @@ export function testEnvironment(
     databasePoolMax: 1,
     databasePoolIdleTimeoutMs: 1_000,
     databaseConnectionTimeoutMs: 1_000,
+    rootAdminSecret: undefined,
+    rootAdminBreakGlass: false,
     openApiEnabled: true,
     platformOrganizationSlug: "answerable",
     adminResourceIdentifier: "http://localhost:47300/api/admin",

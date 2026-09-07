@@ -26,6 +26,10 @@ const environmentSchema = z
       .default("answerable"),
     /** The RFC 8707 resource indicator (aud) of the admin API itself. */
     ADMIN_RESOURCE_IDENTIFIER: z.url().optional(),
+    /** Break-glass principal satisfying every platform scope; stops working once a human holds platform:write unless break-glass is set. */
+    ROOT_ADMIN_SECRET: z.string().min(32).optional(),
+    /** Override the human platform administrator lockout for break-glass use. */
+    ROOT_ADMIN_BREAK_GLASS: z.enum(["true", "false"]).default("false"),
     AUTH_PAGES_URL: z.url().default("http://localhost:47100"),
     DATABASE_POOL_MAX: z.coerce.number().int().min(1).optional(),
     DATABASE_POOL_IDLE_TIMEOUT_MS: z.coerce
@@ -40,6 +44,12 @@ const environmentSchema = z
       .default(5_000),
     OPENAPI_ENABLED: z.enum(["true", "false"]).default("true"),
   })
+  .refine(
+    (environment) =>
+      environment.ROOT_ADMIN_BREAK_GLASS !== "true" ||
+      environment.ROOT_ADMIN_SECRET !== undefined,
+    { message: "ROOT_ADMIN_BREAK_GLASS requires ROOT_ADMIN_SECRET" },
+  )
   .transform((environment) => ({
     nodeEnv: environment.NODE_ENV,
     port: environment.PORT,
@@ -55,6 +65,8 @@ const environmentSchema = z
       environment.ADMIN_RESOURCE_IDENTIFIER ??
       `${environment.BETTER_AUTH_URL.replace(/\/+$/, "")}/api/admin`
     ).replace(/\/+$/, ""),
+    rootAdminSecret: environment.ROOT_ADMIN_SECRET,
+    rootAdminBreakGlass: environment.ROOT_ADMIN_BREAK_GLASS === "true",
     authPagesUrl: environment.AUTH_PAGES_URL,
     databasePoolMax:
       environment.DATABASE_POOL_MAX ??

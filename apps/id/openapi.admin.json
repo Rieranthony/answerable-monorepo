@@ -15,7 +15,8 @@
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer",
-        "bearerFormat": "JWT"
+        "bearerFormat": "JWT",
+        "description": "A JWT for the admin API resource, or the root admin secret while it is enabled."
       }
     }
   },
@@ -96,6 +97,25 @@
                   "properties": {
                     "principal": {
                       "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "const": "root"
+                            },
+                            "scopes": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "scopes"
+                          ]
+                        },
                         {
                           "type": "object",
                           "properties": {

@@ -1,3 +1,5 @@
+import { eq } from "drizzle-orm";
+import { auditEvents } from "../db/schema/index.ts";
 import { expect, test } from "bun:test";
 import type { AdminRoute, AdminRouteTable } from "../http/admin/route-table.ts";
 import type { AdminFixture } from "./admin.ts";
@@ -8,7 +10,7 @@ export function describeAdminRoutes(
   options: { params?: (route: AdminRoute) => Record<string, string> } = {},
 ) {
   for (const route of Object.values(table)) {
-    type Kind = Parameters<AdminFixture["headers"]>[0];
+    type Kind = Parameters<AdminFixture["headers"]>[0] | "root";
     type RequestOptions = {
       origin?: boolean | string;
       body?: unknown;
@@ -92,6 +94,39 @@ export function describeAdminRoutes(
     function entry(name: string, run: () => Promise<unknown>) {
       test(`${route.operationId}: ${name}`, run);
     }
+    entry("root is admitted by authorisation", async () => {
+      const f = fixture();
+      const before = new Set(
+        (
+          await f.db
+            .select()
+            .from(auditEvents)
+            .where(eq(auditEvents.action, "admin.root_request"))
+        ).map((row) => row.id),
+      );
+      // Exercise authorisation without changing the shared fixture on writes.
+      const response = await request(
+        "root",
+        route.kind === "read"
+          ? {}
+          : {
+              unknownIds: true,
+              ...(route.requestBody ? { body: "nope" } : {}),
+            },
+      );
+      expect([401, 403]).not.toContain(response.status);
+      const rows = (
+        await f.db
+          .select()
+          .from(auditEvents)
+          .where(eq(auditEvents.action, "admin.root_request"))
+      ).filter((row) => !before.has(row.id));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        outcome: "success",
+        targetId: route.operationId,
+      });
+    });
     entry("no credentials", async () => {
       const response = await request();
       await problem(response, 401, "unauthenticated");

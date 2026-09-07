@@ -8,16 +8,23 @@ import {
 import type { AppServices } from "../app.ts";
 import type { Auth } from "../auth.ts";
 import type { Database } from "../db/client.ts";
-import { effectiveGrants, type Grant } from "../db/queries/grants.ts";
+import {
+  effectiveGrants,
+  hasPlatformWriter,
+  type Grant,
+} from "../db/queries/grants.ts";
 import {
   findClientPrincipal,
   type ClientPrincipalRow,
 } from "../db/queries/oauth-clients.ts";
+import { recordAuditEvent } from "../db/queries/audit.ts";
+import { secretMatches } from "../services/root-secret.ts";
 import { isAdminScope } from "./admin/scopes.ts";
 import type { AppEnvironment } from "./context.ts";
 import { ProblemError } from "./problem.ts";
 
 export type Principal =
+  | { type: "root"; grants: [] }
   | {
       type: "user";
       userId: string;
@@ -38,6 +45,10 @@ export type BearerClaims = {
   sid?: unknown;
 };
 export type PrincipalDeps = {
+  hasPlatformWriter(
+    db: Database,
+    input: { organizationSlug: string; resource: string },
+  ): Promise<boolean>;
   getSession(headers: Headers): Promise<{
     session: { id: string };
     user: { id: string; email: string; status: string };
@@ -114,6 +125,7 @@ export function createDefaultPrincipalDeps({
       issuer: environment.betterAuthUrl,
       audience: environment.adminResourceIdentifier,
     }),
+    hasPlatformWriter,
     loadGrants: effectiveGrants,
     findClient: findClientPrincipal,
   };
@@ -134,49 +146,84 @@ export function createPrincipalMiddleware(
       };
       const token = /^Bearer +([^\s]+)$/i.exec(authorization)?.[1];
       if (!token) throw invalidToken();
-      let claims: BearerClaims;
-      try {
-        claims = await deps.verifyBearer(token);
-      } catch {
-        throw invalidToken();
-      }
-      const client = await deps.findClient(db, claims.clientId);
-      if (!client || client.disabled) throw invalidToken();
-      if (!client.organizationId)
-        throw new ProblemError(
-          403,
-          "client_unowned",
-          "Client has no organisation",
-        );
-      if (client.organization?.status !== "active")
-        throw new ProblemError(
-          403,
-          "organization_disabled",
-          "Organisation is disabled",
-        );
-      if (claims.sid !== undefined)
-        throw invalidToken("User-delegated tokens are not admin credentials.");
-      const scopes = [
-        ...new Set(
-          claims.scopes.filter(
-            (scope) =>
-              isAdminScope(scope) &&
-              client.clientCredentialsScopes?.includes(scope),
+      if (
+        environment.rootAdminSecret &&
+        secretMatches(environment.rootAdminSecret, token)
+      ) {
+        if (
+          !environment.rootAdminBreakGlass &&
+          (await deps.hasPlatformWriter(db, {
+            organizationSlug: environment.platformOrganizationSlug,
+            resource: environment.adminResourceIdentifier,
+          }))
+        ) {
+          await recordAuditEvent(db, {
+            actorType: "system",
+            actorId: "root",
+            action: "admin.root_request",
+            outcome: "denied",
+            reason: "root_locked",
+            targetType: "route",
+            targetId: context.req.path,
+            requestId: context.get("requestId"),
+            ip: context.req.header("x-forwarded-for")?.split(",")[0]?.trim(),
+            userAgent: context.req.header("user-agent"),
+          });
+          throw new ProblemError(
+            403,
+            "root_locked",
+            "Root is locked",
+            "A platform administrator exists. Set ROOT_ADMIN_BREAK_GLASS=true to use the root secret.",
+          );
+        }
+        principal = { type: "root", grants: [] };
+      } else {
+        let claims: BearerClaims;
+        try {
+          claims = await deps.verifyBearer(token);
+        } catch {
+          throw invalidToken();
+        }
+        const client = await deps.findClient(db, claims.clientId);
+        if (!client || client.disabled) throw invalidToken();
+        if (!client.organizationId)
+          throw new ProblemError(
+            403,
+            "client_unowned",
+            "Client has no organisation",
+          );
+        if (client.organization?.status !== "active")
+          throw new ProblemError(
+            403,
+            "organization_disabled",
+            "Organisation is disabled",
+          );
+        if (claims.sid !== undefined)
+          throw invalidToken(
+            "User-delegated tokens are not admin credentials.",
+          );
+        const scopes = [
+          ...new Set(
+            claims.scopes.filter(
+              (scope) =>
+                isAdminScope(scope) &&
+                client.clientCredentialsScopes?.includes(scope),
+            ),
           ),
-        ),
-      ].sort();
-      principal = {
-        type: "client",
-        clientId: client.clientId,
-        organizationId: client.organizationId,
-        grants: [
-          {
-            organizationId: client.organizationId,
-            organizationSlug: client.organization.slug,
-            scopes,
-          },
-        ],
-      };
+        ].sort();
+        principal = {
+          type: "client",
+          clientId: client.clientId,
+          organizationId: client.organizationId,
+          grants: [
+            {
+              organizationId: client.organizationId,
+              organizationSlug: client.organization.slug,
+              scopes,
+            },
+          ],
+        };
+      }
     } else {
       const session = await deps.getSession(context.req.raw.headers);
       if (!session) {

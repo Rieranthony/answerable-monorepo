@@ -25,22 +25,24 @@ import * as sessions from "./sessions.ts";
 
 import * as auditEvents from "./audit-events.ts";
 
-const families = new Map<AdminRouteTable, typeof me.register>([
-  [me.routes, me.register],
-  [users.routes, users.register],
-  [sessions.routes, sessions.register],
-  [entitlements.routes, entitlements.register],
-  [access.routes, access.register],
-  [groups.routes, groups.register],
-  [members.routes, members.register],
-  [resources.routes, resources.register],
-  [clients.routes, clients.register],
-  [domains.routes, domains.register],
-  [ssoProviders.routes, ssoProviders.register],
-  [organizations.routes, organizations.register],
-  [auditEvents.routes, auditEvents.register],
-]);
-export const adminRouteTables: AdminRouteTable[] = [...families.keys()];
+const families = [
+  me,
+  users,
+  sessions,
+  entitlements,
+  access,
+  groups,
+  members,
+  resources,
+  clients,
+  domains,
+  ssoProviders,
+  organizations,
+  auditEvents,
+];
+export const adminRouteTables: AdminRouteTable[] = families.map(
+  (family) => family.routes,
+);
 
 export function createAdminApp(services: AppServices) {
   const app = new Hono<AppEnvironment>();
@@ -53,7 +55,7 @@ export function createAdminApp(services: AppServices) {
     await next();
   });
   app.use("*", createPrincipalMiddleware(createDefaultPrincipalDeps(services)));
-  for (const table of adminRouteTables) families.get(table)!(app);
+  for (const family of families) family.register(app);
   app.notFound(notFound);
   // Hono does not carry a sub-app's notFound handler across app.route().
   app.all("*", notFound);

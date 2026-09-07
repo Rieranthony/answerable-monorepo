@@ -6,6 +6,7 @@ import { testEnvironment } from "../../__tests__/support.ts";
 import type { AppEnvironment } from "../context.ts";
 import { problemHandler } from "../problem.ts";
 import { registerRoute, tierOf, type AdminRoute } from "./route-table.ts";
+import { adminScopes } from "./scopes.ts";
 import { register as registerMe, meSchema } from "./me.ts";
 
 test("tierOf distinguishes platform, organisation and the me exception", () => {
@@ -122,3 +123,24 @@ test.each(["user", "client"] as const)(
     });
   },
 );
+
+test("me serialises root scopes without phantom grants", async () => {
+  const app = new Hono<AppEnvironment>();
+  app.use("*", async (c, next) => {
+    c.set("principal", { type: "root", grants: [] });
+    c.set("requestId", "request");
+    c.set("db", {
+      insert: () => ({
+        values: (row: unknown) => ({ returning: async () => [row] }),
+      }),
+    } as unknown as Database);
+    await next();
+  });
+  registerMe(app);
+  const response = await app.request("/me");
+  expect(response.status).toBe(200);
+  expect(meSchema.parse(await response.json())).toEqual({
+    principal: { type: "root", scopes: [...adminScopes] },
+    grants: [],
+  });
+});
