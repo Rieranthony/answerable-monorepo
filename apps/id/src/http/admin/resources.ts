@@ -121,7 +121,12 @@ export const routes = {
     responses: standardResponses(
       {},
       {
-        200: { description: "Resource", content: json(resourceSchema) },
+        200: {
+          description: "Resource",
+          content: json(
+            resourceSchema.extend({ clients: z.array(z.string()) }),
+          ),
+        },
         ...problemResponses(400, 404, 409),
       },
     ),

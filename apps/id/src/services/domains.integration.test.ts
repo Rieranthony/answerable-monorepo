@@ -120,3 +120,39 @@ test("domain ownership conflicts and audit failures roll back all writes", async
   });
   expect(await db.select().from(auditEvents)).toHaveLength(3);
 });
+
+test("domain deletion rejects missing and foreign targets and rolls back with its audit", async () => {
+  const db = connection.db;
+  const org = await createOrganization(db, { slug: "delete", name: "Delete" });
+  const other = await createOrganization(db, { slug: "other", name: "Other" });
+  const domain = await service.createDomain(db, actor, org.id, {
+    domain: "delete.example.com",
+  });
+  for (const [orgId, domainId] of [
+    [createId(), domain.id],
+    [other.id, domain.id],
+    [org.id, createId()],
+  ]) {
+    await expect(
+      service.deleteOrganizationDomain(db, actor, orgId!, domainId!),
+    ).rejects.toMatchObject({ status: 404 });
+  }
+  await expect(
+    service.deleteOrganizationDomain(db, invalidActor, org.id, domain.id),
+  ).rejects.toThrow();
+  expect(await findOrganizationDomain(db, org.id, domain.id)).not.toBeNull();
+  await service.deleteOrganizationDomain(db, actor, org.id, domain.id);
+  await expect(
+    service.deleteOrganizationDomain(db, actor, org.id, domain.id),
+  ).rejects.toMatchObject({ status: 404 });
+  const events = await db.select().from(auditEvents).orderBy(auditEvents.id);
+  expect(events).toHaveLength(2);
+  expect(events[1]).toMatchObject({
+    ...actor,
+    organizationId: org.id,
+    action: "domain.deleted",
+    targetType: "domain",
+    targetId: domain.id,
+    outcome: "success",
+  });
+});

@@ -41,6 +41,7 @@ const querySchema = pageQuerySchema.extend({
   groupId: z.uuid().optional(),
   status: z.enum(lifecycleStatuses).optional(),
 });
+const allQuerySchema = querySchema.omit({ memberId: true, groupId: true });
 const scopesSchema = z.array(z.string().min(1)).min(1);
 const createSchema = windowSchema.extend({
   memberId: z.uuid().optional(),
@@ -57,6 +58,33 @@ const patchSchema = windowSchema
   );
 const entitlementParams = orgParams.extend({ entitlementId: z.uuid() });
 export const routes = {
+  listAllEntitlements: {
+    method: "get",
+    path: "/entitlements",
+    operationId: "listAllEntitlements",
+    summary: "List all entitlements",
+    description:
+      "Return entitlements across organisations with each organisation id and slug, newest first, without changing state. Filter by clientId, resource or status and continue with limit and cursor. Prefer listEntitlements for one organisation; validation_failed rejects invalid filters or cursors.",
+    tag: "Entitlements",
+    platformScope: "platform:read",
+    kind: "read",
+    responses: standardResponses(
+      {},
+      {
+        200: {
+          description: "Entitlements",
+          content: json(
+            page(
+              entitlementSchema.extend({
+                organization: z.object({ id: z.uuid(), slug: z.string() }),
+              }),
+            ),
+          ),
+        },
+        ...problemResponses(400),
+      },
+    ),
+  },
   listEntitlements: {
     method: "get",
     path: "/organizations/:organizationId/entitlements",
@@ -207,6 +235,18 @@ export const routes = {
   },
 } satisfies Record<string, AdminRoute>;
 export function register(app: Hono<AppEnvironment>) {
+  registerRoute(
+    app,
+    routes.listAllEntitlements,
+    validate("query", allQuerySchema),
+    async (context) =>
+      context.json(
+        await service.listAllEntitlements(
+          context.get("db"),
+          allQuerySchema.parse(context.req.query()),
+        ),
+      ),
+  );
   registerRoute(
     app,
     routes.listEntitlements,

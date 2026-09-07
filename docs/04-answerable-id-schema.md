@@ -16,7 +16,7 @@ The admin API lives under `/api/admin/v1`, with versioned Hono routes calling se
 - **Caller.** `/me` returns the authenticated principal and effective grants.
 - **Organisation configuration.** Organisations support list, create, read, update, disable, enable and erase; nested domains and the SSO provider support configuration and reads.
 - **People.** Users support list, read, disable, enable, email retirement and erase; members support reads, window changes and removal, with user- and member-scoped session listing and revocation.
-- **Access configuration.** Groups and group members, clients (including secret rotation, ownership and resource links), resources and entitlements have administrative routes.
+- **Access configuration.** Groups and group members, clients (including secret rotation, ownership and resource links), resources and entitlements have administrative routes; clients can be erased when no entitlement references them, and domains can be deleted.
 - **Access reviews.** `…/members/{memberId}/access` and `…/access?client=|resource=` expose effective access.
 - **Audit.** Staff read `/audit-events`; organisation admins read `/organizations/{organizationId}/audit-events`. Every administrative write is audited.
 

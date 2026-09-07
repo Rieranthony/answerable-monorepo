@@ -1,4 +1,4 @@
-import { json, body, pathParameter } from "./schemas.ts";
+import { json, body, pathParameter, confirmQuery } from "./schemas.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
 import { actorFromContext } from "../../services/actor.ts";
@@ -99,6 +99,7 @@ const querySchema = pageQuerySchema.extend({
   organizationId: z.uuid().optional(),
   disabled: z.enum(["true", "false"]).optional(),
 });
+const eraseSchema = z.object({ confirm: z.string().min(1) });
 const paramSchema = z.object({ clientId: z.string().min(1) });
 const resourceParams = paramSchema.extend({ resource: z.url() });
 const parameters = [
@@ -110,6 +111,25 @@ const resourceParameters = [
 ] satisfies AdminRoute["parameters"];
 
 export const routes = {
+  eraseClient: {
+    method: "delete",
+    path: "/clients/:clientId",
+    operationId: "eraseClient",
+    summary: "Erase client",
+    description:
+      "Permanently erase a client and its resource links, tokens and consents, returning no content and recording client.erased. Prefer disableClient to suspend use reversibly. Supply confirm equal to clientId; not_found is checked before confirmation_mismatch, then client_has_entitlements requires removing every referencing entitlement before retrying.",
+    tag: "Clients",
+    platformScope: "platform:write",
+    kind: "erase",
+    parameters: [...parameters, confirmQuery(z.string().min(1))],
+    responses: standardResponses(
+      {},
+      {
+        204: { description: "Client erased" },
+        ...problemResponses(400, 404, 409),
+      },
+    ),
+  },
   listClients: {
     method: "get",
     path: "/clients",
@@ -184,7 +204,12 @@ export const routes = {
     responses: standardResponses(
       {},
       {
-        200: { description: "Client", content: json(clientSchema) },
+        200: {
+          description: "Client",
+          content: json(
+            clientSchema.extend({ resources: z.array(z.string()) }),
+          ),
+        },
         ...problemResponses(400, 404, 409),
       },
     ),
@@ -349,6 +374,21 @@ export const routes = {
   },
 } satisfies Record<string, AdminRoute>;
 export function register(app: Hono<AppEnvironment>) {
+  registerRoute(
+    app,
+    routes.eraseClient,
+    validate("param", paramSchema),
+    validate("query", eraseSchema),
+    async (context) => {
+      await service.eraseClient(
+        context.get("db"),
+        actorFromContext(context),
+        context.req.param("clientId")!,
+        eraseSchema.parse(context.req.query()).confirm,
+      );
+      return context.body(null, 204);
+    },
+  );
   registerRoute(
     app,
     routes.listClients,

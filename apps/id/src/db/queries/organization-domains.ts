@@ -106,3 +106,18 @@ export async function setOrganizationDomainStatus(
     .returning();
   return row ?? null;
 }
+
+export async function deleteOrganizationDomain(
+  executor: Executor,
+  organizationId: string,
+  domainId: string,
+) {
+  await executor
+    .delete(organizationDomains)
+    .where(
+      and(
+        eq(organizationDomains.organizationId, organizationId),
+        eq(organizationDomains.id, domainId),
+      ),
+    );
+}

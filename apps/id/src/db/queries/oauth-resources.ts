@@ -1,6 +1,10 @@
 import { and, count, desc, eq, ilike, or } from "drizzle-orm";
 import type { Executor } from "../client.ts";
-import { oauthResources, entitlements } from "../schema/index.ts";
+import {
+  oauthResources,
+  entitlements,
+  oauthClientResources,
+} from "../schema/index.ts";
 import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
 import { createId } from "../../lib/id.ts";
 
@@ -98,4 +102,12 @@ export async function countResourceEntitlements(
     .from(entitlements)
     .where(eq(entitlements.resource, identifier));
   return row!.count;
+}
+
+export function listResourceClients(executor: Executor, resource: string) {
+  return executor
+    .select()
+    .from(oauthClientResources)
+    .where(eq(oauthClientResources.resourceId, resource))
+    .orderBy(desc(oauthClientResources.id));
 }

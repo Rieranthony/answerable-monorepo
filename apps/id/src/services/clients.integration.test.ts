@@ -76,7 +76,9 @@ test("client lifecycle hides digests, returns secrets once, revokes tokens, chan
   const read = await service.getClient(db, created.clientId);
   expect(read).not.toHaveProperty("clientSecret");
   const page = await service.listClients(db, { limit: 10 });
-  expect(page).toEqual({ items: [read], nextCursor: null });
+  const { resources, ...listed } = read;
+  expect(resources).toEqual([]);
+  expect(page).toEqual({ items: [listed], nextCursor: null });
   const patch = {
     name: "Changed",
     uri: "https://app.example",
@@ -394,4 +396,61 @@ test("audit failures roll back client writes, secrets, ownership, links and toke
     disabled: true,
   });
   expect(await db.select().from(auditEvents)).toHaveLength(3);
+});
+
+test("erasure checks existence, confirmation and entitlements in order, and rolls back on audit failure", async () => {
+  const db = connection.db;
+  await expect(
+    service.eraseClient(db, actor, "missing", "wrong"),
+  ).rejects.toMatchObject({ status: 404 });
+  const client = await service.createClient(db, actor, machineInput());
+  const { createEntitlement, deleteEntitlement } =
+    await import("../db/queries/entitlements.ts");
+  const grant = await createEntitlement(db, {
+    organizationId,
+    clientId: client.clientId,
+    scopes: ["read"],
+  });
+  await expect(
+    service.eraseClient(db, actor, client.clientId, "wrong"),
+  ).rejects.toMatchObject({ status: 400, code: "confirmation_mismatch" });
+  await expect(
+    service.eraseClient(db, actor, client.clientId, client.clientId),
+  ).rejects.toMatchObject({ status: 409, code: "client_has_entitlements" });
+  expect(await db.select().from(auditEvents)).toHaveLength(1);
+  await deleteEntitlement(db, organizationId, grant.id);
+  await service.linkResource(db, actor, client.clientId, resource);
+  await expect(
+    service.eraseClient(
+      db,
+      { ...actor, requestId: "\0" },
+      client.clientId,
+      client.clientId,
+    ),
+  ).rejects.toThrow();
+  expect(await queries.findClient(db, client.clientId)).not.toBeNull();
+  expect(await queries.listClientResources(db, client.clientId)).toHaveLength(
+    1,
+  );
+  await service.eraseClient(db, actor, client.clientId, client.clientId);
+  expect(await queries.findClient(db, client.clientId)).toBeNull();
+  const unowned = await service.createClient(db, actor, publicInput);
+  await service.eraseClient(db, actor, unowned.clientId, unowned.clientId);
+  const events = await db
+    .select()
+    .from(auditEvents)
+    .where(eq(auditEvents.action, "client.erased"))
+    .orderBy(auditEvents.id);
+  expect(events).toHaveLength(2);
+  expect(events[0]).toMatchObject({
+    ...actor,
+    organizationId,
+    targetType: "client",
+    targetId: client.clientId,
+    outcome: "success",
+  });
+  expect(events[1]).toMatchObject({
+    organizationId: null,
+    targetId: unowned.clientId,
+  });
 });

@@ -1,10 +1,10 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, getTableColumns } from "drizzle-orm";
 import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
 import type { LifecycleStatus } from "../schema/vocabulary.ts";
 import type { MemberWindow } from "./groups.ts";
 import { createId } from "../../lib/id.ts";
 import type { Executor } from "../client.ts";
-import { entitlements } from "../schema/index.ts";
+import { entitlements, organizations } from "../schema/index.ts";
 
 export type CreateEntitlementInput = {
   organizationId: string;
@@ -119,4 +119,39 @@ export async function deleteEntitlement(
   await executor
     .delete(entitlements)
     .where(entitlementWhere(organizationId, entitlementId));
+}
+
+export function listAllEntitlements(
+  executor: Executor,
+  query: EntitlementQuery,
+) {
+  return executor
+    .select({
+      ...getTableColumns(entitlements),
+      organization: { id: organizations.id, slug: organizations.slug },
+    })
+    .from(entitlements)
+    .innerJoin(organizations, eq(organizations.id, entitlements.organizationId))
+    .where(
+      and(
+        query.clientId === undefined
+          ? undefined
+          : eq(entitlements.clientId, query.clientId),
+        query.resource === undefined
+          ? undefined
+          : eq(entitlements.resource, query.resource),
+        query.memberId === undefined
+          ? undefined
+          : eq(entitlements.memberId, query.memberId),
+        query.groupId === undefined
+          ? undefined
+          : eq(entitlements.groupId, query.groupId),
+        query.status === undefined
+          ? undefined
+          : eq(entitlements.status, query.status),
+        beforeCursor(entitlements.id, query.cursor),
+      ),
+    )
+    .orderBy(desc(entitlements.id))
+    .limit(query.limit + 1);
 }

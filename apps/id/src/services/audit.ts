@@ -1,3 +1,4 @@
+import { findUser } from "../db/queries/users.ts";
 import type { Database } from "../db/client.ts";
 import * as queries from "../db/queries/audit.ts";
 import { findOrganization } from "../db/queries/organizations.ts";
@@ -22,4 +23,18 @@ export async function listOrganizationAuditEvents(
     throw new ProblemError(404, "not_found", "Organisation not found");
   }
   return listAuditEvents(db, { ...filters, organizationId }, page);
+}
+
+export async function listUserAuditEvents(
+  db: Database,
+  userId: string,
+  filters: Pick<
+    queries.AuditEventFilters,
+    "action" | "outcome" | "from" | "to"
+  >,
+  page: PageQuery,
+) {
+  if (!(await findUser(db, userId)))
+    throw new ProblemError(404, "not_found", "User not found");
+  return queries.listUserAuditEvents(db, userId, filters, page);
 }

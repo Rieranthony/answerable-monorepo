@@ -38,7 +38,10 @@ afterAll(async () => {
 test("resource lifecycle attributes exactly one audit per write and preserves update changes", async () => {
   const db = connection.db;
   const row = await service.createResource(db, actor, input);
-  expect(await service.getResource(db, input.identifier)).toEqual(row);
+  expect(await service.getResource(db, input.identifier)).toEqual({
+    ...row,
+    clients: [],
+  });
   expect(await service.listResources(db, { limit: 2 })).toEqual({
     items: [row],
     nextCursor: null,

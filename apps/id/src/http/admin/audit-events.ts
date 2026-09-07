@@ -13,10 +13,16 @@ import { registerRoute, type AdminRoute } from "./route-table.ts";
 const querySchema = pageQuerySchema.extend({
   actorId: z.string().optional(),
   action: z.string().optional(),
+  outcome: z.enum(auditOutcomes).optional(),
   targetType: z.string().optional(),
   targetId: z.string().optional(),
   from: z.iso.datetime().optional(),
   to: z.iso.datetime().optional(),
+});
+const userQuerySchema = querySchema.omit({
+  actorId: true,
+  targetType: true,
+  targetId: true,
 });
 const platformQuerySchema = querySchema.extend({
   organizationId: z.uuid().optional(),
@@ -54,6 +60,19 @@ const responses = standardResponses(
   },
 );
 export const routes = {
+  listUserAuditEvents: {
+    method: "get",
+    path: "/users/:userId/audit-events",
+    operationId: "listUserAuditEvents",
+    summary: "List user audit events",
+    description:
+      "Return a person's audit trail as actor or user, membership or session target, newest first, without changing state. Filter by action, outcome, from or to and continue with limit and cursor. Prefer listAuditEvents for a platform-wide review; not_found means the user is missing and validation_failed rejects invalid ids, filters or cursors.",
+    tag: "Audit",
+    platformScope: "platform:read",
+    kind: "read",
+    parameters: [pathParameter("userId", "uuid")],
+    responses: { ...responses, ...problemResponses(404) },
+  },
   listAuditEvents: {
     method: "get",
     path: "/audit-events",
@@ -86,6 +105,7 @@ function filters(query: z.output<typeof platformQuerySchema>) {
     organizationId: query.organizationId,
     actorId: query.actorId,
     action: query.action,
+    outcome: query.outcome,
     targetType: query.targetType,
     targetId: query.targetId,
     from: query.from === undefined ? undefined : new Date(query.from),
@@ -93,6 +113,23 @@ function filters(query: z.output<typeof platformQuerySchema>) {
   };
 }
 export function register(app: Hono<AppEnvironment>) {
+  registerRoute(
+    app,
+    routes.listUserAuditEvents,
+    validate("param", uuidParam("userId")),
+    validate("query", userQuerySchema),
+    async (context) => {
+      const query = userQuerySchema.parse(context.req.query());
+      return context.json(
+        await service.listUserAuditEvents(
+          context.get("db"),
+          context.req.param("userId")!,
+          filters(query),
+          query,
+        ),
+      );
+    },
+  );
   registerRoute(
     app,
     routes.listAuditEvents,

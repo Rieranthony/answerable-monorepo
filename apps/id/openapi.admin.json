@@ -314,6 +314,15 @@
           },
           {
             "in": "query",
+            "name": "email",
+            "schema": {
+              "type": "string",
+              "format": "email",
+              "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+            }
+          },
+          {
+            "in": "query",
             "name": "q",
             "schema": {
               "type": "string",
@@ -3326,6 +3335,358 @@
         "x-scopes": {
           "platform": "platform:users",
           "org": "org:users"
+        }
+      }
+    },
+    "/api/admin/v1/entitlements": {
+      "get": {
+        "operationId": "listAllEntitlements",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "in": "query",
+            "name": "clientId",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resource",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "disabled"
+              ]
+            }
+          }
+        ],
+        "summary": "List all entitlements",
+        "description": "Return entitlements across organisations with each organisation id and slug, newest first, without changing state. Filter by clientId, resource or status and continue with limit and cursor. Prefer listEntitlements for one organisation; validation_failed rejects invalid filters or cursors.",
+        "tags": [
+          "Entitlements"
+        ],
+        "responses": {
+          "200": {
+            "description": "Entitlements",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "organizationId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "memberId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "groupId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "clientId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "resource": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uri"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "scopes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "disabled"
+                            ]
+                          },
+                          "validFrom": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "validUntil": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                          },
+                          "updatedAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                          },
+                          "organization": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "slug": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "slug"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "organizationId",
+                          "memberId",
+                          "groupId",
+                          "clientId",
+                          "resource",
+                          "scopes",
+                          "status",
+                          "validFrom",
+                          "validUntil",
+                          "createdAt",
+                          "updatedAt",
+                          "organization"
+                        ]
+                      }
+                    },
+                    "nextCursor": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The principal is not allowed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-tier": "platform",
+        "x-kind": "read",
+        "x-scopes": {
+          "platform": "platform:read"
         }
       }
     },
@@ -9465,6 +9826,15 @@
           },
           {
             "in": "query",
+            "name": "email",
+            "schema": {
+              "type": "string",
+              "format": "email",
+              "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+            }
+          },
+          {
+            "in": "query",
             "name": "q",
             "schema": {
               "type": "string",
@@ -11565,6 +11935,12 @@
                       "type": "string",
                       "format": "date-time",
                       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    "clients": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   },
                   "required": [
@@ -11582,7 +11958,8 @@
                     "policyVersion",
                     "metadata",
                     "createdAt",
-                    "updatedAt"
+                    "updatedAt",
+                    "clients"
                   ]
                 }
               }
@@ -13092,6 +13469,1454 @@
         }
       }
     },
+    "/api/admin/v1/clients/{clientId}": {
+      "delete": {
+        "operationId": "eraseClient",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clientId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "confirm",
+            "required": true,
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Must equal the target id."
+          }
+        ],
+        "summary": "Erase client",
+        "description": "Permanently erase a client and its resource links, tokens and consents, returning no content and recording client.erased. Prefer disableClient to suspend use reversibly. Supply confirm equal to clientId; not_found is checked before confirmation_mismatch, then client_has_entitlements requires removing every referencing entitlement before retrying.",
+        "tags": [
+          "Clients"
+        ],
+        "responses": {
+          "204": {
+            "description": "Client erased"
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The principal is not allowed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-tier": "platform",
+        "x-kind": "erase",
+        "x-scopes": {
+          "platform": "platform:write"
+        }
+      },
+      "get": {
+        "operationId": "getClient",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clientId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "summary": "Get client",
+        "description": "Return the OAuth client registration without revealing a secret or changing state. Prefer listClients to discover a clientId; validation_failed rejects malformed ids and not_found means the client is missing.",
+        "tags": [
+          "Clients"
+        ],
+        "responses": {
+          "200": {
+            "description": "Client",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "clientId": {
+                      "type": "string"
+                    },
+                    "hasClientSecret": {
+                      "type": "boolean"
+                    },
+                    "redirectUris": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "dpopBoundAccessTokens": {
+                      "type": "boolean"
+                    },
+                    "disabled": {
+                      "type": "boolean"
+                    },
+                    "userId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "organizationId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "metadata": {
+                      "anyOf": [
+                        {},
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    "clientDiscoveryId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "referenceId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "name": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "uri": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "icon": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "tos": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "policy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "softwareId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "softwareVersion": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "softwareStatement": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "backchannelLogoutUri": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "tokenEndpointAuthMethod": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "applicationType": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "jwks": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "jwksUri": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "subjectType": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "contacts": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "postLogoutRedirectUris": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "grantTypes": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "responseTypes": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "scopes": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "clientCredentialsScopes": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "backchannelLogoutSessionRequired": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "requirePKCE": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "skipConsent": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "enableEndSession": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "resources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "clientId",
+                    "hasClientSecret",
+                    "redirectUris",
+                    "dpopBoundAccessTokens",
+                    "disabled",
+                    "userId",
+                    "organizationId",
+                    "metadata",
+                    "createdAt",
+                    "updatedAt",
+                    "clientDiscoveryId",
+                    "referenceId",
+                    "name",
+                    "uri",
+                    "icon",
+                    "tos",
+                    "policy",
+                    "softwareId",
+                    "softwareVersion",
+                    "softwareStatement",
+                    "backchannelLogoutUri",
+                    "tokenEndpointAuthMethod",
+                    "applicationType",
+                    "jwks",
+                    "jwksUri",
+                    "subjectType",
+                    "contacts",
+                    "postLogoutRedirectUris",
+                    "grantTypes",
+                    "responseTypes",
+                    "scopes",
+                    "clientCredentialsScopes",
+                    "backchannelLogoutSessionRequired",
+                    "requirePKCE",
+                    "skipConsent",
+                    "enableEndSession",
+                    "resources"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The principal is not allowed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-tier": "platform",
+        "x-kind": "read",
+        "x-scopes": {
+          "platform": "platform:read"
+        }
+      },
+      "patch": {
+        "operationId": "updateClient",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clientId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "uri": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "contacts": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "email",
+                          "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "redirectUris": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  },
+                  "postLogoutRedirectUris": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "uri"
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "scopes": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "clientCredentialsScopes": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "jwks": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "jwksUri": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "skipConsent": {
+                    "type": "boolean"
+                  },
+                  "backchannelLogoutUri": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "name": "Renamed"
+              }
+            }
+          }
+        },
+        "summary": "Update client",
+        "description": "Update client and return the updated record, recording the change in the audit log. Prefer getClient to inspect existing state; validation_failed rejects malformed input, not_found identifies missing parents or targets, and conflict or reference_violation identifies conflicting records.",
+        "tags": [
+          "Clients"
+        ],
+        "responses": {
+          "200": {
+            "description": "Client updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "clientId": {
+                      "type": "string"
+                    },
+                    "hasClientSecret": {
+                      "type": "boolean"
+                    },
+                    "redirectUris": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "dpopBoundAccessTokens": {
+                      "type": "boolean"
+                    },
+                    "disabled": {
+                      "type": "boolean"
+                    },
+                    "userId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "organizationId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "metadata": {
+                      "anyOf": [
+                        {},
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    "clientDiscoveryId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "referenceId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "name": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "uri": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "icon": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "tos": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "policy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "softwareId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "softwareVersion": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "softwareStatement": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "backchannelLogoutUri": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "tokenEndpointAuthMethod": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "applicationType": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "jwks": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "jwksUri": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "subjectType": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "contacts": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "postLogoutRedirectUris": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "grantTypes": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "responseTypes": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "scopes": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "clientCredentialsScopes": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "backchannelLogoutSessionRequired": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "requirePKCE": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "skipConsent": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "enableEndSession": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "clientId",
+                    "hasClientSecret",
+                    "redirectUris",
+                    "dpopBoundAccessTokens",
+                    "disabled",
+                    "userId",
+                    "organizationId",
+                    "metadata",
+                    "createdAt",
+                    "updatedAt",
+                    "clientDiscoveryId",
+                    "referenceId",
+                    "name",
+                    "uri",
+                    "icon",
+                    "tos",
+                    "policy",
+                    "softwareId",
+                    "softwareVersion",
+                    "softwareStatement",
+                    "backchannelLogoutUri",
+                    "tokenEndpointAuthMethod",
+                    "applicationType",
+                    "jwks",
+                    "jwksUri",
+                    "subjectType",
+                    "contacts",
+                    "postLogoutRedirectUris",
+                    "grantTypes",
+                    "responseTypes",
+                    "scopes",
+                    "clientCredentialsScopes",
+                    "backchannelLogoutSessionRequired",
+                    "requirePKCE",
+                    "skipConsent",
+                    "enableEndSession"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The principal is not allowed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-tier": "platform",
+        "x-kind": "write",
+        "x-scopes": {
+          "platform": "platform:write"
+        }
+      }
+    },
     "/api/admin/v1/clients": {
       "get": {
         "operationId": "listClients",
@@ -14007,1210 +15832,6 @@
                     },
                     "clientSecret": {
                       "type": "string"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "clientId",
-                    "hasClientSecret",
-                    "redirectUris",
-                    "dpopBoundAccessTokens",
-                    "disabled",
-                    "userId",
-                    "organizationId",
-                    "metadata",
-                    "createdAt",
-                    "updatedAt",
-                    "clientDiscoveryId",
-                    "referenceId",
-                    "name",
-                    "uri",
-                    "icon",
-                    "tos",
-                    "policy",
-                    "softwareId",
-                    "softwareVersion",
-                    "softwareStatement",
-                    "backchannelLogoutUri",
-                    "tokenEndpointAuthMethod",
-                    "applicationType",
-                    "jwks",
-                    "jwksUri",
-                    "subjectType",
-                    "contacts",
-                    "postLogoutRedirectUris",
-                    "grantTypes",
-                    "responseTypes",
-                    "scopes",
-                    "clientCredentialsScopes",
-                    "backchannelLogoutSessionRequired",
-                    "requirePKCE",
-                    "skipConsent",
-                    "enableEndSession"
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The request is invalid",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "type": "string"
-                    },
-                    "title": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "number"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "request_id": {
-                      "type": "string"
-                    },
-                    "detail": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "title",
-                    "status",
-                    "code",
-                    "request_id"
-                  ],
-                  "additionalProperties": {}
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication is required",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "type": "string"
-                    },
-                    "title": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "number"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "request_id": {
-                      "type": "string"
-                    },
-                    "detail": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "title",
-                    "status",
-                    "code",
-                    "request_id"
-                  ],
-                  "additionalProperties": {}
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The principal is not allowed",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "type": "string"
-                    },
-                    "title": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "number"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "request_id": {
-                      "type": "string"
-                    },
-                    "detail": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "title",
-                    "status",
-                    "code",
-                    "request_id"
-                  ],
-                  "additionalProperties": {}
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "type": "string"
-                    },
-                    "title": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "number"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "request_id": {
-                      "type": "string"
-                    },
-                    "detail": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "title",
-                    "status",
-                    "code",
-                    "request_id"
-                  ],
-                  "additionalProperties": {}
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflict",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "type": "string"
-                    },
-                    "title": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "number"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "request_id": {
-                      "type": "string"
-                    },
-                    "detail": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "title",
-                    "status",
-                    "code",
-                    "request_id"
-                  ],
-                  "additionalProperties": {}
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
-        "x-tier": "platform",
-        "x-kind": "write",
-        "x-scopes": {
-          "platform": "platform:write"
-        }
-      }
-    },
-    "/api/admin/v1/clients/{clientId}": {
-      "get": {
-        "operationId": "getClient",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "clientId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "summary": "Get client",
-        "description": "Return the OAuth client registration without revealing a secret or changing state. Prefer listClients to discover a clientId; validation_failed rejects malformed ids and not_found means the client is missing.",
-        "tags": [
-          "Clients"
-        ],
-        "responses": {
-          "200": {
-            "description": "Client",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                    },
-                    "clientId": {
-                      "type": "string"
-                    },
-                    "hasClientSecret": {
-                      "type": "boolean"
-                    },
-                    "redirectUris": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "dpopBoundAccessTokens": {
-                      "type": "boolean"
-                    },
-                    "disabled": {
-                      "type": "boolean"
-                    },
-                    "userId": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "format": "uuid",
-                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "organizationId": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "format": "uuid",
-                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "metadata": {
-                      "anyOf": [
-                        {},
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "createdAt": {
-                      "type": "string",
-                      "format": "date-time",
-                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
-                    },
-                    "updatedAt": {
-                      "type": "string",
-                      "format": "date-time",
-                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
-                    },
-                    "clientDiscoveryId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "referenceId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "name": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "uri": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "icon": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "tos": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "policy": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "softwareId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "softwareVersion": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "softwareStatement": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "backchannelLogoutUri": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "tokenEndpointAuthMethod": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "applicationType": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "jwks": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "jwksUri": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "subjectType": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "contacts": {
-                      "anyOf": [
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "postLogoutRedirectUris": {
-                      "anyOf": [
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "grantTypes": {
-                      "anyOf": [
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "responseTypes": {
-                      "anyOf": [
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "scopes": {
-                      "anyOf": [
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "clientCredentialsScopes": {
-                      "anyOf": [
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "backchannelLogoutSessionRequired": {
-                      "type": [
-                        "boolean",
-                        "null"
-                      ]
-                    },
-                    "requirePKCE": {
-                      "type": [
-                        "boolean",
-                        "null"
-                      ]
-                    },
-                    "skipConsent": {
-                      "type": [
-                        "boolean",
-                        "null"
-                      ]
-                    },
-                    "enableEndSession": {
-                      "type": [
-                        "boolean",
-                        "null"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "clientId",
-                    "hasClientSecret",
-                    "redirectUris",
-                    "dpopBoundAccessTokens",
-                    "disabled",
-                    "userId",
-                    "organizationId",
-                    "metadata",
-                    "createdAt",
-                    "updatedAt",
-                    "clientDiscoveryId",
-                    "referenceId",
-                    "name",
-                    "uri",
-                    "icon",
-                    "tos",
-                    "policy",
-                    "softwareId",
-                    "softwareVersion",
-                    "softwareStatement",
-                    "backchannelLogoutUri",
-                    "tokenEndpointAuthMethod",
-                    "applicationType",
-                    "jwks",
-                    "jwksUri",
-                    "subjectType",
-                    "contacts",
-                    "postLogoutRedirectUris",
-                    "grantTypes",
-                    "responseTypes",
-                    "scopes",
-                    "clientCredentialsScopes",
-                    "backchannelLogoutSessionRequired",
-                    "requirePKCE",
-                    "skipConsent",
-                    "enableEndSession"
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The request is invalid",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "type": "string"
-                    },
-                    "title": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "number"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "request_id": {
-                      "type": "string"
-                    },
-                    "detail": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "title",
-                    "status",
-                    "code",
-                    "request_id"
-                  ],
-                  "additionalProperties": {}
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication is required",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "type": "string"
-                    },
-                    "title": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "number"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "request_id": {
-                      "type": "string"
-                    },
-                    "detail": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "title",
-                    "status",
-                    "code",
-                    "request_id"
-                  ],
-                  "additionalProperties": {}
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The principal is not allowed",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "type": "string"
-                    },
-                    "title": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "number"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "request_id": {
-                      "type": "string"
-                    },
-                    "detail": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "title",
-                    "status",
-                    "code",
-                    "request_id"
-                  ],
-                  "additionalProperties": {}
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "type": "string"
-                    },
-                    "title": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "number"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "request_id": {
-                      "type": "string"
-                    },
-                    "detail": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "title",
-                    "status",
-                    "code",
-                    "request_id"
-                  ],
-                  "additionalProperties": {}
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflict",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "type": "string"
-                    },
-                    "title": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "number"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "request_id": {
-                      "type": "string"
-                    },
-                    "detail": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "title",
-                    "status",
-                    "code",
-                    "request_id"
-                  ],
-                  "additionalProperties": {}
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
-        "x-tier": "platform",
-        "x-kind": "read",
-        "x-scopes": {
-          "platform": "platform:read"
-        }
-      },
-      "patch": {
-        "operationId": "updateClient",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "clientId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$schema": "https://json-schema.org/draft/2020-12/schema",
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200
-                  },
-                  "uri": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "format": "uri"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "contacts": {
-                    "anyOf": [
-                      {
-                        "type": "array",
-                        "items": {
-                          "type": "string",
-                          "format": "email",
-                          "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
-                        }
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "redirectUris": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "format": "uri"
-                    }
-                  },
-                  "postLogoutRedirectUris": {
-                    "anyOf": [
-                      {
-                        "type": "array",
-                        "items": {
-                          "type": "string",
-                          "format": "uri"
-                        }
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "scopes": {
-                    "anyOf": [
-                      {
-                        "type": "array",
-                        "items": {
-                          "type": "string",
-                          "minLength": 1
-                        }
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "clientCredentialsScopes": {
-                    "anyOf": [
-                      {
-                        "type": "array",
-                        "items": {
-                          "type": "string",
-                          "minLength": 1
-                        }
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "jwks": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "jwksUri": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "format": "uri"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "skipConsent": {
-                    "type": "boolean"
-                  },
-                  "backchannelLogoutUri": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "format": "uri"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  }
-                },
-                "additionalProperties": false
-              },
-              "example": {
-                "name": "Renamed"
-              }
-            }
-          }
-        },
-        "summary": "Update client",
-        "description": "Update client and return the updated record, recording the change in the audit log. Prefer getClient to inspect existing state; validation_failed rejects malformed input, not_found identifies missing parents or targets, and conflict or reference_violation identifies conflicting records.",
-        "tags": [
-          "Clients"
-        ],
-        "responses": {
-          "200": {
-            "description": "Client updated",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                    },
-                    "clientId": {
-                      "type": "string"
-                    },
-                    "hasClientSecret": {
-                      "type": "boolean"
-                    },
-                    "redirectUris": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "dpopBoundAccessTokens": {
-                      "type": "boolean"
-                    },
-                    "disabled": {
-                      "type": "boolean"
-                    },
-                    "userId": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "format": "uuid",
-                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "organizationId": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "format": "uuid",
-                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "metadata": {
-                      "anyOf": [
-                        {},
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "createdAt": {
-                      "type": "string",
-                      "format": "date-time",
-                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
-                    },
-                    "updatedAt": {
-                      "type": "string",
-                      "format": "date-time",
-                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
-                    },
-                    "clientDiscoveryId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "referenceId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "name": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "uri": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "icon": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "tos": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "policy": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "softwareId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "softwareVersion": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "softwareStatement": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "backchannelLogoutUri": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "tokenEndpointAuthMethod": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "applicationType": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "jwks": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "jwksUri": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "subjectType": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "contacts": {
-                      "anyOf": [
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "postLogoutRedirectUris": {
-                      "anyOf": [
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "grantTypes": {
-                      "anyOf": [
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "responseTypes": {
-                      "anyOf": [
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "scopes": {
-                      "anyOf": [
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "clientCredentialsScopes": {
-                      "anyOf": [
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "backchannelLogoutSessionRequired": {
-                      "type": [
-                        "boolean",
-                        "null"
-                      ]
-                    },
-                    "requirePKCE": {
-                      "type": [
-                        "boolean",
-                        "null"
-                      ]
-                    },
-                    "skipConsent": {
-                      "type": [
-                        "boolean",
-                        "null"
-                      ]
-                    },
-                    "enableEndSession": {
-                      "type": [
-                        "boolean",
-                        "null"
-                      ]
                     }
                   },
                   "required": [
@@ -17813,6 +18434,206 @@
           },
           "409": {
             "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-tier": "platform",
+        "x-kind": "write",
+        "x-scopes": {
+          "platform": "platform:write"
+        }
+      }
+    },
+    "/api/admin/v1/organizations/{organizationId}/domains/{domainId}": {
+      "delete": {
+        "operationId": "deleteOrganizationDomain",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "domainId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "summary": "Delete organisation domain",
+        "description": "Delete a domain assignment and return no content, removing its sign-in discovery routing and recording domain.deleted. Prefer disableOrganizationDomain for a reversible suspension; validation_failed rejects malformed ids and not_found means the organisation or domain is missing. No confirmation is required.",
+        "tags": [
+          "Domains"
+        ],
+        "responses": {
+          "204": {
+            "description": "Domain deleted"
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The principal is not allowed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -22062,6 +22883,393 @@
         }
       }
     },
+    "/api/admin/v1/users/{userId}/audit-events": {
+      "get": {
+        "operationId": "listUserAuditEvents",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "in": "query",
+            "name": "action",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "outcome",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "success",
+                "failure",
+                "denied"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            }
+          }
+        ],
+        "summary": "List user audit events",
+        "description": "Return a person's audit trail as actor or user, membership or session target, newest first, without changing state. Filter by action, outcome, from or to and continue with limit and cursor. Prefer listAuditEvents for a platform-wide review; not_found means the user is missing and validation_failed rejects invalid ids, filters or cursors.",
+        "tags": [
+          "Audit"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "occurredAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                          },
+                          "actorType": {
+                            "type": "string",
+                            "enum": [
+                              "user",
+                              "client",
+                              "system"
+                            ]
+                          },
+                          "actorId": {
+                            "type": "string"
+                          },
+                          "organizationId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "action": {
+                            "type": "string"
+                          },
+                          "targetType": {
+                            "type": "string"
+                          },
+                          "targetId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "outcome": {
+                            "type": "string",
+                            "enum": [
+                              "success",
+                              "failure",
+                              "denied"
+                            ]
+                          },
+                          "reason": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "requestId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "ip": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "userAgent": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "data": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {}
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "occurredAt",
+                          "actorType",
+                          "actorId",
+                          "organizationId",
+                          "action",
+                          "targetType",
+                          "targetId",
+                          "outcome",
+                          "reason",
+                          "requestId",
+                          "ip",
+                          "userAgent",
+                          "data"
+                        ]
+                      }
+                    },
+                    "nextCursor": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The principal is not allowed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-tier": "platform",
+        "x-kind": "read",
+        "x-scopes": {
+          "platform": "platform:read"
+        }
+      }
+    },
     "/api/admin/v1/audit-events": {
       "get": {
         "operationId": "listAuditEvents",
@@ -22097,6 +23305,18 @@
             "name": "action",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "outcome",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "success",
+                "failure",
+                "denied"
+              ]
             }
           },
           {
@@ -22464,6 +23684,18 @@
             "name": "action",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "outcome",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "success",
+                "failure",
+                "denied"
+              ]
             }
           },
           {

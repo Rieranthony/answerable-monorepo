@@ -116,3 +116,19 @@ export function enableDomain(
 ) {
   return setStatus(db, actor, organizationId, domainId, "active");
 }
+
+export function deleteOrganizationDomain(
+  db: Database,
+  actor: Actor,
+  organizationId: string,
+  domainId: string,
+) {
+  return db.transaction(async (tx) => {
+    requireRow(await lockOrganization(tx, organizationId));
+    requireRow(
+      await queries.findOrganizationDomain(tx, organizationId, domainId),
+    );
+    await queries.deleteOrganizationDomain(tx, organizationId, domainId);
+    await audit(tx, actor, organizationId, domainId, "domain.deleted", {});
+  });
+}

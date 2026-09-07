@@ -216,3 +216,10 @@ async function checkScopes(tx: Executor, resource: string, scopes: string[]) {
       `Scopes are not allowed for this resource: ${unknown.join(", ")}`,
     );
 }
+
+export async function listAllEntitlements(
+  db: Database,
+  query: queries.EntitlementQuery,
+) {
+  return cursorPage(await queries.listAllEntitlements(db, query), query.limit);
+}

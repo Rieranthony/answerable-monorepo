@@ -44,6 +44,7 @@ const detailSchema = memberSchema.extend({
   ),
 });
 const querySchema = pageQuerySchema.extend({
+  email: z.email().toLowerCase().optional(),
   q: z.string().trim().min(1).max(100).optional(),
   effective: z.enum(["true", "false"]).optional(),
 });

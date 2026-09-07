@@ -44,7 +44,13 @@ export async function listResources(
   return cursorPage(await queries.listResources(db, query), query.limit);
 }
 export async function getResource(db: Database, identifier: string) {
-  return requireResource(await queries.findResource(db, identifier));
+  const row = requireResource(await queries.findResource(db, identifier));
+  return {
+    ...row,
+    clients: (await queries.listResourceClients(db, identifier)).map(
+      (link) => link.clientId,
+    ),
+  };
 }
 export function createResource(
   db: Database,

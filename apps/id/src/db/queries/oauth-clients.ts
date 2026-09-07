@@ -1,9 +1,10 @@
-import { and, desc, eq, ilike, or } from "drizzle-orm";
+import { count, and, desc, eq, ilike, or } from "drizzle-orm";
 
 import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
 import { createId } from "../../lib/id.ts";
 import type { Executor } from "../client.ts";
 import {
+  entitlements,
   oauthClients,
   oauthClientResources,
   organizations,
@@ -200,4 +201,20 @@ export function listClientResources(executor: Executor, clientId: string) {
     .from(oauthClientResources)
     .where(eq(oauthClientResources.clientId, clientId))
     .orderBy(desc(oauthClientResources.id));
+}
+
+export async function countClientEntitlements(
+  executor: Executor,
+  clientId: string,
+) {
+  const [row] = await executor
+    .select({ count: count() })
+    .from(entitlements)
+    .where(eq(entitlements.clientId, clientId));
+  return row!.count;
+}
+export async function deleteClient(executor: Executor, clientId: string) {
+  await executor
+    .delete(oauthClients)
+    .where(eq(oauthClients.clientId, clientId));
 }

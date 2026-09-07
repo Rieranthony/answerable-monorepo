@@ -4,7 +4,11 @@ import { members, users, groups, groupMembers } from "../schema/index.ts";
 import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
 import { isEffective } from "./effective.ts";
 import type { MemberWindow } from "./groups.ts";
-export type MemberQuery = PageQuery & { q?: string; effective?: boolean };
+export type MemberQuery = PageQuery & {
+  q?: string;
+  email?: string;
+  effective?: boolean;
+};
 const selection = {
   id: members.id,
   organizationId: members.organizationId,
@@ -31,6 +35,9 @@ export function listMembers(
     .where(
       and(
         eq(members.organizationId, organizationId),
+        query.email === undefined
+          ? undefined
+          : eq(users.email, query.email.toLowerCase()),
         query.q === undefined
           ? undefined
           : or(

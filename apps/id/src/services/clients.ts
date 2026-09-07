@@ -130,7 +130,13 @@ export async function listClients(db: Database, query: queries.ClientQuery) {
   return { ...page, items: page.items.map(publicClient) };
 }
 export async function getClient(db: Database, clientId: string) {
-  return publicClient(requireRow(await queries.findClient(db, clientId)));
+  const row = publicClient(requireRow(await queries.findClient(db, clientId)));
+  return {
+    ...row,
+    resources: (await queries.listClientResources(db, clientId)).map(
+      (link) => link.resourceId,
+    ),
+  };
 }
 export function createClient(
   db: Database,
@@ -281,5 +287,38 @@ export function unlinkResource(
         "Client resource link not found",
       );
     await audit(tx, actor, clientId, "client.resource_unlinked", { resource });
+  });
+}
+
+export function eraseClient(
+  db: Database,
+  actor: Actor,
+  clientId: string,
+  confirm: string,
+) {
+  return db.transaction(async (tx) => {
+    const existing = requireRow(await queries.lockClient(tx, clientId));
+    if (confirm !== clientId)
+      throw new ProblemError(
+        400,
+        "confirmation_mismatch",
+        "Confirmation must match the client ID",
+      );
+    if (await queries.countClientEntitlements(tx, clientId))
+      throw new ProblemError(
+        409,
+        "client_has_entitlements",
+        "Remove the client's entitlements before erasure",
+      );
+    await queries.deleteClient(tx, clientId);
+    await recordAuditEvent(tx, {
+      ...actor,
+      organizationId: existing.organizationId,
+      targetType: "client",
+      targetId: clientId,
+      action: "client.erased",
+      outcome: "success",
+      data: {},
+    });
   });
 }

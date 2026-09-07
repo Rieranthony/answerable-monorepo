@@ -39,6 +39,22 @@ const domainParameters = [
 ] satisfies AdminRoute["parameters"];
 
 export const routes = {
+  deleteOrganizationDomain: {
+    method: "delete",
+    path: "/organizations/:organizationId/domains/:domainId",
+    operationId: "deleteOrganizationDomain",
+    summary: "Delete organisation domain",
+    description:
+      "Delete a domain assignment and return no content, removing its sign-in discovery routing and recording domain.deleted. Prefer disableOrganizationDomain for a reversible suspension; validation_failed rejects malformed ids and not_found means the organisation or domain is missing. No confirmation is required.",
+    tag: "Domains",
+    platformScope: "platform:write",
+    kind: "write",
+    parameters: domainParameters,
+    responses: standardResponses(
+      {},
+      { 204: { description: "Domain deleted" }, ...problemResponses(400, 404) },
+    ),
+  },
   listOrganizationDomains: {
     method: "get",
     path: "/organizations/:organizationId/domains",
@@ -129,6 +145,20 @@ export const routes = {
 } satisfies Record<string, AdminRoute>;
 
 export function register(app: Hono<AppEnvironment>) {
+  registerRoute(
+    app,
+    routes.deleteOrganizationDomain,
+    validate("param", domainParams),
+    async (context) => {
+      await service.deleteOrganizationDomain(
+        context.get("db"),
+        actorFromContext(context),
+        context.req.param("organizationId")!,
+        context.req.param("domainId")!,
+      );
+      return context.body(null, 204);
+    },
+  );
   registerRoute(
     app,
     routes.listOrganizationDomains,

@@ -56,6 +56,7 @@ import { isEffective } from "./effective.ts";
 
 export type UserQuery = PageQuery & {
   q?: string;
+  email?: string;
   status?: typeof users.$inferSelect.status;
   organizationId?: string;
 };
@@ -66,6 +67,9 @@ export function listUsers(executor: Executor, query: UserQuery) {
     .from(users)
     .where(
       and(
+        query.email === undefined
+          ? undefined
+          : eq(users.email, query.email.toLowerCase()),
         query.q === undefined
           ? undefined
           : or(

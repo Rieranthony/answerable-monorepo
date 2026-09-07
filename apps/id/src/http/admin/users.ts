@@ -46,6 +46,7 @@ const detailSchema = userSchema.extend({
   sessionCount: z.number().int(),
 });
 const querySchema = pageQuerySchema.extend({
+  email: z.email().toLowerCase().optional(),
   q: z.string().trim().min(1).max(100).optional(),
   status: z.enum(userStatuses).optional(),
   organizationId: z.uuid().optional(),
