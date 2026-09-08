@@ -1,4 +1,6 @@
+import { createMetadata, SITE } from "@/lib/metadata"
 import { BulletSquare } from "@/components/bullet-square"
+import { DitherGradient } from "@/components/dither-kit/gradient"
 import {
   ExpandableSection,
   ExpandableSections,
@@ -6,6 +8,23 @@ import {
 import { Logo } from "@/components/logo"
 import { Mosaic } from "@/components/mosaic"
 import { WaitlistForm } from "@/components/waitlist-form"
+
+export const metadata = createMetadata({
+  pathname: "/",
+  title: "Answerable · AI Lead training and accreditation",
+  absoluteTitle: true,
+  index: true,
+})
+
+const structuredData = {
+  "@context": "https://schema.org",
+  "@graph": ["Organization", "WebSite"].map((type) => ({
+    "@type": type,
+    name: SITE.name,
+    url: `${SITE.origin}/`,
+    description: SITE.description,
+  })),
+}
 
 const ACCREDITATION_BENEFITS = [
   "Guided resources and templates to write your firm's AI policy and handbook from scratch",
@@ -26,6 +45,12 @@ const VALUES = [
 export default function Page() {
   return (
     <div className="flex flex-col">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(structuredData).replace(/</g, "\\u003c"),
+        }}
+      />
       {/* First screenful: content column left, mosaic on the right; the
           tagline sits below the fold. */}
       <div className="relative flex min-h-svh flex-col lg:flex-row">
@@ -175,11 +200,33 @@ export default function Page() {
         </div>
       </div>
 
-      {/* Tagline stretched to the full width of the page gutter. */}
-      <div aria-hidden="true" className="mt-32 w-full px-6 pb-6">
+      {/* A white dither wash rises from the bottom edge, full bleed, capped
+          at fifteen percent so it reads as texture rather than a band; the
+          tagline sits on it in black. The footer is the positioned ancestor
+          and its content is lifted above the canvas. Below lg the mosaic
+          flows just above the footer and the wash reaches up behind it: its
+          top is pulled up by the mosaic's height (the full width at 17:18)
+          plus the gaps between them (mb-6 and mt-32), and it sits under
+          in-flow content so the tiles paint over it. */}
+      <footer className="relative mt-32 px-6 pt-32 pb-6">
+        <DitherGradient
+          from="white"
+          direction="up"
+          opacity={0.15}
+          className="-z-10 max-lg:top-[calc(-152px_-_100vw_*_18_/_17)]"
+        />
+        {/* The tagline shows from sm up, one line stretched to the width of
+            the page gutter; on phones it would be tiny, so it is left out.
+            Public Sans Bold at 86 inks 63 units above the baseline and 12
+            below it (the comma's tail), so a baseline at 66 in an 80-unit
+            box leaves about two units clear on each side. A faint white
+            stroke painted under the fill lifts the black letters off the
+            wash: it is two screen pixels wide whatever the box scale, so one
+            pixel shows outside the letter. */}
         <svg
-          viewBox="0 2 1000 66"
-          className="text-primary/[0.05] dark:text-primary/[0.10] block w-full"
+          aria-hidden="true"
+          viewBox="0 0 1000 80"
+          className="relative hidden w-full fill-black stroke-white/5 stroke-2 [paint-order:stroke] [stroke-linejoin:round] sm:block"
           xmlns="http://www.w3.org/2000/svg"
         >
           <text
@@ -187,17 +234,14 @@ export default function Page() {
             y="66"
             textLength="1000"
             lengthAdjust="spacingAndGlyphs"
+            vectorEffect="non-scaling-stroke"
             fontSize="86"
             fontWeight="700"
-            fill="currentColor"
           >
             AI, FOR PROFESSIONALS
           </text>
         </svg>
-      </div>
-
-      <footer className="px-6 pb-6">
-        <p className="text-muted-foreground text-xs/4">
+        <p className="text-muted-foreground relative text-xs/4 sm:mt-2">
           © 2026 Answerable · answerable.org
         </p>
       </footer>

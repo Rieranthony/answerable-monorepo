@@ -5,6 +5,7 @@ import { baseOptions } from "@/lib/layout.shared"
 import { source } from "@/lib/source"
 
 export const metadata = {
+  robots: { index: false, follow: true },
   title: {
     default: "Answerable docs",
     template: "%s · Answerable docs",

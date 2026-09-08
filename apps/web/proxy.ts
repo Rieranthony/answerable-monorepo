@@ -4,6 +4,9 @@ import { type NextRequest, NextResponse } from "next/server"
 const markdownPath = rewritePath("/docs{/*path}", "/llms.mdx/docs{/*path}")
 
 export function proxy(request: NextRequest) {
+  // Explicit Markdown URLs are handled by next.config.mjs; negotiating them
+  // again would leave the .md suffix in the source lookup and return 404.
+  if (request.nextUrl.pathname.endsWith(".md")) return
   if (!isMarkdownPreferred(request)) return
 
   const pathname = markdownPath.rewrite(request.nextUrl.pathname)

@@ -1,3 +1,4 @@
+import { createMetadata } from "@/lib/metadata"
 import { notFound } from "next/navigation"
 import {
   DocsBody,
@@ -61,15 +62,17 @@ export async function generateMetadata(props: PageProps<"/docs/[[...slug]]">) {
 
   const { title, description } = page.data
 
-  return {
-    title: slug ? title : { absolute: title },
+  return createMetadata({
+    pathname: page.url,
+    title,
+    absoluteTitle: page.slugs.length === 0,
+    titleSuffix: "Answerable docs",
     description,
-    alternates: { canonical: page.url },
-    openGraph: {
-      title,
-      description,
-      images: getPageImageUrl(page).url,
+    image: {
+      url: getPageImageUrl(page).url,
+      width: 1200,
+      height: 630,
+      alt: `${title} · Answerable docs`,
     },
-    twitter: { card: "summary_large_image" },
-  }
+  })
 }

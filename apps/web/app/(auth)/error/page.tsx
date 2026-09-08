@@ -1,9 +1,13 @@
-import type { Metadata } from "next"
+import { createMetadata } from "@/lib/metadata"
 import Link from "next/link"
 
 import { describeError } from "@/lib/auth/error-copy"
 
-export const metadata: Metadata = { title: "Can't sign in · Answerable" }
+export const metadata = createMetadata({
+  pathname: "/error",
+  title: "Can't sign in",
+  description: "Get help signing in to your Answerable account.",
+})
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 

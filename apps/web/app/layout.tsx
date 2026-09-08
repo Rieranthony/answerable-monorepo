@@ -3,15 +3,16 @@ import { Public_Sans } from "next/font/google"
 
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
+import { createMetadata, SITE } from "@/lib/metadata"
 import { cn } from "@/lib/utils"
 
 const publicSans = Public_Sans({ subsets: ["latin"], variable: "--font-sans" })
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://answerable.org"),
-  title: "Answerable",
-  description:
-    "Answerable trains, equips and accredits the AI Lead: the named professional who answers for how AI is used in high-stakes professional work.",
+  ...createMetadata({ pathname: "/" }),
+  alternates: undefined,
+  metadataBase: new URL(SITE.origin),
+  title: { default: SITE.name, template: "%s · Answerable" },
 }
 
 export default function RootLayout({

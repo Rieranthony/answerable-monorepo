@@ -36,16 +36,9 @@ function useResolvedScheme(): "light" | "dark" {
   return mounted && resolvedTheme === "dark" ? "dark" : "light"
 }
 
-/**
- * Resolves the active scheme and the settings that go with it. `override`
- * takes the whole record (not one scheme's settings) so the caller does not
- * need to know the scheme before calling — that is what this returns.
- */
-export function useDitherSettings(
-  override?: Record<"light" | "dark", DitherSettings>,
-) {
-  const scheme = useResolvedScheme()
-  return { scheme, settings: (override ?? MOSAIC_DITHER)[scheme] }
+/** The dither settings for the active scheme. */
+export function useDitherSettings(): DitherSettings {
+  return MOSAIC_DITHER[useResolvedScheme()]
 }
 
 interface MosaicDitherProps {

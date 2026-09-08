@@ -5,14 +5,12 @@ import { preload } from "react-dom"
 
 import { COMMA_PATH } from "@/components/logo"
 import { MosaicDither, useDitherSettings } from "@/components/mosaic-dither"
-import { loadTuning, MosaicTuner, type Tuning } from "@/components/mosaic-tuner"
 import {
   ACTIVE_PHOTO,
   COMMA_BOX,
   COMMA_SCALE,
   computeMosaicLayout,
   MOSAIC,
-  MOSAIC_DITHER,
 } from "@/lib/mosaic-layout"
 import { cn } from "@/lib/utils"
 
@@ -42,31 +40,11 @@ const TILE_SCALE = TILE / MOSAIC.cell
  * about the cell center so the tile gutter applies to commas too. Read right
  * to left: normalize to 0..48, shrink about (24,24), rotate about (24,24).
  */
-/**
- * The tuning panel exists only in development; `process.env.NODE_ENV` is
- * inlined at build time so the branch — and the import — drop out of the
- * production bundle.
- */
-const DEV = process.env.NODE_ENV === "development"
-
-/**
- * Read once per page load, not per render. On the server this is always the
- * committed defaults, and the panel only renders after mount, so the
- * server and first client render still agree.
- */
-let cachedTuning: Tuning | undefined
-const initialTuning = (): Tuning => {
-  if (!DEV || typeof window === "undefined") return MOSAIC_DITHER
-  cachedTuning ??= loadTuning() ?? (structuredClone(MOSAIC_DITHER) as Tuning)
-  return cachedTuning
-}
-
 const commaTransform = (rot: number) =>
   `${rot ? `rotate(${rot} 24 24) ` : ""}translate(24 24) scale(${TILE_SCALE}) translate(-24 -24) scale(${COMMA_SCALE}) translate(${-COMMA_BOX.x} ${-COMMA_BOX.y})`
 
 export function Mosaic({ className }: { className?: string }) {
-  const [tuning, setTuning] = useState<Tuning>(initialTuning)
-  const { scheme, settings } = useDitherSettings(DEV ? tuning : undefined)
+  const settings = useDitherSettings()
   // The screened bitmap. Deliberately kept on screen when the
   // settings change: the replacement lands within a frame or two, and
   // briefly showing the previous screen beats flashing back to the raw
@@ -105,9 +83,6 @@ export function Mosaic({ className }: { className?: string }) {
         onCapture={onCapture}
         onUnavailable={onUnavailable}
       />
-      {DEV && (
-        <MosaicTuner scheme={scheme} tuning={tuning} onChange={setTuning} />
-      )}
       <svg
         viewBox={`0 0 ${W} ${H}`}
         preserveAspectRatio="xMaxYMid slice"
@@ -125,102 +100,94 @@ export function Mosaic({ className }: { className?: string }) {
             </clipPath>
           ))}
         </defs>
-        {revealed &&
-          MARKS.map((m, i) => {
-            const x = m.col * MOSAIC.cell
-            const y = m.row * MOSAIC.cell
-            const style = { animationDelay: `${m.delayMs}ms` }
+        {MARKS.map((m, i) => {
+          const x = m.col * MOSAIC.cell
+          const y = m.row * MOSAIC.cell
+          const style = { animationDelay: `${m.delayMs}ms` }
 
-            // Centred on a tile corner rather than placed in a cell, and
-            // scaled by height so the glyph keeps its own proportions.
-            if (m.shape === "focus-comma") {
-              const scale =
-                ((m.cellsTall ?? MOSAIC.focusCommaCellsTall) * MOSAIC.cell) /
-                COMMA_BOX.h
-              return (
-                <g
-                  key={i}
-                  className="mosaic-tile fill-background"
-                  style={style}
-                >
-                  <g transform={`translate(${x} ${y})`}>
-                    <path
-                      d={COMMA_PATH}
-                      transform={`scale(${scale}) translate(${-(COMMA_BOX.x + COMMA_BOX.w / 2)} ${-(COMMA_BOX.y + COMMA_BOX.h / 2)})`}
-                    />
-                  </g>
-                </g>
-              )
-            }
+          // Cutouts are painted in the page colour and exist to keep faces
+          // covered, so they are always drawn and never animate: they must
+          // be in place before the first photo tile fades in around them.
+          // Everything else waits for the screened frame.
+          const cutout = m.fill === "cutout"
+          if (!revealed && !cutout) return null
 
-            if (m.shape === "semicolon")
-              return (
-                <g
-                  key={i}
-                  className="mosaic-tile fill-mosaic-mark"
-                  fillOpacity={m.fade}
-                  style={style}
-                >
-                  <rect
-                    x={x + INSET}
-                    y={y + INSET}
-                    width={TILE}
-                    height={TILE}
-                  />
-                  <g transform={`translate(${x} ${y + 72})`}>
-                    <path d={COMMA_PATH} transform={commaTransform(0)} />
-                  </g>
-                </g>
-              )
-
-            if (m.fill !== "image")
-              return (
-                <g
-                  key={i}
-                  className={cn(
-                    "mosaic-tile",
-                    // A cutout is painted in the page colour, so it reads as
-                    // a hole bitten out of the photo beneath it.
-                    m.fill === "cutout"
-                      ? "fill-background"
-                      : "fill-mosaic-mark",
-                  )}
-                  fillOpacity={m.fade}
-                  style={style}
-                >
-                  <g transform={`translate(${x} ${y})`}>
-                    {m.shape === "square" ? (
-                      <rect x={INSET} y={INSET} width={TILE} height={TILE} />
-                    ) : (
-                      <path d={COMMA_PATH} transform={commaTransform(m.rot)} />
-                    )}
-                  </g>
-                </g>
-              )
-
-            // Image tile: the full photo sits under a cell-local clip window,
-            // so fragments align perfectly across tiles and every tile reuses
-            // the same single decoded bitmap.
-            const clip = m.shape === "square" ? "mz-sq" : `mz-c${m.rot}`
+          // Its top-left corner sits on the grid corner (col, row), like a
+          // scattered comma does in its cell, and it is scaled by height so
+          // the glyph keeps its own proportions.
+          if (m.shape === "focus-comma") {
+            const scale =
+              ((m.cellsTall ?? MOSAIC.focusCommaCellsTall) * MOSAIC.cell) /
+              COMMA_BOX.h
             return (
-              <g key={i} className="mosaic-tile" style={style}>
-                <g
-                  transform={`translate(${x} ${y})`}
-                  clipPath={`url(#${clip})`}
-                >
-                  <image
-                    href={dithered ?? ACTIVE_PHOTO}
-                    x={PHOTO_X - x}
-                    y={-y}
-                    width={PW}
-                    height={H}
-                    className={m.gray ? "grayscale" : undefined}
-                    {...({ loading: "lazy" } as object)}
+              <g key={i} className="fill-background">
+                <g transform={`translate(${x} ${y})`}>
+                  <path
+                    d={COMMA_PATH}
+                    transform={`scale(${scale}) translate(${-COMMA_BOX.x} ${-COMMA_BOX.y})`}
                   />
                 </g>
               </g>
             )
-          })}
+          }
+
+          if (m.shape === "semicolon")
+            return (
+              <g
+                key={i}
+                className="mosaic-tile fill-mosaic-mark"
+                fillOpacity={m.fade}
+                style={style}
+              >
+                <rect x={x + INSET} y={y + INSET} width={TILE} height={TILE} />
+                <g transform={`translate(${x} ${y + 72})`}>
+                  <path d={COMMA_PATH} transform={commaTransform(0)} />
+                </g>
+              </g>
+            )
+
+          if (m.fill !== "image")
+            return (
+              <g
+                key={i}
+                className={cn(
+                  // A cutout is painted in the page colour, so it reads as
+                  // a hole bitten out of the photo beneath it.
+                  cutout ? "fill-background" : "mosaic-tile fill-mosaic-mark",
+                )}
+                fillOpacity={m.fade}
+                style={cutout ? undefined : style}
+              >
+                <g transform={`translate(${x} ${y})`}>
+                  {m.shape === "square" ? (
+                    <rect x={INSET} y={INSET} width={TILE} height={TILE} />
+                  ) : (
+                    <path d={COMMA_PATH} transform={commaTransform(m.rot)} />
+                  )}
+                </g>
+              </g>
+            )
+
+          // Image tile: the full photo sits under a cell-local clip window,
+          // so fragments align perfectly across tiles and every tile reuses
+          // the same single decoded bitmap.
+          const clip = m.shape === "square" ? "mz-sq" : `mz-c${m.rot}`
+          return (
+            <g key={i} className="mosaic-tile" style={style}>
+              <g transform={`translate(${x} ${y})`} clipPath={`url(#${clip})`}>
+                <image
+                  href={dithered ?? ACTIVE_PHOTO}
+                  x={PHOTO_X - x}
+                  y={-y}
+                  width={PW}
+                  height={H}
+                  className={m.gray ? "grayscale" : undefined}
+                  {...({ loading: "lazy" } as object)}
+                />
+              </g>
+            </g>
+          )
+        })}
       </svg>
     </>
   )

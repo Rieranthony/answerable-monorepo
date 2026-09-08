@@ -1,9 +1,13 @@
-import type { Metadata } from "next"
+import { createMetadata } from "@/lib/metadata"
 
 import { LoginForm } from "@/components/auth/login-form"
 import { decideLoginRoute, pendingOAuthQuery } from "@/lib/auth/login-routing"
 
-export const metadata: Metadata = { title: "Sign in · Answerable" }
+export const metadata = createMetadata({
+  pathname: "/login",
+  title: "Sign in",
+  description: "Sign in to Answerable with your organisation’s account.",
+})
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 

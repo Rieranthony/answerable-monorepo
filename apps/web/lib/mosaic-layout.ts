@@ -47,16 +47,17 @@ export const MOSAIC = {
   edgeFrayMax: 0.2, // added probability at the outermost cell
   edgeFrayFalloff: 0.5,
   /**
-   * One hand-placed comma, centred on the point where four tiles meet so it
-   * reads as deliberate rather than another random strike. `col`/`row` are
-   * that shared CORNER, not a cell index — (11, 10) lands on the speaker's
-   * head in the current photograph. Retune if the photo changes.
+   * Hand-placed commas that cover the faces in the photograph. Each sits on
+   * the grid like a scattered comma does: `col`/`row` is the cell whose
+   * top-left corner the glyph's top-left corner lands on, and `cellsTall`
+   * sets its height (its width follows the glyph's own proportions, so 1.5
+   * is exactly one cell wide). Retune if the photo changes.
    */
   focusCommas: [
-    { col: 11, row: 10 }, // the speaker's head
-    // Her face is smaller and sits a little up-left of the corner, so this
-    // one is scaled down until it covers her without dominating the frame.
-    { col: 14, row: 12, cellsTall: 1.75 }, // the seated listener's face
+    { col: 10, row: 9 }, // the speaker's head
+    // Her face is smaller, so this one is scaled down until it covers her
+    // without dominating the frame.
+    { col: 13, row: 11, cellsTall: 1.75 }, // the seated listener's face
   ],
   focusCommaCellsTall: 2, // default when an entry does not set its own
   focusClearMargin: 1,
@@ -333,18 +334,21 @@ export function computeMosaicLayout(): Mark[] {
   // tile rather than claiming new space — the grid is already full here —
   // and are appended last so they draw over their neighbours, letting a
   // comma's tail break the gutter the way the scattered ones do.
-  // The hand-placed comma straddles the four tiles meeting at its corner,
-  // so a random strike landing beside it reads as a stray duplicate rather
-  // than as part of the scatter. Keep that neighbourhood clear.
+  // A hand-placed comma spans the cells under its footprint, so a random
+  // strike landing beside it reads as a stray duplicate rather than as part
+  // of the scatter. Keep that neighbourhood clear.
   const margin = MOSAIC.focusClearMargin
   const nearFocus = (c: number, r: number) =>
-    MOSAIC.focusCommas.some(
-      (f) =>
-        c >= f.col - 1 - margin &&
-        c <= f.col + margin &&
-        r >= f.row - 1 - margin &&
-        r <= f.row + margin,
-    )
+    MOSAIC.focusCommas.some((f) => {
+      const tall = "cellsTall" in f ? f.cellsTall : MOSAIC.focusCommaCellsTall
+      const wide = (tall * COMMA_BOX.w) / COMMA_BOX.h
+      return (
+        c >= f.col - margin &&
+        c < f.col + wide + margin &&
+        r >= f.row - margin &&
+        r < f.row + tall + margin
+      )
+    })
 
   const struck = new Set<Mark>()
   const struckCells = new Set<string>()
@@ -379,11 +383,9 @@ export function computeMosaicLayout(): Mark[] {
     struckCells.add(`${mark.col},${mark.row}`)
   }
 
-  // A comma is one and a half cells tall, so its tail reaches into the
-  // neighbouring tile. Painted in place it would be overdrawn by whichever
-  // mass tile comes later in the list; lifted to the end it lands on top and
-  // takes a bite out of the photograph.
-  // Appended last of all, so they sit over every tile they cross.
+  // Appended last of all, so they sit over every tile they cross. They are
+  // drawn without the entrance stagger (see the renderer), so the delay is
+  // moot.
   const focusMarks: Mark[] = MOSAIC.focusCommas.map((f) => ({
     shape: "focus-comma",
     col: f.col,
@@ -393,7 +395,7 @@ export function computeMosaicLayout(): Mark[] {
     fill: "cutout",
     fade: 1,
     gray: false,
-    delayMs: MOSAIC.staggerMs,
+    delayMs: 0,
   }))
 
   return [

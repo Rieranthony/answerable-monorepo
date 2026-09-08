@@ -18,6 +18,8 @@ export async function GET(
   { params }: { params: Promise<{ slug: string[] }> },
 ) {
   const { slug } = await params
+  const filename = slug.at(-1)
+  if (filename !== "image.png" && filename !== "image.webp") notFound()
   const page = source.getPage(slug.slice(0, -1))
 
   if (!page) notFound()
@@ -32,7 +34,9 @@ export async function GET(
     {
       width: 1200,
       height: 630,
-      format: "webp",
+      ...(filename === "image.png"
+        ? { format: "png" as const }
+        : { format: "webp" as const }),
       fonts: [
         { name: "Public Sans", data: regular, weight: 400 },
         { name: "Public Sans", data: bold, weight: 700 },
@@ -42,7 +46,9 @@ export async function GET(
 }
 
 export function generateStaticParams() {
-  return source.getPages().map((page) => ({
-    slug: getPageImageUrl(page).segments,
-  }))
+  return source.getPages().flatMap((page) =>
+    ["png", "webp"].map((format) => ({
+      slug: getPageImageUrl(page, format as "png" | "webp").segments,
+    })),
+  )
 }
