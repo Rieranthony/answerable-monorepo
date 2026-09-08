@@ -3,9 +3,8 @@ import {
   ExpandableSection,
   ExpandableSections,
 } from "@/components/expandable-sections"
-import { CommaMark, Logo, SquareMark } from "@/components/logo"
+import { Logo } from "@/components/logo"
 import { Mosaic } from "@/components/mosaic"
-import { ThemeToggle } from "@/components/theme-toggle"
 import { WaitlistForm } from "@/components/waitlist-form"
 
 const ACCREDITATION_BENEFITS = [
@@ -31,11 +30,10 @@ export default function Page() {
           tagline sits below the fold. */}
       <div className="relative flex min-h-svh flex-col lg:flex-row">
         <div className="flex w-full max-w-lg flex-col px-6">
-          {/* The logotype spans the column, so it sets the width the text
-              below is measured against. Its corner marks sit flush to the
-              SVG edges, giving it the same 24px gutter as everything else. */}
+          {/* The corner marks of the logotype sit flush to the SVG edges, so
+              it shares the 24px gutter with everything else. */}
           <header className="shrink-0 pt-6">
-            <Logo className="h-auto w-full" />
+            <Logo className="h-14 w-auto" />
           </header>
 
           <main className="grow pt-12">
@@ -52,94 +50,102 @@ export default function Page() {
             </p>
 
             <div className="mt-10">
-              <ExpandableSections>
-                <ExpandableSection value="ai-lead" title="Your AI Lead">
-                  <p className="text-foreground/75 text-sm/6">
-                    An AI Lead is the named professional responsible for how AI
-                    is governed in your practice. They set the policy, define
-                    the guardrails, decide what to work on and they make sure AI
-                    use meets the same standard as every other piece of
-                    published documentation.
-                  </p>
-                  <p className="text-foreground/75 text-sm/6">
-                    Most companies don&apos;t have one yet. The ones that do are
-                    building the mode of adoption from scratch, because until
-                    now there&apos;s been no common framework, no training
-                    pathway and no credential.
-                  </p>
-                  <p className="text-foreground/75 text-sm/6">
-                    Answerable&apos;s AI Lead programme fixes that.
-                  </p>
-                </ExpandableSection>
+              <p className="text-muted-foreground text-xs/6">
+                Click to expand below.
+              </p>
+              <div className="mt-2">
+                <ExpandableSections>
+                  <ExpandableSection value="ai-lead" title="Your AI Lead">
+                    <p className="text-foreground/75 text-sm/6">
+                      An AI Lead is the named professional responsible for how
+                      AI is governed in your practice. They set the policy,
+                      define the guardrails, decide what to work on and they
+                      make sure AI use meets the same standard as every other
+                      piece of published documentation.
+                    </p>
+                    <p className="text-foreground/75 text-sm/6">
+                      Most companies don&apos;t have one yet. The ones that do
+                      are building the mode of adoption from scratch, because
+                      until now there&apos;s been no common framework, no
+                      training pathway and no credential.
+                    </p>
+                    <p className="text-foreground/75 text-sm/6">
+                      Answerable&apos;s AI Lead programme fixes that.
+                    </p>
+                  </ExpandableSection>
 
-                <ExpandableSection
-                  value="accredited-professional"
-                  title="Become an Answerable Accredited Professional"
-                >
-                  <p className="text-foreground/75 text-sm/6">
-                    The first Answerable cohort is a structured programme for
-                    professionals stepping into the AI Lead role. You&apos;ll
-                    get:
-                  </p>
-                  <ul className="flex flex-col gap-2">
-                    {ACCREDITATION_BENEFITS.map((benefit) => (
-                      <li key={benefit} className="flex gap-2">
-                        <BulletSquare />
-                        <p className="text-foreground/75 text-sm/6">
-                          {benefit}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="text-foreground/75 text-sm/6">
-                    You&apos;ll leave with a working policy suite for your
-                    practice and an accreditation that you&apos;ve earned.
-                  </p>
-                </ExpandableSection>
+                  <ExpandableSection
+                    value="accredited-professional"
+                    title="Become an Answerable Accredited Professional"
+                  >
+                    <p className="text-foreground/75 text-sm/6">
+                      The first Answerable cohort is a structured programme for
+                      professionals stepping into the AI Lead role. You&apos;ll
+                      get:
+                    </p>
+                    <ul className="flex flex-col gap-2">
+                      {ACCREDITATION_BENEFITS.map((benefit) => (
+                        <li key={benefit} className="flex gap-2">
+                          <BulletSquare />
+                          <p className="text-foreground/75 text-sm/6">
+                            {benefit}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="text-foreground/75 text-sm/6">
+                      You&apos;ll leave with a working policy suite for your
+                      practice and an accreditation that you&apos;ve earned.
+                    </p>
+                  </ExpandableSection>
 
-                <ExpandableSection
-                  value="core-values"
-                  title="Built upon six core values"
-                >
-                  <p className="text-foreground/75 text-sm/6">
-                    Everything we do together and accredit against is rooted in
-                    six plain commitments.
-                  </p>
-                  <p className="text-foreground/75 text-sm/6">
-                    They reflect what the professions have always stood for and
-                    they have been extended deliberately to facilitate
-                    high-integrity professional work in an age of ubiquitous AI
-                    use where it is difficult to discern good and bad practice.
-                  </p>
-                  <ol className="flex list-none flex-col gap-2">
-                    {VALUES.map((value, index) => (
-                      <li key={value} className="flex gap-2">
-                        <span
-                          aria-hidden="true"
-                          className="text-muted-foreground flex h-6 w-4 shrink-0 items-center text-sm/6 tabular-nums"
-                        >
-                          {index + 1}
-                        </span>
-                        <p className="text-foreground/75 text-sm/6">{value}</p>
-                      </li>
-                    ))}
-                  </ol>
-                </ExpandableSection>
+                  <ExpandableSection
+                    value="core-values"
+                    title="Built upon six core values"
+                  >
+                    <p className="text-foreground/75 text-sm/6">
+                      Everything we do together and accredit against is rooted
+                      in six plain commitments.
+                    </p>
+                    <p className="text-foreground/75 text-sm/6">
+                      They reflect what the professions have always stood for
+                      and they have been extended deliberately to facilitate
+                      high-integrity professional work in an age of ubiquitous
+                      AI use where it is difficult to discern good and bad
+                      practice.
+                    </p>
+                    <ol className="flex list-none flex-col gap-2">
+                      {VALUES.map((value, index) => (
+                        <li key={value} className="flex gap-2">
+                          <span
+                            aria-hidden="true"
+                            className="text-muted-foreground flex h-6 w-4 shrink-0 items-center text-sm/6 tabular-nums"
+                          >
+                            {index + 1}
+                          </span>
+                          <p className="text-foreground/75 text-sm/6">
+                            {value}
+                          </p>
+                        </li>
+                      ))}
+                    </ol>
+                  </ExpandableSection>
 
-                <ExpandableSection
-                  value="what-is-answerable"
-                  title="What is Answerable?"
-                >
-                  <p className="text-foreground/75 text-sm/6">
-                    Answerable is a cross-sector professional initiative created
-                    by Keir Regan-Alexander (of Arka Works | Omnichat.uk) and
-                    Sadie Morgan OBE (dRMM | QoLF | Forefront | Civic). Our
-                    commercial interests are declared in full at the outset. The
-                    standard will be built in the open with the professionals
-                    who join us.
-                  </p>
-                </ExpandableSection>
-              </ExpandableSections>
+                  <ExpandableSection
+                    value="what-is-answerable"
+                    title="What is Answerable?"
+                  >
+                    <p className="text-foreground/75 text-sm/6">
+                      Answerable is a cross-sector professional initiative
+                      created by Keir Regan-Alexander (of Arka Works |
+                      Omnichat.uk) and Sadie Morgan OBE (dRMM | QoLF | Forefront
+                      | Civic). Our commercial interests are declared in full at
+                      the outset. The standard will be built in the open with
+                      the professionals who join us.
+                    </p>
+                  </ExpandableSection>
+                </ExpandableSections>
+              </div>
             </div>
 
             <section aria-labelledby="accreditation-heading" className="mt-10">
@@ -190,17 +196,10 @@ export default function Page() {
         </svg>
       </div>
 
-      <footer className="flex items-center gap-4 px-6 pb-6">
+      <footer className="px-6 pb-6">
         <p className="text-muted-foreground text-xs/4">
           © 2026 Answerable · answerable.org
         </p>
-        {/* The toggle sits between a square and a comma, as in the logo,
-            framed like the waitlist field. */}
-        <div className="border-border focus-within:border-ring flex items-center gap-2 border px-2 py-1 transition-colors">
-          <SquareMark className="size-2" />
-          <ThemeToggle />
-          <CommaMark className="h-3 w-2" />
-        </div>
       </footer>
     </div>
   )

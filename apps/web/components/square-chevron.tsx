@@ -1,20 +1,17 @@
 import type { CSSProperties } from "react"
 
-const SIZE = 2
-const PITCH = 3
+const SIZE = 1.5
+const PITCH = 2.5
 const BOX = 16
+// Squares and offsets stay on half-pixel steps, so at 2x every edge lands on
+// a device pixel.
+const STEP = 0.5
 
 type GridPosition = readonly [column: number, row: number]
 
+// The chevron sits at the end of the heading, so it points down when the
+// panel is closed and up when it is open, as an accordion control does.
 const CLOSED_POSITIONS = [
-  [0, 0],
-  [1, 1],
-  [2, 2],
-  [1, 3],
-  [0, 4],
-] as const satisfies readonly GridPosition[]
-
-const OPEN_POSITIONS = [
   [0, 0],
   [1, 1],
   [2, 2],
@@ -22,13 +19,21 @@ const OPEN_POSITIONS = [
   [4, 0],
 ] as const satisfies readonly GridPosition[]
 
+const OPEN_POSITIONS = [
+  [0, 2],
+  [1, 1],
+  [2, 0],
+  [3, 1],
+  [4, 2],
+] as const satisfies readonly GridPosition[]
+
 function centerPositions(positions: readonly GridPosition[]) {
   const columns = Math.max(...positions.map(([column]) => column)) + 1
   const rows = Math.max(...positions.map(([, row]) => row)) + 1
   const width = (columns - 1) * PITCH + SIZE
   const height = (rows - 1) * PITCH + SIZE
-  const offsetX = (BOX - width) / 2
-  const offsetY = (BOX - height) / 2
+  const offsetX = Math.round((BOX - width) / 2 / STEP) * STEP
+  const offsetY = Math.round((BOX - height) / 2 / STEP) * STEP
 
   return positions.map(
     ([column, row]) =>
