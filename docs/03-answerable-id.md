@@ -6,6 +6,8 @@
 > `apps/platform` design (see [`docs/01-architecture.md`](01-architecture.md) for the
 > reconciled picture).
 
+**Proposed foundation amendment.** Before the next release expansion, implement and validate [Enterprise ID foundation](05-id-enterprise-foundation.md). It specifies tenant boundaries, immutable client ownership, paired access, idempotent administration and durable audit evidence. Those changes are **Not yet implemented**; the [schema contract](04-answerable-id-schema.md) describes the existing implementation and the [build plan](02-plan.md) tracks the new gate. The imported design below is not evidence that a planned capability has shipped.
+
 ## Problem
 
 Our clients' employees log into our products using their corporate Microsoft or Google accounts. To make this work, each of our apps needs to be registered inside that client's identity system (Microsoft Entra ID or Google Workspace). Each registration comes with a client secret that expires on Microsoft's schedule.

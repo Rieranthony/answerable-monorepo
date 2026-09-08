@@ -5,6 +5,8 @@
 > - **Rule:** identifiers are application-generated UUIDv7 stored as PostgreSQL `uuid`, with two named exceptions; administrative changes go through the Hono API.
 > - **Not here:** the detailed HTTP reference (generated from the public and admin contracts), OIDC grants for apps, and OAuth 2.1 for MCP servers.
 
+**Foundation changes: Not yet.** The [enterprise foundation specification](05-id-enterprise-foundation.md) proposes changes to tenant lifecycle, token ownership, entitlements, idempotency and audit history. This page continues to describe the current schema. Known limitations established by the [code review](../reports/answerable-id-feedback-review.md): person-history retrieval depends on live users/members; audit attribution is incomplete after erasure; client ownership can change the authority of existing machine tokens; machine issuance is not yet audited. Member-scoped session services currently operate on the user's global sessions, so tenant-local session isolation also requires the foundation work.
+
 ## Service contract
 
 Answerable ID lives in `apps/id`. Better Auth is mounted at `/auth/*` under `https://id.answerable.org`; the browser login, consent and error pages live in `apps/web` and use `AUTH_PAGES_URL`.
@@ -109,7 +111,7 @@ Better Auth columns beyond its own field set (`users.status`, `users.disabled_at
 - Domains are stored lowercase as ASCII host names with at least two labels (internationalized names as punycode). A domain has at most one **active** organization and appears at most once per organization. Moving a domain means disabling or deleting the old row, then adding the new one; `findOrganizationByDomain` therefore returns one organization or null, and ambiguity cannot exist in the data.
 - An entitlement has at most one of `member_id` and `group_id`, and exactly one of `client_id` and `resource`. It is unique by `(organization_id, member_id, group_id, client_id, resource)` with `NULLS NOT DISTINCT`, so the organization-wide row is unique too. Scopes are non-empty and contain no empty string. Member- and group-specific rows use composite foreign keys with the organization, so they cannot point across organizations. A client or resource referenced by an entitlement cannot be deleted; disable it instead.
 - Client ids and resource identifiers are globally unique. Deleting a client removes its links, tokens, and consents; deleting a resource removes its links. Sessions detach from tokens (`set null`); users take their tokens and consents with them.
-- Client ownership is nullable and deletion-restricted. A client without an owning `organization_id` cannot obtain machine tokens.
+- Client ownership is nullable and deletion-restricted. Administrative client creation requires an owner for machine clients; the admin API rejects unowned machine principals. The token endpoint itself can issue to an unowned client inserted outside that service. Closing that issuance gap is part of the foundation work.
 - Members, group memberships, and entitlements have nullable effective windows with `valid_from < valid_until`. Windows are half-open: `valid_from` is inclusive, `valid_until` is exclusive, and NULL is unbounded. A row is effective when its status is active where present and `now()` is inside the window.
 - `sessions.active_organization_id` is organization-plugin state for Better Auth's own routes. It is never an authorization input; the token's organization comes from membership.
 - `invitations` stays because the organization plugin deletes members and invitations when an organization is deleted through it. Its `status` is constrained to Better Auth's vocabulary. Invitations are not an Answerable administrative capability in this milestone.
@@ -136,7 +138,7 @@ For implemented admin access checks, the policy applies `isEffective` to the mem
 
 `effectiveGrants` in `src/db/queries/grants.ts` implements this computation for resource targets and returns per-organisation scope unions. The admin API’s access views (`…/members/{memberId}/access` and `…/access?clientId=|resource=`) expose this computation for access reviews.
 
-Machine callers are authorized by the per-client scope ceiling and `oauth_client_resources`. Their token's organization claim comes from `oauth_clients.organization_id`; NULL denies `client_credentials`.
+Machine issuance uses the per-client scope ceiling and `oauth_client_resources`. The admin API derives the principal's organisation from the current `oauth_clients.organization_id` and rejects an unowned or disabled-organisation principal. The current configuration does not add the proposed immutable organisation/instance/version claims to machine tokens. Enforcing ownership at issuance and binding it in the token is **Not yet**; see the [foundation specification](05-id-enterprise-foundation.md#3-immutable-credentials-and-token-policy).
 
 ## Contract test
 

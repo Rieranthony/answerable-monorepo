@@ -1,0 +1,112 @@
+{
+  "membershipHistory": {
+    "before": [
+      "member.updated"
+    ],
+    "after": [],
+    "stored": [
+      {
+        "action": "member.removed",
+        "data": {
+          "userId": "01a08059-98bf-7003-b200-438f83bf7cd4"
+        }
+      },
+      {
+        "action": "member.updated",
+        "data": {
+          "changes": {
+            "validUntil": "2100-01-01T00:00:00.000Z"
+          }
+        }
+      }
+    ]
+  },
+  "erasedUserLookup": {
+    "status": 404,
+    "code": "not_found"
+  },
+  "erasureEvent": [
+    {
+      "targetId": "01a08059-98bf-7003-b200-438f83bf7cd4",
+      "data": {}
+    }
+  ],
+  "tokenIssuanceAudit": [],
+  "oldToken": {
+    "first": {
+      "status": 200,
+      "body": {
+        "principal": {
+          "type": "client",
+          "clientId": "review-01a08059-98bf-7006-969b-26fa83798814",
+          "organizationId": "01a08059-98bf-7001-b9bc-485a7ba11af3"
+        },
+        "grants": [
+          {
+            "organizationId": "01a08059-98bf-7001-b9bc-485a7ba11af3",
+            "organizationSlug": "review-01a08059-98bf-7001-b9bc-485a7ba11af3",
+            "scopes": [
+              "org:read"
+            ]
+          }
+        ]
+      }
+    },
+    "reassigned": {
+      "status": 200,
+      "body": {
+        "principal": {
+          "type": "client",
+          "clientId": "review-01a08059-98bf-7006-969b-26fa83798814",
+          "organizationId": "01a08059-98bf-7002-9612-d210b9e21662"
+        },
+        "grants": [
+          {
+            "organizationId": "01a08059-98bf-7002-9612-d210b9e21662",
+            "organizationSlug": "review-01a08059-98bf-7002-9612-d210b9e21662",
+            "scopes": [
+              "org:read"
+            ]
+          }
+        ]
+      }
+    },
+    "deleted": {
+      "status": 401,
+      "body": {
+        "type": "about:blank",
+        "title": "Invalid token",
+        "status": 401,
+        "code": "invalid_token",
+        "request_id": "01a08059-9a3c-7000-9510-72075c9e632a"
+      }
+    },
+    "recreated": {
+      "status": 200,
+      "body": {
+        "principal": {
+          "type": "client",
+          "clientId": "review-01a08059-98bf-7006-969b-26fa83798814",
+          "organizationId": "01a08059-98bf-7002-9612-d210b9e21662"
+        },
+        "grants": [
+          {
+            "organizationId": "01a08059-98bf-7002-9612-d210b9e21662",
+            "organizationSlug": "review-01a08059-98bf-7002-9612-d210b9e21662",
+            "scopes": [
+              "org:read"
+            ]
+          }
+        ]
+      }
+    },
+    "otherOrganisationRead": {
+      "before": 404,
+      "after": 200
+    }
+  },
+  "repeatedRotation": {
+    "sameRequestId": "01a08059-98bf-7000-9a8e-e02ed832716a",
+    "secretsDiffer": true
+  }
+}
