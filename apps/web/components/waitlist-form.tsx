@@ -57,7 +57,7 @@ export function WaitlistForm() {
         <CountrySelect name="country" />
         <FieldError />
       </Field>
-      <Button type="submit" disabled={pending} className="w-fit gap-1.5">
+      <Button type="submit" disabled={pending} className="w-full gap-1.5">
         {pending ? "Registering…" : "Register your interest"}
         <span
           aria-hidden="true"
