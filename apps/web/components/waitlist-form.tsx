@@ -3,8 +3,8 @@
 import { useActionState, useEffect, useRef } from "react"
 
 import { joinWaitlist, type WaitlistState } from "@/app/actions"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { Button } from "@answerable/ui/components/button"
+import { Input } from "@answerable/ui/components/input"
 
 const initialState: WaitlistState = { status: "idle" }
 

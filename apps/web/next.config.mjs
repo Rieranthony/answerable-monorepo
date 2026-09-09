@@ -3,6 +3,7 @@ import { createMDX } from "fumadocs-mdx/next"
 /** @type {import("next").NextConfig} */
 const config = {
   serverExternalPackages: ["@takumi-rs/core"],
+  transpilePackages: ["@answerable/ui", "@answerable/countries"],
   async headers() {
     return [
       "/docs/:path*",

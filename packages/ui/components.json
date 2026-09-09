@@ -5,7 +5,7 @@
   "tsx": true,
   "tailwind": {
     "config": "",
-    "css": "../../packages/ui/src/styles/globals.css",
+    "css": "src/styles/globals.css",
     "baseColor": "neutral",
     "cssVariables": true,
     "prefix": ""
@@ -13,11 +13,11 @@
   "iconLibrary": "lucide",
   "rtl": false,
   "aliases": {
-    "components": "@/components",
+    "components": "@answerable/ui/components",
     "utils": "@answerable/ui/lib/utils",
     "ui": "@answerable/ui/components",
-    "lib": "@/lib",
-    "hooks": "@/hooks"
+    "lib": "@answerable/ui/lib",
+    "hooks": "@answerable/ui/hooks"
   },
   "menuColor": "default",
   "menuAccent": "subtle",
