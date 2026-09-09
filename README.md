@@ -32,7 +32,7 @@ cp .env.example .env
 bun dev
 ```
 
-`apps/web` reads its own env file: `cp apps/web/.env.example apps/web/.env.local`. `ATTIO_API_KEY` is optional locally (without it the waitlist form logs the address to the terminal and reports success) and required in production, where the form returns an error if it is missing. The file explains how to create the token and find the list.
+`apps/web` reads its own env file: `cp apps/web/.env.example apps/web/.env.local`. The waitlist form writes to a Google Sheet through a service account (`GOOGLE_SHEETS_ID`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`). All three are optional locally (without them the form logs the address to the terminal and reports success) and required in production, where the form returns an error if any is missing. The file walks through creating the service account and sharing the sheet.
 
 | Service | Host port | Purpose |
 | --- | --- | --- |
