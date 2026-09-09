@@ -1,9 +1,8 @@
 import {
-  AttioError,
-  createAttioClient,
-  parseAttioConfig,
-  type AttioDeps,
-} from "./attio"
+  createSheetsClient,
+  parseSheetsConfig,
+  type SheetsDeps,
+} from "./sheets"
 
 export type WaitlistState =
   | { status: "idle" }
@@ -18,16 +17,18 @@ export const MESSAGES = {
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const EMAIL_MAX_LENGTH = 254
+const ERROR_MESSAGE_LIMIT = 500
 
-export type WaitlistDeps = AttioDeps & {
+export type WaitlistDeps = SheetsDeps & {
   /** Defaults to process.env, read at call time so builds never need it. */
   env?: Record<string, string | undefined>
-  log?: Pick<Console, "error" | "warn" | "info">
+  log?: Pick<Console, "error" | "info">
 }
 
 /**
- * Validates the address and saves it to Attio. Without an API key it only
- * logs the signup outside production, so the form stays usable in development.
+ * Validates the address and saves it to a Google Sheet. Without configuration
+ * it only logs the signup outside production, so the form stays usable in
+ * development.
  */
 export async function submitWaitlist(
   rawEmail: string,
@@ -42,46 +43,27 @@ export async function submitWaitlist(
     return { status: "error", message: MESSAGES.invalid }
   }
 
-  const config = parseAttioConfig(env)
+  const config = parseSheetsConfig(env)
   if (!config) {
     if (env.NODE_ENV === "production") {
-      log.error(line("attio_not_configured", { email }))
+      log.error(line("sheets_not_configured", { email }))
       return { status: "error", message: MESSAGES.failed }
     }
-    log.info(line("attio_not_configured_signup_logged_only", { email }))
+    log.info(line("sheets_not_configured_signup_logged_only", { email }))
     return { status: "success", email }
   }
 
-  const attio = createAttioClient(config, deps)
   try {
-    const result = await attio.addToWaitlist({ email })
-    if (!result.listed && result.listError) {
-      log.error(
-        line("attio_list_entry_failed", describe(result.listError, email)),
-      )
-    }
+    const result = await createSheetsClient(config, deps).upsertEmail(email)
+    if (result.headerCreated) log.info(line("sheets_header_created", { email }))
     return { status: "success", email }
   } catch (error) {
-    if (error instanceof AttioError) {
-      if (error.kind === "invalid_input") {
-        log.warn(line("attio_rejected_email", describe(error, email)))
-        return { status: "error", message: MESSAGES.invalid }
-      }
-      if (error.kind === "multiple_matches") {
-        // Duplicate people already exist for this address, so the signup is
-        // known. Merge them in Attio before the list step can succeed.
-        log.warn(line("attio_multiple_matches", describe(error, email)))
-        return { status: "success", email }
-      }
-      log.error(line("attio_failed", describe(error, email)))
-    } else {
-      log.error(
-        line("attio_failed", {
-          email,
-          message: error instanceof Error ? error.message : String(error),
-        }),
-      )
-    }
+    log.error(
+      line("sheets_failed", {
+        email,
+        message: describe(error, config.privateKey),
+      }),
+    )
     return { status: "error", message: MESSAGES.failed }
   }
 }
@@ -93,12 +75,7 @@ function line(event: string, fields: LogFields): string {
   return `[waitlist] ${event} ${JSON.stringify(fields)}`
 }
 
-function describe(error: AttioError, email: string): LogFields {
-  return {
-    email,
-    kind: error.kind,
-    status: error.status,
-    code: error.code,
-    message: error.message,
-  }
+function describe(error: unknown, secret: string): string {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.replaceAll(secret, "[redacted]").slice(0, ERROR_MESSAGE_LIMIT)
 }
