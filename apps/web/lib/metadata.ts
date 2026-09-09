@@ -4,7 +4,7 @@ export const SITE = {
   name: "Answerable",
   origin: "https://answerable.org",
   description:
-    "Answerable trains, equips and accredits the AI Lead: the named professional who answers for how AI is used in high-stakes professional work.",
+    "Answerable trains and accredits the professionals leading their practice’s approach to AI, built on six core values.",
 } as const
 
 export type MetadataImage = {
