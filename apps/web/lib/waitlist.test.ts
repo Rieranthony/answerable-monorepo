@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test"
-import { HEADERS, type SheetsConfig } from "./sheets"
+import { COLUMNS, type SheetsConfig } from "./sheets"
 import { fakeWorksheet } from "./test-helpers"
 import { MESSAGES, submitWaitlist } from "./waitlist"
 
@@ -11,7 +11,7 @@ const productionEnv = {
     "-----BEGIN PRIVATE KEY-----\\nTESTKEY\\n-----END PRIVATE KEY-----\\n",
 }
 function harness(
-  initial: Parameters<typeof fakeWorksheet>[0] = { headers: [...HEADERS] },
+  initial: Parameters<typeof fakeWorksheet>[0] = { headers: [...COLUMNS] },
   env: Record<string, string | undefined> = productionEnv,
 ) {
   const fake = fakeWorksheet(initial)
@@ -24,9 +24,9 @@ function harness(
     submitWaitlist(email, {
       env,
       log,
-      openWorksheet: async (config) => {
+      openSheet: async (config) => {
         opened.push(config)
-        return fake.worksheet
+        return { sheet: fake.worksheet, timeZone: "UTC" }
       },
       now: () => new Date("2026-09-09T10:00:00.000Z"),
     })
@@ -114,7 +114,7 @@ describe("unit: waitlist", () => {
     expect(await h.submit("a@b.com")).toEqual(success)
     expect(h.rows).toHaveLength(1)
     expect(h.calls.addRow).toHaveLength(1)
-    expect(h.calls.save).toHaveLength(1)
+    expect(h.calls.saveUpdatedCells).toHaveLength(1)
   })
   test("logs worksheet failures and returns the generic message", async () => {
     const h = harness({
