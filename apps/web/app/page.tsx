@@ -27,10 +27,26 @@ const structuredData = {
 }
 
 const ACCREDITATION_BENEFITS = [
-  "Guided resources and templates to write your firm's AI policy and handbook from scratch",
-  "Governance training and support materials, grounded in Answerable's six core values",
-  "A formal examination to prove your level of competence in this role",
-  "The “Answerable AP” credential: a publicly listed, verifiable mark that demonstrates to clients that you have met the standard",
+  {
+    lead: "The skills to lead your practice’s approach to AI.",
+    body: "Practical training grounded in Answerable’s six core values, equipping you to guide decisions and help colleagues use AI well.",
+  },
+  {
+    lead: "A policy suite your practice can put to work.",
+    body: "Develop your AI policy and handbook with guided resources and templates, shaped around your practice rather than written from scratch.",
+  },
+  {
+    lead: "An accreditation you’ve earned.",
+    body: "Demonstrate your competence through formal examination to qualify as an Answerable AP.",
+  },
+  {
+    lead: "Recognition others can verify.",
+    body: "Successful candidates join the public register of Answerable Accredited Professionals.",
+  },
+  {
+    lead: "A community to keep learning with.",
+    body: "Exchange experience, explore difficult questions, and continue developing alongside fellow AI Leads beyond the programme.",
+  },
 ]
 
 const VALUES = [
@@ -63,64 +79,38 @@ export default function Page() {
 
           <main className="grow pt-12">
             <h1 className="text-xl/6 font-bold text-balance">
-              AI is capable of outstanding responses. It is critical that a
-              professional answers for them.
+              For everything you put your name to.
             </h1>
             <p className="text-muted-foreground mt-2 text-sm/6">
-              All professional teams need someone who can answer for how AI is
-              being used for high-stakes work. We train that AI Leader, equip
-              them with a full suite of policy documents for their business and
-              accredit them to prove that they&apos;ve met the required
-              standard.
+              The people who change a practice aren’t always the first to try
+              something new. They’re the ones who make it worthwhile for
+              everyone else. AI needs that kind of leadership: grounded in the
+              work, generous with colleagues, and clear about what good looks
+              like.
             </p>
 
             <div className="mt-10">
               <p className="text-muted-foreground text-xs/6">
-                Click to expand below.
+                Click to expand below:
               </p>
               <div className="mt-2">
                 <ExpandableSections>
-                  <ExpandableSection value="ai-lead" title="Your AI Lead">
+                  <ExpandableSection value="ai-lead" title="The AI Lead role">
                     <p className="text-foreground/75 text-sm/6">
-                      An AI Lead is the named professional responsible for how
-                      AI is governed in your practice. They set the policy,
-                      define the guardrails, decide what to work on and they
-                      make sure AI use meets the same standard as every other
-                      piece of published documentation.
+                      When a client asks how your practice uses AI, the answer
+                      should give them another reason to choose you.
                     </p>
                     <p className="text-foreground/75 text-sm/6">
-                      Most companies don&apos;t have one yet. The ones that do
-                      are building the mode of adoption from scratch, because
-                      until now there&apos;s been no common framework, no
-                      training pathway and no credential.
+                      An AI Lead helps build the substance behind that answer:
+                      better ways of working, colleagues who know how to use the
+                      tools well, and standards the practice can explain and
+                      uphold.
                     </p>
                     <p className="text-foreground/75 text-sm/6">
-                      Answerable&apos;s AI Lead programme fixes that.
-                    </p>
-                  </ExpandableSection>
-
-                  <ExpandableSection
-                    value="accredited-professional"
-                    title="Become an Answerable Accredited Professional"
-                  >
-                    <p className="text-foreground/75 text-sm/6">
-                      The first Answerable cohort is a structured programme for
-                      professionals stepping into the AI Lead role. You&apos;ll
-                      get:
-                    </p>
-                    <ul className="flex flex-col gap-2">
-                      {ACCREDITATION_BENEFITS.map((benefit) => (
-                        <li key={benefit} className="flex gap-2">
-                          <BulletSquare />
-                          <p className="text-foreground/75 text-sm/6">
-                            {benefit}
-                          </p>
-                        </li>
-                      ))}
-                    </ul>
-                    <p className="text-foreground/75 text-sm/6">
-                      You&apos;ll leave with a working policy suite for your
-                      practice and an accreditation that you&apos;ve earned.
+                      They bring useful discoveries beyond the people who made
+                      them. They connect everyday experimentation with decisions
+                      about the practice’s future. And they help make the care
+                      behind the work visible to the people commissioning it.
                     </p>
                   </ExpandableSection>
 
@@ -129,15 +119,10 @@ export default function Page() {
                     title="Built upon six core values"
                   >
                     <p className="text-foreground/75 text-sm/6">
-                      Everything we do together and accredit against is rooted
-                      in six plain commitments.
-                    </p>
-                    <p className="text-foreground/75 text-sm/6">
-                      They reflect what the professions have always stood for
-                      and they have been extended deliberately to facilitate
-                      high-integrity professional work in an age of ubiquitous
-                      AI use where it is difficult to discern good and bad
-                      practice.
+                      Everything we teach, assess, and work towards together is
+                      rooted in six commitments. They connect the principles
+                      that make our work professional with the decisions we face
+                      when using AI.
                     </p>
                     <ol className="flex list-none flex-col gap-2">
                       {VALUES.map((value, index) => (
@@ -157,16 +142,57 @@ export default function Page() {
                   </ExpandableSection>
 
                   <ExpandableSection
-                    value="what-is-answerable"
-                    title="What is Answerable?"
+                    value="people"
+                    title="The people behind the programme"
                   >
                     <p className="text-foreground/75 text-sm/6">
-                      Answerable is a cross-sector professional initiative
-                      created by Keir Regan-Alexander (of Arka Works |
-                      Omnichat.uk) and Sadie Morgan OBE (dRMM | QoLF | Forefront
-                      | Civic). Our commercial interests are declared in full at
-                      the outset. The standard will be built in the open with
-                      the professionals who join us.
+                      Keir Regan-Alexander has spent the past three years
+                      helping more than 100 AEC firms develop their approach to
+                      AI. He has worked alongside professionals establishing
+                      policies, bringing colleagues into the conversation, and
+                      stepping into the AI Lead role. The programme draws on
+                      what they have learned together.
+                    </p>
+                    <p className="text-foreground/75 text-sm/6">
+                      Sadie Morgan OBE is co-founder of Stirling Prize-winning
+                      dRMM and founder of the Quality of Life Foundation. Her
+                      career brings together excellence in practice and a
+                      commitment to what good design makes possible for others.
+                      At Answerable, she is helping shape an approach to AI
+                      worthy of the professions adopting it and the people they
+                      serve.
+                    </p>
+                    <p className="text-foreground/75 text-sm/6">
+                      Together, they are developing a programme for
+                      professionals who want to take an active part in that
+                      future.
+                    </p>
+                  </ExpandableSection>
+
+                  <ExpandableSection
+                    value="accredited-professional"
+                    title="Become an Answerable Accredited Professional"
+                  >
+                    <p className="text-foreground/75 text-sm/6">
+                      The founding cohort is a structured programme for
+                      professionals stepping into the AI Lead role. You’ll get:
+                    </p>
+                    <ul className="flex flex-col gap-2">
+                      {ACCREDITATION_BENEFITS.map(({ lead, body }) => (
+                        <li key={lead} className="flex gap-2">
+                          <BulletSquare />
+                          <p className="text-foreground/75 text-sm/6">
+                            <strong className="text-foreground font-bold">
+                              {lead}
+                            </strong>{" "}
+                            {body}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="text-foreground/75 text-sm/6">
+                      You’ll develop an approach you can apply across whichever
+                      AI tools your practice uses, now and in the future.
                     </p>
                   </ExpandableSection>
                 </ExpandableSections>
@@ -175,18 +201,25 @@ export default function Page() {
 
             <section aria-labelledby="accreditation-heading" className="mt-10">
               <h2 id="accreditation-heading" className="text-sm/6 font-bold">
-                Get accredited
+                Join the founding cohort
               </h2>
               <p className="text-muted-foreground mt-2 text-sm/6">
-                Submit your email address and we&apos;ll send you the programme
-                details and digital access requirements when enrolment opens.
-                Places in the founding cohort are limited. We are looking for
-                people who can help define the business standards that will
-                follow.
+                Be among the first to earn the Answerable AP credential and join
+                a professional community that continues beyond the programme.
+              </p>
+              <p className="text-muted-foreground mt-4 text-sm/6">
+                We’re limiting the founding cohort to give participants the
+                support and assessment the programme requires. Leave your email
+                and we’ll send you programme details and let you know when
+                enrolment opens.
               </p>
               <div className="mt-4">
                 <WaitlistForm />
               </div>
+              <p className="text-muted-foreground mt-2 text-xs/6 italic">
+                Registering interest does not reserve a place or commit you to
+                enrol.
+              </p>
             </section>
           </main>
         </div>
