@@ -68,7 +68,10 @@ function CountrySelect({
         render={
           <Button
             variant="outline"
-            className={cn("w-full justify-between font-normal", className)}
+            className={cn(
+              "w-full justify-between text-base font-normal md:text-sm",
+              className,
+            )}
           />
         }
       >
