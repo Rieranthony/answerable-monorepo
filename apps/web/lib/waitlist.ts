@@ -1,15 +1,20 @@
+import { findCountry } from "@answerable/countries"
 import {
   createSheetsClient,
   parseSheetsConfig,
   type SheetsDeps,
 } from "./sheets"
 
+export type WaitlistInput = { email: string; country: string }
+export type WaitlistErrors = Partial<Record<"email" | "country", string>>
+
 export type WaitlistState =
   | { status: "idle" }
-  | { status: "error"; message: string }
+  | { status: "error"; errors?: WaitlistErrors; message?: string }
   | { status: "success"; email: string }
 
 export const MESSAGES = {
+  country: "Please select your country.",
   empty: "Please enter your email address.",
   invalid: "That doesn't look like a valid email address.",
   failed: "Something went wrong on our side. Please try again in a moment.",
@@ -31,17 +36,21 @@ export type WaitlistDeps = SheetsDeps & {
  * development.
  */
 export async function submitWaitlist(
-  rawEmail: string,
+  input: WaitlistInput,
   deps: WaitlistDeps = {},
 ): Promise<WaitlistState> {
   const env = deps.env ?? process.env
   const log = deps.log ?? console
-  const email = rawEmail.trim().toLowerCase()
+  const email = input.email.trim().toLowerCase()
 
-  if (!email) return { status: "error", message: MESSAGES.empty }
-  if (email.length > EMAIL_MAX_LENGTH || !EMAIL_PATTERN.test(email)) {
-    return { status: "error", message: MESSAGES.invalid }
+  const errors: WaitlistErrors = {}
+  if (!email) errors.email = MESSAGES.empty
+  else if (email.length > EMAIL_MAX_LENGTH || !EMAIL_PATTERN.test(email)) {
+    errors.email = MESSAGES.invalid
   }
+  const country = findCountry(input.country)
+  if (!country) errors.country = MESSAGES.country
+  if (Object.keys(errors).length || !country) return { status: "error", errors }
 
   const config = parseSheetsConfig(env)
   if (!config) {
@@ -54,8 +63,20 @@ export async function submitWaitlist(
   }
 
   try {
-    const result = await createSheetsClient(config, deps).upsertEmail(email)
+    const result = await createSheetsClient(config, deps).upsert({
+      email,
+      countryCode: country.code,
+      countryName: country.name,
+    })
     if (result.headerCreated) log.info(line("sheets_header_created", { email }))
+    if (result.columnsAdded.length) {
+      log.info(
+        line("sheets_header_extended", {
+          email,
+          columns: result.columnsAdded.join(","),
+        }),
+      )
+    }
     return { status: "success", email }
   } catch (error) {
     log.error(

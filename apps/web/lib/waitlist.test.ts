@@ -20,16 +20,19 @@ function harness(
     info: mock<(line: string) => void>(() => {}),
   }
   const opened: SheetsConfig[] = []
-  const submit = (email: string) =>
-    submitWaitlist(email, {
-      env,
-      log,
-      openSheet: async (config) => {
-        opened.push(config)
-        return { sheet: fake.worksheet, timeZone: "UTC" }
+  const submit = (email: string, country = "GB") =>
+    submitWaitlist(
+      { email, country },
+      {
+        env,
+        log,
+        openSheet: async (config) => {
+          opened.push(config)
+          return { sheet: fake.worksheet, timeZone: "UTC" }
+        },
+        now: () => new Date("2026-09-09T10:00:00.000Z"),
       },
-      now: () => new Date("2026-09-09T10:00:00.000Z"),
-    })
+    )
   const lines = (level: keyof typeof log) =>
     log[level].mock.calls.map((call) => call[0])
   return { ...fake, log, opened, submit, lines }
@@ -43,7 +46,7 @@ describe("unit: waitlist", () => {
     for (const email of ["", "   "])
       expect(await h.submit(email)).toEqual({
         status: "error",
-        message: MESSAGES.empty,
+        errors: { email: MESSAGES.empty },
       })
     expect(h.opened).toEqual([])
   })
@@ -52,9 +55,42 @@ describe("unit: waitlist", () => {
     for (const email of ["nope", "a@b", "a b@c.d", `${"a".repeat(250)}@b.com`])
       expect(await h.submit(email)).toEqual({
         status: "error",
-        message: MESSAGES.invalid,
+        errors: { email: MESSAGES.invalid },
       })
     expect(h.opened).toEqual([])
+  })
+  test("rejects missing and unknown countries before opening the sheet", async () => {
+    const h = harness()
+    for (const country of ["", "  ", "ZZ"]) {
+      expect(await h.submit("a@b.com", country)).toEqual({
+        status: "error",
+        errors: { country: MESSAGES.country },
+      })
+    }
+    expect(h.opened).toEqual([])
+  })
+  test("collects both field errors", async () => {
+    const h = harness()
+    expect(await h.submit("", "")).toEqual({
+      status: "error",
+      errors: { email: MESSAGES.empty, country: MESSAGES.country },
+    })
+    expect(h.opened).toEqual([])
+  })
+  test("normalises the country and stores its name", async () => {
+    const h = harness()
+    expect(await h.submit("a@b.com", " gb ")).toEqual(success)
+    expect(h.rows[0].country_code).toBe("GB")
+    expect(h.rows[0].country_name).toBe("United Kingdom")
+  })
+  test("logs header extension", async () => {
+    const h = harness({
+      headers: ["email", "first_seen_at", "last_seen_at", "contacted"],
+    })
+    expect(await h.submit("a@b.com")).toEqual(success)
+    expect(h.lines("info")).toEqual([
+      '[waitlist] sheets_header_extended {"email":"a@b.com","columns":"country_code,country_name"}',
+    ])
   })
   test("stores trimmed lowercase addresses", async () => {
     const h = harness()
