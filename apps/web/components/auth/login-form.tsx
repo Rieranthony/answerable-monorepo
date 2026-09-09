@@ -2,8 +2,8 @@
 
 import { type FormEvent, useEffect, useRef, useState } from "react"
 
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { Button } from "@answerable/ui/components/button"
+import { Input } from "@answerable/ui/components/input"
 import { authClient } from "@/lib/auth/client"
 import { describeError } from "@/lib/auth/error-copy"
 import type { LoginRoute } from "@/lib/auth/login-routing"

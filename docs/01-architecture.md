@@ -52,7 +52,7 @@ A token carrying a user's identity is only ever issued when that user's own auth
 | Testing | Test-driven; CI enforces full coverage of our own code (`bun test --coverage`) |
 | Edge | No CDN/WAF in front of our services for now; TLS terminates at the ingress (the design doc's Cloudflare front is under review — `Q-AID-CDN`) |
 | Hosting | Civo London: isolated network, K3s, managed Postgres, admin access via the tailnet ([`03-answerable-id.md` §Hosting](03-answerable-id.md#hosting)) |
-| Shared packages | `auth` (JWT verification middleware + client helpers for every consumer), `utils` (logging/redaction, env, crypto, backoff) |
+| Shared packages | Built: `ui` (`@answerable/ui`, shadcn/Base UI components and the Tailwind theme, source-only), `countries` (`@answerable/countries`, ISO data). Planned: `auth` (JWT verification middleware + client helpers for every consumer), `utils` (logging/redaction, env, crypto, backoff) |
 
 ## How the next app or MCP server plugs in
 

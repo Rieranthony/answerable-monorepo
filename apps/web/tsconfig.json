@@ -19,7 +19,8 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@answerable/ui/*": ["../../packages/ui/src/*"]
     }
   },
   "include": [
