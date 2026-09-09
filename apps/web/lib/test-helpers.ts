@@ -31,7 +31,7 @@ export function fakeWorksheet(
     getRows: 0,
     setHeaderRow: [] as string[][],
     addRow: [] as { values: Values; options?: { raw?: boolean } }[],
-    loadCells: [] as string[],
+    loadCells: [] as string[][],
     saveUpdatedCells: [] as SavedCell[][],
     setDataValidation: [] as { range: GridRange; rule: ValidationRule }[],
   }
@@ -72,12 +72,15 @@ export function fakeWorksheet(
     async addRow(values, options) {
       calls.addRow.push({ values: { ...values }, options })
       fail("addRow")
-      rows.push(
-        Object.fromEntries(header().map((key) => [key, values[key] ?? ""])),
+      const row = Object.fromEntries(
+        header().map((key) => [key, values[key] ?? ""]),
       )
+      const index = rows.length
+      rows.push(row)
+      return { get: (key: string) => row[key], rowNumber: index + 2 }
     },
-    async loadCells(range) {
-      calls.loadCells.push(range)
+    async loadCells(ranges) {
+      calls.loadCells.push([...ranges])
       fail("loadCells")
     },
     getCellByA1(address): Cell {

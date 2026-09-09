@@ -14,11 +14,12 @@ export const COLUMNS = [
   "email",
   "first_seen_at",
   "last_seen_at",
+  "country_code",
+  "country_name",
   "contacted",
 ] as const
 /** The columns the client writes; the rest belong to whoever reads the sheet. */
-const WRITTEN = ["email", "first_seen_at", "last_seen_at"] as const
-const CONTACTED = COLUMNS.indexOf("contacted")
+const WRITTEN = COLUMNS.slice(0, 5)
 
 export type SheetsConfig = {
   spreadsheetId: string
@@ -73,8 +74,8 @@ export type Worksheet = {
   addRow(
     values: Record<string, string>,
     options?: { raw?: boolean },
-  ): Promise<unknown>
-  loadCells(range: string): Promise<void>
+  ): Promise<Row>
+  loadCells(ranges: string[]): Promise<void>
   getCellByA1(address: string): Cell
   saveUpdatedCells(): Promise<void>
   setDataValidation(range: GridRange, rule: ValidationRule): Promise<unknown>
@@ -98,20 +99,25 @@ export type SheetsDeps = {
 export type UpsertResult = {
   outcome: "inserted" | "updated"
   headerCreated: boolean
+  columnsAdded: string[]
 }
 
 export function createSheetsClient(
   config: SheetsConfig,
   deps: SheetsDeps = {},
 ): {
-  upsertEmail(email: string): Promise<UpsertResult>
+  upsert(input: {
+    email: string
+    countryCode: string
+    countryName: string
+  }): Promise<UpsertResult>
 } {
   const openSheet = deps.openSheet ?? openGoogleSheet
   const now = deps.now ?? (() => new Date())
   return {
-    async upsertEmail(email) {
+    async upsert({ email, countryCode, countryName }) {
       const { sheet, timeZone } = await openSheet(config)
-      const headerCreated = await ensureHeader(sheet)
+      const header = await ensureHeader(sheet)
       const at = formatTimestamp(now(), timeZone)
       const rows = await sheet.getRows()
       const existing = rows.find(
@@ -121,20 +127,49 @@ export function createSheetsClient(
             .toLowerCase() === email,
       )
       if (existing) {
-        // One cell, not the whole row: saving the row would rewrite the
-        // reader's own edits (the contacted checkbox, extra columns) as text.
-        const column = columnLetter(sheet.headerValues.indexOf("last_seen_at"))
-        const address = `${column}${existing.rowNumber}`
-        await sheet.loadCells(address)
-        sheet.getCellByA1(address).value = at
+        // Save only client-owned cells, preserving the reader's edits.
+        const updates = [
+          ["last_seen_at", at],
+          ["country_code", countryCode],
+          ["country_name", countryName],
+        ].map(([column, value]) => ({
+          address: `${columnLetter(sheet.headerValues.indexOf(column))}${existing.rowNumber}`,
+          value,
+        }))
+        await sheet.loadCells(updates.map(({ address }) => address))
+        for (const { address, value } of updates) {
+          sheet.getCellByA1(address).value = value
+        }
         await sheet.saveUpdatedCells()
-        return { outcome: "updated", headerCreated }
+        return { outcome: "updated", ...header }
       }
-      await sheet.addRow(
-        { email, first_seen_at: at, last_seen_at: at },
+      const row = await sheet.addRow(
+        {
+          email,
+          first_seen_at: at,
+          last_seen_at: at,
+          country_code: countryCode,
+          country_name: countryName,
+        },
         { raw: true },
       )
-      return { outcome: "inserted", headerCreated }
+      const contacted = sheet.headerValues.indexOf("contacted")
+      if (contacted !== -1) {
+        await sheet.setDataValidation(
+          {
+            startRowIndex: row.rowNumber - 1,
+            endRowIndex: row.rowNumber,
+            startColumnIndex: contacted,
+            endColumnIndex: contacted + 1,
+          },
+          {
+            condition: { type: "BOOLEAN", values: [] },
+            strict: true,
+            showCustomUi: true,
+          },
+        )
+      }
+      return { outcome: "inserted", ...header }
     },
   }
 }
@@ -145,8 +180,10 @@ export function createSheetsClient(
 const EMPTY_HEADER =
   /^(No values in the header row|All your header cells are blank)/
 
-/** Writes row 1 and the contacted checkboxes on a blank sheet. */
-async function ensureHeader(sheet: Worksheet): Promise<boolean> {
+/** Creates a blank header or appends missing client-owned columns. */
+async function ensureHeader(
+  sheet: Worksheet,
+): Promise<Pick<UpsertResult, "headerCreated" | "columnsAdded">> {
   try {
     await sheet.loadHeaderRow()
   } catch (error) {
@@ -154,29 +191,19 @@ async function ensureHeader(sheet: Worksheet): Promise<boolean> {
       throw error
     }
     await sheet.setHeaderRow([...COLUMNS])
-    await sheet.setDataValidation(
-      {
-        startRowIndex: 1,
-        startColumnIndex: CONTACTED,
-        endColumnIndex: CONTACTED + 1,
-      },
-      {
-        condition: { type: "BOOLEAN", values: [] },
-        strict: true,
-        showCustomUi: true,
-      },
-    )
-    return true
+    return { headerCreated: true, columnsAdded: [] }
   }
   const missing = WRITTEN.filter(
     (column) => !sheet.headerValues.includes(column),
   )
-  if (missing.length) {
+  if (!sheet.headerValues.includes("email")) {
     throw new Error(
       `Missing worksheet columns: ${missing.join(", ")}. Expected: ${COLUMNS.join(", ")}`,
     )
   }
-  return false
+  if (missing.length)
+    await sheet.setHeaderRow([...sheet.headerValues, ...missing])
+  return { headerCreated: false, columnsAdded: missing }
 }
 
 const TIMESTAMP_FORMAT: Intl.DateTimeFormatOptions = {
