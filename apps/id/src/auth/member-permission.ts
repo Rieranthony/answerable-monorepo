@@ -46,18 +46,22 @@ export function memberPermissionFields(
   const activeMember = and(
     isEffective(members),
     eq(users.status, "active"),
+    sql`${users.deletedAt} is null`,
     eq(organizations.status, "active"),
+    sql`${organizations.deletedAt} is null`,
   );
   const clientId = includeClient ? oauthClients.clientId : sql`null::text`;
   const loginEligible = includeClient
     ? and(
         activeMember,
         eq(oauthClients.disabled, false),
+        sql`${oauthClients.deletedAt} is null`,
         sql`${oauthClients.grantTypes} @> ARRAY['authorization_code']::text[]`,
       )
     : sql`false`;
   const resourceEligible = and(
     eq(oauthResources.disabled, false),
+    sql`${oauthResources.deletedAt} is null`,
     or(
       eq(oauthResources.classification, "platform_shared"),
       eq(oauthResources.organizationId, members.organizationId),
@@ -88,7 +92,7 @@ export function memberPermissionFields(
     loginEligible: sql<boolean>`coalesce(${loginEligible}, false)`,
     // The capability constraint already restricts admin_session to the bound resource.
     adminEligible: sql<boolean>`coalesce(${and(activeMember, resourceEligible)}, false)`,
-    eligible: sql<boolean>`coalesce(${and(loginEligible, resourceEligible, sql`exists(select 1 from ${oauthClientResources} where ${oauthClientResources.clientId} = ${clientId} and ${oauthClientResources.resourceId} = ${oauthResources.identifier})`)}, false)`,
+    eligible: sql<boolean>`coalesce(${and(loginEligible, resourceEligible, sql`exists(select 1 from ${oauthClientResources} where ${oauthClientResources.clientId} = ${clientId} and ${oauthClientResources.resourceId} = ${oauthResources.identifier} and ${oauthClientResources.deletedAt} is null)`)}, false)`,
     refreshEnabled: includeClient
       ? sql<boolean>`coalesce(${oauthClients.grantTypes} @> ARRAY['refresh_token']::text[], false)`
       : sql<boolean>`false`,

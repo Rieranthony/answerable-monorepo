@@ -47,23 +47,32 @@ export function revokeUserGrantContexts(
     });
 }
 
-/** Capture contexts also erased through the user's owned-client cascade. */
-export function deleteUserGrantContexts(
+/** Revoke contexts belonging to the user and to their owned clients. */
+export function revokeUserAndOwnedClientGrantContexts(
   context: PlatformWriteContext,
   userId: string,
 ) {
   const { tx: executor } = requirePlatformWriteContext(context);
   return executor
-    .delete(grantContexts)
+    .update(grantContexts)
+    .set({ revokedAt: sql`statement_timestamp()` })
     .where(
-      or(
-        eq(grantContexts.userId, userId),
-        inArray(
-          grantContexts.clientInstanceId,
-          executor
-            .select({ id: oauthClients.id })
-            .from(oauthClients)
-            .where(eq(oauthClients.userId, userId)),
+      and(
+        isNull(grantContexts.revokedAt),
+        or(
+          eq(grantContexts.userId, userId),
+          inArray(
+            grantContexts.clientInstanceId,
+            executor
+              .select({ id: oauthClients.id })
+              .from(oauthClients)
+              .where(
+                and(
+                  isNull(oauthClients.deletedAt),
+                  eq(oauthClients.userId, userId),
+                ),
+              ),
+          ),
         ),
       ),
     )
@@ -89,21 +98,6 @@ export function revokeOrganizationGrantContexts(
       ),
     )
     .returning({ id: grantContexts.id, userId: grantContexts.userId });
-}
-
-export function deleteOrganizationGrantContexts(
-  context: PlatformWriteContext,
-  organizationId: string,
-) {
-  const { tx: executor } = requirePlatformWriteContext(context);
-  return executor
-    .delete(grantContexts)
-    .where(eq(grantContexts.organizationId, organizationId))
-    .returning({
-      id: grantContexts.id,
-      userId: grantContexts.userId,
-      organizationId: grantContexts.organizationId,
-    });
 }
 
 export function revokeSessionGrantContexts(
@@ -149,21 +143,6 @@ export function revokeResourceGrantContexts(
     });
 }
 
-export function deleteResourceGrantContexts(
-  context: PlatformWriteContext,
-  resourceInstanceId: string,
-) {
-  const { tx: executor } = requirePlatformWriteContext(context);
-  return executor
-    .delete(grantContexts)
-    .where(eq(grantContexts.resourceInstanceId, resourceInstanceId))
-    .returning({
-      id: grantContexts.id,
-      organizationId: grantContexts.organizationId,
-      userId: grantContexts.userId,
-    });
-}
-
 export function revokeClientGrantContexts(
   context: PlatformWriteContext,
   clientInstanceId: string,
@@ -178,21 +157,6 @@ export function revokeClientGrantContexts(
         isNull(grantContexts.revokedAt),
       ),
     )
-    .returning({
-      id: grantContexts.id,
-      organizationId: grantContexts.organizationId,
-      userId: grantContexts.userId,
-    });
-}
-
-export function deleteClientGrantContexts(
-  context: PlatformWriteContext,
-  clientInstanceId: string,
-) {
-  const { tx: executor } = requirePlatformWriteContext(context);
-  return executor
-    .delete(grantContexts)
-    .where(eq(grantContexts.clientInstanceId, clientInstanceId))
     .returning({
       id: grantContexts.id,
       organizationId: grantContexts.organizationId,

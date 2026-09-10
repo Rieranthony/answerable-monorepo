@@ -193,10 +193,14 @@ test("member windows and removal audit, cascade grants and memberships, and reta
   });
   const grantId = await grant(org.id, { memberId: ids[0]! });
   await service.remove(db, actor, org.id, ids[0]!);
-  expect(await db.select().from(groupMembers)).toEqual([]);
+  expect(await db.select().from(groupMembers)).toMatchObject([
+    { deletedAt: expect.any(Date) },
+  ]);
   expect(
     await db.select().from(entitlements).where(eq(entitlements.id, grantId)),
-  ).toEqual([]);
+  ).toMatchObject([
+    { id: grantId, status: "disabled", deletedAt: expect.any(Date) },
+  ]);
   expect(
     await db.select().from(users).where(eq(users.id, row.userId)),
   ).toHaveLength(1);
@@ -357,7 +361,7 @@ test("revocation retains identity, denies tenant A, preserves tenant B and requi
   expect(evidence[0]!.data).toMatchObject({
     effects: {
       removedGrants: [{ id: aGrant }],
-      removedGroups: [{ groupId: group.id }],
+      softDeletedGroups: [{ groupId: group.id }],
     },
   });
   await expect(

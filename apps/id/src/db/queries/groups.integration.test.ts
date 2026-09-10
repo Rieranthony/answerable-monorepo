@@ -215,15 +215,15 @@ test("group membership upserts preserve omitted windows, compute effectiveness a
   expect(
     await queries.listGroupMembers(db, other.id, group.id, { limit: 10 }),
   ).toEqual([]);
-  expect(await queries.removeGroupMember(db, other.id, group.id, ids[0]!)).toBe(
-    false,
-  );
-  expect(await queries.removeGroupMember(db, org.id, group.id, ids[0]!)).toBe(
-    true,
-  );
-  expect(await queries.removeGroupMember(db, org.id, group.id, ids[0]!)).toBe(
-    false,
-  );
+  expect(
+    await queries.removeGroupMember(db, other.id, group.id, ids[0]!),
+  ).toBeNull();
+  expect(
+    await queries.removeGroupMember(db, org.id, group.id, ids[0]!),
+  ).toMatchObject({ deletedAt: expect.any(Date) });
+  expect(
+    await queries.removeGroupMember(db, org.id, group.id, ids[0]!),
+  ).toBeNull();
   expect(
     await queries.findGroupMember(db, org.id, group.id, ids[0]!),
   ).toBeNull();

@@ -286,14 +286,12 @@ for (const principal of ["member", "group", "organisation"] as const) {
           })
           .returning();
         groupId = group!.id;
-        await fixture.db
-          .insert(groupMembers)
-          .values({
-            id: createId(),
-            organizationId,
-            groupId,
-            memberId: person.memberId,
-          });
+        await fixture.db.insert(groupMembers).values({
+          id: createId(),
+          organizationId,
+          groupId,
+          memberId: person.memberId,
+        });
       }
       const created = await command(
         `/api/admin/v1/organizations/${organizationId}/entitlements`,
@@ -402,12 +400,16 @@ for (const principal of ["member", "group", "organisation"] as const) {
         expect(items).toHaveLength(1);
         expect(items[0]).toMatchObject({
           action: "entitlement.removed",
-          schemaVersion: principal === "member" ? 1 : 2,
+          schemaVersion: 3,
           organizationId,
           targetId: entitlement.id,
           data: {
             before: { id: entitlement.id },
-            after: null,
+            after: {
+              id: entitlement.id,
+              status: "disabled",
+              deletedAt: expect.any(String),
+            },
           },
         });
         const references = await runtime.db
@@ -535,7 +537,9 @@ for (const principal of ["group", "organisation"] as const) {
         .where(
           eq(auditEvents.operationId, response.headers.get("Operation-Id")!),
         );
-      expect(event!.schemaVersion).toBe(2);
+      expect(event!.schemaVersion).toBe(
+        event!.action === "entitlement.removed" ? 3 : 2,
+      );
       expect(event!.data!.audience).toEqual(expected);
       events.push(event!);
     }
@@ -615,14 +619,12 @@ for (const principal of ["group", "organisation"] as const) {
         name: "Failure",
       })
       .returning();
-    await fixture.db
-      .insert(groupMembers)
-      .values({
-        id: createId(),
-        organizationId,
-        groupId: group!.id,
-        memberId: fixture.principals.tenantReader.memberId,
-      });
+    await fixture.db.insert(groupMembers).values({
+      id: createId(),
+      organizationId,
+      groupId: group!.id,
+      memberId: fixture.principals.tenantReader.memberId,
+    });
     const beforeRows = await fixture.db.select().from(entitlements);
     const beforeOperations = await fixture.db.select().from(adminOperations);
     const path = `/api/admin/v1/organizations/${organizationId}/entitlements`;

@@ -36,13 +36,24 @@ export async function effectiveGrants(
         .select({ id: organizations.id })
         .from(members)
         .innerJoin(organizations, eq(organizations.id, members.organizationId))
-        .where(eq(members.userId, principal.userId))
+        .where(
+          and(
+            sql`${organizations.deletedAt} is null`,
+            sql`${members.deletedAt} is null`,
+            eq(members.userId, principal.userId),
+          ),
+        )
         .orderBy(organizations.id)
         .for("share", { of: organizations });
       await tx
         .select({ id: oauthResources.id })
         .from(oauthResources)
-        .where(eq(oauthResources.identifier, resource))
+        .where(
+          and(
+            sql`${oauthResources.deletedAt} is null`,
+            eq(oauthResources.identifier, resource),
+          ),
+        )
         .for("share");
       const rows = await tx
         .select({
@@ -57,6 +68,10 @@ export async function effectiveGrants(
         .innerJoin(oauthResources, eq(oauthResources.identifier, resource))
         .where(
           and(
+            sql`${oauthResources.deletedAt} is null`,
+            sql`${organizations.deletedAt} is null`,
+            sql`${users.deletedAt} is null`,
+            sql`${members.deletedAt} is null`,
             eq(members.userId, principal.userId),
             inArray(
               members.organizationId,
@@ -108,12 +123,20 @@ export async function hasPlatformWriter(
       .select({ id: users.id })
       .from(users)
       .where(
-        inArray(
-          users.id,
-          tx
-            .select({ id: members.userId })
-            .from(members)
-            .where(inArray(members.organizationId, organizationIds)),
+        and(
+          sql`${users.deletedAt} is null`,
+          inArray(
+            users.id,
+            tx
+              .select({ id: members.userId })
+              .from(members)
+              .where(
+                and(
+                  sql`${members.deletedAt} is null`,
+                  inArray(members.organizationId, organizationIds),
+                ),
+              ),
+          ),
         ),
       )
       .orderBy(users.id)
@@ -121,7 +144,12 @@ export async function hasPlatformWriter(
     await tx
       .select({ id: oauthResources.id })
       .from(oauthResources)
-      .where(eq(oauthResources.identifier, input.resource))
+      .where(
+        and(
+          sql`${oauthResources.deletedAt} is null`,
+          eq(oauthResources.identifier, input.resource),
+        ),
+      )
       .for("share");
     const rows = await tx
       .select(memberPermissionFields(tx, false))
@@ -129,7 +157,15 @@ export async function hasPlatformWriter(
       .innerJoin(users, eq(users.id, members.userId))
       .innerJoin(organizations, eq(organizations.id, members.organizationId))
       .innerJoin(oauthResources, eq(oauthResources.identifier, input.resource))
-      .where(inArray(organizations.id, organizationIds));
+      .where(
+        and(
+          sql`${oauthResources.deletedAt} is null`,
+          sql`${organizations.deletedAt} is null`,
+          sql`${users.deletedAt} is null`,
+          sql`${members.deletedAt} is null`,
+          inArray(organizations.id, organizationIds),
+        ),
+      );
     return rows.some((row) => {
       const decision = evaluateAdminPermission(row);
       return (

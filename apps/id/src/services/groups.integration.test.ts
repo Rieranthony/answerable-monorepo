@@ -180,10 +180,14 @@ test("group lifecycle and membership writes emit one attributed audit each and e
   ).rejects.toMatchObject({ status: 400, code: "confirmation_mismatch" });
   await service.eraseGroup(db, actor, org.id, row.id, row.id);
   expect(await queries.findGroup(db, org.id, row.id)).toBeNull();
-  expect(await db.select().from(groupMembers)).toEqual([]);
+  const retiredAssignments = await db.select().from(groupMembers);
+  expect(retiredAssignments).toHaveLength(3);
+  expect(retiredAssignments.every((row) => row.deletedAt !== null)).toBe(true);
   expect(
     await db.select().from(entitlements).where(eq(entitlements.id, grantId)),
-  ).toEqual([]);
+  ).toMatchObject([
+    { id: grantId, deletedAt: expect.any(Date), status: "disabled" },
+  ]);
   const events = await db.select().from(auditEvents).orderBy(auditEvents.id);
   expect(events.map((e) => e.action)).toEqual([
     "group.created",

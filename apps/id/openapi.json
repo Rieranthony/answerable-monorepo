@@ -59,6 +59,11 @@
             "type": "string",
             "format": "date-time"
           },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
           "status": {
             "type": [
               "inert",
@@ -186,6 +191,11 @@
             "type": "string",
             "format": "date-time"
           },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
           "directoryId": {
             "type": "string",
             "readOnly": true
@@ -240,11 +250,216 @@
           "updatedAt"
         ]
       },
+      "SsoProvider": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "oidcConfig": {
+            "type": "string"
+          },
+          "samlConfig": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "number",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "id",
+          "issuer",
+          "providerId",
+          "domain"
+        ]
+      },
+      "OauthConsent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "clientId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "referenceId": {
+            "type": "string"
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "requestedUserInfoClaims": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "clientId",
+          "scopes"
+        ]
+      },
+      "OauthResource": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "identifier": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "accessTokenTtl": {
+            "type": "number"
+          },
+          "refreshTokenTtl": {
+            "type": "number"
+          },
+          "signingAlgorithm": {
+            "type": "string"
+          },
+          "signingKeyId": {
+            "type": "string"
+          },
+          "allowedScopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "customClaims": {
+            "type": "json"
+          },
+          "dpopBoundAccessTokensRequired": {
+            "type": "boolean",
+            "default": false
+          },
+          "disabled": {
+            "type": "boolean",
+            "default": false
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "policyVersion": {
+            "type": "number",
+            "default": 1
+          },
+          "metadata": {
+            "type": "json"
+          }
+        },
+        "required": [
+          "id",
+          "identifier",
+          "name"
+        ]
+      },
+      "OauthClientResource": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "clientId": {
+            "type": "string"
+          },
+          "resourceId": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "json"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "clientId",
+          "resourceId"
+        ]
+      },
       "OauthClient": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
+            "readOnly": true
+          },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time",
             "readOnly": true
           },
           "organizationId": {
@@ -402,6 +617,11 @@
             "type": "string",
             "readOnly": true
           },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
           "organizationId": {
             "type": "string"
           },
@@ -451,6 +671,11 @@
           },
           "metadata": {
             "type": "string"
+          },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
           },
           "authorizationVersion": {
             "type": "number",
@@ -505,6 +730,11 @@
           "createdAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
           },
           "status": {
             "type": [
@@ -569,6 +799,11 @@
           },
           "inviterId": {
             "type": "string"
+          },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
           }
         },
         "required": [
@@ -614,137 +849,6 @@
           "publicKey",
           "privateKey",
           "createdAt"
-        ]
-      },
-      "SsoProvider": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "readOnly": true
-          },
-          "issuer": {
-            "type": "string"
-          },
-          "oidcConfig": {
-            "type": "string"
-          },
-          "samlConfig": {
-            "type": "string"
-          },
-          "userId": {
-            "type": "string"
-          },
-          "providerId": {
-            "type": "string"
-          },
-          "organizationId": {
-            "type": "string"
-          },
-          "domain": {
-            "type": "string"
-          },
-          "revision": {
-            "type": "number",
-            "readOnly": true
-          }
-        },
-        "required": [
-          "id",
-          "issuer",
-          "providerId",
-          "domain"
-        ]
-      },
-      "OauthResource": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "readOnly": true
-          },
-          "identifier": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "accessTokenTtl": {
-            "type": "number"
-          },
-          "refreshTokenTtl": {
-            "type": "number"
-          },
-          "signingAlgorithm": {
-            "type": "string"
-          },
-          "signingKeyId": {
-            "type": "string"
-          },
-          "allowedScopes": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "customClaims": {
-            "type": "json"
-          },
-          "dpopBoundAccessTokensRequired": {
-            "type": "boolean",
-            "default": false
-          },
-          "disabled": {
-            "type": "boolean",
-            "default": false
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "policyVersion": {
-            "type": "number",
-            "default": 1
-          },
-          "metadata": {
-            "type": "json"
-          }
-        },
-        "required": [
-          "id",
-          "identifier",
-          "name"
-        ]
-      },
-      "OauthClientResource": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "readOnly": true
-          },
-          "clientId": {
-            "type": "string"
-          },
-          "resourceId": {
-            "type": "string"
-          },
-          "metadata": {
-            "type": "json"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "id",
-          "clientId",
-          "resourceId"
         ]
       },
       "OauthRefreshToken": {
@@ -889,55 +993,6 @@
             "items": {
               "type": "string"
             }
-          }
-        },
-        "required": [
-          "id",
-          "clientId",
-          "scopes"
-        ]
-      },
-      "OauthConsent": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "readOnly": true
-          },
-          "clientId": {
-            "type": "string"
-          },
-          "userId": {
-            "type": "string"
-          },
-          "referenceId": {
-            "type": "string"
-          },
-          "resources": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "requestedUserInfoClaims": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "scopes": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
           }
         },
         "required": [

@@ -383,7 +383,7 @@ test("eraseOrganization: confirmation, owned client conflict and successful eras
       .select()
       .from(organizations)
       .where(eq(organizations.id, row.id)),
-  ).toHaveLength(0);
+  ).toMatchObject([{ status: "disabled", deletedAt: expect.any(Date) }]);
   const events = await fixture.db
     .select()
     .from(auditEvents)
@@ -513,7 +513,7 @@ test("organisation commands recover committed results across lifecycle changes a
       .select()
       .from(organizations)
       .where(eq(organizations.id, original.id)),
-  ).toHaveLength(0);
+  ).toMatchObject([{ status: "disabled", deletedAt: expect.any(Date) }]);
   const creationReplay = await command("org-create", "", "POST", input);
   expect(creationReplay.headers.get("Idempotency-Replayed")).toBe("true");
   expect(await creationReplay.json()).toEqual(original);
@@ -652,15 +652,13 @@ test("getOrganizationSummary: exact pairs retain both identifiers in the HTTP co
   await fixture.db
     .insert(oauthResources)
     .values({ id: createId(), identifier: resource, name: "Summary" });
-  await fixture.db
-    .insert(entitlements)
-    .values({
-      id: createId(),
-      organizationId: organization.id,
-      clientId,
-      resource,
-      scopes: ["read"],
-    });
+  await fixture.db.insert(entitlements).values({
+    id: createId(),
+    organizationId: organization.id,
+    clientId,
+    resource,
+    scopes: ["read"],
+  });
   const response = await request(`/${organization.id}/summary`);
   expect(response.status).toBe(200);
   const summary = organizationSummarySchema.parse(await response.json());

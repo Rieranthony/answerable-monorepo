@@ -163,7 +163,7 @@ test("already-disabled resource reconciles remaining contexts and then becomes a
   ).toMatchObject({ changed: false });
 });
 
-test("resource erasure records every deleted context before cascade, preserving unrelated authority", async () => {
+test("resource deletion records every revoked context, preserving unrelated authority", async () => {
   const { db, target, contexts } = await seed();
   await inPlatformWrite(db, (context) =>
     eraseResource(context, target.identifier, target.identifier),
@@ -172,7 +172,11 @@ test("resource erasure records every deleted context before cascade, preserving 
     await db.select().from(grantContexts).orderBy(grantContexts.id),
   ).toEqual(
     contexts
-      .filter((row) => row.resourceInstanceId !== target.id)
+      .map((row) =>
+        row.resourceInstanceId === target.id
+          ? { ...row, revokedAt: expect.any(Date) }
+          : row,
+      )
       .sort((a, b) => a.id.localeCompare(b.id)),
   );
   const [event] = await db
@@ -180,7 +184,7 @@ test("resource erasure records every deleted context before cascade, preserving 
     .from(auditEvents)
     .where(eq(auditEvents.action, "resource.erased"));
   expect(event!.organizationId).toBeNull();
-  expect(event!.data!.deletedGrantContexts).toEqual(
+  expect(event!.data!.revokedGrantContexts).toEqual(
     expect.arrayContaining(
       contexts
         .filter((row) => row.resourceInstanceId === target.id)
@@ -191,7 +195,7 @@ test("resource erasure records every deleted context before cascade, preserving 
         })),
     ),
   );
-  expect(event!.data!.deletedGrantContexts).toHaveLength(2);
+  expect(event!.data!.revokedGrantContexts).toHaveLength(2);
   const erasedUserId = contexts[0]!.userId;
   await db.delete(users).where(eq(users.id, erasedUserId));
   expect(

@@ -56,6 +56,7 @@ function audit(
     targetId: id,
     action,
     outcome: "success",
+    schemaVersion: data.deletionMode === "soft" ? 2 : 1,
     data,
   });
 }
@@ -148,6 +149,9 @@ export async function deleteSsoProvider(
 ) {
   const { tx, actor } = requirePlatformWriteContext(context);
   requireRow(await lockOrganizationForCommand(context, organizationId));
+  const before = requireRow(
+    await queries.findSsoProviderForCommand(context, organizationId),
+  );
   const row = requireRow(
     await queries.deleteSsoProvider(context, organizationId),
   );
@@ -156,8 +160,14 @@ export async function deleteSsoProvider(
     organizationId,
   );
   await audit(tx, actor, organizationId, row.id, "sso_provider.deleted", {
-    before: configuration(row),
-    after: null,
+    before: configuration(before),
+    after: {
+      id: row.id,
+      revision: row.revision,
+      deletedAt: row.deletedAt,
+      credentialsCleared: true,
+    },
+    deletionMode: "soft",
     effects: { revokedGrantContexts },
   });
   return row.id;

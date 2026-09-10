@@ -1,7 +1,7 @@
 import { identityScopes } from "../auth/grant-scopes.ts";
 import { hasPlatformWriter } from "../db/queries/grants.ts";
 import { adminScopes } from "../http/admin/scopes.ts";
-import { and, desc, eq } from "drizzle-orm";
+import { sql, and, desc, eq } from "drizzle-orm";
 import {
   organizationCapabilities,
   systemBindings,
@@ -49,6 +49,7 @@ export type CapabilityPatch = Partial<
 >;
 const where = (organizationId: string, id: string) =>
   and(
+    sql`${organizationCapabilities.deletedAt} is null`,
     eq(organizationCapabilities.organizationId, organizationId),
     eq(organizationCapabilities.id, id),
   );
@@ -68,6 +69,7 @@ export async function listCapabilities(
       .from(organizationCapabilities)
       .where(
         and(
+          sql`${organizationCapabilities.deletedAt} is null`,
           eq(organizationCapabilities.organizationId, organizationId),
           beforeCursor(organizationCapabilities.id, query.cursor),
         ),
@@ -306,7 +308,16 @@ export async function removeCapability(
       "protected_capability",
       "The bound platform capability cannot be removed",
     );
-  await tx.delete(organizationCapabilities).where(where(organizationId, id));
+  const [after] = await tx
+    .update(organizationCapabilities)
+    .set({ deletedAt: sql`now()`, status: "disabled" })
+    .where(
+      and(
+        sql`${organizationCapabilities.deletedAt} is null`,
+        where(organizationId, id),
+      ),
+    )
+    .returning();
   await recordAuditEvent(tx, {
     ...actor,
     organizationId,
@@ -314,7 +325,8 @@ export async function removeCapability(
     targetId: id,
     action: "capability.removed",
     outcome: "success",
-    data: { before, after: null },
+    schemaVersion: 2,
+    data: { before, after, deletionMode: "soft" },
   });
 }
 
@@ -328,9 +340,12 @@ export async function requireNoCapabilityReferences(
     .select({ id: organizationCapabilities.id })
     .from(organizationCapabilities)
     .where(
-      "clientId" in target
-        ? eq(organizationCapabilities.clientId, target.clientId)
-        : eq(organizationCapabilities.resource, target.resource),
+      and(
+        sql`${organizationCapabilities.deletedAt} is null`,
+        "clientId" in target
+          ? eq(organizationCapabilities.clientId, target.clientId)
+          : eq(organizationCapabilities.resource, target.resource),
+      ),
     )
     .limit(1);
   if (rows.length)

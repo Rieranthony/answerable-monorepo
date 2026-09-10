@@ -7,7 +7,7 @@ import {
   addOAuthServerContext,
   getOAuthState,
 } from "better-auth/api";
-import { eq } from "drizzle-orm";
+import { and, isNull, eq } from "drizzle-orm";
 import { ssoProviders } from "../db/schema/index.ts";
 import { resolveFederatedUser } from "../services/federation.ts";
 import { authTransaction } from "./database-adapter.ts";
@@ -62,7 +62,12 @@ export function createSsoOriginBoundary() {
         authenticationProviderRevision: ssoProviders.revision,
       })
       .from(ssoProviders)
-      .where(eq(ssoProviders.providerId, input.providerId));
+      .where(
+        and(
+          isNull(ssoProviders.deletedAt),
+          eq(ssoProviders.providerId, input.providerId),
+        ),
+      );
     if (!provider)
       throw new Error("Accepted SSO provider is no longer available");
     const initiation = requests.getStore()

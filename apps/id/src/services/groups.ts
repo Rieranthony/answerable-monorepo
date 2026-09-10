@@ -23,6 +23,7 @@ function configuration(
 ) {
   return {
     id: row.id,
+    deletedAt: row.deletedAt,
     revision: row.revision,
     organizationId: row.organizationId,
     slug: row.slug,
@@ -36,6 +37,7 @@ function assignment(
 ) {
   return {
     id: row.id,
+    deletedAt: row.deletedAt,
     revision: row.revision,
     organizationId: row.organizationId,
     groupId: row.groupId,
@@ -59,11 +61,12 @@ function audit(
     targetId,
     targetType,
     action,
-    schemaVersion: ["group.erased", "group.enabled", "group.disabled"].includes(
-      action,
-    )
-      ? 2
-      : 1,
+    schemaVersion:
+      data.deletionMode === "soft"
+        ? 3
+        : ["group.erased", "group.enabled", "group.disabled"].includes(action)
+          ? 2
+          : 1,
     data,
     outcome: "success",
   });
@@ -205,11 +208,16 @@ export async function eraseGroup(
       "Confirmation must match the group ID",
     );
   const checkWriter = await platformWriterCheck(tx, organizationId);
-  const effects = await queries.deleteGroup(context, organizationId, groupId);
+  const { row, effects } = await queries.deleteGroup(
+    context,
+    organizationId,
+    groupId,
+  );
   await checkWriter();
   await audit(tx, actor, organizationId, groupId, "group.erased", {
     before: configuration(before),
-    after: null,
+    after: configuration(row),
+    deletionMode: "soft",
     effects,
   });
 }
@@ -334,7 +342,12 @@ export async function removeMember(
     ),
   );
   const checkWriter = await platformWriterCheck(tx, organizationId);
-  await queries.removeGroupMember(context, organizationId, groupId, memberId);
+  const row = await queries.removeGroupMember(
+    context,
+    organizationId,
+    groupId,
+    memberId,
+  );
   await checkWriter();
   await audit(
     tx,
@@ -342,7 +355,12 @@ export async function removeMember(
     organizationId,
     memberId,
     "group_member.removed",
-    { groupId, before: assignment(before), after: null },
+    {
+      groupId,
+      before: assignment(before),
+      after: assignment(row!),
+      deletionMode: "soft",
+    },
     "group_member",
   );
 }

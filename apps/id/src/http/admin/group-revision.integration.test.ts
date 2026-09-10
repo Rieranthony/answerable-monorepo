@@ -103,7 +103,7 @@ test("group revisions reject stale and recreated targets without breaking replay
   ).toBe(204);
   const replacement = await createGroup(fixture.db, {
     organizationId: fixture.tenant.organizationId,
-    slug: group.slug,
+    slug: `${group.slug}-replacement`,
     name: "Replacement",
   });
   expect((await patch(replacement.id, "wrong-instance", tag)).status).toBe(412);

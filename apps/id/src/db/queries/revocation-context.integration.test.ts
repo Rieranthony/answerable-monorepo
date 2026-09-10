@@ -130,13 +130,10 @@ test("grant mutation queries require their exact issued command purpose", async 
     grants.revokeSessionGrantContexts,
   ];
   const platformWrites = [
-    grants.deleteUserGrantContexts,
+    grants.revokeUserAndOwnedClientGrantContexts,
     grants.revokeOrganizationGrantContexts,
-    grants.deleteOrganizationGrantContexts,
     grants.revokeResourceGrantContexts,
-    grants.deleteResourceGrantContexts,
     grants.revokeClientGrantContexts,
-    grants.deleteClientGrantContexts,
   ];
   const all = [...userWrites, ...platformWrites];
   async function reject(context: unknown, cases = all) {

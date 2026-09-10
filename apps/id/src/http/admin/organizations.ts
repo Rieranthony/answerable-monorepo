@@ -276,7 +276,7 @@ export const routes = {
     operationId: "eraseOrganization",
     summary: "Erase an organisation",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original response for seven days; changed input conflicts and expired recovery never repeats effects. Permanently erase the organization and return no content; organization_has_clients requires removing owned clients first. The confirm query parameter must equal the target id. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableOrganization for reversible offboarding.",
+      "Requires Idempotency-Key. Identical authorised retries recover the original response for seven days; changed input conflicts and expired recovery never repeats effects. Soft-delete the organisation and its tenant configuration, memberships and assignments. Clear provider credentials, revoke tenant grant contexts and clear browser-session selections. Global profiles and sessions remain. organization_has_clients requires removing owned clients first; undeleted owned resources also block deletion. The confirm query parameter must equal the target id. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableOrganization for reversible offboarding. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
     tag: "Organizations",
     platformScope: "platform:write",
     kind: "erase",

@@ -291,7 +291,7 @@ test("removal replays after deletion, preserves evidence and blocks resource era
     );
   expect(event!.data).toMatchObject({
     before: { id: row.id, scopes: ["tool:read", "tool:write"] },
-    after: null,
+    after: { id: row.id, status: "disabled", deletedAt: expect.any(String) },
   });
   expect((await request("DELETE", resourcePath)).status).toBe(204);
 });

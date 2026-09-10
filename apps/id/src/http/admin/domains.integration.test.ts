@@ -57,7 +57,7 @@ test("domain creation and deletion recover their committed result without adopti
       .select()
       .from(organizationDomains)
       .where(eq(organizationDomains.id, row.id)),
-  ).toHaveLength(0);
+  ).toMatchObject([{ status: "disabled", deletedAt: expect.any(Date) }]);
   const [receipt] = await fixture.db
     .select()
     .from(adminOperations)

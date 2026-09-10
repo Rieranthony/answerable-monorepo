@@ -32,6 +32,7 @@ import { lifecycleStatuses } from "./vocabulary.ts";
 export const organizationDomains = pgTable(
   "organization_domains",
   {
+    deletedAt: timestampColumn("deleted_at"),
     id: id(),
     organizationId: uuid("organization_id")
       .notNull()
@@ -43,15 +44,14 @@ export const organizationDomains = pgTable(
     ...timestamps(),
   },
   (table) => [
-    unique("organization_domains_organization_id_domain_unique").on(
-      table.organizationId,
-      table.domain,
-    ),
+    uniqueIndex("organization_domains_organization_id_domain_unique")
+      .on(table.organizationId, table.domain)
+      .where(sql`${table.deletedAt} is null`),
     // A domain routes to at most one organization. Moving it means disabling
     // the old row first, so ambiguity cannot exist in the data.
     uniqueIndex("organization_domains_active_domain_idx")
       .on(table.domain)
-      .where(sql`${table.status} = 'active'`),
+      .where(sql`${table.status} = 'active' and ${table.deletedAt} is null`),
     vocabularyCheck(
       "organization_domains_status_check",
       table.status,
@@ -74,6 +74,7 @@ export const organizationDomains = pgTable(
 export const groups = pgTable(
   "groups",
   {
+    deletedAt: timestampColumn("deleted_at"),
     id: id(),
     organizationId: uuid("organization_id")
       .notNull()
@@ -116,6 +117,7 @@ export const groups = pgTable(
 export const groupMembers = pgTable(
   "group_members",
   {
+    deletedAt: timestampColumn("deleted_at"),
     organizationId: uuid("organization_id").notNull(),
     groupId: uuid("group_id").notNull(),
     memberId: uuid("member_id").notNull(),
@@ -126,11 +128,13 @@ export const groupMembers = pgTable(
   },
   (table) => [
     ...tenantPolicies(table.organizationId),
-    unique("group_members_id_unique").on(table.id),
+    uniqueIndex("group_members_live_assignment_unique")
+      .on(table.groupId, table.memberId)
+      .where(sql`${table.deletedAt} is null`),
     check("group_members_revision_check", sql`${table.revision} > 0`),
     primaryKey({
       name: "group_members_pkey",
-      columns: [table.groupId, table.memberId],
+      columns: [table.id],
     }),
     foreignKey({
       name: "group_members_organization_id_group_id_fk",
@@ -163,6 +167,7 @@ export const groupMembers = pgTable(
 export const entitlements = pgTable(
   "entitlements",
   {
+    deletedAt: timestampColumn("deleted_at"),
     id: id(),
     organizationId: uuid("organization_id")
       .notNull()
@@ -198,7 +203,8 @@ export const entitlements = pgTable(
     }).onDelete("cascade"),
     // NULLS NOT DISTINCT makes every principal and target shape unique with
     // one constraint. Named short because the generated form exceeds 63 chars.
-    unique("entitlements_principal_target_unique")
+    // The SQL migration adds NULLS NOT DISTINCT; Drizzle cannot express it on partial indexes.
+    uniqueIndex("entitlements_principal_target_unique")
       .on(
         table.organizationId,
         table.memberId,
@@ -206,7 +212,7 @@ export const entitlements = pgTable(
         table.clientId,
         table.resource,
       )
-      .nullsNotDistinct(),
+      .where(sql`${table.deletedAt} is null`),
     index("entitlements_client_id_idx").on(table.clientId),
     index("entitlements_resource_idx").on(table.resource),
     check(

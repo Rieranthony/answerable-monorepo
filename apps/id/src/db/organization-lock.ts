@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, isNull, eq } from "drizzle-orm";
 import type { Executor } from "./client.ts";
 import { organizations } from "./schema/index.ts";
 
@@ -14,7 +14,7 @@ export async function lockOrganization(
   const [row] = await executor
     .select()
     .from(organizations)
-    .where(eq(organizations.id, id))
+    .where(and(isNull(organizations.deletedAt), eq(organizations.id, id)))
     .for(mode);
   return row ?? null;
 }

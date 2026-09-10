@@ -29,6 +29,7 @@ export function createAuth(db: Database, environment: Environment) {
     onAPIError: {
       onError(error) {
         if (isAPIError(error)) return;
+
         console.error(
           "[id] auth",
           JSON.stringify({ level: "error", event: "provider_diagnostic" }),
@@ -91,6 +92,12 @@ export function createAuth(db: Database, environment: Environment) {
         enabled: false,
       },
       additionalFields: {
+        deletedAt: {
+          type: "date",
+          required: false,
+          input: false,
+          returned: false,
+        },
         directoryId: {
           type: "string",
           required: false,
@@ -105,6 +112,12 @@ export function createAuth(db: Database, environment: Environment) {
     },
     user: {
       additionalFields: {
+        deletedAt: {
+          type: "date",
+          required: false,
+          input: false,
+          returned: false,
+        },
         // Every user Better Auth creates starts inert, including one created
         // by a successful upstream login; activation is an explicit step.
         status: {
@@ -140,8 +153,24 @@ export function createAuth(db: Database, environment: Environment) {
       organization({
         allowUserToCreateOrganization: false,
         schema: {
+          invitation: {
+            additionalFields: {
+              deletedAt: {
+                type: "date",
+                required: false,
+                input: false,
+                returned: false,
+              },
+            },
+          },
           organization: {
             additionalFields: {
+              deletedAt: {
+                type: "date",
+                required: false,
+                input: false,
+                returned: false,
+              },
               authorizationVersion: {
                 type: "number",
                 required: true,
@@ -168,6 +197,12 @@ export function createAuth(db: Database, environment: Environment) {
           },
           member: {
             additionalFields: {
+              deletedAt: {
+                type: "date",
+                required: false,
+                input: false,
+                returned: false,
+              },
               status: {
                 type: [...membershipStatuses],
                 required: true,

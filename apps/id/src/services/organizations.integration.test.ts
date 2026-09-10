@@ -6,7 +6,7 @@ import {
 import { inTenantRead } from "../__tests__/tenant-command.ts";
 import type { Database } from "../db/client.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, isNull } from "drizzle-orm";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import {
@@ -286,9 +286,15 @@ test("erase rejects confirmation and clients, cascades members and domains and r
   expect(await db.select().from(auditEvents)).toHaveLength(1);
   await db.delete(oauthClients).where(eq(oauthClients.clientId, "owned"));
   await service.eraseOrganization(db, actor, row.id, row.id);
-  expect(await db.select().from(organizations)).toHaveLength(0);
-  expect(await db.select().from(members)).toHaveLength(0);
-  expect(await db.select().from(organizationDomains)).toHaveLength(0);
+  expect(await db.select().from(organizations)).toMatchObject([
+    { deletedAt: expect.any(Date) },
+  ]);
+  expect(await db.select().from(members)).toMatchObject([
+    { deletedAt: expect.any(Date) },
+  ]);
+  expect(await db.select().from(organizationDomains)).toMatchObject([
+    { deletedAt: expect.any(Date) },
+  ]);
   expect(await db.select().from(users)).toHaveLength(1);
   const events = await db.select().from(auditEvents);
   expect(events).toHaveLength(2);
@@ -570,13 +576,19 @@ test("organisation disable irreversibly revokes only its tenant contexts and aud
 test("organisation erasure records deleted contexts without deleting a shared user's other tenant", async () => {
   const { db, a, contexts } = await seedTenantGrantContexts();
   await service.eraseOrganization(db, actor, a.id, a.id);
-  expect(await db.select().from(grantContexts)).toEqual([contexts[1]!]);
+  expect(
+    await db
+      .select()
+      .from(grantContexts)
+      .where(isNull(grantContexts.revokedAt)),
+  ).toEqual([contexts[1]!]);
+  expect(await db.select().from(grantContexts)).toHaveLength(2);
   const [event] = await db
     .select()
     .from(auditEvents)
     .where(eq(auditEvents.action, "organization.erased"));
   expect(event!.data).toMatchObject({
-    deletedGrantContexts: [
+    revokedGrantContexts: [
       { id: contexts[0]!.id, userId: contexts[0]!.userId },
     ],
   });

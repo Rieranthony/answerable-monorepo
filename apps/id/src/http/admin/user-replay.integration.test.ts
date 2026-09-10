@@ -107,7 +107,7 @@ test("user commands recover their original responses after erasure without repea
   ).toBe(409);
   expect(
     await fixture.db.select().from(users).where(eq(users.id, id)),
-  ).toHaveLength(0);
+  ).toMatchObject([{ status: "disabled", deletedAt: expect.any(Date) }]);
 });
 test("new-key user lifecycle noops preserve state and timestamps", async () => {
   const id = await seed();
@@ -168,25 +168,21 @@ test("restricted disable reconciliation distinguishes replay from a new command 
       .where(eq(users.id, id));
     const sessionId = createId();
     const secret = createId();
-    await fixture.db
-      .insert(sessions)
-      .values({
-        id: sessionId,
+    await fixture.db.insert(sessions).values({
+      id: sessionId,
+      userId: id,
+      token: secret,
+      expiresAt: new Date(Date.now() + 60000),
+    });
+    for (const table of [oauthAccessTokens, oauthRefreshTokens])
+      await fixture.db.insert(table).values({
+        id: createId(),
         userId: id,
-        token: secret,
+        clientId: fixture.platform.client.clientId,
+        token: createId(),
+        scopes: [],
         expiresAt: new Date(Date.now() + 60000),
       });
-    for (const table of [oauthAccessTokens, oauthRefreshTokens])
-      await fixture.db
-        .insert(table)
-        .values({
-          id: createId(),
-          userId: id,
-          clientId: fixture.platform.client.clientId,
-          token: createId(),
-          scopes: [],
-          expiresAt: new Date(Date.now() + 60000),
-        });
     const replay = await disable(originalKey);
     expect(replay.status).toBe(200);
     expect(replay.headers.get("Idempotency-Replayed")).toBe("true");

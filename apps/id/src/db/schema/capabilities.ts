@@ -5,7 +5,7 @@ import {
   pgPolicy,
   pgTable,
   text,
-  unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { organizations } from "./auth.ts";
@@ -13,6 +13,7 @@ import { oauthClients, oauthResources } from "./oauth.ts";
 import {
   effectiveWindow,
   id,
+  timestampColumn,
   timestamps,
   vocabularyCheck,
   windowCheck,
@@ -30,6 +31,7 @@ export const capabilityGrantKinds = [
 export const organizationCapabilities = pgTable(
   "organization_capabilities",
   {
+    deletedAt: timestampColumn("deleted_at"),
     id: id(),
     organizationId: uuid("organization_id")
       .notNull()
@@ -50,9 +52,10 @@ export const organizationCapabilities = pgTable(
     revision: integer("revision").default(1).notNull(),
   },
   (table) => [
-    unique("organization_capabilities_target_kind_unique")
+    // The SQL migration adds NULLS NOT DISTINCT; Drizzle cannot express it on partial indexes.
+    uniqueIndex("organization_capabilities_target_kind_unique")
       .on(table.organizationId, table.clientId, table.resource, table.grantKind)
-      .nullsNotDistinct(),
+      .where(sql`${table.deletedAt} is null`),
     check(
       "organization_capabilities_revision_check",
       sql`${table.revision} > 0`,

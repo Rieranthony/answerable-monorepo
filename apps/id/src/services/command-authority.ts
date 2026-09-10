@@ -53,6 +53,7 @@ export async function authorizeCommand(
           eq(sessions.id, principal.sessionId),
           eq(users.id, principal.userId),
           eq(users.status, "active"),
+          sql`${users.deletedAt} is null`,
           sql`${sessions.expiresAt} > statement_timestamp()`,
         ),
       )

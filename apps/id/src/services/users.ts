@@ -27,6 +27,7 @@ function requireUser<T>(row: T | null): T {
 function state(row: NonNullable<Awaited<ReturnType<typeof queries.lockUser>>>) {
   return {
     id: row.id,
+    deletedAt: row.deletedAt,
     status: row.status,
     disabledAt: row.disabledAt,
     emailRetired: row.retiredEmail !== null,
@@ -47,13 +48,14 @@ function audit(
     action,
     data,
     outcome: "success",
-    schemaVersion: [
-      "user.erased",
-      "user.disabled",
-      "user.disable_unchanged",
-    ].includes(action)
-      ? 2
-      : 1,
+    schemaVersion:
+      data.deletionMode === "soft"
+        ? 3
+        : ["user.erased", "user.disabled", "user.disable_unchanged"].includes(
+              action,
+            )
+          ? 2
+          : 1,
   });
 }
 export async function listUsers(
@@ -199,13 +201,14 @@ export async function eraseUser(
       "Confirmation must match the user ID",
     );
   await protectPlatformUser(tx, userId);
-  const { effects, deletedGrantContexts } = requireUser(
+  const { effects, revokedGrantContexts, ...row } = requireUser(
     await queries.deleteUser(context, userId),
   );
   await audit(tx, actor, userId, "user.erased", {
     before: state(before),
-    after: null,
-    deletedGrantContexts,
+    after: state(row),
+    deletionMode: "soft",
+    revokedGrantContexts,
     effects,
   });
 }

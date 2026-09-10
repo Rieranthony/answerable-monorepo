@@ -313,7 +313,7 @@ test("RLS denies missing/read-only context and isolates concurrent tenants on th
   ];
   for (const insert of foreignInserts)
     await expect(Promise.resolve(insert(runtime.db))).rejects.toMatchObject({
-      cause: { code: "42501" },
+      cause: { code: expect.stringMatching(/^(42501|23503)$/) },
     });
   const tables = ["groups", "group_members", "entitlements"];
   const rows = (tx: import("./client.ts").Executor, table: string) =>
@@ -322,13 +322,13 @@ test("RLS denies missing/read-only context and isolates concurrent tenants on th
     );
   for (const table of tables) {
     expect((await rows(runtime.db, table)).rows).toEqual([]);
-    expect(
-      (
-        await runtime.db.execute(
+    await expect(
+      Promise.resolve(
+        runtime.db.execute(
           sql`delete from ${sql.identifier(table)} returning organization_id`,
-        )
-      ).rows,
-    ).toEqual([]);
+        ),
+      ),
+    ).rejects.toMatchObject({ cause: { code: "42501" } });
   }
   const { inPlatformUsers } = await import("../__tests__/platform-context.ts");
   await inPlatformUsers(runtime.db, async (context) => {
@@ -369,20 +369,22 @@ test("RLS denies missing/read-only context and isolates concurrent tenants on th
         )
       ).rows,
     ).toEqual([{ organization_id: a.id }]);
-    expect(
-      (
-        await tx.execute(
+    await expect(
+      tx.transaction((nested) =>
+        nested.execute(
           sql`delete from groups where organization_id = ${b.id} returning id`,
-        )
-      ).rows,
-    ).toEqual([]);
+        ),
+      ),
+    ).rejects.toMatchObject({ cause: { code: "42501" } });
     await expect(
       tx.transaction(async (nested) => insert(nested, b.id)),
     ).rejects.toThrow();
     for (const insert of foreignInserts)
       await expect(
         tx.transaction(async (nested) => insert(nested)),
-      ).rejects.toMatchObject({ cause: { code: "42501" } });
+      ).rejects.toMatchObject({
+        cause: { code: expect.stringMatching(/^(42501|23503)$/) },
+      });
     await withDatabaseScope(
       tx,
       { kind: "policy-user", userId: b.userId },
@@ -391,9 +393,11 @@ test("RLS denies missing/read-only context and isolates concurrent tenants on th
           expect((await rows(policy, table)).rows).toEqual([
             { organization_id: b.id },
           ]);
-        expect(
-          (await policy.execute(sql`delete from groups returning id`)).rows,
-        ).toEqual([]);
+        await expect(
+          policy.transaction((nested) =>
+            nested.execute(sql`delete from groups returning id`),
+          ),
+        ).rejects.toMatchObject({ cause: { code: "42501" } });
       },
     );
     expect((await rows(tx, "groups")).rows).toEqual([
@@ -618,7 +622,7 @@ test("access queries use issued tenant contexts on a restricted connection", asy
       ).toBeNull();
       expect(
         await memberQueries.removeMemberAssignments(context, foreign.memberId),
-      ).toEqual({ removedGrants: [], removedGroups: [] });
+      ).toEqual({ removedGrants: [], softDeletedGroups: [] });
       expect(
         await memberQueries.revokeMember(context, tenant.memberId),
       ).toMatchObject({ status: "revoked" });
@@ -969,7 +973,11 @@ test("capability RLS permits tenant inspection but denies tenant ceiling writes"
           .set({ status: "disabled" })
           .returning(),
       ).toEqual([]);
-      expect(await tx.delete(organizationCapabilities).returning()).toEqual([]);
+      await expect(
+        tx.transaction((nested) =>
+          nested.delete(organizationCapabilities).returning(),
+        ),
+      ).rejects.toMatchObject({ cause: { code: "42501" } });
     });
     await expect(
       runtime.db.transaction(async (tx) => {
@@ -2098,13 +2106,10 @@ test("restricted revocation queries preserve their tenant, user, client and sess
   for (const operation of [
     "revokeUser",
     "revokeSession",
-    "deleteUser",
+    "revokeUserAndOwnedClients",
     "revokeOrganization",
-    "deleteOrganization",
     "revokeResource",
-    "deleteResource",
     "revokeClient",
-    "deleteClient",
   ] as const) {
     const ids = targets.map(() => createId());
     for (const [index, target] of targets.entries())
@@ -2116,7 +2121,7 @@ test("restricted revocation queries preserve their tenant, user, client and sess
         expiresAt: new Date(Date.now() + 60000),
       });
     const expected = ids.filter((_, index) =>
-      operation === "deleteUser"
+      operation === "revokeUserAndOwnedClients"
         ? index !== 2
         : operation === "revokeUser" || operation === "revokeSession"
           ? index < 2
@@ -2141,8 +2146,8 @@ test("restricted revocation queries preserve their tenant, user, client and sess
             )
           : inPlatformWrite(runtime.db, (context) => {
               switch (operation) {
-                case "deleteUser":
-                  return grantQueries.deleteUserGrantContexts(
+                case "revokeUserAndOwnedClients":
+                  return grantQueries.revokeUserAndOwnedClientGrantContexts(
                     context,
                     userIds[0]!,
                   );
@@ -2151,28 +2156,13 @@ test("restricted revocation queries preserve their tenant, user, client and sess
                     context,
                     tenantIds[0]!,
                   );
-                case "deleteOrganization":
-                  return grantQueries.deleteOrganizationGrantContexts(
-                    context,
-                    tenantIds[0]!,
-                  );
                 case "revokeResource":
                   return grantQueries.revokeResourceGrantContexts(
                     context,
                     resourceIds[0]!,
                   );
-                case "deleteResource":
-                  return grantQueries.deleteResourceGrantContexts(
-                    context,
-                    resourceIds[0]!,
-                  );
                 case "revokeClient":
                   return grantQueries.revokeClientGrantContexts(
-                    context,
-                    clientIds[0]!,
-                  );
-                case "deleteClient":
-                  return grantQueries.deleteClientGrantContexts(
                     context,
                     clientIds[0]!,
                   );
@@ -2187,12 +2177,8 @@ test("restricted revocation queries preserve their tenant, user, client and sess
         .select()
         .from(grantContexts)
         .where(eq(grantContexts.id, id));
-      if (expected.includes(id) && operation.startsWith("delete"))
-        expect(row).toBeUndefined();
-      else {
-        expect(row).toBeDefined();
-        expect(row!.revokedAt !== null).toBe(expected.includes(id));
-      }
+      expect(row).toBeDefined();
+      expect(row!.revokedAt !== null).toBe(expected.includes(id));
       await owner.db.delete(grantContexts).where(eq(grantContexts.id, id));
     }
   }

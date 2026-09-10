@@ -66,21 +66,29 @@ export async function platformSummary(
         groupId: systemBindings.groupId,
       })
       .from(systemBindings),
-    executor.select(statuses(organizations.status)).from(organizations),
-    executor.select(userStatuses()).from(users),
+    executor
+      .select(statuses(organizations.status))
+      .from(organizations)
+      .where(sql`${organizations.deletedAt} is null`),
+    executor
+      .select(userStatuses())
+      .from(users)
+      .where(sql`${users.deletedAt} is null`),
     executor
       .select({
         total: count(),
         disabled: filtered(eq(oauthClients.disabled, true)),
         unowned: filtered(isNull(oauthClients.organizationId)),
       })
-      .from(oauthClients),
+      .from(oauthClients)
+      .where(sql`${oauthClients.deletedAt} is null`),
     executor
       .select({
         total: count(),
         disabled: filtered(eq(oauthResources.disabled, true)),
       })
-      .from(oauthResources),
+      .from(oauthResources)
+      .where(sql`${oauthResources.deletedAt} is null`),
     executor
       .select({ active: filtered(gt(sessions.expiresAt, now)) })
       .from(sessions),
@@ -129,15 +137,30 @@ export async function organizationSummary(
     executor
       .select()
       .from(organizations)
-      .where(eq(organizations.id, organizationId)),
+      .where(
+        and(
+          sql`${organizations.deletedAt} is null`,
+          eq(organizations.id, organizationId),
+        ),
+      ),
     executor
       .select(statuses(organizationDomains.status))
       .from(organizationDomains)
-      .where(eq(organizationDomains.organizationId, organizationId)),
+      .where(
+        and(
+          sql`${organizationDomains.deletedAt} is null`,
+          eq(organizationDomains.organizationId, organizationId),
+        ),
+      ),
     executor
       .select({ issuer: ssoProviders.issuer })
       .from(ssoProviders)
-      .where(eq(ssoProviders.organizationId, organizationId)),
+      .where(
+        and(
+          sql`${ssoProviders.deletedAt} is null`,
+          eq(ssoProviders.organizationId, organizationId),
+        ),
+      ),
     executor
       .select({
         total: count(),
@@ -146,11 +169,22 @@ export async function organizationSummary(
       })
       .from(members)
       .innerJoin(users, eq(users.id, members.userId))
-      .where(eq(members.organizationId, organizationId)),
+      .where(
+        and(
+          sql`${users.deletedAt} is null`,
+          sql`${members.deletedAt} is null`,
+          eq(members.organizationId, organizationId),
+        ),
+      ),
     executor
       .select(statuses(groups.status))
       .from(groups)
-      .where(eq(groups.organizationId, organizationId)),
+      .where(
+        and(
+          sql`${groups.deletedAt} is null`,
+          eq(groups.organizationId, organizationId),
+        ),
+      ),
     executor
       .select({
         clientId: entitlements.clientId,
@@ -159,13 +193,23 @@ export async function organizationSummary(
         ...statuses(entitlements.status),
       })
       .from(entitlements)
-      .where(eq(entitlements.organizationId, organizationId))
+      .where(
+        and(
+          sql`${entitlements.deletedAt} is null`,
+          eq(entitlements.organizationId, organizationId),
+        ),
+      )
       .groupBy(entitlements.clientId, entitlements.resource)
       .orderBy(entitlements.clientId, entitlements.resource),
     executor
       .select({ owned: count() })
       .from(oauthClients)
-      .where(eq(oauthClients.organizationId, organizationId)),
+      .where(
+        and(
+          sql`${oauthClients.deletedAt} is null`,
+          eq(oauthClients.organizationId, organizationId),
+        ),
+      ),
   ]);
   const { total, effective: effectiveCount, ...byStatus } = memberCounts!;
   return {

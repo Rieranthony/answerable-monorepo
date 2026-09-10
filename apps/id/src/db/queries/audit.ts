@@ -87,7 +87,7 @@ export function listOrganizationAuditEvents(
     // Legacy link payloads did not establish the target's visibility. Retain
     // them for platform auditors without consulting mutable/live target rows.
     or(
-      eq(auditEvents.schemaVersion, 2),
+      inArray(auditEvents.schemaVersion, [2, 3]),
       notInArray(auditEvents.action, [
         "client.resource_linked",
         "client.resource_unlinked",

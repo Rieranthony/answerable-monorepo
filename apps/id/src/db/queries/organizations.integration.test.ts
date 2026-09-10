@@ -85,7 +85,11 @@ test("organisation queries: CRUD, filters, cursor, missing rows and related IDs"
   });
   expect(await queries.countOrganizationClients(db, a.id)).toBe(1);
   await queries.deleteOrganization(db, b.id);
-  expect(await queries.findOrganization(db, b.id)).toBeNull();
+  expect(await queries.findOrganization(db, b.id)).toMatchObject({
+    id: b.id,
+    status: "disabled",
+    deletedAt: expect.any(Date),
+  });
   expect(await queries.lockOrganization(db, b.id)).toBeNull();
   expect(
     await queries.updateOrganization(db, b.id, { name: "Missing" }),

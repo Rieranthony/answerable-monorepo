@@ -23,6 +23,7 @@ function configuration(
 ) {
   return {
     id: row.id,
+    deletedAt: row.deletedAt,
     revision: row.revision,
     organizationId: row.organizationId,
     memberId: row.memberId,
@@ -41,8 +42,12 @@ async function audit(
   context: PlatformWriteContext,
   action: string,
   data:
-    | { before: Configuration; after: Configuration | null }
-    | { before: null; after: Configuration },
+    | {
+        before: Configuration;
+        after: Configuration | null;
+        deletionMode?: "soft";
+      }
+    | { before: null; after: Configuration; deletionMode?: "soft" },
 ) {
   const { tx, actor } = requirePlatformWriteContext(context);
   const target = data.before ?? data.after;
@@ -61,7 +66,7 @@ async function audit(
     targetId: target.id,
     targetType: "entitlement",
     action,
-    schemaVersion: captureAudience ? 2 : 1,
+    schemaVersion: data.deletionMode === "soft" ? 3 : captureAudience ? 2 : 1,
     data: { ...data, ...(captureAudience ? { audience } : {}) },
     outcome: "success",
   });
@@ -250,11 +255,16 @@ export async function removeEntitlement(
     entitlementId,
   );
   const checkWriter = await platformWriterCheck(tx, organizationId);
-  await queries.deleteEntitlement(context, organizationId, entitlementId);
+  const row = await queries.deleteEntitlement(
+    context,
+    organizationId,
+    entitlementId,
+  );
   await checkWriter();
   await audit(context, "entitlement.removed", {
     before: configuration(before),
-    after: null,
+    after: configuration(row!),
+    deletionMode: "soft",
   });
 }
 

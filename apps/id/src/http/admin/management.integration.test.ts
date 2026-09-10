@@ -220,13 +220,17 @@ for (const machine of [false, true]) {
     expect((await request(kind, erasePath, "DELETE")).status).toBe(204);
     expect((await request(kind, erasePath, "DELETE")).status).toBe(404);
     expect(await listClientResources(fixture.db, client.clientId)).toEqual([]);
-    for (const table of [oauthAccessTokens, oauthRefreshTokens, oauthConsents])
+    for (const table of [oauthAccessTokens, oauthRefreshTokens])
       expect(
         await fixture.db
           .select()
           .from(table)
           .where(eq(table.clientId, client.clientId)),
       ).toEqual([]);
+
+    expect(await fixture.db.select().from(oauthConsents)).toMatchObject([
+      { deletedAt: expect.any(Date) },
+    ]);
     for (const [action, targetType, targetId] of [
       ["client.erased", "client", client.clientId],
       ["domain.deleted", "domain", domain.id],

@@ -25,24 +25,44 @@ export async function findClientPrincipal(
         organizationId: oauthClients.organizationId,
       })
       .from(oauthClients)
-      .where(eq(oauthClients.clientId, clientId));
+      .where(
+        and(
+          sql`${oauthClients.deletedAt} is null`,
+          eq(oauthClients.clientId, clientId),
+        ),
+      );
     if (!identity) return null;
     // Follow the protocol lock order and re-read authority after any wait.
     if (identity.organizationId)
       await tx
         .select({ id: organizations.id })
         .from(organizations)
-        .where(eq(organizations.id, identity.organizationId))
+        .where(
+          and(
+            sql`${organizations.deletedAt} is null`,
+            eq(organizations.id, identity.organizationId),
+          ),
+        )
         .for("share");
     await tx
       .select({ id: oauthClients.id })
       .from(oauthClients)
-      .where(eq(oauthClients.id, identity.id))
+      .where(
+        and(
+          sql`${oauthClients.deletedAt} is null`,
+          eq(oauthClients.id, identity.id),
+        ),
+      )
       .for("share");
     await tx
       .select({ id: oauthResources.id })
       .from(oauthResources)
-      .where(eq(oauthResources.identifier, resource))
+      .where(
+        and(
+          sql`${oauthResources.deletedAt} is null`,
+          eq(oauthResources.identifier, resource),
+        ),
+      )
       .for("share");
     const [client] = await tx
       .select({
@@ -76,6 +96,10 @@ export async function findClientPrincipal(
       )
       .where(
         and(
+          sql`${oauthResources.deletedAt} is null`,
+          sql`${oauthClientResources.deletedAt} is null`,
+          sql`${organizations.deletedAt} is null`,
+          sql`${oauthClients.deletedAt} is null`,
           eq(oauthClients.id, identity.id),
           eq(oauthResources.identifier, resource),
           eq(oauthResources.disabled, false),

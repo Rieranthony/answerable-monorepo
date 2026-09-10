@@ -1,6 +1,6 @@
 import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   createAdminFixture,
   type AdminFixture,
@@ -400,7 +400,12 @@ test("user pagination, platform reader access, validation and lifecycle conflict
     cursor = page.nextCursor;
   } while (cursor);
   expect(seen).toEqual(
-    (await fixture.db.select({ id: users.id }).from(users))
+    (
+      await fixture.db
+        .select({ id: users.id })
+        .from(users)
+        .where(isNull(users.deletedAt))
+    )
       .map((r) => r.id)
       .sort()
       .reverse(),

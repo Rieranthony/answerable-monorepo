@@ -50,7 +50,7 @@ export const routes = {
     operationId: "deleteOrganizationDomain",
     summary: "Delete organisation domain",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating its audit or mutation. Changed input returns idempotency_key_reused; expired recovery returns operation_result_expired and never repeats effects. Delete a domain assignment and return no content, removing its sign-in discovery routing and recording domain.deleted. Prefer disableOrganizationDomain for a reversible suspension; validation_failed rejects malformed ids and not_found means the organisation or domain is missing. No confirmation is required.",
+      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating its audit or mutation. Changed input returns idempotency_key_reused; expired recovery returns operation_result_expired and never repeats effects. Delete a domain assignment and return no content, removing its sign-in discovery routing and recording domain.deleted. Prefer disableOrganizationDomain for a reversible suspension; validation_failed rejects malformed ids and not_found means the organisation or domain is missing. No confirmation is required. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
     tag: "Domains",
     platformScope: "platform:write",
     kind: "write",

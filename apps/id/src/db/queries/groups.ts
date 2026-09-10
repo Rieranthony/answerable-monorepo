@@ -70,6 +70,7 @@ export function listGroups(
     .from(groups)
     .where(
       and(
+        sql`${groups.deletedAt} is null`,
         eq(groups.organizationId, organizationId),
         query.q === undefined
           ? undefined
@@ -94,7 +95,12 @@ function findGroupQuery(
   return executor
     .select()
     .from(groups)
-    .where(groupWhere(organizationId, groupId));
+    .where(
+      and(
+        sql`${groups.deletedAt} is null`,
+        groupWhere(organizationId, groupId),
+      ),
+    );
 }
 export async function findGroup(
   context: TenantReadContext<"directory">,
@@ -123,7 +129,12 @@ export async function updateGroup(
   const [row] = await executor
     .update(groups)
     .set(patch)
-    .where(groupWhere(organizationId, groupId))
+    .where(
+      and(
+        sql`${groups.deletedAt} is null`,
+        groupWhere(organizationId, groupId),
+      ),
+    )
     .returning();
   return row ?? null;
 }
@@ -137,7 +148,12 @@ export async function setGroupStatus(
   const [row] = await executor
     .update(groups)
     .set({ status })
-    .where(groupWhere(organizationId, groupId))
+    .where(
+      and(
+        sql`${groups.deletedAt} is null`,
+        groupWhere(organizationId, groupId),
+      ),
+    )
     .returning();
   return row ?? null;
 }
@@ -176,7 +192,12 @@ export async function readGroupPolicyForCommand(
   const assignments = await tx
     .select(groupAssignmentEvidence)
     .from(groupMembers)
-    .where(membershipWhere(organizationId, groupId))
+    .where(
+      and(
+        sql`${groupMembers.deletedAt} is null`,
+        membershipWhere(organizationId, groupId),
+      ),
+    )
     .orderBy(groupMembers.id)
     .for("share");
   const policy = await tx
@@ -184,6 +205,7 @@ export async function readGroupPolicyForCommand(
     .from(entitlements)
     .where(
       and(
+        sql`${entitlements.deletedAt} is null`,
         eq(entitlements.organizationId, organizationId),
         eq(entitlements.groupId, groupId),
       ),
@@ -200,28 +222,54 @@ export async function deleteGroup(
 ) {
   const { tx: executor } = requirePlatformWriteContext(context);
   // The service holds the parent group lock, preventing new child rows while
-  // DELETE RETURNING captures the actual effects, including ineligible policy.
-  const removedAssignments = await executor
-    .delete(groupMembers)
-    .where(membershipWhere(organizationId, groupId))
-    .returning(groupAssignmentEvidence);
-  const removedEntitlements = await executor
-    .delete(entitlements)
+  // UPDATE RETURNING captures the actual effects, including ineligible policy.
+  const softDeletedAssignments = await executor
+    .update(groupMembers)
+    .set({ deletedAt: sql`now()` })
     .where(
       and(
+        sql`${groupMembers.deletedAt} is null`,
+        membershipWhere(organizationId, groupId),
+      ),
+    )
+    .returning({
+      ...groupAssignmentEvidence,
+      deletedAt: groupMembers.deletedAt,
+    });
+  const softDeletedEntitlements = await executor
+    .update(entitlements)
+    .set({ deletedAt: sql`now()`, status: "disabled" })
+    .where(
+      and(
+        sql`${entitlements.deletedAt} is null`,
         eq(entitlements.organizationId, organizationId),
         eq(entitlements.groupId, groupId),
       ),
     )
-    .returning(groupEntitlementEvidence);
-  await executor.delete(groups).where(groupWhere(organizationId, groupId));
+    .returning({
+      ...groupEntitlementEvidence,
+      deletedAt: entitlements.deletedAt,
+    });
+  const [row] = await executor
+    .update(groups)
+    .set({ deletedAt: sql`now()`, status: "disabled" })
+    .where(
+      and(
+        sql`${groups.deletedAt} is null`,
+        groupWhere(organizationId, groupId),
+      ),
+    )
+    .returning();
   return {
-    removedAssignments: removedAssignments.sort((a, b) =>
-      a.id.localeCompare(b.id),
-    ),
-    removedEntitlements: removedEntitlements.sort((a, b) =>
-      a.id.localeCompare(b.id),
-    ),
+    row: row!,
+    effects: {
+      softDeletedAssignments: softDeletedAssignments.sort((a, b) =>
+        a.id.localeCompare(b.id),
+      ),
+      softDeletedEntitlements: softDeletedEntitlements.sort((a, b) =>
+        a.id.localeCompare(b.id),
+      ),
+    },
   };
 }
 export function listGroupMembers(
@@ -246,6 +294,9 @@ export function listGroupMembers(
     .innerJoin(users, eq(users.id, members.userId))
     .where(
       and(
+        sql`${users.deletedAt} is null`,
+        sql`${members.deletedAt} is null`,
+        sql`${groupMembers.deletedAt} is null`,
         membershipWhere(organizationId, groupId),
         beforeCursor(groupMembers.memberId, query.cursor),
       ),
@@ -262,7 +313,12 @@ function findGroupMemberQuery(
   return executor
     .select()
     .from(groupMembers)
-    .where(membershipWhere(organizationId, groupId, memberId));
+    .where(
+      and(
+        sql`${groupMembers.deletedAt} is null`,
+        membershipWhere(organizationId, groupId, memberId),
+      ),
+    );
 }
 export async function findGroupMember(
   context: TenantReadContext<"directory">,
@@ -308,6 +364,7 @@ export async function upsertGroupMember(
     .values({ ...input, id: createId() })
     .onConflictDoUpdate({
       target: [groupMembers.groupId, groupMembers.memberId],
+      targetWhere: sql`${groupMembers.deletedAt} is null`,
       set: {
         organizationId: input.organizationId,
         memberId: input.memberId,
@@ -330,8 +387,14 @@ export async function removeGroupMember(
 ) {
   const { tx: executor } = requirePlatformWriteContext(context);
   const rows = await executor
-    .delete(groupMembers)
-    .where(membershipWhere(organizationId, groupId, memberId))
+    .update(groupMembers)
+    .set({ deletedAt: sql`now()` })
+    .where(
+      and(
+        sql`${groupMembers.deletedAt} is null`,
+        membershipWhere(organizationId, groupId, memberId),
+      ),
+    )
     .returning();
-  return rows.length > 0;
+  return rows[0] ?? null;
 }

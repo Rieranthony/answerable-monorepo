@@ -4,8 +4,54 @@ export function answerableSchema(): BetterAuthPlugin {
   return {
     id: "answerable-schema",
     schema: {
+      ssoProvider: {
+        fields: {
+          deletedAt: {
+            type: "date",
+            required: false,
+            input: false,
+            returned: false,
+          },
+        },
+      },
+      oauthConsent: {
+        fields: {
+          deletedAt: {
+            type: "date",
+            required: false,
+            input: false,
+            returned: false,
+          },
+        },
+      },
+      oauthResource: {
+        fields: {
+          deletedAt: {
+            type: "date",
+            required: false,
+            input: false,
+            returned: false,
+          },
+        },
+      },
+      oauthClientResource: {
+        fields: {
+          deletedAt: {
+            type: "date",
+            required: false,
+            input: false,
+            returned: false,
+          },
+        },
+      },
       oauthClient: {
         fields: {
+          deletedAt: {
+            type: "date",
+            required: false,
+            input: false,
+            returned: false,
+          },
           organizationId: { type: "string", required: false, input: false },
           authorizationVersion: {
             type: "number",
@@ -17,6 +63,12 @@ export function answerableSchema(): BetterAuthPlugin {
       },
       organizationDomain: {
         fields: {
+          deletedAt: {
+            type: "date",
+            required: false,
+            input: false,
+            returned: false,
+          },
           organizationId: {
             type: "string",
             required: true,

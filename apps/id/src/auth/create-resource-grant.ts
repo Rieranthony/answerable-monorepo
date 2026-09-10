@@ -113,6 +113,7 @@ export async function createResourceGrant(
               and(
                 eq(oauthClientResources.clientId, oauthClients.clientId),
                 eq(oauthClientResources.resourceId, oauthResources.identifier),
+                sql`${oauthClientResources.deletedAt} is null`,
               ),
             )
             .where(
@@ -121,10 +122,14 @@ export async function createResourceGrant(
                 eq(users.id, input.userId),
                 isEffective(members),
                 eq(users.status, "active"),
+                sql`${users.deletedAt} is null`,
                 eq(organizations.status, "active"),
+                sql`${organizations.deletedAt} is null`,
                 sql`${sessions.expiresAt} > statement_timestamp()`,
                 eq(oauthClients.disabled, false),
+                sql`${oauthClients.deletedAt} is null`,
                 eq(oauthResources.disabled, false),
+                sql`${oauthResources.deletedAt} is null`,
                 sql`${oauthClients.grantTypes} @> ARRAY['authorization_code']::text[]`,
                 sql`cardinality(${scopeArray}) > 0 and ${scopeArray} <@ ${oauthClients.scopes}`,
                 or(

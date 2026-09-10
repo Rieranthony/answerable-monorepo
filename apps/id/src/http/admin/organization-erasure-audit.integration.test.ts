@@ -164,20 +164,20 @@ test("organisation erasure records removed tenant configuration and member histo
     .select()
     .from(auditEvents)
     .where(eq(auditEvents.operationId, response.headers.get("Operation-Id")!));
-  expect(event!.schemaVersion).toBe(2);
+  expect(event!.schemaVersion).toBe(3);
   const effects = event!.data!.effects as Record<
     string,
     Array<{ id: string; organizationId: string }>
   >;
   for (const [name, rows] of Object.entries({
-    removedMembers: before.members,
-    removedGroups: before.groups,
-    removedAssignments: before.assignments,
-    removedEntitlements: before.entitlements,
-    removedCapabilities: before.capabilities,
-    removedDomains: before.domains,
-    removedSsoProviders: before.providers,
-    removedInvitations: before.invitations,
+    softDeletedMembers: before.members,
+    softDeletedGroups: before.groups,
+    softDeletedAssignments: before.assignments,
+    softDeletedEntitlements: before.entitlements,
+    softDeletedCapabilities: before.capabilities,
+    softDeletedDomains: before.domains,
+    softDeletedSsoProviders: before.providers,
+    softDeletedInvitations: before.invitations,
   })) {
     expect(effects[name]!.map((row) => row.id).sort()).toEqual(
       rows
@@ -187,23 +187,24 @@ test("organisation erasure records removed tenant configuration and member histo
     );
     expect(effects[name]!.every((row) => row.organizationId === id)).toBe(true);
   }
-  expect(effects.removedMembers).toContainEqual(
+  expect(effects.softDeletedMembers).toContainEqual(
     expect.objectContaining({
       userId: fixture.principals.tenantReader.userId,
-      revision: 1,
-      status: "active",
+      revision: 2,
+      status: "revoked",
+      deletedAt: expect.any(String),
     }),
   );
-  expect(effects.removedEntitlements).toContainEqual(
+  expect(effects.softDeletedEntitlements).toContainEqual(
     expect.objectContaining({ status: "disabled", scopes: ["org:read"] }),
   );
   expect(JSON.stringify(event!.data)).not.toContain(
     "private-invite@example.com",
   );
-  expect(JSON.stringify(effects.removedSsoProviders)).not.toContain(
+  expect(JSON.stringify(effects.softDeletedSsoProviders)).not.toContain(
     "oidcConfig",
   );
-  expect(JSON.stringify(effects.removedSsoProviders)).not.toContain(
+  expect(JSON.stringify(effects.softDeletedSsoProviders)).not.toContain(
     "samlConfig",
   );
   const after = await state();
@@ -216,10 +217,21 @@ test("organisation erasure records removed tenant configuration and member histo
     "domains",
     "providers",
     "invitations",
-  ] as const)
-    expect(after[name] as unknown[]).toEqual(
+  ] as const) {
+    expect(after[name]).toHaveLength(before[name].length);
+    expect(after[name].filter((row) => row.organizationId !== id)).toEqual(
       before[name].filter((row) => row.organizationId !== id),
     );
+    expect(
+      after[name]
+        .filter((row) => row.organizationId === id)
+        .every((row) => row.deletedAt instanceof Date),
+    ).toBe(true);
+  }
+  expect(after.organizations.find((row) => row.id === id)).toMatchObject({
+    status: "disabled",
+    deletedAt: expect.any(Date),
+  });
   expect(after.users).toEqual(before.users);
   expect(after.sessions).toEqual(
     before.sessions.map((row) =>
@@ -283,7 +295,7 @@ test("organisation erasure rolls back configuration and receipt when subject cap
     .select()
     .from(auditEvents)
     .where(eq(auditEvents.action, "organization.erased"));
-  expect(event!.schemaVersion).toBe(2);
+  expect(event!.schemaVersion).toBe(3);
   expect((await erase(id, key)).headers.get("Idempotency-Replayed")).toBe(
     "true",
   );
@@ -370,10 +382,10 @@ for (const order of ["organisation-first", "user-first"] as const) {
       .from(auditEvents)
       .where(eq(auditEvents.action, "organization.erased"));
     const effects = event!.data!.effects as {
-      removedMembers: Array<{ userId: string }>;
+      softDeletedMembers: Array<{ userId: string }>;
     };
     expect(
-      effects.removedMembers.some((row) => row.userId === person.userId),
+      effects.softDeletedMembers.some((row) => row.userId === person.userId),
     ).toBe(order === "organisation-first");
     const subjects = await fixture.db
       .select()
@@ -469,15 +481,13 @@ test("organisation erasure records each deleted grant with its stored tenant ide
     .where(eq(sessions.userId, person.userId));
   const id = createId();
   const clientInstanceId = createId();
-  await fixture.db
-    .insert(oauthClients)
-    .values({
-      id: clientInstanceId,
-      clientId: createId(),
-      organizationId: fixture.outsider.organizationId,
-      redirectUris: [],
-      scopes: ["org:read"],
-    });
+  await fixture.db.insert(oauthClients).values({
+    id: clientInstanceId,
+    clientId: createId(),
+    organizationId: fixture.outsider.organizationId,
+    redirectUris: [],
+    scopes: ["org:read"],
+  });
   await fixture.db.insert(grantContexts).values({
     id,
     organizationId: person.organizationId,
@@ -495,7 +505,7 @@ test("organisation erasure records each deleted grant with its stored tenant ide
     .select()
     .from(auditEvents)
     .where(eq(auditEvents.operationId, response.headers.get("Operation-Id")!));
-  expect(event!.data!.deletedGrantContexts).toEqual([
+  expect(event!.data!.revokedGrantContexts).toEqual([
     { id, userId: person.userId, organizationId: person.organizationId },
   ]);
 });

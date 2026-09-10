@@ -249,6 +249,7 @@ describe("integration: PostgreSQL schema", () => {
         "created_at timestamptz default now()",
         "updated_at timestamptz default now()",
         "revision integer default 1",
+        "deleted_at timestamptz null",
       ],
       admin_operation_results: ["operation_id uuid", "ciphertext text"],
       admin_operations: [
@@ -294,6 +295,7 @@ describe("integration: PostgreSQL schema", () => {
         "retired_email text null",
         created,
         updated,
+        "deleted_at timestamptz null",
       ],
       organizations: [
         "id uuid",
@@ -307,6 +309,7 @@ describe("integration: PostgreSQL schema", () => {
         updated,
         "authorization_version integer default 1",
         "revision integer default 1",
+        "deleted_at timestamptz null",
       ],
       sessions: [
         "id uuid",
@@ -339,6 +342,7 @@ describe("integration: PostgreSQL schema", () => {
         "password text null",
         created,
         updated,
+        "deleted_at timestamptz null",
       ],
       sso_providers: [
         "id uuid",
@@ -352,6 +356,7 @@ describe("integration: PostgreSQL schema", () => {
         created,
         updated,
         "revision integer default 1",
+        "deleted_at timestamptz null",
       ],
       verifications: [
         "id text",
@@ -372,6 +377,7 @@ describe("integration: PostgreSQL schema", () => {
         "status text default 'active'::text",
         "revoked_at timestamptz null",
         "revision integer default 1",
+        "deleted_at timestamptz null",
       ],
       invitations: [
         "id uuid",
@@ -382,6 +388,7 @@ describe("integration: PostgreSQL schema", () => {
         "expires_at timestamptz",
         created,
         "inviter_id uuid",
+        "deleted_at timestamptz null",
       ],
       jwks: [
         "id uuid",
@@ -432,6 +439,7 @@ describe("integration: PostgreSQL schema", () => {
         updated,
         "authorization_version integer default 1",
         "revision integer default 1",
+        "deleted_at timestamptz null",
       ],
       oauth_resources: [
         "id uuid",
@@ -452,6 +460,7 @@ describe("integration: PostgreSQL schema", () => {
         "revision integer default 1",
         "classification text default 'platform_shared'::text",
         "organization_id uuid null",
+        "deleted_at timestamptz null",
       ],
       oauth_client_resources: [
         "id uuid",
@@ -459,6 +468,7 @@ describe("integration: PostgreSQL schema", () => {
         "resource_id text",
         "metadata jsonb null",
         created,
+        "deleted_at timestamptz null",
       ],
       oauth_refresh_tokens: [
         "id uuid",
@@ -507,6 +517,7 @@ describe("integration: PostgreSQL schema", () => {
         "scopes text[]",
         created,
         updated,
+        "deleted_at timestamptz null",
       ],
       oauth_client_assertions: ["id text", "expires_at timestamptz"],
       organization_domains: [
@@ -516,6 +527,7 @@ describe("integration: PostgreSQL schema", () => {
         active,
         created,
         updated,
+        "deleted_at timestamptz null",
       ],
       groups: [
         "id uuid",
@@ -527,6 +539,7 @@ describe("integration: PostgreSQL schema", () => {
         created,
         updated,
         "revision integer default 1",
+        "deleted_at timestamptz null",
       ],
       group_members: [
         "organization_id uuid",
@@ -537,6 +550,7 @@ describe("integration: PostgreSQL schema", () => {
         created,
         "id uuid",
         "revision integer default 1",
+        "deleted_at timestamptz null",
       ],
       entitlements: [
         "id uuid",
@@ -552,6 +566,7 @@ describe("integration: PostgreSQL schema", () => {
         created,
         updated,
         "revision integer default 1",
+        "deleted_at timestamptz null",
       ],
       audit_events: [
         "id uuid",
@@ -636,7 +651,6 @@ describe("integration: PostgreSQL schema", () => {
         "organization_capabilities_scopes_check CHECK (((cardinality(scopes) > 0) AND (array_position(scopes, ''::text) IS NULL) AND (array_position(scopes, NULL::text) IS NULL)))",
         "organization_capabilities_status_check CHECK ((status = ANY (ARRAY['active'::text, 'disabled'::text])))",
         "organization_capabilities_target_check CHECK ((((grant_kind = 'admin_session'::text) AND (client_id IS NULL) AND (resource IS NOT NULL)) OR ((grant_kind = 'authorization_code'::text) AND (client_id IS NOT NULL)) OR ((grant_kind = ANY (ARRAY['refresh_token'::text, 'client_credentials'::text])) AND (client_id IS NOT NULL) AND (resource IS NOT NULL))))",
-        "organization_capabilities_target_kind_unique UNIQUE NULLS NOT DISTINCT (organization_id, client_id, resource, grant_kind)",
         "organization_capabilities_window_check CHECK ((valid_from < valid_until))",
       ],
       security_identifiers: [
@@ -683,7 +697,6 @@ describe("integration: PostgreSQL schema", () => {
       sso_providers: [
         "sso_providers_domain_normalized_check CHECK ((domain ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'::text))",
         `sso_providers_organization_id_organizations_id_fk ${cascadeOrganization}`,
-        "sso_providers_organization_id_unique UNIQUE (organization_id)",
         "sso_providers_pkey PRIMARY KEY (id)",
         "sso_providers_provider_id_unique UNIQUE (provider_id)",
         "sso_providers_revision_check CHECK ((revision > 0))",
@@ -726,7 +739,6 @@ describe("integration: PostgreSQL schema", () => {
       ],
       oauth_client_resources: [
         `oauth_client_resources_client_id_oauth_clients_client_id_fk ${cascadeClient}`,
-        "oauth_client_resources_client_id_resource_id_unique UNIQUE (client_id, resource_id)",
         "oauth_client_resources_pkey PRIMARY KEY (id)",
         "oauth_client_resources_resource_id_fk FOREIGN KEY (resource_id) REFERENCES oauth_resources(identifier) ON DELETE RESTRICT",
       ],
@@ -755,7 +767,6 @@ describe("integration: PostgreSQL schema", () => {
       ],
       organization_domains: [
         "organization_domains_domain_normalized_check CHECK ((domain ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'::text))",
-        "organization_domains_organization_id_domain_unique UNIQUE (organization_id, domain)",
         `organization_domains_organization_id_organizations_id_fk ${cascadeOrganization}`,
         "organization_domains_pkey PRIMARY KEY (id)",
         `organization_domains_status_check ${lifecycle}`,
@@ -770,10 +781,9 @@ describe("integration: PostgreSQL schema", () => {
         `groups_status_check ${lifecycle}`,
       ],
       group_members: [
-        "group_members_id_unique UNIQUE (id)",
         "group_members_organization_id_group_id_fk FOREIGN KEY (organization_id, group_id) REFERENCES groups(organization_id, id) ON DELETE CASCADE",
         "group_members_organization_id_member_id_fk FOREIGN KEY (organization_id, member_id) REFERENCES members(organization_id, id) ON DELETE CASCADE",
-        "group_members_pkey PRIMARY KEY (group_id, member_id)",
+        "group_members_pkey PRIMARY KEY (id)",
         "group_members_revision_check CHECK ((revision > 0))",
         "group_members_window_check CHECK ((valid_from < valid_until))",
       ],
@@ -784,7 +794,6 @@ describe("integration: PostgreSQL schema", () => {
         `entitlements_organization_id_organizations_id_fk ${cascadeOrganization}`,
         "entitlements_pkey PRIMARY KEY (id)",
         "entitlements_principal_check CHECK ((num_nonnulls(member_id, group_id) <= 1))",
-        "entitlements_principal_target_unique UNIQUE NULLS NOT DISTINCT (organization_id, member_id, group_id, client_id, resource)",
         "entitlements_resource_oauth_resources_identifier_fk FOREIGN KEY (resource) REFERENCES oauth_resources(identifier) ON DELETE RESTRICT",
         "entitlements_revision_check CHECK ((revision > 0))",
         "entitlements_scopes_check CHECK (((cardinality(scopes) > 0) AND (array_position(scopes, ''::text) IS NULL)))",
@@ -825,6 +834,12 @@ describe("integration: PostgreSQL schema", () => {
         return `${row.name}${unique} ${columns}`;
       }),
     ).toEqual({
+      sso_providers: [
+        "sso_providers_organization_id_unique unique (organization_id) WHERE (deleted_at IS NULL)",
+      ],
+      organization_capabilities: [
+        "organization_capabilities_target_kind_unique unique (organization_id, client_id, resource, grant_kind) NULLS NOT DISTINCT WHERE (deleted_at IS NULL)",
+      ],
       grant_contexts: [
         "grant_contexts_client_instance_id_idx (client_instance_id)",
         "grant_contexts_member_id_idx (member_id)",
@@ -862,6 +877,7 @@ describe("integration: PostgreSQL schema", () => {
         "oauth_resources_organization_id_idx (organization_id)",
       ],
       oauth_client_resources: [
+        "oauth_client_resources_client_id_resource_id_unique unique (client_id, resource_id) WHERE (deleted_at IS NULL)",
         "oauth_client_resources_resource_id_idx (resource_id)",
       ],
       oauth_refresh_tokens: [
@@ -885,14 +901,19 @@ describe("integration: PostgreSQL schema", () => {
         "oauth_client_assertions_expires_at_idx (expires_at)",
       ],
       organization_domains: [
-        "organization_domains_active_domain_idx unique (domain) WHERE (status = 'active'::text)",
+        "organization_domains_active_domain_idx unique (domain) WHERE ((status = 'active'::text) AND (deleted_at IS NULL))",
+        "organization_domains_organization_id_domain_unique unique (organization_id, domain) WHERE (deleted_at IS NULL)",
       ],
       groups: [
         "groups_organization_id_external_id_idx unique (organization_id, external_id) WHERE (external_id IS NOT NULL)",
       ],
-      group_members: ["group_members_member_id_idx (member_id)"],
+      group_members: [
+        "group_members_live_assignment_unique unique (group_id, member_id) WHERE (deleted_at IS NULL)",
+        "group_members_member_id_idx (member_id)",
+      ],
       entitlements: [
         "entitlements_client_id_idx (client_id)",
+        "entitlements_principal_target_unique unique (organization_id, member_id, group_id, client_id, resource) NULLS NOT DISTINCT WHERE (deleted_at IS NULL)",
         "entitlements_resource_idx (resource)",
       ],
       audit_events: [

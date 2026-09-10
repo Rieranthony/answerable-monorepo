@@ -610,6 +610,7 @@ test("group noops preserve state and old removal replay does not remove a new as
         and(
           eq(groupMembers.groupId, group.id),
           eq(groupMembers.memberId, member),
+          sql`${groupMembers.deletedAt} is null`,
         ),
       ),
   ).toHaveLength(1);

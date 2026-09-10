@@ -31,7 +31,7 @@ export async function lockResourceGrantTargets(
   await tx
     .select({ id: users.id })
     .from(users)
-    .where(inArray(users.id, userIds))
+    .where(and(sql`${users.deletedAt} is null`, inArray(users.id, userIds)))
     .orderBy(users.id)
     .for("share")
     .catch(rethrowGrantError);
@@ -70,6 +70,8 @@ export async function lockResourceGrantPolicy(
     )
     .where(
       and(
+        sql`${oauthResources.deletedAt} is null`,
+        sql`${oauthClients.deletedAt} is null`,
         eq(grantContexts.id, input.id),
         eq(oauthClients.clientId, input.clientId),
       ),

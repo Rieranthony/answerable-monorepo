@@ -220,7 +220,7 @@ export const routes = {
     summary: "Remove an organisation capability",
     description:
       recovery +
-      "Remove a user, machine or tenant direct-session capability and retain its previous configuration in audit history. Subsequent grants are denied; existing offline tokens remain bounded by expiry. Assignments remain. Remove references before erasing a client or resource. Prefer updateCapability with disabled status for a reversible suspension. validation_failed rejects malformed input; not_found means the capability is unavailable. protected_capability means the bound platform ceiling cannot be removed.",
+      "Soft-delete a user, machine or tenant direct-session capability, retaining its disabled row and before/after audit state. Deletion is terminal; an explicit replacement gets a new UUID. Subsequent grants are denied; existing offline tokens remain bounded by expiry. Assignments remain. Remove references before erasing a client or resource. Prefer updateCapability with disabled status for a reversible suspension. validation_failed rejects malformed input; not_found means the capability is unavailable. protected_capability means the bound platform ceiling cannot be removed.",
     tag: "Capabilities",
     platformScope: "platform:write",
     kind: "write",

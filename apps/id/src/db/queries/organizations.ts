@@ -55,6 +55,7 @@ export function listOrganizations(
     .from(organizations)
     .where(
       and(
+        sql`${organizations.deletedAt} is null`,
         query.q === undefined
           ? undefined
           : or(
@@ -78,7 +79,12 @@ export async function readOrganization(
   const [row] = await tx
     .select()
     .from(organizations)
-    .where(eq(organizations.id, organizationId));
+    .where(
+      and(
+        sql`${organizations.deletedAt} is null`,
+        eq(organizations.id, organizationId),
+      ),
+    );
   return row ?? null;
 }
 
@@ -93,7 +99,12 @@ export async function readOrganizationStatus(
       status: organizations.status,
     })
     .from(organizations)
-    .where(eq(organizations.id, organizationId));
+    .where(
+      and(
+        sql`${organizations.deletedAt} is null`,
+        eq(organizations.id, organizationId),
+      ),
+    );
   return row ?? null;
 }
 
@@ -104,7 +115,12 @@ export async function organizationExistsForHistory(
   const [row] = await tx
     .select({ id: organizations.id })
     .from(organizations)
-    .where(eq(organizations.id, organizationId));
+    .where(
+      and(
+        sql`${organizations.deletedAt} is null`,
+        eq(organizations.id, organizationId),
+      ),
+    );
   return row !== undefined;
 }
 
@@ -137,7 +153,9 @@ export async function updateOrganization(
   const [row] = await executor
     .update(organizations)
     .set(patch)
-    .where(eq(organizations.id, id))
+    .where(
+      and(sql`${organizations.deletedAt} is null`, eq(organizations.id, id)),
+    )
     .returning();
   return row ?? null;
 }
@@ -151,7 +169,9 @@ export async function setOrganizationStatus(
   const [row] = await executor
     .update(organizations)
     .set({ status, disabledAt: status === "disabled" ? sql`now()` : null })
-    .where(eq(organizations.id, id))
+    .where(
+      and(sql`${organizations.deletedAt} is null`, eq(organizations.id, id)),
+    )
     .returning();
   return row ?? null;
 }
@@ -164,7 +184,12 @@ export async function countOrganizationClients(
   const [row] = await executor
     .select({ count: count() })
     .from(oauthClients)
-    .where(eq(oauthClients.organizationId, id));
+    .where(
+      and(
+        sql`${oauthClients.deletedAt} is null`,
+        eq(oauthClients.organizationId, id),
+      ),
+    );
   return row!.count;
 }
 
@@ -177,10 +202,17 @@ export async function deleteOrganization(
   organizationId: string,
 ) {
   const { tx } = requirePlatformWriteContext(context);
-  const removedEntitlements = await tx
-    .delete(entitlements)
-    .where(eq(entitlements.organizationId, organizationId))
+  const softDeletedEntitlements = await tx
+    .update(entitlements)
+    .set({ deletedAt: sql`now()`, status: "disabled" })
+    .where(
+      and(
+        sql`${entitlements.deletedAt} is null`,
+        eq(entitlements.organizationId, organizationId),
+      ),
+    )
     .returning({
+      deletedAt: entitlements.deletedAt,
       id: entitlements.id,
       organizationId: entitlements.organizationId,
       revision: entitlements.revision,
@@ -193,10 +225,17 @@ export async function deleteOrganization(
       validFrom: entitlements.validFrom,
       validUntil: entitlements.validUntil,
     });
-  const removedAssignments = await tx
-    .delete(groupMembers)
-    .where(eq(groupMembers.organizationId, organizationId))
+  const softDeletedAssignments = await tx
+    .update(groupMembers)
+    .set({ deletedAt: sql`now()` })
+    .where(
+      and(
+        sql`${groupMembers.deletedAt} is null`,
+        eq(groupMembers.organizationId, organizationId),
+      ),
+    )
     .returning({
+      deletedAt: groupMembers.deletedAt,
       id: groupMembers.id,
       organizationId: groupMembers.organizationId,
       revision: groupMembers.revision,
@@ -205,10 +244,21 @@ export async function deleteOrganization(
       validFrom: groupMembers.validFrom,
       validUntil: groupMembers.validUntil,
     });
-  const removedMembers = await tx
-    .delete(members)
-    .where(eq(members.organizationId, organizationId))
+  const softDeletedMembers = await tx
+    .update(members)
+    .set({
+      deletedAt: sql`now()`,
+      status: "revoked",
+      revokedAt: sql`coalesce(${members.revokedAt}, now())`,
+    })
+    .where(
+      and(
+        sql`${members.deletedAt} is null`,
+        eq(members.organizationId, organizationId),
+      ),
+    )
     .returning({
+      deletedAt: members.deletedAt,
       id: members.id,
       organizationId: members.organizationId,
       userId: members.userId,
@@ -218,20 +268,34 @@ export async function deleteOrganization(
       validFrom: members.validFrom,
       validUntil: members.validUntil,
     });
-  const removedGroups = await tx
-    .delete(groups)
-    .where(eq(groups.organizationId, organizationId))
+  const softDeletedGroups = await tx
+    .update(groups)
+    .set({ deletedAt: sql`now()`, status: "disabled" })
+    .where(
+      and(
+        sql`${groups.deletedAt} is null`,
+        eq(groups.organizationId, organizationId),
+      ),
+    )
     .returning({
+      deletedAt: groups.deletedAt,
       id: groups.id,
       organizationId: groups.organizationId,
       revision: groups.revision,
       slug: groups.slug,
       status: groups.status,
     });
-  const removedCapabilities = await tx
-    .delete(organizationCapabilities)
-    .where(eq(organizationCapabilities.organizationId, organizationId))
+  const softDeletedCapabilities = await tx
+    .update(organizationCapabilities)
+    .set({ deletedAt: sql`now()`, status: "disabled" })
+    .where(
+      and(
+        sql`${organizationCapabilities.deletedAt} is null`,
+        eq(organizationCapabilities.organizationId, organizationId),
+      ),
+    )
     .returning({
+      deletedAt: organizationCapabilities.deletedAt,
       id: organizationCapabilities.id,
       organizationId: organizationCapabilities.organizationId,
       revision: organizationCapabilities.revision,
@@ -243,19 +307,33 @@ export async function deleteOrganization(
       validFrom: organizationCapabilities.validFrom,
       validUntil: organizationCapabilities.validUntil,
     });
-  const removedDomains = await tx
-    .delete(organizationDomains)
-    .where(eq(organizationDomains.organizationId, organizationId))
+  const softDeletedDomains = await tx
+    .update(organizationDomains)
+    .set({ deletedAt: sql`now()`, status: "disabled" })
+    .where(
+      and(
+        sql`${organizationDomains.deletedAt} is null`,
+        eq(organizationDomains.organizationId, organizationId),
+      ),
+    )
     .returning({
+      deletedAt: organizationDomains.deletedAt,
       id: organizationDomains.id,
       organizationId: organizationDomains.organizationId,
       domain: organizationDomains.domain,
       status: organizationDomains.status,
     });
-  const removedSsoProviders = await tx
-    .delete(ssoProviders)
-    .where(eq(ssoProviders.organizationId, organizationId))
+  const softDeletedSsoProviders = await tx
+    .update(ssoProviders)
+    .set({ deletedAt: sql`now()`, oidcConfig: null, samlConfig: null })
+    .where(
+      and(
+        sql`${ssoProviders.deletedAt} is null`,
+        eq(ssoProviders.organizationId, organizationId),
+      ),
+    )
     .returning({
+      deletedAt: ssoProviders.deletedAt,
       id: ssoProviders.id,
       organizationId: ssoProviders.organizationId,
       revision: ssoProviders.revision,
@@ -263,10 +341,17 @@ export async function deleteOrganization(
       issuer: ssoProviders.issuer,
       domain: ssoProviders.domain,
     });
-  const removedInvitations = await tx
-    .delete(invitations)
-    .where(eq(invitations.organizationId, organizationId))
+  const softDeletedInvitations = await tx
+    .update(invitations)
+    .set({ deletedAt: sql`now()`, status: "canceled" })
+    .where(
+      and(
+        sql`${invitations.deletedAt} is null`,
+        eq(invitations.organizationId, organizationId),
+      ),
+    )
     .returning({
+      deletedAt: invitations.deletedAt,
       id: invitations.id,
       organizationId: invitations.organizationId,
       status: invitations.status,
@@ -282,16 +367,28 @@ export async function deleteOrganization(
       userId: sessions.userId,
       organizationId: sql<string>`${organizationId}::uuid`,
     });
-  await tx.delete(organizations).where(eq(organizations.id, organizationId));
+  const [row] = await tx
+    .update(organizations)
+    .set({ deletedAt: sql`now()`, status: "disabled", disabledAt: sql`now()` })
+    .where(
+      and(
+        sql`${organizations.deletedAt} is null`,
+        eq(organizations.id, organizationId),
+      ),
+    )
+    .returning();
   return {
-    removedEntitlements,
-    removedAssignments,
-    removedMembers,
-    removedGroups,
-    removedCapabilities,
-    removedDomains,
-    removedSsoProviders,
-    removedInvitations,
-    clearedSessionSelections,
+    row: row!,
+    effects: {
+      softDeletedEntitlements,
+      softDeletedAssignments,
+      softDeletedMembers,
+      softDeletedGroups,
+      softDeletedCapabilities,
+      softDeletedDomains,
+      softDeletedSsoProviders,
+      softDeletedInvitations,
+      clearedSessionSelections,
+    },
   };
 }

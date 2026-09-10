@@ -183,18 +183,21 @@ test("group erasure records actual removed policy rows, preserves another tenant
     .select()
     .from(auditEvents)
     .where(eq(auditEvents.operationId, response.headers.get("Operation-Id")!));
-  expect(event).toMatchObject({
+  expect(structuredClone(event)).toMatchObject({
     action: "group.erased",
-    schemaVersion: 2,
+    schemaVersion: 3,
     organizationId: a.group.organizationId,
     targetId: a.group.id,
-    data: { before: { id: a.group.id }, after: null },
+    data: {
+      before: { id: a.group.id },
+      after: { deletedAt: expect.any(String) },
+    },
   });
   const effects = event!.data!.effects as {
-    removedAssignments: Record<string, unknown>[];
-    removedEntitlements: Record<string, unknown>[];
+    softDeletedAssignments: Record<string, unknown>[];
+    softDeletedEntitlements: Record<string, unknown>[];
   };
-  expect(effects.removedAssignments).toEqual(
+  expect(effects.softDeletedAssignments).toEqual(
     [
       { ...a.assignment, userId: person.userId },
       { ...live!, userId: fixture.principals.tenantAdmin.userId },
@@ -202,7 +205,8 @@ test("group erasure records actual removed policy rows, preserves another tenant
       .sort((x, y) => x.id.localeCompare(y.id))
       .map((row) => ({
         id: row.id,
-        revision: row.revision,
+        revision: row.revision + 1,
+        deletedAt: expect.any(String),
         organizationId: row.organizationId,
         groupId: row.groupId,
         memberId: row.memberId,
@@ -211,30 +215,47 @@ test("group erasure records actual removed policy rows, preserves another tenant
         validUntil: row.validUntil?.toISOString() ?? null,
       })),
   );
-  expect(effects.removedEntitlements).toEqual(
+  expect(effects.softDeletedEntitlements).toEqual(
     a.grants
       .sort((x, y) => x.id.localeCompare(y.id))
       .map((row) => ({
         id: row.id,
-        revision: row.revision,
+        revision: row.revision + 1,
+        deletedAt: expect.any(String),
         organizationId: row.organizationId,
         groupId: row.groupId,
         memberId: row.memberId,
         clientId: row.clientId,
         resource: row.resource,
         scopes: row.scopes,
-        status: row.status,
+        status: "disabled",
         validFrom: row.validFrom?.toISOString() ?? null,
         validUntil: row.validUntil?.toISOString() ?? null,
       })),
   );
   const state = await snapshot();
   expect(state.assignments.filter((row) => row.groupId === a.group.id)).toEqual(
-    [],
+    [a.assignment, live!]
+      .sort((x, y) => x.id.localeCompare(y.id))
+      .map((row) => ({
+        ...row,
+        revision: row.revision + 1,
+        deletedAt: expect.any(Date),
+      })),
   );
   expect(
     state.entitlements.filter((row) => row.groupId === a.group.id),
-  ).toEqual([]);
+  ).toEqual(
+    a.grants
+      .sort((x, y) => x.id.localeCompare(y.id))
+      .map((row) => ({
+        ...row,
+        status: "disabled",
+        revision: row.revision + 1,
+        deletedAt: expect.any(Date),
+        updatedAt: expect.any(Date),
+      })),
+  );
   expect(state.assignments.filter((row) => row.groupId === b.group.id)).toEqual(
     [b.assignment],
   );
@@ -463,13 +484,13 @@ for (const order of ["assignment-first", "user-first"] as const) {
       expect(items).toHaveLength(1);
       expect(items[0]).toMatchObject({
         action: "group_member.removed",
-        schemaVersion: 1,
+        schemaVersion: 3,
         organizationId: a.group.organizationId,
         targetId: person.memberId,
         data: {
           groupId: a.group.id,
           before: { id: a.assignment.id },
-          after: null,
+          after: { deletedAt: expect.any(String) },
         },
       });
       const references = await runtime.db

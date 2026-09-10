@@ -2832,13 +2832,15 @@ for (const change of creationChanges)
     const grant = await created;
     const stored = await fixture.db.select().from(grantContexts);
     if (change === "erase-owner") {
-      expect(stored).toHaveLength(0);
+      expect(stored).toMatchObject([{ revokedAt: expect.any(Date) }]);
       expect(
         await fixture.db
           .select()
           .from(oauthClients)
           .where(eq(oauthClients.clientId, targetClient)),
-      ).toHaveLength(0);
+      ).toMatchObject([
+        { deletedAt: expect.any(Date), disabled: true, clientSecret: null },
+      ]);
     } else {
       expect(stored).toHaveLength(1);
       expect(stored[0]!.revokedAt !== null).toBe(change !== "unlink");
@@ -3520,13 +3522,15 @@ test("erasing a client owner waits for another user's locked grant before cascad
       .select()
       .from(grantContexts)
       .where(eq(grantContexts.id, grant.id)),
-  ).toHaveLength(0);
+  ).toMatchObject([{ id: grant.id, revokedAt: expect.any(Date) }]);
   expect(
     await fixture.db
       .select()
       .from(oauthClients)
       .where(eq(oauthClients.clientId, ownedClient)),
-  ).toHaveLength(0);
+  ).toMatchObject([
+    { deletedAt: expect.any(Date), disabled: true, clientSecret: null },
+  ]);
 });
 
 for (const change of ["disable", "session", "all-sessions"] as const)

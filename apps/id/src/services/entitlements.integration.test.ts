@@ -238,7 +238,15 @@ test("entitlement writes each audit once, keep immutable fields and preserve omi
   });
   expect(events[11]).toMatchObject({
     targetId: grouped.id,
-    data: { before: { id: grouped.id }, after: null },
+    data: {
+      before: { id: grouped.id },
+      after: {
+        id: grouped.id,
+        deletedAt: expect.any(String),
+        status: "disabled",
+      },
+      deletionMode: "soft",
+    },
   });
 });
 test("service validates principal, target, references and resource scopes before creating", async () => {

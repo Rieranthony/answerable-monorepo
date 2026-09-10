@@ -131,7 +131,7 @@ export const routes = {
     operationId: "eraseClient",
     summary: "Erase client",
     description:
-      "capability_references_exist requires removing all referencing capabilities before erasure. Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Permanently erase a client and its resource links, tokens and consents, returning no content and recording client.erased. Prefer disableClient to retain the registration; enabling does not restore revoked grant contexts. Supply confirm equal to clientId; not_found is checked before confirmation_mismatch, then client_has_entitlements requires removing every referencing entitlement before retrying.",
+      "capability_references_exist requires removing all referencing capabilities before erasure. Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Soft-delete a client, its resource links and consents, clear its secret and delete its token rows, returning no content and recording client.erased. Prefer disableClient for reversible suspension; enabling does not restore revoked grant contexts. Supply confirm equal to clientId; not_found is checked before confirmation_mismatch, then client_has_entitlements requires removing every referencing entitlement before retrying. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "erase",

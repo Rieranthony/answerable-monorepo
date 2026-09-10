@@ -14,15 +14,18 @@ type ProviderRow = {
 type OrganizationRow = {
   id: string;
   status: "active" | "disabled";
+  deletedAt?: Date | null;
 };
 
 type UserRow = {
   id: string;
   email: string;
   status: "inert" | "active" | "disabled";
+  deletedAt?: Date | null;
 };
 
 type AccountRow = {
+  deletedAt?: Date | null;
   id: string;
   userId: string;
   directoryId?: string | null;
@@ -100,14 +103,17 @@ async function membershipRevoked(
   organizationId: string,
   userId: string,
 ) {
-  const member = await database.findOne<{ status: string }>({
+  const member = await database.findOne<{
+    status: string;
+    deletedAt?: Date | null;
+  }>({
     model: "member",
     where: [
       { field: "organizationId", value: organizationId },
       { field: "userId", value: userId },
     ],
   });
-  return member?.status === "revoked";
+  return member?.status === "revoked" || Boolean(member?.deletedAt);
 }
 
 export async function resolveFederatedUser(
@@ -127,7 +133,11 @@ export async function resolveFederatedUser(
     model: "organization",
     where: [{ field: "id", value: provider.organizationId }],
   });
-  if (!organization || organization.status !== "active") {
+  if (
+    !organization ||
+    organization.deletedAt ||
+    organization.status !== "active"
+  ) {
     return reject("organization_disabled", "Organization is disabled");
   }
 
@@ -191,7 +201,11 @@ export async function resolveFederatedUser(
   });
   if (exactAccount) {
     const owner = userFrom(exactAccount);
-    if (owner.status === "disabled") {
+    if (
+      exactAccount.deletedAt ||
+      owner.deletedAt ||
+      owner.status === "disabled"
+    ) {
       return reject("user_disabled", "User is disabled");
     }
     if (await membershipRevoked(database, provider.organizationId, owner.id))
@@ -222,7 +236,11 @@ export async function resolveFederatedUser(
   });
   if (placeholder) {
     const owner = userFrom(placeholder);
-    if (owner.status === "disabled") {
+    if (
+      placeholder.deletedAt ||
+      owner.deletedAt ||
+      owner.status === "disabled"
+    ) {
       return reject("user_disabled", "User is disabled");
     }
     if (await membershipRevoked(database, provider.organizationId, owner.id))
@@ -250,7 +268,7 @@ export async function resolveFederatedUser(
     model: "user",
     where: [{ field: "email", value: email }],
   });
-  if (emailUser?.status === "disabled") {
+  if (emailUser?.deletedAt || emailUser?.status === "disabled") {
     await database.update({
       model: "user",
       where: [{ field: "id", value: emailUser.id }],

@@ -1,3 +1,4 @@
+import { prepareRestoredDeletion } from "../src/__tests__/restore-deletion.ts";
 import { prepareRestoredSigning } from "../src/__tests__/restore-signing.ts";
 import { prepareRestoredRetention } from "../src/__tests__/restore-retention.ts";
 import { prepareRestoredRuntime } from "../src/__tests__/restore-runtime.ts";
@@ -237,6 +238,13 @@ try {
     orgId,
   );
   const verifyRetention = await prepareRestoredRetention(owner.db, environment);
+  const verifyDeletion = await prepareRestoredDeletion(
+    owner.db,
+    runtime.db,
+    environment,
+    orgId,
+    userId,
+  );
   const receipt = await owner.db.execute(
     sql`select * from drizzle.__drizzle_migrations order by id`,
   );
@@ -349,6 +357,7 @@ try {
     before,
   );
   await verifyCommands(owner.db, runtime.db);
+  await verifyDeletion(owner.db, runtime.db);
   for (const retained of [[keys[1]!], [keys[0]!], undefined]) {
     const { adapter: missing } = await createAuth(runtime.db, {
       ...environment,
@@ -437,7 +446,7 @@ try {
     databaseUrl: replacement.url,
   });
   console.log(
-    "PASS: restored signing keys verify old/new machine tokens and refuse missing decryption custody without replacement keys or successful issuance; rebuilt retention role purges only expired ciphertext with atomic evidence and preserved reservations; restored production startup rejects an owner login and survives two clean HTTP starts without changing bootstrap policy; fresh-cluster PostgreSQL restore rebuilds runtime permissions with new login credentials and preserves ciphertext, sessions, migration receipts and restricted runtime permissions; separate retained keys recover values, missing keys refuse reads, native SSO preserves A and denies revoked B; restored commands recover the same secrets without repeating effects, reject unavailable keys/conflicts, and retain expired reservations.",
+    "PASS: restored product tombstones remain inactive and credential-free, retain UUID subjects and identifier reservations, and replay deletion without another transition; restored signing keys verify old/new machine tokens and refuse missing decryption custody without replacement keys or successful issuance; rebuilt retention role purges only expired ciphertext with atomic evidence and preserved reservations; restored production startup rejects an owner login and survives two clean HTTP starts without changing bootstrap policy; fresh-cluster PostgreSQL restore rebuilds runtime permissions with new login credentials and preserves ciphertext, sessions, migration receipts and restricted runtime permissions; separate retained keys recover values, missing keys refuse reads, native SSO preserves A and denies revoked B; restored commands recover the same secrets without repeating effects, reject unavailable keys/conflicts, and retain expired reservations.",
   );
 } finally {
   await runtime?.close();

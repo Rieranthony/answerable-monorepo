@@ -69,6 +69,7 @@ export function listEntitlements(
     .from(entitlements)
     .where(
       and(
+        sql`${entitlements.deletedAt} is null`,
         eq(entitlements.organizationId, organizationId),
         query.clientId === undefined
           ? undefined
@@ -99,7 +100,12 @@ function findEntitlementQuery(
   return executor
     .select()
     .from(entitlements)
-    .where(entitlementWhere(organizationId, entitlementId));
+    .where(
+      and(
+        sql`${entitlements.deletedAt} is null`,
+        entitlementWhere(organizationId, entitlementId),
+      ),
+    );
 }
 export async function findEntitlement(
   context: TenantReadContext<"directory">,
@@ -132,7 +138,12 @@ export async function updateEntitlement(
   const [row] = await executor
     .update(entitlements)
     .set(patch)
-    .where(entitlementWhere(organizationId, entitlementId))
+    .where(
+      and(
+        sql`${entitlements.deletedAt} is null`,
+        entitlementWhere(organizationId, entitlementId),
+      ),
+    )
     .returning();
   return row ?? null;
 }
@@ -146,7 +157,12 @@ export async function setEntitlementStatus(
   const [row] = await executor
     .update(entitlements)
     .set({ status })
-    .where(entitlementWhere(organizationId, entitlementId))
+    .where(
+      and(
+        sql`${entitlements.deletedAt} is null`,
+        entitlementWhere(organizationId, entitlementId),
+      ),
+    )
     .returning();
   return row ?? null;
 }
@@ -156,9 +172,17 @@ export async function deleteEntitlement(
   entitlementId: string,
 ) {
   const { tx: executor } = requirePlatformWriteContext(context);
-  await executor
-    .delete(entitlements)
-    .where(entitlementWhere(organizationId, entitlementId));
+  const [row] = await executor
+    .update(entitlements)
+    .set({ deletedAt: sql`now()`, status: "disabled" })
+    .where(
+      and(
+        sql`${entitlements.deletedAt} is null`,
+        entitlementWhere(organizationId, entitlementId),
+      ),
+    )
+    .returning();
+  return row ?? null;
 }
 
 /** The command holds the organisation lock. Capture current source membership,
@@ -200,6 +224,8 @@ export function readEntitlementAudience(
       )
       .where(
         and(
+          sql`${groupMembers.deletedAt} is null`,
+          sql`${members.deletedAt} is null`,
           eq(members.organizationId, organizationId),
           eq(groupMembers.groupId, groupId),
         ),
@@ -210,7 +236,12 @@ export function readEntitlementAudience(
   return tx
     .select({ ...membership, groupAssignment: sql<null>`null` })
     .from(members)
-    .where(eq(members.organizationId, organizationId))
+    .where(
+      and(
+        sql`${members.deletedAt} is null`,
+        eq(members.organizationId, organizationId),
+      ),
+    )
     .orderBy(members.id)
     .for("share");
 }
@@ -229,6 +260,8 @@ export function listAllEntitlements(
     .innerJoin(organizations, eq(organizations.id, entitlements.organizationId))
     .where(
       and(
+        sql`${organizations.deletedAt} is null`,
+        sql`${entitlements.deletedAt} is null`,
         query.clientId === undefined
           ? undefined
           : eq(entitlements.clientId, query.clientId),

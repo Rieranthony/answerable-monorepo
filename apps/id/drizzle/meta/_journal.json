@@ -330,6 +330,13 @@
       "when": 1789041581165,
       "tag": "0046_grant_context_isolation",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1789052260043,
+      "tag": "0047_soft_deletion",
+      "breakpoints": true
     }
   ]
 }

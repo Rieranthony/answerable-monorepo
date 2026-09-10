@@ -1,3 +1,4 @@
+import { and } from "drizzle-orm";
 import {
   requirePlatformReadContext,
   requirePlatformWriteContext,
@@ -66,12 +67,22 @@ export async function createSsoProvider(
   input: CreateSsoProviderInput,
 ) {
   const { tx: db } = requirePlatformWriteContext(context);
+  const [reserved] = await db
+    .select({
+      deletedAt: ssoProviders.deletedAt,
+      organizationId: ssoProviders.organizationId,
+    })
+    .from(ssoProviders)
+    .where(eq(ssoProviders.providerId, input.providerId));
   const [provider] = await db
     .insert(ssoProviders)
     .values({
       id: createId(),
       organizationId: input.organizationId,
-      providerId: input.providerId,
+      providerId:
+        reserved?.deletedAt && reserved.organizationId === input.organizationId
+          ? `${input.providerId}-${createId()}`
+          : input.providerId,
       issuer: input.issuer,
       domain: input.domain.trim().toLowerCase(),
       oidcConfig: serializeSsoProviderConfig(input),
@@ -85,7 +96,12 @@ function providerQuery(db: Executor, organizationId: string) {
   return db
     .select()
     .from(ssoProviders)
-    .where(eq(ssoProviders.organizationId, organizationId))
+    .where(
+      and(
+        sql`${ssoProviders.deletedAt} is null`,
+        eq(ssoProviders.organizationId, organizationId),
+      ),
+    )
     .limit(1);
 }
 
@@ -111,7 +127,12 @@ export async function readSsoIssuer(
   const [provider] = await tx
     .select({ issuer: ssoProviders.issuer })
     .from(ssoProviders)
-    .where(eq(ssoProviders.organizationId, organizationId))
+    .where(
+      and(
+        sql`${ssoProviders.deletedAt} is null`,
+        eq(ssoProviders.organizationId, organizationId),
+      ),
+    )
     .limit(1);
   return provider ?? null;
 }
@@ -129,7 +150,12 @@ export async function readSsoEndpoints(
       >`${ssoProviders.oidcConfig}::jsonb ->> 'discoveryEndpoint'`,
     })
     .from(ssoProviders)
-    .where(eq(ssoProviders.organizationId, organizationId))
+    .where(
+      and(
+        sql`${ssoProviders.deletedAt} is null`,
+        eq(ssoProviders.organizationId, organizationId),
+      ),
+    )
     .limit(1);
   return provider
     ? {
@@ -152,7 +178,7 @@ export async function updateSsoProvider(
       domain: input.domain.trim().toLowerCase(),
       oidcConfig: serializeSsoProviderConfig(input),
     })
-    .where(eq(ssoProviders.id, id))
+    .where(and(sql`${ssoProviders.deletedAt} is null`, eq(ssoProviders.id, id)))
     .returning();
   return provider!;
 }
@@ -163,8 +189,14 @@ export async function deleteSsoProvider(
 ) {
   const { tx: executor } = requirePlatformWriteContext(context);
   const [row] = await executor
-    .delete(ssoProviders)
-    .where(eq(ssoProviders.organizationId, organizationId))
+    .update(ssoProviders)
+    .set({ deletedAt: sql`now()`, oidcConfig: null, samlConfig: null })
+    .where(
+      and(
+        sql`${ssoProviders.deletedAt} is null`,
+        eq(ssoProviders.organizationId, organizationId),
+      ),
+    )
     .returning();
   return row ?? null;
 }

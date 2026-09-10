@@ -242,7 +242,7 @@ test("reinstatement observes surviving organisation permission without recreatin
   });
   expect(removed.status).toBe(204);
   expect(await eventFor(removed)).toMatchObject({
-    schemaVersion: 2,
+    schemaVersion: 3,
     action: "member.removed",
     data: {
       before: { access: approvedRead() },
@@ -258,7 +258,7 @@ test("reinstatement observes surviving organisation permission without recreatin
   });
   expect(noop.status).toBe(204);
   expect(await eventFor(noop)).toMatchObject({
-    schemaVersion: 2,
+    schemaVersion: 3,
     action: "member.removal_unchanged",
     data: {
       before: { access: { effective: false, targets: [] } },
@@ -269,7 +269,12 @@ test("reinstatement observes surviving organisation permission without recreatin
     .select()
     .from(entitlements)
     .where(eq(entitlements.memberId, person.memberId));
-  expect(afterRemoval).toHaveLength(0);
+  expect(afterRemoval).not.toHaveLength(0);
+  expect(
+    afterRemoval.every(
+      (row) => row.deletedAt !== null && row.status === "disabled",
+    ),
+  ).toBe(true);
   const initial = await configuration();
   const key = createId();
   const restored = await change(key, initial.tag, "reinstate");
@@ -299,7 +304,7 @@ test("reinstatement observes surviving organisation permission without recreatin
       .select()
       .from(entitlements)
       .where(eq(entitlements.memberId, person.memberId)),
-  ).toHaveLength(0);
+  ).toEqual(afterRemoval);
   expect(
     (await change(key, initial.tag, "reinstate")).headers.get(
       "Idempotency-Replayed",
@@ -389,7 +394,9 @@ for (const kind of ["window", "reinstate", "remove"] as const) {
     }
     const recovered = await change(key, initial.tag, kind);
     expect(recovered.status).toBe(kind === "remove" ? 204 : 200);
-    expect(await eventFor(recovered)).toMatchObject({ schemaVersion: 2 });
+    expect(await eventFor(recovered)).toMatchObject({
+      schemaVersion: kind === "remove" ? 3 : 2,
+    });
     expect(
       (await change(key, initial.tag, kind)).headers.get(
         "Idempotency-Replayed",

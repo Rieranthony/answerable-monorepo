@@ -23,6 +23,7 @@ const clientSchema = z.object({
   organizationId: z.uuid(),
   authorizationVersion: z.number().int().positive(),
   disabled: z.literal(false),
+  deletedAt: z.null().optional(),
 });
 
 /** Lock before the provider reads policy; refresh configuration after authentication. */
@@ -96,6 +97,7 @@ export function machineIdentity(): OAuthProviderExtension {
             organizationId: oauthClients.organizationId,
             authorizationVersion: oauthClients.authorizationVersion,
             disabled: oauthClients.disabled,
+            deletedAt: oauthClients.deletedAt,
           })
           .from(oauthClients)
           .where(eq(oauthClients.clientId, client.clientId));

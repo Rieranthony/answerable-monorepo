@@ -275,44 +275,53 @@ test("global user erasure records actual cross-tenant and owned-client effects w
     .select()
     .from(auditEvents)
     .where(eq(auditEvents.operationId, response.headers.get("Operation-Id")!));
-  expect(event!.schemaVersion).toBe(2);
+  expect(event!.schemaVersion).toBe(3);
   const after = await state();
   const effects = event!.data!.effects as Record<string, Array<{ id: string }>>;
   for (const [effect, table] of Object.entries({
-    removedMembers: "members",
-    removedAssignments: "assignments",
-    removedEntitlements: "entitlements",
-    deletedAccounts: "accounts",
+    softDeletedMembers: "members",
+    softDeletedAssignments: "assignments",
+    softDeletedEntitlements: "entitlements",
+    softDeletedAccounts: "accounts",
     deletedSessions: "sessions",
-    deletedInvitations: "invitations",
-    deletedClients: "clients",
-    deletedClientResources: "links",
+    softDeletedInvitations: "invitations",
+    softDeletedClients: "clients",
+    softDeletedClientResources: "links",
     deletedAccessTokens: "access",
     deletedRefreshTokens: "refresh",
-    deletedConsents: "consents",
+    softDeletedConsents: "consents",
   }) as Array<[string, keyof Awaited<ReturnType<typeof state>>]>) {
     expect(effects[effect]!.map((row) => row.id).sort()).toEqual(
       before[table]
-        .filter(
-          (row) => !after[table].some((remaining) => remaining.id === row.id),
+        .filter((row) =>
+          effect.startsWith("softDeleted")
+            ? after[table].some(
+                (retained) =>
+                  retained.id === row.id &&
+                  "deletedAt" in retained &&
+                  retained.deletedAt !== null,
+              )
+            : !after[table].some((remaining) => remaining.id === row.id),
         )
         .map((row) => row.id)
         .sort(),
     );
   }
-  expect(effects.removedMembers).toHaveLength(2);
+  expect(effects.softDeletedMembers).toHaveLength(2);
   for (const member of before.members.filter(
     (row) => row.userId === person.userId,
   )) {
-    expect(effects.removedMembers).toContainEqual(
+    expect(effects.softDeletedMembers).toContainEqual(
       expect.objectContaining({
         id: member.id,
         organizationId: member.organizationId,
         userId: person.userId,
-        revision: member.revision,
+        revision: member.revision + 1,
+        status: "revoked",
+        deletedAt: expect.any(String),
       }),
     );
-    expect(effects.removedEntitlements).toContainEqual(
+    expect(effects.softDeletedEntitlements).toContainEqual(
       expect.objectContaining({
         organizationId: member.organizationId,
         memberId: member.id,
@@ -324,7 +333,7 @@ test("global user erasure records actual cross-tenant and owned-client effects w
   for (const name of [
     "deletedAccessTokens",
     "deletedRefreshTokens",
-    "deletedConsents",
+    "softDeletedConsents",
     "clearedAccessTokenSessions",
     "clearedRefreshTokenSessions",
   ])
@@ -350,18 +359,34 @@ test("global user erasure records actual cross-tenant and owned-client effects w
     "assignments",
     "entitlements",
   ] as const) {
-    const remainingIds = new Set(after[name].map((row) => row.id));
-    expect(after[name] as unknown[]).toEqual(
+    const unchanged = after[name].filter(
+      (row) => !("deletedAt" in row) || row.deletedAt === null,
+    );
+    const remainingIds = new Set(unchanged.map((row) => row.id));
+    expect(unchanged).toEqual(
       before[name].filter((row) => remainingIds.has(row.id)),
     );
+    if (name !== "sessions")
+      expect(after[name]).toHaveLength(before[name].length);
   }
 
-  expect(after.users).toEqual(
+  expect(after.users.filter((row) => row.id !== person.userId)).toEqual(
     before.users.filter((row) => row.id !== person.userId),
   );
-  expect(after.members).toEqual(
+  expect(after.users.find((row) => row.id === person.userId)).toMatchObject({
+    name: before.users.find((row) => row.id === person.userId)!.name,
+    status: "disabled",
+    deletedAt: expect.any(Date),
+  });
+  expect(after.members).toHaveLength(before.members.length);
+  expect(after.members.filter((row) => row.userId !== person.userId)).toEqual(
     before.members.filter((row) => row.userId !== person.userId),
   );
+  expect(
+    after.members
+      .filter((row) => row.userId === person.userId)
+      .every((row) => row.deletedAt !== null && row.status === "revoked"),
+  ).toBe(true);
   expect(
     effects.clearedAccessTokenSessions!.map((row) => row.id).sort(),
   ).toEqual(
@@ -435,7 +460,7 @@ test("global user erasure records actual cross-tenant and owned-client effects w
   for (const name of [
     "deletedAccessTokens",
     "deletedRefreshTokens",
-    "deletedConsents",
+    "softDeletedConsents",
     "clearedAccessTokenSessions",
     "clearedRefreshTokenSessions",
   ]) {
@@ -446,10 +471,12 @@ test("global user erasure records actual cross-tenant and owned-client effects w
       targetType: "user",
       targetId: person.userId,
       action: "user.erased",
-      schemaVersion: 2,
+      schemaVersion: 3,
       outcome: "success",
       data: {
+        deletionMode: "soft",
         before: { id: person.userId },
+        after: event!.data!.after,
         effects: { [name]: effects[name] },
       },
     });
@@ -484,7 +511,7 @@ test("global user erasure rolls back all effects and its receipt when subject ca
     .select()
     .from(auditEvents)
     .where(eq(auditEvents.action, "user.erased"));
-  expect(event!.schemaVersion).toBe(2);
+  expect(event!.schemaVersion).toBe(3);
   expect(
     (await erase(person.userId, key)).headers.get("Idempotency-Replayed"),
   ).toBe("true");
@@ -607,10 +634,10 @@ for (const order of ["user-first", "client-first"] as const) {
       .from(auditEvents)
       .where(eq(auditEvents.action, "user.erased"));
     const effects = event!.data!.effects as {
-      deletedClients: Array<{ id: string }>;
+      softDeletedClients: Array<{ id: string }>;
       deletedAccessTokens: Array<{ clientId: string }>;
     };
-    expect(effects.deletedClients.some((row) => row.id === owned.id)).toBe(
+    expect(effects.softDeletedClients.some((row) => row.id === owned.id)).toBe(
       order === "user-first",
     );
     expect(

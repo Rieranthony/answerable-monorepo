@@ -217,6 +217,8 @@ test("resource erasure requires explicit unlinking in both the service and datab
     .delete(oauthClientResources)
     .where(eq(oauthClientResources.resourceId, row.identifier));
   await service.eraseResource(db, actor, row.identifier, row.identifier);
-  expect(await db.select().from(oauthResources)).toHaveLength(0);
+  expect(await db.select().from(oauthResources)).toMatchObject([
+    { disabled: true, deletedAt: expect.any(Date) },
+  ]);
   expect(await db.select().from(oauthClients)).toHaveLength(1);
 });

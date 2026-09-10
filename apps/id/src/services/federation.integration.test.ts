@@ -666,7 +666,14 @@ describe("integration: federated sign-in", () => {
         authenticationProviderId: provider!.id,
         authenticationProviderRevision: provider!.revision,
       });
-      const current = await connection.db.select().from(ssoProviders);
+      const retained = await connection.db.select().from(ssoProviders);
+      const current = retained.filter((row) => row.deletedAt === null);
+      if (change !== "update")
+        expect(retained.find((row) => row.id === provider!.id)).toMatchObject({
+          deletedAt: expect.any(Date),
+          oidcConfig: null,
+          samlConfig: null,
+        });
       if (change === "delete") expect(current).toHaveLength(0);
       else if (change === "recreate")
         expect(current[0]!.id).not.toBe(provider!.id);

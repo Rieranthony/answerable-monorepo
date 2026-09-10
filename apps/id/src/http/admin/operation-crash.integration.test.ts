@@ -352,8 +352,9 @@ for (const action of ["create", "rotate", "erase"] as const)
         await authorised.arrayBuffer();
       }
       if (action === "erase") {
-        expect(final.organizations).toHaveLength(0);
-        expect(final.members).toHaveLength(0);
-        expect(final.groups).toHaveLength(0);
+        for (const key of ["organizations", "members", "groups"] as const) {
+          expect(final[key]).toHaveLength(before[key].length);
+          expect(final[key].every((row) => row.deletedAt !== null)).toBe(true);
+        }
       }
     }, 15000);

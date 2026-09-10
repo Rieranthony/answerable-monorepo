@@ -265,7 +265,7 @@ export const routes = {
     operationId: "removeEntitlement",
     summary: "Remove an organisation entitlement",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts and expired recovery never re-executes. Remove an organisation entitlement and return no content, removing access supplied by that record. Prefer updateEntitlement to change its validity or scopes; validation_failed rejects malformed ids and not_found means the target is unavailable. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input.",
+      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts and expired recovery never re-executes. Soft-delete an organisation entitlement and return no content, removing access supplied by that record. Deletion is terminal; an explicit replacement gets a new UUID. Prefer updateEntitlement to change its validity or scopes; validation_failed rejects malformed ids and not_found means the target is unavailable. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",

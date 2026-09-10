@@ -193,25 +193,29 @@ test("client administration queries cover writes, filters, pagination, missing r
     allowedScopes: ["read"],
   });
   expect(await queries.listClientResources(db, a.clientId)).toEqual([]);
-  expect(await queries.linkClientResource(db, a.clientId, resource)).toEqual({
+  expect(
+    await queries.linkClientResource(db, a.clientId, resource),
+  ).toMatchObject({
     created: true,
   });
-  expect(await queries.linkClientResource(db, a.clientId, resource)).toEqual({
+  expect(
+    await queries.linkClientResource(db, a.clientId, resource),
+  ).toMatchObject({
     created: false,
   });
   expect(await queries.listClientResources(db, a.clientId)).toMatchObject([
     { clientId: a.clientId, resourceId: resource },
   ]);
   expect(await queries.listClientResources(db, b.clientId)).toEqual([]);
-  expect(await queries.unlinkClientResource(db, b.clientId, resource)).toBe(
-    false,
-  );
-  expect(await queries.unlinkClientResource(db, a.clientId, resource)).toBe(
-    true,
-  );
-  expect(await queries.unlinkClientResource(db, a.clientId, resource)).toBe(
-    false,
-  );
+  expect(
+    await queries.unlinkClientResource(db, b.clientId, resource),
+  ).toBeNull();
+  expect(
+    await queries.unlinkClientResource(db, a.clientId, resource),
+  ).toMatchObject({ deletedAt: expect.any(Date) });
+  expect(
+    await queries.unlinkClientResource(db, a.clientId, resource),
+  ).toBeNull();
 });
 
 test("client administration rejects raw database authority", async () => {

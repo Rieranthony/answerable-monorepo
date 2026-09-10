@@ -1,10 +1,7 @@
 import { eq } from "drizzle-orm";
 import { oauthResources, systemBindings } from "../db/schema/index.ts";
 import { platformWriterCheck } from "./platform-writer.ts";
-import {
-  revokeResourceGrantContexts,
-  deleteResourceGrantContexts,
-} from "../db/queries/grant-contexts.ts";
+import { revokeResourceGrantContexts } from "../db/queries/grant-contexts.ts";
 import { requireNoCapabilityReferences } from "./capabilities.ts";
 import {
   requirePlatformWriteContext,
@@ -24,6 +21,7 @@ type ResourceRow = NonNullable<
 function auditResource(row: ResourceRow) {
   return {
     id: row.id,
+    deletedAt: row.deletedAt,
     identifier: row.identifier,
     classification: row.classification,
     organizationId: row.organizationId,
@@ -68,6 +66,7 @@ function audit(
     targetId: identifier,
     action,
     outcome: "success",
+    schemaVersion: data.deletionMode === "soft" ? 2 : 1,
     data,
   });
 }
@@ -234,14 +233,15 @@ export async function eraseResource(
       "Unlink the resource from its clients before erasure",
     );
   await requireNoCapabilityReferences(context, { resource: identifier });
-  const deletedGrantContexts = await deleteResourceGrantContexts(
+  const revokedGrantContexts = await revokeResourceGrantContexts(
     context,
     existing.id,
   );
-  await queries.deleteResource(context, identifier);
+  const row = await queries.deleteResource(context, identifier);
   await audit(tx, actor, identifier, "resource.erased", {
     before: auditResource(existing),
-    after: null,
-    deletedGrantContexts,
+    after: auditResource(row),
+    deletionMode: "soft",
+    revokedGrantContexts,
   });
 }

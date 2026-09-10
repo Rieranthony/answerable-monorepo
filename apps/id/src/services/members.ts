@@ -37,7 +37,10 @@ function audit(
     targetId,
     targetType: "member",
     action,
-    schemaVersion: 2,
+    schemaVersion:
+      action === "member.removed" || action === "member.removal_unchanged"
+        ? 3
+        : 2,
     data,
     outcome: "success",
   });
@@ -98,7 +101,7 @@ export async function remove(context: TenantMemberContext, memberId: string) {
   const before = requireRow(await queries.findMember(context, memberId));
   const accessBefore = await memberAccess(context, memberId);
   const row = requireRow(await queries.revokeMember(context, memberId));
-  const { removedGrants, removedGroups } =
+  const { removedGrants, softDeletedGroups } =
     await queries.removeMemberAssignments(context, memberId);
   const revokedGrantContexts = await revokeMemberGrantContexts(
     context,
@@ -109,7 +112,7 @@ export async function remove(context: TenantMemberContext, memberId: string) {
     revokedGrantContexts.length === 0 &&
     before.membershipStatus === "revoked" &&
     removedGrants.length === 0 &&
-    removedGroups.length === 0;
+    softDeletedGroups.length === 0;
   await audit(
     tx,
     actor,
@@ -129,7 +132,7 @@ export async function remove(context: TenantMemberContext, memberId: string) {
         revokedAt: row.revokedAt,
         access: accessAfter,
       },
-      effects: { removedGrants, removedGroups, revokedGrantContexts },
+      effects: { removedGrants, softDeletedGroups, revokedGrantContexts },
     },
   );
   return unchanged ? ("noop" as const) : ("applied" as const);

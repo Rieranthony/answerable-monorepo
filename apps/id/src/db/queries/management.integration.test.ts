@@ -115,8 +115,11 @@ test("client erasure respects entitlement references and cascades links, tokens 
   expect(await resources.listResourceClients(db, resource.identifier)).toEqual(
     [],
   );
-  for (const table of [oauthAccessTokens, oauthRefreshTokens, oauthConsents])
+  for (const table of [oauthAccessTokens, oauthRefreshTokens])
     expect(await db.select().from(table)).toEqual([]);
+  expect(await db.select().from(oauthConsents)).toMatchObject([
+    { deletedAt: expect.any(Date) },
+  ]);
 });
 test("domain deletion is scoped to its organisation", async () => {
   const { db, org, other } = await seed();
@@ -131,7 +134,11 @@ test("domain deletion is scoped to its organisation", async () => {
   await domains.deleteOrganizationDomain(db, org.id, domain.id);
   expect(
     await domains.findOrganizationDomain(db, org.id, domain.id),
-  ).toBeNull();
+  ).toMatchObject({
+    id: domain.id,
+    status: "disabled",
+    deletedAt: expect.any(Date),
+  });
 });
 test("exact email combines with q and does not match suffixes", async () => {
   const { db, org, user } = await seed();

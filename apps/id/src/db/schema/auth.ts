@@ -35,6 +35,7 @@ import {
 export const users = pgTable(
   "users",
   {
+    deletedAt: timestampColumn("deleted_at"),
     id: id(),
     name: text("name").notNull(),
     email: text("email").notNull().unique(),
@@ -62,6 +63,7 @@ export const users = pgTable(
 export const organizations = pgTable(
   "organizations",
   {
+    deletedAt: timestampColumn("deleted_at"),
     id: id(),
     name: text("name").notNull(),
     slug: text("slug").notNull().unique(),
@@ -135,6 +137,7 @@ export const sessions = pgTable(
 export const accounts = pgTable(
   "accounts",
   {
+    deletedAt: timestampColumn("deleted_at"),
     id: id(),
     issuer: text("issuer").notNull(),
     accountId: text("account_id").notNull(),
@@ -185,6 +188,7 @@ export const verifications = pgTable(
 export const members = pgTable(
   "members",
   {
+    deletedAt: timestampColumn("deleted_at"),
     id: id(),
     revision: integer("revision").default(1).notNull(),
     organizationId: uuid("organization_id")
@@ -228,6 +232,7 @@ export const members = pgTable(
 export const invitations = pgTable(
   "invitations",
   {
+    deletedAt: timestampColumn("deleted_at"),
     id: id(),
     organizationId: uuid("organization_id")
       .notNull()
