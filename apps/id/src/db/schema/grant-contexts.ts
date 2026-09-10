@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   check,
   index,
+  jsonb,
   pgTable,
   pgPolicy,
   text,
@@ -10,6 +11,7 @@ import {
 import { members, organizations, users } from "./auth.ts";
 import { oauthClients, oauthResources } from "./oauth.ts";
 import { id, timestampColumn } from "./columns.ts";
+import type { GrantAuthentication } from "../../auth/grant-authentication.ts";
 
 /** One immutable authority context per user authorisation, shared by its rotations. */
 export const grantContexts = pgTable(
@@ -36,6 +38,7 @@ export const grantContexts = pgTable(
     // Immutable authentication evidence, retained after the browser session ends.
     authenticationSessionId: uuid("authentication_session_id").notNull(),
     authTime: timestampColumn("auth_time").notNull(),
+    authentication: jsonb("authentication").$type<GrantAuthentication>(),
     requestedScopes: text("requested_scopes").array().notNull(),
     createdAt: timestampColumn("created_at").defaultNow().notNull(),
     expiresAt: timestampColumn("expires_at").notNull(),

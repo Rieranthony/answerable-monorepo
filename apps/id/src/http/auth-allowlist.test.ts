@@ -9,11 +9,15 @@ test("only POST is allowlisted for the token endpoint", () => {
   expect(isAllowedAuthRoute("post", "/auth/oauth2/token")).toBe(true);
   expect(isAllowedAuthRoute("GET", "/auth/oauth2/token")).toBe(false);
   expect(isAllowedAuthRoute("POST", "/auth/oauth2/token/extra")).toBe(false);
-  expect([...allowedTokenGrantTypes]).toEqual(["client_credentials"]);
+  expect([...allowedTokenGrantTypes]).toEqual([
+    "client_credentials",
+    "authorization_code",
+    "refresh_token",
+  ]);
 });
 
 test("unsupported and empty form grants receive an uncached OAuth error", async () => {
-  for (const grant of ["authorization_code", "refresh_token", "unknown", ""]) {
+  for (const grant of ["password", "implicit", "unknown", ""]) {
     const request = new Request("http://localhost/auth/oauth2/token", {
       method: "POST",
       headers: {
@@ -26,7 +30,7 @@ test("unsupported and empty form grants receive an uncached OAuth error", async 
     expect(response?.headers.get("cache-control")).toBe("no-store");
     expect(await response?.json()).toEqual({
       error: "unsupported_grant_type",
-      error_description: "Only client_credentials is available.",
+      error_description: "This grant type is not supported.",
     });
     expect((await request.formData()).get("grant_type")).toBe(grant);
   }

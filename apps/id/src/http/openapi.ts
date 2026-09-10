@@ -174,7 +174,7 @@ export async function buildPublicOpenApiDocument(input: {
     },
     servers: input.servers ?? [{ url: input.environment.betterAuthUrl }],
     tags: [
-      { name: "Token", description: "Machine access with client credentials" },
+      { name: "Token", description: "User authorisation and machine access" },
       {
         name: "Health",
         description: "Service liveness and readiness checks.",

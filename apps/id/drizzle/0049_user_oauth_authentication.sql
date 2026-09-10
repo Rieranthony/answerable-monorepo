@@ -1,0 +1,1 @@
+ALTER TABLE "grant_contexts" ADD COLUMN "authentication" jsonb;

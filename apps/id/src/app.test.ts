@@ -246,8 +246,17 @@ describe("unit: Hono application", () => {
     expect(schema.info.title).toBe("Answerable ID API");
     expect(schema.servers).toEqual([{ url: environment.betterAuthUrl }]);
     expect(Object.keys(schema.paths)).toEqual([
+      "/.well-known/oauth-authorization-server",
+      "/.well-known/openid-configuration",
       "/auth/get-session",
+      "/auth/jwks",
+      "/auth/oauth2/authorize",
+      "/auth/oauth2/consent",
+      "/auth/oauth2/continue",
+      "/auth/oauth2/flow",
+      "/auth/oauth2/revoke",
       "/auth/oauth2/token",
+      "/auth/oauth2/userinfo",
       "/auth/ok",
       "/auth/sign-in/sso",
       "/auth/sign-out",
@@ -316,7 +325,7 @@ describe("unit: Hono application", () => {
 
     expect(document.tags).toContainEqual({
       name: "Token",
-      description: "Machine access with client credentials",
+      description: "User authorisation and machine access",
     });
     expect(document.servers).toEqual([{ url: "https://id.example.com" }]);
     expect(Object.keys(document.paths["/healthz"]!)).toEqual(["get", "post"]);
@@ -414,8 +423,11 @@ describe("unit: Hono application", () => {
       ["POST", "/auth/sso/saml2/sp/slo/x"],
       ["POST", "/auth/sso/saml2/logout/x"],
       ["GET", "/auth/sso/callback/x"],
-      ["GET", "/auth/oauth2/authorize"],
-      ["POST", "/auth/oauth2/consent"],
+      ["POST", "/auth/oauth2/authorize"],
+      ["GET", "/auth/oauth2/consent"],
+      ["POST", "/auth/oauth2/introspect"],
+      ["POST", "/auth/oauth2/register"],
+      ["GET", "/auth/oauth2/end-session"],
       ["GET", "/auth/oauth2/continue"],
     ] as const;
 
@@ -529,13 +541,13 @@ test("token requests guard grants and preserve bodies for Better Auth", async ()
   const rejected = await app.request("/auth/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "grant_type=authorization_code",
+    body: "grant_type=unsupported",
   });
   expect(rejected.status).toBe(400);
   expect(rejected.headers.get("cache-control")).toBe("no-store");
   expect(await rejected.json()).toEqual({
     error: "unsupported_grant_type",
-    error_description: "Only client_credentials is available.",
+    error_description: "This grant type is not supported.",
   });
   expect((await app.request("/auth/oauth2/token")).status).toBe(404);
   expect(received).toHaveLength(3);

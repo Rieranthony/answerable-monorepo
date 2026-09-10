@@ -137,7 +137,7 @@ export const oauthResources = pgTable(
     // The provider merges resource custom claims after extension claims.
     check(
       "oauth_resources_identity_claims_check",
-      sql`NOT (${table.customClaims} ?| ARRAY['client_instance', 'organization_id', 'authorization_version', 'organization_authorization_version', 'subject_type'])`,
+      sql`NOT (${table.customClaims} ?| ARRAY['client_instance', 'organization_id', 'authorization_version', 'organization_authorization_version', 'subject_type', 'membership_id', 'grant_id', 'resource_instance', 'upstream_auth_time'])`,
     ),
   ],
 );

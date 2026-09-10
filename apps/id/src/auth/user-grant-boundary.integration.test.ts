@@ -541,15 +541,13 @@ afterEach(async () => {
 async function authenticateB() {
   if (boundB) return boundB;
   const userId = fixture.principals.tenantAdmin.userId;
-  await fixture.db
-    .insert(accounts)
-    .values({
-      id: createId(),
-      userId,
-      issuer: fixture.issuer.origin,
-      providerId: "outsider",
-      accountId: "bound-b-subject",
-    });
+  await fixture.db.insert(accounts).values({
+    id: createId(),
+    userId,
+    issuer: fixture.issuer.origin,
+    providerId: "outsider",
+    accountId: "bound-b-subject",
+  });
   fixture.issuer.enqueue({
     sub: "bound-b-subject",
     email: "bound@outsider.example.com",
@@ -1265,7 +1263,7 @@ test("grant provenance cannot be forged or rewritten and expiry denies context l
         .values({ ...grant!, ...patch, id: createId() })
         .execute(),
     ).rejects.toMatchObject({
-      cause: { constraint: "grant_context_provenance" },
+      cause: { constraint: "grant_authentication_provenance" },
     });
   }
   const expiredId = createId();

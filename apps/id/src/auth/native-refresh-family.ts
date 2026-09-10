@@ -1,4 +1,4 @@
-import { APIError } from "better-auth/api";
+import { isAPIError } from "better-auth/api";
 import type { getOAuthProviderApi } from "@better-auth/oauth-provider";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Executor } from "../db/client.ts";
@@ -12,6 +12,7 @@ export async function withNativeRefreshFamily<T>(
   tx: Executor,
   grant: { id: string; clientId: string; userId: string },
   run: (scoped: Adapter) => Promise<T>,
+  revocation = false,
 ): Promise<{ value: T } | { error: unknown }> {
   let invalidating = false;
   const scoped: Adapter = {
@@ -70,16 +71,22 @@ export async function withNativeRefreshFamily<T>(
   };
   try {
     const value = await run(scoped);
-    if (invalidating)
+    if (invalidating && !revocation)
       throw new Error(
         "Native family invalidation unexpectedly returned tokens",
       );
+    if (invalidating)
+      await tx.execute(sql`release savepoint native_family_cleanup`);
     return { value };
   } catch (error) {
     if (!invalidating) throw error;
     // Failed cleanup must not undo the authoritative revocation barrier.
     // Native invalid_grant means cleanup completed; every other failure restores it.
-    if (!(error instanceof APIError && error.body?.error === "invalid_grant"))
+    if (!(
+      isAPIError(error) &&
+      (error.body?.error === "invalid_grant" ||
+        (revocation && error.body?.error === "invalid_request"))
+    ))
       await tx.execute(sql`rollback to savepoint native_family_cleanup`);
     await tx.execute(sql`release savepoint native_family_cleanup`);
     return { error };

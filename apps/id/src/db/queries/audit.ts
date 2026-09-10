@@ -26,7 +26,7 @@ import type { AuditActorType, AuditOutcome } from "../schema/vocabulary.ts";
 export type AuditEvent = typeof auditEvents.$inferSelect;
 
 export type AuditEventInput = {
-  schemaVersion?: 1 | 2 | 3;
+  schemaVersion?: 1 | 2 | 3 | 4;
   operationId?: string;
   actorType: AuditActorType;
   actorId: string;

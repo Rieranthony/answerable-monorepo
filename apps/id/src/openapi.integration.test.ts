@@ -50,7 +50,15 @@ test("the public OpenAPI snapshot matches the served document", async () => {
   ).toEqual(withoutServers(snapshot));
 
   for (const [path, pathItem] of Object.entries(document.paths)) {
-    if (path === "/healthz" || path === "/readyz") continue;
+    if (
+      [
+        "/healthz",
+        "/readyz",
+        "/.well-known/openid-configuration",
+        "/.well-known/oauth-authorization-server",
+      ].includes(path)
+    )
+      continue;
 
     for (const method of Object.keys(pathItem)) {
       expect(isAllowedAuthRoute(method, path)).toBe(true);

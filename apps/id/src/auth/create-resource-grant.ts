@@ -17,6 +17,7 @@ import { createId } from "../lib/id.ts";
 import { lockResourceGrantTargets } from "./lock-resource-grant-policy.ts";
 import { rethrowGrantError } from "./grant-error.ts";
 import { tenantAuthentication } from "./tenant-authentication.ts";
+import { grantAuthenticationSnapshot } from "./grant-authentication.ts";
 
 /** Native callback supplies authenticated identity/session and validated request scopes.
  * This validates stored provenance; knowing these IDs is not authentication.
@@ -29,7 +30,7 @@ export async function createResourceGrant(
     sessionId: string;
     memberId: string;
     clientId: string;
-    resource: string;
+    resource: string | null;
     scopes: readonly string[];
   },
   lifetimeSeconds: number,
@@ -60,9 +61,11 @@ export async function createResourceGrant(
         })
         .from(members)
         .innerJoin(oauthClients, eq(oauthClients.clientId, input.clientId))
-        .innerJoin(
+        .leftJoin(
           oauthResources,
-          eq(oauthResources.identifier, input.resource),
+          input.resource === null
+            ? sql`false`
+            : eq(oauthResources.identifier, input.resource),
         )
         .where(
           and(eq(members.id, input.memberId), eq(members.userId, input.userId)),
@@ -92,6 +95,11 @@ export async function createResourceGrant(
               // Existing context column records broker session creation only.
               // T2 persists the complete authentication snapshot for user OAuth.
               authTime: sessions.createdAt,
+              authentication: sql<
+                ReturnType<typeof grantAuthenticationSnapshot>
+              >`${JSON.stringify(grantAuthenticationSnapshot(authentication))}::jsonb`.as(
+                "authentication",
+              ),
               requestedScopes: scopeArray.as("requested_scopes"),
               createdAt: sql<Date>`statement_timestamp()`.as("created_at"),
               expiresAt:
@@ -114,11 +122,13 @@ export async function createResourceGrant(
               ),
             )
             .innerJoin(oauthClients, eq(oauthClients.clientId, input.clientId))
-            .innerJoin(
+            .leftJoin(
               oauthResources,
-              eq(oauthResources.identifier, input.resource),
+              input.resource === null
+                ? sql`false`
+                : eq(oauthResources.identifier, input.resource),
             )
-            .innerJoin(
+            .leftJoin(
               oauthClientResources,
               and(
                 eq(oauthClientResources.clientId, oauthClients.clientId),
@@ -138,14 +148,20 @@ export async function createResourceGrant(
                 sql`${sessions.expiresAt} > statement_timestamp()`,
                 eq(oauthClients.disabled, false),
                 sql`${oauthClients.deletedAt} is null`,
-                eq(oauthResources.disabled, false),
-                sql`${oauthResources.deletedAt} is null`,
+                input.resource === null
+                  ? undefined
+                  : eq(oauthResources.disabled, false),
+                input.resource === null
+                  ? undefined
+                  : sql`${oauthResources.deletedAt} is null and ${oauthClientResources.id} is not null`,
                 sql`${oauthClients.grantTypes} @> ARRAY['authorization_code']::text[]`,
                 sql`cardinality(${scopeArray}) > 0 and ${scopeArray} <@ ${oauthClients.scopes}`,
-                or(
-                  eq(oauthResources.classification, "platform_shared"),
-                  eq(oauthResources.organizationId, members.organizationId),
-                ),
+                input.resource === null
+                  ? undefined
+                  : or(
+                      eq(oauthResources.classification, "platform_shared"),
+                      eq(oauthResources.organizationId, members.organizationId),
+                    ),
               ),
             ),
         )

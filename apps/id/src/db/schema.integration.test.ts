@@ -235,6 +235,7 @@ describe("integration: PostgreSQL schema", () => {
         "expires_at timestamptz",
         "revoked_at timestamptz null",
         "authorization_code_id text null",
+        "authentication jsonb null",
       ],
       organization_capabilities: [
         "id uuid",
@@ -652,7 +653,7 @@ describe("integration: PostgreSQL schema", () => {
         "organization_capabilities_revision_check CHECK ((revision > 0))",
         "organization_capabilities_scopes_check CHECK (((cardinality(scopes) > 0) AND (array_position(scopes, ''::text) IS NULL) AND (array_position(scopes, NULL::text) IS NULL)))",
         "organization_capabilities_status_check CHECK ((status = ANY (ARRAY['active'::text, 'disabled'::text])))",
-        "organization_capabilities_target_check CHECK ((((grant_kind = 'admin_session'::text) AND (client_id IS NULL) AND (resource IS NOT NULL)) OR ((grant_kind = 'authorization_code'::text) AND (client_id IS NOT NULL)) OR ((grant_kind = ANY (ARRAY['refresh_token'::text, 'client_credentials'::text])) AND (client_id IS NOT NULL) AND (resource IS NOT NULL))))",
+        "organization_capabilities_target_check CHECK ((((grant_kind = 'admin_session'::text) AND (client_id IS NULL) AND (resource IS NOT NULL)) OR ((grant_kind = ANY (ARRAY['authorization_code'::text, 'refresh_token'::text])) AND (client_id IS NOT NULL)) OR ((grant_kind = 'client_credentials'::text) AND (client_id IS NOT NULL) AND (resource IS NOT NULL))))",
         "organization_capabilities_window_check CHECK ((valid_from < valid_until))",
       ],
       security_identifiers: [
@@ -734,7 +735,7 @@ describe("integration: PostgreSQL schema", () => {
       ],
       oauth_resources: [
         "oauth_resources_identifier_unique UNIQUE (identifier)",
-        "oauth_resources_identity_claims_check CHECK ((NOT (custom_claims ?| ARRAY['client_instance'::text, 'organization_id'::text, 'authorization_version'::text, 'organization_authorization_version'::text, 'subject_type'::text])))",
+        "oauth_resources_identity_claims_check CHECK ((NOT (custom_claims ?| ARRAY['client_instance'::text, 'organization_id'::text, 'authorization_version'::text, 'organization_authorization_version'::text, 'subject_type'::text, 'membership_id'::text, 'grant_id'::text, 'resource_instance'::text, 'upstream_auth_time'::text])))",
         "oauth_resources_organization_id_organizations_id_fk FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT",
         "oauth_resources_ownership_check CHECK ((((classification = 'platform_shared'::text) AND (organization_id IS NULL)) OR ((classification = 'tenant_owned'::text) AND (organization_id IS NOT NULL))))",
         "oauth_resources_pkey PRIMARY KEY (id)",

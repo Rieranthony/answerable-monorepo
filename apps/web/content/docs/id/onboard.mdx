@@ -240,7 +240,7 @@ curl -X DELETE "https://id.answerable.org/api/admin/v1/organizations/$ORG/domain
 
 ## Connect the directory
 
-**Changing the directory.** Creating, replacing or deleting SSO configuration revokes existing user authorisations for that organisation. An unchanged configuration preserves them. Restoring an earlier configuration does not restore revoked grants. Other organisations and global browser sessions are preserved. User OAuth remains [Not yet.](/docs/id#today-and-next); checking the authentication source for new authorisations is unfinished.
+**Changing the directory.** Creating, replacing or deleting SSO configuration revokes existing user authorisations for that organisation. An unchanged configuration preserves them. Restoring an earlier configuration does not restore revoked grants. Other organisations and global browser sessions are preserved. [User OAuth](/docs/id/oauth) validates the selected organisation's accepted account, provider UUID and configuration revision before creating or using a grant.
 
 Set `SSO_OPERATION_KEY` once for this configuration command and reuse it with identical input on retry. PUT and delete require keys; redacted result recovery lasts seven days. Omit `clientSecret` to retain the stored secret on a new update. Creation requires `If-None-Match: *`; replacement requires the current provider ETag in `If-Match`. Send exactly one precondition and retain it with the key on retry.
 
@@ -291,7 +291,7 @@ curl https://id.answerable.org/api/admin/v1/clients \
   }'
 ```
 
-**Links.** A client may only request tokens for resources it is linked to: `PUT /clients/{clientId}/resources/{resource}` with the resource URL encoded. A registering client can never link itself. Sign-in through a client (OIDC for apps): [Not yet.](/docs/id#today-and-next)
+**Links.** A client may only request tokens for resources it is linked to: `PUT /clients/{clientId}/resources/{resource}` with the resource URL encoded. A registering client can never link itself. Registered applications can use [OIDC sign-in](/docs/id/oauth).
 
 ```bash
 curl "https://id.answerable.org/api/admin/v1/clients/$CLIENT_ID" \
@@ -345,7 +345,7 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/entitlements" \
 
 **Withhold access.** Do not create the row. **Remove access.** `POST …/entitlements/{id}/disable`, or `DELETE` it. **Time-bound access.** Every membership, group membership and entitlement takes `validFrom` and `validUntil`; outside the window it does not count.
 
-**Where entitlements apply today.** Entitlements to the admin API resource authorise browser sessions today. Machine clients use their scope ceiling and resource link; root satisfies every platform scope. Entitlements to apps and MCP servers are recorded and readable, but the check at every token grant: [Not yet.](/docs/id#today-and-next)
+**Where entitlements apply.** Direct-session assignments authorise browser access to the admin resource. User OAuth checks client-only login permission and, for service access, the exact client/resource capability and assignment at authorisation, code exchange and refresh. Machine clients require an exact capability as well as their scope ceiling and compatibility link. See [application access](/docs/id/oauth).
 
 ## Let the organisation manage itself
 
@@ -368,19 +368,19 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/access?resource=
   -H "Authorization: Bearer $TOKEN"
 ```
 
-**Two views.** `…/access?resource=` or `?clientId=` lists the members who can reach a target with their scopes. `…/members/{memberId}/access` lists a member's targets and which rows grant them. Both compute effective grants for access reviews; app and MCP token-grant enforcement is still [Not yet.](/docs/id#today-and-next).
+**Two views.** `…/access?resource=` or `?clientId=` lists the members who can reach a target with their scopes. `…/members/{memberId}/access` lists a member's targets and which rows grant them. Both compute effective grants for access reviews; [App and service OAuth](/docs/id/oauth) re-evaluates the current policy at each exchange.
 
 ## Offboard
 
-| Situation                        | Do this                                                                                    | Effect                                                                                                                                  |
-| -------------------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| A person leaves the organisation | `PATCH …/members/{memberId}` with `validUntil` now, or `DELETE` the membership             | Their admin grants in that organisation stop; other memberships stay. App/MCP enforcement: [Not yet.](/docs/id#today-and-next)          |
-| A person must be cut off at once | `POST /users/{userId}/disable`                                                             | Every session ends and every token is revoked, in one transaction                                                                       |
-| Their address will be reused     | `POST /users/{userId}/retire-email` after disabling                                        | The address is released; the old account keeps a tombstone                                                                              |
-| The organisation leaves          | `POST /organizations/{org}/disable`                                                        | Sign-in refuses; the tenant epoch advances and owned machine tokens are revoked. Global browser sessions and unbound user grants remain |
-| An app is retired                | `DELETE /clients/{clientId}?confirm={clientId}` after removing its entitlements            | Links, tokens and consents are erased; audit rows remain                                                                                |
-| A domain no longer belongs here  | `DELETE /organizations/{org}/domains/{domainId}`                                           | Sign-in routing is removed; no confirmation needed                                                                                      |
-| Data must be erased              | `DELETE /users/{userId}` or `DELETE /organizations/{org}` with `?confirm=<id>` and no body | Cascades; audit rows keep erased IDs. Remove owned clients before organisation erasure                                                  |
+| Situation                        | Do this                                                                                    | Effect                                                                                                                                                        |
+| -------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A person leaves the organisation | `PATCH …/members/{memberId}` with `validUntil` now, or `DELETE` the membership             | Their admin access and stored user OAuth grants in that organisation stop; other memberships stay. Offline JWTs remain subject to expiry and consumer checks. |
+| A person must be cut off at once | `POST /users/{userId}/disable`                                                             | Every session ends and every token is revoked, in one transaction                                                                                             |
+| Their address will be reused     | `POST /users/{userId}/retire-email` after disabling                                        | The address is released; the old account keeps a tombstone                                                                                                    |
+| The organisation leaves          | `POST /organizations/{org}/disable`                                                        | Sign-in refuses; the tenant epoch advances and owned machine tokens are revoked. Global browser sessions and unbound user grants remain                       |
+| An app is retired                | `DELETE /clients/{clientId}?confirm={clientId}` after removing its entitlements            | Links, tokens and consents are erased; audit rows remain                                                                                                      |
+| A domain no longer belongs here  | `DELETE /organizations/{org}/domains/{domainId}`                                           | Sign-in routing is removed; no confirmation needed                                                                                                            |
+| Data must be erased              | `DELETE /users/{userId}` or `DELETE /organizations/{org}` with `?confirm=<id>` and no body | Cascades; audit rows keep erased IDs. Remove owned clients before organisation erasure                                                                        |
 
 **Bulk import of an existing cell's users.** [Not yet.](/docs/id#today-and-next)
 
@@ -396,7 +396,7 @@ curl --get https://id.answerable.org/api/admin/v1/entitlements \
   --data-urlencode 'resource=https://tutor.answerable.org'
 ```
 
-[listAllEntitlements](/docs/id/admin-api/entitlements/listAllEntitlements) lists recorded grants across organisations with each organisation's ID and slug. Filter by `clientId`, `resource` or `status`; paginate with `limit` and `cursor`. These rows are not proof of current effective access: check status and windows, or use the access views above. Token-grant enforcement for apps and MCP servers is [Not yet.](/docs/id#today-and-next).
+[listAllEntitlements](/docs/id/admin-api/entitlements/listAllEntitlements) lists recorded grants across organisations with each organisation's ID and slug. Filter by `clientId`, `resource` or `status`; paginate with `limit` and `cursor`. These rows are not proof of current effective access: check status and windows, or use the access views above. [User OAuth exchanges](/docs/id/oauth) check current effective access.
 
 ## One person's trail
 
@@ -437,8 +437,6 @@ See [all admin error codes](/docs/id/manage#errors), including confirmation and 
 | Domain verification by DNS                | [Not yet.](/docs/id#today-and-next) |
 | Organisations configuring their own SSO   | [Not yet.](/docs/id#today-and-next) |
 | Guest accounts, opted in per organisation | [Not yet.](/docs/id#today-and-next) |
-| Sign-in through registered apps (OIDC)    | [Not yet.](/docs/id#today-and-next) |
-| Entitlements checked at every token grant | [Not yet.](/docs/id#today-and-next) |
 | Bulk import of existing users             | [Not yet.](/docs/id#today-and-next) |
 | SCIM provisioning                         | [Not yet.](/docs/id#today-and-next) |
 

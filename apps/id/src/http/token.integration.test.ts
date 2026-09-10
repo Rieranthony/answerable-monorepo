@@ -186,11 +186,11 @@ test("integration: scopes outside the client ceiling are rejected", async () => 
   expect(await response.json()).toMatchObject({ error: "invalid_scope" });
 });
 
-test("integration: the public endpoint rejects authorization code grants", async () => {
+test("integration: a machine-only client cannot exchange authorization codes", async () => {
   const response = await mint({ body: { grant_type: "authorization_code" } });
   expect(response.status).toBe(400);
   expect(await response.json()).toMatchObject({
-    error: "unsupported_grant_type",
+    error: "unauthorized_client",
   });
 });
 

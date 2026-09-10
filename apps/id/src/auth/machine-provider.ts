@@ -25,8 +25,8 @@ import { prepareMachineGrant } from "./machine-identity.ts";
 export function machineOAuthProvider(
   db: Database,
   options: OAuthOptions<string[]>,
+  provider = oauthProvider(options),
 ) {
-  const provider = oauthProvider(options);
   const token = provider.endpoints.oauth2Token;
   return {
     ...provider,

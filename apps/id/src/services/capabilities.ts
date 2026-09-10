@@ -31,12 +31,12 @@ export type CapabilityInput = (
   | {
       clientId: string;
       resource: string;
-      grantKind: "client_credentials" | "refresh_token";
+      grantKind: "client_credentials";
     }
   | {
       clientId: string;
       resource: string | null;
-      grantKind: "authorization_code";
+      grantKind: "authorization_code" | "refresh_token";
     }
   | { clientId: null; resource: string; grantKind: "admin_session" }
 ) & {

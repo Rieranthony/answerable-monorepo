@@ -72,6 +72,7 @@ describe("unit: environment", () => {
       upstreamTokenSecrets: undefined,
       trustedOrigins: ["http://localhost:47100"],
       authPagesUrl: "http://localhost:47100",
+      oauthRefreshReuseIntervalSeconds: 0,
       maxConcurrentRequests: 64,
       databasePoolMax: 5,
       databasePoolIdleTimeoutMs: 10_000,

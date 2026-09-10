@@ -60,7 +60,7 @@ const createSchema = z.discriminatedUnion("grantKind", [
   windowSchema
     .extend({
       clientId: z.string().min(1),
-      resource: z.url(),
+      resource: z.url().nullable().default(null),
       grantKind: z.literal("refresh_token"),
       scopes,
     })
@@ -158,7 +158,7 @@ export const routes = {
     summary: "Approve an organisation capability",
     description:
       recovery +
-      "Approve an exact client/resource pair for client_credentials in its immutable owner organisation. Registration and compatibility alone grant no machine permission. Only platform writers may approve ceilings. For direct session administration, use admin_session with a null clientId and the bound ID admin resource. Only the platform organisation may receive platform scopes. For user grants use authorization_code: null resource approves login identity scopes, an exact resource approves resource scopes. refresh_token requires an exact resource and approves renewal separately. User scopes must fit the registered client scopes and resource vocabulary; identity and resource scopes cannot be mixed. User clients may serve multiple organisations, while private resources must belong to the approved organisation. Public user OAuth remains closed; approval does not open it. Prefer updateCapability for scopes, windows or status. validation_failed rejects incompatible targets/scopes; not_found means a reference is missing; conflict or constraint_violation means duplicate or inconsistent configuration.",
+      "Approve an exact client/resource pair for client_credentials in its immutable owner organisation. Registration and compatibility alone grant no machine permission. Only platform writers may approve ceilings. For direct session administration, use admin_session with a null clientId and the bound ID admin resource. Only the platform organisation may receive platform scopes. For user grants use authorization_code: null resource approves login identity scopes, an exact resource approves resource scopes. refresh_token approves renewal separately for a client-only login or exact resource pair. User scopes must fit the registered client scopes and resource vocabulary; identity and resource scopes cannot be mixed. User clients may serve multiple organisations, while private resources must belong to the approved organisation. Capabilities approve ceilings; current membership, authentication, assignments and consent are also required. Prefer updateCapability for scopes, windows or status. validation_failed rejects incompatible targets/scopes; not_found means a reference is missing; conflict or constraint_violation means duplicate or inconsistent configuration.",
     tag: "Capabilities",
     platformScope: "platform:write",
     kind: "write",

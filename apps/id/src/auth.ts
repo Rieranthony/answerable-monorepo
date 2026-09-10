@@ -1,6 +1,5 @@
 import { authDatabaseAdapter } from "./auth/database-adapter.ts";
-import { machineOAuthProvider } from "./auth/machine-provider.ts";
-import { machineIdentity } from "./auth/machine-identity.ts";
+import { userOAuthProvider } from "./auth/user-provider.ts";
 import { sso } from "@better-auth/sso";
 import { betterAuth } from "better-auth";
 import { APIError, isAPIError } from "better-auth/api";
@@ -270,16 +269,19 @@ export function createAuth(db: Database, environment: Environment) {
       }),
       nativeSso,
       verifiedSso.plugin(nativeSso),
-      // OIDC provider for our apps and OAuth 2.1 authorization server for MCP
-      // servers. The login and consent pages arrive with the federation and
-      // provider milestones; until then no OAuth route is allowlisted.
-      machineOAuthProvider(db, {
-        extensions: [machineIdentity()],
-        // hashClientSecret mirrors this digest for bootstrap clients.
-        storeClientSecret: "hashed",
-        loginPage: `${environment.authPagesUrl}/login`,
-        consentPage: `${environment.authPagesUrl}/consent`,
-      }),
+      // Native OIDC and OAuth protocol with current tenant policy at each grant boundary.
+      userOAuthProvider(
+        db,
+        {
+          refreshTokenReuseInterval:
+            environment.oauthRefreshReuseIntervalSeconds,
+          // hashClientSecret mirrors this digest for bootstrap clients.
+          storeClientSecret: "hashed",
+          loginPage: `${environment.authPagesUrl}/login`,
+          consentPage: `${environment.authPagesUrl}/consent`,
+        },
+        `${environment.authPagesUrl}/authorize`,
+      ),
       openAPI({ disableDefaultReference: true }),
       // Listed last so its after-hook runs once the SSO plugin has provisioned
       // the membership.

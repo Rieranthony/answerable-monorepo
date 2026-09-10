@@ -1,0 +1,133 @@
+---
+title: Connect an application
+description: "Use OpenID Connect for sign-in and OAuth for access to one service in a selected organisation."
+---
+
+```bash
+curl https://id.answerable.org/.well-known/openid-configuration
+```
+
+Use the returned issuer, authorisation endpoint, token endpoint and public signing keys. Both discovery documents describe the supported public routes. Client registration, introspection, device flows and OIDC logout are not public endpoints.
+
+## Prepare access
+
+**Register the application.** Answerable staff register its client ID, redirect URI, authentication method, scopes and `authorization_code` grant. Add `refresh_token` if the application needs renewal. Every authorisation uses S256 PKCE, including confidential clients.
+
+**Approve each organisation.** A client-only `authorization_code` capability and assignment approve login identity scopes. Access to a service also requires a capability and assignment for the exact client/resource pair. Renewal needs a separate `refresh_token` capability for the same target: null resource for login-only access, or the exact service URL. Registration and a client/resource compatibility link confer no permission. See [user capabilities](/docs/id/manage#approve-user-capabilities).
+
+**Authenticate the selected organisation.** Membership in two organisations does not establish trust between them. Each requires its own current company sign-in. A person can [connect another independently verified work identity](/docs/id/sign-in#connect-another-work-account) to the same global account. Email never merges identities.
+
+## Start an authorisation
+
+```bash
+export ID_URL='https://id.answerable.org'
+export CLIENT_ID='your-registered-client'
+export REDIRECT_URI='https://your-app.example/callback'
+export VERIFIER="$(openssl rand -base64 48 | tr '+/' '-_' | tr -d '=\n')"
+export CHALLENGE="$(printf '%s' "$VERIFIER" | openssl dgst -sha256 -binary | openssl base64 -A | tr '+/' '-_' | tr -d '=')"
+export STATE="$(openssl rand -hex 24)"
+export NONCE="$(openssl rand -hex 24)"
+
+curl --get --include "$ID_URL/auth/oauth2/authorize" \
+  --data-urlencode "client_id=$CLIENT_ID" \
+  --data-urlencode 'response_type=code' \
+  --data-urlencode "redirect_uri=$REDIRECT_URI" \
+  --data-urlencode 'scope=openid email offline_access' \
+  --data-urlencode "state=$STATE" \
+  --data-urlencode "nonce=$NONCE" \
+  --data-urlencode 'code_challenge_method=S256' \
+  --data-urlencode "code_challenge=$CHALLENGE"
+```
+
+Open that authorisation URL in the person's browser. Retain the verifier, state and nonce in the application's own session. Add one `resource` parameter and its registered scopes when requesting service access. Multiple resources require separate authorisations.
+
+The browser signs in, selects an organisation and reviews the application and requested access. These details come from the validated server request. Consent applies to every new authorisation, except an explicitly configured first-party bypass. A flow lasts ten minutes. Completed or denied flows cannot issue another code; start again from the application to change organisation.
+
+**Callback validation.** Check the returned `state` and issuer before exchanging the code. The redirect URI must match the original request. A code is short-lived and single-use.
+
+## Exchange the code
+
+```bash
+curl "$ID_URL/auth/oauth2/token" \
+  --user "$CLIENT_ID:$CLIENT_SECRET" \
+  --data-urlencode 'grant_type=authorization_code' \
+  --data-urlencode "code=$CODE" \
+  --data-urlencode "code_verifier=$VERIFIER" \
+  --data-urlencode "redirect_uri=$REDIRECT_URI"
+```
+
+For a service grant, include the same `resource` URL. Public clients use their registered `none` authentication method and send `client_id` without a secret. Registered confidential clients use HTTP Basic, `client_secret_post` or `private_key_jwt`; assertion audiences bind to the particular endpoint and each request requires a fresh assertion.
+
+**ID token.** Verify its signature using discovery's keys, issuer, audience, expiry and nonce. `sub` is the stable global user UUID. Email is display data.
+
+**Access token.** Login-only tokens are opaque and can call UserInfo. Service tokens are JWTs whose audience includes the requested resource. An ID token is not a service access token. Native token expiry comes from provider defaults and configured resource lifetimes; the immutable authorisation context also expires after 30 days.
+
+| Claim                                | Meaning                                                             |
+| ------------------------------------ | ------------------------------------------------------------------- |
+| `sub`                                | Global user UUID                                                    |
+| `subject_type`                       | `user`; machine tokens use `client`                                 |
+| `organization_id`                    | Selected organisation UUID                                          |
+| `membership_id`                      | Membership authorising this grant                                   |
+| `grant_id`                           | Immutable authorisation context shared by refresh rotations         |
+| `client_instance`                    | Durable registered client UUID                                      |
+| `resource_instance`                  | Durable resource UUID, or null for login-only access                |
+| `authorization_version`              | Client authorisation version at issuance                            |
+| `organization_authorization_version` | Organisation authorisation version at issuance                      |
+| `auth_time`                          | Native ID-token broker authentication time                          |
+| `upstream_auth_time`                 | Verified company-provider authentication time, or null when unknown |
+
+The broker time does not establish upstream freshness. The five-minute freshness rule applies to sensitive human commands and identity linking, not ordinary application browsing.
+
+## Read identity and renew access
+
+```bash
+curl "$ID_URL/auth/oauth2/userinfo" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+
+curl "$ID_URL/auth/oauth2/token" \
+  --user "$CLIENT_ID:$CLIENT_SECRET" \
+  --data-urlencode 'grant_type=refresh_token' \
+  --data-urlencode "refresh_token=$REFRESH_TOKEN"
+```
+
+Include the original resource for service renewal. Save the returned replacement refresh token. A narrowed `scope` must fit the current token and original grant. Dropped permissions cannot be recovered by widening a later refresh request.
+
+Every exchange checks the original authentication tuple, current user/account/provider/membership, client/resource state and permissions. Provider replacement, terminal deletion or administrative grant revocation prevents renewal. Ordinary sign-out preserves delegation; [explicit administrative session revocation](/docs/id/manage#global-session-retries) revokes the affected grants.
+
+**Response retry.** By default, reuse of a rotated refresh token revokes its family. `OAUTH_REFRESH_REUSE_INTERVAL_SECONDS` can enable the native encrypted response cache for an operator-selected retry interval. A matching retry returns the original response only after current policy is checked again. Different scopes or resources do not reuse that response. This is not a longer grant lifetime.
+
+## Revoke access
+
+```bash
+curl "$ID_URL/auth/oauth2/revoke" \
+  --user "$CLIENT_ID:$CLIENT_SECRET" \
+  --data-urlencode "token=$REFRESH_TOKEN" \
+  --data-urlencode 'token_type_hint=refresh_token'
+```
+
+Refresh revocation closes that authorisation family. Another authorisation for the same user/client remains independent. Opaque access-token revocation removes that token. Unknown or foreign tokens produce an empty success without changing another client's grants.
+
+**Offline JWTs.** Revocation does not remove an already-issued JWT from a resource server. The server must verify its signature, issuer, audience, expiry, user subject and tenant claims, and enforce its own current-authority contract. Native JWT revocation returns `unsupported_token_type`. Consumer integration and operational cutover require separate acceptance; local provider tests do not certify an external application or resource server.
+
+## Errors
+
+| Error                                           | Meaning                                                                          | What to do                                                                    |
+| ----------------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `invalid_request`                               | Malformed, expired, completed or mismatched request/flow                         | Start a new authorisation from the application                                |
+| `invalid_signature`                             | The browser continuation was changed or expired                                  | Restart; preserve the native signed query unchanged                           |
+| `login_required`                                | No accepted browser sign-in is available                                         | Sign in through the selected organisation                                     |
+| `interaction_required`, `consent_required`      | Silent authorisation cannot complete                                             | Start an interactive browser authorisation                                    |
+| `invalid_client`, `client_disabled`             | Client authentication or registration is unavailable                             | Check registration, credentials and assertion audience                        |
+| `unauthorized_client`                           | The client cannot use this grant type                                            | Ask Answerable staff to update its registration                               |
+| `invalid_redirect`, `unsupported_response_type` | Redirect or response type is not supported                                       | Use the exact registered redirect and `response_type=code`                    |
+| `invalid_scope`                                 | Requested scopes exceed a current ceiling                                        | Request only approved scopes; refresh cannot widen access                     |
+| `invalid_target`                                | Resource is missing, changed, incompatible or repeated                           | Use the single approved resource, or omit it for login-only access            |
+| `access_denied`                                 | Consent was denied or current tenant authentication/permission is insufficient   | Check the selected company sign-in and assignments                            |
+| `invalid_grant`                                 | Code, refresh token, stored authentication or grant authority is no longer valid | Restart authorisation; reused credentials cannot restore it                   |
+| `invalid_token`                                 | UserInfo access token is inactive or invalid                                     | Obtain a current access token                                                 |
+| `unsupported_token_type`                        | A self-contained JWT cannot be revoked through this endpoint                     | Revoke the refresh family and enforce expiry/current authority at the service |
+| `unsupported_grant_type`                        | The requested protocol grant is closed                                           | Use authorisation code, refresh or client credentials                         |
+| `temporarily_unavailable`                       | Policy locks or required audit storage are unavailable                           | Respect `Retry-After`; retry with fresh client authentication                 |
+| `authentication_unavailable`                    | An unexpected provider failure occurred                                          | Retry; contact Answerable staff if it persists                                |
+
+Transport limits can return HTTP 408, 413 or plain-text HTTP 503 before OAuth processing. The [API reference](/docs/id/api) describes each reachable endpoint. Successful authorisation, issuance, replay and revocation persist versioned [audit facts](/docs/id/manage) with durable user, membership, client, resource and authentication subjects in the same transaction as native effects.

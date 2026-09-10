@@ -101,6 +101,12 @@ const environmentSchema = z
     /** Override the human platform administrator lockout for break-glass use. */
     ROOT_ADMIN_BREAK_GLASS: z.enum(["true", "false"]).default("false"),
     AUTH_PAGES_URL: z.url().default("http://localhost:47100"),
+    OAUTH_REFRESH_REUSE_INTERVAL_SECONDS: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(Number.MAX_SAFE_INTEGER)
+      .default(0),
     MAX_CONCURRENT_REQUESTS: z.coerce.number().int().min(1).default(64),
     DATABASE_POOL_MAX: z.coerce.number().int().min(1).optional(),
     DATABASE_POOL_IDLE_TIMEOUT_MS: z.coerce
@@ -149,6 +155,8 @@ const environmentSchema = z
     rootAdminSecret: environment.ROOT_ADMIN_SECRET,
     rootAdminBreakGlass: environment.ROOT_ADMIN_BREAK_GLASS === "true",
     authPagesUrl: environment.AUTH_PAGES_URL,
+    oauthRefreshReuseIntervalSeconds:
+      environment.OAUTH_REFRESH_REUSE_INTERVAL_SECONDS,
     maxConcurrentRequests: environment.MAX_CONCURRENT_REQUESTS,
     databasePoolMax:
       environment.DATABASE_POOL_MAX ??

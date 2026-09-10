@@ -25,6 +25,7 @@ import { recordRejectedSignIn } from "./http/signin-audit.ts";
 import { createId } from "./lib/id.ts";
 import { limitRequestBody } from "./http/request-limits.ts";
 import { checkReadiness } from "./services/readiness.ts";
+import { publicOAuthMetadata } from "./http/oauth-metadata.ts";
 
 const requestIdPattern = /^[A-Za-z0-9._:-]{1,128}$/;
 
@@ -87,6 +88,31 @@ export function createApp(services: AppServices) {
     }),
   );
   app.route("/api/admin/v1", createAdminApp(services));
+
+  for (const [path, operationId] of [
+    ["/.well-known/openid-configuration", "getOpenIdConfiguration"],
+    ["/.well-known/oauth-authorization-server", "getOAuthAuthorizationServer"],
+  ] as const)
+    app.get(
+      path,
+      describeRoute({
+        operationId,
+        summary: "Read the public OAuth provider metadata",
+        tags: ["Token"],
+        responses: {
+          200: {
+            description:
+              "Native issuer, signing keys and supported public endpoints",
+            content: {
+              "application/json": {
+                schema: resolver(z.record(z.string(), z.unknown())),
+              },
+            },
+          },
+        },
+      }),
+      (context) => publicOAuthMetadata(services.auth, context.req.raw),
+    );
 
   app.get(
     "/healthz",

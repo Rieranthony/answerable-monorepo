@@ -74,8 +74,8 @@ export const organizationCapabilities = pgTable(
       "organization_capabilities_target_check",
       sql`
     (${table.grantKind} = 'admin_session' and ${table.clientId} is null and ${table.resource} is not null)
-    or (${table.grantKind} = 'authorization_code' and ${table.clientId} is not null)
-    or (${table.grantKind} in ('refresh_token', 'client_credentials') and ${table.clientId} is not null and ${table.resource} is not null)`,
+    or (${table.grantKind} in ('authorization_code', 'refresh_token') and ${table.clientId} is not null)
+    or (${table.grantKind} = 'client_credentials' and ${table.clientId} is not null and ${table.resource} is not null)`,
     ),
     check(
       "organization_capabilities_scopes_check",

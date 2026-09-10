@@ -562,8 +562,17 @@ test("platform user approvals distinguish login, exact pair and renewal across t
       ).toBe(true);
     }
   }
+  expect(
+    (
+      await request("POST", base(), {
+        clientId: machine.clientId,
+        resource: null,
+        grantKind: "refresh_token",
+        scopes: ["openid"],
+      })
+    ).status,
+  ).toBe(201);
   for (const target of [
-    { resource: null, grantKind: "refresh_token", scopes: ["openid"] },
     { resource: null, grantKind: "authorization_code", scopes: ["tool:read"] },
     {
       resource: machine.resource,

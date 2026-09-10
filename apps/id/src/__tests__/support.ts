@@ -27,6 +27,7 @@ export function testEnvironment(
     ],
     trustedOrigins: [],
     authPagesUrl: "http://localhost:47100",
+    oauthRefreshReuseIntervalSeconds: 0,
     maxConcurrentRequests: 64,
     databasePoolMax: 1,
     databasePoolIdleTimeoutMs: 1_000,
@@ -84,6 +85,26 @@ export function stubAuth(): Auth {
           },
         },
         paths: {
+          "/jwks": { get: { responses: { "200": { description: "OK" } } } },
+          "/oauth2/authorize": {
+            get: { responses: { "302": { description: "Redirect" } } },
+          },
+          "/oauth2/flow": {
+            post: { responses: { "200": { description: "OK" } } },
+          },
+          "/oauth2/continue": {
+            post: { responses: { "200": { description: "OK" } } },
+          },
+          "/oauth2/consent": {
+            post: { responses: { "200": { description: "OK" } } },
+          },
+          "/oauth2/userinfo": {
+            get: { responses: { "200": { description: "OK" } } },
+            post: { responses: { "200": { description: "OK" } } },
+          },
+          "/oauth2/revoke": {
+            post: { responses: { "200": { description: "OK" } } },
+          },
           "/sso/reauthenticate": {
             post: { responses: { "200": { description: "OK" } } },
           },

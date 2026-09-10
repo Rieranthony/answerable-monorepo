@@ -884,7 +884,7 @@ test("concurrent independently verified bindings cannot assign one target identi
 });
 
 test("a stale committed replay requires reauthentication and then recovers the original receipt", async () => {
-  const time = Math.floor(Date.now() / 1000) - 299;
+  const time = Math.floor(Date.now() / 1000) - 297;
   const cookie = await login(time);
   const url = `/api/admin/v1/organizations/${fixture.tenant.organizationId}/members/${fixture.principals.tenantReader.memberId}`;
   const command = (value: string) =>

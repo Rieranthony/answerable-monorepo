@@ -344,6 +344,34 @@
       "when": 1789055519827,
       "tag": "0048_session_account_provenance",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1789077130850,
+      "tag": "0049_user_oauth_authentication",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1789077420389,
+      "tag": "0050_client_login_renewal",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1789077823218,
+      "tag": "0051_user_oauth_subjects",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1789079865787,
+      "tag": "0052_user_oauth_reserved_claims",
+      "breakpoints": true
     }
   ]
 }
