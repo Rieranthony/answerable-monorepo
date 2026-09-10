@@ -4,7 +4,7 @@ import { Public_Sans } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { createMetadata, SITE } from "@/lib/metadata"
-import { cn } from "@/lib/utils"
+import { cn } from "@answerable/ui/lib/utils"
 
 const publicSans = Public_Sans({ subsets: ["latin"], variable: "--font-sans" })
 

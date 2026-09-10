@@ -3,8 +3,11 @@
 import { useActionState, useEffect, useRef } from "react"
 
 import { joinWaitlist, type WaitlistState } from "@/app/actions"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { Button } from "@answerable/ui/components/button"
+import { CountrySelect } from "@answerable/ui/components/country-select"
+import { Field, FieldLabel, FieldError } from "@answerable/ui/components/field"
+import { Form } from "@answerable/ui/components/form"
+import { Input } from "@answerable/ui/components/input"
 
 const initialState: WaitlistState = { status: "idle" }
 
@@ -32,40 +35,42 @@ export function WaitlistForm() {
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <form
-        action={formAction}
-        className="border-border focus-within:border-ring flex w-full max-w-sm items-center border p-1 transition-colors"
-      >
+    <Form
+      action={formAction}
+      errors={state.status === "error" ? state.errors : undefined}
+      className="w-full max-w-sm"
+    >
+      <Field name="email">
+        <FieldLabel>Email</FieldLabel>
         <Input
           ref={inputRef}
-          type="email"
+          type="text"
+          inputMode="email"
           name="email"
-          required
           autoComplete="email"
-          aria-label="Email address"
           placeholder="you@practice.com"
-          className="h-9 bg-transparent px-2 text-sm focus-visible:ring-0"
         />
-        <Button
-          type="submit"
-          disabled={pending}
-          className="h-9 gap-1.5 px-3 text-sm"
+        <FieldError />
+      </Field>
+      <Field name="country">
+        <FieldLabel nativeLabel={false}>Country</FieldLabel>
+        <CountrySelect name="country" />
+        <FieldError />
+      </Field>
+      <Button type="submit" disabled={pending} className="w-full gap-1.5">
+        {pending ? "Registering…" : "Register your interest"}
+        <span
+          aria-hidden="true"
+          className="font-system text-primary-foreground/60"
         >
-          {pending ? "Registering…" : "Register your interest"}
-          <span
-            aria-hidden="true"
-            className="font-system text-primary-foreground/60"
-          >
-            ⏎
-          </span>
-        </Button>
-      </form>
-      {state.status === "error" && (
+          ⏎
+        </span>
+      </Button>
+      {state.status === "error" && state.message && (
         <p role="alert" className="text-sm/6 font-medium">
           {state.message}
         </p>
       )}
-    </div>
+    </Form>
   )
 }

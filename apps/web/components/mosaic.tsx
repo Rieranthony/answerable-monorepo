@@ -12,7 +12,7 @@ import {
   computeMosaicLayout,
   MOSAIC,
 } from "@/lib/mosaic-layout"
-import { cn } from "@/lib/utils"
+import { cn } from "@answerable/ui/lib/utils"
 
 /**
  * The hero mosaic: one photo clipped into the logo's shapes on one inline

@@ -3,7 +3,7 @@
 import { Check, Copy } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
-import { Button } from "@/components/ui/button"
+import { Button } from "@answerable/ui/components/button"
 
 export function PageActions({ pageUrl }: { pageUrl: string }) {
   const [copied, setCopied] = useState(false)

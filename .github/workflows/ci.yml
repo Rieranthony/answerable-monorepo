@@ -46,6 +46,9 @@ jobs:
       - name: Test web
         run: bun --filter web test
 
+      - name: Test countries
+        run: bun --filter @answerable/countries test
+
       - name: Test with coverage
         run: bun --filter @answerable/id test:coverage
 

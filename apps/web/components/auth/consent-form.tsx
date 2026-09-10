@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 
-import { Button } from "@/components/ui/button"
+import { Button } from "@answerable/ui/components/button"
 import { authClient } from "@/lib/auth/client"
 
 const SCOPE_COPY: Record<string, string> = {

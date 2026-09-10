@@ -10,6 +10,8 @@ The [enterprise foundation](docs/05-id-enterprise-foundation.md) is in progress.
 | --- | --- | --- |
 | `apps/web` | Public site (Next.js 16): the waitlist one-pager, the Answerable ID browser pages, and the docs at `/docs` (Fumadocs, Markdown for agents at `.md` and `/llms.txt`) | Live |
 | `apps/id` | **Answerable ID** — identity broker for client orgs, OIDC login provider for our apps, OAuth 2.1 authorization server for hosted MCP servers | Machine issuance, SSO and administration implemented; enterprise foundation in progress — [current checklist](task_plan.md) |
+| `packages/ui` | Shared React UI: shadcn base-nova components on Base UI and the Tailwind theme, consumed as source by apps/web | Live |
+| `packages/countries` | ISO country list, priority order and flag URL helper; framework-free | Live |
 | `apps/community-mcp` | The tutor MCP (the Omni Accelerator community inside OmniChat) | **Parked** until Answerable ID ships — its docs and Circle mocks stay in that folder, out of the plan |
 
 ## Reading order
@@ -34,7 +36,7 @@ cp .env.example .env
 bun dev
 ```
 
-`apps/web` reads its own env file: `cp apps/web/.env.example apps/web/.env.local`. `ATTIO_API_KEY` is optional locally (without it the waitlist form logs the address to the terminal and reports success) and required in production, where the form returns an error if it is missing. The file explains how to create the token and find the list.
+`apps/web` reads its own env file: `cp apps/web/.env.example apps/web/.env.local`. The waitlist form writes to a Google Sheet through a service account (`GOOGLE_SHEETS_ID`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`). All three are optional locally (without them the form logs the address to the terminal and reports success) and required in production, where the form returns an error if any is missing. The file walks through creating the service account and sharing the sheet.
 
 | Service | Host port | Purpose |
 | --- | --- | --- |

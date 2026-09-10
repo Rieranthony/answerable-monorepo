@@ -1,210 +1,197 @@
 import { describe, expect, mock, test } from "bun:test"
-
-import {
-  entryUpserted,
-  fakeFetch,
-  json,
-  personUpserted,
-  throwing,
-} from "./test-helpers"
+import { COLUMNS, type SheetsConfig } from "./sheets"
+import { fakeWorksheet } from "./test-helpers"
 import { MESSAGES, submitWaitlist } from "./waitlist"
 
 const productionEnv = {
   NODE_ENV: "production",
-  ATTIO_API_KEY: "test-key",
-  ATTIO_WAITLIST_LIST: "waitlist",
+  GOOGLE_SHEETS_ID: "sheet-id",
+  GOOGLE_SERVICE_ACCOUNT_EMAIL: "sa@x.iam.gserviceaccount.com",
+  GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY:
+    "-----BEGIN PRIVATE KEY-----\\nTESTKEY\\n-----END PRIVATE KEY-----\\n",
 }
-
 function harness(
-  responses: Array<() => Response> = [],
+  initial: Parameters<typeof fakeWorksheet>[0] = { headers: [...COLUMNS] },
   env: Record<string, string | undefined> = productionEnv,
-  sleep: (ms: number) => Promise<void> = async () => {},
 ) {
-  const { fetch, calls } = fakeFetch(responses)
+  const fake = fakeWorksheet(initial)
   const log = {
     error: mock<(line: string) => void>(() => {}),
-    warn: mock<(line: string) => void>(() => {}),
     info: mock<(line: string) => void>(() => {}),
   }
-  const submit = (email: string) =>
-    submitWaitlist(email, { env, fetch, log, sleep })
-  const body = (index: number) => JSON.parse(String(calls[index]?.init.body))
+  const opened: SheetsConfig[] = []
+  const submit = (email: string, country = "GB") =>
+    submitWaitlist(
+      { email, country },
+      {
+        env,
+        log,
+        openSheet: async (config) => {
+          opened.push(config)
+          return { sheet: fake.worksheet, timeZone: "UTC" }
+        },
+        now: () => new Date("2026-09-09T10:00:00.000Z"),
+      },
+    )
   const lines = (level: keyof typeof log) =>
-    log[level].mock.calls.map((call) => String(call[0]))
-  const logged = () =>
-    [...lines("error"), ...lines("warn"), ...lines("info")].join("\n")
-  return { submit, calls, log, body, lines, logged }
+    log[level].mock.calls.map((call) => call[0])
+  return { ...fake, log, opened, submit, lines }
 }
+const success = { status: "success", email: "a@b.com" } as const
+const failed = { status: "error", message: MESSAGES.failed } as const
 
 describe("unit: waitlist", () => {
-  test("rejects an empty email without calling Attio", async () => {
-    const { submit, calls } = harness()
-
-    expect(await submit("")).toEqual({
-      status: "error",
-      message: MESSAGES.empty,
-    })
-    expect(await submit("   ")).toEqual({
-      status: "error",
-      message: MESSAGES.empty,
-    })
-    expect(calls).toHaveLength(0)
-  })
-
-  test("rejects a malformed email", async () => {
-    const { submit, calls } = harness()
-
-    for (const email of [
-      "nope",
-      "a@b",
-      "a b@c.d",
-      `${"a".repeat(250)}@b.com`,
-    ]) {
-      expect(await submit(email)).toEqual({
+  test("rejects empty and whitespace-only input before opening the sheet", async () => {
+    const h = harness()
+    for (const email of ["", "   "])
+      expect(await h.submit(email)).toEqual({
         status: "error",
-        message: MESSAGES.invalid,
+        errors: { email: MESSAGES.empty },
+      })
+    expect(h.opened).toEqual([])
+  })
+  test("rejects malformed and overlong addresses before opening the sheet", async () => {
+    const h = harness()
+    for (const email of ["nope", "a@b", "a b@c.d", `${"a".repeat(250)}@b.com`])
+      expect(await h.submit(email)).toEqual({
+        status: "error",
+        errors: { email: MESSAGES.invalid },
+      })
+    expect(h.opened).toEqual([])
+  })
+  test("rejects missing and unknown countries before opening the sheet", async () => {
+    const h = harness()
+    for (const country of ["", "  ", "ZZ"]) {
+      expect(await h.submit("a@b.com", country)).toEqual({
+        status: "error",
+        errors: { country: MESSAGES.country },
       })
     }
-    expect(calls).toHaveLength(0)
+    expect(h.opened).toEqual([])
   })
-
-  test("normalizes case and whitespace before sending", async () => {
-    const { submit, body } = harness([personUpserted, entryUpserted])
-
-    expect(await submit("  Foo@Example.COM ")).toEqual({
+  test("collects both field errors", async () => {
+    const h = harness()
+    expect(await h.submit("", "")).toEqual({
+      status: "error",
+      errors: { email: MESSAGES.empty, country: MESSAGES.country },
+    })
+    expect(h.opened).toEqual([])
+  })
+  test("normalises the country and stores its name", async () => {
+    const h = harness()
+    expect(await h.submit("a@b.com", " gb ")).toEqual(success)
+    expect(h.rows[0].country_code).toBe("GB")
+    expect(h.rows[0].country_name).toBe("United Kingdom")
+  })
+  test("logs header extension", async () => {
+    const h = harness({
+      headers: ["email", "first_seen_at", "last_seen_at", "contacted"],
+    })
+    expect(await h.submit("a@b.com")).toEqual(success)
+    expect(h.lines("info")).toEqual([
+      '[waitlist] sheets_header_extended {"email":"a@b.com","columns":"country_code,country_name"}',
+    ])
+  })
+  test("stores trimmed lowercase addresses", async () => {
+    const h = harness()
+    expect(await h.submit("  Foo@Example.COM ")).toEqual({
       status: "success",
       email: "foo@example.com",
     })
-    expect(body(0).data.values.email_addresses).toEqual([
-      { email_address: "foo@example.com" },
-    ])
+    expect(h.rows[0].email).toBe("foo@example.com")
   })
-
-  test("logs and succeeds without a key outside production", async () => {
-    const { submit, calls, log, lines } = harness([], {
-      NODE_ENV: "development",
-    })
-
-    expect(await submit("a@b.com")).toEqual({
-      status: "success",
-      email: "a@b.com",
-    })
-    expect(calls).toHaveLength(0)
-    expect(lines("info")).toEqual([
-      '[waitlist] attio_not_configured_signup_logged_only {"email":"a@b.com"}',
+  test("logs and succeeds unconfigured outside production", async () => {
+    const h = harness(undefined, { NODE_ENV: "development" })
+    expect(await h.submit("a@b.com")).toEqual(success)
+    expect(h.lines("info")).toEqual([
+      '[waitlist] sheets_not_configured_signup_logged_only {"email":"a@b.com"}',
     ])
-    expect(log.error).not.toHaveBeenCalled()
+    expect(h.log.error).not.toHaveBeenCalled()
+    expect(h.opened).toEqual([])
   })
-
-  test("fails loudly without a key in production", async () => {
-    const { submit, calls, lines } = harness([], { NODE_ENV: "production" })
-
-    expect(await submit("a@b.com")).toEqual({
-      status: "error",
-      message: MESSAGES.failed,
-    })
-    expect(calls).toHaveLength(0)
-    expect(lines("error")).toEqual([
-      '[waitlist] attio_not_configured {"email":"a@b.com"}',
+  test("fails unconfigured in production", async () => {
+    const h = harness(undefined, { NODE_ENV: "production" })
+    expect(await h.submit("a@b.com")).toEqual(failed)
+    expect(h.lines("error")).toEqual([
+      '[waitlist] sheets_not_configured {"email":"a@b.com"}',
     ])
+    expect(h.log.info).not.toHaveBeenCalled()
+    expect(h.opened).toEqual([])
   })
-
-  test("upserts the person and the list entry", async () => {
-    const { submit, calls, logged } = harness([personUpserted, entryUpserted])
-
-    expect(await submit("a@b.com")).toEqual({
-      status: "success",
-      email: "a@b.com",
+  test("treats partial config as unconfigured", async () => {
+    const h = harness(undefined, {
+      NODE_ENV: "production",
+      GOOGLE_SHEETS_ID: "sheet-id",
     })
-    expect(calls).toHaveLength(2)
-    expect(logged()).toBe("")
+    expect(await h.submit("a@b.com")).toEqual(failed)
+    expect(h.lines("error")).toEqual([
+      '[waitlist] sheets_not_configured {"email":"a@b.com"}',
+    ])
+    expect(h.opened).toEqual([])
   })
-
-  test("maps an Attio input rejection to the invalid-email message", async () => {
-    const { submit, lines } = harness([
-      json(400, { code: "validation_type", message: "invalid email domain" }),
-    ])
-
-    expect(await submit("a@b.zz")).toEqual({
-      status: "error",
-      message: MESSAGES.invalid,
-    })
-    expect(lines("warn")).toEqual([
-      '[waitlist] attio_rejected_email {"email":"a@b.zz","kind":"invalid_input","status":400,"code":"validation_type","message":"invalid email domain"}',
-    ])
+  test("inserts successfully without logging", async () => {
+    const h = harness()
+    expect(await h.submit("a@b.com")).toEqual(success)
+    expect(h.rows).toHaveLength(1)
+    expect(h.log.error).not.toHaveBeenCalled()
+    expect(h.log.info).not.toHaveBeenCalled()
   })
-
-  test("treats duplicate matches as already known", async () => {
-    const { submit, lines } = harness([
-      json(409, { code: "MULTIPLE_MATCH_RESULTS", message: "dupes" }),
+  test("logs header creation on first use", async () => {
+    const h = harness({})
+    expect(await h.submit("a@b.com")).toEqual(success)
+    expect(h.lines("info")).toEqual([
+      '[waitlist] sheets_header_created {"email":"a@b.com"}',
     ])
-
-    expect(await submit("a@b.com")).toEqual({
-      status: "success",
-      email: "a@b.com",
-    })
-    expect(lines("warn")).toHaveLength(1)
-    expect(lines("warn")[0]).toStartWith("[waitlist] attio_multiple_matches ")
-    expect(lines("warn")[0]).toContain('"kind":"multiple_matches"')
+    expect(h.log.error).not.toHaveBeenCalled()
   })
-
-  test("returns the generic error on Attio failure and logs the details", async () => {
-    const { submit, lines } = harness([json(500, {}), json(500, {})])
-
-    expect(await submit("a@b.com")).toEqual({
-      status: "error",
-      message: MESSAGES.failed,
-    })
-    expect(lines("error")).toEqual([
-      '[waitlist] attio_failed {"email":"a@b.com","kind":"server","status":500,"message":"{}"}',
-    ])
+  test("repeated submissions succeed and leave one row", async () => {
+    const h = harness()
+    expect(await h.submit("a@b.com")).toEqual(success)
+    expect(await h.submit("a@b.com")).toEqual(success)
+    expect(h.rows).toHaveLength(1)
+    expect(h.calls.addRow).toHaveLength(1)
+    expect(h.calls.saveUpdatedCells).toHaveLength(1)
   })
-
-  test("still succeeds when only the list step fails", async () => {
-    const { submit, lines } = harness([
-      personUpserted,
-      json(404, { code: "not_found", message: "List not found" }),
-    ])
-
-    expect(await submit("a@b.com")).toEqual({
-      status: "success",
-      email: "a@b.com",
-    })
-    expect(lines("error")).toEqual([
-      '[waitlist] attio_list_entry_failed {"email":"a@b.com","kind":"not_found","status":404,"code":"not_found","message":"List not found"}',
-    ])
-  })
-
-  test("logs failures that are not Attio errors", async () => {
-    const { submit, lines } = harness(
-      [json(500, {})],
-      productionEnv,
-      async () => {
-        throw new Error("boom")
+  test("logs worksheet failures and returns the generic message", async () => {
+    const h = harness({
+      fail: {
+        loadHeaderRow: new Error(
+          "Google API error - [403] The caller does not have permission",
+        ),
       },
-    )
-
-    expect(await submit("a@b.com")).toEqual({
-      status: "error",
-      message: MESSAGES.failed,
     })
-    expect(lines("error")).toEqual([
-      '[waitlist] attio_failed {"email":"a@b.com","message":"boom"}',
+    expect(await h.submit("a@b.com")).toEqual(failed)
+    expect(h.lines("error")).toEqual([
+      '[waitlist] sheets_failed {"email":"a@b.com","message":"Google API error - [403] The caller does not have permission"}',
     ])
   })
-
-  test("never logs the API key", async () => {
-    const { submit, logged } = harness([
-      json(401, { message: "Unauthorized" }),
-      throwing(new TypeError("fetch failed")),
-      throwing(new TypeError("fetch failed")),
+  test("truncates logged error messages to 500 characters", async () => {
+    const h = harness({ fail: { loadHeaderRow: new Error("x".repeat(700)) } })
+    expect(await h.submit("a@b.com")).toEqual(failed)
+    expect(h.lines("error")).toEqual([
+      `[waitlist] sheets_failed ${JSON.stringify({ email: "a@b.com", message: "x".repeat(500) })}`,
     ])
-
-    await submit("a@b.com")
-    await submit("a@b.com")
-
-    expect(logged()).toContain('"kind":"auth"')
-    expect(logged()).toContain('"kind":"network"')
-    expect(logged()).not.toContain("test-key")
+  })
+  test("redacts every private key occurrence before truncating", async () => {
+    const key = productionEnv.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY.replace(
+      /\\n/g,
+      "\n",
+    )
+    const h = harness({
+      fail: { loadHeaderRow: new Error(`before ${key} middle ${key} after`) },
+    })
+    expect(await h.submit("a@b.com")).toEqual(failed)
+    expect(h.lines("error")).toEqual([
+      '[waitlist] sheets_failed {"email":"a@b.com","message":"before [redacted] middle [redacted] after"}',
+    ])
+    expect(h.lines("error").join()).not.toContain("TESTKEY")
+    expect(h.opened[0].privateKey).toBe(key)
+  })
+  test("logs non-Error throws", async () => {
+    const h = harness({ fail: { loadHeaderRow: "boom" } })
+    expect(await h.submit("a@b.com")).toEqual(failed)
+    expect(h.lines("error")).toEqual([
+      '[waitlist] sheets_failed {"email":"a@b.com","message":"boom"}',
+    ])
   })
 })

@@ -13,5 +13,8 @@ export async function joinWaitlist(
   _previous: WaitlistState,
   formData: FormData,
 ): Promise<WaitlistState> {
-  return submitWaitlist(String(formData.get("email") ?? ""))
+  return submitWaitlist({
+    email: String(formData.get("email") ?? ""),
+    country: String(formData.get("country") ?? ""),
+  })
 }

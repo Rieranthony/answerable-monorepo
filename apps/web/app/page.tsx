@@ -36,12 +36,8 @@ const ACCREDITATION_BENEFITS = [
     body: "Develop your AI policy and handbook with guided resources and templates, shaped around your practice rather than written from scratch.",
   },
   {
-    lead: "An accreditation you’ve earned.",
-    body: "Demonstrate your competence through formal examination to qualify as an Answerable AP.",
-  },
-  {
-    lead: "Recognition others can verify.",
-    body: "Successful candidates join the public register of Answerable Accredited Professionals.",
+    lead: "An accreditation others can verify.",
+    body: "Demonstrate your competence through formal examination, and take your place on the public register of Accredited Professionals.",
   },
   {
     lead: "A community to keep learning with.",
@@ -181,12 +177,12 @@ export default function Page() {
                       {ACCREDITATION_BENEFITS.map(({ lead, body }) => (
                         <li key={lead} className="flex gap-2">
                           <BulletSquare />
-                          <p className="text-foreground/75 text-sm/6">
-                            <strong className="text-foreground font-bold">
-                              {lead}
-                            </strong>{" "}
-                            {body}
-                          </p>
+                          <div>
+                            <p className="text-sm/6 font-bold">{lead}</p>
+                            <p className="text-foreground/75 text-sm/6">
+                              {body}
+                            </p>
+                          </div>
                         </li>
                       ))}
                     </ul>
