@@ -15,7 +15,7 @@ User authorises this task to manage implementation of the six completed plans, i
 
 | Owner | Exact task title | Task ID | State |
 | --- | --- | --- | --- |
-| T1 | Plan ID tenant authentication and authority | 01a08b80-277b-7382-be76-51e1b7c18b10 | Initiation fix integrated; next owner: tenant admission/provenance slice |
+| T1 | Plan ID tenant authentication and authority | 01a08b80-277b-7382-be76-51e1b7c18b10 | Admission/provenance integrated at 40b09b6; idle pending freshness choice and linking dispatch |
 | T2 | Plan ID production OAuth and consent | 01a08b80-50b2-79e0-880a-46d1a5a33dfe | Plan complete; implementation not dispatched |
 | T3 | Plan ID audit lifecycle and retention | 01a08b80-6407-7a03-9ac8-ee28ba12c4f7 | Soft deletion accepted/integrated at 3e09ad1; idle |
 | T4 | Plan ID capacity operations and recovery | 01a08b80-c0dd-7793-858b-678a943deda7 | Plan complete; implementation not dispatched |
@@ -65,13 +65,20 @@ The user explicitly accepted both recommendations and specified soft deletion:
 
 ## Next coordinator action
 
-T3 soft deletion is accepted and integrated at 3e09ad1 (source f5aaf47abe138825ab1132dddc242f0361d2a62e). Dispatch T1 from this baseline for current own-tenant authentication admission and account provenance. T1 is the sole implementation/shared DB owner once dispatched. Explicit identity binding and sensitive-command freshness enforcement follow that bounded slice; the proposed freshness duration is not yet an approved product decision. T2 remains pending the authentication handoff. No purge or migration squash yet.
+T1 admission/provenance was reviewed and integrated at 40b09b6 (source ad72a4f184a30c7c357c06d2ff9f7b5ae77a4e2d). Worker is terminal, clean and has released the shared DB slot. The next bounded T1 slice is deliberate verified identity linking and sensitive-command freshness enforcement, then T2 production OAuth. A concise question has been presented to the user: five-minute (recommended) or fifteen-minute verified SSO freshness for sensitive changes and linking; ordinary browsing keeps normal session lifetime. Do not repeat this question or infer an answer. No implementation worker currently owns the DB. Once the choice arrives, dispatch T1 from the latest integration commit with its report and the chosen duration. Keep native proof of both identities, no email merge or account transfer, and atomic linking audit/replay. No purge or migration squash yet.
 
 Review adjustment to T3's proposal: do not accidentally remove the existing explicit membership reinstatement feature. Distinguish reversible membership revocation from product/entity deletion. No automatic SSO resurrection is allowed, but explicit reinstatement of a revoked membership remains a supported command unless the user changes that contract. If a genuine conflict requires changing public semantics, bring that concrete conflict to the coordinator rather than silently making reinstatement unreachable.
 
 ## Follow-up automation
 
 Thread heartbeat `coordinate-id-foundation-completion` is active every ten minutes. It checks the current owner and advances only after review/integration. It stays quiet on unchanged status and pauses after actual completion. It cannot supply missing user decisions. The coordinator retains responsibility for the integration branch; no other task may dispatch peers.
+
+## Integrated tenant admission checkpoint
+
+- T1 source ad72a4f was accepted as 40b09b6. Reviewed the shared authentication decision, caller locks/scopes, post-wait time checks, account/user/issuer/provider binding, immutable session fields, native verified auth_time handling, tenant-specific human grants and command revalidation before replay.
+- Removed membership-derived sign-in attribution and its extra selection write; success version 2 carries verified origin. Existing after-callback audit lifecycle remains; this is not a claim of atomic production OAuth issuance.
+- Checked behavioural tests for A/B isolation, independent B SSO, platform support, provider races, expiry during waits, replay, invalid times and provenance rollback. Verified raw final log: 1,944 pass, zero failures, 26,713 assertions, 100% line/function coverage, 514.08s, exit 0. Typecheck/lint/build/web71/countries5 pass. Evidence paths and exact T2 provenance handoff: reports/id-tenant-authentication.md.
+- Integrated application/docs trees equal the tested source commit; no unchanged full-suite repeat. T1 confirmed no test roles remain and DB work stopped. Deliberate linking and freshness enforcement are still required; persisted grant snapshot/code/refresh/actual claims remain T2 work.
 
 ## Latest review checkpoint
 
