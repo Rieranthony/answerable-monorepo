@@ -58,7 +58,7 @@ curl "$ID_URL/auth/oauth2/token" \
 
 For a service grant, include the same `resource` URL. Public clients use their registered `none` authentication method and send `client_id` without a secret. Registered confidential clients use HTTP Basic, `client_secret_post` or `private_key_jwt`; assertion audiences bind to the particular endpoint and each request requires a fresh assertion.
 
-**ID token.** Verify its signature using discovery's keys, issuer, audience, expiry and nonce. `sub` is the stable global user UUID. Email is display data.
+**ID token.** Returned only when the issued scopes include `openid`. Verify its signature using discovery's keys, issuer, audience and expiry. At code exchange, also verify the original nonce; refresh ID tokens omit it. `sub` is the stable global user UUID. Profile and email claims come from UserInfo under the consented scopes or individual claims request, not from the ID token. Email is display data.
 
 **Access token.** Login-only tokens are opaque and can call UserInfo. Service tokens are JWTs whose audience includes the requested resource. An ID token is not a service access token. Native token expiry comes from provider defaults and configured resource lifetimes; the immutable authorisation context also expires after 30 days.
 
@@ -91,6 +91,8 @@ curl "$ID_URL/auth/oauth2/token" \
 ```
 
 Include the original resource for service renewal. Save the returned replacement refresh token. A narrowed `scope` must fit the current token and original grant. Dropped permissions cannot be recovered by widening a later refresh request.
+
+Removing `openid` removes the ID token. Removing `offline_access` can return one final replacement refresh token with the narrowed scopes; using that token returns access without another refresh token. Resource scope filtering also applies to identity scopes. Use the response's `scope` and token fields as the issued contract.
 
 Every exchange checks the original authentication tuple, current user/account/provider/membership, client/resource state and permissions. Provider replacement, terminal deletion or administrative grant revocation prevents renewal. Ordinary sign-out preserves delegation; [explicit administrative session revocation](/docs/id/manage#global-session-retries) revokes the affected grants.
 

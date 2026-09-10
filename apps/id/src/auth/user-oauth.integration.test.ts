@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import type { oauthProvider } from "@better-auth/oauth-provider";
+import type { jwt } from "better-auth/plugins/jwt";
+import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
 import { decodeJwt, exportJWK, generateKeyPair, SignJWT } from "jose";
 import { and, eq, sql } from "drizzle-orm";
 import { createAdminFixture, type AdminFixture } from "../__tests__/admin.ts";
@@ -23,6 +25,8 @@ import {
   accounts,
   ssoProviders,
   oauthRefreshTokens,
+  oauthAccessTokens,
+  oauthConsents,
 } from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
 import { createCapability } from "../services/capabilities.ts";
@@ -341,6 +345,7 @@ test("refresh survives browser sign-out and can narrow resource scopes without c
     fixture.tenant.organizationId,
   );
   expect(next.id_token).toBeUndefined();
+  expect(typeof next.refresh_token).toBe("string");
   expect(
     (
       await exchange({
@@ -360,6 +365,13 @@ test("refresh survives browser sign-out and can narrow resource scopes without c
       })
     ).status,
   ).toBe(400);
+  const final = await exchange({
+    grant_type: "refresh_token",
+    refresh_token: next.refresh_token,
+    resource,
+  });
+  expect(final.status).toBe(200);
+  expect((await final.json()).refresh_token).toBeUndefined();
 });
 
 test("unknown revocation and opaque access revocation do not revoke another grant", async () => {
@@ -516,6 +528,383 @@ test("refresh audit failure rolls back rotation and leaves the original token us
     await fixture.db.execute(sql`drop function reject_refresh_audit()`);
   }
   expect((await exchange(input)).status).toBe(200);
+});
+
+test("missing native ID token rolls back code, refresh material and issuance audit", async () => {
+  const code = await authorize();
+  const signer = auth.options.plugins.find(
+    (plugin) => plugin.id === "jwt",
+  ) as ReturnType<typeof jwt>;
+  const { privateKey } = await generateKeyPair("EdDSA");
+  signer.options.jwks = {
+    ...signer.options.jwks,
+    keyPairConfig: { alg: "EdDSA" },
+  };
+  signer.options.jwt!.sign = async (payload, header) =>
+    payload.nonce
+      ? undefined!
+      : new SignJWT(payload)
+          .setProtectedHeader({ alg: "EdDSA", ...header })
+          .sign(privateKey);
+  const input = {
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: redirect,
+    code_verifier: verifier,
+    resource,
+  };
+  expect((await exchange(input)).status).toBe(400);
+  expect(await fixture.db.$count(oauthRefreshTokens)).toBe(0);
+  expect(
+    await fixture.db.$count(
+      auditEvents,
+      eq(auditEvents.action, "oauth.user.issued"),
+    ),
+  ).toBe(0);
+  signer.options.jwt!.sign = undefined;
+  expect((await exchange(input)).status).toBe(200);
+});
+
+test("divergent returned refresh persistence rolls back native rotation and audit", async () => {
+  const issued = await issue();
+  await fixture.db.execute(
+    sql`create function corrupt_refresh_output() returns trigger language plpgsql as $$ begin NEW.scopes := ARRAY['email']; return NEW; end $$`,
+  );
+  await fixture.db.execute(
+    sql`create trigger corrupt_refresh_output before insert on oauth_refresh_tokens for each row execute function corrupt_refresh_output()`,
+  );
+  const input = {
+    grant_type: "refresh_token",
+    refresh_token: issued.refresh_token,
+    resource,
+    scope: "mail:read",
+  };
+  try {
+    expect((await exchange(input)).status).toBe(400);
+    expect(await fixture.db.$count(oauthRefreshTokens)).toBe(1);
+    expect(
+      (await fixture.db.select().from(oauthRefreshTokens))[0]!.revoked,
+    ).toBeNull();
+    expect(
+      await fixture.db.$count(
+        auditEvents,
+        eq(auditEvents.action, "oauth.user.issued"),
+      ),
+    ).toBe(1);
+  } finally {
+    await fixture.db.execute(
+      sql`drop trigger corrupt_refresh_output on oauth_refresh_tokens`,
+    );
+    await fixture.db.execute(sql`drop function corrupt_refresh_output()`);
+  }
+  expect((await exchange(input)).status).toBe(200);
+});
+
+test("native JWT scope, lifetime, type and ID nonce or profile divergences preserve the code", async () => {
+  const code = await authorize();
+  const signer = auth.options.plugins.find(
+    (plugin) => plugin.id === "jwt",
+  ) as ReturnType<typeof jwt>;
+  const { privateKey } = await generateKeyPair("EdDSA");
+  signer.options.jwks = {
+    ...signer.options.jwks,
+    keyPairConfig: { alg: "EdDSA" },
+  };
+  const input = {
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: redirect,
+    code_verifier: verifier,
+    resource,
+  };
+  for (const fault of [
+    "access-scope",
+    "access-expiry",
+    "access-type",
+    "id-expiry",
+    "id-nonce",
+    "id-access-hash",
+    "id-email",
+    "id-name",
+  ] as const) {
+    signer.options.jwt!.sign = async (payload, header) => {
+      const changed = { ...payload };
+      const isId = payload.nonce !== undefined;
+      if (!isId && fault === "access-scope") changed.scope = "email";
+      if (!isId && fault === "access-expiry")
+        changed.exp = Number(payload.exp) + 60;
+      if (isId && fault === "id-expiry") changed.exp = Number(payload.exp) + 60;
+      if (isId && fault === "id-nonce") changed.nonce = "wrong-nonce";
+      if (isId && fault === "id-access-hash")
+        changed.at_hash = "wrong-access-hash";
+      if (isId && fault === "id-email") changed.email = "private@example.com";
+      if (isId && fault === "id-name") changed.name = "Unconsented name";
+      return new SignJWT(changed)
+        .setProtectedHeader({
+          alg: "EdDSA",
+          ...header,
+          ...(!isId && fault === "access-type" ? { typ: "JWT" } : {}),
+        })
+        .sign(privateKey);
+    };
+    expect((await exchange(input)).status, fault).toBe(400);
+    expect(await fixture.db.$count(oauthRefreshTokens), fault).toBe(0);
+    expect(
+      await fixture.db.$count(
+        auditEvents,
+        eq(auditEvents.action, "oauth.user.issued"),
+      ),
+      fault,
+    ).toBe(0);
+  }
+  signer.options.jwt!.sign = undefined;
+  expect((await exchange(input)).status).toBe(200);
+});
+
+test("opaque and refresh rows must match returned scopes, resource, reference and native expiry", async () => {
+  const code = await authorize("openid email offline_access", null);
+  const input = {
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: redirect,
+    code_verifier: verifier,
+  };
+  for (const [table, assignment] of [
+    ["oauth_access_tokens", "NEW.scopes := ARRAY['openid']"],
+    [
+      "oauth_access_tokens",
+      "NEW.resources := ARRAY['https://wrong.example/mcp']",
+    ],
+    [
+      "oauth_access_tokens",
+      "NEW.expires_at := NEW.expires_at + interval '1 second'",
+    ],
+    [
+      "oauth_refresh_tokens",
+      "NEW.resources := ARRAY['https://wrong.example/mcp']",
+    ],
+    ["oauth_refresh_tokens", "NEW.reference_id := 'wrong-grant'"],
+    [
+      "oauth_refresh_tokens",
+      "NEW.expires_at := NEW.expires_at + interval '1 second'",
+    ],
+    [
+      "oauth_refresh_tokens",
+      "NEW.auth_time := NEW.auth_time - interval '1 second'",
+    ],
+  ]) {
+    await fixture.db.execute(
+      sql.raw(
+        `create function corrupt_stored_output() returns trigger language plpgsql as $$ begin ${assignment}; return NEW; end $$`,
+      ),
+    );
+    await fixture.db.execute(
+      sql.raw(
+        `create trigger corrupt_stored_output before insert on ${table} for each row execute function corrupt_stored_output()`,
+      ),
+    );
+    try {
+      expect((await exchange(input)).status, assignment).toBe(400);
+      expect(await fixture.db.$count(oauthAccessTokens)).toBe(0);
+      expect(await fixture.db.$count(oauthRefreshTokens)).toBe(0);
+      expect(
+        await fixture.db.$count(
+          auditEvents,
+          eq(auditEvents.action, "oauth.user.issued"),
+        ),
+      ).toBe(0);
+    } finally {
+      await fixture.db.execute(
+        sql.raw(`drop trigger corrupt_stored_output on ${table}`),
+      );
+      await fixture.db.execute(sql`drop function corrupt_stored_output()`);
+    }
+  }
+  expect((await exchange(input)).status).toBe(200);
+});
+
+test("consent narrowing is authorised and audited before native resource filtering", async () => {
+  const consent = await select(await start());
+  const input = { oauth_query: consent.search.slice(1), accept: true };
+  expect(
+    (await request("/oauth2/consent", { ...input, scope: "email mail:read" }))
+      .status,
+  ).toBe(400);
+  expect(await fixture.db.$count(oauthConsents)).toBe(0);
+  const accepted = await request("/oauth2/consent", {
+    ...input,
+    scope: "mail:read",
+  });
+  expect(accepted.status).toBe(200);
+  const code = new URL((await accepted.json()).url).searchParams.get("code")!;
+  const [event] = await fixture.db
+    .select()
+    .from(auditEvents)
+    .where(eq(auditEvents.action, "oauth.user.authorized"));
+  expect(event!.data).toMatchObject({
+    scopes: ["mail:read"],
+    decision: { requestedScopes: ["mail:read"], scopes: ["mail:read"] },
+  });
+  const issued = await exchange({
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: redirect,
+    code_verifier: verifier,
+    resource,
+  });
+  expect(issued.status).toBe(200);
+  expect(await issued.json()).toMatchObject({ scope: "mail:read" });
+  const [outcome] = await fixture.db
+    .select()
+    .from(auditEvents)
+    .where(eq(auditEvents.action, "oauth.user.issued"));
+  expect(outcome!.data).toMatchObject({
+    scopes: ["mail:read"],
+    decision: { requestedScopes: ["mail:read"] },
+  });
+});
+
+test("native configured expiry and identity-scope filtering determine the full returned contract", async () => {
+  const provider = auth.options.plugins.find(
+    (plugin) => plugin.id === "oauth-provider",
+  ) as ReturnType<typeof oauthProvider>;
+  provider.options.accessTokenExpiresIn = 120;
+  provider.options.refreshTokenExpiresIn = 600;
+  provider.options.idTokenExpiresIn = 180;
+  provider.options.scopeExpirations = { "mail:read": "45s" };
+  await fixture.db
+    .update(oauthResources)
+    .set({ refreshTokenTtl: 90, allowedScopes: ["mail:read"] });
+  const issued = await issue();
+  expect(issued.scope).toBe("mail:read");
+  expect(issued.expires_in).toBe(45);
+  expect(issued.id_token).toBeUndefined();
+  const access = decodeJwt(issued.access_token);
+  const [refresh] = await fixture.db.select().from(oauthRefreshTokens);
+  expect(refresh!.scopes).toEqual(["mail:read"]);
+  expect(refresh!.expiresAt.getTime() / 1000).toBe(access.iat! + 90);
+  const login = await issue("openid email", null);
+  expect(login.refresh_token).toBeUndefined();
+  const id = decodeJwt(login.id_token);
+  expect(id.exp! - id.iat!).toBe(180);
+  expect(id.email).toBeUndefined();
+  const userInfo = await request("/oauth2/userinfo", undefined, {
+    authorization: `Bearer ${login.access_token}`,
+  });
+  expect(userInfo.status).toBe(200);
+  expect((await userInfo.json()).email).toBe("tenantadmin@tenant.example.com");
+});
+
+test("cached output and returned refresh rows are checked again without a success audit on divergence", async () => {
+  const provider = createAuth(runtime.db, {
+    ...fixture.environment,
+    oauthRefreshReuseIntervalSeconds: 60,
+  });
+  const app = createApp({
+    auth: provider,
+    db: runtime.db,
+    environment: fixture.environment,
+  });
+  auth = { ...provider, handler: async (request) => app.fetch(request) };
+  const issued = await issue();
+  const input = {
+    grant_type: "refresh_token",
+    refresh_token: issued.refresh_token,
+    resource,
+    scope: "mail:read",
+  };
+  const first = await exchange(input);
+  expect(first.status).toBe(200);
+  const saved = await first.json();
+  const [original] = await fixture.db
+    .select()
+    .from(oauthRefreshTokens)
+    .where(sql`${oauthRefreshTokens.rotatedAt} is not null`);
+  const [replacement] = await fixture.db
+    .select()
+    .from(oauthRefreshTokens)
+    .where(sql`${oauthRefreshTokens.rotatedAt} is null`);
+  const key = fixture.environment.betterAuthSecret;
+  const replay = JSON.parse(
+    await symmetricDecrypt({ key, data: original!.rotationReplayResponse! }),
+  );
+  for (const fault of [
+    "unexpected-id",
+    "missing-refresh",
+    "unknown-refresh",
+    "scope",
+    "expires-at",
+    "token-type",
+    "stored-scope",
+  ] as const) {
+    const changed = structuredClone(replay);
+    if (fault === "unexpected-id") changed.response.id_token = issued.id_token;
+    if (fault === "missing-refresh") delete changed.response.refresh_token;
+    if (fault === "unknown-refresh")
+      changed.response.refresh_token = "not-a-stored-token";
+    if (fault === "scope") changed.response.scope = "openid mail:read";
+    if (fault === "expires-at") changed.response.expires_at += 60;
+    if (fault === "token-type") changed.response.token_type = "DPoP";
+    if (fault === "stored-scope")
+      await fixture.db
+        .update(oauthRefreshTokens)
+        .set({ scopes: ["email"] })
+        .where(eq(oauthRefreshTokens.id, replacement!.id));
+    await fixture.db
+      .update(oauthRefreshTokens)
+      .set({
+        rotationReplayResponse: await symmetricEncrypt({
+          key,
+          data: JSON.stringify(changed),
+        }),
+      })
+      .where(eq(oauthRefreshTokens.id, original!.id));
+    expect((await exchange(input)).status, fault).toBe(400);
+    expect(await fixture.db.$count(oauthRefreshTokens)).toBe(2);
+    expect(
+      await fixture.db.$count(
+        auditEvents,
+        eq(auditEvents.action, "oauth.user.replayed"),
+      ),
+    ).toBe(0);
+    await fixture.db
+      .update(oauthRefreshTokens)
+      .set({ scopes: replacement!.scopes })
+      .where(eq(oauthRefreshTokens.id, replacement!.id));
+  }
+  await fixture.db
+    .update(oauthRefreshTokens)
+    .set({ rotationReplayResponse: original!.rotationReplayResponse })
+    .where(eq(oauthRefreshTokens.id, original!.id));
+  const valid = await exchange(input);
+  expect(valid.status).toBe(200);
+  expect(await valid.json()).toMatchObject({
+    access_token: saved.access_token,
+    refresh_token: saved.refresh_token,
+    scope: "mail:read",
+  });
+  expect(
+    await fixture.db.$count(
+      auditEvents,
+      eq(auditEvents.action, "oauth.user.replayed"),
+    ),
+  ).toBe(1);
+});
+
+test("ID-token access hashes follow the configured native signing algorithm", async () => {
+  const signer = auth.options.plugins.find(
+    (plugin) => plugin.id === "jwt",
+  ) as ReturnType<typeof jwt>;
+  for (const alg of ["ES256", "ES512"] as const) {
+    const { privateKey } = await generateKeyPair(alg);
+    signer.options.jwks = { ...signer.options.jwks, keyPairConfig: { alg } };
+    signer.options.jwt!.sign = (payload, header) =>
+      new SignJWT(payload)
+        .setProtectedHeader({ alg, ...header })
+        .sign(privateKey);
+    const issued = await issue("openid email", null);
+    expect(typeof decodeJwt(issued.id_token).at_hash).toBe("string");
+  }
 });
 
 test("native refresh authentication time must match retained broker evidence", async () => {

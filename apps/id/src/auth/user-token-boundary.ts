@@ -4,7 +4,6 @@ import {
   runWithTransaction,
 } from "@better-auth/core/context";
 import {
-  getIssuer,
   getOAuthProviderApi,
   type OAuthOptions,
   type OAuthProviderExtension,
@@ -12,13 +11,12 @@ import {
 } from "@better-auth/oauth-provider";
 import { APIError } from "better-auth/api";
 import { eq, sql } from "drizzle-orm";
-import { decodeJwt } from "jose";
 import { z } from "zod";
 import { setDatabaseScope } from "../db/isolation.ts";
 import { grantContexts, oauthResources } from "../db/schema/index.ts";
 import { authTransaction } from "./database-adapter.ts";
 import { currentGrantAuthentication } from "./grant-authentication.ts";
-import { identityScopes } from "./grant-scopes.ts";
+import { assertUserTokenResponse } from "./user-token-assertions.ts";
 import { lockResourceGrantPolicy } from "./lock-resource-grant-policy.ts";
 import { bindGrantCode, withNativeCodeReplay } from "./native-code-replay.ts";
 import { withNativeClientAuthentication } from "./native-client-authentication.ts";
@@ -39,7 +37,11 @@ const codeSchema = z.object({
   referenceId: z.uuid(),
   userId: z.uuid(),
   sessionId: z.uuid(),
-  query: z.object({ client_id: z.string(), scope: z.string() }),
+  query: z.object({
+    client_id: z.string(),
+    scope: z.string(),
+    nonce: z.string().optional(),
+  }),
   resource: z.array(z.string()),
 });
 const refreshSchema = z.object({
@@ -234,6 +236,7 @@ export function createUserTokenBoundary() {
               scopes: string[];
               resources: string[];
               sessionId?: string;
+              nonce?: string;
             } | null = null;
             if (kind === "authorization_code") {
               const row = await adapter.findOne<{ value: string }>({
@@ -253,6 +256,7 @@ export function createUserTokenBoundary() {
                   sessionId: code.data.sessionId,
                   scopes: code.data.query.scope.split(" ").filter(Boolean),
                   resources: code.data.resource,
+                  nonce: code.data.query.nonce,
                 };
               }
             } else {
@@ -359,6 +363,7 @@ export function createUserTokenBoundary() {
                     execute,
                   );
             const issuance = decision ? { decision, minted: false } : null;
+            const startedAt = Math.floor(Date.now() / 1000);
             const result = issuance
               ? await issuing.run(issuance, run)
               : await run();
@@ -384,90 +389,35 @@ export function createUserTokenBoundary() {
             }
             if (!decision) throw invalid();
             const response = result.value.response;
-            // Inspect only freshly returned native material. This is an issuance assertion,
-            // not authentication of an arbitrary caller-supplied JWT.
-            const returnedScopes = response.scope.split(" ").filter(Boolean);
-            if (
-              returnedScopes.some(
-                (scope) => !decision.requestedScopes?.includes(scope),
-              )
-            )
-              throw invalid();
-            const expected = decision.scopes;
-            const actual =
-              decision.resource === null
-                ? returnedScopes
-                : returnedScopes.filter((scope) => !identityScopes.has(scope));
-            if (
-              expected.length !== actual.length ||
-              expected.some((scope) => !actual.includes(scope))
-            )
-              throw invalid();
-            if (decision.resource !== null) {
-              const access = decodeJwt(response.access_token);
-              const expectedAudience = [
-                decision.resource.identifier,
-                ...(decision.requestedScopes?.includes("openid")
-                  ? [`${ctx.context.baseURL}/oauth2/userinfo`]
-                  : []),
-              ];
-              const audience =
-                typeof access.aud === "string"
-                  ? [access.aud]
-                  : (access.aud ?? []);
-              if (
-                access.sub !== decision.grant.userId ||
-                access.iss !== getIssuer(bound, options) ||
-                access.client_id !== authenticated.clientId ||
-                Object.entries(identity(decision)).some(
-                  ([key, value]) => access[key] !== value,
-                ) ||
-                audience.length !== expectedAudience.length ||
-                audience.some((value) => !expectedAudience.includes(value))
-              )
-                throw invalid();
-            } else {
-              const accessHash = await api.hashToken(
-                response.access_token,
-                "access_token",
-              );
-              const access = await adapter.findOne<{
-                referenceId: string;
-                userId: string;
-                clientId: string;
-              }>({
-                model: "oauthAccessToken",
-                where: [{ field: "token", value: accessHash }],
-              });
-              if (
-                access?.referenceId !== decision.grant.id ||
-                access.userId !== decision.grant.userId ||
-                access.clientId !== authenticated.clientId
-              )
-                throw invalid();
-            }
-            if (response.id_token) {
-              const id = decodeJwt(response.id_token);
-              if (
-                id.sub !== decision.grant.userId ||
-                id.iss !== getIssuer(bound, options) ||
-                id.aud !== authenticated.clientId ||
-                id.auth_time !==
-                  Math.floor(decision.grant.authTime.getTime() / 1000) ||
-                Object.entries(identity(decision)).some(
-                  ([key, value]) => id[key] !== value,
-                )
-              )
-                throw invalid();
-            }
+            const replayed = !(issuance?.minted || storedTokens);
+            const returnedScopes = await assertUserTokenResponse({
+              ctx: {
+                ...bound,
+                context: {
+                  ...bound.context,
+                  adapter: { ...bound.context.adapter, ...adapter },
+                },
+              },
+              options,
+              decision,
+              identity: identity(decision),
+              response,
+              reference: reference!,
+              clientAllowsRefresh:
+                authenticated.client.grantTypes?.includes("refresh_token") ??
+                false,
+              authorizationCodeId:
+                kind === "authorization_code"
+                  ? hash
+                  : decision.grant.authorizationCodeId!,
+              replayed,
+              startedAt,
+            });
             await recordUserOAuth(tx, {
               grant: decision.grant,
               clientId: authenticated.clientId,
               actor: "client",
-              action:
-                issuance?.minted || storedTokens
-                  ? "oauth.user.issued"
-                  : "oauth.user.replayed",
+              action: replayed ? "oauth.user.replayed" : "oauth.user.issued",
               requestId: ctx.headers?.get("x-request-id"),
               data: { grantType: kind, scopes: returnedScopes, decision },
             });

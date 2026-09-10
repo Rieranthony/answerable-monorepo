@@ -186,7 +186,17 @@ export function createUserOAuthFlow(
       if (resources.length > 1)
         throw new APIError("BAD_REQUEST", { error: "invalid_target" });
       const resource = resources[0] ?? null;
-      const scopes = params.get("scope")?.split(" ").filter(Boolean) ?? [];
+      const originalScopes =
+        params.get("scope")?.split(" ").filter(Boolean) ?? [];
+      const scopes =
+        action === "consent" &&
+        ctx.body.accept === true &&
+        ctx.body.scope !== undefined
+          ? (ctx.body.scope.split(" ") as string[])
+          : originalScopes;
+      // Authorise the consented subset before native resource-scope filtering.
+      if (scopes.some((scope) => !originalScopes.includes(scope)))
+        throw invalid();
       if (action === "continue") {
         const memberId = z.uuid().safeParse(ctx.body.memberId);
         if (
@@ -340,7 +350,7 @@ export function createUserOAuthFlow(
               : "oauth.user.authorized",
           requestId: ctx.headers?.get("x-request-id"),
           data: {
-            scopes: ctx.body.scope?.split(" ").filter(Boolean) ?? scopes,
+            scopes,
             decision: acceptedDecision,
           },
         });

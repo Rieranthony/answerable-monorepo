@@ -58,7 +58,8 @@ Native ID tokens and resource access JWTs carry the global user subject and
 matching tenant, membership, grant, client-instance and resource-instance claims.
 The broker `auth_time` and nullable `upstream_auth_time` have distinct meanings.
 Client and organisation authorisation versions reflect issuance-time policy.
-Returned native token material is checked against the decision before commit.
+Returned native token material is checked against the decision before commit;
+the follow-up correction below completes the original issuance assertions.
 Resource custom claims cannot replace those identity fields. Login-only access
 tokens remain native opaque tokens; UserInfo rechecks their retained grant.
 
@@ -107,6 +108,80 @@ was squashed. Existing resource custom claims using the newly reserved identity
 fields must be corrected before applying migration 0052.
 
 ## Evidence
+
+### Issuance assertion correction
+
+Coordinator review found that the original commit's return-material statement
+was too broad. Its boundary checked ID claims only when an ID token was returned,
+and did not compare returned refresh material to its stored row. Two production
+HTTP fault cases confirmed this: a missing ID token and a mismatched replacement
+refresh scope both returned 200 before the correction
+(`/private/tmp/id-oauth-assertions-before.log`).
+
+`user-token-assertions.ts` now runs once after native code issuance, refresh or
+encrypted replay, inside the same transaction and before required outcome audit.
+It checks the complete effective scope set, required/forbidden ID and refresh
+token presence, access-token kind, JWT scope/audience/identity/type, opaque and
+refresh row bindings/scopes/resources, native configured expiry, and the opaque
+access-to-refresh relationship. Returned opaque and refresh strings are hashed
+through the provider API and read from the current transaction. Refresh rows
+must also retain broker authentication time and agree with access-token DPoP
+confirmation. ID assertions cover nonce, native lifetime, broker/tenant claims
+and `at_hash` against the actual returned access token.
+
+The pinned provider deliberately routes standard profile/email claims to
+UserInfo (`introspect-C6P1zrTr.mjs`, `STANDARD_CLAIMS`, `userNormalClaims` and
+`ID_TOKEN_SCOPE_CLAIM_GUARDS`); it does not require them in an ID token. The
+production assertion preserves their absence there. Code ID tokens retain the
+authorisation nonce; refresh ID tokens omit it. Native token-kind semantics are
+preserved: removing `openid` removes the ID token, while removing `offline_access`
+can create one final narrowed replacement whose use yields no further refresh
+token. The configured resource and provider TTLs, including scope expirations,
+remain the authority; this correction introduces no new lifetime policy.
+
+Consent already had a native subset check before filtering
+(`authorize-BmTe2VYG.mjs`, `consentEndpoint`, lines 42–48), plus the production
+`postLogin.consentReferenceId` subset guard. The missing part was applying the
+valid consent subset to the policy decision and its audit evidence. The flow now
+does so before native processing; issuance/replay audits record the actual
+filtered response scopes. No alternate consent or token protocol was added.
+
+Fault regressions prove rollback of code consumption, opaque/refresh creation,
+refresh rotation and required success audit. Cached-output and stored replacement
+divergences return no replay success audit. Positive cases cover native resource
+filtering, configured TTLs, consent narrowing, the final refresh without
+`offline_access`, UserInfo email and signing-algorithm-dependent access hashes.
+The original duplicated inline checks were replaced by the shared assertion;
+no schema, migration, native package or public API schema changed.
+
+The expanded production matrix passes 45 tests and 1,700 assertions
+(`/private/tmp/id-oauth-assertions-focused-final.log`). The additional configured
+signing regression passes with supported ES256/ES512
+(`/private/tmp/id-oauth-assertions-signing-final.log`); an earlier test-only ES384
+configuration was rejected by typecheck and removed along with its unused hash
+case. The original before-fix faults returned 200; the corrected paths return
+400 without committing native effects or a success audit. Focused runs exit 1
+only because their partial-file coverage does not meet the repository-wide gate.
+
+Final typecheck and lint pass in all four packages
+(`/private/tmp/id-oauth-assertions-root-typecheck.log`,
+`/private/tmp/id-oauth-assertions-root-lint.log`). Both applications build in
+19.969s (`/private/tmp/id-oauth-assertions-build.log`). Web tests pass 71/71 with
+240 assertions (`/private/tmp/id-oauth-assertions-web.log`); country tests pass
+5/5 with 304 assertions (`/private/tmp/id-oauth-assertions-countries.log`). These
+gates were run serially. The static OAuth guide was rebuilt with the corrected
+nonce, UserInfo and narrowed-refresh contract.
+
+The final full ID gate on the unchanged correction source passes **2,031 tests,
+zero failures, 29,860 assertions, 100% line and function coverage**, across 147
+files in 590.74s, exit 0 (`/private/tmp/id-oauth-assertions-full-final.log`). The
+new assertion module also has 100% line/function coverage. The database ownership
+slot is released: the final check found zero other `answerable_id_test` sessions
+and zero `id_test_*` roles (`/private/tmp/id-oauth-assertions-db-release.log`).
+The original commit `7a1e2fe3b42e4e009e3f0326bdab3ac4344072e6` remains intact;
+the correction is delivered as its direct follow-up.
+
+### Original implementation evidence
 
 All database suites are serial and use `answerable_id_test`, including the
 restricted-runtime production HTTP fixture. Names such as OmniChat and Microsoft
