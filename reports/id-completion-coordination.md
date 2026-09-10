@@ -15,9 +15,9 @@ User authorises this task to manage implementation of the six completed plans, i
 
 | Owner | Exact task title | Task ID | State |
 | --- | --- | --- | --- |
-| T1 | Plan ID tenant authentication and authority | 01a08b80-277b-7382-be76-51e1b7c18b10 | Initiation fix accepted/integrated at 372b066; idle pending deletion handoff |
+| T1 | Plan ID tenant authentication and authority | 01a08b80-277b-7382-be76-51e1b7c18b10 | Initiation fix integrated; next owner: tenant admission/provenance slice |
 | T2 | Plan ID production OAuth and consent | 01a08b80-50b2-79e0-880a-46d1a5a33dfe | Plan complete; implementation not dispatched |
-| T3 | Plan ID audit lifecycle and retention | 01a08b80-6407-7a03-9ac8-ee28ba12c4f7 | Dispatched: soft-deletion implementation; exclusive implementation/DB owner |
+| T3 | Plan ID audit lifecycle and retention | 01a08b80-6407-7a03-9ac8-ee28ba12c4f7 | Soft deletion accepted/integrated at 3e09ad1; idle |
 | T4 | Plan ID capacity operations and recovery | 01a08b80-c0dd-7793-858b-678a943deda7 | Plan complete; implementation not dispatched |
 | T5 | Plan ID single initial migration cleanup | 01a08b80-d8c5-7763-99e6-e764415127f7 | Plan complete; implementation not dispatched |
 | T6 | Plan ID release acceptance and documentation | 01a08b80-f14b-70d1-8265-1dd18a2fb232 | Plan complete; implementation not dispatched |
@@ -65,7 +65,7 @@ The user explicitly accepted both recommendations and specified soft deletion:
 
 ## Next coordinator action
 
-T1's local commit 9bb7c625a465759d9cc4b52bbe87ea3e138179bd was reviewed and integrated as 372b0660b8fb92e4062c657035b3b1468e1e0875. T1 is idle. T3 now owns implementation and shared database tests for the approved soft-deletion work. Wait for T3 completion/attention, review its actual code/tests/deletion semantics and integrate accepted local commits. Do not dispatch T1 admission or T2 OAuth until the required deletion interfaces are integrated. Other tasks remain idle.
+T3 soft deletion is accepted and integrated at 3e09ad1 (source f5aaf47abe138825ab1132dddc242f0361d2a62e). Dispatch T1 from this baseline for current own-tenant authentication admission and account provenance. T1 is the sole implementation/shared DB owner once dispatched. Explicit identity binding and sensitive-command freshness enforcement follow that bounded slice; the proposed freshness duration is not yet an approved product decision. T2 remains pending the authentication handoff. No purge or migration squash yet.
 
 Review adjustment to T3's proposal: do not accidentally remove the existing explicit membership reinstatement feature. Distinguish reversible membership revocation from product/entity deletion. No automatic SSO resurrection is allowed, but explicit reinstatement of a revoked membership remains a supported command unless the user changes that contract. If a genuine conflict requires changing public semantics, bring that concrete conflict to the coordinator rather than silently making reinstatement unreachable.
 
@@ -75,11 +75,11 @@ Thread heartbeat `coordinate-id-foundation-completion` is active every ten minut
 
 ## Latest review checkpoint
 
-- T1 remains active; focused SSO/routing tests, typecheck, lint and build are reported passing, with final full ID coverage running. No commit integrated yet. Preliminary production diff review confirms reuse of native server-only OAuth context and existing callback revision observation; no new schema/table/provider selector.
-- T3 completed read-only plan turn 01a08b97-52df-7df3-b6cf-3909f3ca30e1. Read its final answer for the exact domain deletion mapping and SQL/eligibility contract. It must run before subsequent admission/linking work because deleted and absent identity matches have different security meanings.
-- T3's implementation should cover markers, live-row reads/uniqueness, preserved reservations, guarded parent relationships, immediate credential retirement, exact soft-deletion audit effects and terminal deletion. Deferred purge/retention jobs remain excluded. Preserve session/code/assertion native lifecycles rather than blindly adding markers.
-- Updated AGENTS supplied by the user includes packages/ui and packages/countries, with countries tests in the required gates. Workers must use that current instruction; existing T1 verification already includes countries tests.
-- Do not dispatch T3 implementation until T1 is terminal and its accepted commit is integrated. No unchanged gates rerun in this checkpoint.
+- T3 finished and committed with clean worktree; shared DB testing ended. Reviewed terminal markers and parent-lock guards, native root/transaction adapter filters, deleted-vs-absent SSO handling, retained account bindings, credential clearing, live uniqueness/replacement UUIDs, reversible membership removal, exact audit effects and replay.
+- Verified raw final logs: 1,915 ID tests pass, zero failures, 25,789 assertions, 100% line/function coverage, 485.14s, exit 0. Typecheck/lint/build/web71/countries5 and fresh-cluster restore passed; paths and contracts are in reports/id-soft-deletion.md.
+- Integrated application/docs trees exactly match the tested worker commit. No unchanged full-suite repeat. The restore includes deleted client/link/consent retention, denied authority, credential clearing, UUID history and same-key recovery.
+- First-principles review: reuse existing transactions, revocation and journal; keep protocol expiry separate, reserve immutable identities, replace removed relationships with fresh UUIDs. Removed obsolete grant-deletion wrappers. No purge scheduler or generic restore mechanism.
+- T1 admission is next; later T2 must add actual production user OAuth audit producers. Passing this deletion slice does not close the full authentication/OAuth/release scope.
 
 ## Integrated SSO initiation slice
 
