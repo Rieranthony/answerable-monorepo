@@ -16,7 +16,7 @@ User authorises this task to manage implementation of the six completed plans, i
 | Owner | Exact task title | Task ID | State |
 | --- | --- | --- | --- |
 | T1 | Plan ID tenant authentication and authority | 01a08b80-277b-7382-be76-51e1b7c18b10 | Admission, verified linking and five-minute freshness integrated at c245060; idle |
-| T2 | Plan ID production OAuth and consent | 01a08b80-50b2-79e0-880a-46d1a5a33dfe | Production OAuth and consent dispatched from c245060; sole writer/DB owner |
+| T2 | Plan ID production OAuth and consent | 01a08b80-50b2-79e0-880a-46d1a5a33dfe | First implementation 7a1e2fe under review; bounded token-output correction dispatched; sole writer/DB owner |
 | T3 | Plan ID audit lifecycle and retention | 01a08b80-6407-7a03-9ac8-ee28ba12c4f7 | Soft deletion accepted/integrated at 3e09ad1; idle |
 | T4 | Plan ID capacity operations and recovery | 01a08b80-c0dd-7793-858b-678a943deda7 | Plan complete; implementation not dispatched |
 | T5 | Plan ID single initial migration cleanup | 01a08b80-d8c5-7763-99e6-e764415127f7 | Plan complete; implementation not dispatched |
@@ -102,3 +102,10 @@ Thread heartbeat `coordinate-id-foundation-completion` is active every ten minut
 - Verified raw final coverage: 1,985 pass, zero failures, 28,099 assertions, 146 files, 697.97s, 100% line/function coverage, exit 0. Required gates and browser/native evidence recorded in reports/id-verified-linking-and-freshness.md. Cleanup reports no test roles; worker explicitly released DB ownership.
 - Integrated application/docs trees equal the tested source commit; no unchanged full-suite repetition. Reused native verification consumption and existing audit/authority infrastructure rather than new tables or a parallel identity protocol.
 - T2 received final T1/T3 reports, full provenance/policy/replay/audit/browser scope, finite acceptance conditions and exclusive ownership. Other tasks remain idle.
+
+## OAuth review checkpoint awaiting correction
+
+- T2 delivered clean source 7a1e2fe3b42e4e009e3f0326bdab3ac4344072e6; not integrated yet. Raw full log confirms 2,023 pass, zero failures, 29,491 assertions, 612.93s, exit 0. Report: worker reports/id-production-oauth.md.
+- Reviewed actual native provider composition, signed durable flow/terminal state, per-tenant snapshot/current grant checks, native code/refresh reuse and family-local revocation, atomic OAuth subjects and browser/HTTP evidence.
+- Requested bounded correction to explicit planned issuance assertions: current boundary never checks required/forbidden ID-token presence, nonce/scope-limited claims, complete opaque output persistence, or returned refresh row correspondence; resource JWT checks omit scope/expiry/token-type. The report overstates complete output/persistence agreement. Worker must reproduce divergences with existing fault fixtures, minimally assert actual native contract including cached replay/narrowing, verify rollback, update report and rerun affected gates. No speculative hardening expansion.
+- T2 retains sole writer/shared test DB ownership for correction. Await clean follow-up evidence before integration or T4 dispatch.
