@@ -38,6 +38,7 @@ import {
   ssoProviders,
   users,
   sessions,
+  verifications,
 } from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
 
@@ -348,6 +349,167 @@ describe("integration: federated sign-in", () => {
       ]);
     }
     expect(await connection.db.select().from(sessions)).toHaveLength(1);
+  });
+  for (const change of ["secret", "reverted", "unchanged"] as const) {
+    test(`restricted native SSO checks ${change} initiation revision before callback`, async () => {
+      await assertRuntimeRole(runtime.db);
+      const org = await seedProvider();
+      const [provider] = await connection.db.select().from(ssoProviders);
+      const input = {
+        issuer: provider!.issuer,
+        domain: provider!.domain,
+        oidc: JSON.parse(provider!.oidcConfig!),
+      };
+      issuer.enqueue(entraClaims());
+      const result = await signInThroughIdp(
+        app,
+        { providerId: org.slug, callbackURL, errorCallbackURL },
+        async () => {
+          await inPlatformWrite(connection.db, async (context) => {
+            await putSsoProvider(
+              context,
+              org.id,
+              change === "secret"
+                ? {
+                    ...input,
+                    oidc: { ...input.oidc, clientSecret: "new-secret" },
+                  }
+                : change === "reverted"
+                  ? { ...input, domain: "replacement.example.com" }
+                  : input,
+            );
+            if (change === "reverted")
+              await putSsoProvider(context, org.id, input);
+          });
+          // A separate auth instance must recover initiation evidence from native state.
+          const environment = testEnvironment({
+            trustedOrigins: [issuer.origin, new URL(callbackURL).origin],
+          });
+          return createApp({
+            auth: createAuth(runtime.db, environment),
+            db: runtime.db,
+            environment,
+          });
+        },
+      );
+      const [current] = await connection.db.select().from(ssoProviders);
+      expect(current!.revision).toBe(
+        provider!.revision +
+          (change === "unchanged" ? 0 : change === "secret" ? 1 : 2),
+      );
+      expect(result.response.status).toBe(302);
+      expect(errorCode(result.location)).toBe(
+        change === "unchanged" ? null : "SSO_PROVIDER_CHANGED",
+      );
+      for (const table of [users, accounts, members, sessions])
+        expect(await connection.db.select().from(table)).toHaveLength(
+          change === "unchanged" ? 1 : 0,
+        );
+      const events = await connection.db
+        .select()
+        .from(auditEvents)
+        .where(eq(auditEvents.action, "auth.signin.succeeded"));
+      expect(events).toHaveLength(change === "unchanged" ? 1 : 0);
+      if (change !== "unchanged") {
+        issuer.enqueue(entraClaims());
+        expect((await signIn()).location).toBe(callbackURL);
+      }
+      const [session] = await connection.db.select().from(sessions);
+      expect(session).toMatchObject({
+        authenticationProviderId: current!.id,
+        authenticationProviderRevision: current!.revision,
+      });
+    });
+  }
+  for (const selection of [
+    { organizationSlug: "contoso" },
+    { email: "person@contoso.com" },
+    { email: "person@CONTOSO.COM" },
+    { email: "person@department.contoso.com" },
+  ]) {
+    test(`native initiation preserves provider selection ${JSON.stringify(selection)}`, async () => {
+      const org = await seedProvider();
+      await seedProvider({
+        slug: "unrelated",
+        domain: "unrelated.example.com",
+      });
+      issuer.enqueue(entraClaims());
+      const result = await signInThroughIdp(app, {
+        ...selection,
+        callbackURL,
+        errorCallbackURL,
+      });
+      expect(result.location).toBe(callbackURL);
+      const [provider] = await connection.db
+        .select()
+        .from(ssoProviders)
+        .where(eq(ssoProviders.organizationId, org.id));
+      const [session] = await connection.db.select().from(sessions);
+      expect(session).toMatchObject({
+        authenticationProviderId: provider!.id,
+        authenticationProviderRevision: provider!.revision,
+      });
+    });
+  }
+  for (const [kind, evidence] of [
+    ["missing", undefined],
+    ["null", null],
+    ["malformed", "invalid"],
+    ["wrong provider", { "00000000-0000-0000-0000-000000000000": 1 }],
+    ["missing provider", {}],
+  ] as const) {
+    test(`restricted native SSO rejects ${kind} initiation evidence`, async () => {
+      await seedProvider();
+      issuer.enqueue(entraClaims());
+      const result = await signInThroughIdp(
+        app,
+        { providerId: "contoso", callbackURL, errorCallbackURL },
+        async () => {
+          const [stored] = await connection.db.select().from(verifications);
+          const state = JSON.parse(stored!.value);
+          expect(state.serverContext.ssoProviderReference).toBeObject();
+          expect(
+            state.serverContext.answerableSsoProviderRevisions,
+          ).toBeObject();
+          state.serverContext.answerableSsoProviderRevisions = evidence;
+          await connection.db
+            .update(verifications)
+            .set({ value: JSON.stringify(state) })
+            .where(eq(verifications.id, stored!.id));
+        },
+      );
+      expect(errorCode(result.location)).toBe("SSO_PROVIDER_CHANGED");
+      for (const table of [users, accounts, members, sessions])
+        expect(await connection.db.select().from(table)).toHaveLength(0);
+    });
+  }
+  test("native SSO initiation evidence cannot be supplied by the browser", async () => {
+    await seedProvider();
+    const [provider] = await connection.db.select().from(ssoProviders);
+    const forged = { [provider!.id]: provider!.revision + 1 };
+    const input = {
+      providerId: "contoso",
+      callbackURL,
+      errorCallbackURL,
+      serverContext: { answerableSsoProviderRevisions: forged },
+      additionalData: {
+        answerableSsoProviderRevisions: forged,
+        serverContext: { answerableSsoProviderRevisions: forged },
+      },
+    };
+    issuer.enqueue(entraClaims());
+    const result = await signInThroughIdp(app, input, async () => {
+      const [stored] = await connection.db.select().from(verifications);
+      expect(
+        JSON.parse(stored!.value).serverContext.answerableSsoProviderRevisions,
+      ).toEqual({ [provider!.id]: provider!.revision });
+    });
+    expect(errorCode(result.location)).toBeNull();
+    const [session] = await connection.db.select().from(sessions);
+    expect(session).toMatchObject({
+      authenticationProviderId: provider!.id,
+      authenticationProviderRevision: provider!.revision,
+    });
   });
   for (const change of ["update", "delete", "recreate", "unchanged"] as const) {
     test(`restricted native SSO rechecks ${change} configuration after token exchange`, async () => {

@@ -9,7 +9,7 @@ const config = { provider: "pg", schema, usePlural: true } as const;
 /** Preserve the supported adapter while exposing its actual transaction to policy. */
 export function authDatabaseAdapter(
   db: Database,
-  onProviderRead?: (row: unknown) => void,
+  onProviderRead?: (rows: unknown[]) => Promise<void>,
 ) {
   return (options: BetterAuthOptions) => {
     const adapter = drizzleAdapter(db, { ...config, transaction: true })(
@@ -19,8 +19,13 @@ export function authDatabaseAdapter(
       ...adapter,
       findOne: async <T>(input: Parameters<typeof adapter.findOne>[0]) => {
         const row = await adapter.findOne<T>(input);
-        if (input.model === "ssoProvider") onProviderRead?.(row);
+        if (input.model === "ssoProvider") await onProviderRead?.([row]);
         return row;
+      },
+      findMany: async <T>(input: Parameters<typeof adapter.findMany>[0]) => {
+        const rows = await adapter.findMany<T>(input);
+        if (input.model === "ssoProvider") await onProviderRead?.(rows);
+        return rows;
       },
       transaction: async <T>(
         run: (boundAdapter: typeof adapter) => Promise<T>,

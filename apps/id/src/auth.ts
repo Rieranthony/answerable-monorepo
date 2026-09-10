@@ -54,7 +54,7 @@ export function createAuth(db: Database, environment: Environment) {
     basePath: "/auth",
     secret: environment.betterAuthSecret,
     secrets: environment.betterAuthSecrets,
-    database: authDatabaseAdapter(db, ssoOrigin.observeProvider),
+    database: authDatabaseAdapter(db, ssoOrigin.observeProviders),
     databaseHooks: {
       session: {
         ...sessionAuditHooks(db),

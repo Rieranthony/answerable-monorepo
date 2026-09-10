@@ -2,7 +2,11 @@ import { boundedUserAgent } from "../lib/user-agent.ts";
 import type { SSOOptions } from "@better-auth/sso";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { getCurrentAdapter, type BetterAuthOptions } from "better-auth";
-import { APIError } from "better-auth/api";
+import {
+  APIError,
+  addOAuthServerContext,
+  getOAuthState,
+} from "better-auth/api";
 import { eq } from "drizzle-orm";
 import { ssoProviders } from "../db/schema/index.ts";
 import { resolveFederatedUser } from "../services/federation.ts";
@@ -26,16 +30,26 @@ export function createSsoOriginBoundary() {
   function run<T>(work: () => T): T {
     return requests.run(new Map(), work);
   }
-  function observeProvider(row: unknown) {
+  async function observeProviders(rows: unknown[]) {
     const request = requests.getStore();
-    if (!request || !row || typeof row !== "object") return;
-    const provider = row as { id?: unknown; revision?: unknown };
-    if (
-      typeof provider.id !== "string" ||
-      typeof provider.revision !== "number"
-    )
-      return;
-    if (!request.has(provider.id)) request.set(provider.id, provider.revision);
+    if (!request) return;
+    for (const row of rows) {
+      if (!row || typeof row !== "object") continue;
+      const provider = row as { id?: unknown; revision?: unknown };
+      if (
+        typeof provider.id !== "string" ||
+        typeof provider.revision !== "number"
+      )
+        continue;
+      if (!request.has(provider.id))
+        request.set(provider.id, provider.revision);
+    }
+    if (!request.size) return;
+    // Native domain routing can select from a list. Preserve its selection and
+    // bind the chosen provider's revision without copying its matching rules.
+    await addOAuthServerContext({
+      answerableSsoProviderRevisions: Object.fromEntries(request),
+    });
   }
   const resolveUser: NonNullable<SSOOptions["resolveUser"]> = async (
     input,
@@ -51,9 +65,16 @@ export function createSsoOriginBoundary() {
       .where(eq(ssoProviders.providerId, input.providerId));
     if (!provider)
       throw new Error("Accepted SSO provider is no longer available");
+    const initiation = requests.getStore()
+      ? ((await getOAuthState())?.serverContext
+          ?.answerableSsoProviderRevisions as
+          Record<string, unknown> | undefined)
+      : undefined;
     if (
       requests.getStore()?.get(provider.authenticationProviderId) !==
-      provider.authenticationProviderRevision
+        provider.authenticationProviderRevision ||
+      initiation?.[provider.authenticationProviderId] !==
+        provider.authenticationProviderRevision
     )
       return {
         action: "reject",
@@ -93,5 +114,5 @@ export function createSsoOriginBoundary() {
       },
     };
   };
-  return { resolveUser, before, run, observeProvider };
+  return { resolveUser, before, run, observeProviders };
 }

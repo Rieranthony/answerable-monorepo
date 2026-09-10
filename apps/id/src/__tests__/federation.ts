@@ -15,7 +15,11 @@ function cookieHeader(headers: Headers): string {
     .join("; ");
 }
 
-export async function signInThroughIdp(app: App, input: SignInInput) {
+export async function signInThroughIdp(
+  app: App,
+  input: SignInInput,
+  beforeCallback?: () => Promise<App | void>,
+) {
   const start = await app.request("/auth/sign-in/sso", {
     method: "POST",
     headers: {
@@ -35,7 +39,8 @@ export async function signInThroughIdp(app: App, input: SignInInput) {
   const stateCookie = cookieHeader(start.headers);
   const authorization = await fetch(url, { redirect: "manual" });
   const callback = new URL(authorization.headers.get("location")!);
-  const completed = await app.request(
+  const callbackApp = (await beforeCallback?.()) ?? app;
+  const completed = await callbackApp.request(
     `${callback.pathname}${callback.search}`,
     {
       headers: { Cookie: stateCookie },

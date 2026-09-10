@@ -54,6 +54,8 @@ Sign out ends the current session and updates the cookie jar.
 | Email domain          | Enabled for the organisation                              |
 | Answerable ID account | Active                                                    |
 
+The SSO configuration must stay unchanged from the start of sign-in until the callback completes. Changing the provider's credentials or changing and then restoring its configuration requires a new sign-in attempt. Saving unchanged configuration does not interrupt sign-in.
+
 ## When sign-in is refused
 
 If the service cannot securely store upstream credentials, the callback can return HTTP `500` with `authentication_unavailable`. An unreadable existing credential encountered during identity resolution instead redirects with `SSO_USER_RESOLUTION_FAILED`. Neither attempt creates a session. Contact the service operator. Operators should check the dedicated upstream key configuration and migration state described in [onboarding](/docs/id/onboard#first-run). Retrying does not convert legacy token rows.
