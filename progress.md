@@ -1898,3 +1898,18 @@ Already-disabled user reconciliation verified: full rerun1862pass/24358 assertio
 - Added final consolidation to the current checklist and replaced the canonical production-upgrade assumptions with a fresh-install contract. The release plan now identifies older cutover/conversion notes as superseded.
 - Final cleanup must retain all custom SQL security invariants, produce one initial migration plus matching snapshot/journal, remove obsolete upgrade-only machinery, update docs/tests, and pass fresh-install/repeated-startup/role/schema/restore and repository gates.
 - No migration files or databases changed in this turn: the requested timing is after implementation. Tenant-trust and retention decisions remain unresolved; this new fact removes the legacy-production migration assumption, not those product dependencies.
+
+
+### Approved tenant trust and soft deletion
+
+- User explicitly chose own-tenant SSO with verified identity binding and UUID-based audit history, then specified `deletedAt` soft deletion. Physical cleanup jobs at a future configurable age are deferred.
+- Updated the current checklist and coordination contract; removed those product questions as blockers. Historical physical-erasure/retention proposals are superseded. Retained soft-deleted profiles remain identifying data, not anonymised records.
+- T1 remains the only implementation/DB owner while finishing initiation-state verification. T3 is assigned a read-only revision of its deletion plan and interface mapping; no concurrent schema or database mutation is authorised.
+- Required deletion semantics include ordinary-read exclusion, immediate loss of eligibility, preserved revocation/tenant boundaries, reserved identifiers and idempotent audit/command handling. Do not build deferred cleanup jobs or apply deletedAt mechanically to protocol-consumption state.
+
+
+### Coordinated SSO initiation fix integrated
+
+- T1 completed with a clean worktree and local commit 9bb7c62. Coordinator reviewed the production diff and native regression assertions, then cherry-picked it as 372b066 onto codex/id-foundation-completion.
+- Raw full log confirms 1,904 ID tests / zero failures /25,455 assertions /100% line+function coverage in445.02s. Other gates and scope are in reports/id-sso-initiation-revision.md. Integrated application trees exactly match the tested worker commit; no duplicate full run.
+- Next exclusive writer/DB owner is T3 for soft deletion. Reviewed plan adjustment preserves explicit membership reinstatement as a revocation operation; soft deletion must not silently eliminate that existing feature. No auto resurrection through SSO or linking.

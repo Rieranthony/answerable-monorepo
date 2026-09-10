@@ -1,14 +1,14 @@
 # Enterprise foundation execution
 
-**Goal:** implement [F0–F7](docs/05-id-enterprise-foundation.md#8-implementation-sequence-and-proof) in full, with clean tested code and current documentation. Execution is blocked on the unresolved product and deployment dependencies below; the full F0–F7 objective is unchanged and unfinished. No production cutover or complete release readiness is claimed.
+**Goal:** implement [F0–F7](docs/05-id-enterprise-foundation.md#8-implementation-sequence-and-proof) in full, with clean tested code and current documentation. Execution is coordinated through [the six-task handoff](reports/id-completion-coordination.md); tenant-trust and deletion decisions are now settled, while deployment evidence remains outstanding; the full F0–F7 objective is unchanged and unfinished. No production cutover or complete release readiness is claimed.
 
 This is the current checklist. Detailed requirements remain in the foundation specification; the [release sequence](reports/answerable-id-release-decision-plan.md#current-completion-plan) orders the remaining work. Completed experiments, failed runs and limits belong in the [execution evidence](reports/answerable-id-foundation-execution-plan.md) and [progress log](progress.md). Previous task notes are preserved in [history](reports/answerable-id-task-history.md), including their superseded status claims.
 
 ## Current sequence
 
 1. Administrative denial-audit fix verified: all repository gates and the synthetic restore pass. This slice is closed; proceed to the existing production-flow requirements below.
-2. The next production change depends on the unanswered tenant-trust choice. The native consent probe also requires one stable server-bound flow reference; see [the integration contract](reports/answerable-id-release-decision-plan.md#interactive-consent-contract-for-the-next-integration). Complete tenant authentication and production user OAuth against the existing acceptance contract. The production allowlist still accepts only `client_credentials`; the native user-grant fixture is not production integration. Resolve the tenant-trust dependency before implementing dependent admission rules.
-3. Complete the remaining audit/lifecycle requirements and the chosen identity-retention contract. Preserve local transactional audit and replay guarantees.
+2. The approved policy requires own-tenant SSO and explicit verified identity binding. The native consent probe also requires one stable server-bound flow reference; see [the integration contract](reports/answerable-id-release-decision-plan.md#interactive-consent-contract-for-the-next-integration). Complete tenant authentication and production user OAuth against the existing acceptance contract. The production allowlist still accepts only `client_credentials`; the native user-grant fixture is not production integration. Consume the approved authentication and soft-deletion contracts before integrating grant admission.
+3. Implement deletedAt-based product deletion, exclusion from ordinary reads/authority, and remaining audit/lifecycle requirements. Audit attribution is UUID-based; physical cleanup jobs and their retention duration are deferred. Preserve local transactional audit and replay guarantees.
 4. Establish supported deployment capacity and complete fresh-install, recovery and first-consumer evidence. Local synthetic tests do not certify production limits or recovery.
 5. **Final cleanup requested by the user:** this platform has never shipped to production. Once implementation is finished, replace the entire development migration chain with exactly one initial migration and matching Drizzle snapshot/journal. Preserve all final constraints, indexes, triggers, functions, RLS and privileges. Remove obsolete upgrade-only code/tests and update documentation. Verify an empty-database install, repeated migration/startup, schema consistency, runtime permissions, restore and all repository gates before calling the cleanup complete.
 
@@ -31,8 +31,8 @@ No F0–F7 item is marked complete solely from green coverage or a native test f
 
 ## Explicit dependencies
 
-- **Tenant trust:** proposed initial policy requires the selected tenant's own current SSO. Cross-tenant trust versus this initial policy remains unanswered; no approval is inferred. Membership or selected organisation alone is not authentication evidence.
-- **Identity history:** UUID-only attribution versus restricted identifying-data recovery, fields, readers and retention remains unanswered. Do not invent a retention duration or claim that UUID history recovers a person's name.
+- **Tenant trust — decided:** require the selected tenant's own current SSO, with deliberate verified binding of multiple upstream identities to one global user. Membership alone does not confer authentication trust.
+- **Deletion/history — decided:** soft deletion through `deletedAt`, UUID-based audit attribution, and physical cleanup jobs later at a separately chosen age. Retained rows are not anonymised; they must be inaccessible through ordinary reads and must confer no authority. No named-recovery feature or purge-duration approval is needed to complete this release.
 - **Deployment evidence:** actual topology, budgets, key custody, consumer behaviour and recovery requirements must be verified against the intended environment. No production database changes are authorised by a passing local rehearsal alone.
 
 ## Current verification
