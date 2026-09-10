@@ -15,7 +15,7 @@ User authorises this task to manage implementation of the six completed plans, i
 
 | Owner | Exact task title | Task ID | State |
 | --- | --- | --- | --- |
-| T1 | Plan ID tenant authentication and authority | 01a08b80-277b-7382-be76-51e1b7c18b10 | Admission/provenance integrated at 40b09b6; idle pending freshness choice and linking dispatch |
+| T1 | Plan ID tenant authentication and authority | 01a08b80-277b-7382-be76-51e1b7c18b10 | Admission integrated; dispatched verified linking and five-minute freshness; sole writer/DB owner |
 | T2 | Plan ID production OAuth and consent | 01a08b80-50b2-79e0-880a-46d1a5a33dfe | Plan complete; implementation not dispatched |
 | T3 | Plan ID audit lifecycle and retention | 01a08b80-6407-7a03-9ac8-ee28ba12c4f7 | Soft deletion accepted/integrated at 3e09ad1; idle |
 | T4 | Plan ID capacity operations and recovery | 01a08b80-c0dd-7793-858b-678a943deda7 | Plan complete; implementation not dispatched |
@@ -60,12 +60,12 @@ The user explicitly accepted both recommendations and specified soft deletion:
 
 ## Pending inputs
 
-- Consent frequency and human freshness defaults in the plans are proposals. Keep configuration/behaviour explicit and resolve materially different product outcomes before dependent implementation.
+- Five-minute verified SSO freshness is explicitly approved for sensitive human changes and identity linking. Ordinary browsing retains its existing session lifetime. Consent behaviour remains to be made explicit in T2; do not block independent work on routine configurable defaults.
 - Intended topology/traffic, recovery objectives, key/backup service and real first-consumer/test-tenant references remain needed for production evidence. T4/T6 should request non-secret facts once, with concrete gaps.
 
 ## Next coordinator action
 
-T1 admission/provenance was reviewed and integrated at 40b09b6 (source ad72a4f184a30c7c357c06d2ff9f7b5ae77a4e2d). Worker is terminal, clean and has released the shared DB slot. The next bounded T1 slice is deliberate verified identity linking and sensitive-command freshness enforcement, then T2 production OAuth. A concise question has been presented to the user: five-minute (recommended) or fifteen-minute verified SSO freshness for sensitive changes and linking; ordinary browsing keeps normal session lifetime. Do not repeat this question or infer an answer. No implementation worker currently owns the DB. Once the choice arrives, dispatch T1 from the latest integration commit with its report and the chosen duration. Keep native proof of both identities, no email merge or account transfer, and atomic linking audit/replay. No purge or migration squash yet.
+The user explicitly approved five-minute freshness and instructed us to continue to completion. T1 was dispatched from 4d660243d1003083984a6937e29aa9127f58a977 to complete deliberate verified identity linking and sensitive-command freshness enforcement. It owns the sole implementation/shared test DB slot. Wait for completion, review actual diff and evidence, integrate, then dispatch T2 production OAuth with the final authentication/deletion contracts. Do not ask the freshness question again. No email merging, identity transfer, implicit tenant trust or automatic membership reinstatement. Required linking audit must commit with the binding. Keep ordinary browsing/session lifetimes separate. No purge or migration squash yet.
 
 Review adjustment to T3's proposal: do not accidentally remove the existing explicit membership reinstatement feature. Distinguish reversible membership revocation from product/entity deletion. No automatic SSO resurrection is allowed, but explicit reinstatement of a revoked membership remains a supported command unless the user changes that contract. If a genuine conflict requires changing public semantics, bring that concrete conflict to the coordinator rather than silently making reinstatement unreachable.
 
