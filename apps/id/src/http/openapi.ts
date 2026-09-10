@@ -1,15 +1,18 @@
+import { withAdmissionResponse } from "./admission.ts";
 import { generateSpecs } from "hono-openapi";
 
 import type { App } from "../app.ts";
 import type { Auth } from "../auth.ts";
 import type { Environment } from "../env.ts";
 import { publicAuthRoutes } from "./auth-allowlist.ts";
+import { requestBoundaryResponses } from "./request-limits.ts";
 
 type OpenApiOperation = {
   [key: string]: unknown;
   operationId?: string;
   summary?: string;
   tags?: string[];
+  responses?: Record<string, unknown>;
 };
 
 type OpenApiPathItem = {
@@ -88,6 +91,18 @@ export async function buildPublicOpenApiDocument(input: {
   const routeByMethodAndPath = new Map(
     publicAuthRoutes.map((route) => [`${route.method} ${route.path}`, route]),
   );
+  // The native generator includes fields hidden by its runtime response filter.
+  const sessionSchema = authDocument.components.schemas.Session!;
+  for (const [name, field] of Object.entries(
+    input.auth.options.session.additionalFields,
+  )) {
+    if (field.returned === false) {
+      delete sessionSchema.properties[name];
+      sessionSchema.required = sessionSchema.required?.filter(
+        (required) => required !== name,
+      );
+    }
+  }
   const authPaths: Record<string, OpenApiPathItem> = {};
 
   for (const [authPath, pathItem] of Object.entries(authDocument.paths)) {
@@ -104,6 +119,14 @@ export async function buildPublicOpenApiDocument(input: {
         ...authPaths[publicPath],
         [method]: {
           ...operation,
+          responses: {
+            ...operation.responses,
+            ...requestBoundaryResponses,
+            503: withAdmissionResponse(
+              operation.responses?.[503],
+              "authentication",
+            ),
+          },
           operationId: route.operationId,
           summary: route.summary,
           tags: [route.tag],

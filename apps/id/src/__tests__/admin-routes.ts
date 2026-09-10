@@ -42,6 +42,12 @@ export function describeAdminRoutes(
       const headers = kind
         ? f.headers(kind, { origin: input.origin })
         : new Headers({ Origin: f.trustedOrigin });
+      if (
+        route.parameters?.some(
+          (parameter) => "name" in parameter && parameter.name === "If-Match",
+        )
+      )
+        headers.set("If-Match", '"00000000-0000-7000-8000-000000000000:1"');
       const body = Object.hasOwn(input, "body")
         ? input.body
         : route.example?.body;

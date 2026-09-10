@@ -28,7 +28,11 @@ A new service has no accounts at all. You get in with the root secret, sign in w
 openssl rand -base64 48
 ```
 
-1. **Start the service with the secret.** Set `ROOT_ADMIN_SECRET` to that value next to the usual settings, apply the migrations, then start the service the way you deploy it. On an empty database it creates the platform organisation, the admin API resource and the `platform-admins` group on its own. `PLATFORM_ORGANIZATION_NAME` names the organisation; the default is `Answerable`.
+1. **Start the service with the secret.** Set `ROOT_ADMIN_SECRET` to that value and configure `OPERATION_REPLAY_CONFIG` in deployment secret storage, independently of `BETTER_AUTH_SECRET`. Its JSON shape is `{"activeKeyId":"v1","keys":{"v1":"<canonical-base64url-encoded random 32-byte key>"}}`. Generate a dedicated random key; the placeholder is not a usable key. Keep older keys until their replay windows close. Without this configuration, domain commands return `503` before changing state.
+
+   Also configure independent upstream token keys before sign-in: `UPSTREAM_TOKEN_SECRETS=[{"version":1,"value":"<canonical-base64url-encoded random 32-byte key>"}]`. The first version encrypts upstream access, refresh and ID tokens; retain previous versions for reads. Missing keys make sign-in fail with `500 authentication_unavailable`. For rotation, distribute the new key to every instance before making it the first entry. Do not reuse authentication or replay keys.
+
+   Apply the migrations, then start the service the way you deploy it. On an empty database it creates the platform organisation, the admin API resource and the `platform-admins` group on its own. `PLATFORM_ORGANIZATION_NAME` names the organisation; the default is `Answerable`. Migration 0037 clears pre-cutover upstream credentials once while preserving identity bindings and browser sessions; fresh SSO stores encrypted replacements. Existing installations still require an external-consumer review, stopped old writers, separately provisioned keys, and representative migration/backup-restore rehearsal before cutover. These operational release gates are **not yet** complete.
 
    ```bash
    bun --filter @answerable/id db:migrate
@@ -49,11 +53,14 @@ openssl rand -base64 48
 
    ```bash
    curl "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/domains" \
+     -H "Idempotency-Key: platform-domain-setup" \
      -H "Authorization: Bearer $ROOT_ADMIN_SECRET" \
      -H "Content-Type: application/json" \
      -d '{"domain":"'"$STAFF_DOMAIN"'"}'
 
    curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/sso-provider" \
+     -H "Idempotency-Key: platform-sso-setup" \
+     -H "If-None-Match: *" \
      -H "Authorization: Bearer $ROOT_ADMIN_SECRET" \
      -H "Content-Type: application/json" \
      -d '{"issuer":"'"$STAFF_ISSUER"'","domain":"'"$STAFF_DOMAIN"'","oidc":{"clientId":"'"$SSO_CLIENT_ID"'","clientSecret":"'"$SSO_CLIENT_SECRET"'"}}'
@@ -74,6 +81,8 @@ openssl rand -base64 48
      --data-urlencode "email=you@answerable.org"
 
    curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/groups/$PLATFORM_GROUP/members/$STAFF_MEMBER" \
+     -H "Idempotency-Key: platform-admin-membership-setup" \
+     -H "If-None-Match: *" \
      -H "Authorization: Bearer $ROOT_ADMIN_SECRET" \
      -H "Content-Type: application/json" \
      -d '{}'
@@ -96,8 +105,11 @@ openssl rand -base64 48
 
 Your browser session is enough for commands you type by hand. For scripts and agents, create a client owned by the platform organisation, allow it to use the admin API, and swap its secret for a token.
 
+Client creation requires configured replay encryption and a stable `Idempotency-Key`. Use a distinct key for each intended registration, and reuse it after a lost response. Recovery lasts 24 hours; see [operation status and retries](/docs/id/manage#operation-status).
+
 ```bash
 curl https://id.answerable.org/api/admin/v1/clients \
+  -H "Idempotency-Key: staff-automation-v1" \
   -H "Cookie: $SESSION_COOKIE" \
   -H "Origin: https://answerable.org" \
   -H "Content-Type: application/json" \
@@ -110,7 +122,7 @@ curl https://id.answerable.org/api/admin/v1/clients \
     "clientCredentialsScopes": ["platform:read", "platform:users", "platform:write"]
   }'
 
-# Save clientId as CLIENT_ID and the one-time clientSecret as CLIENT_SECRET.
+# Save clientId as CLIENT_ID and the returned clientSecret as CLIENT_SECRET.
 curl -X PUT "https://id.answerable.org/api/admin/v1/clients/$CLIENT_ID/resources/https%3A%2F%2Fid.answerable.org%2Fapi%2Fadmin" \
   -H "Cookie: $SESSION_COOKIE" \
   -H "Origin: https://answerable.org"
@@ -142,7 +154,7 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/summary" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-Set `ORG` to an organisation ID from creation or the organisations list. [getOrganizationSummary](/docs/id/admin-api/organizations/getOrganizationSummary) returns the organisation, domain and SSO configuration summary, member counts and effective windows, groups, entitlement targets, owned clients, active sessions and successful sign-ins over the trailing seven days. Status counts include stored rows; entitlement target counts include disabled and out-of-window rows. Sessions belong to any member, regardless of membership window. There is no per-organisation rejection count.
+Set `ORG` to an organisation ID from creation or the organisations list. [getOrganizationSummary](/docs/id/admin-api/organizations/getOrganizationSummary) returns the organisation, domain and SSO configuration summary, member counts and effective windows, groups, entitlement targets, owned clients and successful sign-ins over the trailing seven days. Status counts include stored rows; entitlement target counts include disabled and out-of-window rows. Exact app–resource pairs use `kind: "client_resource"`, `id` for the client and `resource` for the resource identifier. Standalone targets use `kind: "client"` or `kind: "resource"`. These counts describe stored assignments, not effective permission. Global browser session counts are omitted from organisation summaries. There is no per-organisation rejection count.
 
 ## Why can't someone sign in
 
@@ -152,19 +164,22 @@ curl --get "https://id.answerable.org/api/admin/v1/organizations/$ORG/sign-in-di
   --data-urlencode "email=$EMAIL"
 ```
 
-[diagnoseSignIn](/docs/id/admin-api/diagnostics/diagnoseSignIn) checks database state without changing it. `verdict.checked` lists checks evaluated in resolver order; `verdict.code` is the first applicable result.
+[diagnoseSignIn](/docs/id/admin-api/diagnostics/diagnoseSignIn) checks this tenant's configuration and memberships without changing state. `verdict.checked` lists the local checks evaluated in order; `verdict.code` is the first applicable result. It rechecks current `org:users` or staff `platform:read` authority inside its transaction and returns `Cache-Control: no-store`.
 
-| Verdict                     | Meaning                                   | What to do                                        |
-| --------------------------- | ----------------------------------------- | ------------------------------------------------- |
-| `provider_not_found`        | No SSO provider is configured.            | Configure the provider.                           |
-| `organization_disabled`     | Organisation is disabled.                 | Review whether to enable it.                      |
-| `domain_not_allowed`        | Email domain does not route here.         | Check its active domain assignment.               |
-| `new_user_would_be_created` | No user has this email.                   | Complete a real sign-in to verify identity.       |
-| `user_disabled`             | The user is disabled.                     | Review the account before enabling it.            |
-| `identity_conflict`         | Existing accounts all use another issuer. | Review the stored identity and intended provider. |
-| `would_sign_in`             | Database checks found no blocker.         | Try a real sign-in; token checks still apply.     |
+| Verdict                   | Meaning                                                  | What to do                                                |
+| ------------------------- | -------------------------------------------------------- | --------------------------------------------------------- |
+| `provider_not_found`      | No SSO provider is configured.                           | Configure the provider.                                   |
+| `organization_disabled`   | Organisation is disabled.                                | Review whether to enable it.                              |
+| `domain_not_allowed`      | Email domain does not route here.                        | Check this tenant's active domain assignment.             |
+| `user_disabled`           | The user linked to this tenant's membership is disabled. | Ask platform staff to review the account.                 |
+| `membership_revoked`      | This tenant's membership was revoked.                    | Review whether to reinstate it.                           |
+| `authentication_required` | Local checks found no blocker.                           | Complete a real IdP authentication to establish identity. |
 
-**A real IdP token is required** for `directory_mismatch`, `guest_account`, `personal_account`, `hosted_domain_mismatch` and `email_unverified` checks, listed in `verdict.requiresToken`. An email diagnosis cannot prove the token subject or account collisions. A non-effective membership does not prevent sign-in, but stops grants. See [sign-in checks](/docs/id/sign-in#what-is-checked).
+**Tenant visibility.** `user` and `membership` are null unless this tenant has a membership for the exact email. A null user does not mean the email is globally unused. Routing names only this organisation, never another tenant. Account issuers, directory IDs and retired-email state are excluded for all callers, including staff. Platform-wide user inspection remains a separate permission-controlled API.
+
+**A real IdP authentication is required** to establish identity and evaluate `directory_mismatch`, `guest_account`, `personal_account`, `hosted_domain_mismatch`, `email_unverified` and `identity_conflict`, listed in `verdict.requiresToken`. This diagnosis does not predict account creation or successful sign-in. A non-effective membership does not prevent sign-in, but stops grants. See [sign-in checks](/docs/id/sign-in#what-is-checked).
+
+**Contract change.** The diagnostic response no longer includes `accounts` or `user.retiredEmail`. `authentication_required` replaces `new_user_would_be_created` and `would_sign_in`; `identity_conflict` is deferred to real authentication. Update diagnostic consumers before releasing this API change.
 
 ## Test an SSO configuration
 
@@ -173,7 +188,7 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/sso-provider/tes
   -H "Authorization: Bearer $TOKEN"
 ```
 
-[testSsoProvider](/docs/id/admin-api/diagnostics/testSsoProvider) fetches discovery and JWKS without sending credentials or changing state. It reports reachability, exact issuer equality, key count and elapsed time. It does not prove client credentials, consent, a usable signing key or a person's ability to sign in; complete a real sign-in for those checks.
+[testSsoProvider](/docs/id/admin-api/diagnostics/testSsoProvider) fetches discovery and JWKS without sending credentials or changing state. It reports reachability, exact issuer equality, key count and elapsed time. It requires current `platform:read` when reading the endpoint configuration and returns `Cache-Control: no-store`. Network requests run after that read transaction closes, so the result describes the captured endpoints even if configuration changes during the probe. It does not prove client credentials, consent, a usable signing key or a person's ability to sign in; complete a real sign-in for those checks.
 
 | Problem code            | Meaning                                                                              | What to do                                                |
 | ----------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------- |
@@ -191,10 +206,13 @@ No provider returns HTTP `404 provider_not_found`; configure it first. Other fai
 
 ```bash
 curl https://id.answerable.org/api/admin/v1/organizations \
+  -H "Idempotency-Key: $ORGANISATION_CREATE_KEY" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"slug":"contoso","name":"Contoso"}'
 ```
+
+**Retry key.** Set `ORGANISATION_CREATE_KEY` once for this intended creation and reuse it with identical input after a lost response. All organisation mutations require keys; ordinary result recovery lasts seven days. PATCH also requires the strong If-Match ETag from getOrganization; see [editing organisation configuration](/docs/id/manage#operation-status).
 
 **Slug.** Lowercase labels joined by single hyphens, the same grammar as the Omni-Weaver tenant id. It cannot change later. Set `ORG` to the returned `id`.
 
@@ -202,6 +220,7 @@ curl https://id.answerable.org/api/admin/v1/organizations \
 
 ```bash
 curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/domains" \
+  -H "Idempotency-Key: $DOMAIN_OPERATION_KEY" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"domain":"contoso.com"}'
@@ -211,15 +230,24 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/domains" \
 
 ```bash
 curl -X DELETE "https://id.answerable.org/api/admin/v1/organizations/$ORG/domains/$DOMAIN" \
+  -H "Idempotency-Key: $DOMAIN_DELETE_KEY" \
   -H "Authorization: Bearer $TOKEN"
 ```
+
+**Domain operation keys.** Set `DOMAIN_OPERATION_KEY` and `DOMAIN_DELETE_KEY` to different stable keys for the two logical commands. Reuse each key with identical input when retrying; recoverable responses last seven days. The root setup example also uses a stable key. Repeated enable/disable under a new key records a no-op; changed input under an existing key conflicts.
 
 **Delete an assignment.** Set `DOMAIN` to its domain row ID. [deleteOrganizationDomain](/docs/id/admin-api/domains/deleteOrganizationDomain) removes sign-in routing and records `domain.deleted`. No `confirm` is required; disable the assignment for a reversible suspension.
 
 ## Connect the directory
 
+**Changing the directory.** Creating, replacing or deleting SSO configuration revokes existing user authorisations for that organisation. An unchanged configuration preserves them. Restoring an earlier configuration does not restore revoked grants. Other organisations and global browser sessions are preserved. User OAuth remains [Not yet.](/docs/id#today-and-next); checking the authentication source for new authorisations is unfinished.
+
+Set `SSO_OPERATION_KEY` once for this configuration command and reuse it with identical input on retry. PUT and delete require keys; redacted result recovery lasts seven days. Omit `clientSecret` to retain the stored secret on a new update. Creation requires `If-None-Match: *`; replacement requires the current provider ETag in `If-Match`. Send exactly one precondition and retain it with the key on retry.
+
 ```bash
 curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$ORG/sso-provider" \
+  -H "Idempotency-Key: $SSO_OPERATION_KEY" \
+  -H "If-None-Match: *" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -249,6 +277,7 @@ curl https://id.answerable.org/api/admin/v1/resources \
 
 ```bash
 curl https://id.answerable.org/api/admin/v1/clients \
+  -H "Idempotency-Key: omnichat-contoso-v1" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -285,6 +314,7 @@ An **entitlement** says who may obtain tokens for what, with which scopes. Its p
 
 ```bash
 curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/entitlements" \
+  -H "Idempotency-Key: $ORG_ENTITLEMENT_KEY" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"resource":"https://tutor.answerable.org","scopes":["tutor:read"]}'
@@ -294,16 +324,20 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/entitlements" \
 
 ```bash
 curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/groups" \
+  -H "Idempotency-Key: $GROUP_CREATE_KEY" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"slug":"finance","name":"Finance"}'
 
 curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$ORG/groups/$GROUP/members/$MEMBER" \
+  -H "Idempotency-Key: $GROUP_MEMBER_KEY" \
+  -H "If-None-Match: *" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"validUntil":"2026-12-31T00:00:00Z"}'
 
 curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/entitlements" \
+  -H "Idempotency-Key: $GROUP_ENTITLEMENT_KEY" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"groupId":"'"$GROUP"'","resource":"https://tutor.answerable.org","scopes":["tutor:read"]}'
@@ -319,6 +353,7 @@ Once one of their admins has signed in, grant them scopes on the admin API. Set 
 
 ```bash
 curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/entitlements" \
+  -H "Idempotency-Key: $ADMIN_ENTITLEMENT_KEY" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"memberId":"'"$MEMBER"'","resource":"https://id.answerable.org/api/admin","scopes":["org:read","org:users"]}'
@@ -337,15 +372,15 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/access?resource=
 
 ## Offboard
 
-| Situation                        | Do this                                                                                    | Effect                                                                                                                         |
-| -------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| A person leaves the organisation | `PATCH …/members/{memberId}` with `validUntil` now, or `DELETE` the membership             | Their admin grants in that organisation stop; other memberships stay. App/MCP enforcement: [Not yet.](/docs/id#today-and-next) |
-| A person must be cut off at once | `POST /users/{userId}/disable`                                                             | Every session ends and every token is revoked, in one transaction                                                              |
-| Their address will be reused     | `POST /users/{userId}/retire-email` after disabling                                        | The address is released; the old account keeps a tombstone                                                                     |
-| The organisation leaves          | `POST /organizations/{org}/disable`                                                        | Sign-in refuses; every member's sessions and tokens end                                                                        |
-| An app is retired                | `DELETE /clients/{clientId}?confirm={clientId}` after removing its entitlements            | Links, tokens and consents are erased; audit rows remain                                                                       |
-| A domain no longer belongs here  | `DELETE /organizations/{org}/domains/{domainId}`                                           | Sign-in routing is removed; no confirmation needed                                                                             |
-| Data must be erased              | `DELETE /users/{userId}` or `DELETE /organizations/{org}` with `?confirm=<id>` and no body | Cascades; audit rows keep erased IDs. Reassign or erase owned clients before organisation erasure                              |
+| Situation                        | Do this                                                                                    | Effect                                                                                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| A person leaves the organisation | `PATCH …/members/{memberId}` with `validUntil` now, or `DELETE` the membership             | Their admin grants in that organisation stop; other memberships stay. App/MCP enforcement: [Not yet.](/docs/id#today-and-next)          |
+| A person must be cut off at once | `POST /users/{userId}/disable`                                                             | Every session ends and every token is revoked, in one transaction                                                                       |
+| Their address will be reused     | `POST /users/{userId}/retire-email` after disabling                                        | The address is released; the old account keeps a tombstone                                                                              |
+| The organisation leaves          | `POST /organizations/{org}/disable`                                                        | Sign-in refuses; the tenant epoch advances and owned machine tokens are revoked. Global browser sessions and unbound user grants remain |
+| An app is retired                | `DELETE /clients/{clientId}?confirm={clientId}` after removing its entitlements            | Links, tokens and consents are erased; audit rows remain                                                                                |
+| A domain no longer belongs here  | `DELETE /organizations/{org}/domains/{domainId}`                                           | Sign-in routing is removed; no confirmation needed                                                                                      |
+| Data must be erased              | `DELETE /users/{userId}` or `DELETE /organizations/{org}` with `?confirm=<id>` and no body | Cascades; audit rows keep erased IDs. Remove owned clients before organisation erasure                                                  |
 
 **Bulk import of an existing cell's users.** [Not yet.](/docs/id#today-and-next)
 
@@ -406,3 +441,7 @@ See [all admin error codes](/docs/id/manage#errors), including confirmation and 
 | Entitlements checked at every token grant | [Not yet.](/docs/id#today-and-next) |
 | Bulk import of existing users             | [Not yet.](/docs/id#today-and-next) |
 | SCIM provisioning                         | [Not yet.](/docs/id#today-and-next) |
+
+**Group operation keys.** Set `GROUP_CREATE_KEY` and `GROUP_MEMBER_KEY` once for their respective creation and membership commands, and reuse it with identical input after a lost response. Use a different key for each separate command. Group PATCH requires the current getGroup ETag in If-Match. Membership PUT requires If-None-Match: \* for creation or the getGroupMember ETag in If-Match for replacement. Keep the original precondition when retrying a key.
+
+**Entitlement operation keys.** Set `ORG_ENTITLEMENT_KEY`, `GROUP_ENTITLEMENT_KEY` or `ADMIN_ENTITLEMENT_KEY` once for the corresponding creation command. Reuse that key with identical input after a lost response; use a new key for a separate command. Entitlement create, PATCH, enable, disable and delete all require keys and recover committed responses for seven days. Unchanged scopes/windows or lifecycle state records a noop and preserves timestamps. Scope order and duplicates do not change the command's meaning. PATCH requires the getEntitlement ETag in If-Match. Keep that original precondition when retrying its key.

@@ -20,7 +20,7 @@ describeAdminRoutes(routes, () => fixture, {
     resource: encodeURIComponent(fixture.platform.adminResource),
   }),
 });
-function request(
+async function request(
   path = "",
   method = "GET",
   body?: unknown,
@@ -38,6 +38,16 @@ function request(
   const headers = fixture.headers(kind);
   headers.set("x-request-id", "resources-http-test");
   if (body !== undefined) headers.set("content-type", "application/json");
+  if (method === "PATCH") {
+    const current = await fixture.app.request(
+      `/api/admin/v1/resources${path}`,
+      { headers },
+    );
+    headers.set(
+      "If-Match",
+      current.headers.get("ETag") ?? '"00000000-0000-7000-8000-000000000000:1"',
+    );
+  }
   return fixture.app.request(`/api/admin/v1/resources${path}`, {
     method,
     headers,
@@ -171,9 +181,9 @@ test("resource conflicts, protection, confirmation and validation use problem re
   expect(await mismatch.json()).toMatchObject({
     code: "confirmation_mismatch",
   });
-  expect((await request(path + "/enable", "POST")).status).toBe(409);
+  expect((await request(path + "/enable", "POST")).status).toBe(200);
   expect((await request(path + "/disable", "POST")).status).toBe(200);
-  expect((await request(path + "/disable", "POST")).status).toBe(409);
+  expect((await request(path + "/disable", "POST")).status).toBe(200);
   for (const [suffix, method, body] of [
     ["/disable", "POST", undefined],
     ["", "DELETE", { confirm: fixture.platform.adminResource }],
@@ -247,4 +257,60 @@ test("erase requires a query confirmation and checks existence before mismatch",
   });
   expect(response.status).toBe(400);
   expect(await response.json()).toMatchObject({ code: "validation_failed" });
+});
+
+test("resource creation records explicit immutable ownership and rejects conflicting classification", async () => {
+  const headers = fixture.headers("platformAdmin");
+  headers.set("Content-Type", "application/json");
+  const input = {
+    identifier: `https://${createId()}.example/private`,
+    name: "Private",
+    allowedScopes: ["read"],
+    classification: "tenant_owned",
+    organizationId: fixture.tenant.organizationId,
+  };
+  const response = await fixture.app.request("/api/admin/v1/resources", {
+    method: "POST",
+    headers,
+    body: JSON.stringify(input),
+  });
+  expect(response.status).toBe(201);
+  expect(await response.json()).toMatchObject(input);
+  const evidence = await fixture.db
+    .select()
+    .from(auditEvents)
+    .where(eq(auditEvents.operationId, response.headers.get("Operation-Id")!));
+  expect(evidence).toMatchObject([
+    {
+      data: {
+        after: {
+          classification: "tenant_owned",
+          organizationId: input.organizationId,
+        },
+      },
+    },
+  ]);
+  const ownershipPatch = await fixture.app.request(
+    `/api/admin/v1/resources/${encodeURIComponent(input.identifier)}`,
+    {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ name: "Changed", organizationId: createId() }),
+    },
+  );
+  expect(ownershipPatch.status).toBe(400);
+
+  for (const invalid of [
+    { ...input, organizationId: null },
+    { ...input, classification: "platform_shared" },
+  ]) {
+    const invalidHeaders = fixture.headers("platformAdmin");
+    invalidHeaders.set("Content-Type", "application/json");
+    const rejected = await fixture.app.request("/api/admin/v1/resources", {
+      method: "POST",
+      headers: invalidHeaders,
+      body: JSON.stringify(invalid),
+    });
+    expect(rejected.status).toBe(400);
+  }
 });

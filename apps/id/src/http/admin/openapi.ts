@@ -1,5 +1,7 @@
+import { withAdmissionResponse } from "../admission.ts";
 import { describeRoute, type DescribeRouteOptions } from "hono-openapi";
 import { problemResponses } from "../problem.ts";
+import { requestBoundaryResponses } from "../request-limits.ts";
 import { tierOf, type AdminRoute } from "./route-table.ts";
 
 export const adminSecuritySchemes = {
@@ -46,7 +48,9 @@ export function standardResponses(
 ) {
   return {
     ...success,
-    ...problemResponses(401, 403),
+    ...requestBoundaryResponses,
+    ...problemResponses(401, 403, 503),
+    503: withAdmissionResponse(problemResponses(503)[503]),
     ...(route.orgScope ? problemResponses(404) : {}),
   };
 }
@@ -85,9 +89,12 @@ export function adminRoute(route: AdminRoute) {
     security: [{ cookieAuth: [] }, { bearerAuth: [] }],
     "x-tier": tierOf(route),
     "x-kind": route.kind,
-    "x-scopes": {
-      platform: route.platformScope,
-      ...(route.orgScope ? { org: route.orgScope } : {}),
-    },
+    "x-scope-alternatives": route.scopeAlternatives,
+    "x-scopes": route.open
+      ? {}
+      : {
+          platform: route.platformScope,
+          ...(route.orgScope ? { org: route.orgScope } : {}),
+        },
   } as DescribeRouteOptions);
 }

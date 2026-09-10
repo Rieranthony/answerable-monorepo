@@ -43,6 +43,7 @@ export async function signInThroughIdp(app: App, input: SignInInput) {
   );
 
   return {
+    response: completed,
     location: completed.headers.get("location"),
     cookies: completed.headers.getSetCookie(),
   };

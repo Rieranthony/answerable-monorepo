@@ -1,7 +1,14 @@
+import { platformRead } from "./platform-read.ts";
 import { json, pathParameter, uuidParam, confirmQuery } from "./schemas.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
-import { actorFromContext } from "../../services/actor.ts";
+import {
+  platformCommand,
+  platformUsersCommand,
+  operationJson,
+  idempotencyParameter,
+  commandResponseHeaders,
+} from "./command.ts";
 import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
 import { problemResponses } from "../problem.ts";
@@ -98,16 +105,20 @@ export const routes = {
     operationId: "disableUser",
     summary: "Disable user",
     description:
-      "Disable the user, revoke sessions and tokens and return the updated user. Prefer removeMember to offboard from only one organisation; not_found means the user is missing and user_already_disabled means no transition is needed.",
+      "Requires Idempotency-Key. Authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts; expired recovery never re-executes. Disable the user, revoke sessions and tokens and return the updated user. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input. Prefer removeMember to offboard from only one organisation; not_found means the user is missing. A new command reconciles remaining sessions, tokens and grant contexts even when the user is already disabled; only zero actual effects and unchanged status record a noop. Replaying an old key recovers its original result without performing a new reconciliation.",
     tag: "Users",
     platformScope: "platform:users",
     kind: "write",
-    parameters: ["userId"].map((name) => pathParameter(name, "uuid")),
+    parameters: [pathParameter("userId", "uuid"), idempotencyParameter],
     responses: standardResponses(
       {},
       {
-        200: { description: "Success", content: json(userSchema) },
-        ...problemResponses(400, 404, 409),
+        200: {
+          description: "Success",
+          headers: commandResponseHeaders,
+          content: json(userSchema),
+        },
+        ...problemResponses(400, 404, 409, 410, 503),
       },
     ),
   },
@@ -117,16 +128,20 @@ export const routes = {
     operationId: "enableUser",
     summary: "Enable user",
     description:
-      "Enable a disabled user and return the updated user without restoring revoked sessions. Prefer getUser to inspect blockers; not_found, user_already_active, user_email_retired and user_inert identify missing users or states that cannot be enabled.",
+      "Requires Idempotency-Key. Authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts; expired recovery never re-executes. Enable a disabled user and return the updated user without restoring revoked sessions. Prefer getUser to inspect blockers; not_found, user_email_retired and user_inert identify missing users or states that cannot be enabled.",
     tag: "Users",
     platformScope: "platform:users",
     kind: "write",
-    parameters: ["userId"].map((name) => pathParameter(name, "uuid")),
+    parameters: [pathParameter("userId", "uuid"), idempotencyParameter],
     responses: standardResponses(
       {},
       {
-        200: { description: "Success", content: json(userSchema) },
-        ...problemResponses(400, 404, 409),
+        200: {
+          description: "Success",
+          headers: commandResponseHeaders,
+          content: json(userSchema),
+        },
+        ...problemResponses(400, 404, 409, 410, 503),
       },
     ),
   },
@@ -136,16 +151,20 @@ export const routes = {
     operationId: "retireUserEmail",
     summary: "Retire user email",
     description:
-      "Replace a disabled user’s email with a tombstone and return the updated user, freeing the original email for reuse. Prefer disableUser for reversible offboarding; not_found, user_not_disabled and user_email_already_retired identify missing users or invalid lifecycle states.",
+      "Requires Idempotency-Key. Authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts; expired recovery never re-executes. Replace a disabled user’s email with a tombstone and return the updated user, freeing the original email for reuse. Prefer disableUser for reversible offboarding; not_found and user_not_disabled identify missing users or invalid lifecycle states.",
     tag: "Users",
     platformScope: "platform:users",
     kind: "write",
-    parameters: ["userId"].map((name) => pathParameter(name, "uuid")),
+    parameters: [pathParameter("userId", "uuid"), idempotencyParameter],
     responses: standardResponses(
       {},
       {
-        200: { description: "Success", content: json(userSchema) },
-        ...problemResponses(400, 404, 409),
+        200: {
+          description: "Success",
+          headers: commandResponseHeaders,
+          content: json(userSchema),
+        },
+        ...problemResponses(400, 404, 409, 410, 503),
       },
     ),
   },
@@ -155,18 +174,22 @@ export const routes = {
     operationId: "eraseUser",
     summary: "Erase user",
     description:
-      "Permanently erase the user and return no content; related identity records are also deleted. The confirm query parameter must equal the target id. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableUser for reversible offboarding.",
+      "Requires Idempotency-Key. Authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts; expired recovery never re-executes. Permanently erase the user and return no content; related identity records are also deleted. Concurrent writes through owned clients, memberships, sessions and refresh tokens are ordered before actual deletion and reference-clearing effects are captured. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input. The confirm query parameter must equal the target id. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableUser for reversible offboarding.",
     tag: "Users",
     platformScope: "platform:write",
     kind: "erase",
     parameters: [
       ...["userId"].map((name) => pathParameter(name, "uuid")),
       confirmQuery(eraseSchema.shape.confirm),
+      idempotencyParameter,
     ],
     example: { query: { confirm: "00000000-0000-7000-8000-000000000000" } },
     responses: standardResponses(
       {},
-      { 204: { description: "Success" }, ...problemResponses(400, 404) },
+      {
+        204: { description: "Success", headers: commandResponseHeaders },
+        ...problemResponses(400, 404, 409, 410, 503),
+      },
     ),
   },
 } satisfies Record<string, AdminRoute>;
@@ -178,7 +201,9 @@ export function register(app: Hono<AppEnvironment>) {
     async (context) => {
       const query = querySchema.parse(context.req.query());
       return context.json(
-        await service.listUsers(context.get("db"), query),
+        await platformRead(context, (platform) =>
+          service.listUsers(platform, query),
+        ),
         200,
       );
     },
@@ -189,7 +214,9 @@ export function register(app: Hono<AppEnvironment>) {
     validate("param", userParams),
     async (context) => {
       return context.json(
-        await service.getUser(context.get("db"), context.req.param("userId")!),
+        await platformRead(context, (platform) =>
+          service.getUser(platform, context.req.param("userId")!),
+        ),
         200,
       );
     },
@@ -199,13 +226,21 @@ export function register(app: Hono<AppEnvironment>) {
     routes.disableUser,
     validate("param", userParams),
     async (context) => {
-      return context.json(
-        await service.disableUser(
-          context.get("db"),
-          actorFromContext(context),
-          context.req.param("userId")!,
-        ),
+      const userId = context.req.param("userId")!;
+      return platformUsersCommand(
+        context,
+        "disableUser",
+        operationJson({ userId }),
         200,
+        async (platform) => {
+          const result = await service.disableUser(platform, userId);
+          return {
+            body: result.row,
+            outcome: result.changed ? "applied" : "noop",
+            resultReference: { type: "user", id: userId },
+          };
+        },
+        { retention: "ordinary" },
       );
     },
   );
@@ -214,13 +249,21 @@ export function register(app: Hono<AppEnvironment>) {
     routes.enableUser,
     validate("param", userParams),
     async (context) => {
-      return context.json(
-        await service.enableUser(
-          context.get("db"),
-          actorFromContext(context),
-          context.req.param("userId")!,
-        ),
+      const userId = context.req.param("userId")!;
+      return platformUsersCommand(
+        context,
+        "enableUser",
+        operationJson({ userId }),
         200,
+        async (platform) => {
+          const result = await service.enableUser(platform, userId);
+          return {
+            body: result.row,
+            outcome: result.changed ? "applied" : "noop",
+            resultReference: { type: "user", id: userId },
+          };
+        },
+        { retention: "ordinary" },
       );
     },
   );
@@ -229,13 +272,21 @@ export function register(app: Hono<AppEnvironment>) {
     routes.retireUserEmail,
     validate("param", userParams),
     async (context) => {
-      return context.json(
-        await service.retireUserEmail(
-          context.get("db"),
-          actorFromContext(context),
-          context.req.param("userId")!,
-        ),
+      const userId = context.req.param("userId")!;
+      return platformUsersCommand(
+        context,
+        "retireUserEmail",
+        operationJson({ userId }),
         200,
+        async (platform) => {
+          const result = await service.retireUserEmail(platform, userId);
+          return {
+            body: result.row,
+            outcome: result.changed ? "applied" : "noop",
+            resultReference: { type: "user", id: userId },
+          };
+        },
+        { retention: "ordinary" },
       );
     },
   );
@@ -245,13 +296,19 @@ export function register(app: Hono<AppEnvironment>) {
     validate("param", userParams),
     validate("query", eraseSchema),
     async (context) => {
-      await service.eraseUser(
-        context.get("db"),
-        actorFromContext(context),
-        context.req.param("userId")!,
-        eraseSchema.parse(context.req.query()).confirm,
+      const userId = context.req.param("userId")!;
+      const confirm = eraseSchema.parse(context.req.query()).confirm;
+      return platformCommand(
+        context,
+        "eraseUser",
+        operationJson({ userId, confirm }),
+        204,
+        async (platform) => {
+          await service.eraseUser(platform, userId, confirm);
+          return { body: null, resultReference: { type: "user", id: userId } };
+        },
+        { retention: "ordinary" },
       );
-      return context.body(null, 204);
     },
   );
 }

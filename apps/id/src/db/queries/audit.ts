@@ -1,13 +1,33 @@
-import { and, desc, eq, gte, lt, or, inArray, sql } from "drizzle-orm";
+import {
+  requirePlatformReadContext,
+  type PlatformReadContext,
+} from "../../services/platform-context.ts";
+import {
+  requireTenantHistoryContext,
+  type TenantReadContext,
+} from "../../services/tenant-context.ts";
+import {
+  and,
+  desc,
+  eq,
+  gte,
+  lt,
+  inArray,
+  notInArray,
+  or,
+  type SQL,
+} from "drizzle-orm";
 
 import { createId } from "../../lib/id.ts";
 import type { Executor } from "../client.ts";
-import { auditEvents, members } from "../schema/index.ts";
+import { auditEvents, auditEventSubjects } from "../schema/index.ts";
 import type { AuditActorType, AuditOutcome } from "../schema/vocabulary.ts";
 
 export type AuditEvent = typeof auditEvents.$inferSelect;
 
 export type AuditEventInput = {
+  schemaVersion?: 1 | 2 | 3;
+  operationId?: string;
   actorType: AuditActorType;
   actorId: string;
   organizationId?: string | null;
@@ -34,6 +54,7 @@ export async function recordAuditEvent(
 }
 
 export type AuditEventFilters = {
+  operationId?: string;
   organizationId?: string;
   actorId?: string;
   action?: string;
@@ -44,16 +65,53 @@ export type AuditEventFilters = {
   to?: Date;
 };
 
-export async function listAuditEvents(
+export function listAuditEvents(
+  context: PlatformReadContext,
+  filters: AuditEventFilters,
+  page: { cursor?: string; limit: number },
+) {
+  const { tx } = requirePlatformReadContext(context);
+  return queryAuditEvents(tx, filters, page);
+}
+
+export function listOrganizationAuditEvents(
+  context: TenantReadContext<"history">,
+  filters: Omit<AuditEventFilters, "organizationId">,
+  page: { cursor?: string; limit: number },
+) {
+  const { tx, organizationId } = requireTenantHistoryContext(context);
+  return queryAuditEvents(
+    tx,
+    { ...filters, organizationId },
+    page,
+    // Legacy link payloads did not establish the target's visibility. Retain
+    // them for platform auditors without consulting mutable/live target rows.
+    or(
+      eq(auditEvents.schemaVersion, 2),
+      notInArray(auditEvents.action, [
+        "client.resource_linked",
+        "client.resource_unlinked",
+        "client.resource_unchanged",
+      ]),
+    ),
+  );
+}
+
+async function queryAuditEvents(
   executor: Executor,
   filters: AuditEventFilters,
   page: { cursor?: string; limit: number },
+  visibility?: SQL,
 ): Promise<{ items: AuditEvent[]; nextCursor: string | null }> {
   const rows = await executor
     .select()
     .from(auditEvents)
     .where(
       and(
+        visibility,
+        filters.operationId === undefined
+          ? undefined
+          : eq(auditEvents.operationId, filters.operationId),
         filters.organizationId !== undefined
           ? eq(auditEvents.organizationId, filters.organizationId)
           : undefined,
@@ -91,36 +149,28 @@ export async function listAuditEvents(
 }
 
 export async function listUserAuditEvents(
-  executor: Executor,
+  context: PlatformReadContext,
   userId: string,
   filters: Pick<AuditEventFilters, "action" | "outcome" | "from" | "to">,
   page: { cursor?: string; limit: number },
 ): Promise<{ items: AuditEvent[]; nextCursor: string | null }> {
+  const { tx: executor } = requirePlatformReadContext(context);
   const rows = await executor
     .select()
     .from(auditEvents)
     .where(
       and(
-        or(
-          eq(auditEvents.actorId, userId),
-          and(
-            eq(auditEvents.targetType, "user"),
-            eq(auditEvents.targetId, userId),
-          ),
-          and(
-            inArray(auditEvents.targetType, ["member", "group_member"]),
-            inArray(
-              auditEvents.targetId,
-              executor
-                .select({ id: sql<string>`${members.id}::text` })
-                .from(members)
-                .where(eq(members.userId, userId)),
+        inArray(
+          auditEvents.id,
+          executor
+            .select({ id: auditEventSubjects.eventId })
+            .from(auditEventSubjects)
+            .where(
+              and(
+                eq(auditEventSubjects.entityType, "user"),
+                eq(auditEventSubjects.entityId, userId),
+              ),
             ),
-          ),
-          and(
-            eq(auditEvents.targetType, "session"),
-            sql`${auditEvents.data}->>'userId' = ${userId}`,
-          ),
         ),
         filters.outcome === undefined
           ? undefined

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
-import { createOrganization } from "../db/queries/organizations.ts";
+import { createOrganization } from "../__tests__/organization-queries.ts";
 import { createId } from "../lib/id.ts";
 import {
   users,
@@ -11,15 +11,15 @@ import {
   oauthResources,
   auditEvents,
 } from "../db/schema/index.ts";
-import { createGroup, addGroupMember } from "../db/queries/groups.ts";
-import { createEntitlement } from "../db/queries/entitlements.ts";
+import { createGroup, addGroupMember } from "../__tests__/group-queries.ts";
+import { createEntitlement } from "../__tests__/entitlement-queries.ts";
 let connection: DatabaseConnection;
 beforeAll(() => {
   connection = createDatabase(testEnvironment());
 });
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table audit_events, organizations, users, oauth_clients, oauth_resources cascade`,
+    sql`truncate table security_identifiers, audit_events, organizations, users, oauth_clients, oauth_resources cascade`,
   );
 });
 afterAll(async () => {
@@ -43,6 +43,7 @@ async function seed() {
       id: userId,
       email: `person${index}@example.com`,
       name: `Person ${index}`,
+      status: "active",
     });
     await db.insert(members).values({
       id,
@@ -80,7 +81,104 @@ async function seed() {
     .values({ id: createId(), clientId, redirectUris: [], scopes: ["openid"] });
   return { db, org, other, ids, group, foreignGroup, resource, clientId };
 }
-import { getMemberAccess, listTargetAccess } from "./access.ts";
+import * as service from "./access.ts";
+import * as accessQueries from "../db/queries/access.ts";
+import { inTenant, inTenantRead } from "../__tests__/tenant-command.ts";
+import type { Database } from "../db/client.ts";
+import type { TenantReadContext } from "./tenant-context.ts";
+const getMemberAccess = (db: Database, org: string, memberId: string) =>
+  inTenantRead(db, org, "memberAccess", (context) =>
+    service.getMemberAccess(context, memberId),
+  );
+const listTargetAccess = (
+  db: Database,
+  org: string,
+  target: Parameters<typeof service.listTargetAccess>[1],
+  page: Parameters<typeof service.listTargetAccess>[2],
+) =>
+  inTenantRead(db, org, "directory", (context) =>
+    service.listTargetAccess(context, target, page),
+  );
+test("access queries reject raw database and tenant arguments", async () => {
+  const { db, org, ids, resource } = await seed();
+  await expect(
+    Reflect.apply(accessQueries.memberAccess, undefined, [db, org.id, ids[0]!]),
+  ).rejects.toThrow("Invalid or expired");
+  await expect(
+    Reflect.apply(accessQueries.targetAccess, undefined, [
+      db,
+      org.id,
+      { resource },
+      { limit: 1 },
+    ]),
+  ).rejects.toThrow("Invalid or expired");
+});
+test("access query contexts bind tenant, purpose and callback lifetime", async () => {
+  const { db, org, other, ids, resource } = await seed();
+  for (const organizationId of [org.id, other.id])
+    await createEntitlement(db, { organizationId, resource, scopes: ["read"] });
+  let escaped!: TenantReadContext<"memberAccess">;
+  await inTenantRead(db, org.id, "memberAccess", async (context) => {
+    escaped = context;
+    expect(
+      (await accessQueries.memberAccess(context, ids[0]!)).targets,
+    ).toHaveLength(1);
+    expect(await accessQueries.memberAccess(context, ids[3]!)).toEqual({
+      effective: false,
+      targets: [],
+    });
+    await expect(
+      accessQueries.memberAccess({ ...context }, ids[0]!),
+    ).rejects.toThrow("Invalid or expired");
+    await expect(
+      accessQueries.targetAccess(
+        context as unknown as TenantReadContext<"directory">,
+        { resource },
+        { limit: 10 },
+      ),
+    ).rejects.toThrow("Invalid or expired");
+  });
+  await expect(accessQueries.memberAccess(escaped, ids[0]!)).rejects.toThrow(
+    "Invalid or expired",
+  );
+  let directory!: TenantReadContext<"directory">;
+  await inTenantRead(db, org.id, "directory", async (context) => {
+    directory = context;
+    const page = await accessQueries.targetAccess(
+      context,
+      { resource },
+      { limit: 10 },
+    );
+    expect(page.items.map((row) => row.memberId).sort()).toEqual(
+      [ids[0]!, ids[1]!].sort(),
+    );
+    await expect(
+      accessQueries.targetAccess({ ...context }, { resource }, { limit: 10 }),
+    ).rejects.toThrow("Invalid or expired");
+    await expect(
+      accessQueries.memberAccess(
+        context as unknown as TenantReadContext<"memberAccess">,
+        ids[0]!,
+      ),
+    ).rejects.toThrow("Invalid or expired");
+  });
+  await expect(
+    accessQueries.targetAccess(directory, { resource }, { limit: 10 }),
+  ).rejects.toThrow("Invalid or expired");
+  let command!: import("./tenant-context.ts").TenantMemberContext;
+  await inTenant(db, org.id, async (context) => {
+    command = context;
+    expect(
+      (await accessQueries.memberAccess(context, ids[0]!)).targets,
+    ).toHaveLength(1);
+    await expect(
+      accessQueries.memberAccess({ ...context }, ids[0]!),
+    ).rejects.toThrow("Invalid or expired");
+  });
+  await expect(accessQueries.memberAccess(command, ids[0]!)).rejects.toThrow(
+    "Invalid or expired",
+  );
+});
 test("access service checks organisation, member and target existence without auditing reads", async () => {
   const { db, org, other, ids, resource, clientId } = await seed();
   await createEntitlement(db, {
@@ -144,4 +242,36 @@ test("access service checks organisation, member and target existence without au
       listTargetAccess(db, org.id, target, { limit: 1 }),
     ).rejects.toMatchObject({ status: 404, code: "not_found" });
   expect(await db.select().from(auditEvents)).toEqual([]);
+});
+
+test("access services reject forged, expired and differently scoped contexts", async () => {
+  const { db, org, ids, resource } = await seed();
+  let escaped!: TenantReadContext<"memberAccess">;
+  await inTenantRead(db, org.id, "memberAccess", async (context) => {
+    escaped = context;
+    await expect(
+      service.getMemberAccess({ ...context }, ids[0]!),
+    ).rejects.toThrow("Invalid or expired");
+    await expect(
+      service.listTargetAccess(
+        context as unknown as TenantReadContext<"directory">,
+        { resource },
+        { limit: 1 },
+      ),
+    ).rejects.toThrow("Invalid or expired");
+  });
+  await expect(service.getMemberAccess(escaped, ids[0]!)).rejects.toThrow(
+    "Invalid or expired",
+  );
+  await inTenantRead(db, org.id, "directory", async (context) => {
+    await expect(
+      service.getMemberAccess(
+        context as unknown as TenantReadContext<"memberAccess">,
+        ids[0]!,
+      ),
+    ).rejects.toThrow("Invalid or expired");
+    await expect(
+      service.listTargetAccess({ ...context }, { resource }, { limit: 1 }),
+    ).rejects.toThrow("Invalid or expired");
+  });
 });

@@ -49,6 +49,9 @@ jobs:
       - name: Test with coverage
         run: bun --filter @answerable/id test:coverage
 
+      - name: Rehearse upstream token backup and restore
+        run: bun --filter @answerable/id test:restore
+
       - name: Show PostgreSQL logs on failure
         if: failure()
         run: docker compose logs postgres

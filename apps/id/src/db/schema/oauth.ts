@@ -1,5 +1,7 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   foreignKey,
   index,
   integer,
@@ -73,39 +75,70 @@ export const oauthClients = pgTable(
     userId: uuid("user_id").references(() => users.id, {
       onDelete: "cascade",
     }),
-    organizationId: uuid("organization_id").references(
-      () => organizations.id,
-      { onDelete: "restrict" },
-    ),
+    organizationId: uuid("organization_id").references(() => organizations.id, {
+      onDelete: "restrict",
+    }),
     metadata: jsonb("metadata"),
     ...timestamps(),
+    revision: integer("revision").default(1).notNull(),
+    authorizationVersion: integer("authorization_version").default(1).notNull(),
   },
   (table) => [
+    check("oauth_clients_revision_check", sql`${table.revision} > 0`),
+    check(
+      "oauth_clients_authorization_version_check",
+      sql`${table.authorizationVersion} > 0`,
+    ),
     index("oauth_clients_user_id_idx").on(table.userId),
     index("oauth_clients_organization_id_idx").on(table.organizationId),
   ],
 );
 
 /** A protected resource (an MCP server) with its own token policy. */
-export const oauthResources = pgTable("oauth_resources", {
-  id: id(),
-  /** The RFC 8707 resource indicator and the `aud` claim value. */
-  identifier: text("identifier").notNull().unique(),
-  name: text("name").notNull(),
-  accessTokenTtl: integer("access_token_ttl"),
-  refreshTokenTtl: integer("refresh_token_ttl"),
-  signingAlgorithm: text("signing_algorithm"),
-  signingKeyId: text("signing_key_id"),
-  allowedScopes: text("allowed_scopes").array(),
-  customClaims: jsonb("custom_claims"),
-  dpopBoundAccessTokensRequired: boolean("dpop_bound_access_tokens_required")
-    .default(false)
-    .notNull(),
-  disabled: boolean("disabled").default(false).notNull(),
-  policyVersion: integer("policy_version").default(1).notNull(),
-  metadata: jsonb("metadata"),
-  ...timestamps(),
-});
+export const oauthResources = pgTable(
+  "oauth_resources",
+  {
+    id: id(),
+    classification: text("classification", {
+      enum: ["platform_shared", "tenant_owned"],
+    })
+      .default("platform_shared")
+      .notNull(),
+    organizationId: uuid("organization_id").references(() => organizations.id, {
+      onDelete: "restrict",
+    }),
+    /** The RFC 8707 resource indicator and the `aud` claim value. */
+    identifier: text("identifier").notNull().unique(),
+    name: text("name").notNull(),
+    accessTokenTtl: integer("access_token_ttl"),
+    refreshTokenTtl: integer("refresh_token_ttl"),
+    signingAlgorithm: text("signing_algorithm"),
+    signingKeyId: text("signing_key_id"),
+    allowedScopes: text("allowed_scopes").array(),
+    customClaims: jsonb("custom_claims"),
+    dpopBoundAccessTokensRequired: boolean("dpop_bound_access_tokens_required")
+      .default(false)
+      .notNull(),
+    disabled: boolean("disabled").default(false).notNull(),
+    revision: integer("revision").default(1).notNull(),
+    policyVersion: integer("policy_version").default(1).notNull(),
+    metadata: jsonb("metadata"),
+    ...timestamps(),
+  },
+  (table) => [
+    check(
+      "oauth_resources_ownership_check",
+      sql`(${table.classification} = 'platform_shared' and ${table.organizationId} is null) or (${table.classification} = 'tenant_owned' and ${table.organizationId} is not null)`,
+    ),
+    index("oauth_resources_organization_id_idx").on(table.organizationId),
+    check("oauth_resources_revision_check", sql`${table.revision} > 0`),
+    // The provider merges resource custom claims after extension claims.
+    check(
+      "oauth_resources_identity_claims_check",
+      sql`NOT (${table.customClaims} ?| ARRAY['client_instance', 'organization_id', 'authorization_version', 'organization_authorization_version', 'subject_type'])`,
+    ),
+  ],
+);
 
 /** Server-owned link: which clients may request tokens for which resources. */
 export const oauthClientResources = pgTable(
@@ -127,7 +160,7 @@ export const oauthClientResources = pgTable(
       name: "oauth_client_resources_resource_id_fk",
       columns: [table.resourceId],
       foreignColumns: [oauthResources.identifier],
-    }).onDelete("cascade"),
+    }).onDelete("restrict"),
     unique("oauth_client_resources_client_id_resource_id_unique").on(
       table.clientId,
       table.resourceId,

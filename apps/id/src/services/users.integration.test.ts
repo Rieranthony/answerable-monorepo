@@ -1,9 +1,14 @@
+import {
+  listUserAuditEvents,
+  listAuditEvents,
+} from "../__tests__/audit-queries.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import {
   accounts,
+  grantContexts,
   auditEvents,
   members,
   oauthAccessTokens,
@@ -15,12 +20,51 @@ import {
 } from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
 import type { Actor } from "./actor.ts";
-import * as service from "./users.ts";
+import * as implementation from "./users.ts";
+import {
+  inPlatformRead,
+  inPlatformUsers,
+  inPlatformWrite,
+} from "../__tests__/platform-context.ts";
+import type { Database } from "../db/client.ts";
+const service = {
+  ...implementation,
+  eraseUser: (db: Database, actor: Actor, id: string, confirm: string) =>
+    inPlatformWrite(
+      db,
+      (context) => implementation.eraseUser(context, id, confirm),
+      actor,
+    ),
+  disableUser: (db: Database, actor: Actor, userId: string) =>
+    inPlatformUsers(
+      db,
+      (context) => implementation.disableUser(context, userId),
+      actor,
+    ),
+  enableUser: (db: Database, actor: Actor, userId: string) =>
+    inPlatformUsers(
+      db,
+      (context) => implementation.enableUser(context, userId),
+      actor,
+    ),
+  retireUserEmail: (db: Database, actor: Actor, userId: string) =>
+    inPlatformUsers(
+      db,
+      (context) => implementation.retireUserEmail(context, userId),
+      actor,
+    ),
+  listUsers: (
+    db: Database,
+    arg1: Parameters<typeof implementation.listUsers>[1],
+  ) => inPlatformRead(db, (context) => implementation.listUsers(context, arg1)),
+  getUser: (db: Database, arg1: Parameters<typeof implementation.getUser>[1]) =>
+    inPlatformRead(db, (context) => implementation.getUser(context, arg1)),
+};
 
 let connection: DatabaseConnection;
 const actor: Actor = {
-  actorType: "user",
-  actorId: createId(),
+  actorType: "system",
+  actorId: "root",
   requestId: "users-service",
 };
 beforeAll(() => {
@@ -28,7 +72,7 @@ beforeAll(() => {
 });
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table audit_events, organizations, users cascade`,
+    sql`truncate table security_identifiers, audit_events, organizations, users cascade`,
   );
 });
 afterAll(async () => {
@@ -39,6 +83,7 @@ async function seed(status: "active" | "inert" = "active") {
   const userId = createId();
   const organizationId = createId();
   const sessionId = createId();
+  const authTime = new Date();
   await db.insert(users).values({
     id: userId,
     email: userId + "@example.com",
@@ -60,6 +105,7 @@ async function seed(status: "active" | "inert" = "active") {
     id: sessionId,
     userId,
     token: createId(),
+    createdAt: authTime,
     expiresAt: new Date(Date.now() + 60000),
   });
   await db
@@ -85,6 +131,74 @@ async function events(userId: string) {
     .where(eq(auditEvents.targetId, userId))
     .orderBy(auditEvents.id);
 }
+for (const kind of ["session", "access", "refresh"] as const) {
+  test(`disabling an already-disabled user reconciles remaining ${kind} state`, async () => {
+    const db = connection.db;
+    const id = await seed();
+    const other = await seed();
+    await service.disableUser(db, actor, id);
+    const before = await db.select().from(users).where(eq(users.id, id));
+    const lateId = createId();
+    if (kind === "session") {
+      await db
+        .insert(sessions)
+        .values({
+          id: lateId,
+          userId: id,
+          token: createId(),
+          expiresAt: new Date(Date.now() + 60000),
+        });
+    } else {
+      await db
+        .insert(kind === "access" ? oauthAccessTokens : oauthRefreshTokens)
+        .values({
+          id: lateId,
+          userId: id,
+          clientId: id,
+          token: createId(),
+          scopes: [],
+          expiresAt: new Date(Date.now() + 60000),
+        });
+    }
+    expect(await service.disableUser(db, actor, id)).toMatchObject({
+      changed: true,
+    });
+    expect(await db.select().from(users).where(eq(users.id, id))).toEqual(
+      before,
+    );
+    expect(
+      await db.select().from(sessions).where(eq(sessions.userId, id)),
+    ).toHaveLength(0);
+    for (const table of [oauthAccessTokens, oauthRefreshTokens]) {
+      const rows = await db.select().from(table).where(eq(table.userId, id));
+      expect(rows.every((row) => row.revoked !== null)).toBe(true);
+      const retained = await db
+        .select()
+        .from(table)
+        .where(eq(table.userId, other));
+      expect(retained.every((row) => row.revoked === null)).toBe(true);
+    }
+    const evidence = (await events(id)).at(-1)!;
+    expect(evidence).toMatchObject({
+      action: "user.disabled",
+      data: {
+        before: { status: "disabled" },
+        after: { status: "disabled" },
+        sessions: kind === "session" ? 1 : 0,
+        sessionIds: kind === "session" ? [lateId] : [],
+        accessTokens: kind === "access" ? 1 : 0,
+        refreshTokens: kind === "refresh" ? 1 : 0,
+        revokedGrantContexts: [],
+      },
+    });
+    expect(await service.disableUser(db, actor, id)).toMatchObject({
+      changed: false,
+    });
+    expect(await db.select().from(users).where(eq(users.id, id))).toEqual(
+      before,
+    );
+  });
+}
 test("all missing user paths return 404 without audit", async () => {
   const db = connection.db;
   const id = createId();
@@ -107,9 +221,8 @@ test("lifecycle conflicts, kill switch counts, retired-email CHECK and erasure a
   const other = await seed("inert");
   expect((await service.listUsers(db, { limit: 1 })).nextCursor).toBeString();
   expect((await service.getUser(db, id)).sessionCount).toBe(1);
-  await expect(service.enableUser(db, actor, id)).rejects.toMatchObject({
-    status: 409,
-    code: "user_already_active",
+  expect(await service.enableUser(db, actor, id)).toMatchObject({
+    changed: false,
   });
   await expect(service.enableUser(db, actor, other)).rejects.toMatchObject({
     status: 409,
@@ -120,12 +233,11 @@ test("lifecycle conflicts, kill switch counts, retired-email CHECK and erasure a
       service.retireUserEmail(db, actor, userId),
     ).rejects.toMatchObject({ status: 409, code: "user_not_disabled" });
   expect(await service.disableUser(db, actor, id)).toMatchObject({
-    status: "disabled",
-    disabledAt: expect.any(Date),
+    changed: true,
+    row: { status: "disabled", disabledAt: expect.any(Date) },
   });
-  await expect(service.disableUser(db, actor, id)).rejects.toMatchObject({
-    status: 409,
-    code: "user_already_disabled",
+  expect(await service.disableUser(db, actor, id)).toMatchObject({
+    changed: false,
   });
   expect((await service.getUser(db, id)).sessionCount).toBe(0);
   for (const table of [oauthRefreshTokens, oauthAccessTokens]) {
@@ -137,7 +249,9 @@ test("lifecycle conflicts, kill switch counts, retired-email CHECK and erasure a
         ?.revoked,
     ).toBeNull();
   }
-  expect(await events(id)).toMatchObject([
+  expect(
+    (await events(id)).filter((event) => event.action === "user.disabled"),
+  ).toMatchObject([
     {
       ...actor,
       targetType: "user",
@@ -149,18 +263,17 @@ test("lifecycle conflicts, kill switch counts, retired-email CHECK and erasure a
     },
   ]);
   expect(await service.enableUser(db, actor, id)).toMatchObject({
-    status: "active",
-    disabledAt: null,
+    changed: true,
+    row: { status: "active", disabledAt: null },
   });
   expect((await service.getUser(db, id)).sessionCount).toBe(0);
   await service.disableUser(db, actor, id);
   expect(await service.retireUserEmail(db, actor, id)).toMatchObject({
-    email: id + "@retired.invalid",
-    retiredEmail: id + "@example.com",
+    changed: true,
+    row: { email: id + "@retired.invalid", retiredEmail: id + "@example.com" },
   });
-  await expect(service.retireUserEmail(db, actor, id)).rejects.toMatchObject({
-    status: 409,
-    code: "user_email_already_retired",
+  expect(await service.retireUserEmail(db, actor, id)).toMatchObject({
+    changed: false,
   });
   await expect(service.enableUser(db, actor, id)).rejects.toMatchObject({
     status: 409,
@@ -174,26 +287,38 @@ test("lifecycle conflicts, kill switch counts, retired-email CHECK and erasure a
   await expect(service.getUser(db, id)).rejects.toMatchObject({ status: 404 });
   const audit = await events(id);
   expect(audit.map((e) => e.action)).toEqual([
+    "user.enable_unchanged",
     "user.disabled",
+    "user.disable_unchanged",
     "user.enabled",
     "user.disabled",
     "user.email_retired",
+    "user.email_retirement_unchanged",
     "user.erased",
   ]);
-  expect(audit[1]?.data).toEqual({ status: "active" });
-  expect(audit[2]?.data).toEqual({
+  expect(audit[3]?.data).toMatchObject({
+    before: { status: "disabled" },
+    after: { status: "active" },
+  });
+  expect(audit[4]?.data).toMatchObject({
     sessions: 0,
+    sessionIds: [],
     refreshTokens: 0,
     accessTokens: 0,
   });
-  expect(audit[3]?.data).toEqual({ retiredEmail: id + "@example.com" });
-  expect(audit[4]).toMatchObject({
+  expect(audit[5]?.data).toMatchObject({
+    before: { emailRetired: false },
+    after: { emailRetired: true },
+  });
+  expect(JSON.stringify(audit)).not.toContain(id + "@example.com");
+  expect(audit[7]).toMatchObject({
     targetId: id,
     organizationId: null,
-    data: {},
+    data: { before: { id }, after: null },
   });
   expect(await service.disableUser(db, actor, other)).toMatchObject({
-    status: "disabled",
+    row: { status: "disabled" },
+    changed: true,
   });
 });
 test("erase cascades live memberships, accounts, sessions and tokens", async () => {
@@ -236,4 +361,164 @@ test("audit failure rolls back every lifecycle write and all kill-switch side ef
     email: id + "@example.com",
   });
   expect(await events(id)).toHaveLength(1);
+});
+
+async function seedGrantContexts() {
+  const db = connection.db;
+  const userId = await seed();
+  const otherUserId = await seed();
+  const extraOrg = createId();
+  await db
+    .insert(organizations)
+    .values({ id: extraOrg, slug: extraOrg, name: "Second tenant" });
+  await db
+    .insert(members)
+    .values({ id: createId(), organizationId: extraOrg, userId });
+  await db.update(oauthClients).set({ scopes: ["read"] });
+  await db
+    .update(oauthClients)
+    .set({ userId })
+    .where(eq(oauthClients.clientId, userId));
+  const [client] = await db
+    .select()
+    .from(oauthClients)
+    .where(eq(oauthClients.clientId, userId));
+  const contexts: (typeof grantContexts.$inferSelect)[] = [];
+  for (const membership of await db.select().from(members)) {
+    const [session] = await db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.userId, membership.userId));
+    const [grant] = await db
+      .insert(grantContexts)
+      .values({
+        id: createId(),
+        organizationId: membership.organizationId,
+        memberId: membership.id,
+        userId: membership.userId,
+        clientInstanceId: client!.id,
+        authenticationSessionId: session!.id,
+        authTime: session!.createdAt,
+        requestedScopes: ["read"],
+        expiresAt: new Date(Date.now() + 60000),
+      })
+      .returning();
+    contexts.push(grant!);
+  }
+  const [otherClient] = await db
+    .select()
+    .from(oauthClients)
+    .where(eq(oauthClients.clientId, otherUserId));
+  const template = contexts.find((row) => row.userId === otherUserId)!;
+  const [independent] = await db
+    .insert(grantContexts)
+    .values({ ...template, id: createId(), clientInstanceId: otherClient!.id })
+    .returning();
+  return { db, userId, otherUserId, contexts, independent: independent! };
+}
+
+test("global disable irreversibly revokes that user's contexts across tenants without disabling another user", async () => {
+  const { db, userId, otherUserId, contexts } = await seedGrantContexts();
+  const expected = contexts
+    .filter((row) => row.userId === userId)
+    .map(({ id, organizationId }) => ({ id, organizationId }));
+  expect(expected).toHaveLength(2);
+  expect((await service.disableUser(db, actor, userId)).changed).toBe(true);
+  const revoked = await db
+    .select()
+    .from(grantContexts)
+    .where(eq(grantContexts.userId, userId));
+  for (const row of revoked) expect(row.revokedAt).toBeInstanceOf(Date);
+  for (const row of await db
+    .select()
+    .from(grantContexts)
+    .where(eq(grantContexts.userId, otherUserId)))
+    expect(row.revokedAt).toBeNull();
+  expect((await events(userId))[0]!.data).toMatchObject({
+    revokedGrantContexts: expect.arrayContaining(expected),
+  });
+  expect((await service.disableUser(db, actor, userId)).changed).toBe(false);
+  expect((await events(userId))[1]!.data).toMatchObject({
+    revokedGrantContexts: [],
+  });
+  await service.enableUser(db, actor, userId);
+  expect(
+    await db
+      .select()
+      .from(grantContexts)
+      .where(eq(grantContexts.userId, userId)),
+  ).toEqual(revoked);
+});
+
+test("user erasure audits all deleted contexts including another user's grant through its owned client", async () => {
+  const { db, userId, contexts, independent } = await seedGrantContexts();
+  await service.eraseUser(db, actor, userId, userId);
+  expect(await db.select().from(grantContexts)).toEqual([independent]);
+  const [event] = await events(userId);
+  expect(event!.data).toMatchObject({
+    deletedGrantContexts: expect.arrayContaining(
+      contexts.map(({ id, organizationId, userId }) => ({
+        id,
+        organizationId,
+        userId,
+      })),
+    ),
+  });
+  expect(
+    (
+      await listUserAuditEvents(db, independent.userId, {}, { limit: 10 })
+    ).items.map((row) => row.id),
+  ).toEqual([event!.id]);
+  expect(
+    (await listUserAuditEvents(db, userId, {}, { limit: 10 })).items.map(
+      (row) => row.id,
+    ),
+  ).toEqual([event!.id]);
+  expect(
+    (
+      await listAuditEvents(
+        db,
+        { organizationId: independent.organizationId },
+        { limit: 10 },
+      )
+    ).items,
+  ).toEqual([]);
+  await db.delete(users).where(eq(users.id, independent.userId));
+  expect(
+    (
+      await listUserAuditEvents(db, independent.userId, {}, { limit: 10 })
+    ).items.map((row) => row.id),
+  ).toEqual([event!.id]);
+});
+
+test("global user audit failure restores grant contexts for disable and erasure", async () => {
+  const { db, userId } = await seedGrantContexts();
+  const before = await db.select().from(grantContexts);
+  const invalid = { ...actor, requestId: "\0" };
+  await expect(service.disableUser(db, invalid, userId)).rejects.toThrow();
+  expect(await db.select().from(grantContexts)).toEqual(before);
+  await expect(
+    service.eraseUser(db, invalid, userId, userId),
+  ).rejects.toThrow();
+  expect(await db.select().from(grantContexts)).toEqual(before);
+  expect(await events(userId)).toHaveLength(0);
+});
+
+test("disable reconciles unrevoked contexts on an already-disabled user as an applied effect", async () => {
+  const { db, userId } = await seedGrantContexts();
+  await db
+    .update(users)
+    .set({ status: "disabled", disabledAt: new Date() })
+    .where(eq(users.id, userId));
+  expect((await service.disableUser(db, actor, userId)).changed).toBe(true);
+  for (const row of await db
+    .select()
+    .from(grantContexts)
+    .where(eq(grantContexts.userId, userId)))
+    expect(row.revokedAt).toBeInstanceOf(Date);
+  expect((await events(userId))[0]!.data).toMatchObject({
+    before: { status: "disabled" },
+    after: { status: "disabled" },
+  });
+  expect((await service.disableUser(db, actor, userId)).changed).toBe(false);
 });

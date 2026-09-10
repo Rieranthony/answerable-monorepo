@@ -153,13 +153,16 @@
             "type": "string"
           },
           "accessToken": {
-            "type": "string"
+            "type": "string",
+            "readOnly": true
           },
           "refreshToken": {
-            "type": "string"
+            "type": "string",
+            "readOnly": true
           },
           "idToken": {
-            "type": "string"
+            "type": "string",
+            "readOnly": true
           },
           "accessTokenExpiresAt": {
             "type": "string",
@@ -237,248 +240,20 @@
           "updatedAt"
         ]
       },
-      "OrganizationDomain": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "readOnly": true
-          },
-          "organizationId": {
-            "type": "string"
-          },
-          "domain": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "id",
-          "organizationId",
-          "domain",
-          "status",
-          "createdAt",
-          "updatedAt"
-        ]
-      },
-      "Organization": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "readOnly": true
-          },
-          "name": {
-            "type": "string"
-          },
-          "slug": {
-            "type": "string"
-          },
-          "logo": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "metadata": {
-            "type": "string"
-          },
-          "status": {
-            "type": [
-              "active",
-              "disabled"
-            ],
-            "default": "active",
-            "readOnly": true
-          },
-          "disabledAt": {
-            "type": "string",
-            "format": "date-time",
-            "readOnly": true
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time",
-            "readOnly": true
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "slug",
-          "createdAt",
-          "status"
-        ]
-      },
-      "Member": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "readOnly": true
-          },
-          "organizationId": {
-            "type": "string"
-          },
-          "userId": {
-            "type": "string"
-          },
-          "role": {
-            "type": "string",
-            "default": "member"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "validFrom": {
-            "type": "string",
-            "format": "date-time",
-            "readOnly": true
-          },
-          "validUntil": {
-            "type": "string",
-            "format": "date-time",
-            "readOnly": true
-          }
-        },
-        "required": [
-          "id",
-          "organizationId",
-          "userId",
-          "role",
-          "createdAt"
-        ]
-      },
-      "Invitation": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "readOnly": true
-          },
-          "organizationId": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          },
-          "role": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string",
-            "default": "pending"
-          },
-          "expiresAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "inviterId": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "organizationId",
-          "email",
-          "status",
-          "expiresAt",
-          "createdAt",
-          "inviterId"
-        ]
-      },
-      "Jwks": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "readOnly": true
-          },
-          "publicKey": {
-            "type": "string"
-          },
-          "privateKey": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "expiresAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "alg": {
-            "type": "string"
-          },
-          "crv": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "publicKey",
-          "privateKey",
-          "createdAt"
-        ]
-      },
-      "SsoProvider": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "readOnly": true
-          },
-          "issuer": {
-            "type": "string"
-          },
-          "oidcConfig": {
-            "type": "string"
-          },
-          "samlConfig": {
-            "type": "string"
-          },
-          "userId": {
-            "type": "string"
-          },
-          "providerId": {
-            "type": "string"
-          },
-          "organizationId": {
-            "type": "string"
-          },
-          "domain": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "issuer",
-          "providerId",
-          "domain"
-        ]
-      },
       "OauthClient": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
+            "readOnly": true
+          },
+          "organizationId": {
+            "type": "string",
+            "readOnly": true
+          },
+          "authorizationVersion": {
+            "type": "number",
+            "default": 1,
             "readOnly": true
           },
           "clientId": {
@@ -615,8 +390,270 @@
         },
         "required": [
           "id",
+          "authorizationVersion",
           "clientId",
           "redirectUris"
+        ]
+      },
+      "OrganizationDomain": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "organizationId",
+          "domain",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "Organization": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "logo": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "metadata": {
+            "type": "string"
+          },
+          "authorizationVersion": {
+            "type": "number",
+            "default": 1,
+            "readOnly": true
+          },
+          "status": {
+            "type": [
+              "active",
+              "disabled"
+            ],
+            "default": "active",
+            "readOnly": true
+          },
+          "disabledAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "createdAt",
+          "authorizationVersion",
+          "status"
+        ]
+      },
+      "Member": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "default": "member"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": [
+              "active",
+              "revoked"
+            ],
+            "default": "active",
+            "readOnly": true
+          },
+          "revokedAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "validFrom": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "id",
+          "organizationId",
+          "userId",
+          "role",
+          "createdAt",
+          "status"
+        ]
+      },
+      "Invitation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "default": "pending"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "inviterId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organizationId",
+          "email",
+          "status",
+          "expiresAt",
+          "createdAt",
+          "inviterId"
+        ]
+      },
+      "Jwks": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "publicKey": {
+            "type": "string"
+          },
+          "privateKey": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "alg": {
+            "type": "string"
+          },
+          "crv": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "publicKey",
+          "privateKey",
+          "createdAt"
+        ]
+      },
+      "SsoProvider": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "oidcConfig": {
+            "type": "string"
+          },
+          "samlConfig": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "number",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "id",
+          "issuer",
+          "providerId",
+          "domain"
         ]
       },
       "OauthResource": {
@@ -1047,6 +1084,12 @@
             },
             "description": "Not Found. The requested resource was not found."
           },
+          "408": {
+            "description": "The request body did not finish within five seconds. Send a complete body in a new request. This is a transport response, not a problem-details response."
+          },
+          "413": {
+            "description": "The request body exceeds 262144 bytes (256 KiB). Reduce the payload. This transport response may precede application headers and is not a problem-details response."
+          },
           "429": {
             "content": {
               "application/json": {
@@ -1076,6 +1119,26 @@
               }
             },
             "description": "Internal Server Error. This is a problem with the server that you cannot fix."
+          },
+          "503": {
+            "description": "Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
+            "headers": {
+              "Retry-After": {
+                "description": "Minimum delay in seconds before retrying.",
+                "schema": {
+                  "type": "string",
+                  "example": "1"
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "Service Busy"
+                }
+              }
+            }
           }
         },
         "summary": "Read the current session"
@@ -1086,7 +1149,7 @@
         "tags": [
           "Token"
         ],
-        "description": "Only grant_type=client_credentials is accepted. Authenticate the client with HTTP Basic (client_secret_basic) and send resource= to receive a JWT bound to that resource. Other grant types open with the OIDC provider milestone.",
+        "description": "Only grant_type=client_credentials is accepted. An effective platform-approved capability for the exact owner/client/resource is required; registration and a compatibility link alone do not grant access. Omitted scopes default to the intersection of client, resource and capability ceilings. Authenticate the client with HTTP Basic (client_secret_basic) and send resource= to receive a JWT bound to that resource. At most two machine issuance transactions per verified owner organisation proceed concurrently across instances sharing this database. Excess issuance returns 503 temporarily_unavailable with Retry-After: 1. This limit starts after authentication and policy locking; it does not bound connection checkout or guarantee tenant fairness. Each database lock wait during issuance is limited to two seconds. Database statements have a configurable server-side deadline (ten seconds by default). Lock contention, statement cancellation or an unavailable issuance audit write returns 503 temporarily_unavailable with Retry-After: 1; retry after that delay with fresh client authentication (including a new assertion for private_key_jwt). Successful issuance commits an oauth.token.issued audit fact before returning the token. This is not a total request deadline. Other grant types open with the OIDC provider milestone.",
         "operationId": "issueToken",
         "security": [
           {
@@ -1251,6 +1314,12 @@
             },
             "description": "Not Found. The requested resource was not found."
           },
+          "408": {
+            "description": "The request body did not finish within five seconds. Send a complete body in a new request. This is a transport response, not a problem-details response."
+          },
+          "413": {
+            "description": "The request body exceeds 262144 bytes (256 KiB). Reduce the payload. This transport response may precede application headers and is not a problem-details response."
+          },
           "429": {
             "content": {
               "application/json": {
@@ -1280,6 +1349,45 @@
               }
             },
             "description": "Internal Server Error. This is a problem with the server that you cannot fix."
+          },
+          "503": {
+            "description": "Tenant issuance capacity or authorization state is busy, a database statement was cancelled, or issuance audit storage is unavailable. Retry after the indicated delay with fresh client authentication. Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "error_description": {
+                      "type": "string"
+                    },
+                    "error_uri": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "Service Busy"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Minimum delay in seconds before retrying.",
+                "schema": {
+                  "type": "string",
+                  "example": "1"
+                }
+              }
+            }
           }
         },
         "summary": "Obtain an access token with client credentials"
@@ -1384,6 +1492,12 @@
             },
             "description": "Not Found. The requested resource was not found."
           },
+          "408": {
+            "description": "The request body did not finish within five seconds. Send a complete body in a new request. This is a transport response, not a problem-details response."
+          },
+          "413": {
+            "description": "The request body exceeds 262144 bytes (256 KiB). Reduce the payload. This transport response may precede application headers and is not a problem-details response."
+          },
           "429": {
             "content": {
               "application/json": {
@@ -1413,6 +1527,26 @@
               }
             },
             "description": "Internal Server Error. This is a problem with the server that you cannot fix."
+          },
+          "503": {
+            "description": "Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
+            "headers": {
+              "Retry-After": {
+                "description": "Minimum delay in seconds before retrying.",
+                "schema": {
+                  "type": "string",
+                  "example": "1"
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "Service Busy"
+                }
+              }
+            }
           }
         },
         "summary": "Check that Answerable ID is reachable"
@@ -1598,6 +1732,12 @@
             },
             "description": "Not Found. The requested resource was not found."
           },
+          "408": {
+            "description": "The request body did not finish within five seconds. Send a complete body in a new request. This is a transport response, not a problem-details response."
+          },
+          "413": {
+            "description": "The request body exceeds 262144 bytes (256 KiB). Reduce the payload. This transport response may precede application headers and is not a problem-details response."
+          },
           "429": {
             "content": {
               "application/json": {
@@ -1627,6 +1767,26 @@
               }
             },
             "description": "Internal Server Error. This is a problem with the server that you cannot fix."
+          },
+          "503": {
+            "description": "Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
+            "headers": {
+              "Retry-After": {
+                "description": "Minimum delay in seconds before retrying.",
+                "schema": {
+                  "type": "string",
+                  "example": "1"
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "Service Busy"
+                }
+              }
+            }
           }
         },
         "summary": "Start sign-in through the organisation's identity provider"
@@ -1759,6 +1919,12 @@
             },
             "description": "Not Found. The requested resource was not found."
           },
+          "408": {
+            "description": "The request body did not finish within five seconds. Send a complete body in a new request. This is a transport response, not a problem-details response."
+          },
+          "413": {
+            "description": "The request body exceeds 262144 bytes (256 KiB). Reduce the payload. This transport response may precede application headers and is not a problem-details response."
+          },
           "429": {
             "content": {
               "application/json": {
@@ -1788,6 +1954,26 @@
               }
             },
             "description": "Internal Server Error. This is a problem with the server that you cannot fix."
+          },
+          "503": {
+            "description": "Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
+            "headers": {
+              "Retry-After": {
+                "description": "Minimum delay in seconds before retrying.",
+                "schema": {
+                  "type": "string",
+                  "example": "1"
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "Service Busy"
+                }
+              }
+            }
           }
         },
         "summary": "End the current session"
@@ -1905,6 +2091,12 @@
             },
             "description": "Not Found. The requested resource was not found."
           },
+          "408": {
+            "description": "The request body did not finish within five seconds. Send a complete body in a new request. This is a transport response, not a problem-details response."
+          },
+          "413": {
+            "description": "The request body exceeds 262144 bytes (256 KiB). Reduce the payload. This transport response may precede application headers and is not a problem-details response."
+          },
           "429": {
             "content": {
               "application/json": {
@@ -1934,6 +2126,26 @@
               }
             },
             "description": "Internal Server Error. This is a problem with the server that you cannot fix."
+          },
+          "503": {
+            "description": "Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
+            "headers": {
+              "Retry-After": {
+                "description": "Minimum delay in seconds before retrying.",
+                "schema": {
+                  "type": "string",
+                  "example": "1"
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "Service Busy"
+                }
+              }
+            }
           }
         },
         "summary": "Complete sign-in after the identity provider redirects back"
@@ -1999,7 +2211,7 @@
             }
           },
           "503": {
-            "description": "PostgreSQL is unavailable",
+            "description": "PostgreSQL is unavailable Request admission may also return plain text Service Busy before authentication or body acquisition when this instance is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2013,6 +2225,21 @@
                   "required": [
                     "status"
                   ]
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "Service Busy"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Minimum delay in seconds before retrying.",
+                "schema": {
+                  "type": "string",
+                  "example": "1"
                 }
               }
             }

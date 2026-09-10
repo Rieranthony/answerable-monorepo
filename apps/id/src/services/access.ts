@@ -1,9 +1,11 @@
-import type { Database } from "../db/client.ts";
+import {
+  requireTenantMemberAccessContext,
+  type TenantReadContext,
+} from "./tenant-context.ts";
 import * as queries from "../db/queries/access.ts";
-import { findOrganization } from "../db/queries/organizations.ts";
-import { findMember } from "../db/queries/members.ts";
-import { findClient } from "../db/queries/oauth-clients.ts";
-import { findResource } from "../db/queries/oauth-resources.ts";
+import { findMemberConfiguration } from "../db/queries/members.ts";
+import { findClientForAccess } from "../db/queries/oauth-clients.ts";
+import { findResourceForAccess } from "../db/queries/oauth-resources.ts";
 import type { PageQuery } from "../http/pagination.ts";
 import { ProblemError } from "../http/problem.ts";
 function requireRow<T>(row: T | null): T {
@@ -11,25 +13,21 @@ function requireRow<T>(row: T | null): T {
   return row;
 }
 export async function getMemberAccess(
-  db: Database,
-  organizationId: string,
+  context: TenantReadContext<"memberAccess">,
   memberId: string,
 ) {
-  requireRow(await findOrganization(db, organizationId));
-  requireRow(await findMember(db, organizationId, memberId));
-  return queries.memberAccess(db, organizationId, memberId);
+  requireTenantMemberAccessContext(context);
+  requireRow(await findMemberConfiguration(context, memberId));
+  return queries.memberAccess(context, memberId);
 }
 export async function listTargetAccess(
-  db: Database,
-  organizationId: string,
+  context: TenantReadContext<"directory">,
   target: queries.AccessTarget,
   page: PageQuery,
 ) {
-  requireRow(await findOrganization(db, organizationId));
-  requireRow(
-    "clientId" in target
-      ? await findClient(db, target.clientId)
-      : await findResource(db, target.resource),
-  );
-  return queries.targetAccess(db, organizationId, target, page);
+  if (target.clientId !== undefined)
+    requireRow(await findClientForAccess(context, target.clientId));
+  if (target.resource !== undefined)
+    requireRow(await findResourceForAccess(context, target.resource));
+  return queries.targetAccess(context, target, page);
 }

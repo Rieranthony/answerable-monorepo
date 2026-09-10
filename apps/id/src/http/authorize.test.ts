@@ -2,7 +2,7 @@ import { register as registerMe } from "./admin/me.ts";
 import { expect, mock, test } from "bun:test";
 import { Hono } from "hono";
 import type { Database } from "../db/client.ts";
-import type { AuditEventInput } from "../db/queries/audit.ts";
+import type { AuditEventInput } from "../__tests__/audit-queries.ts";
 import { testEnvironment } from "../__tests__/support.ts";
 import { admitRoot, authorize } from "./authorize.ts";
 import type { AdminScope } from "./admin/scopes.ts";
@@ -13,11 +13,13 @@ import { problemHandler } from "./problem.ts";
 const own = {
   organizationId: "own",
   organizationSlug: "tenant",
+  isPlatform: false,
   scopes: ["org:read"],
 };
 const platform = {
   organizationId: "staff",
   organizationSlug: "answerable",
+  isPlatform: true,
   scopes: ["platform:read"],
 };
 function setup(
@@ -131,6 +133,7 @@ test.each([
     const known = grants.some(
       (grant) => grant.organizationId === path.slice(1),
     );
+    expect(rows[0]).not.toHaveProperty("ip");
     expect(rows[0]).toMatchObject({
       actorType: client ? "client" : "user",
       actorId: client ? "client" : "user",
@@ -142,7 +145,6 @@ test.each([
       targetId: "testOperation",
       reason: code,
       requestId: "request",
-      ip: "192.0.2.1",
       userAgent: "test-agent",
     });
   }
@@ -150,9 +152,9 @@ test.each([
 test("an org scope without an organisation parameter cannot authorise", async () => {
   const { app, rows } = setup([own], { org: true, path: "/" });
   expect((await app.request("/")).status).toBe(403);
+  expect(rows[0]).not.toHaveProperty("ip");
   expect(rows[0]).toMatchObject({
     organizationId: undefined,
-    ip: undefined,
     userAgent: undefined,
   });
 });
@@ -178,6 +180,7 @@ test.each([
     ).json(),
   ).toEqual({ tier: "platform" });
   expect(rows).toHaveLength(1);
+  expect(rows[0]).not.toHaveProperty("ip");
   expect(rows[0]).toMatchObject({
     actorType: "system",
     actorId: "root",
@@ -188,7 +191,6 @@ test.each([
     targetId: "testOperation",
     data: options.data,
     requestId: "request",
-    ip: "192.0.2.1",
     userAgent: "test-agent",
   });
 });

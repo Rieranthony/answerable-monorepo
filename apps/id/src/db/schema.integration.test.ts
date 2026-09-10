@@ -14,23 +14,21 @@ import { createAuth } from "../auth.ts";
 import { isUuidV7, testEnvironment } from "../__tests__/support.ts";
 import { createId } from "../lib/id.ts";
 import { createDatabase, type DatabaseConnection } from "./client.ts";
-import { createEntitlement } from "./queries/entitlements.ts";
-import { addGroupMember, createGroup } from "./queries/groups.ts";
-import {
-  assignClientOrganization,
-  OAuthClientNotFoundError,
-} from "./queries/oauth-clients.ts";
+import { createEntitlement } from "../__tests__/entitlement-queries.ts";
+import { addGroupMember, createGroup } from "../__tests__/group-queries.ts";
+import { createClient } from "../__tests__/client-queries.ts";
 import {
   createOrganizationDomain,
-  findOrganizationByDomain,
-} from "./queries/organization-domains.ts";
-import { retireUserEmail } from "./queries/users.ts";
-import { createSsoProvider } from "./queries/sso-providers.ts";
+  organizationAcceptsDomain,
+} from "../__tests__/domain-queries.ts";
+import { retireUserEmail } from "../__tests__/user-queries.ts";
+import { createSsoProvider } from "../__tests__/sso-queries.ts";
 import {
   accounts,
   auditEvents,
   entitlements,
   groupMembers,
+  grantContexts,
   groups,
   invitations,
   jwks,
@@ -42,6 +40,7 @@ import {
   oauthConsents,
   oauthRefreshTokens,
   oauthResources,
+  organizationCapabilities,
   organizationDomains,
   organizations,
   sessions,
@@ -60,7 +59,7 @@ beforeAll(() => {
 beforeEach(async () => {
   await connection.db.execute(sql`
     truncate table
-      audit_events,
+      security_identifiers, audit_events,
       entitlements,
       group_members,
       groups,
@@ -175,9 +174,11 @@ const allTables = [
   oauthAccessTokens,
   oauthConsents,
   oauthClientAssertions,
+  organizationCapabilities,
   organizationDomains,
   groups,
   groupMembers,
+  grantContexts,
   entitlements,
   ssoProviders,
   auditEvents,
@@ -220,6 +221,68 @@ describe("integration: PostgreSQL schema", () => {
     const updated = "updated_at timestamptz default now()";
     const active = "status text default 'active'::text";
     expect(columns).toEqual({
+      grant_contexts: [
+        "id uuid",
+        "organization_id uuid",
+        "member_id uuid",
+        "user_id uuid",
+        "client_instance_id uuid",
+        "resource_instance_id uuid null",
+        "authentication_session_id uuid",
+        "auth_time timestamptz",
+        "requested_scopes text[]",
+        created,
+        "expires_at timestamptz",
+        "revoked_at timestamptz null",
+        "authorization_code_id text null",
+      ],
+      organization_capabilities: [
+        "id uuid",
+        "organization_id uuid",
+        "client_id text null",
+        "resource text null",
+        "grant_kind text",
+        "scopes text[]",
+        "status text default 'active'::text",
+        "valid_from timestamptz null",
+        "valid_until timestamptz null",
+        "created_at timestamptz default now()",
+        "updated_at timestamptz default now()",
+        "revision integer default 1",
+      ],
+      admin_operation_results: ["operation_id uuid", "ciphertext text"],
+      admin_operations: [
+        "id uuid",
+        "actor_instance text",
+        "authority_scope text",
+        "name text",
+        "key_digest text",
+        "fingerprint text",
+        "outcome text",
+        "status_code integer",
+        "result_reference jsonb",
+        "committed_at timestamptz default now()",
+        "replay_expires_at timestamptz null",
+      ],
+      audit_event_subjects: [
+        "event_id uuid",
+        "entity_type text",
+        "entity_id text",
+        "relationship text",
+        "organization_id uuid null",
+        "provenance text default 'recorded'::text",
+      ],
+      system_bindings: [
+        "name text",
+        "organization_id uuid",
+        "resource_id uuid",
+        "group_id uuid",
+      ],
+      security_identifiers: [
+        "kind text",
+        "identifier text",
+        "instance_id uuid",
+      ],
       users: [
         "id uuid",
         "name text",
@@ -242,6 +305,8 @@ describe("integration: PostgreSQL schema", () => {
         "disabled_at timestamptz null",
         created,
         updated,
+        "authorization_version integer default 1",
+        "revision integer default 1",
       ],
       sessions: [
         "id uuid",
@@ -253,6 +318,9 @@ describe("integration: PostgreSQL schema", () => {
         "user_agent text null",
         "user_id uuid",
         "active_organization_id uuid null",
+        "authentication_organization_id uuid null",
+        "authentication_provider_id uuid null",
+        "authentication_provider_revision integer null",
       ],
       accounts: [
         "id uuid",
@@ -283,6 +351,7 @@ describe("integration: PostgreSQL schema", () => {
         "domain text",
         created,
         updated,
+        "revision integer default 1",
       ],
       verifications: [
         "id text",
@@ -300,6 +369,9 @@ describe("integration: PostgreSQL schema", () => {
         "valid_from timestamptz null",
         "valid_until timestamptz null",
         created,
+        "status text default 'active'::text",
+        "revoked_at timestamptz null",
+        "revision integer default 1",
       ],
       invitations: [
         "id uuid",
@@ -358,6 +430,8 @@ describe("integration: PostgreSQL schema", () => {
         "metadata jsonb null",
         created,
         updated,
+        "authorization_version integer default 1",
+        "revision integer default 1",
       ],
       oauth_resources: [
         "id uuid",
@@ -375,6 +449,9 @@ describe("integration: PostgreSQL schema", () => {
         "metadata jsonb null",
         created,
         updated,
+        "revision integer default 1",
+        "classification text default 'platform_shared'::text",
+        "organization_id uuid null",
       ],
       oauth_client_resources: [
         "id uuid",
@@ -449,6 +526,7 @@ describe("integration: PostgreSQL schema", () => {
         active,
         created,
         updated,
+        "revision integer default 1",
       ],
       group_members: [
         "organization_id uuid",
@@ -457,6 +535,8 @@ describe("integration: PostgreSQL schema", () => {
         "valid_from timestamptz null",
         "valid_until timestamptz null",
         created,
+        "id uuid",
+        "revision integer default 1",
       ],
       entitlements: [
         "id uuid",
@@ -471,6 +551,7 @@ describe("integration: PostgreSQL schema", () => {
         "valid_until timestamptz null",
         created,
         updated,
+        "revision integer default 1",
       ],
       audit_events: [
         "id uuid",
@@ -487,6 +568,8 @@ describe("integration: PostgreSQL schema", () => {
         "ip text null",
         "user_agent text null",
         "data jsonb null",
+        "operation_id uuid null",
+        "schema_version integer default 1",
       ],
     });
   });
@@ -531,6 +614,43 @@ describe("integration: PostgreSQL schema", () => {
         (row) => `${row.name} ${row.definition}`,
       ),
     ).toEqual({
+      grant_contexts: [
+        "grant_contexts_authorization_code_id_unique UNIQUE (authorization_code_id)",
+        "grant_contexts_client_instance_id_oauth_clients_id_fk FOREIGN KEY (client_instance_id) REFERENCES oauth_clients(id) ON DELETE CASCADE",
+        "grant_contexts_code_check CHECK (((authorization_code_id IS NULL) OR (length(authorization_code_id) > 0)))",
+        "grant_contexts_expiry_check CHECK ((expires_at > created_at))",
+        "grant_contexts_member_id_members_id_fk FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE",
+        "grant_contexts_organization_id_organizations_id_fk FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+        "grant_contexts_pkey PRIMARY KEY (id)",
+        "grant_contexts_resource_instance_id_oauth_resources_id_fk FOREIGN KEY (resource_instance_id) REFERENCES oauth_resources(id) ON DELETE CASCADE",
+        "grant_contexts_scopes_check CHECK (((cardinality(requested_scopes) > 0) AND (array_position(requested_scopes, ''::text) IS NULL) AND (array_position(requested_scopes, NULL::text) IS NULL)))",
+        "grant_contexts_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE",
+      ],
+      organization_capabilities: [
+        "organization_capabilities_client_id_oauth_clients_client_id_fk FOREIGN KEY (client_id) REFERENCES oauth_clients(client_id) ON DELETE RESTRICT",
+        "organization_capabilities_kind_check CHECK ((grant_kind = ANY (ARRAY['admin_session'::text, 'authorization_code'::text, 'refresh_token'::text, 'client_credentials'::text])))",
+        "organization_capabilities_organization_id_organizations_id_fk FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+        "organization_capabilities_pkey PRIMARY KEY (id)",
+        "organization_capabilities_resource_oauth_resources_identifier_f FOREIGN KEY (resource) REFERENCES oauth_resources(identifier) ON DELETE RESTRICT",
+        "organization_capabilities_revision_check CHECK ((revision > 0))",
+        "organization_capabilities_scopes_check CHECK (((cardinality(scopes) > 0) AND (array_position(scopes, ''::text) IS NULL) AND (array_position(scopes, NULL::text) IS NULL)))",
+        "organization_capabilities_status_check CHECK ((status = ANY (ARRAY['active'::text, 'disabled'::text])))",
+        "organization_capabilities_target_check CHECK ((((grant_kind = 'admin_session'::text) AND (client_id IS NULL) AND (resource IS NOT NULL)) OR ((grant_kind = 'authorization_code'::text) AND (client_id IS NOT NULL)) OR ((grant_kind = ANY (ARRAY['refresh_token'::text, 'client_credentials'::text])) AND (client_id IS NOT NULL) AND (resource IS NOT NULL))))",
+        "organization_capabilities_target_kind_unique UNIQUE NULLS NOT DISTINCT (organization_id, client_id, resource, grant_kind)",
+        "organization_capabilities_window_check CHECK ((valid_from < valid_until))",
+      ],
+      security_identifiers: [
+        "security_identifiers_kind_check CHECK ((kind = ANY (ARRAY['client'::text, 'resource'::text])))",
+        "security_identifiers_kind_identifier_pk PRIMARY KEY (kind, identifier)",
+        "security_identifiers_kind_instance_unique UNIQUE (kind, instance_id)",
+      ],
+      system_bindings: [
+        "system_bindings_name_check CHECK ((name = 'platform'::text))",
+        "system_bindings_organization_id_group_id_groups_organization_id FOREIGN KEY (organization_id, group_id) REFERENCES groups(organization_id, id) ON DELETE RESTRICT",
+        "system_bindings_organization_id_organizations_id_fk FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT",
+        "system_bindings_pkey PRIMARY KEY (name)",
+        "system_bindings_resource_id_oauth_resources_id_fk FOREIGN KEY (resource_id) REFERENCES oauth_resources(id) ON DELETE RESTRICT",
+      ],
       users: [
         "users_disabled_check CHECK (((status = 'disabled'::text) = (disabled_at IS NOT NULL)))",
         "users_email_normalized_check CHECK ((email = lower(btrim(email))))",
@@ -540,14 +660,17 @@ describe("integration: PostgreSQL schema", () => {
         "users_status_check CHECK ((status = ANY (ARRAY['inert'::text, 'active'::text, 'disabled'::text])))",
       ],
       organizations: [
+        "organizations_authorization_version_check CHECK ((authorization_version > 0))",
         "organizations_disabled_check CHECK (((status = 'disabled'::text) = (disabled_at IS NOT NULL)))",
         "organizations_pkey PRIMARY KEY (id)",
+        "organizations_revision_check CHECK ((revision > 0))",
         "organizations_slug_normalized_check CHECK ((slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'::text))",
         "organizations_slug_unique UNIQUE (slug)",
         `organizations_status_check ${lifecycle}`,
       ],
       sessions: [
         "sessions_active_organization_id_organizations_id_fk FOREIGN KEY (active_organization_id) REFERENCES organizations(id) ON DELETE SET NULL",
+        "sessions_authentication_origin_check CHECK ((((authentication_organization_id IS NULL) AND (authentication_provider_id IS NULL) AND (authentication_provider_revision IS NULL)) OR ((authentication_organization_id IS NOT NULL) AND (authentication_provider_id IS NOT NULL) AND (authentication_provider_revision IS NOT NULL) AND (authentication_provider_revision > 0))))",
         "sessions_pkey PRIMARY KEY (id)",
         "sessions_token_unique UNIQUE (token)",
         `sessions_user_id_users_id_fk ${cascadeUser}`,
@@ -563,6 +686,7 @@ describe("integration: PostgreSQL schema", () => {
         "sso_providers_organization_id_unique UNIQUE (organization_id)",
         "sso_providers_pkey PRIMARY KEY (id)",
         "sso_providers_provider_id_unique UNIQUE (provider_id)",
+        "sso_providers_revision_check CHECK ((revision > 0))",
         "sso_providers_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL",
       ],
       verifications: ["verifications_pkey PRIMARY KEY (id)"],
@@ -571,6 +695,9 @@ describe("integration: PostgreSQL schema", () => {
         `members_organization_id_organizations_id_fk ${cascadeOrganization}`,
         "members_organization_id_user_id_unique UNIQUE (organization_id, user_id)",
         "members_pkey PRIMARY KEY (id)",
+        "members_revision_check CHECK ((revision > 0))",
+        "members_revoked_check CHECK (((status = 'revoked'::text) = (revoked_at IS NOT NULL)))",
+        "members_status_check CHECK ((status = ANY (ARRAY['active'::text, 'revoked'::text])))",
         `members_user_id_users_id_fk ${cascadeUser}`,
         "members_window_check CHECK ((valid_from < valid_until))",
       ],
@@ -582,20 +709,26 @@ describe("integration: PostgreSQL schema", () => {
       ],
       jwks: ["jwks_pkey PRIMARY KEY (id)"],
       oauth_clients: [
+        "oauth_clients_authorization_version_check CHECK ((authorization_version > 0))",
         "oauth_clients_client_id_unique UNIQUE (client_id)",
         "oauth_clients_organization_id_organizations_id_fk FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT",
         "oauth_clients_pkey PRIMARY KEY (id)",
+        "oauth_clients_revision_check CHECK ((revision > 0))",
         `oauth_clients_user_id_users_id_fk ${cascadeUser}`,
       ],
       oauth_resources: [
         "oauth_resources_identifier_unique UNIQUE (identifier)",
+        "oauth_resources_identity_claims_check CHECK ((NOT (custom_claims ?| ARRAY['client_instance'::text, 'organization_id'::text, 'authorization_version'::text, 'organization_authorization_version'::text, 'subject_type'::text])))",
+        "oauth_resources_organization_id_organizations_id_fk FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT",
+        "oauth_resources_ownership_check CHECK ((((classification = 'platform_shared'::text) AND (organization_id IS NULL)) OR ((classification = 'tenant_owned'::text) AND (organization_id IS NOT NULL))))",
         "oauth_resources_pkey PRIMARY KEY (id)",
+        "oauth_resources_revision_check CHECK ((revision > 0))",
       ],
       oauth_client_resources: [
         `oauth_client_resources_client_id_oauth_clients_client_id_fk ${cascadeClient}`,
         "oauth_client_resources_client_id_resource_id_unique UNIQUE (client_id, resource_id)",
         "oauth_client_resources_pkey PRIMARY KEY (id)",
-        "oauth_client_resources_resource_id_fk FOREIGN KEY (resource_id) REFERENCES oauth_resources(identifier) ON DELETE CASCADE",
+        "oauth_client_resources_resource_id_fk FOREIGN KEY (resource_id) REFERENCES oauth_resources(identifier) ON DELETE RESTRICT",
       ],
       oauth_refresh_tokens: [
         `oauth_refresh_tokens_client_id_oauth_clients_client_id_fk ${cascadeClient}`,
@@ -632,13 +765,16 @@ describe("integration: PostgreSQL schema", () => {
         `groups_organization_id_organizations_id_fk ${cascadeOrganization}`,
         "groups_organization_id_slug_unique UNIQUE (organization_id, slug)",
         "groups_pkey PRIMARY KEY (id)",
+        "groups_revision_check CHECK ((revision > 0))",
         "groups_slug_normalized_check CHECK ((slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'::text))",
         `groups_status_check ${lifecycle}`,
       ],
       group_members: [
+        "group_members_id_unique UNIQUE (id)",
         "group_members_organization_id_group_id_fk FOREIGN KEY (organization_id, group_id) REFERENCES groups(organization_id, id) ON DELETE CASCADE",
         "group_members_organization_id_member_id_fk FOREIGN KEY (organization_id, member_id) REFERENCES members(organization_id, id) ON DELETE CASCADE",
         "group_members_pkey PRIMARY KEY (group_id, member_id)",
+        "group_members_revision_check CHECK ((revision > 0))",
         "group_members_window_check CHECK ((valid_from < valid_until))",
       ],
       entitlements: [
@@ -650,14 +786,29 @@ describe("integration: PostgreSQL schema", () => {
         "entitlements_principal_check CHECK ((num_nonnulls(member_id, group_id) <= 1))",
         "entitlements_principal_target_unique UNIQUE NULLS NOT DISTINCT (organization_id, member_id, group_id, client_id, resource)",
         "entitlements_resource_oauth_resources_identifier_fk FOREIGN KEY (resource) REFERENCES oauth_resources(identifier) ON DELETE RESTRICT",
+        "entitlements_revision_check CHECK ((revision > 0))",
         "entitlements_scopes_check CHECK (((cardinality(scopes) > 0) AND (array_position(scopes, ''::text) IS NULL)))",
         `entitlements_status_check ${lifecycle}`,
-        "entitlements_target_check CHECK ((num_nonnulls(client_id, resource) = 1))",
+        "entitlements_target_check CHECK ((num_nonnulls(client_id, resource) >= 1))",
         "entitlements_window_check CHECK ((valid_from < valid_until))",
+      ],
+      admin_operation_results: [
+        "admin_operation_results_operation_id_admin_operations_id_fk FOREIGN KEY (operation_id) REFERENCES admin_operations(id) ON DELETE RESTRICT",
+        "admin_operation_results_pkey PRIMARY KEY (operation_id)",
+      ],
+      admin_operations: [
+        "admin_operations_key_unique UNIQUE (actor_instance, authority_scope, name, key_digest)",
+        "admin_operations_outcome_check CHECK ((outcome = ANY (ARRAY['applied'::text, 'noop'::text])))",
+        "admin_operations_pkey PRIMARY KEY (id)",
+      ],
+      audit_event_subjects: [
+        "audit_event_subjects_event_id_audit_events_id_fk FOREIGN KEY (event_id) REFERENCES audit_events(id) ON DELETE CASCADE",
+        "audit_event_subjects_event_id_entity_type_entity_id_relationshi PRIMARY KEY (event_id, entity_type, entity_id, relationship)",
+        "audit_event_subjects_provenance_check CHECK ((provenance = ANY (ARRAY['recorded'::text, 'legacy_derived'::text])))",
       ],
       audit_events: [
         "audit_events_actor_type_check CHECK ((actor_type = ANY (ARRAY['user'::text, 'client'::text, 'system'::text])))",
-        "audit_events_organization_id_organizations_id_fk FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE SET NULL",
+        "audit_events_operation_id_admin_operations_id_fk FOREIGN KEY (operation_id) REFERENCES admin_operations(id) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED",
         "audit_events_outcome_check CHECK ((outcome = ANY (ARRAY['success'::text, 'failure'::text, 'denied'::text])))",
         "audit_events_pkey PRIMARY KEY (id)",
       ],
@@ -674,10 +825,20 @@ describe("integration: PostgreSQL schema", () => {
         return `${row.name}${unique} ${columns}`;
       }),
     ).toEqual({
+      grant_contexts: [
+        "grant_contexts_client_instance_id_idx (client_instance_id)",
+        "grant_contexts_member_id_idx (member_id)",
+        "grant_contexts_resource_instance_id_idx (resource_instance_id)",
+        "grant_contexts_user_id_idx (user_id)",
+      ],
       sessions: [
         "sessions_active_organization_id_idx (active_organization_id)",
         "sessions_expires_at_idx (expires_at)",
         "sessions_user_id_idx (user_id)",
+      ],
+      audit_event_subjects: [
+        "audit_event_subjects_entity_idx (entity_type, entity_id, event_id)",
+        "audit_event_subjects_tenant_entity_idx (organization_id, entity_type, entity_id, event_id)",
       ],
       accounts: [
         "accounts_issuer_directory_user_id_idx unique (issuer, directory_user_id) WHERE (directory_user_id IS NOT NULL)",
@@ -696,6 +857,9 @@ describe("integration: PostgreSQL schema", () => {
       oauth_clients: [
         "oauth_clients_organization_id_idx (organization_id)",
         "oauth_clients_user_id_idx (user_id)",
+      ],
+      oauth_resources: [
+        "oauth_resources_organization_id_idx (organization_id)",
       ],
       oauth_client_resources: [
         "oauth_client_resources_resource_id_idx (resource_id)",
@@ -733,6 +897,7 @@ describe("integration: PostgreSQL schema", () => {
       ],
       audit_events: [
         "audit_events_actor_id_idx (actor_id)",
+        "audit_events_operation_id_idx (operation_id)",
         "audit_events_organization_id_id_idx (organization_id, id)",
         "audit_events_target_type_target_id_idx (target_type, target_id)",
       ],
@@ -867,12 +1032,10 @@ describe("integration: PostgreSQL schema", () => {
   });
 
   test("keeps a machine client inside its owning organization", async () => {
-    const auth = createAuth(connection.db, environment);
-    const { clientId } = await registerTutor(auth);
     const organization = await insertOrganization();
-
-    await assignClientOrganization(connection.db, {
-      clientId,
+    const { clientId } = await createClient(connection.db, {
+      clientId: "owned-machine",
+      redirectUris: [],
       organizationId: organization.id,
     });
 
@@ -896,18 +1059,6 @@ describe("integration: PostgreSQL schema", () => {
         .where(eq(organizations.id, organization.id))
         .execute(),
     ).rejects.toThrow();
-    await expect(
-      assignClientOrganization(connection.db, {
-        clientId,
-        organizationId: createId(),
-      }),
-    ).rejects.toThrow();
-    await expect(
-      assignClientOrganization(connection.db, {
-        clientId: "unknown-client",
-        organizationId: organization.id,
-      }),
-    ).rejects.toBeInstanceOf(OAuthClientNotFoundError);
   });
 
   test("accepts the client assertion ids Better Auth computes itself", async () => {
@@ -1285,11 +1436,11 @@ describe("integration: PostgreSQL schema", () => {
     expect(domain.domain).toBe("example.com");
     expect(isUuidV7(domain.id)).toBe(true);
     expect(
-      await findOrganizationByDomain(connection.db, " EXAMPLE.com "),
-    ).toEqual({ id: first.id, slug: "first" });
+      await organizationAcceptsDomain(connection.db, first.id, " EXAMPLE.com "),
+    ).toBe(true);
     expect(
-      await findOrganizationByDomain(connection.db, "other.example"),
-    ).toBeNull();
+      await organizationAcceptsDomain(connection.db, first.id, "other.example"),
+    ).toBe(false);
 
     await expect(
       createOrganizationDomain(connection.db, {
@@ -1338,19 +1489,16 @@ describe("integration: PostgreSQL schema", () => {
       domain: "example.com",
     });
     expect(
-      await findOrganizationByDomain(connection.db, "example.com"),
-    ).toEqual({
-      id: second.id,
-      slug: "second",
-    });
+      await organizationAcceptsDomain(connection.db, second.id, "example.com"),
+    ).toBe(true);
 
     await connection.db
       .update(organizations)
       .set({ status: "disabled", disabledAt: new Date() })
       .where(eq(organizations.id, second.id));
     expect(
-      await findOrganizationByDomain(connection.db, "example.com"),
-    ).toBeNull();
+      await organizationAcceptsDomain(connection.db, second.id, "example.com"),
+    ).toBe(false);
   });
 
   test("keeps groups inside their organization", async () => {
@@ -1471,6 +1619,7 @@ describe("integration: PostgreSQL schema", () => {
     });
 
     const groupMembership = {
+      id: createId(),
       organizationId: organization.id,
       groupId: group.id,
       memberId: member.id,
@@ -1566,7 +1715,7 @@ describe("integration: PostgreSQL schema", () => {
       createEntitlement(connection.db, { ...forResource, memberId: member.id }),
     ).rejects.toThrow();
 
-    // Exactly one principal narrowing and exactly one target.
+    // At most one principal narrowing; a client, resource or exact pair target.
     await expect(
       createEntitlement(connection.db, {
         ...forResource,
@@ -1580,13 +1729,13 @@ describe("integration: PostgreSQL schema", () => {
         scopes: ["tutor:read"],
       }),
     ).rejects.toThrow();
-    await expect(
-      createEntitlement(connection.db, {
+    expect(
+      await createEntitlement(connection.db, {
         ...forResource,
         clientId,
         memberId: undefined,
       }),
-    ).rejects.toThrow();
+    ).toMatchObject({ clientId, resource });
 
     // Targets must exist; principals must belong to the organization.
     await expect(
@@ -1650,7 +1799,7 @@ describe("integration: PostgreSQL schema", () => {
     // Removing the group or the member removes only their grants.
     await connection.db.delete(groups).where(eq(groups.id, group.id));
     await connection.db.delete(members).where(eq(members.id, member.id));
-    expect(await connection.db.select().from(entitlements)).toHaveLength(2);
+    expect(await connection.db.select().from(entitlements)).toHaveLength(3);
   });
 
   test("cascades organization data while keeping clients and resources", async () => {

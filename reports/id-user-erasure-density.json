@@ -1,0 +1,1539 @@
+{
+  "metadata": {
+    "bun": "1.3.1",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M1 Pro",
+    "logicalCpus": 10,
+    "memoryBytes": 34359738368,
+    "poolMax": 4,
+    "connectionTimeoutMs": 1000,
+    "statementTimeoutMs": 10000,
+    "sizes": [
+      10,
+      100,
+      1000
+    ],
+    "dimension": "group assignments and distinct direct resource grants per membership; eight global users each belong to two tenants",
+    "countedUserRelationship": "target",
+    "topology": "one Bun loopback HTTP server and one restricted pool; local PostgreSQL",
+    "limits": "Single observations, not production capacity, percentiles or a peak-memory guarantee. RSS samples include this measurement process and are a lower bound on transient peaks."
+  },
+  "results": [
+    {
+      "size": 10,
+      "name": "other-tenant-baseline",
+      "elapsedMs": 45.331707999999935,
+      "rssBefore": 216760320,
+      "rssSampledMax": 217825280,
+      "maxTimerGapMs": 10.227791999999909,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 2,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 23.68941700000005,
+          "replayed": null
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 23.76579199999992
+        }
+      ],
+      "events": []
+    },
+    {
+      "size": 10,
+      "name": "eight-global-user-erasures",
+      "elapsedMs": 109.19208299999991,
+      "rssBefore": 219365376,
+      "rssSampledMax": 222035968,
+      "maxTimerGapMs": 13.821416,
+      "maxPoolWaiting": 5,
+      "maxPoolTotal": 4,
+      "busyPoolSamples": 7,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 53.89474999999993,
+          "replayed": "false"
+        },
+        {
+          "status": 204,
+          "ms": 90.1332080000002,
+          "replayed": "false"
+        },
+        {
+          "status": 204,
+          "ms": 94.91720799999985,
+          "replayed": "false"
+        },
+        {
+          "status": 204,
+          "ms": 55.07191700000021,
+          "replayed": "false"
+        },
+        {
+          "status": 204,
+          "ms": 62.83879200000001,
+          "replayed": "false"
+        },
+        {
+          "status": 204,
+          "ms": 68.57004200000006,
+          "replayed": "false"
+        },
+        {
+          "status": 204,
+          "ms": 81.70520800000008,
+          "replayed": "false"
+        },
+        {
+          "status": 204,
+          "ms": 81.68554100000006,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 13.019250000000056
+        },
+        {
+          "status": 200,
+          "ms": 52.78104200000007
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 13685,
+          "users": 1
+        },
+        {
+          "action": "user.erased",
+          "json_bytes": 13685,
+          "users": 1
+        },
+        {
+          "action": "user.erased",
+          "json_bytes": 13685,
+          "users": 1
+        },
+        {
+          "action": "user.erased",
+          "json_bytes": 13685,
+          "users": 1
+        },
+        {
+          "action": "user.erased",
+          "json_bytes": 13685,
+          "users": 1
+        },
+        {
+          "action": "user.erased",
+          "json_bytes": 13685,
+          "users": 1
+        },
+        {
+          "action": "user.erased",
+          "json_bytes": 13685,
+          "users": 1
+        },
+        {
+          "action": "user.erased",
+          "json_bytes": 13685,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 10,
+      "name": "user-erasure-replay-0",
+      "elapsedMs": 30.787625000000162,
+      "rssBefore": 222134272,
+      "rssSampledMax": 222134272,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 8.223457999999937,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 8.659250000000156
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 13685,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 10,
+      "name": "user-erasure-replay-1",
+      "elapsedMs": 28.13583399999993,
+      "rssBefore": 222380032,
+      "rssSampledMax": 222380032,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 5.909249999999929,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 5.517957999999908
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 13685,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 10,
+      "name": "user-erasure-replay-2",
+      "elapsedMs": 29.607874999999922,
+      "rssBefore": 222478336,
+      "rssSampledMax": 222478336,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 6.66533400000003,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 7.160333000000037
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 13685,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 10,
+      "name": "user-erasure-replay-3",
+      "elapsedMs": 28.50516700000003,
+      "rssBefore": 222593024,
+      "rssSampledMax": 222593024,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 6.517459000000144,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 6.12395800000013
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 13685,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 10,
+      "name": "user-erasure-replay-4",
+      "elapsedMs": 27.936790999999857,
+      "rssBefore": 222593024,
+      "rssSampledMax": 222593024,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 5.672624999999925,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 5.652332999999999
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 13685,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 10,
+      "name": "user-erasure-replay-5",
+      "elapsedMs": 28.99970899999994,
+      "rssBefore": 222642176,
+      "rssSampledMax": 222642176,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 7.855791999999838,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 7.343166999999994
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 13685,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 10,
+      "name": "user-erasure-replay-6",
+      "elapsedMs": 28.5904579999999,
+      "rssBefore": 222674944,
+      "rssSampledMax": 222674944,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 6.617582999999968,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 6.149083000000019
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 13685,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 10,
+      "name": "user-erasure-replay-7",
+      "elapsedMs": 33.26641700000005,
+      "rssBefore": 222806016,
+      "rssSampledMax": 222806016,
+      "maxTimerGapMs": 10.188540999999987,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 4,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 11.00929199999996,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 10.620791999999938
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 13685,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "other-tenant-baseline",
+      "elapsedMs": 83.90729200000033,
+      "rssBefore": 230785024,
+      "rssSampledMax": 231194624,
+      "maxTimerGapMs": 13.043707999999697,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 2,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 59.71204100000023,
+          "replayed": null
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 59.178833999999824
+        }
+      ],
+      "events": []
+    },
+    {
+      "size": 100,
+      "name": "eight-global-user-erasures",
+      "elapsedMs": 894.7238329999996,
+      "rssBefore": 231211008,
+      "rssSampledMax": 244203520,
+      "maxTimerGapMs": 73.07875000000013,
+      "maxPoolWaiting": 5,
+      "maxPoolTotal": 4,
+      "busyPoolSamples": 60,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 819.5917919999997,
+          "replayed": "false"
+        },
+        {
+          "status": 204,
+          "ms": 867.2612919999997,
+          "replayed": "false"
+        },
+        {
+          "status": 204,
+          "ms": 877.6254170000002,
+          "replayed": "false"
+        },
+        {
+          "status": 204,
+          "ms": 839.607583,
+          "replayed": "false"
+        },
+        {
+          "status": 204,
+          "ms": 819.4233750000003,
+          "replayed": "false"
+        },
+        {
+          "status": 204,
+          "ms": 819.3995829999994,
+          "replayed": "false"
+        },
+        {
+          "status": 204,
+          "ms": 865.3903340000002,
+          "replayed": "false"
+        },
+        {
+          "status": 204,
+          "ms": 865.4406249999997,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 126.79879200000005
+        },
+        {
+          "status": 200,
+          "ms": 721.592208
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 127627,
+          "users": 1
+        },
+        {
+          "action": "user.erased",
+          "json_bytes": 127627,
+          "users": 1
+        },
+        {
+          "action": "user.erased",
+          "json_bytes": 127627,
+          "users": 1
+        },
+        {
+          "action": "user.erased",
+          "json_bytes": 127627,
+          "users": 1
+        },
+        {
+          "action": "user.erased",
+          "json_bytes": 127627,
+          "users": 1
+        },
+        {
+          "action": "user.erased",
+          "json_bytes": 127627,
+          "users": 1
+        },
+        {
+          "action": "user.erased",
+          "json_bytes": 127627,
+          "users": 1
+        },
+        {
+          "action": "user.erased",
+          "json_bytes": 127627,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "user-erasure-replay-0",
+      "elapsedMs": 28.276332999999795,
+      "rssBefore": 244695040,
+      "rssSampledMax": 244695040,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 5.030999999999949,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 5.712625000000116
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 127627,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "user-erasure-replay-1",
+      "elapsedMs": 27.562958000000435,
+      "rssBefore": 244776960,
+      "rssSampledMax": 244776960,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 5.6900830000004134,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 5.77020900000025
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 127627,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "user-erasure-replay-2",
+      "elapsedMs": 26.914582999999766,
+      "rssBefore": 244809728,
+      "rssSampledMax": 244809728,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 4.869249999999738,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 4.8680829999993875
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 127627,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "user-erasure-replay-3",
+      "elapsedMs": 28.448458000000755,
+      "rssBefore": 244809728,
+      "rssSampledMax": 244809728,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 5.667916999999761,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 5.320792000000438
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 127627,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "user-erasure-replay-4",
+      "elapsedMs": 28.60358400000041,
+      "rssBefore": 244924416,
+      "rssSampledMax": 244924416,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 5.735749999999825,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 6.170333000000028
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 127627,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "user-erasure-replay-5",
+      "elapsedMs": 26.55695900000046,
+      "rssBefore": 244924416,
+      "rssSampledMax": 244924416,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 4.789667000000009,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 4.856166999999914
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 127627,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "user-erasure-replay-6",
+      "elapsedMs": 27.55999999999949,
+      "rssBefore": 244940800,
+      "rssSampledMax": 244940800,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 7.32024999999976,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 7.300166999999419
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 127627,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "user-erasure-replay-7",
+      "elapsedMs": 29.58245799999986,
+      "rssBefore": 244940800,
+      "rssSampledMax": 244940800,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 5.977125000000342,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 5.977665999999772
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 127627,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "other-tenant-baseline",
+      "elapsedMs": 45.199499999999716,
+      "rssBefore": 253181952,
+      "rssSampledMax": 253198336,
+      "maxTimerGapMs": 11.09204100000079,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 2,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 23.893957999999657,
+          "replayed": null
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 24.006709000000228
+        }
+      ],
+      "events": []
+    },
+    {
+      "size": 1000,
+      "name": "eight-global-user-erasures",
+      "elapsedMs": 506.1825829999998,
+      "rssBefore": 253296640,
+      "rssSampledMax": 335773696,
+      "maxTimerGapMs": 14.197167000000263,
+      "maxPoolWaiting": 5,
+      "maxPoolTotal": 4,
+      "busyPoolSamples": 40,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 267.34649999999965,
+          "replayed": "false"
+        },
+        {
+          "status": 204,
+          "ms": 291.774042,
+          "replayed": "false"
+        },
+        {
+          "status": 204,
+          "ms": 272.7399580000001,
+          "replayed": "false"
+        },
+        {
+          "status": 204,
+          "ms": 291.78862500000014,
+          "replayed": "false"
+        },
+        {
+          "status": 204,
+          "ms": 483.1295,
+          "replayed": "false"
+        },
+        {
+          "status": 204,
+          "ms": 429.6432500000001,
+          "replayed": "false"
+        },
+        {
+          "status": 204,
+          "ms": 482.9703749999999,
+          "replayed": "false"
+        },
+        {
+          "status": 204,
+          "ms": 466.09583399999974,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 40.788667000000714
+        },
+        {
+          "status": 200,
+          "ms": 379.9225829999996
+        },
+        {
+          "status": 200,
+          "ms": 22.194249999999556
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 1268829,
+          "users": 1
+        },
+        {
+          "action": "user.erased",
+          "json_bytes": 1268829,
+          "users": 1
+        },
+        {
+          "action": "user.erased",
+          "json_bytes": 1268829,
+          "users": 1
+        },
+        {
+          "action": "user.erased",
+          "json_bytes": 1268829,
+          "users": 1
+        },
+        {
+          "action": "user.erased",
+          "json_bytes": 1268829,
+          "users": 1
+        },
+        {
+          "action": "user.erased",
+          "json_bytes": 1268829,
+          "users": 1
+        },
+        {
+          "action": "user.erased",
+          "json_bytes": 1268829,
+          "users": 1
+        },
+        {
+          "action": "user.erased",
+          "json_bytes": 1268829,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "user-erasure-replay-0",
+      "elapsedMs": 28.39141699999982,
+      "rssBefore": 299499520,
+      "rssSampledMax": 299499520,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 4.263500000000022,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 5.1961670000000595
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 1268829,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "user-erasure-replay-1",
+      "elapsedMs": 28.823041999999987,
+      "rssBefore": 299532288,
+      "rssSampledMax": 299532288,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 4.581167000000278,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 6.1244580000002316
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 1268829,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "user-erasure-replay-2",
+      "elapsedMs": 28.040750000000116,
+      "rssBefore": 299548672,
+      "rssSampledMax": 299548672,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 4.992500000000291,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 6.405208999999559
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 1268829,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "user-erasure-replay-3",
+      "elapsedMs": 26.6987909999998,
+      "rssBefore": 299548672,
+      "rssSampledMax": 299548672,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 3.9750829999993584,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 6.481792000000496
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 1268829,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "user-erasure-replay-4",
+      "elapsedMs": 31.171875,
+      "rssBefore": 298860544,
+      "rssSampledMax": 298860544,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 7.787792000000081,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 8.65099999999984
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 1268829,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "user-erasure-replay-5",
+      "elapsedMs": 30.51691699999992,
+      "rssBefore": 298926080,
+      "rssSampledMax": 298926080,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 9.803666000000703,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 10.175999999999476
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 1268829,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "user-erasure-replay-6",
+      "elapsedMs": 34.88612499999999,
+      "rssBefore": 298926080,
+      "rssSampledMax": 298926080,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 4.583292000000256,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 5.866708999999901
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 1268829,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "user-erasure-replay-7",
+      "elapsedMs": 28.60162500000024,
+      "rssBefore": 298942464,
+      "rssSampledMax": 298942464,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 6.110749999999825,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 7.125041999999667
+        }
+      ],
+      "events": [
+        {
+          "action": "user.erased",
+          "json_bytes": 1268829,
+          "users": 1
+        }
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "size": 10,
+      "user": 0,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 20,
+        "entitlements": 20
+      }
+    },
+    {
+      "size": 10,
+      "user": 1,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 20,
+        "entitlements": 20
+      }
+    },
+    {
+      "size": 10,
+      "user": 2,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 20,
+        "entitlements": 20
+      }
+    },
+    {
+      "size": 10,
+      "user": 3,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 20,
+        "entitlements": 20
+      }
+    },
+    {
+      "size": 10,
+      "user": 4,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 20,
+        "entitlements": 20
+      }
+    },
+    {
+      "size": 10,
+      "user": 5,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 20,
+        "entitlements": 20
+      }
+    },
+    {
+      "size": 10,
+      "user": 6,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 20,
+        "entitlements": 20
+      }
+    },
+    {
+      "size": 10,
+      "user": 7,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 20,
+        "entitlements": 20
+      }
+    },
+    {
+      "size": 10,
+      "unaffectedMembers": 1,
+      "retainedGroups": 20
+    },
+    {
+      "size": 100,
+      "user": 0,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 200,
+        "entitlements": 200
+      }
+    },
+    {
+      "size": 100,
+      "user": 1,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 200,
+        "entitlements": 200
+      }
+    },
+    {
+      "size": 100,
+      "user": 2,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 200,
+        "entitlements": 200
+      }
+    },
+    {
+      "size": 100,
+      "user": 3,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 200,
+        "entitlements": 200
+      }
+    },
+    {
+      "size": 100,
+      "user": 4,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 200,
+        "entitlements": 200
+      }
+    },
+    {
+      "size": 100,
+      "user": 5,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 200,
+        "entitlements": 200
+      }
+    },
+    {
+      "size": 100,
+      "user": 6,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 200,
+        "entitlements": 200
+      }
+    },
+    {
+      "size": 100,
+      "user": 7,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 200,
+        "entitlements": 200
+      }
+    },
+    {
+      "size": 100,
+      "unaffectedMembers": 1,
+      "retainedGroups": 200
+    },
+    {
+      "size": 1000,
+      "user": 0,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 2000,
+        "entitlements": 2000
+      }
+    },
+    {
+      "size": 1000,
+      "user": 1,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 2000,
+        "entitlements": 2000
+      }
+    },
+    {
+      "size": 1000,
+      "user": 2,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 2000,
+        "entitlements": 2000
+      }
+    },
+    {
+      "size": 1000,
+      "user": 3,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 2000,
+        "entitlements": 2000
+      }
+    },
+    {
+      "size": 1000,
+      "user": 4,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 2000,
+        "entitlements": 2000
+      }
+    },
+    {
+      "size": 1000,
+      "user": 5,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 2000,
+        "entitlements": 2000
+      }
+    },
+    {
+      "size": 1000,
+      "user": 6,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 2000,
+        "entitlements": 2000
+      }
+    },
+    {
+      "size": 1000,
+      "user": 7,
+      "status": 204,
+      "users": 0,
+      "memberships": 0,
+      "assignments": 0,
+      "entitlements": 0,
+      "events": 1,
+      "manifest": {
+        "memberships": 2,
+        "assignments": 2000,
+        "entitlements": 2000
+      }
+    },
+    {
+      "size": 1000,
+      "unaffectedMembers": 1,
+      "retainedGroups": 2000
+    }
+  ]
+}

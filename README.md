@@ -4,10 +4,12 @@ Monorepo for Answerable's products, program documentation, and the local environ
 
 **Status:** `apps/web` is live. **The current focus is Answerable ID** — the identity service every app and MCP server will authenticate through. Code is written test-first by AI agents from these docs.
 
+The [enterprise foundation](docs/05-id-enterprise-foundation.md) is in progress. Machine tokens bind immutable identities; administrative changes use a transaction-backed operation journal; durable UUID audit subjects and tenant isolation safeguards are implemented. Public user OAuth remains closed. Tenant authentication policy, production user grants and operational release proof remain in the [current checklist](task_plan.md). Existing ID databases require the migration and system-binding review in the [operator instructions](apps/id/README.md) before startup.
+
 | Workspace | What it is | Status |
 | --- | --- | --- |
 | `apps/web` | Public site (Next.js 16): the waitlist one-pager, the Answerable ID browser pages, and the docs at `/docs` (Fumadocs, Markdown for agents at `.md` and `/llms.txt`) | Live |
-| `apps/id` | **Answerable ID** — identity broker for client orgs, OIDC login provider for our apps, OAuth 2.1 authorization server for hosted MCP servers | Schema foundation built — design in [`docs/03-answerable-id.md`](docs/03-answerable-id.md) |
+| `apps/id` | **Answerable ID** — identity broker for client orgs, OIDC login provider for our apps, OAuth 2.1 authorization server for hosted MCP servers | Machine issuance, SSO and administration implemented; enterprise foundation in progress — [current checklist](task_plan.md) |
 | `apps/community-mcp` | The tutor MCP (the Omni Accelerator community inside OmniChat) | **Parked** until Answerable ID ships — its docs and Circle mocks stay in that folder, out of the plan |
 
 ## Reading order

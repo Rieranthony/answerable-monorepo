@@ -1,18 +1,21 @@
+import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
 import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
 import { signInThroughIdp } from "../../__tests__/federation.ts";
-import { createOrganizationDomain } from "../../db/queries/organization-domains.ts";
-import { createSsoProvider } from "../../db/queries/sso-providers.ts";
+import { createOrganizationDomain } from "../../__tests__/domain-queries.ts";
+import { createSsoProvider } from "../../__tests__/sso-queries.ts";
 import {
   auditEvents,
+  adminOperations,
   entitlements,
   members,
   oauthClients,
+  oauthResources,
   organizations,
   users,
 } from "../../db/schema/index.ts";
@@ -32,7 +35,7 @@ afterAll(async () => {
 });
 describeAdminRoutes(routes, () => fixture);
 
-function request(
+async function request(
   path = "",
   method = "GET",
   body?: unknown,
@@ -48,6 +51,17 @@ function request(
     body = undefined;
   }
   const headers = fixture.headers(kind);
+  if (method === "PATCH") {
+    const current = await fixture.app.request(
+      "/api/admin/v1/organizations" + path,
+      { headers },
+    );
+    headers.set(
+      "If-Match",
+      current.headers.get("ETag") ?? '"00000000-0000-7000-8000-000000000000:1"',
+    );
+  }
+
   headers.set("x-request-id", "organizations-http-test");
   headers.set("x-forwarded-for", "192.0.2.1, 198.51.100.1");
   headers.set("user-agent", "organisation-test");
@@ -102,7 +116,6 @@ test("getOrganizationSummary: tenant reader, platform reader and machine see cou
         ],
       },
       clients: { owned: 0 },
-      sessions: { active: 6 },
       signIns7d: { succeeded: 6, lastSucceededAt: expect.any(String) },
     });
   }
@@ -191,7 +204,7 @@ test("createOrganization: cookie and machine writes return 201 and attributed au
           ? fixture.principals.platformAdmin.userId
           : fixture.platform.client.clientId,
       requestId: "organizations-http-test",
-      ip: "192.0.2.1",
+      ip: null,
       userAgent: "organisation-test",
       organizationId: row.id,
       targetType: "organization",
@@ -254,11 +267,17 @@ test("updateOrganization: nullable fields and audit changes", async () => {
         eq(auditEvents.action, "organization.updated"),
       ),
     );
-  expect(event?.data).toEqual({ changes: patch });
+  expect(event?.data).toMatchObject({
+    before: { name: "patch-me" },
+    after: { name: "Patched", logo: null },
+    metadataChanged: false,
+  });
+  expect(event?.data).not.toHaveProperty("changes");
+  expect(event?.data).not.toHaveProperty("after.metadata");
   expect((await request("/" + row.id, "PATCH", {})).status).toBe(400);
 });
 
-test("disableOrganization and enableOrganization: fresh signed-in tenant admin loses the session permanently", async () => {
+test("disableOrganization and enableOrganization: global browser session survives while organisation access is disabled", async () => {
   const row = await create("fresh-tenant");
   const domain = "fresh-tenant.example.com";
   await createOrganizationDomain(fixture.db, {
@@ -323,8 +342,8 @@ test("disableOrganization and enableOrganization: fresh signed-in tenant admin l
   });
   expect(
     (await fixture.app.request("/api/admin/v1/me", { headers })).status,
-  ).toBe(401);
-  expect((await request("/" + row.id + "/disable", "POST")).status).toBe(409);
+  ).toBe(200);
+  expect((await request("/" + row.id + "/disable", "POST")).status).toBe(200);
   const enabled = await request("/" + row.id + "/enable", "POST");
   expect(enabled.status).toBe(200);
   expect(organizationSchema.parse(await enabled.json())).toMatchObject({
@@ -333,8 +352,8 @@ test("disableOrganization and enableOrganization: fresh signed-in tenant admin l
   });
   expect(
     (await fixture.app.request("/api/admin/v1/me", { headers })).status,
-  ).toBe(401);
-  expect((await request("/" + row.id + "/enable", "POST")).status).toBe(409);
+  ).toBe(200);
+  expect((await request("/" + row.id + "/enable", "POST")).status).toBe(200);
 });
 
 test("eraseOrganization: confirmation, owned client conflict and successful erasure retains audit", async () => {
@@ -375,7 +394,7 @@ test("eraseOrganization: confirmation, owned client conflict and successful eras
       ),
     );
   expect(events).toHaveLength(1);
-  expect(events[0]).toMatchObject({ targetId: row.id, organizationId: null });
+  expect(events[0]).toMatchObject({ targetId: row.id, organizationId: row.id });
 });
 
 test("organisation paths validate UUIDs and platform writes return 404 for missing rows", async () => {
@@ -435,4 +454,217 @@ test("erase requires a query confirmation and checks existence before mismatch",
   });
   expect(response.status).toBe(400);
   expect(await response.json()).toMatchObject({ code: "validation_failed" });
+});
+
+test("organisation commands recover committed results across lifecycle changes and erasure", async () => {
+  const input = { slug: "organisation-replay", name: "Replay" };
+  const first = await command("org-create", "", "POST", input);
+  expect(first.status).toBe(201);
+  const original = await first.json();
+  expect(first.headers.get("Operation-Id")).toBeString();
+  const duplicate = await command("org-create", "", "POST", input);
+  expect(duplicate.headers.get("Idempotency-Replayed")).toBe("true");
+  expect(await duplicate.json()).toEqual(original);
+  expect(
+    (await command("org-create", "", "POST", { ...input, name: "Other" }))
+      .status,
+  ).toBe(409);
+  for (const [suffix, method, body] of [
+    ["", "PATCH", { name: "Changed" }],
+    ["/disable", "POST", undefined],
+    ["/enable", "POST", undefined],
+  ] as const) {
+    const key = `org-${method}-${suffix}`;
+    const path = `/${original.id}${suffix}`;
+    const changed = await command(key, path, method, body);
+    expect(changed.status).toBe(200);
+    const saved = await changed.json();
+    const repeated = await command(key, path, method, body);
+    expect(repeated.headers.get("Operation-Id")).toBe(
+      changed.headers.get("Operation-Id"),
+    );
+    expect(repeated.headers.get("Idempotency-Replayed")).toBe("true");
+    expect(await repeated.json()).toEqual(saved);
+    expect(
+      await fixture.db
+        .select()
+        .from(auditEvents)
+        .where(
+          eq(auditEvents.operationId, changed.headers.get("Operation-Id")!),
+        ),
+    ).toHaveLength(1);
+    const noop = await command(`${key}-noop`, path, method, body);
+    expect(noop.status).toBe(200);
+    expect(await noop.json()).toEqual(saved);
+    const [receipt] = await fixture.db
+      .select()
+      .from(adminOperations)
+      .where(eq(adminOperations.id, noop.headers.get("Operation-Id")!));
+    expect(receipt?.outcome).toBe("noop");
+  }
+  const erasePath = `/${original.id}?confirm=${original.id}`;
+  const erased = await command("org-erase", erasePath, "DELETE");
+  expect(erased.status).toBe(204);
+  const eraseReplay = await command("org-erase", erasePath, "DELETE");
+  expect(eraseReplay.status).toBe(204);
+  expect(eraseReplay.headers.get("Idempotency-Replayed")).toBe("true");
+  expect(
+    await fixture.db
+      .select()
+      .from(organizations)
+      .where(eq(organizations.id, original.id)),
+  ).toHaveLength(0);
+  const creationReplay = await command("org-create", "", "POST", input);
+  expect(creationReplay.headers.get("Idempotency-Replayed")).toBe("true");
+  expect(await creationReplay.json()).toEqual(original);
+});
+
+const patchTags = new Map<string, string>();
+async function command(
+  key: string,
+  path: string,
+  method: string,
+  body?: unknown,
+) {
+  const headers = fixture.headers("platformAdmin");
+  headers.set("Idempotency-Key", key);
+  if (method === "PATCH") {
+    if (!patchTags.has(key)) {
+      const current = await fixture.app.request(
+        `/api/admin/v1/organizations${path}`,
+        { headers },
+      );
+      patchTags.set(key, current.headers.get("ETag")!);
+    }
+    headers.set("If-Match", patchTags.get(key)!);
+  }
+  if (body !== undefined) headers.set("Content-Type", "application/json");
+  return fixture.app.request(`/api/admin/v1/organizations${path}`, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
+test("organisation audit failure rolls back both creation and its replay reservation", async () => {
+  const input = { slug: "org-atomic-replay", name: "Atomic" };
+  const before = await fixture.db.select().from(adminOperations);
+  await fixture.db.execute(
+    sql`alter table audit_events add constraint org_replay_fault check (action <> 'organization.created') not valid`,
+  );
+  try {
+    expect(
+      (await command("org-atomic", "", "POST", input)).status,
+    ).toBeGreaterThanOrEqual(400);
+  } finally {
+    await fixture.db.execute(
+      sql`alter table audit_events drop constraint org_replay_fault`,
+    );
+  }
+  expect(await fixture.db.select().from(adminOperations)).toEqual(before);
+  expect(
+    await fixture.db
+      .select()
+      .from(organizations)
+      .where(eq(organizations.slug, input.slug)),
+  ).toHaveLength(0);
+  expect((await command("org-atomic", "", "POST", input)).status).toBe(201);
+  expect(
+    (await command("org-atomic", "", "POST", input)).headers.get(
+      "Idempotency-Replayed",
+    ),
+  ).toBe("true");
+});
+
+test("concurrent organisation creation commits once", async () => {
+  const input = { slug: "org-concurrent-replay", name: "Concurrent" };
+  const responses = await Promise.all([
+    command("org-concurrent", "", "POST", input),
+    command("org-concurrent", "", "POST", input),
+  ]);
+  expect(responses.some((response) => response.status === 201)).toBe(true);
+  for (const response of responses) {
+    expect([201, 409]).toContain(response.status);
+    if (response.status === 409)
+      expect(await response.json()).toMatchObject({
+        code: "operation_in_progress",
+      });
+  }
+  const replay = await command("org-concurrent", "", "POST", input);
+  expect(replay.status).toBe(201);
+  expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
+  expect(
+    await fixture.db
+      .select()
+      .from(organizations)
+      .where(eq(organizations.slug, input.slug)),
+  ).toHaveLength(1);
+  expect(
+    await fixture.db
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.operationId, replay.headers.get("Operation-Id")!)),
+  ).toHaveLength(1);
+});
+
+test("organisation replay rechecks platform authority after middleware admission", async () => {
+  const input = { slug: "org-authority-replay", name: "Authority" };
+  const first = await command("org-authority", "", "POST", input);
+  expect(first.status).toBe(201);
+  const actor = fixture.principals.platformAdmin;
+  const original = fixture.db.transaction.bind(fixture.db);
+  fixture.db.transaction = afterBrokerRead(original, (async (
+    ...args: Parameters<typeof original>
+  ) => {
+    fixture.db.transaction = original;
+    await fixture.db
+      .update(members)
+      .set({ status: "revoked", revokedAt: new Date() })
+      .where(eq(members.id, actor.memberId));
+    return original(...args);
+  }) as typeof original);
+  try {
+    const denied = await command("org-authority", "", "POST", input);
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toMatchObject({ code: "insufficient_scope" });
+    expect(
+      await fixture.db
+        .select()
+        .from(auditEvents)
+        .where(eq(auditEvents.operationId, first.headers.get("Operation-Id")!)),
+    ).toHaveLength(1);
+  } finally {
+    fixture.db.transaction = original;
+    await fixture.db
+      .update(members)
+      .set({ status: "active", revokedAt: null })
+      .where(eq(members.id, actor.memberId));
+  }
+});
+
+test("getOrganizationSummary: exact pairs retain both identifiers in the HTTP contract", async () => {
+  const organization = await create("summary-pairs");
+  const clientId = createId();
+  const resource = `https://${createId()}.example`;
+  await fixture.db
+    .insert(oauthClients)
+    .values({ id: createId(), clientId, redirectUris: [] });
+  await fixture.db
+    .insert(oauthResources)
+    .values({ id: createId(), identifier: resource, name: "Summary" });
+  await fixture.db
+    .insert(entitlements)
+    .values({
+      id: createId(),
+      organizationId: organization.id,
+      clientId,
+      resource,
+      scopes: ["read"],
+    });
+  const response = await request(`/${organization.id}/summary`);
+  expect(response.status).toBe(200);
+  const summary = organizationSummarySchema.parse(await response.json());
+  expect(summary.entitlements.targets).toEqual([
+    { kind: "client_resource", id: clientId, resource, rows: 1 },
+  ]);
 });

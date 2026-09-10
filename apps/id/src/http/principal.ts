@@ -1,4 +1,8 @@
+import { recordAdministrativeDenial } from "./denial-audit.ts";
+import { boundedUserAgent } from "../lib/user-agent.ts";
+import { APIError } from "better-auth/api";
 import type { MiddlewareHandler } from "hono";
+import { machineIdentitySchema } from "../auth/machine-identity.ts";
 import {
   createLocalJWKSet,
   errors,
@@ -16,8 +20,7 @@ import {
 import {
   findClientPrincipal,
   type ClientPrincipalRow,
-} from "../db/queries/oauth-clients.ts";
-import { recordAuditEvent } from "../db/queries/audit.ts";
+} from "../db/client-principal.ts";
 import { secretMatches } from "../services/root-secret.ts";
 import { isAdminScope } from "./admin/scopes.ts";
 import type { AppEnvironment } from "./context.ts";
@@ -40,6 +43,11 @@ export type Principal =
     };
 export type Tier = "platform" | "tenant";
 export type BearerClaims = {
+  expiresAt: number;
+  clientInstance: string;
+  organizationId: string;
+  authorizationVersion: number;
+  organizationAuthorizationVersion: number;
   clientId: string;
   scopes: string[];
   sid?: unknown;
@@ -47,7 +55,7 @@ export type BearerClaims = {
 export type PrincipalDeps = {
   hasPlatformWriter(
     db: Database,
-    input: { organizationSlug: string; resource: string },
+    input: { resource: string },
   ): Promise<boolean>;
   getSession(headers: Headers): Promise<{
     session: { id: string };
@@ -62,6 +70,7 @@ export type PrincipalDeps = {
   findClient(
     db: Database,
     clientId: string,
+    resource: string,
   ): Promise<ClientPrincipalRow | null>;
 };
 
@@ -79,11 +88,24 @@ export function createBearerVerifier({
       issuer,
       audience,
       typ: "at+jwt",
+      requiredClaims: ["exp"],
     });
-    const clientId = payload.azp ?? payload.client_id ?? payload.sub;
-    if (typeof clientId !== "string" || !clientId)
+    const clientId = payload.client_id;
+    if (
+      typeof clientId !== "string" ||
+      !clientId ||
+      payload.sub !== clientId ||
+      (payload.azp !== undefined && payload.azp !== clientId)
+    )
       throw new Error("Missing client identity");
+    const identity = machineIdentitySchema.parse(payload);
     return {
+      expiresAt: payload.exp!,
+      clientInstance: identity.client_instance,
+      organizationId: identity.organization_id,
+      authorizationVersion: identity.authorization_version,
+      organizationAuthorizationVersion:
+        identity.organization_authorization_version,
       clientId,
       scopes: String(payload.scope ?? "")
         .split(" ")
@@ -96,19 +118,30 @@ export function createBearerVerifier({
 export function createJwksResolver(auth: Pick<Auth, "api">): JWTVerifyGetKey {
   let cached: ReturnType<typeof createLocalJWKSet> | undefined;
   let expiresAt = 0;
-  async function refresh() {
-    cached = createLocalJWKSet(await auth.api.getJwks());
-    expiresAt = Date.now() + 5 * 60 * 1000;
-    return cached;
+  let loading: Promise<ReturnType<typeof createLocalJWKSet>> | undefined;
+  function refresh() {
+    // Share store work, not verification results or attacker-supplied key IDs.
+    loading ??= (async () => {
+      const resolver = createLocalJWKSet(await auth.api.getJwks());
+      cached = resolver;
+      expiresAt = Date.now() + 5 * 60 * 1000;
+      return resolver;
+    })().finally(() => {
+      loading = undefined;
+    });
+    return loading;
   }
   return async (header, token) => {
-    const resolver =
-      !cached || Date.now() >= expiresAt ? await refresh() : cached;
+    const fresh = !cached || Date.now() >= expiresAt;
+    const resolver = fresh ? await refresh() : cached!;
     try {
       return await resolver(header, token);
     } catch (error) {
-      if (!(error instanceof errors.JWKSNoMatchingKey)) throw error;
-      return (await refresh())(header, token);
+      // A just-loaded set cannot improve by immediately loading it again.
+      if (!(error instanceof errors.JWKSNoMatchingKey) || fresh) throw error;
+      // Another verification may have refreshed while this one inspected its set.
+      const current = cached !== resolver ? cached! : await refresh();
+      return current(header, token);
     }
   };
 }
@@ -118,8 +151,27 @@ export function createDefaultPrincipalDeps({
   environment,
 }: Pick<AppServices, "auth" | "environment">): PrincipalDeps {
   return {
-    getSession: (headers) =>
-      auth.api.getSession({ headers, query: { disableRefresh: true } }),
+    getSession: async (headers) => {
+      try {
+        return await auth.api.getSession({
+          headers,
+          query: { disableRefresh: true },
+        });
+      } catch (error) {
+        if (
+          error instanceof APIError &&
+          error.status === "INTERNAL_SERVER_ERROR"
+        )
+          throw new ProblemError(
+            503,
+            "authentication_unavailable",
+            "Authentication is unavailable",
+            "Retry after the indicated delay.",
+            { retryable: true },
+          );
+        throw error;
+      }
+    },
     verifyBearer: createBearerVerifier({
       getKey: createJwksResolver(auth),
       issuer: environment.betterAuthUrl,
@@ -153,21 +205,19 @@ export function createPrincipalMiddleware(
         if (
           !environment.rootAdminBreakGlass &&
           (await deps.hasPlatformWriter(db, {
-            organizationSlug: environment.platformOrganizationSlug,
             resource: environment.adminResourceIdentifier,
           }))
         ) {
-          await recordAuditEvent(db, {
+          await recordAdministrativeDenial(db, {
             actorType: "system",
             actorId: "root",
             action: "admin.root_request",
-            outcome: "denied",
             reason: "root_locked",
             targetType: "route",
             targetId: context.req.path,
             requestId: context.get("requestId"),
-            ip: context.req.header("x-forwarded-for")?.split(",")[0]?.trim(),
-            userAgent: context.req.header("user-agent"),
+            userAgent:
+              boundedUserAgent(context.req.header("user-agent")) ?? undefined,
           });
           throw new ProblemError(
             403,
@@ -184,8 +234,18 @@ export function createPrincipalMiddleware(
         } catch {
           throw invalidToken();
         }
-        const client = await deps.findClient(db, claims.clientId);
-        if (!client || client.disabled) throw invalidToken();
+        const client = await deps.findClient(
+          db,
+          claims.clientId,
+          environment.adminResourceIdentifier,
+        );
+        if (
+          !client ||
+          client.disabled ||
+          !Number.isFinite(claims.expiresAt) ||
+          claims.expiresAt <= Date.now() / 1000
+        )
+          throw invalidToken();
         if (!client.organizationId)
           throw new ProblemError(
             403,
@@ -198,16 +258,27 @@ export function createPrincipalMiddleware(
             "organization_disabled",
             "Organisation is disabled",
           );
+        if (
+          claims.clientInstance !== client.id ||
+          claims.organizationId !== client.organizationId ||
+          claims.authorizationVersion !== client.authorizationVersion ||
+          claims.organizationAuthorizationVersion !==
+            client.organization.authorizationVersion
+        )
+          throw invalidToken();
         if (claims.sid !== undefined)
           throw invalidToken(
             "User-delegated tokens are not admin credentials.",
           );
+        context.set("bearerClaims", claims);
         const scopes = [
           ...new Set(
             claims.scopes.filter(
               (scope) =>
                 isAdminScope(scope) &&
-                client.clientCredentialsScopes?.includes(scope),
+                client.clientCredentialsScopes?.includes(scope) &&
+                (client.resourceScopes === null ||
+                  client.resourceScopes.includes(scope)),
             ),
           ),
         ].sort();
@@ -219,6 +290,7 @@ export function createPrincipalMiddleware(
             {
               organizationId: client.organizationId,
               organizationSlug: client.organization.slug,
+              isPlatform: client.isPlatform,
               scopes,
             },
           ],

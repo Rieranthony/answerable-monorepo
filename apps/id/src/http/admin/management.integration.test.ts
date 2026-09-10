@@ -11,8 +11,20 @@ import {
   oauthRefreshTokens,
   oauthConsents,
 } from "../../db/schema/index.ts";
-import { listClientResources } from "../../db/queries/oauth-clients.ts";
-import * as auditService from "../../services/audit.ts";
+import { listClientResources } from "../../__tests__/client-queries.ts";
+import * as auditImplementation from "../../services/audit.ts";
+import { inPlatformRead } from "../../__tests__/platform-context.ts";
+const auditService = {
+  listUserAuditEvents: (
+    db: import("../../db/client.ts").Database,
+    id: string,
+    filters: Parameters<typeof auditImplementation.listUserAuditEvents>[2],
+    page: Parameters<typeof auditImplementation.listUserAuditEvents>[3],
+  ) =>
+    inPlatformRead(db, (context) =>
+      auditImplementation.listUserAuditEvents(context, id, filters, page),
+    ),
+};
 let fixture: AdminFixture;
 beforeEach(async () => {
   fixture = await createAdminFixture();
@@ -21,8 +33,20 @@ afterEach(async () => {
   await fixture?.close();
 });
 type Kind = Parameters<AdminFixture["headers"]>[0];
-function request(kind: Kind, path: string, method = "GET", body?: unknown) {
+async function request(
+  kind: Kind,
+  path: string,
+  method = "GET",
+  body?: unknown,
+) {
   const headers = fixture.headers(kind);
+  if (method === "PATCH" && /\/members\/[^/]+$/.test(path)) {
+    const current = await fixture.app.request(
+      `/api/admin/v1${path}/configuration`,
+      { headers },
+    );
+    headers.set("If-Match", current.headers.get("ETag")!);
+  }
   if (body !== undefined) headers.set("content-type", "application/json");
   return fixture.app.request(`/api/admin/v1${path}`, {
     method,
@@ -93,6 +117,16 @@ for (const machine of [false, true]) {
       (await read(kind, `/resources?q=${encodeURIComponent(resource)}`))
         .items[0],
     ).not.toHaveProperty("clients");
+    const capability = await create(
+      kind,
+      `/organizations/${org.id}/capabilities`,
+      {
+        clientId: client.clientId,
+        resource,
+        grantKind: "client_credentials",
+        scopes: ["read"],
+      },
+    );
     const tokenResponse = await fixture.app.request("/auth/oauth2/token", {
       method: "POST",
       headers: {
@@ -169,6 +203,20 @@ for (const machine of [false, true]) {
         )
       ).status,
     ).toBe(204);
+    const blocked = await request(kind, erasePath, "DELETE");
+    expect(blocked.status).toBe(409);
+    expect(await blocked.json()).toMatchObject({
+      code: "capability_references_exist",
+    });
+    expect(
+      (
+        await request(
+          kind,
+          `/organizations/${org.id}/capabilities/${capability.id}`,
+          "DELETE",
+        )
+      ).status,
+    ).toBe(204);
     expect((await request(kind, erasePath, "DELETE")).status).toBe(204);
     expect((await request(kind, erasePath, "DELETE")).status).toBe(404);
     expect(await listClientResources(fixture.db, client.clientId)).toEqual([]);
@@ -237,7 +285,7 @@ for (const machine of [false, true]) {
       name: "Review",
       allowedScopes: ["read"],
     });
-    const grants = [];
+    const grants: { id: string }[] = [];
     for (const org of [fixture.tenant, fixture.outsider])
       grants.push(
         await create(
@@ -299,6 +347,28 @@ for (const machine of [false, true]) {
         trail.items.some((row: { action: string }) => row.action === action),
       ).toBe(true);
     expect(
+      trail.items.filter(
+        (row: { targetType: string }) => row.targetType === "entitlement",
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        action: "entitlement.created",
+        schemaVersion: 2,
+        organizationId: person.organizationId,
+        targetId: grants[0]!.id,
+        data: expect.objectContaining({
+          audience: expect.arrayContaining([
+            expect.objectContaining({
+              organizationId: person.organizationId,
+              memberId: person.memberId,
+              userId: person.userId,
+              groupAssignment: null,
+            }),
+          ]),
+        }),
+      }),
+    ]);
+    expect(
       trail.items.every(
         (row: {
           actorId: string;
@@ -310,7 +380,9 @@ for (const machine of [false, true]) {
           (row.targetType === "user" && row.targetId === person.userId) ||
           (["member", "group_member"].includes(row.targetType) &&
             row.targetId === person.memberId) ||
-          (row.targetType === "session" && row.data?.userId === person.userId),
+          (row.targetType === "session" &&
+            row.data?.userId === person.userId) ||
+          (row.targetType === "entitlement" && row.targetId === grants[0]!.id),
       ),
     ).toBe(true);
     for (const path of [

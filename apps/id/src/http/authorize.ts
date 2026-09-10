@@ -1,3 +1,4 @@
+import { recordAdministrativeDenial } from "./denial-audit.ts";
 import type { Context, MiddlewareHandler } from "hono";
 import { recordAuditEvent } from "../db/queries/audit.ts";
 import { actorFromContext } from "../services/actor.ts";
@@ -17,13 +18,12 @@ async function deny(
   const known =
     organizationId !== undefined &&
     principal.grants.some((grant) => grant.organizationId === organizationId);
-  await recordAuditEvent(context.get("db"), {
+  await recordAdministrativeDenial(context.get("db"), {
     ...actorFromContext(context),
     organizationId: known ? organizationId : undefined,
     data:
       organizationId !== undefined && !known ? { organizationId } : undefined,
     action: "admin.denied",
-    outcome: "denied",
     targetType: "route",
     targetId: context.get("operationId"),
     reason: code,
@@ -77,11 +77,7 @@ export function authorize({
       return next();
     }
     const grants = context.get("principal")!.grants;
-    const platformGrant = grants.find(
-      (grant) =>
-        grant.organizationSlug ===
-        context.get("environment").platformOrganizationSlug,
-    );
+    const platformGrant = grants.find((grant) => grant.isPlatform);
     if (platformGrant?.scopes.includes(platform)) {
       context.set("tier", "platform");
       return next();

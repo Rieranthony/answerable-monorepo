@@ -25,6 +25,7 @@ export const meSchema = z.object({
     z.object({
       organizationId: z.string(),
       organizationSlug: z.string(),
+      isPlatform: z.boolean(),
       scopes: z.array(z.string()),
     }),
   ),

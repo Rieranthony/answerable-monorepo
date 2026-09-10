@@ -7,7 +7,7 @@ import {
 } from "../../__tests__/admin.ts";
 import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
 import { auditEvents, oauthAccessTokens } from "../../db/schema/index.ts";
-import { findClient } from "../../db/queries/oauth-clients.ts";
+import { findClient } from "../../__tests__/client-queries.ts";
 import { hashClientSecret } from "../../services/client-secrets.ts";
 import { createId } from "../../lib/id.ts";
 import { routes, clientSchema } from "./clients.ts";
@@ -24,7 +24,7 @@ describeAdminRoutes(routes, () => fixture, {
     resource: encodeURIComponent(fixture.platform.adminResource),
   }),
 });
-function request(
+async function request(
   path = "",
   method = "GET",
   body?: unknown,
@@ -33,6 +33,15 @@ function request(
   const headers = fixture.headers(kind);
   headers.set("x-request-id", "clients-http-test");
   if (body !== undefined) headers.set("content-type", "application/json");
+  if (method === "PATCH") {
+    const current = await fixture.app.request(`/api/admin/v1/clients${path}`, {
+      headers,
+    });
+    headers.set(
+      "If-Match",
+      current.headers.get("ETag") ?? '"00000000-0000-7000-8000-000000000000:1"',
+    );
+  }
   return fixture.app.request(`/api/admin/v1/clients${path}`, {
     method,
     headers,
@@ -115,6 +124,20 @@ for (const machine of [false, true])
     const existingLink = await request(link, "PUT", undefined, kind);
     expect(existingLink.status).toBe(200);
     expect(await existingLink.json()).toEqual({ created: false });
+    const approval = await fixture.app.request(
+      `/api/admin/v1/organizations/${fixture.tenant.organizationId}/capabilities`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          clientId: client.clientId,
+          resource,
+          grantKind: "client_credentials",
+          scopes: ["tutor:read"],
+        }),
+      },
+    );
+    expect(approval.status).toBe(201);
     const minted = await mint(client.clientId, secret, resource);
     expect(minted.status).toBe(200);
     expect(decodeJwt((await minted.json()).access_token).aud).toBe(resource);
@@ -170,11 +193,21 @@ for (const machine of [false, true])
         { organizationId },
         kind,
       );
-      expect(response.status).toBe(200);
-      const result = await response.json();
-      expect(result.organizationId).toBe(organizationId);
-      expect(result).not.toHaveProperty("clientSecret");
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({
+        code: "ownership_conflict",
+      });
     }
+    const unchanged = await request(
+      path + "/owner",
+      "PUT",
+      { organizationId: fixture.tenant.organizationId },
+      kind,
+    );
+    expect(unchanged.status).toBe(200);
+    expect(await unchanged.json()).toMatchObject({
+      organizationId: fixture.tenant.organizationId,
+    });
     const events = await fixture.db
       .select()
       .from(auditEvents)
@@ -189,14 +222,14 @@ for (const machine of [false, true])
       "client.created",
       "client.updated",
       "client.resource_linked",
-      "client.resource_linked",
+      "client.resource_unchanged",
       "client.secret_rotated",
+      "client.grants_revoked",
       "client.disabled",
       "client.enabled",
       "client.resource_unlinked",
       "client.resource_linked",
-      "client.owner_changed",
-      "client.owner_changed",
+      "client.owner_unchanged",
     ]);
     for (const event of events)
       expect(event).toMatchObject({
@@ -322,7 +355,7 @@ test("client cross-field failures include errors; the create example reaches an 
   expect(
     (await request("/conflicts/owner", "PUT", { organizationId: createId() }))
       .status,
-  ).toBe(404);
+  ).toBe(409);
   expect(
     (
       await request(
@@ -339,10 +372,10 @@ test("client cross-field failures include errors; the create example reaches an 
         "DELETE",
       )
     ).status,
-  ).toBe(404);
-  expect((await request("/conflicts/enable", "POST")).status).toBe(409);
+  ).toBe(204);
+  expect((await request("/conflicts/enable", "POST")).status).toBe(200);
   expect((await request("/conflicts/disable", "POST")).status).toBe(200);
-  expect((await request("/conflicts/disable", "POST")).status).toBe(409);
+  expect((await request("/conflicts/disable", "POST")).status).toBe(200);
   const disabled = await (await request("?q=conflicts&disabled=true")).json();
   expect(disabled.items).toHaveLength(1);
 });

@@ -1,8 +1,9 @@
+import { inPlatformWrite } from "../__tests__/platform-context.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
-import { createOrganization } from "../db/queries/organizations.ts";
+import { createOrganization } from "../__tests__/organization-queries.ts";
 import { createId } from "../lib/id.ts";
 let connection: DatabaseConnection;
 beforeAll(() => {
@@ -10,7 +11,7 @@ beforeAll(() => {
 });
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table audit_events, organizations, users cascade`,
+    sql`truncate table security_identifiers, audit_events, organizations, users cascade`,
   );
 });
 afterAll(async () => {
@@ -19,16 +20,64 @@ afterAll(async () => {
 import { auditEvents } from "../db/schema/index.ts";
 import type { Actor } from "./actor.ts";
 const actor: Actor = {
-  actorType: "user",
-  actorId: createId(),
+  actorType: "system",
+  actorId: "root",
   requestId: "service-test",
   ip: "192.0.2.1",
   userAgent: "test",
 };
 const invalidActor = { ...actor, requestId: "\0" };
-import * as service from "./domains.ts";
-import { findOrganizationDomain } from "../db/queries/organization-domains.ts";
-test("domain lifecycle writes have one attributed audit and reject repeats, foreign rows and missing organisations", async () => {
+import * as implementation from "./domains.ts";
+import { inTenantRead } from "../__tests__/tenant-command.ts";
+import type { Database } from "../db/client.ts";
+const service = {
+  ...implementation,
+
+  createDomain: (
+    db: Database,
+    actor: Actor,
+    org: string,
+    input: { domain: string },
+  ) =>
+    inPlatformWrite(
+      db,
+      (context) => implementation.createDomain(context, org, input),
+      actor,
+    ),
+  disableDomain: (db: Database, actor: Actor, org: string, id: string) =>
+    inPlatformWrite(
+      db,
+      (context) => implementation.disableDomain(context, org, id),
+      actor,
+    ),
+  enableDomain: (db: Database, actor: Actor, org: string, id: string) =>
+    inPlatformWrite(
+      db,
+      (context) => implementation.enableDomain(context, org, id),
+      actor,
+    ),
+  deleteOrganizationDomain: (
+    db: Database,
+    actor: Actor,
+    org: string,
+    id: string,
+  ) =>
+    inPlatformWrite(
+      db,
+      (context) => implementation.deleteOrganizationDomain(context, org, id),
+      actor,
+    ),
+  listDomains: (
+    db: Database,
+    org: string,
+    arg1: Parameters<typeof implementation.listDomains>[1],
+  ) =>
+    inTenantRead(db, org, "directory", (context) =>
+      implementation.listDomains(context, arg1),
+    ),
+};
+import { findOrganizationDomain } from "../__tests__/domain-queries.ts";
+test("domain lifecycle writes have one attributed audit and record noops and reject foreign rows and missing organisations", async () => {
   const db = connection.db;
   const org = await createOrganization(db, { slug: "alpha", name: "Alpha" });
   const other = await createOrganization(db, { slug: "beta", name: "Beta" });
@@ -39,17 +88,21 @@ test("domain lifecycle writes have one attributed audit and reject repeats, fore
     items: [row],
     nextCursor: null,
   });
-  await expect(
-    service.enableDomain(db, actor, org.id, row.id),
-  ).rejects.toMatchObject({ status: 409, code: "domain_already_active" });
-  expect(await service.disableDomain(db, actor, org.id, row.id)).toMatchObject({
-    status: "disabled",
-  });
-  await expect(
-    service.disableDomain(db, actor, org.id, row.id),
-  ).rejects.toMatchObject({ status: 409, code: "domain_already_disabled" });
   expect(await service.enableDomain(db, actor, org.id, row.id)).toMatchObject({
-    status: "active",
+    domain: row,
+    changed: false,
+  });
+  expect(await service.disableDomain(db, actor, org.id, row.id)).toMatchObject({
+    domain: { status: "disabled" },
+    changed: true,
+  });
+  expect(await service.disableDomain(db, actor, org.id, row.id)).toMatchObject({
+    domain: { status: "disabled" },
+    changed: false,
+  });
+  expect(await service.enableDomain(db, actor, org.id, row.id)).toMatchObject({
+    domain: { status: "active" },
+    changed: true,
   });
   for (const id of [createId(), other.id]) {
     await expect(
@@ -68,7 +121,7 @@ test("domain lifecycle writes have one attributed audit and reject repeats, fore
     }),
   ).rejects.toMatchObject({ status: 404 });
   const events = await db.select().from(auditEvents).orderBy(auditEvents.id);
-  expect(events).toHaveLength(3);
+  expect(events).toHaveLength(5);
   for (const event of events)
     expect(event).toMatchObject({
       ...actor,
@@ -79,12 +132,28 @@ test("domain lifecycle writes have one attributed audit and reject repeats, fore
     });
   expect(events.map((event) => event.action)).toEqual([
     "domain.created",
+    "domain.enable_unchanged",
     "domain.disabled",
+    "domain.disable_unchanged",
     "domain.enabled",
   ]);
-  expect(events[0]?.data).toEqual({ domain: row.domain });
-  expect(events[1]?.data).toEqual({ status: "disabled" });
-  expect(events[2]?.data).toEqual({ status: "active" });
+  expect(events[0]?.data).toMatchObject({
+    domain: row.domain,
+    before: null,
+    after: { id: row.id, organizationId: org.id, status: "active" },
+  });
+  expect(events[1]?.data).toMatchObject({
+    before: { status: "active" },
+    after: { status: "active" },
+  });
+  expect(events[2]?.data).toMatchObject({
+    before: { status: "active" },
+    after: { status: "disabled" },
+  });
+  expect(events[4]?.data).toMatchObject({
+    before: { status: "disabled" },
+    after: { status: "active" },
+  });
 });
 test("domain ownership conflicts and audit failures roll back all writes", async () => {
   const db = connection.db;

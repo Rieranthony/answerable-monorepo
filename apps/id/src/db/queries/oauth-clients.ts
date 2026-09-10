@@ -1,4 +1,25 @@
-import { count, and, desc, eq, ilike, or } from "drizzle-orm";
+import {
+  requirePlatformReadContext,
+  requirePlatformWriteContext,
+  type PlatformReadContext,
+  type PlatformWriteContext,
+} from "../../services/platform-context.ts";
+import {
+  requireTenantDirectoryContext,
+  type TenantReadContext,
+} from "../../services/tenant-context.ts";
+import { lockClient } from "../client-lock.ts";
+import {
+  count,
+  and,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  or,
+  sql,
+  getTableColumns,
+} from "drizzle-orm";
 
 import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
 import { createId } from "../../lib/id.ts";
@@ -7,57 +28,16 @@ import {
   entitlements,
   oauthClients,
   oauthClientResources,
-  organizations,
+  oauthAccessTokens,
+  oauthRefreshTokens,
+  oauthConsents,
 } from "../schema/index.ts";
 
-export class OAuthClientNotFoundError extends Error {
-  constructor(clientId: string) {
-    super(`OAuth client not found: ${clientId}`);
-    this.name = "OAuthClientNotFoundError";
-  }
-}
-
-export async function assignClientOrganization(
-  db: Executor,
-  input: { clientId: string; organizationId: string | null },
-) {
-  const [client] = await db
-    .update(oauthClients)
-    .set({ organizationId: input.organizationId })
-    .where(eq(oauthClients.clientId, input.clientId))
-    .returning();
-
-  if (!client) throw new OAuthClientNotFoundError(input.clientId);
-
-  return client;
-}
-
-export async function findClientPrincipal(
-  executor: Executor,
-  clientId: string,
-) {
-  const [client] = await executor
-    .select({
-      clientId: oauthClients.clientId,
-      disabled: oauthClients.disabled,
-      clientCredentialsScopes: oauthClients.clientCredentialsScopes,
-      organizationId: oauthClients.organizationId,
-      organization: {
-        id: organizations.id,
-        slug: organizations.slug,
-        status: organizations.status,
-      },
-    })
-    .from(oauthClients)
-    .leftJoin(organizations, eq(organizations.id, oauthClients.organizationId))
-    .where(eq(oauthClients.clientId, clientId))
-    .limit(1);
-  return client ?? null;
-}
-
-export type ClientPrincipalRow = NonNullable<
-  Awaited<ReturnType<typeof findClientPrincipal>>
->;
+const { clientSecret, ...clientColumns } = getTableColumns(oauthClients);
+const publicSelection = {
+  ...clientColumns,
+  hasClientSecret: sql<boolean>`${clientSecret} is not null`,
+};
 
 export type ClientInput = Omit<
   typeof oauthClients.$inferInsert,
@@ -84,9 +64,10 @@ export type ClientQuery = PageQuery & {
   organizationId?: string;
   disabled?: boolean;
 };
-export function listClients(executor: Executor, query: ClientQuery) {
+export function listClients(context: PlatformReadContext, query: ClientQuery) {
+  const { tx: executor } = requirePlatformReadContext(context);
   return executor
-    .select()
+    .select(publicSelection)
     .from(oauthClients)
     .where(
       and(
@@ -108,23 +89,54 @@ export function listClients(executor: Executor, query: ClientQuery) {
     .orderBy(desc(oauthClients.id))
     .limit(query.limit + 1);
 }
-export async function findClient(executor: Executor, clientId: string) {
-  const [row] = await executor
-    .select()
+function publicClientQuery(executor: Executor, clientId: string) {
+  return executor
+    .select(publicSelection)
+    .from(oauthClients)
+    .where(eq(oauthClients.clientId, clientId))
+    .for("share");
+}
+export async function readClient(
+  context: PlatformReadContext,
+  clientId: string,
+) {
+  const { tx } = requirePlatformReadContext(context);
+  const [row] = await publicClientQuery(tx, clientId);
+  return row ?? null;
+}
+export async function readClientForPolicy(
+  context: PlatformWriteContext,
+  clientId: string,
+) {
+  const { tx } = requirePlatformWriteContext(context);
+  const [row] = await publicClientQuery(tx, clientId);
+  return row ?? null;
+}
+export function lockClientForCommand(
+  context: PlatformWriteContext,
+  clientId: string,
+) {
+  const { tx } = requirePlatformWriteContext(context);
+  return lockClient(tx, clientId);
+}
+/** Client registration can be shared; this existence check grants no permission. */
+export async function findClientForAccess(
+  context: TenantReadContext<"directory">,
+  clientId: string,
+) {
+  const { tx } = requireTenantDirectoryContext(context);
+  const [row] = await tx
+    .select({ id: oauthClients.id })
     .from(oauthClients)
     .where(eq(oauthClients.clientId, clientId));
   return row ?? null;
 }
-/** Serialise client configuration, token revocation and secret rotation. */
-export async function lockClient(executor: Executor, clientId: string) {
-  const [row] = await executor
-    .select()
-    .from(oauthClients)
-    .where(eq(oauthClients.clientId, clientId))
-    .for("update");
-  return row ?? null;
-}
-export async function createClient(executor: Executor, input: ClientInput) {
+
+export async function createClient(
+  context: PlatformWriteContext,
+  input: ClientInput,
+) {
+  const { tx: executor } = requirePlatformWriteContext(context);
   const [row] = await executor
     .insert(oauthClients)
     .values({ ...input, id: createId() })
@@ -132,10 +144,11 @@ export async function createClient(executor: Executor, input: ClientInput) {
   return row!;
 }
 export async function updateClient(
-  executor: Executor,
+  context: PlatformWriteContext,
   clientId: string,
   patch: ClientPatch,
 ) {
+  const { tx: executor } = requirePlatformWriteContext(context);
   const [row] = await executor
     .update(oauthClients)
     .set(patch)
@@ -144,10 +157,11 @@ export async function updateClient(
   return row ?? null;
 }
 export async function setClientDisabled(
-  executor: Executor,
+  context: PlatformWriteContext,
   clientId: string,
   disabled: boolean,
 ) {
+  const { tx: executor } = requirePlatformWriteContext(context);
   const [row] = await executor
     .update(oauthClients)
     .set({ disabled })
@@ -156,10 +170,11 @@ export async function setClientDisabled(
   return row ?? null;
 }
 export async function setClientSecret(
-  executor: Executor,
+  context: PlatformWriteContext,
   clientId: string,
   digest: string,
 ) {
+  const { tx: executor } = requirePlatformWriteContext(context);
   const [row] = await executor
     .update(oauthClients)
     .set({ clientSecret: digest })
@@ -168,10 +183,11 @@ export async function setClientSecret(
   return row ?? null;
 }
 export async function linkClientResource(
-  executor: Executor,
+  context: PlatformWriteContext,
   clientId: string,
   resource: string,
 ) {
+  const { tx: executor } = requirePlatformWriteContext(context);
   const rows = await executor
     .insert(oauthClientResources)
     .values({ id: createId(), clientId, resourceId: resource })
@@ -180,10 +196,11 @@ export async function linkClientResource(
   return { created: rows.length > 0 };
 }
 export async function unlinkClientResource(
-  executor: Executor,
+  context: PlatformWriteContext,
   clientId: string,
   resource: string,
 ) {
+  const { tx: executor } = requirePlatformWriteContext(context);
   const rows = await executor
     .delete(oauthClientResources)
     .where(
@@ -195,7 +212,11 @@ export async function unlinkClientResource(
     .returning({ id: oauthClientResources.id });
   return rows.length > 0;
 }
-export function listClientResources(executor: Executor, clientId: string) {
+export function listClientResources(
+  context: PlatformReadContext,
+  clientId: string,
+) {
+  const { tx: executor } = requirePlatformReadContext(context);
   return executor
     .select()
     .from(oauthClientResources)
@@ -204,17 +225,90 @@ export function listClientResources(executor: Executor, clientId: string) {
 }
 
 export async function countClientEntitlements(
-  executor: Executor,
+  context: PlatformWriteContext,
   clientId: string,
 ) {
+  const { tx: executor } = requirePlatformWriteContext(context);
   const [row] = await executor
     .select({ count: count() })
     .from(entitlements)
     .where(eq(entitlements.clientId, clientId));
   return row!.count;
 }
-export async function deleteClient(executor: Executor, clientId: string) {
-  await executor
-    .delete(oauthClients)
-    .where(eq(oauthClients.clientId, clientId));
+export async function deleteClient(
+  context: PlatformWriteContext,
+  clientId: string,
+) {
+  const { tx } = requirePlatformWriteContext(context);
+  // Caller holds the client FOR UPDATE. Lock refresh parents in a separate
+  // statement: a cross-client access row can reference one while deletion waits.
+  await tx
+    .select({ id: oauthRefreshTokens.id })
+    .from(oauthRefreshTokens)
+    .where(eq(oauthRefreshTokens.clientId, clientId))
+    .orderBy(oauthRefreshTokens.id)
+    .for("update");
+  const deletedAccessTokens = await tx
+    .delete(oauthAccessTokens)
+    .where(
+      or(
+        eq(oauthAccessTokens.clientId, clientId),
+        inArray(
+          oauthAccessTokens.refreshId,
+          tx
+            .select({ id: oauthRefreshTokens.id })
+            .from(oauthRefreshTokens)
+            .where(eq(oauthRefreshTokens.clientId, clientId)),
+        ),
+      ),
+    )
+    .returning({
+      id: oauthAccessTokens.id,
+      userId: oauthAccessTokens.userId,
+      clientId: oauthAccessTokens.clientId,
+      sessionId: oauthAccessTokens.sessionId,
+      refreshId: oauthAccessTokens.refreshId,
+      scopes: oauthAccessTokens.scopes,
+      resources: oauthAccessTokens.resources,
+      expiresAt: oauthAccessTokens.expiresAt,
+      revoked: oauthAccessTokens.revoked,
+    });
+  const deletedRefreshTokens = await tx
+    .delete(oauthRefreshTokens)
+    .where(eq(oauthRefreshTokens.clientId, clientId))
+    .returning({
+      id: oauthRefreshTokens.id,
+      userId: oauthRefreshTokens.userId,
+      clientId: oauthRefreshTokens.clientId,
+      sessionId: oauthRefreshTokens.sessionId,
+      scopes: oauthRefreshTokens.scopes,
+      resources: oauthRefreshTokens.resources,
+      expiresAt: oauthRefreshTokens.expiresAt,
+      revoked: oauthRefreshTokens.revoked,
+    });
+  const deletedConsents = await tx
+    .delete(oauthConsents)
+    .where(eq(oauthConsents.clientId, clientId))
+    .returning({
+      id: oauthConsents.id,
+      userId: oauthConsents.userId,
+      clientId: oauthConsents.clientId,
+      scopes: oauthConsents.scopes,
+      resources: oauthConsents.resources,
+    });
+  const deletedClientResources = await tx
+    .delete(oauthClientResources)
+    .where(eq(oauthClientResources.clientId, clientId))
+    .returning({
+      id: oauthClientResources.id,
+      clientId: oauthClientResources.clientId,
+      resourceId: oauthClientResources.resourceId,
+    });
+  await tx.delete(oauthClients).where(eq(oauthClients.clientId, clientId));
+  return {
+    deletedAccessTokens,
+    deletedRefreshTokens,
+    deletedConsents,
+    deletedClientResources,
+  };
 }

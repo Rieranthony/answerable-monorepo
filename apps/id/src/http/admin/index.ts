@@ -29,7 +29,12 @@ import * as platform from "./platform.ts";
 
 import * as diagnostics from "./diagnostics.ts";
 
+import * as capabilities from "./capabilities.ts";
+import * as operations from "./operations.ts";
+
 const families = [
+  capabilities,
+  operations,
   diagnostics,
   platform,
   me,

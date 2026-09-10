@@ -1,3 +1,4 @@
+import { boundedUserAgent } from "../lib/user-agent.ts";
 import type { Executor } from "../db/client.ts";
 import { recordAuditEvent } from "../db/queries/audit.ts";
 
@@ -21,8 +22,9 @@ export function sessionAuditHooks(db: Executor) {
       targetId: session.id,
       outcome: "success",
       requestId: context?.headers?.get("x-request-id") ?? null,
-      ip: session.ipAddress ?? null,
-      userAgent: session.userAgent ?? null,
+      // Existing session IPs have no recorded trust provenance.
+      ip: null,
+      userAgent: boundedUserAgent(session.userAgent),
     });
   }
   // Sign-in success is recorded by the sign-in audit plugin, after the SSO

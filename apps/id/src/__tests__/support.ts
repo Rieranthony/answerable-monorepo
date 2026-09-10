@@ -21,11 +21,18 @@ export function testEnvironment(
     databaseUrl: testDatabaseUrl,
     betterAuthUrl: "http://localhost:47300",
     betterAuthSecret: "test-secret-that-is-at-least-32-characters",
+    betterAuthSecrets: undefined,
+    upstreamTokenSecrets: [
+      { version: 1, value: Buffer.alloc(32, 73).toString("base64url") },
+    ],
     trustedOrigins: [],
     authPagesUrl: "http://localhost:47100",
+    maxConcurrentRequests: 64,
     databasePoolMax: 1,
     databasePoolIdleTimeoutMs: 1_000,
     databaseConnectionTimeoutMs: 1_000,
+    databaseStatementTimeoutMs: 10_000,
+    operationReplay: undefined,
     rootAdminSecret: undefined,
     rootAdminBreakGlass: false,
     openApiEnabled: true,
@@ -38,6 +45,7 @@ export function testEnvironment(
 
 export function stubAuth(): Auth {
   return {
+    options: { session: { additionalFields: {} } },
     handler: () => Response.json({ status: "ok" }),
     api: {
       generateOpenAPISchema: async () => ({
@@ -140,6 +148,9 @@ export function stubAuth(): Auth {
   } as unknown as Auth;
 }
 
-export function stubDatabase(): Database {
-  return { marker: "database" } as unknown as Database;
+export function stubDatabase(poolMax = 10): Database {
+  return {
+    marker: "database",
+    $client: { options: { max: poolMax } },
+  } as unknown as Database;
 }

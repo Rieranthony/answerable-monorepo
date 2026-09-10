@@ -1,7 +1,19 @@
+import { platformRead } from "./platform-read.ts";
 import { json, body, pathParameter, confirmQuery } from "./schemas.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
-import { actorFromContext } from "../../services/actor.ts";
+import {
+  platformCommand,
+  operationJson,
+  idempotencyParameter,
+  commandResponseHeaders,
+} from "./command.ts";
+import {
+  requireRevision,
+  revisionTag,
+  revisionParameter,
+  revisionResponseHeaders,
+} from "./revision.ts";
 import * as service from "../../services/resources.ts";
 import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
@@ -10,6 +22,8 @@ import { validate } from "../validation.ts";
 import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 export const resourceSchema = z.object({
+  classification: z.enum(["platform_shared", "tenant_owned"]),
+  organizationId: z.uuid().nullable(),
   id: z.uuid(),
   identifier: z.url(),
   name: z.string(),
@@ -21,10 +35,16 @@ export const resourceSchema = z.object({
   customClaims: z.unknown().nullable(),
   dpopBoundAccessTokensRequired: z.boolean(),
   disabled: z.boolean(),
+  revision: z.number().int().positive(),
   policyVersion: z.number(),
   metadata: z.unknown().nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
+});
+// Historical mutation receipts keep their original response shape.
+const replayedResourceSchema = resourceSchema.partial({
+  classification: true,
+  organizationId: true,
 });
 const fields = {
   name: z.string().min(1).max(200),
@@ -32,13 +52,29 @@ const fields = {
   refreshTokenTtl: z.number().int().min(60).optional(),
   allowedScopes: z.array(z.string().min(1)).min(1),
 };
-const createSchema = z.object({
-  identifier: z.url(),
-  ...fields,
-  signingAlgorithm: z.enum(["EdDSA", "ES256", "RS256"]).optional(),
-});
+const createSchema = z
+  .object({
+    classification: z
+      .enum(["platform_shared", "tenant_owned"])
+      .default("platform_shared"),
+    organizationId: z.uuid().nullable().default(null),
+    identifier: z.url(),
+    ...fields,
+    signingAlgorithm: z.enum(["EdDSA", "ES256", "RS256"]).optional(),
+  })
+  .refine(
+    (input) =>
+      (input.classification === "tenant_owned") ===
+      (input.organizationId !== null),
+    {
+      path: ["organizationId"],
+      message:
+        "Tenant-owned resources require an owner; platform-shared resources cannot have one",
+    },
+  );
 const patchSchema = z
   .object(fields)
+  .strict()
   .partial()
   .refine(
     (patch) => Object.keys(patch).length > 0,
@@ -87,10 +123,11 @@ export const routes = {
     operationId: "createResource",
     summary: "Create resource",
     description:
-      "Create an OAuth resource and return its generated id, URL identifier and configuration, recording the creation in the audit log. Prefer updateResource for an existing URL identifier; validation_failed rejects malformed input and conflict means the identifier already exists.",
+      "Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Create an OAuth resource and return its generated id, URL identifier and configuration, recording the creation in the audit log. Prefer updateResource for an existing URL identifier; validation_failed rejects malformed input conflict means the identifier already exists, and identifier_reserved means a retired identity cannot be reused.",
     tag: "Resources",
     platformScope: "platform:write",
     kind: "write",
+    parameters: [idempotencyParameter],
     requestBody: body(createSchema),
     example: {
       body: {
@@ -102,8 +139,12 @@ export const routes = {
     responses: standardResponses(
       {},
       {
-        201: { description: "Resource created", content: json(resourceSchema) },
-        ...problemResponses(400, 404, 409),
+        201: {
+          headers: commandResponseHeaders,
+          description: "Resource created",
+          content: json(replayedResourceSchema),
+        },
+        ...problemResponses(400, 404, 409, 410, 503),
       },
     ),
   },
@@ -122,6 +163,7 @@ export const routes = {
       {},
       {
         200: {
+          headers: revisionResponseHeaders,
           description: "Resource",
           content: json(
             resourceSchema.extend({ clients: z.array(z.string()) }),
@@ -137,18 +179,22 @@ export const routes = {
     operationId: "updateResource",
     summary: "Update resource (URL-encode {resource})",
     description:
-      "Change the resource configuration and return the updated record, recording the change in the audit log. The {resource} URL must be percent-encoded in the path; prefer getResource to inspect settings, and validation_failed or not_found identifies malformed input or a missing resource.",
+      "Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Requires the If-Match ETag from getResource. Missing preconditions return 428, stale new commands return 412; committed replay precedes the old revision check. An unchanged patch records noop without advancing the revision. Change the resource configuration and return the updated record, recording the change in the audit log. The {resource} URL must be percent-encoded in the path; prefer getResource to inspect settings, and validation_failed or not_found identifies malformed input or a missing resource. Scope changes to the bound admin resource cannot remove existing effective platform-write authority; last_platform_administrator rolls back the command. Retain that authority in any new scope configuration.",
     tag: "Resources",
     platformScope: "platform:write",
     kind: "write",
-    parameters,
+    parameters: [...parameters, idempotencyParameter, revisionParameter],
     requestBody: body(patchSchema),
     example: { body: { name: "Renamed" } },
     responses: standardResponses(
       {},
       {
-        200: { description: "Resource updated", content: json(resourceSchema) },
-        ...problemResponses(400, 404, 409),
+        200: {
+          headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
+          description: "Resource updated",
+          content: json(replayedResourceSchema),
+        },
+        ...problemResponses(400, 404, 409, 410, 412, 428, 503),
       },
     ),
   },
@@ -158,19 +204,20 @@ export const routes = {
     operationId: "disableResource",
     summary: "Disable resource (URL-encode {resource})",
     description:
-      "Disable the resource for future token grants and return its updated configuration. The {resource} URL must be percent-encoded in the path; prefer enableResource to restore use, and validation_failed, not_found, resource_already_disabled or resource_protected identifies malformed input, a missing resource, an unchanged state or the protected admin resource.",
+      "Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Disable the resource for future token grants, revoke its stored grant contexts across tenants and return its updated configuration. The {resource} URL must be percent-encoded in the path; prefer enableResource to restore use, and validation_failed, not_found or resource_protected identifies malformed input, a missing resource or the protected admin resource. An already disabled resource reconciles remaining unrevoked contexts; it returns 200 with a noop outcome only when neither state nor contexts change. Protection follows the persisted system resource UUID, not a configured name.",
     tag: "Resources",
     platformScope: "platform:write",
     kind: "write",
-    parameters,
+    parameters: [...parameters, idempotencyParameter],
     responses: standardResponses(
       {},
       {
         200: {
+          headers: commandResponseHeaders,
           description: "Resource disabled",
-          content: json(resourceSchema),
+          content: json(replayedResourceSchema),
         },
-        ...problemResponses(400, 404, 409),
+        ...problemResponses(400, 404, 409, 410, 503),
       },
     ),
   },
@@ -180,16 +227,20 @@ export const routes = {
     operationId: "enableResource",
     summary: "Enable resource (URL-encode {resource})",
     description:
-      "Enable resource and return the updated record. Prefer disableResource for the opposite transition; not_found means the target is missing and resource_already_active means no transition is needed; the {resource} URL must be percent-encoded in the path.",
+      "Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Enable resource and return the updated record without restoring previously revoked grant contexts. Prefer disableResource for the opposite transition; not_found means the target is missing and an already active resource returns 200 with a noop outcome; the {resource} URL must be percent-encoded in the path.",
     tag: "Resources",
     platformScope: "platform:write",
     kind: "write",
-    parameters,
+    parameters: [...parameters, idempotencyParameter],
     responses: standardResponses(
       {},
       {
-        200: { description: "Resource enabled", content: json(resourceSchema) },
-        ...problemResponses(400, 404, 409),
+        200: {
+          headers: commandResponseHeaders,
+          description: "Resource enabled",
+          content: json(replayedResourceSchema),
+        },
+        ...problemResponses(400, 404, 409, 410, 503),
       },
     ),
   },
@@ -199,17 +250,24 @@ export const routes = {
     operationId: "eraseResource",
     summary: "Erase resource (URL-encode {resource})",
     description:
-      "Permanently erase the resource and return no content; resource_has_entitlements requires removing entitlements first; resource_protected prevents erasing the admin resource. The confirm query parameter must equal the target id; the {resource} URL must be percent-encoded in the path, and confirm is the decoded resource identifier. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableResource for reversible offboarding.",
+      "capability_references_exist requires removing all referencing capabilities before erasure. Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Permanently erase the resource and return no content; resource_has_entitlements requires removing entitlements first; resource_has_clients requires explicitly unlinking all clients before erasure; resource_protected prevents erasing the admin resource. The confirm query parameter must equal the target id; the {resource} URL must be percent-encoded in the path, and confirm is the decoded resource identifier. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableResource to retain the resource registration. Protection follows the persisted system resource UUID, not a configured name.",
     tag: "Resources",
     platformScope: "platform:write",
     kind: "erase",
-    parameters: [...parameters, confirmQuery(eraseSchema.shape.confirm)],
+    parameters: [
+      ...parameters,
+      idempotencyParameter,
+      confirmQuery(eraseSchema.shape.confirm),
+    ],
     example: { query: { confirm: "https://none.example" } },
     responses: standardResponses(
       {},
       {
-        204: { description: "Resource erased" },
-        ...problemResponses(400, 404, 409),
+        204: {
+          headers: commandResponseHeaders,
+          description: "Resource erased",
+        },
+        ...problemResponses(400, 404, 409, 410, 503),
       },
     ),
   },
@@ -222,13 +280,15 @@ export function register(app: Hono<AppEnvironment>) {
     async (context) => {
       const query = querySchema.parse(context.req.query());
       return context.json(
-        await service.listResources(context.get("db"), {
-          ...query,
-          disabled:
-            query.disabled === undefined
-              ? undefined
-              : query.disabled === "true",
-        }),
+        await platformRead(context, (platform) =>
+          service.listResources(platform, {
+            ...query,
+            disabled:
+              query.disabled === undefined
+                ? undefined
+                : query.disabled === "true",
+          }),
+        ),
       );
     },
   );
@@ -237,14 +297,27 @@ export function register(app: Hono<AppEnvironment>) {
     routes.createResource,
     validate("json", createSchema),
     async (context) => {
-      const input = createSchema.parse(await context.req.json());
-      return context.json(
-        await service.createResource(
-          context.get("db"),
-          actorFromContext(context),
-          input,
-        ),
+      const parsed = createSchema.parse(await context.req.json());
+      const input = {
+        ...parsed,
+        allowedScopes: [...new Set(parsed.allowedScopes)].sort(),
+      };
+      const { classification, organizationId, ...configuration } = input;
+      // Keep pre-ownership shared-resource receipts replayable.
+      const canonicalInput =
+        classification === "platform_shared"
+          ? configuration
+          : { ...configuration, classification, organizationId };
+      return platformCommand(
+        context,
+        "createResource",
+        operationJson(canonicalInput),
         201,
+        async (platform) => ({
+          body: await service.createResource(platform, input),
+          resultReference: { type: "resource", id: input.identifier },
+        }),
+        { retention: "ordinary" },
       );
     },
   );
@@ -253,12 +326,11 @@ export function register(app: Hono<AppEnvironment>) {
     routes.getResource,
     validate("param", paramSchema),
     async (context) => {
-      return context.json(
-        await service.getResource(
-          context.get("db"),
-          context.req.param("resource")!,
-        ),
+      const result = await platformRead(context, (platform) =>
+        service.getResource(platform, context.req.param("resource")!),
       );
+      context.header("ETag", revisionTag(result));
+      return context.json(result);
     },
   );
   registerRoute(
@@ -268,13 +340,35 @@ export function register(app: Hono<AppEnvironment>) {
     validate("json", patchSchema),
     async (context) => {
       const input = patchSchema.parse(await context.req.json());
-      return context.json(
-        await service.updateResource(
-          context.get("db"),
-          actorFromContext(context),
-          context.req.param("resource")!,
-          input,
-        ),
+      if (input.allowedScopes)
+        input.allowedScopes = [...new Set(input.allowedScopes)].sort();
+      const expected = requireRevision(context.req.header("If-Match"));
+      const identifier = context.req.param("resource")!;
+      return platformCommand(
+        context,
+        "updateResource",
+        operationJson({ identifier, expected, patch: input }),
+        200,
+        async (platform) => {
+          const body = await service.updateResource(
+            platform,
+            identifier,
+            input,
+            expected,
+          );
+          return {
+            body,
+            outcome: body.revision === expected.revision ? "noop" : "applied",
+            resultReference: { type: "resource", id: identifier },
+          };
+        },
+        {
+          retention: "ordinary",
+          etag: (body) =>
+            revisionTag(
+              resourceSchema.pick({ id: true, revision: true }).parse(body),
+            ),
+        },
       );
     },
   );
@@ -283,13 +377,21 @@ export function register(app: Hono<AppEnvironment>) {
     routes.disableResource,
     validate("param", paramSchema),
     async (context) => {
-      return context.json(
-        await service.disableResource(
-          context.get("db"),
-          actorFromContext(context),
-          context.req.param("resource")!,
-          context.get("environment"),
-        ),
+      const identifier = context.req.param("resource")!;
+      return platformCommand(
+        context,
+        "disableResource",
+        { identifier },
+        200,
+        async (platform) => {
+          const result = await service.disableResource(platform, identifier);
+          return {
+            body: result.resource,
+            outcome: result.changed ? "applied" : "noop",
+            resultReference: { type: "resource", id: identifier },
+          };
+        },
+        { retention: "ordinary" },
       );
     },
   );
@@ -298,12 +400,21 @@ export function register(app: Hono<AppEnvironment>) {
     routes.enableResource,
     validate("param", paramSchema),
     async (context) => {
-      return context.json(
-        await service.enableResource(
-          context.get("db"),
-          actorFromContext(context),
-          context.req.param("resource")!,
-        ),
+      const identifier = context.req.param("resource")!;
+      return platformCommand(
+        context,
+        "enableResource",
+        { identifier },
+        200,
+        async (platform) => {
+          const result = await service.enableResource(platform, identifier);
+          return {
+            body: result.resource,
+            outcome: result.changed ? "applied" : "noop",
+            resultReference: { type: "resource", id: identifier },
+          };
+        },
+        { retention: "ordinary" },
       );
     },
   );
@@ -314,14 +425,21 @@ export function register(app: Hono<AppEnvironment>) {
     validate("query", eraseSchema),
     async (context) => {
       const input = eraseSchema.parse(context.req.query());
-      await service.eraseResource(
-        context.get("db"),
-        actorFromContext(context),
-        context.req.param("resource")!,
-        input.confirm,
-        context.get("environment"),
+      const identifier = context.req.param("resource")!;
+      return platformCommand(
+        context,
+        "eraseResource",
+        { identifier, ...input },
+        204,
+        async (platform) => {
+          await service.eraseResource(platform, identifier, input.confirm);
+          return {
+            body: null,
+            resultReference: { type: "resource", id: identifier },
+          };
+        },
+        { retention: "ordinary" },
       );
-      return context.body(null, 204);
     },
   );
 }

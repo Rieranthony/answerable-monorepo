@@ -1,3 +1,4 @@
+import { platformRead } from "./platform-read.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
 import { getPlatformSummary } from "../../services/summary.ts";
@@ -48,8 +49,6 @@ export const routes = {
 } satisfies Record<string, AdminRoute>;
 export function register(app: Hono<AppEnvironment>) {
   registerRoute(app, routes.getPlatformSummary, async (context) =>
-    context.json(
-      await getPlatformSummary(context.get("db"), context.get("environment")),
-    ),
+    context.json(await platformRead(context, getPlatformSummary)),
   );
 }

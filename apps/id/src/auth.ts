@@ -1,7 +1,9 @@
-import { drizzleAdapter } from "@better-auth/drizzle-adapter";
-import { oauthProvider } from "@better-auth/oauth-provider";
+import { authDatabaseAdapter } from "./auth/database-adapter.ts";
+import { machineOAuthProvider } from "./auth/machine-provider.ts";
+import { machineIdentity } from "./auth/machine-identity.ts";
 import { sso } from "@better-auth/sso";
 import { betterAuth } from "better-auth";
+import { APIError, isAPIError } from "better-auth/api";
 import { openAPI } from "better-auth/plugins";
 import { jwt } from "better-auth/plugins/jwt";
 import { organization } from "better-auth/plugins/organization";
@@ -10,27 +12,81 @@ import { sessionAuditHooks } from "./auth/audit-hooks.ts";
 import { signInAudit } from "./auth/signin-audit-plugin.ts";
 import type { Database } from "./db/client.ts";
 import { answerableSchema } from "./auth/answerable-schema.ts";
-import * as schema from "./db/schema/index.ts";
-import { lifecycleStatuses, userStatuses } from "./db/schema/vocabulary.ts";
+import {
+  lifecycleStatuses,
+  userStatuses,
+  membershipStatuses,
+} from "./db/schema/vocabulary.ts";
 import type { Environment } from "./env.ts";
 import { createId } from "./lib/id.ts";
-import { resolveFederatedUser } from "./services/federation.ts";
+import { createSsoOriginBoundary } from "./auth/sso-origin.ts";
+import { upstreamTokenStorage } from "./auth/upstream-token-storage.ts";
 
 export function createAuth(db: Database, environment: Environment) {
-  return betterAuth({
+  const ssoOrigin = createSsoOriginBoundary();
+  const auth = betterAuth({
     appName: "Answerable ID",
+    onAPIError: {
+      onError(error) {
+        if (isAPIError(error)) return;
+        console.error(
+          "[id] auth",
+          JSON.stringify({ level: "error", event: "provider_diagnostic" }),
+        );
+        // Throw a safe protocol error so the native router cannot log the raw exception.
+        throw new APIError("INTERNAL_SERVER_ERROR", {
+          code: "authentication_unavailable",
+          message: "Authentication is temporarily unavailable",
+        });
+      },
+    },
+    // Provider diagnostics may contain SQL parameters, tokens or upstream bodies.
+    // Preserve a severity signal, never free-form messages or argument objects.
+    logger: {
+      level: "warn",
+      log: (level) =>
+        console.error(
+          "[id] auth",
+          JSON.stringify({ level, event: "provider_diagnostic" }),
+        ),
+    },
     baseURL: environment.betterAuthUrl,
     basePath: "/auth",
     secret: environment.betterAuthSecret,
-    database: drizzleAdapter(db, {
-      provider: "pg",
-      schema,
-      usePlural: true,
-      transaction: true,
-    }),
-    databaseHooks: { session: sessionAuditHooks(db) },
+    secrets: environment.betterAuthSecrets,
+    database: authDatabaseAdapter(db, ssoOrigin.observeProvider),
+    databaseHooks: {
+      session: {
+        ...sessionAuditHooks(db),
+        create: { before: ssoOrigin.before },
+      },
+    },
+    session: {
+      additionalFields: {
+        authenticationOrganizationId: {
+          type: "string",
+          required: false,
+          input: false,
+          returned: false,
+        },
+        authenticationProviderId: {
+          type: "string",
+          required: false,
+          input: false,
+          returned: false,
+        },
+        authenticationProviderRevision: {
+          type: "number",
+          required: false,
+          input: false,
+          returned: false,
+        },
+      },
+    },
     trustedOrigins: environment.trustedOrigins,
     account: {
+      // The storage plugin protects all three fields; do not encrypt twice.
+      encryptOAuthTokens: false,
       accountLinking: {
         enabled: false,
       },
@@ -70,6 +126,9 @@ export function createAuth(db: Database, environment: Environment) {
       },
     },
     advanced: {
+      // No verified ingress/peer contract yet. Keep the native shared rate limit;
+      // disableIpTracking would bypass it when no address is available.
+      ipAddress: { ipAddressHeaders: [] },
       database: {
         generateId: createId,
         joins: true,
@@ -77,11 +136,18 @@ export function createAuth(db: Database, environment: Environment) {
     },
     plugins: [
       answerableSchema(),
+      upstreamTokenStorage(environment.upstreamTokenSecrets),
       organization({
         allowUserToCreateOrganization: false,
         schema: {
           organization: {
             additionalFields: {
+              authorizationVersion: {
+                type: "number",
+                required: true,
+                defaultValue: 1,
+                input: false,
+              },
               status: {
                 type: [...lifecycleStatuses],
                 required: true,
@@ -102,6 +168,13 @@ export function createAuth(db: Database, environment: Environment) {
           },
           member: {
             additionalFields: {
+              status: {
+                type: [...membershipStatuses],
+                required: true,
+                defaultValue: "active",
+                input: false,
+              },
+              revokedAt: { type: "date", required: false, input: false },
               validFrom: {
                 type: "date",
                 required: false,
@@ -125,16 +198,28 @@ export function createAuth(db: Database, environment: Environment) {
         schema: { jwks: { modelName: "jwk" } },
       }),
       sso({
+        schema: {
+          ssoProvider: {
+            additionalFields: {
+              revision: {
+                type: "number",
+                required: false,
+                input: false,
+                returned: false,
+              },
+            },
+          },
+        },
         redirectURI: "/sso/callback",
         providersLimit: 0,
         organizationProvisioning: { defaultRole: "member" },
-        resolveUser: (input, { database }) =>
-          resolveFederatedUser(input, database),
+        resolveUser: ssoOrigin.resolveUser,
       }),
       // OIDC provider for our apps and OAuth 2.1 authorization server for MCP
       // servers. The login and consent pages arrive with the federation and
       // provider milestones; until then no OAuth route is allowlisted.
-      oauthProvider({
+      machineOAuthProvider(db, {
+        extensions: [machineIdentity()],
         // hashClientSecret mirrors this digest for bootstrap clients.
         storeClientSecret: "hashed",
         loginPage: `${environment.authPagesUrl}/login`,
@@ -146,6 +231,10 @@ export function createAuth(db: Database, environment: Environment) {
       signInAudit(db),
     ],
   });
+  return {
+    ...auth,
+    handler: (request: Request) => ssoOrigin.run(() => auth.handler(request)),
+  };
 }
 
 export type Auth = ReturnType<typeof createAuth>;

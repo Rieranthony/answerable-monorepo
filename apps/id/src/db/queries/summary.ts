@@ -1,4 +1,12 @@
 import {
+  requirePlatformReadContext,
+  type PlatformReadContext,
+} from "../../services/platform-context.ts";
+import {
+  requireTenantDirectoryContext,
+  type TenantReadContext,
+} from "../../services/tenant-context.ts";
+import {
   and,
   count,
   eq,
@@ -11,7 +19,6 @@ import {
   type SQL,
 } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
-import { platformAdminsGroupSlug } from "../../bootstrap.ts";
 import type { Executor } from "../client.ts";
 import {
   auditEvents,
@@ -25,6 +32,7 @@ import {
   sessions,
   ssoProviders,
   users,
+  systemBindings,
 } from "../schema/index.ts";
 
 const filtered = (condition: SQL) =>
@@ -39,12 +47,10 @@ const userStatuses = () => ({
 });
 
 export async function platformSummary(
-  executor: Executor,
-  {
-    platformOrganizationSlug,
-    now,
-  }: { platformOrganizationSlug: string; now: Date },
+  context: PlatformReadContext,
+  { now }: { now: Date },
 ) {
+  const { tx: executor } = requirePlatformReadContext(context);
   const [
     platformRows,
     [organizationCounts],
@@ -55,16 +61,11 @@ export async function platformSummary(
     [denied],
   ] = await Promise.all([
     executor
-      .select({ organizationId: organizations.id, groupId: groups.id })
-      .from(organizations)
-      .leftJoin(
-        groups,
-        and(
-          eq(groups.organizationId, organizations.id),
-          eq(groups.slug, platformAdminsGroupSlug),
-        ),
-      )
-      .where(eq(organizations.slug, platformOrganizationSlug)),
+      .select({
+        organizationId: systemBindings.organizationId,
+        groupId: systemBindings.groupId,
+      })
+      .from(systemBindings),
     executor.select(statuses(organizations.status)).from(organizations),
     executor.select(userStatuses()).from(users),
     executor
@@ -109,12 +110,13 @@ export async function platformSummary(
 }
 
 export async function organizationSummary(
-  executor: Executor,
-  organizationId: string,
+  context: TenantReadContext<"directory">,
   { now }: { now: Date },
 ) {
+  const { tx: executor, organizationId } =
+    requireTenantDirectoryContext(context);
   // Same inclusive start / exclusive end as isEffective, at the caller's instant.
-  const effective = sql`(${members.validFrom} is null or ${members.validFrom} <= ${now}) and (${members.validUntil} is null or ${members.validUntil} > ${now})`;
+  const effective = sql`${members.status} = 'active' and (${members.validFrom} is null or ${members.validFrom} <= ${now}) and (${members.validUntil} is null or ${members.validUntil} > ${now})`;
   const [
     organizationRows,
     [domains],
@@ -123,7 +125,6 @@ export async function organizationSummary(
     [groupCounts],
     targets,
     [clients],
-    [sessionCounts],
   ] = await Promise.all([
     executor
       .select()
@@ -165,18 +166,6 @@ export async function organizationSummary(
       .select({ owned: count() })
       .from(oauthClients)
       .where(eq(oauthClients.organizationId, organizationId)),
-    executor
-      .select({ active: filtered(gt(sessions.expiresAt, now)) })
-      .from(sessions)
-      .where(
-        inArray(
-          sessions.userId,
-          executor
-            .select({ id: members.userId })
-            .from(members)
-            .where(eq(members.organizationId, organizationId)),
-        ),
-      ),
   ]);
   const { total, effective: effectiveCount, ...byStatus } = memberCounts!;
   return {
@@ -188,19 +177,43 @@ export async function organizationSummary(
     entitlements: {
       active: targets.reduce((sum, row) => sum + row.active, 0),
       disabled: targets.reduce((sum, row) => sum + row.disabled, 0),
-      targets: targets.map((row) => ({
-        kind:
-          row.clientId === null ? ("resource" as const) : ("client" as const),
-        id: row.clientId ?? row.resource!,
-        rows: row.rows,
-      })),
+      targets: targets.map((row) => {
+        if (row.clientId !== null && row.resource !== null)
+          return {
+            kind: "client_resource" as const,
+            id: row.clientId,
+            resource: row.resource,
+            rows: row.rows,
+          };
+        return {
+          kind:
+            row.clientId === null ? ("resource" as const) : ("client" as const),
+          id: row.clientId ?? row.resource!,
+          rows: row.rows,
+        };
+      }),
     },
     clients: clients!,
-    sessions: sessionCounts!,
   };
 }
 
-export async function signInStats(
+export async function platformSignInStats(
+  context: PlatformReadContext,
+  options: { since: Date },
+) {
+  const { tx } = requirePlatformReadContext(context);
+  return signInStats(tx, options);
+}
+
+export async function organizationSignInStats(
+  context: TenantReadContext<"directory">,
+  { since }: { since: Date },
+) {
+  const { tx, organizationId } = requireTenantDirectoryContext(context);
+  return signInStats(tx, { since, organizationId });
+}
+
+async function signInStats(
   executor: Executor,
   { organizationId, since }: { organizationId?: string; since: Date },
 ) {

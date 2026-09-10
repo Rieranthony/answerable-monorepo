@@ -3,6 +3,7 @@ import {
   boolean,
   check,
   index,
+  integer,
   pgTable,
   text,
   unique,
@@ -22,6 +23,7 @@ import {
 } from "./columns.ts";
 import {
   invitationStatuses,
+  membershipStatuses,
   lifecycleStatuses,
   userStatuses,
 } from "./vocabulary.ts";
@@ -70,8 +72,15 @@ export const organizations = pgTable(
       .notNull(),
     disabledAt: timestampColumn("disabled_at"),
     ...timestamps(),
+    authorizationVersion: integer("authorization_version").default(1).notNull(),
+    revision: integer("revision").default(1).notNull(),
   },
   (table) => [
+    check("organizations_revision_check", sql`${table.revision} > 0`),
+    check(
+      "organizations_authorization_version_check",
+      sql`${table.authorizationVersion} > 0`,
+    ),
     slugCheck("organizations_slug_normalized_check", table.slug),
     vocabularyCheck(
       "organizations_status_check",
@@ -92,6 +101,10 @@ export const sessions = pgTable(
     id: id(),
     expiresAt: timestampColumn("expires_at").notNull(),
     token: text("token").notNull().unique(),
+    // Historical authentication origin; provider deletion must not erase it.
+    authenticationOrganizationId: uuid("authentication_organization_id"),
+    authenticationProviderId: uuid("authentication_provider_id"),
+    authenticationProviderRevision: integer("authentication_provider_revision"),
     ...timestamps(),
     ipAddress: text("ip_address"),
     userAgent: text("user_agent"),
@@ -107,10 +120,15 @@ export const sessions = pgTable(
   },
   (table) => [
     index("sessions_user_id_idx").on(table.userId),
-    index("sessions_active_organization_id_idx").on(
-      table.activeOrganizationId,
-    ),
+    index("sessions_active_organization_id_idx").on(table.activeOrganizationId),
     index("sessions_expires_at_idx").on(table.expiresAt),
+    check(
+      "sessions_authentication_origin_check",
+      sql`
+      (${table.authenticationOrganizationId} is null and ${table.authenticationProviderId} is null and ${table.authenticationProviderRevision} is null)
+      or (${table.authenticationOrganizationId} is not null and ${table.authenticationProviderId} is not null and ${table.authenticationProviderRevision} is not null and ${table.authenticationProviderRevision} > 0)
+    `,
+    ),
   ],
 );
 
@@ -168,6 +186,7 @@ export const members = pgTable(
   "members",
   {
     id: id(),
+    revision: integer("revision").default(1).notNull(),
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
@@ -177,10 +196,20 @@ export const members = pgTable(
     // Better Auth role state; may hold a comma-separated list. Confers no
     // authority in Answerable ID, where entitlements decide access.
     role: text("role").default("member").notNull(),
+    status: text("status", { enum: membershipStatuses })
+      .default("active")
+      .notNull(),
+    revokedAt: timestampColumn("revoked_at"),
     ...effectiveWindow(),
     createdAt: timestampColumn("created_at").defaultNow().notNull(),
   },
   (table) => [
+    check("members_revision_check", sql`${table.revision} > 0`),
+    vocabularyCheck("members_status_check", table.status, membershipStatuses),
+    check(
+      "members_revoked_check",
+      sql`(${table.status} = 'revoked') = (${table.revokedAt} is not null)`,
+    ),
     unique("members_organization_id_user_id_unique").on(
       table.organizationId,
       table.userId,

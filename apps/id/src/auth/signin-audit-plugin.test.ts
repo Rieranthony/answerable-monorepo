@@ -74,7 +74,7 @@ test("attributes the single active organisation, stamps the session and audits",
       targetId: "session",
       outcome: "success",
       requestId: "request",
-      ip: "192.0.2.1",
+      ip: null,
       userAgent: "agent",
     },
   ]);

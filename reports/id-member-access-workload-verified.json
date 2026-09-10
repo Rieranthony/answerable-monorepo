@@ -1,0 +1,2073 @@
+{
+  "metadata": {
+    "bun": "1.3.1",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M1 Pro",
+    "logicalCpus": 10,
+    "memoryBytes": 34359738368,
+    "poolMax": 4,
+    "connectionTimeoutMs": 1000,
+    "statementTimeoutMs": 10000,
+    "sizes": [
+      10,
+      100,
+      1000
+    ],
+    "dimension": "effective group assignments per member; eight members share the groups and one admin resource",
+    "topology": "one Bun loopback HTTP server and one restricted pool; local PostgreSQL",
+    "limits": "Single observations, not production capacity, percentiles or a peak-memory guarantee. RSS samples include this measurement process and are a lower bound on transient peaks."
+  },
+  "results": [
+    {
+      "size": 10,
+      "name": "other-tenant-baseline",
+      "elapsedMs": 48.2677920000001,
+      "rssBefore": 216055808,
+      "rssSampledMax": 217104384,
+      "maxTimerGapMs": 10.237458999999944,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 2,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 26.53420899999992,
+          "replayed": null
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 26.55749999999989
+        }
+      ],
+      "events": []
+    },
+    {
+      "size": 10,
+      "name": "eight-dense-member-window-commands",
+      "elapsedMs": 94.0196249999999,
+      "rssBefore": 217300992,
+      "rssSampledMax": 222461952,
+      "maxTimerGapMs": 11.492540999999846,
+      "maxPoolWaiting": 2,
+      "maxPoolTotal": 4,
+      "busyPoolSamples": 2,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 50.998875,
+          "replayed": "false"
+        },
+        {
+          "status": 503,
+          "ms": 27.251584000000094,
+          "replayed": null,
+          "code": "database_busy"
+        },
+        {
+          "status": 503,
+          "ms": 27.303708000000142,
+          "replayed": null,
+          "code": "database_busy"
+        },
+        {
+          "status": 200,
+          "ms": 73.20412499999998,
+          "replayed": "false"
+        },
+        {
+          "status": 503,
+          "ms": 11.32616599999983,
+          "replayed": null,
+          "code": "database_busy"
+        },
+        {
+          "status": 503,
+          "ms": 11.331416999999874,
+          "replayed": null,
+          "code": "database_busy"
+        },
+        {
+          "status": 503,
+          "ms": 16.006208000000015,
+          "replayed": null,
+          "code": "database_busy"
+        },
+        {
+          "status": 503,
+          "ms": 16.007790999999997,
+          "replayed": null,
+          "code": "database_busy"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 20.555624999999964
+        },
+        {
+          "status": 200,
+          "ms": 7.423624999999902
+        },
+        {
+          "status": 200,
+          "ms": 4.892540999999937
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 7012,
+          "users": 1
+        },
+        {
+          "action": "member.updated",
+          "json_bytes": 7012,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 10,
+      "name": "dense-member-replay-0",
+      "elapsedMs": 27.721917000000076,
+      "rssBefore": 222658560,
+      "rssSampledMax": 222658560,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 6.637917000000016,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 4.645874999999933
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 7012,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 10,
+      "name": "dense-member-recovery-1",
+      "elapsedMs": 25.60674999999992,
+      "rssBefore": 222756864,
+      "rssSampledMax": 222920704,
+      "maxTimerGapMs": 10.626500000000078,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 4,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 22.43987500000003,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 5.236167000000023
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 7012,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 10,
+      "name": "dense-member-replay-1",
+      "elapsedMs": 26.95699999999988,
+      "rssBefore": 223019008,
+      "rssSampledMax": 223019008,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 5.599583000000166,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 4.231665999999905
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 7012,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 10,
+      "name": "dense-member-recovery-2",
+      "elapsedMs": 54.51387499999987,
+      "rssBefore": 223084544,
+      "rssSampledMax": 223084544,
+      "maxTimerGapMs": 10.747749999999996,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 4,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 28.26062499999989,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 6.431250000000091
+        },
+        {
+          "status": 200,
+          "ms": 5.07224999999994
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 7012,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 10,
+      "name": "dense-member-replay-2",
+      "elapsedMs": 28.46575000000007,
+      "rssBefore": 223133696,
+      "rssSampledMax": 223133696,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 8.235750000000053,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 6.5447499999997945
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 7012,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 10,
+      "name": "dense-member-replay-3",
+      "elapsedMs": 30.324542000000065,
+      "rssBefore": 223199232,
+      "rssSampledMax": 223199232,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 9.392041999999947,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 7.973500000000058
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 7012,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 10,
+      "name": "dense-member-recovery-4",
+      "elapsedMs": 54.75612500000011,
+      "rssBefore": 224313344,
+      "rssSampledMax": 224378880,
+      "maxTimerGapMs": 10.635708000000022,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 4,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 29.499416999999994,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 7.465875000000096
+        },
+        {
+          "status": 200,
+          "ms": 5.6163329999999405
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 7012,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 10,
+      "name": "dense-member-replay-4",
+      "elapsedMs": 33.591915999999856,
+      "rssBefore": 224395264,
+      "rssSampledMax": 224395264,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 8.414082999999891,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 7.776542000000063
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 7012,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 10,
+      "name": "dense-member-recovery-5",
+      "elapsedMs": 60.20841599999994,
+      "rssBefore": 224477184,
+      "rssSampledMax": 224575488,
+      "maxTimerGapMs": 10.424249999999802,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 4,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 32.782916000000114,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 7.2309999999999945
+        },
+        {
+          "status": 200,
+          "ms": 8.939208000000008
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 7011,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 10,
+      "name": "dense-member-replay-5",
+      "elapsedMs": 37.62608300000011,
+      "rssBefore": 224624640,
+      "rssSampledMax": 224641024,
+      "maxTimerGapMs": 11.135083000000122,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 4,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 15.770958000000064,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 15.247667000000092
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 7011,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 10,
+      "name": "dense-member-recovery-6",
+      "elapsedMs": 25.948667000000114,
+      "rssBefore": 224673792,
+      "rssSampledMax": 225067008,
+      "maxTimerGapMs": 10.982083999999986,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 4,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 23.29333399999996,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 5.419125000000122
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 7012,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 10,
+      "name": "dense-member-replay-6",
+      "elapsedMs": 29.061124999999947,
+      "rssBefore": 225083392,
+      "rssSampledMax": 225083392,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 6.473250000000007,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 5.627999999999929
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 7012,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 10,
+      "name": "dense-member-recovery-7",
+      "elapsedMs": 26.01666699999987,
+      "rssBefore": 225230848,
+      "rssSampledMax": 225476608,
+      "maxTimerGapMs": 10.368832999999995,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 4,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 25.966583000000128,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 5.992334000000028
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 7011,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 10,
+      "name": "dense-member-replay-7",
+      "elapsedMs": 27.755499999999984,
+      "rssBefore": 225509376,
+      "rssSampledMax": 225509376,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 5.600750000000062,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 4.523415999999997
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 7011,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "other-tenant-baseline",
+      "elapsedMs": 42.3642090000003,
+      "rssBefore": 233586688,
+      "rssSampledMax": 234192896,
+      "maxTimerGapMs": 10.288915999999972,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 2,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 19.156375000000025,
+          "replayed": null
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 19.173291000000063
+        }
+      ],
+      "events": []
+    },
+    {
+      "size": 100,
+      "name": "eight-dense-member-window-commands",
+      "elapsedMs": 88.11412500000006,
+      "rssBefore": 234225664,
+      "rssSampledMax": 236224512,
+      "maxTimerGapMs": 13.09887499999968,
+      "maxPoolWaiting": 1,
+      "maxPoolTotal": 4,
+      "busyPoolSamples": 1,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 40.43550000000005,
+          "replayed": "false"
+        },
+        {
+          "status": 503,
+          "ms": 15.768166999999721,
+          "replayed": null,
+          "code": "database_busy"
+        },
+        {
+          "status": 503,
+          "ms": 15.775707999999668,
+          "replayed": null,
+          "code": "database_busy"
+        },
+        {
+          "status": 200,
+          "ms": 80.26816699999972,
+          "replayed": "false"
+        },
+        {
+          "status": 503,
+          "ms": 7.610917000000427,
+          "replayed": null,
+          "code": "database_busy"
+        },
+        {
+          "status": 503,
+          "ms": 7.61587499999996,
+          "replayed": null,
+          "code": "database_busy"
+        },
+        {
+          "status": 503,
+          "ms": 9.132250000000113,
+          "replayed": null,
+          "code": "database_busy"
+        },
+        {
+          "status": 503,
+          "ms": 9.203541999999743,
+          "replayed": null,
+          "code": "database_busy"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 12.400500000000193
+        },
+        {
+          "status": 200,
+          "ms": 7.3215000000000146
+        },
+        {
+          "status": 200,
+          "ms": 5.4395000000004075
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 53452,
+          "users": 1
+        },
+        {
+          "action": "member.updated",
+          "json_bytes": 53452,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "dense-member-replay-0",
+      "elapsedMs": 27.47629199999983,
+      "rssBefore": 236257280,
+      "rssSampledMax": 236257280,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 7.696584000000257,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 6.086333000000195
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 53452,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "dense-member-recovery-1",
+      "elapsedMs": 53.45937499999991,
+      "rssBefore": 236257280,
+      "rssSampledMax": 236421120,
+      "maxTimerGapMs": 10.685124999999971,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 4,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 26.996250000000146,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 4.7614159999998265
+        },
+        {
+          "status": 200,
+          "ms": 4.151792000000114
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 53452,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "dense-member-replay-1",
+      "elapsedMs": 26.08304199999975,
+      "rssBefore": 236519424,
+      "rssSampledMax": 236519424,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 6.485874999999851,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 4.64975000000004
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 53452,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "dense-member-recovery-2",
+      "elapsedMs": 57.239374999999654,
+      "rssBefore": 236535808,
+      "rssSampledMax": 237322240,
+      "maxTimerGapMs": 12.19079099999999,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 4,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 32.49400000000014,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 7.25649999999996
+        },
+        {
+          "status": 200,
+          "ms": 5.905957999999828
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 53452,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "dense-member-replay-2",
+      "elapsedMs": 27.795415999999932,
+      "rssBefore": 237322240,
+      "rssSampledMax": 237322240,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 5.45983299999989,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 4.59545799999978
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 53452,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "dense-member-replay-3",
+      "elapsedMs": 28.187958000000435,
+      "rssBefore": 237469696,
+      "rssSampledMax": 237469696,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 8.464249999999993,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 6.612333000000035
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 53452,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "dense-member-recovery-4",
+      "elapsedMs": 62.0994169999999,
+      "rssBefore": 237469696,
+      "rssSampledMax": 237666304,
+      "maxTimerGapMs": 10.431375000000116,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 4,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 42.06795899999997,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 10.37820899999997
+        },
+        {
+          "status": 200,
+          "ms": 10.034457999999631
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 53452,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "dense-member-replay-4",
+      "elapsedMs": 29.111291000000165,
+      "rssBefore": 237666304,
+      "rssSampledMax": 237666304,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 6.730000000000018,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 5.432917000000089
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 53452,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "dense-member-recovery-5",
+      "elapsedMs": 73.85300000000007,
+      "rssBefore": 237682688,
+      "rssSampledMax": 237682688,
+      "maxTimerGapMs": 12.027749999999742,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 4,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 52.21129199999996,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 6.0477499999997235
+        },
+        {
+          "status": 200,
+          "ms": 14.747459000000163
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 53452,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "dense-member-replay-5",
+      "elapsedMs": 37.83816700000034,
+      "rssBefore": 237912064,
+      "rssSampledMax": 237912064,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 7.272833999999875,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 5.434125000000222
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 53452,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "dense-member-recovery-6",
+      "elapsedMs": 57.59308400000009,
+      "rssBefore": 237944832,
+      "rssSampledMax": 238190592,
+      "maxTimerGapMs": 10.89791699999978,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 4,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 31.92504199999985,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 5.0409169999998085
+        },
+        {
+          "status": 200,
+          "ms": 7.114749999999731
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 53452,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "dense-member-replay-6",
+      "elapsedMs": 28.549125000000004,
+      "rssBefore": 238223360,
+      "rssSampledMax": 238223360,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 4.913540999999896,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 4.004832999999962
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 53452,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "dense-member-recovery-7",
+      "elapsedMs": 63.38704199999984,
+      "rssBefore": 238256128,
+      "rssSampledMax": 238600192,
+      "maxTimerGapMs": 11.483374999999796,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 4,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 38.35362500000019,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 11.061916999999994
+        },
+        {
+          "status": 200,
+          "ms": 5.758791000000201
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 53452,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "dense-member-replay-7",
+      "elapsedMs": 28.970624999999927,
+      "rssBefore": 238747648,
+      "rssSampledMax": 238780416,
+      "maxTimerGapMs": 10.186624999999822,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 4,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 10.801375000000007,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 8.596750000000156
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 53452,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "other-tenant-baseline",
+      "elapsedMs": 39.22887499999979,
+      "rssBefore": 250445824,
+      "rssSampledMax": 250527744,
+      "maxTimerGapMs": 12.065749999999753,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 2,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 16.43029200000001,
+          "replayed": null
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 16.426959000000352
+        }
+      ],
+      "events": []
+    },
+    {
+      "size": 1000,
+      "name": "eight-dense-member-window-commands",
+      "elapsedMs": 656.904708,
+      "rssBefore": 215154688,
+      "rssSampledMax": 226934784,
+      "maxTimerGapMs": 26.474083000000064,
+      "maxPoolWaiting": 5,
+      "maxPoolTotal": 4,
+      "busyPoolSamples": 2,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 156.921292,
+          "replayed": "false"
+        },
+        {
+          "status": 503,
+          "ms": 26.52570899999955,
+          "replayed": null,
+          "code": "database_busy"
+        },
+        {
+          "status": 503,
+          "ms": 35.341582999999446,
+          "replayed": null,
+          "code": "database_busy"
+        },
+        {
+          "status": 503,
+          "ms": 16.885458000000654,
+          "replayed": null,
+          "code": "database_busy"
+        },
+        {
+          "status": 200,
+          "ms": 626.3602499999997,
+          "replayed": "false"
+        },
+        {
+          "status": 503,
+          "ms": 17.716334000000643,
+          "replayed": null,
+          "code": "database_busy"
+        },
+        {
+          "status": 503,
+          "ms": 20.00208300000031,
+          "replayed": null,
+          "code": "database_busy"
+        },
+        {
+          "status": 503,
+          "ms": 18.579749999999876,
+          "replayed": null,
+          "code": "database_busy"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 35.40508399999999
+        },
+        {
+          "status": 200,
+          "ms": 6.6909999999998035
+        },
+        {
+          "status": 200,
+          "ms": 5.674750000000131
+        },
+        {
+          "status": 200,
+          "ms": 12.438709000000017
+        },
+        {
+          "status": 200,
+          "ms": 10.216374999999971
+        },
+        {
+          "status": 200,
+          "ms": 17.11883399999988
+        },
+        {
+          "status": 200,
+          "ms": 68.79095799999959
+        },
+        {
+          "status": 200,
+          "ms": 76.88345900000058
+        },
+        {
+          "status": 200,
+          "ms": 59.390292000000045
+        },
+        {
+          "status": 200,
+          "ms": 104.46058299999913
+        },
+        {
+          "status": 200,
+          "ms": 9.595750000000407
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 517852,
+          "users": 1
+        },
+        {
+          "action": "member.updated",
+          "json_bytes": 517851,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "dense-member-replay-0",
+      "elapsedMs": 28.02337500000067,
+      "rssBefore": 231686144,
+      "rssSampledMax": 231686144,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 8.760209000000032,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 5.3996250000000146
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 517852,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "dense-member-recovery-1",
+      "elapsedMs": 140.69524999999976,
+      "rssBefore": 232325120,
+      "rssSampledMax": 236044288,
+      "maxTimerGapMs": 13.59070900000006,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 4,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 116.77800000000025,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 4.654583000000457
+        },
+        {
+          "status": 200,
+          "ms": 5.023291999999856
+        },
+        {
+          "status": 200,
+          "ms": 10.671875
+        },
+        {
+          "status": 200,
+          "ms": 9.568417000000409
+        },
+        {
+          "status": 200,
+          "ms": 5.815750000000662
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 517852,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "dense-member-replay-1",
+      "elapsedMs": 26.14483399999972,
+      "rssBefore": 236290048,
+      "rssSampledMax": 236290048,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 7.306583000000501,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 4.067417000000205
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 517852,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "dense-member-recovery-2",
+      "elapsedMs": 134.44945800000005,
+      "rssBefore": 237453312,
+      "rssSampledMax": 242008064,
+      "maxTimerGapMs": 13.56945799999994,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 4,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 110.69420799999989,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 4.726999999999862
+        },
+        {
+          "status": 200,
+          "ms": 4.8761670000003505
+        },
+        {
+          "status": 200,
+          "ms": 4.719207999999526
+        },
+        {
+          "status": 200,
+          "ms": 7.115082999999686
+        },
+        {
+          "status": 200,
+          "ms": 7.590500000000247
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 517852,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "dense-member-replay-2",
+      "elapsedMs": 29.383332999999766,
+      "rssBefore": 242237440,
+      "rssSampledMax": 243007488,
+      "maxTimerGapMs": 10.078833000000486,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 3,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 11.126874999999927,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 7.410166000000572
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 517852,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "dense-member-recovery-3",
+      "elapsedMs": 114.27345800000057,
+      "rssBefore": 243286016,
+      "rssSampledMax": 247005184,
+      "maxTimerGapMs": 12.956833000000188,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 3,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 98.20687499999985,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 4.385040999999546
+        },
+        {
+          "status": 200,
+          "ms": 4.611457999999402
+        },
+        {
+          "status": 200,
+          "ms": 10.057542000000467
+        },
+        {
+          "status": 200,
+          "ms": 9.46545800000058
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 517852,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "dense-member-replay-3",
+      "elapsedMs": 31.160167,
+      "rssBefore": 247480320,
+      "rssSampledMax": 247496704,
+      "maxTimerGapMs": 9.990999999999985,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 2,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 12.079625000000306,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 9.299750000000131
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 517852,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "dense-member-replay-4",
+      "elapsedMs": 25.36920800000007,
+      "rssBefore": 248594432,
+      "rssSampledMax": 248643584,
+      "maxTimerGapMs": 11.018041000000267,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 2,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 14.218915999999808,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 4.397415999999794
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 517851,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "dense-member-recovery-5",
+      "elapsedMs": 138.5005000000001,
+      "rssBefore": 248905728,
+      "rssSampledMax": 252461056,
+      "maxTimerGapMs": 12.036166000000776,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 2,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 111.90195799999947,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 6.5328329999993
+        },
+        {
+          "status": 200,
+          "ms": 7.579208000000108
+        },
+        {
+          "status": 200,
+          "ms": 5.236417000000074
+        },
+        {
+          "status": 200,
+          "ms": 10.48041700000067
+        },
+        {
+          "status": 200,
+          "ms": 5.893708000000515
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 517852,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "dense-member-replay-5",
+      "elapsedMs": 28.10033300000032,
+      "rssBefore": 252903424,
+      "rssSampledMax": 252903424,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 7.853084000000308,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 4.727125000000342
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 517852,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "dense-member-recovery-6",
+      "elapsedMs": 114.2721249999995,
+      "rssBefore": 253919232,
+      "rssSampledMax": 258375680,
+      "maxTimerGapMs": 12.448959000000286,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 2,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 112.00129199999992,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 4.760541999999987
+        },
+        {
+          "status": 200,
+          "ms": 4.139791999999943
+        },
+        {
+          "status": 200,
+          "ms": 11.331374999999753
+        },
+        {
+          "status": 200,
+          "ms": 12.53295799999978
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 517852,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "dense-member-replay-6",
+      "elapsedMs": 25.801916999999776,
+      "rssBefore": 258572288,
+      "rssSampledMax": 258572288,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 8.414166999999907,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 4.340125000000626
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 517852,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "dense-member-recovery-7",
+      "elapsedMs": 126.55299999999988,
+      "rssBefore": 259112960,
+      "rssSampledMax": 261324800,
+      "maxTimerGapMs": 19.586583999999675,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 2,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 112.1777919999995,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 6.248541999999361
+        },
+        {
+          "status": 200,
+          "ms": 14.42462500000056
+        },
+        {
+          "status": 200,
+          "ms": 8.122541000000638
+        },
+        {
+          "status": 200,
+          "ms": 9.859000000000378
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 517852,
+          "users": 1
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "dense-member-replay-7",
+      "elapsedMs": 26.663916999999856,
+      "rssBefore": 261357568,
+      "rssSampledMax": 261357568,
+      "maxTimerGapMs": 0,
+      "maxPoolWaiting": 0,
+      "maxPoolTotal": 0,
+      "busyPoolSamples": 0,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 7.761459000000286,
+          "replayed": "true"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 4.183208000000377
+        }
+      ],
+      "events": [
+        {
+          "action": "member.updated",
+          "json_bytes": 517852,
+          "users": 1
+        }
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "size": 10,
+      "member": 0,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 10,
+      "assignments": 10,
+      "after_targets": 0
+    },
+    {
+      "size": 10,
+      "member": 1,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 10,
+      "assignments": 10,
+      "after_targets": 0
+    },
+    {
+      "size": 10,
+      "member": 2,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 10,
+      "assignments": 10,
+      "after_targets": 0
+    },
+    {
+      "size": 10,
+      "member": 3,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 10,
+      "assignments": 10,
+      "after_targets": 0
+    },
+    {
+      "size": 10,
+      "member": 4,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 10,
+      "assignments": 10,
+      "after_targets": 0
+    },
+    {
+      "size": 10,
+      "member": 5,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 10,
+      "assignments": 10,
+      "after_targets": 0
+    },
+    {
+      "size": 10,
+      "member": 6,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 10,
+      "assignments": 10,
+      "after_targets": 0
+    },
+    {
+      "size": 10,
+      "member": 7,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 10,
+      "assignments": 10,
+      "after_targets": 0
+    },
+    {
+      "size": 100,
+      "member": 0,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 100,
+      "assignments": 100,
+      "after_targets": 0
+    },
+    {
+      "size": 100,
+      "member": 1,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 100,
+      "assignments": 100,
+      "after_targets": 0
+    },
+    {
+      "size": 100,
+      "member": 2,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 100,
+      "assignments": 100,
+      "after_targets": 0
+    },
+    {
+      "size": 100,
+      "member": 3,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 100,
+      "assignments": 100,
+      "after_targets": 0
+    },
+    {
+      "size": 100,
+      "member": 4,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 100,
+      "assignments": 100,
+      "after_targets": 0
+    },
+    {
+      "size": 100,
+      "member": 5,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 100,
+      "assignments": 100,
+      "after_targets": 0
+    },
+    {
+      "size": 100,
+      "member": 6,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 100,
+      "assignments": 100,
+      "after_targets": 0
+    },
+    {
+      "size": 100,
+      "member": 7,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 100,
+      "assignments": 100,
+      "after_targets": 0
+    },
+    {
+      "size": 1000,
+      "member": 0,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 1000,
+      "assignments": 1000,
+      "after_targets": 0
+    },
+    {
+      "size": 1000,
+      "member": 1,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 1000,
+      "assignments": 1000,
+      "after_targets": 0
+    },
+    {
+      "size": 1000,
+      "member": 2,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 1000,
+      "assignments": 1000,
+      "after_targets": 0
+    },
+    {
+      "size": 1000,
+      "member": 3,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 1000,
+      "assignments": 1000,
+      "after_targets": 0
+    },
+    {
+      "size": 1000,
+      "member": 4,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 1000,
+      "assignments": 1000,
+      "after_targets": 0
+    },
+    {
+      "size": 1000,
+      "member": 5,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 1000,
+      "assignments": 1000,
+      "after_targets": 0
+    },
+    {
+      "size": 1000,
+      "member": 6,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 1000,
+      "assignments": 1000,
+      "after_targets": 0
+    },
+    {
+      "size": 1000,
+      "member": 7,
+      "status": 200,
+      "revision": 2,
+      "expired": true,
+      "events": 1,
+      "sources": 1000,
+      "assignments": 1000,
+      "after_targets": 0
+    }
+  ]
+}

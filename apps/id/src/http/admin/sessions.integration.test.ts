@@ -131,78 +131,32 @@ async function deadCookie(value: string) {
 import { routes } from "./sessions.ts";
 describeAdminRoutes(routes, () => fixture);
 
-test("tenant users-only scope lists and revokes member sessions with organisation isolation", async () => {
-  const fresh = await freshUser();
-  const path = `/organizations/${fixture.tenant.organizationId}/members/${fresh.memberId}/sessions`;
-  const listed = await request(path, "GET", undefined, "tenantUsersOnly");
-  expect(listed.status).toBe(200);
-  const body = await listed.json();
-  expect(body.items.map((r: { id: string }) => r.id)).toEqual([
-    fresh.sessionId,
-  ]);
-  expect(JSON.stringify(body)).not.toContain('"token"');
-  const outsider = fixture.principals.outsider;
-  const foreign = `/organizations/${outsider.organizationId}/members/${outsider.memberId}/sessions`;
-  const mismatched = `/organizations/${fixture.tenant.organizationId}/members/${outsider.memberId}/sessions`;
-  for (const url of [foreign, mismatched])
-    for (const method of ["GET", "DELETE"])
-      expect(
-        (await request(url, method, undefined, "tenantUsersOnly")).status,
-      ).toBe(404);
-  const revoked = await request(path, "DELETE", undefined, "tenantUsersOnly", {
-    action: "session.revoked_all",
-    targetType: "session",
-    targetId: fresh.userId,
-    organizationId: fixture.tenant.organizationId,
-    data: {
-      userId: fresh.userId,
-      sessions: 1,
-      refreshTokens: 1,
-      accessTokens: 1,
-    },
-  });
-  expect(revoked.status).toBe(200);
-  expect(await revoked.json()).toEqual({ revoked: 1 });
-  await deadCookie(fresh.cookie);
-  for (const table of [oauthRefreshTokens, oauthAccessTokens])
-    expect(
-      (
-        await fixture.db
-          .select()
-          .from(table)
-          .where(eq(table.userId, fresh.userId))
-      )[0]?.revoked,
-    ).toBeInstanceOf(Date);
-});
-test("platform administrator and machine revoke all through both route tiers", async () => {
+test("platform administrator and machine revoke global user sessions", async () => {
   for (const kind of [
     "platformAdmin",
     { bearer: await fixture.mintMachineToken() },
-  ] satisfies Kind[])
-    for (const memberScoped of [false, true]) {
-      const fresh = await freshUser();
-      const path = memberScoped
-        ? `/organizations/${fixture.tenant.organizationId}/members/${fresh.memberId}/sessions`
-        : `/users/${fresh.userId}/sessions`;
-      expect((await request(path, "GET", undefined, kind)).status).toBe(200);
-      for (const count of [1, 0]) {
-        const response = await request(path, "DELETE", undefined, kind, {
-          action: "session.revoked_all",
-          targetType: "session",
-          targetId: fresh.userId,
-          organizationId: memberScoped ? fixture.tenant.organizationId : null,
-          data: {
-            userId: fresh.userId,
-            sessions: count,
-            refreshTokens: count,
-            accessTokens: count,
-          },
-        });
-        expect(response.status).toBe(200);
-        expect(await response.json()).toEqual({ revoked: count });
-      }
-      await deadCookie(fresh.cookie);
+  ] satisfies Kind[]) {
+    const fresh = await freshUser();
+    const path = `/users/${fresh.userId}/sessions`;
+    expect((await request(path, "GET", undefined, kind)).status).toBe(200);
+    for (const count of [1, 0]) {
+      const response = await request(path, "DELETE", undefined, kind, {
+        action: "session.revoked_all",
+        targetType: "user",
+        targetId: fresh.userId,
+        organizationId: null,
+        data: {
+          userId: fresh.userId,
+          sessions: count,
+          refreshTokens: count,
+          accessTokens: count,
+        },
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ revoked: count });
     }
+    await deadCookie(fresh.cookie);
+  }
 });
 test("single-session revocation preserves another user's session; pagination and UUID validation", async () => {
   const fresh = await freshUser();
@@ -214,11 +168,7 @@ test("single-session revocation preserves another user's session; pagination and
   expect((await request(path + "/" + other.sessionId, "DELETE")).status).toBe(
     404,
   );
-  for (const url of [
-    "/users/bad/sessions",
-    path + "/bad",
-    `/organizations/${fixture.tenant.organizationId}/members/bad/sessions`,
-  ])
+  for (const url of ["/users/bad/sessions", path + "/bad"])
     expect(
       (await request(url, url.endsWith("/bad") ? "DELETE" : "GET")).status,
     ).toBe(400);
@@ -261,4 +211,49 @@ test("single-session revocation preserves another user's session; pagination and
   expect(
     (await (await request(`/users/${other.userId}/sessions`)).json()).items,
   ).toHaveLength(1);
+});
+
+test("tenant session aliases cannot expose or revoke a shared person's global login", async () => {
+  const fresh = await freshUser();
+  await fixture.db.insert(members).values({
+    id: createId(),
+    userId: fresh.userId,
+    organizationId: fixture.principals.outsider.organizationId,
+  });
+  const path = `/organizations/${fixture.tenant.organizationId}/members/${fresh.memberId}/sessions`;
+  for (const kind of ["tenantUsersOnly", "platformAdmin"] as const)
+    for (const method of ["GET", "DELETE"])
+      expect((await request(path, method, undefined, kind)).status).toBe(404);
+  const response = await fixture.app.request("/auth/get-session", {
+    headers: { Cookie: fresh.cookie },
+  });
+  expect((await response.json()).session.id).toBe(fresh.sessionId);
+  for (const table of [oauthRefreshTokens, oauthAccessTokens])
+    expect(
+      (
+        await fixture.db
+          .select()
+          .from(table)
+          .where(eq(table.userId, fresh.userId))
+      )[0]!.revoked,
+    ).toBeNull();
+  for (const method of ["GET", "DELETE"])
+    expect(
+      (
+        await request(
+          `/users/${fresh.userId}/sessions`,
+          method,
+          undefined,
+          "tenantUsersOnly",
+        )
+      ).status,
+    ).toBe(403);
+  const summary = await request(
+    `/organizations/${fixture.tenant.organizationId}/summary`,
+    "GET",
+    undefined,
+    "tenantAdmin",
+  );
+  expect(summary.status).toBe(200);
+  expect(await summary.json()).not.toHaveProperty("sessions");
 });

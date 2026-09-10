@@ -1,3 +1,8 @@
+import {
+  approveAdminCapability,
+  approveMachineCapability,
+} from "./capabilities.ts";
+import { platformWriteService } from "./platform-context.ts";
 import { expect } from "bun:test";
 import { and, eq, gte, sql } from "drizzle-orm";
 import { generateKeyPair, SignJWT } from "jose";
@@ -5,10 +10,15 @@ import { createApp } from "../app.ts";
 import { createAuth } from "../auth.ts";
 import { bootstrap, platformScopes, systemActor } from "../bootstrap.ts";
 import { createDatabase } from "../db/client.ts";
-import { upsertGroupMember } from "../db/queries/groups.ts";
-import { createClient, linkResource } from "../services/clients.ts";
-import { createOrganizationDomain } from "../db/queries/organization-domains.ts";
-import { createSsoProvider } from "../db/queries/sso-providers.ts";
+import { upsertGroupMember } from "./group-queries.ts";
+import {
+  createClient as createClientImplementation,
+  linkResource as linkResourceImplementation,
+} from "../services/clients.ts";
+const createClient = platformWriteService(createClientImplementation);
+const linkResource = platformWriteService(linkResourceImplementation);
+import { createOrganizationDomain } from "./domain-queries.ts";
+import { createSsoProvider } from "./sso-queries.ts";
 import {
   auditEvents,
   entitlements,
@@ -40,13 +50,20 @@ type FixturePrincipal = {
 
 export type AdminFixture = Awaited<ReturnType<typeof createAdminFixture>>;
 
-export async function createAdminFixture() {
+export async function createAdminFixture(
+  overrides: Partial<import("../env.ts").Environment> = {},
+) {
   const issuer = await startOidcIssuer();
   const trustedOrigin = "https://console.example.com";
   const environment = testEnvironment({
     trustedOrigins: [issuer.origin, trustedOrigin],
     rootAdminSecret: "fixture-root-secret-at-least-32-characters",
     rootAdminBreakGlass: true,
+    operationReplay: {
+      activeKeyId: "test",
+      keys: { test: Buffer.alloc(32, 3).toString("base64url") },
+    },
+    ...overrides,
   });
   const connection = createDatabase(environment);
   const { db } = connection;
@@ -56,7 +73,7 @@ export async function createAdminFixture() {
   }
   try {
     await db.execute(sql`
-      truncate table audit_events, entitlements, group_members, groups,
+      truncate table security_identifiers, audit_events, entitlements, group_members, groups,
       organization_domains, sso_providers, oauth_client_assertions,
       oauth_access_tokens, oauth_refresh_tokens, oauth_consents,
       oauth_client_resources, oauth_resources, oauth_clients, jwks,
@@ -88,6 +105,12 @@ export async function createAdminFixture() {
       client.clientId,
       environment.adminResourceIdentifier,
     );
+    await approveMachineCapability(db, {
+      organizationId: bootstrapped.organization.id,
+      clientId: client.clientId,
+      resource: environment.adminResourceIdentifier,
+      scopes: [...platformScopes],
+    });
     expect(client.clientSecret).toBeString();
     const platform = {
       organizationId: bootstrapped.organization.id,
@@ -125,6 +148,12 @@ export async function createAdminFixture() {
     await organization(platform.slug, platform.organizationId);
     const tenant = await organization("tenant");
     const outsider = await organization("outsider");
+    for (const org of [tenant, outsider])
+      await approveAdminCapability(db, {
+        organizationId: org.organizationId,
+        resource: environment.adminResourceIdentifier,
+        scopes: ["org:read", "org:users", "org:write"],
+      });
     const principals = {} as Record<Name, FixturePrincipal>;
     const shapes: {
       name: Name;
@@ -261,6 +290,7 @@ export async function createAdminFixture() {
       extra: { origin?: boolean | string } = {},
     ) {
       const headers = new Headers();
+      headers.set("Idempotency-Key", createId());
       if (kind === "root")
         headers.set("Authorization", `Bearer ${environment.rootAdminSecret}`);
       else if (typeof kind === "string")

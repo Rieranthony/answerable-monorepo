@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import { testEnvironment } from "../../__tests__/support.ts";
 import { createDatabase, type DatabaseConnection } from "../client.ts";
-import { createOrganization } from "./organizations.ts";
+import { createOrganization } from "../../__tests__/organization-queries.ts";
 import { createId } from "../../lib/id.ts";
 import {
   users,
@@ -10,15 +10,15 @@ import {
   oauthClients,
   oauthResources,
 } from "../schema/index.ts";
-import { createGroup, addGroupMember } from "./groups.ts";
-import { createEntitlement } from "./entitlements.ts";
+import { createGroup, addGroupMember } from "../../__tests__/group-queries.ts";
+import { createEntitlement } from "../../__tests__/entitlement-queries.ts";
 let connection: DatabaseConnection;
 beforeAll(() => {
   connection = createDatabase(testEnvironment());
 });
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table audit_events, organizations, users, oauth_clients, oauth_resources cascade`,
+    sql`truncate table security_identifiers, audit_events, organizations, users, oauth_clients, oauth_resources cascade`,
   );
 });
 afterAll(async () => {
@@ -80,7 +80,7 @@ async function seed() {
     .values({ id: createId(), clientId, redirectUris: [], scopes: ["openid"] });
   return { db, org, other, ids, group, foreignGroup, resource, clientId };
 }
-import * as queries from "./entitlements.ts";
+import * as queries from "../../__tests__/entitlement-queries.ts";
 test("entitlement CRUD filters, pagination and organisation isolation", async () => {
   const { db, org, other, group, ids, resource, clientId } = await seed();
   const a = await createEntitlement(db, {
@@ -150,8 +150,16 @@ test("entitlement CRUD filters, pagination and organisation isolation", async ()
   expect(
     await queries.setEntitlementStatus(db, org.id, b.id, "active"),
   ).toMatchObject({ status: "active" });
-  for (const organizationId of [other.id, createId()]) {
-    expect(await queries.findEntitlement(db, organizationId, a.id)).toBeNull();
+  const missingOrganizationId = createId();
+  for (const organizationId of [other.id, missingOrganizationId]) {
+    if (organizationId === missingOrganizationId)
+      await expect(
+        queries.findEntitlement(db, organizationId, a.id),
+      ).rejects.toMatchObject({ status: 404 });
+    else
+      expect(
+        await queries.findEntitlement(db, organizationId, a.id),
+      ).toBeNull();
     expect(
       await queries.updateEntitlement(db, organizationId, a.id, {
         validUntil: null,

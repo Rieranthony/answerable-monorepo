@@ -91,6 +91,9 @@ describe("unit: HTTP problems", () => {
     ["23505", 409, "conflict"],
     ["23503", 409, "reference_violation"],
     ["23514", 400, "constraint_violation"],
+    ["57014", 503, "database_busy"],
+    ["55P03", 503, "database_busy"],
+    ["40P01", 503, "database_busy"],
   ] as const)("maps database code %s", async (code, status, problemCode) => {
     const error = databaseError(code, "organisations_slug_unique");
     expect(mapDatabaseError(error)).toMatchObject({
@@ -110,6 +113,13 @@ describe("unit: HTTP problems", () => {
   });
 
   test("names unique constraints and handles missing constraints", () => {
+    for (const constraint of [
+      "security_identifiers_kind_identifier_pk",
+      "security_identifiers_kind_instance_unique",
+    ])
+      expect(
+        mapDatabaseError(databaseError("23505", constraint)),
+      ).toMatchObject({ status: 409, code: "identifier_reserved" });
     expect(
       mapDatabaseError(databaseError("23505", "slug_unique"))?.detail,
     ).toContain("slug_unique");
@@ -161,8 +171,7 @@ describe("unit: HTTP problems", () => {
         "[id] error",
         JSON.stringify({
           requestId: "request-123",
-          name: "Error",
-          message: "private credentials",
+          event: "unexpected_error",
         }),
       );
     } finally {
@@ -193,3 +202,24 @@ describe("unit: HTTP problems", () => {
     });
   });
 });
+
+test.each([
+  "timeout exceeded when trying to connect",
+  "Connection terminated due to connection timeout",
+])(
+  "pool timeout %s has the same safe response for checkout and query failures",
+  async (message) => {
+    for (const error of [
+      new Error(message),
+      new DrizzleQueryError("private query", [], new Error(message)),
+    ]) {
+      const response = await errorApp(error).request("/");
+      expect(response.status).toBe(503);
+      expect(response.headers.get("Retry-After")).toBe("1");
+      const body = await response.json();
+      expect(body).toMatchObject({ code: "database_busy", retryable: true });
+      expect(JSON.stringify(body)).not.toContain(message);
+      expect(JSON.stringify(body)).not.toContain("private query");
+    }
+  },
+);

@@ -1,8 +1,10 @@
+import { tenantPolicies } from "./tenant-policies.ts";
 import { sql } from "drizzle-orm";
 import {
   check,
   foreignKey,
   index,
+  integer,
   pgTable,
   primaryKey,
   text,
@@ -84,8 +86,11 @@ export const groups = pgTable(
       .default("active")
       .notNull(),
     ...timestamps(),
+    revision: integer("revision").default(1).notNull(),
   },
   (table) => [
+    ...tenantPolicies(table.organizationId),
+    check("groups_revision_check", sql`${table.revision} > 0`),
     unique("groups_organization_id_slug_unique").on(
       table.organizationId,
       table.slug,
@@ -102,7 +107,7 @@ export const groups = pgTable(
     slugCheck("groups_slug_normalized_check", table.slug),
     vocabularyCheck("groups_status_check", table.status, lifecycleStatuses),
   ],
-);
+).enableRLS();
 
 /**
  * Membership of a group. Both composite foreign keys carry the organization,
@@ -116,8 +121,13 @@ export const groupMembers = pgTable(
     memberId: uuid("member_id").notNull(),
     ...effectiveWindow(),
     createdAt: timestampColumn("created_at").defaultNow().notNull(),
+    id: uuid("id").notNull(),
+    revision: integer("revision").default(1).notNull(),
   },
   (table) => [
+    ...tenantPolicies(table.organizationId),
+    unique("group_members_id_unique").on(table.id),
+    check("group_members_revision_check", sql`${table.revision} > 0`),
     primaryKey({
       name: "group_members_pkey",
       columns: [table.groupId, table.memberId],
@@ -139,15 +149,15 @@ export const groupMembers = pgTable(
       table.validUntil,
     ),
   ],
-);
+).enableRLS();
 
 /**
  * Who may obtain tokens for what, and with which scopes.
  *
  * Principal: the whole organization (member_id and group_id null), one
- * group, or one member. Target: exactly one of an OAuth client (an app users
- * log into, or a tool such as Claude Code that an organization allows) or an
- * RFC 8707 resource (an MCP server). Grants are additive: a person is
+ * group, or one member. Target: a client, a resource, or an exact client/resource
+ * pair. Legacy resource-only assignments remain until capability cutover.
+ * Grants are additive within the same exact target: a person is
  * entitled when any active row matches them for the target.
  */
 export const entitlements = pgTable(
@@ -171,8 +181,11 @@ export const entitlements = pgTable(
       .notNull(),
     ...effectiveWindow(),
     ...timestamps(),
+    revision: integer("revision").default(1).notNull(),
   },
   (table) => [
+    ...tenantPolicies(table.organizationId),
+    check("entitlements_revision_check", sql`${table.revision} > 0`),
     foreignKey({
       name: "entitlements_organization_id_member_id_fk",
       columns: [table.organizationId, table.memberId],
@@ -202,21 +215,17 @@ export const entitlements = pgTable(
     ),
     check(
       "entitlements_target_check",
-      sql`num_nonnulls(${table.clientId}, ${table.resource}) = 1`,
+      sql`num_nonnulls(${table.clientId}, ${table.resource}) >= 1`,
     ),
     vocabularyCheck(
       "entitlements_status_check",
       table.status,
       lifecycleStatuses,
     ),
-    windowCheck(
-      "entitlements_window_check",
-      table.validFrom,
-      table.validUntil,
-    ),
+    windowCheck("entitlements_window_check", table.validFrom, table.validUntil),
     check(
       "entitlements_scopes_check",
       sql`cardinality(${table.scopes}) > 0 and array_position(${table.scopes}, '') is null`,
     ),
   ],
-);
+).enableRLS();

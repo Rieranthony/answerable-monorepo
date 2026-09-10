@@ -23,6 +23,44 @@ afterEach(() => {
 });
 
 describe("unit: environment", () => {
+  test("parses dedicated upstream versions and rejects invalid rings without revealing values", () => {
+    const keys = [
+      { version: 2, value: Buffer.alloc(32, 2).toString("base64url") },
+      { version: 1, value: Buffer.alloc(32, 1).toString("base64url") },
+    ];
+    expect(
+      parseEnvironment({
+        ...requiredEnvironment,
+        UPSTREAM_TOKEN_SECRETS: JSON.stringify(keys),
+      }).upstreamTokenSecrets,
+    ).toEqual(keys);
+    for (const value of [
+      "not-json",
+      "[]",
+      "null",
+      JSON.stringify([keys[0], keys[0]]),
+      JSON.stringify([{ ...keys[0], version: 0 }]),
+      JSON.stringify([{ ...keys[0], value: "private-short-secret" }]),
+      JSON.stringify([{ ...keys[0], value: "A".repeat(42) + "B" }]),
+    ]) {
+      expect(() =>
+        parseEnvironment({
+          ...requiredEnvironment,
+          UPSTREAM_TOKEN_SECRETS: value,
+        }),
+      ).toThrow(
+        "UPSTREAM_TOKEN_SECRETS: Expected distinct positive key versions",
+      );
+      try {
+        parseEnvironment({
+          ...requiredEnvironment,
+          UPSTREAM_TOKEN_SECRETS: value,
+        });
+      } catch (error) {
+        expect(String(error)).not.toContain(value);
+      }
+    }
+  });
   test("parses defaults", () => {
     expect(parseEnvironment(requiredEnvironment)).toEqual({
       nodeEnv: "development",
@@ -30,11 +68,16 @@ describe("unit: environment", () => {
       databaseUrl: requiredEnvironment.DATABASE_URL,
       betterAuthUrl: requiredEnvironment.BETTER_AUTH_URL,
       betterAuthSecret: requiredEnvironment.BETTER_AUTH_SECRET,
+      betterAuthSecrets: undefined,
+      upstreamTokenSecrets: undefined,
       trustedOrigins: ["http://localhost:47100"],
       authPagesUrl: "http://localhost:47100",
+      maxConcurrentRequests: 64,
       databasePoolMax: 5,
       databasePoolIdleTimeoutMs: 10_000,
       databaseConnectionTimeoutMs: 5_000,
+      databaseStatementTimeoutMs: 10_000,
+      operationReplay: undefined,
       rootAdminSecret: undefined,
       rootAdminBreakGlass: false,
       openApiEnabled: true,
@@ -63,9 +106,11 @@ describe("unit: environment", () => {
       ...requiredEnvironment,
       NODE_ENV: "production",
       PORT: "8080",
+      MAX_CONCURRENT_REQUESTS: "12",
       DATABASE_POOL_MAX: "7",
       DATABASE_POOL_IDLE_TIMEOUT_MS: "2000",
       DATABASE_CONNECTION_TIMEOUT_MS: "3000",
+      DATABASE_STATEMENT_TIMEOUT_MS: "8000",
       OPENAPI_ENABLED: "false",
       PLATFORM_ORGANIZATION_SLUG: "platform-org",
       PLATFORM_ORGANIZATION_NAME: " Custom platform ",
@@ -78,9 +123,11 @@ describe("unit: environment", () => {
     expect(environment).toMatchObject({
       nodeEnv: "production",
       port: 8080,
+      maxConcurrentRequests: 12,
       databasePoolMax: 7,
       databasePoolIdleTimeoutMs: 2_000,
       databaseConnectionTimeoutMs: 3_000,
+      databaseStatementTimeoutMs: 8_000,
       openApiEnabled: false,
       platformOrganizationSlug: "platform-org",
       platformOrganizationName: "Custom platform",
@@ -167,4 +214,96 @@ test("validates root configuration", () => {
     rootAdminSecret: "x".repeat(32),
     rootAdminBreakGlass: true,
   });
+});
+
+test("replay configuration validates dedicated versioned keys without exposing their values", () => {
+  const config = {
+    activeKeyId: "current",
+    keys: { current: Buffer.alloc(32, 7).toString("base64url") },
+  };
+  expect(
+    parseEnvironment({
+      ...requiredEnvironment,
+      OPERATION_REPLAY_CONFIG: JSON.stringify(config),
+    }),
+  ).toMatchObject({ operationReplay: config });
+  for (const value of [
+    "not-json-secret",
+    JSON.stringify({ ...config, activeKeyId: "missing" }),
+    JSON.stringify({
+      activeKeyId: "current",
+      keys: { current: "invalid-key-secret" },
+    }),
+  ]) {
+    try {
+      parseEnvironment({
+        ...requiredEnvironment,
+        OPERATION_REPLAY_CONFIG: value,
+      });
+      throw new Error("configuration was accepted");
+    } catch (error) {
+      expect(error).toBeInstanceOf(EnvironmentValidationError);
+      expect((error as Error).message).not.toContain(value);
+      expect((error as Error).message).not.toContain("invalid-key-secret");
+      expect((error as Error).message).toContain("OPERATION_REPLAY_CONFIG");
+    }
+  }
+});
+
+test("application secret rotation validates every retained version without leaking values", () => {
+  const old = "retained-secret-value-that-is-over-32-characters";
+  const current = "current-secret-value-that-is-over-32-characters";
+  expect(
+    parseEnvironment({
+      ...requiredEnvironment,
+      BETTER_AUTH_SECRETS: `2:${current},1:${old}`,
+    }),
+  ).toMatchObject({
+    betterAuthSecrets: [
+      { version: 2, value: current },
+      { version: 1, value: old },
+    ],
+  });
+  for (const value of [
+    "",
+    `2x:${current}`,
+    `-1:${current}`,
+    `1.5:${current}`,
+    `1:${current},1:${old}`,
+    `2:${current},1:short`,
+    `2:${current},`,
+    `9007199254740992:${current}`,
+  ]) {
+    expect(() =>
+      parseEnvironment({ ...requiredEnvironment, BETTER_AUTH_SECRETS: value }),
+    ).toThrow(
+      "BETTER_AUTH_SECRETS: Expected distinct non-negative integer versions and secrets of at least 32 characters",
+    );
+    try {
+      parseEnvironment({ ...requiredEnvironment, BETTER_AUTH_SECRETS: value });
+    } catch (error) {
+      expect(String(error)).not.toContain(current);
+      expect(String(error)).not.toContain(old);
+    }
+  }
+});
+
+test("statement deadline rejects disabled, fractional and out-of-range values", () => {
+  for (const value of ["0", "-1", "1.5", "2147483648", "not-a-number"])
+    expect(() =>
+      parseEnvironment({
+        ...requiredEnvironment,
+        DATABASE_STATEMENT_TIMEOUT_MS: value,
+      }),
+    ).toThrow("DATABASE_STATEMENT_TIMEOUT_MS");
+});
+
+test("request admission rejects disabled, fractional and excessive limits", () => {
+  for (const value of ["0", "-1", "1.5", "9007199254740992", "invalid"])
+    expect(() =>
+      parseEnvironment({
+        ...requiredEnvironment,
+        MAX_CONCURRENT_REQUESTS: value,
+      }),
+    ).toThrow("MAX_CONCURRENT_REQUESTS");
 });

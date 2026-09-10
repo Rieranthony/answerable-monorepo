@@ -9,7 +9,7 @@ import {
   systemActor,
 } from "../bootstrap.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
-import { auditEvents } from "../db/schema/index.ts";
+import { auditEvents, users } from "../db/schema/index.ts";
 import { signInThroughIdp } from "../__tests__/federation.ts";
 import { startOidcIssuer } from "../__tests__/oidc-issuer.ts";
 import { testEnvironment } from "../__tests__/support.ts";
@@ -21,7 +21,7 @@ beforeAll(async () => {
   issuer = await startOidcIssuer();
   connection = createDatabase(testEnvironment());
   await connection.db.execute(
-    sql`truncate table audit_events, entitlements, group_members, groups,
+    sql`truncate table security_identifiers, audit_events, entitlements, group_members, groups,
       organization_domains, sso_providers, oauth_client_assertions,
       oauth_access_tokens, oauth_refresh_tokens, oauth_consents,
       oauth_client_resources, oauth_resources, oauth_clients, jwks,
@@ -37,6 +37,10 @@ test("integration: root locks after a human administrator and supports break-gla
   const { db } = connection;
   const secret = "integration-root-secret-at-least-32-characters";
   const environment = testEnvironment({
+    operationReplay: {
+      activeKeyId: "test",
+      keys: { test: Buffer.alloc(32, 3).toString("base64url") },
+    },
     rootAdminSecret: secret,
     rootAdminBreakGlass: false,
     trustedOrigins: [issuer.origin, "https://console.example.com"],
@@ -44,6 +48,7 @@ test("integration: root locks after a human administrator and supports break-gla
   const auth = createAuth(db, environment);
   const app = createApp({ db, auth, environment });
   const headers = {
+    "Idempotency-Key": crypto.randomUUID(),
     Authorization: `Bearer ${secret}`,
     "x-forwarded-for": "192.0.2.1, 192.0.2.2",
     "user-agent": "root-test",
@@ -82,7 +87,7 @@ test("integration: root locks after a human administrator and supports break-gla
     actorId: "root",
     outcome: "success",
     targetId: "getAdminMe",
-    ip: "192.0.2.1",
+    ip: null,
     userAgent: "root-test",
     requestId: response.headers.get("x-request-id"),
   });
@@ -126,7 +131,11 @@ test("integration: root locks after a human administrator and supports break-gla
   expect(domain.status).toBe(201);
   const provider = await app.request(`${platformPath}/sso-provider`, {
     method: "PUT",
-    headers: { ...headers, "Content-Type": "application/json" },
+    headers: {
+      ...headers,
+      "If-None-Match": "*",
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({
       issuer: issuer.origin,
       domain: "answerable.example.com",
@@ -174,7 +183,11 @@ test("integration: root locks after a human administrator and supports break-gla
     `${platformPath}/groups/${group.id}/members/${members.items[0]!.id}`,
     {
       method: "PUT",
-      headers: { ...headers, "Content-Type": "application/json" },
+      headers: {
+        ...headers,
+        "Content-Type": "application/json",
+        "If-None-Match": "*",
+      },
       body: "{}",
     },
   );
@@ -194,6 +207,7 @@ test("integration: root locks after a human administrator and supports break-gla
       {
         organizationId: platform.id,
         organizationSlug: platform.slug,
+        isPlatform: true,
         scopes: [...platformScopes],
       },
     ],
@@ -225,6 +239,17 @@ test("integration: root locks after a human administrator and supports break-gla
     environment: { ...environment, rootAdminBreakGlass: true },
   });
   expect((await breakGlass.request(me, { headers })).status).toBe(200);
+  await db
+    .update(users)
+    .set({ status: "disabled", disabledAt: new Date() })
+    .where(eq(users.email, email));
+  expect((await app.request(me, { headers })).status).toBe(200);
+  await db
+    .update(users)
+    .set({ status: "active", disabledAt: null })
+    .where(eq(users.email, email));
+  expect((await app.request(me, { headers })).status).toBe(403);
+
   expect(JSON.stringify(await db.select().from(auditEvents))).not.toContain(
     secret,
   );

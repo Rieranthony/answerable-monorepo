@@ -1,32 +1,36 @@
-import { findUser } from "../db/queries/users.ts";
-import type { Database } from "../db/client.ts";
+import { type TenantReadContext } from "./tenant-context.ts";
+import { userExists } from "../db/queries/users.ts";
+import { type PlatformReadContext } from "./platform-context.ts";
 import * as queries from "../db/queries/audit.ts";
-import { findOrganization } from "../db/queries/organizations.ts";
+import { organizationExistsForHistory } from "../db/queries/organizations.ts";
 import type { PageQuery } from "../http/pagination.ts";
 import { ProblemError } from "../http/problem.ts";
 
 export function listAuditEvents(
-  db: Database,
+  context: PlatformReadContext,
   filters: queries.AuditEventFilters,
   page: PageQuery,
 ) {
-  return queries.listAuditEvents(db, filters, page);
+  return queries.listAuditEvents(context, filters, page);
 }
 
 export async function listOrganizationAuditEvents(
-  db: Database,
-  organizationId: string,
+  context: TenantReadContext<"history">,
   filters: Omit<queries.AuditEventFilters, "organizationId">,
   page: PageQuery,
 ) {
-  if (!(await findOrganization(db, organizationId))) {
+  if (
+    !(await organizationExistsForHistory(context)) &&
+    !(await queries.listOrganizationAuditEvents(context, {}, { limit: 1 }))
+      .items.length
+  ) {
     throw new ProblemError(404, "not_found", "Organisation not found");
   }
-  return listAuditEvents(db, { ...filters, organizationId }, page);
+  return queries.listOrganizationAuditEvents(context, filters, page);
 }
 
 export async function listUserAuditEvents(
-  db: Database,
+  context: PlatformReadContext,
   userId: string,
   filters: Pick<
     queries.AuditEventFilters,
@@ -34,7 +38,11 @@ export async function listUserAuditEvents(
   >,
   page: PageQuery,
 ) {
-  if (!(await findUser(db, userId)))
+  if (
+    !(await userExists(context, userId)) &&
+    !(await queries.listUserAuditEvents(context, userId, {}, { limit: 1 }))
+      .items.length
+  )
     throw new ProblemError(404, "not_found", "User not found");
-  return queries.listUserAuditEvents(db, userId, filters, page);
+  return queries.listUserAuditEvents(context, userId, filters, page);
 }

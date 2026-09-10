@@ -11,24 +11,33 @@ import {
   oauthRefreshTokens,
   oauthConsents,
 } from "../schema/index.ts";
-import * as clients from "./oauth-clients.ts";
-import * as resources from "./oauth-resources.ts";
-import * as domains from "./organization-domains.ts";
-import * as entitlements from "./entitlements.ts";
-import { listUsers } from "./users.ts";
-import { listMembers } from "./members.ts";
+import * as clients from "../../__tests__/client-queries.ts";
+import * as resources from "../../__tests__/resource-queries.ts";
+import * as domains from "../../__tests__/domain-queries.ts";
+import * as entitlements from "../../__tests__/entitlement-queries.ts";
+import { listUsers } from "../../__tests__/user-queries.ts";
+import { listMembers as queryMembers, type MemberQuery } from "./members.ts";
+import { inTenantRead } from "../../__tests__/tenant-command.ts";
+const listMembers = (
+  db: import("../client.ts").Database,
+  organizationId: string,
+  query: MemberQuery,
+) =>
+  inTenantRead(db, organizationId, "directory", (context) =>
+    queryMembers(context, query),
+  );
 import {
   listAuditEvents,
   listUserAuditEvents,
   recordAuditEvent,
-} from "./audit.ts";
+} from "../../__tests__/audit-queries.ts";
 let connection: DatabaseConnection;
 beforeAll(() => {
   connection = createDatabase(testEnvironment());
 });
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table audit_events, organizations, users, oauth_clients, oauth_resources cascade`,
+    sql`truncate table security_identifiers, audit_events, organizations, users, oauth_clients, oauth_resources cascade`,
   );
 });
 afterAll(async () => {
@@ -100,7 +109,7 @@ test("client erasure respects entitlement references and cascades links, tokens 
     userId: user.id,
     scopes: ["read"],
   });
-  await db.transaction((tx) => clients.deleteClient(tx, client.clientId));
+  await clients.deleteClient(db, client.clientId);
   expect(await clients.findClient(db, client.clientId)).toBeNull();
   expect(await clients.listClientResources(db, client.clientId)).toEqual([]);
   expect(await resources.listResourceClients(db, resource.identifier)).toEqual(
@@ -119,9 +128,7 @@ test("domain deletion is scoped to its organisation", async () => {
   expect(
     await domains.findOrganizationDomain(db, org.id, domain.id),
   ).not.toBeNull();
-  await db.transaction((tx) =>
-    domains.deleteOrganizationDomain(tx, org.id, domain.id),
-  );
+  await domains.deleteOrganizationDomain(db, org.id, domain.id);
   expect(
     await domains.findOrganizationDomain(db, org.id, domain.id),
   ).toBeNull();
@@ -216,7 +223,7 @@ test("all entitlements joins organisations and applies filters and cursors", asy
     }),
   ).toEqual([]);
 });
-test("user audit OR branches stay inside AND filters, including deleted sessions", async () => {
+test("user audit subject matches stay inside filters, including deleted sessions", async () => {
   const { db, org, user, another, member } = await seed();
   const rows = [];
   for (const input of [

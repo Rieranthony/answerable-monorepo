@@ -1,3 +1,4 @@
+import { tenantRead } from "./tenant-read.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
 import {
@@ -37,16 +38,8 @@ export const signInDiagnosisSchema = z.object({
     .object({
       id: z.uuid(),
       status: z.enum(["inert", "active", "disabled"]),
-      retiredEmail: z.boolean(),
     })
     .nullable(),
-  accounts: z.array(
-    z.object({
-      issuer: z.string(),
-      matchesProvider: z.boolean(),
-      directoryId: z.string().nullable(),
-    }),
-  ),
   membership: z
     .object({
       memberId: z.uuid(),
@@ -68,7 +61,7 @@ export const routes = {
     operationId: "diagnoseSignIn",
     summary: "Diagnose sign-in by email",
     description:
-      "Inspect database sign-in checks in resolver order without changing state. Supply an email; routing identifies its active organisation, checked lists evaluated codes and requiresToken lists checks requiring a real IdP token. This email diagnosis cannot prove the token subject or account collisions. A non-effective membership does not stop sign-in but stops every grant. Use testSsoProvider to check discovery connectivity. validation_failed rejects malformed ids or email; not_found means the organisation is missing.",
+      "Inspect tenant-local configuration and membership. Current platform:read or org:users authority is rechecked inside the read transaction. Routing identifies only this organisation; user and membership are null unless this tenant has a membership for the exact email. Global accounts and retired-email state are excluded, including for staff. A null user does not mean the email is globally unused. authentication_required means local checks found no blocker; a real IdP authentication must establish identity and account conflicts. Windows affect grants, not admission; revoked membership requires reinstatement. Responses use no-store. validation_failed rejects malformed input; not_found means the organisation is unavailable.",
     tag: "Diagnostics",
     platformScope: "platform:read",
     orgScope: "org:users",
@@ -103,10 +96,8 @@ export function register(app: Hono<AppEnvironment>) {
     validate("query", query),
     async (context) =>
       context.json(
-        await diagnoseSignIn(
-          context.get("db"),
-          context.req.param("organizationId")!,
-          query.parse(context.req.query()).email,
+        await tenantRead(context, "memberAccess", (tenant) =>
+          diagnoseSignIn(tenant, query.parse(context.req.query()).email),
         ),
       ),
   );

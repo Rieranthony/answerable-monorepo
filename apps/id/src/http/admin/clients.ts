@@ -1,7 +1,19 @@
+import { platformRead } from "./platform-read.ts";
+import {
+  requireRevision,
+  revisionTag,
+  revisionParameter,
+  revisionResponseHeaders,
+} from "./revision.ts";
+import {
+  idempotencyParameter,
+  commandResponseHeaders,
+  operationJson,
+  platformCommand,
+} from "./command.ts";
 import { json, body, pathParameter, confirmQuery } from "./schemas.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
-import { actorFromContext } from "../../services/actor.ts";
 import * as service from "../../services/clients.ts";
 import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
@@ -12,6 +24,8 @@ import { registerRoute, type AdminRoute } from "./route-table.ts";
 export const clientSchema = z.object({
   id: z.uuid(),
   clientId: z.string(),
+  revision: z.number().int().positive(),
+  authorizationVersion: z.number().int().positive(),
   hasClientSecret: z.boolean(),
   redirectUris: z.array(z.string()),
   dpopBoundAccessTokens: z.boolean(),
@@ -117,16 +131,20 @@ export const routes = {
     operationId: "eraseClient",
     summary: "Erase client",
     description:
-      "Permanently erase a client and its resource links, tokens and consents, returning no content and recording client.erased. Prefer disableClient to suspend use reversibly. Supply confirm equal to clientId; not_found is checked before confirmation_mismatch, then client_has_entitlements requires removing every referencing entitlement before retrying.",
+      "capability_references_exist requires removing all referencing capabilities before erasure. Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Permanently erase a client and its resource links, tokens and consents, returning no content and recording client.erased. Prefer disableClient to retain the registration; enabling does not restore revoked grant contexts. Supply confirm equal to clientId; not_found is checked before confirmation_mismatch, then client_has_entitlements requires removing every referencing entitlement before retrying.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "erase",
-    parameters: [...parameters, confirmQuery(z.string().min(1))],
+    parameters: [
+      ...parameters,
+      idempotencyParameter,
+      confirmQuery(z.string().min(1)),
+    ],
     responses: standardResponses(
       {},
       {
-        204: { description: "Client erased" },
-        ...problemResponses(400, 404, 409),
+        204: { headers: commandResponseHeaders, description: "Client erased" },
+        ...problemResponses(400, 404, 409, 410, 503),
       },
     ),
   },
@@ -162,10 +180,11 @@ export const routes = {
     operationId: "createClient",
     summary: "Create client",
     description:
-      "Create an OAuth client and return its registration, with a secret shown only once for client_secret_basic; save that secret immediately. Prefer updateClient for an existing registration; validation_failed rejects incompatible OAuth settings, not_found means the owner is missing, and conflict means a registration already exists.",
+      "Create an OAuth client with a required Idempotency-Key. Identical authorised retries recover the original registration and secret for up to 24 hours, without another creation. Operation-Id identifies the journal record and Idempotency-Replayed marks recovery. A changed input returns idempotency_key_reused; a running duplicate returns retryable operation_in_progress; expired recovery returns operation_result_expired and never recreates the client. validation_failed rejects incompatible settings, not_found means the owner is missing, and identifier_reserved prevents identity reuse.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
+    parameters: [idempotencyParameter],
     requestBody: body(createSchema),
     example: {
       body: {
@@ -180,13 +199,14 @@ export const routes = {
       {},
       {
         201: {
+          headers: commandResponseHeaders,
           description:
-            "Client created; the plaintext secret is returned only here and on rotation",
+            "Client created; the original response is recoverable with the same key for 24 hours",
           content: json(
             clientSchema.extend({ clientSecret: z.string().optional() }),
           ),
         },
-        ...problemResponses(400, 404, 409),
+        ...problemResponses(400, 404, 409, 410, 503),
       },
     ),
   },
@@ -205,6 +225,7 @@ export const routes = {
       {},
       {
         200: {
+          headers: revisionResponseHeaders,
           description: "Client",
           content: json(
             clientSchema.extend({ resources: z.array(z.string()) }),
@@ -220,18 +241,22 @@ export const routes = {
     operationId: "updateClient",
     summary: "Update client",
     description:
-      "Update client and return the updated record, recording the change in the audit log. Prefer getClient to inspect existing state; validation_failed rejects malformed input, not_found identifies missing parents or targets, and conflict or reference_violation identifies conflicting records.",
+      "Update a client with Idempotency-Key and the If-Match ETag from getClient. A committed retry returns its original result for seven days before evaluating its old revision. New stale commands return revision_mismatch (412); missing If-Match returns precondition_required (428). An unchanged patch records a noop without advancing the revision. Invalid input returns validation_failed; unknown clients return not_found.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
-    parameters,
+    parameters: [...parameters, idempotencyParameter, revisionParameter],
     requestBody: body(patchSchema),
     example: { body: { name: "Renamed" } },
     responses: standardResponses(
       {},
       {
-        200: { description: "Client updated", content: json(clientSchema) },
-        ...problemResponses(400, 404, 409),
+        200: {
+          headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
+          description: "Client updated",
+          content: json(clientSchema),
+        },
+        ...problemResponses(400, 404, 409, 410, 412, 428, 503),
       },
     ),
   },
@@ -241,19 +266,20 @@ export const routes = {
     operationId: "disableClient",
     summary: "Disable client",
     description:
-      "Disable the client, revoke its tokens and return the updated registration. Prefer enableClient to restore future use; not_found means it is missing and client_already_disabled means no transition is needed.",
+      "Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Disable the client, revoke its tokens and stored grant contexts across tenants, and return the updated registration. Prefer enableClient to restore future use; not_found means it is missing; an already disabled client reconciles remaining tokens and contexts, returning 200 with a noop outcome only when nothing changes.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
-    parameters,
+    parameters: [...parameters, idempotencyParameter],
     responses: standardResponses(
       {},
       {
         200: {
+          headers: commandResponseHeaders,
           description: "Client disabled and tokens revoked",
           content: json(clientSchema),
         },
-        ...problemResponses(400, 404, 409),
+        ...problemResponses(400, 404, 409, 410, 503),
       },
     ),
   },
@@ -263,16 +289,20 @@ export const routes = {
     operationId: "enableClient",
     summary: "Enable client",
     description:
-      "Enable client and return the updated record. Prefer disableClient for the opposite transition; not_found means the target is missing and client_already_active means no transition is needed.",
+      "Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Enable client and return the updated record without restoring revoked grant contexts. Prefer disableClient for the opposite transition; not_found means the target is missing; an already active client returns 200 with a noop outcome.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
-    parameters,
+    parameters: [...parameters, idempotencyParameter],
     responses: standardResponses(
       {},
       {
-        200: { description: "Client enabled", content: json(clientSchema) },
-        ...problemResponses(400, 404, 409),
+        200: {
+          headers: commandResponseHeaders,
+          description: "Client enabled",
+          content: json(clientSchema),
+        },
+        ...problemResponses(400, 404, 409, 410, 503),
       },
     ),
   },
@@ -282,22 +312,23 @@ export const routes = {
     operationId: "rotateClientSecret",
     summary: "Rotate client secret",
     description:
-      "Replace the client secret immediately and return the new secret once, invalidating the old credential. Prefer getClient to inspect the registration without rotation; not_found means the client is missing and client_has_no_secret rejects clients using another authentication method.",
+      "Rotate the client secret with a required Idempotency-Key, revoking existing client tokens and stored grant contexts across tenants in the same transaction. Identical authorised retries recover the same secret for up to 24 hours without rotating again, advancing the authorisation version or revoking grants established afterwards. A new key deliberately rotates again. Operation-Id identifies the result and Idempotency-Replayed marks recovery. operation_result_expired requires a deliberate new rotation; operation_in_progress is retryable with the same key. not_found means the client is missing and client_has_no_secret rejects another authentication method.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
-    parameters,
+    parameters: [...parameters, idempotencyParameter],
     responses: standardResponses(
       {},
       {
         200: {
+          headers: commandResponseHeaders,
           description:
-            "New plaintext client secret; store it before leaving this response",
+            "Original rotation result, recoverable for 24 hours with the same key",
           content: json(
             z.object({ clientId: z.string(), clientSecret: z.string() }),
           ),
         },
-        ...problemResponses(400, 404, 409),
+        ...problemResponses(400, 404, 409, 410, 503),
       },
     ),
   },
@@ -305,13 +336,13 @@ export const routes = {
     method: "put",
     path: "/clients/:clientId/owner",
     operationId: "setClientOwner",
-    summary: "Set client owner",
+    summary: "Verify unchanged client owner",
     description:
-      "Change the client’s owning organisation and return the updated registration, affecting which organisation controls it. Prefer updateClient for OAuth settings; validation_failed rejects malformed ids and not_found means the client or new owner is missing.",
+      "Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Client ownership is immutable. Supplying the current owner returns the registration without changing it; any different owner, including adding or removing one, returns ownership_conflict. Create a replacement client under the new owner and retire the old client. validation_failed rejects malformed ids; not_found means the client is missing.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
-    parameters,
+    parameters: [...parameters, idempotencyParameter],
     requestBody: body(ownerSchema),
     example: {
       body: { organizationId: "00000000-0000-7000-8000-000000000000" },
@@ -320,10 +351,11 @@ export const routes = {
       {},
       {
         200: {
-          description: "Client owner changed",
+          headers: commandResponseHeaders,
+          description: "Client owner unchanged",
           content: json(clientSchema),
         },
-        ...problemResponses(400, 404, 409),
+        ...problemResponses(400, 404, 409, 410, 503),
       },
     ),
   },
@@ -333,23 +365,25 @@ export const routes = {
     operationId: "linkClientResource",
     summary: "Link client resource (URL-encode {resource})",
     description:
-      "Link an OAuth client to a resource and return the link, with 201 on creation and 200 when it already exists. The {resource} URL must be percent-encoded in the path; prefer unlinkClientResource to remove the link, and validation_failed or not_found identifies malformed input or a missing target.",
+      "Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Link an OAuth client to a resource and return the link, with 201 on creation and 200 when it already exists. The {resource} URL must be percent-encoded in the path; prefer unlinkClientResource to remove the link, and validation_failed or not_found identifies malformed input or a missing target.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
-    parameters: resourceParameters,
+    parameters: [...resourceParameters, idempotencyParameter],
     responses: standardResponses(
       {},
       {
         200: {
+          headers: commandResponseHeaders,
           description: "Resource link already exists",
           content: json(z.object({ created: z.boolean() })),
         },
         201: {
+          headers: commandResponseHeaders,
           description: "Resource linked",
           content: json(z.object({ created: z.boolean() })),
         },
-        ...problemResponses(400, 404, 409),
+        ...problemResponses(400, 404, 409, 410, 503),
       },
     ),
   },
@@ -359,16 +393,19 @@ export const routes = {
     operationId: "unlinkClientResource",
     summary: "Unlink client resource (URL-encode {resource})",
     description:
-      "Remove the client-to-resource link and return no content. The {resource} URL must be percent-encoded in the path; prefer linkClientResource to add a link, and validation_failed or not_found identifies malformed input or a missing target.",
+      "Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Remove the client-to-resource link and return no content. The {resource} URL must be percent-encoded in the path; prefer linkClientResource to add a link, validation_failed identifies malformed input; not_found means the client is missing. An absent link returns 204 with a noop outcome.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
-    parameters: resourceParameters,
+    parameters: [...resourceParameters, idempotencyParameter],
     responses: standardResponses(
       {},
       {
-        204: { description: "Resource unlinked" },
-        ...problemResponses(400, 404, 409),
+        204: {
+          headers: commandResponseHeaders,
+          description: "Resource unlinked",
+        },
+        ...problemResponses(400, 404, 409, 410, 503),
       },
     ),
   },
@@ -380,13 +417,22 @@ export function register(app: Hono<AppEnvironment>) {
     validate("param", paramSchema),
     validate("query", eraseSchema),
     async (context) => {
-      await service.eraseClient(
-        context.get("db"),
-        actorFromContext(context),
-        context.req.param("clientId")!,
-        eraseSchema.parse(context.req.query()).confirm,
+      const clientId = context.req.param("clientId")!;
+      const confirm = eraseSchema.parse(context.req.query()).confirm;
+      return platformCommand(
+        context,
+        "eraseClient",
+        { clientId, confirm },
+        204,
+        async (platform) => {
+          await service.eraseClient(platform, clientId, confirm);
+          return {
+            body: null,
+            resultReference: { type: "client", id: clientId },
+          };
+        },
+        { retention: "ordinary" },
       );
-      return context.body(null, 204);
     },
   );
   registerRoute(
@@ -396,13 +442,15 @@ export function register(app: Hono<AppEnvironment>) {
     async (context) => {
       const query = querySchema.parse(context.req.query());
       return context.json(
-        await service.listClients(context.get("db"), {
-          ...query,
-          disabled:
-            query.disabled === undefined
-              ? undefined
-              : query.disabled === "true",
-        }),
+        await platformRead(context, (platform) =>
+          service.listClients(platform, {
+            ...query,
+            disabled:
+              query.disabled === undefined
+                ? undefined
+                : query.disabled === "true",
+          }),
+        ),
       );
     },
   );
@@ -411,14 +459,31 @@ export function register(app: Hono<AppEnvironment>) {
     routes.createClient,
     validate("json", createSchema),
     async (context) => {
-      const input = createSchema.parse(await context.req.json());
-      return context.json(
-        await service.createClient(
-          context.get("db"),
-          actorFromContext(context),
-          input,
-        ),
+      const parsed = createSchema.parse(await context.req.json());
+      const input = {
+        ...parsed,
+        grantTypes: [...new Set(parsed.grantTypes)].sort(),
+        clientCredentialsScopes:
+          parsed.clientCredentialsScopes === undefined
+            ? undefined
+            : [...new Set(parsed.clientCredentialsScopes)].sort(),
+        scopes:
+          parsed.scopes === undefined
+            ? undefined
+            : [...new Set(parsed.scopes)].sort(),
+      };
+      return platformCommand(
+        context,
+        "createClient",
+        operationJson(input),
         201,
+        async (platform) => {
+          const body = await service.createClient(platform, input);
+          return {
+            body,
+            resultReference: { type: "client", id: body.clientId },
+          };
+        },
       );
     },
   );
@@ -427,12 +492,11 @@ export function register(app: Hono<AppEnvironment>) {
     routes.getClient,
     validate("param", paramSchema),
     async (context) => {
-      return context.json(
-        await service.getClient(
-          context.get("db"),
-          context.req.param("clientId")!,
-        ),
+      const body = await platformRead(context, (platform) =>
+        service.getClient(platform, context.req.param("clientId")!),
       );
+      context.header("ETag", revisionTag(body));
+      return context.json(body);
     },
   );
   registerRoute(
@@ -442,13 +506,35 @@ export function register(app: Hono<AppEnvironment>) {
     validate("json", patchSchema),
     async (context) => {
       const input = patchSchema.parse(await context.req.json());
-      return context.json(
-        await service.updateClient(
-          context.get("db"),
-          actorFromContext(context),
-          context.req.param("clientId")!,
-          input,
-        ),
+      for (const key of ["scopes", "clientCredentialsScopes"] as const)
+        if (input[key]) input[key] = [...new Set(input[key])].sort();
+      const expected = requireRevision(context.req.header("If-Match"));
+      const clientId = context.req.param("clientId")!;
+      return platformCommand(
+        context,
+        "updateClient",
+        operationJson({ clientId, expected, patch: input }),
+        200,
+        async (platform) => {
+          const body = await service.updateClient(
+            platform,
+            clientId,
+            input,
+            expected,
+          );
+          return {
+            body,
+            outcome: body.revision === expected.revision ? "noop" : "applied",
+            resultReference: { type: "client", id: clientId },
+          };
+        },
+        {
+          retention: "ordinary",
+          etag: (body) =>
+            revisionTag(
+              clientSchema.pick({ id: true, revision: true }).parse(body),
+            ),
+        },
       );
     },
   );
@@ -457,12 +543,21 @@ export function register(app: Hono<AppEnvironment>) {
     routes.disableClient,
     validate("param", paramSchema),
     async (context) => {
-      return context.json(
-        await service.disableClient(
-          context.get("db"),
-          actorFromContext(context),
-          context.req.param("clientId")!,
-        ),
+      const clientId = context.req.param("clientId")!;
+      return platformCommand(
+        context,
+        "disableClient",
+        { clientId },
+        200,
+        async (platform) => {
+          const result = await service.disableClient(platform, clientId);
+          return {
+            body: result.client,
+            outcome: result.changed ? "applied" : "noop",
+            resultReference: { type: "client", id: clientId },
+          };
+        },
+        { retention: "ordinary" },
       );
     },
   );
@@ -471,12 +566,21 @@ export function register(app: Hono<AppEnvironment>) {
     routes.enableClient,
     validate("param", paramSchema),
     async (context) => {
-      return context.json(
-        await service.enableClient(
-          context.get("db"),
-          actorFromContext(context),
-          context.req.param("clientId")!,
-        ),
+      const clientId = context.req.param("clientId")!;
+      return platformCommand(
+        context,
+        "enableClient",
+        { clientId },
+        200,
+        async (platform) => {
+          const result = await service.enableClient(platform, clientId);
+          return {
+            body: result.client,
+            outcome: result.changed ? "applied" : "noop",
+            resultReference: { type: "client", id: clientId },
+          };
+        },
+        { retention: "ordinary" },
       );
     },
   );
@@ -485,12 +589,16 @@ export function register(app: Hono<AppEnvironment>) {
     routes.rotateClientSecret,
     validate("param", paramSchema),
     async (context) => {
-      return context.json(
-        await service.rotateSecret(
-          context.get("db"),
-          actorFromContext(context),
-          context.req.param("clientId")!,
-        ),
+      const clientId = context.req.param("clientId")!;
+      return platformCommand(
+        context,
+        "rotateClientSecret",
+        { clientId },
+        200,
+        async (platform) => ({
+          body: await service.rotateSecret(platform, clientId),
+          resultReference: { type: "client", id: clientId },
+        }),
       );
     },
   );
@@ -501,13 +609,22 @@ export function register(app: Hono<AppEnvironment>) {
     validate("json", ownerSchema),
     async (context) => {
       const input = ownerSchema.parse(await context.req.json());
-      return context.json(
-        await service.setOwner(
-          context.get("db"),
-          actorFromContext(context),
-          context.req.param("clientId")!,
-          input.organizationId,
-        ),
+      const clientId = context.req.param("clientId")!;
+      return platformCommand(
+        context,
+        "setClientOwner",
+        { clientId, ...input },
+        200,
+        async (platform) => ({
+          body: await service.setOwner(
+            platform,
+            clientId,
+            input.organizationId,
+          ),
+          outcome: "noop",
+          resultReference: { type: "client", id: clientId },
+        }),
+        { retention: "ordinary" },
       );
     },
   );
@@ -516,13 +633,28 @@ export function register(app: Hono<AppEnvironment>) {
     routes.linkClientResource,
     validate("param", resourceParams),
     async (context) => {
-      const result = await service.linkResource(
-        context.get("db"),
-        actorFromContext(context),
-        context.req.param("clientId")!,
-        context.req.param("resource")!,
+      const clientId = context.req.param("clientId")!;
+      const resource = context.req.param("resource")!;
+      return platformCommand(
+        context,
+        "linkClientResource",
+        { clientId, resource },
+        201,
+        async (platform) => {
+          const result = await service.linkResource(
+            platform,
+            clientId,
+            resource,
+          );
+          return {
+            body: result,
+            outcome: result.created ? "applied" : "noop",
+            statusCode: result.created ? 201 : 200,
+            resultReference: { type: "client", id: clientId },
+          };
+        },
+        { retention: "ordinary" },
       );
-      return context.json(result, result.created ? 201 : 200);
     },
   );
   registerRoute(
@@ -530,13 +662,27 @@ export function register(app: Hono<AppEnvironment>) {
     routes.unlinkClientResource,
     validate("param", resourceParams),
     async (context) => {
-      await service.unlinkResource(
-        context.get("db"),
-        actorFromContext(context),
-        context.req.param("clientId")!,
-        context.req.param("resource")!,
+      const clientId = context.req.param("clientId")!;
+      const resource = context.req.param("resource")!;
+      return platformCommand(
+        context,
+        "unlinkClientResource",
+        { clientId, resource },
+        204,
+        async (platform) => {
+          const result = await service.unlinkResource(
+            platform,
+            clientId,
+            resource,
+          );
+          return {
+            body: null,
+            outcome: result.removed ? "applied" : "noop",
+            resultReference: { type: "client", id: clientId },
+          };
+        },
+        { retention: "ordinary" },
       );
-      return context.body(null, 204);
     },
   );
 }

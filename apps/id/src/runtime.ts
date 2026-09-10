@@ -1,8 +1,10 @@
 import { createApp } from "./app.ts";
+import { maxRequestBodyBytes } from "./http/request-limits.ts";
 import { bootstrap, systemActor } from "./bootstrap.ts";
 import { createAuth } from "./auth.ts";
 import { createDatabase } from "./db/client.ts";
 import type { Environment } from "./env.ts";
+import { assertRuntimeRole } from "./db/runtime-role.ts";
 
 export async function startRuntime(
   environment: Environment,
@@ -12,41 +14,46 @@ export async function startRuntime(
     authFactory = createAuth,
     appFactory = createApp,
     serve = Bun.serve,
+    verifyDatabaseRole = assertRuntimeRole,
   }: {
     seed?: typeof bootstrap;
     databaseFactory?: typeof createDatabase;
     authFactory?: typeof createAuth;
     appFactory?: typeof createApp;
     serve?: typeof Bun.serve;
+    verifyDatabaseRole?: typeof assertRuntimeRole;
   } = {},
 ) {
   const database = databaseFactory(environment);
-  let seeded;
+  let server: Bun.Server<undefined>;
   try {
-    seeded = await seed(database.db, systemActor("startup"), {
+    if (environment.nodeEnv === "production")
+      await verifyDatabaseRole(database.db);
+    const seeded = await seed(database.db, systemActor("startup"), {
       platformOrganizationSlug: environment.platformOrganizationSlug,
       platformOrganizationName: environment.platformOrganizationName,
       adminResourceIdentifier: environment.adminResourceIdentifier,
+    });
+    const summary = Object.entries(seeded)
+      .map(
+        ([row, result]) =>
+          `${row}: created=${result.created}, updated=${"updated" in result ? result.updated : false}`,
+      )
+      .join("; ");
+    console.log(
+      `[id] seeded platform organisation ${seeded.organization.slug} (${summary})`,
+    );
+    const auth = authFactory(database.db, environment);
+    const app = appFactory({ auth, db: database.db, environment });
+    server = serve({
+      port: environment.port,
+      maxRequestBodySize: maxRequestBodyBytes,
+      fetch: app.fetch,
     });
   } catch (error) {
     await database.close();
     throw error;
   }
-  const summary = Object.entries(seeded)
-    .map(
-      ([row, result]) =>
-        `${row}: created=${result.created}, updated=${"updated" in result ? result.updated : false}`,
-    )
-    .join("; ");
-  console.log(
-    `[id] seeded platform organisation ${seeded.organization.slug} (${summary})`,
-  );
-  const auth = authFactory(database.db, environment);
-  const app = appFactory({ auth, db: database.db, environment });
-  const server = serve({
-    port: environment.port,
-    fetch: app.fetch,
-  });
   let isShuttingDown = false;
 
   async function shutdown(): Promise<void> {

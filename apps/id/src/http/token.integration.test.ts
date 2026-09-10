@@ -1,3 +1,5 @@
+import { approveMachineCapability } from "../__tests__/capabilities.ts";
+import { platformWriteService } from "../__tests__/platform-context.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import { decodeJwt, decodeProtectedHeader } from "jose";
@@ -11,7 +13,12 @@ import {
   systemActor,
   type BootstrapResult,
 } from "../bootstrap.ts";
-import { createClient, linkResource } from "../services/clients.ts";
+import {
+  createClient as createClientImplementation,
+  linkResource as linkResourceImplementation,
+} from "../services/clients.ts";
+const createClient = platformWriteService(createClientImplementation);
+const linkResource = platformWriteService(linkResourceImplementation);
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import {
   oauthClients,
@@ -34,7 +41,7 @@ beforeAll(async () => {
   issuer = await startOidcIssuer();
   connection = createDatabase(environment);
   await connection.db.execute(
-    sql`truncate table users, organizations, oauth_clients, oauth_resources, audit_events cascade`,
+    sql`truncate table security_identifiers, users, organizations, oauth_clients, oauth_resources, audit_events cascade`,
   );
   app = createApp({
     auth: createAuth(connection.db, environment),
@@ -61,6 +68,12 @@ beforeAll(async () => {
     clientId,
     environment.adminResourceIdentifier,
   );
+  await approveMachineCapability(connection.db, {
+    organizationId: bootstrapped.organization.id,
+    clientId,
+    resource: environment.adminResourceIdentifier,
+    scopes: [...platformScopes],
+  });
   expect(client.clientSecret).toBeString();
   secret = client.clientSecret!;
 });
@@ -148,6 +161,7 @@ test("integration: a bootstrapped client mints a resource JWT and calls the admi
       {
         organizationId: bootstrapped.organization.id,
         organizationSlug: "answerable",
+        isPlatform: true,
         scopes,
       },
     ],
@@ -160,13 +174,10 @@ test("integration: a wrong client secret is rejected", async () => {
   expect(await response.json()).toMatchObject({ error: "invalid_client" });
 });
 
-test("integration: a token without a resource is opaque and cannot call the admin API", async () => {
+test("integration: a token without a resource is rejected", async () => {
   const response = await mint({ body: { grant_type: "client_credentials" } });
-  expect(response.status).toBe(200);
-  const result = await response.json();
-  expect(result.access_token).toBeString();
-  expect(() => decodeProtectedHeader(result.access_token)).toThrow();
-  await expectProblem(result.access_token, 401, "invalid_token");
+  expect(response.status).toBe(400);
+  expect(await response.json()).toMatchObject({ error: "invalid_target" });
 });
 
 test("integration: scopes outside the client ceiling are rejected", async () => {
@@ -202,7 +213,7 @@ test("integration: disabling a client revokes admin access and prevents minting"
   }
 });
 
-test("integration: an unowned client mints but cannot call the admin API", async () => {
+test("integration: an unowned client cannot mint a token", async () => {
   const clientId = "unowned-token-client";
   const clientSecret = "unowned-token-client-secret";
   await connection.db.insert(oauthClients).values({
@@ -232,11 +243,8 @@ test("integration: an unowned client mints but cannot call the admin API", async
       resource: environment.adminResourceIdentifier,
     },
   });
-  expect(response.status).toBe(200);
-  const result = await response.json();
-  expect(result.access_token).toBeString();
-  expect(decodeJwt(result.access_token).scope).toBe("platform:read");
-  await expectProblem(result.access_token, 403, "client_unowned");
+  expect(response.status).toBe(401);
+  expect(await response.json()).toMatchObject({ error: "invalid_client" });
 });
 
 test("integration: an expired resource JWT cannot call the admin API", async () => {

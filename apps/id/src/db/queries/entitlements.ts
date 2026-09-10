@@ -1,26 +1,42 @@
-import { and, desc, eq, getTableColumns } from "drizzle-orm";
+import {
+  requireTenantDirectoryContext,
+  type TenantReadContext,
+} from "../../services/tenant-context.ts";
+import {
+  requirePlatformWriteContext,
+  requirePlatformReadContext,
+  type PlatformWriteContext,
+  type PlatformReadContext,
+} from "../../services/platform-context.ts";
+import { and, desc, eq, getTableColumns, sql } from "drizzle-orm";
 import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
 import type { LifecycleStatus } from "../schema/vocabulary.ts";
 import type { MemberWindow } from "./groups.ts";
 import { createId } from "../../lib/id.ts";
 import type { Executor } from "../client.ts";
-import { entitlements, organizations } from "../schema/index.ts";
+import {
+  entitlements,
+  organizations,
+  members,
+  groupMembers,
+} from "../schema/index.ts";
 
 export type CreateEntitlementInput = {
   organizationId: string;
   /** Principal: omit both for an organization-wide grant. */
   memberId?: string;
   groupId?: string;
-  /** Target: exactly one of an OAuth client id or an RFC 8707 resource. */
+  /** Target: a client, a resource, or an exact client/resource pair. */
   clientId?: string;
   resource?: string;
   scopes: string[];
 } & MemberWindow;
 
 export async function createEntitlement(
-  db: Executor,
+  context: PlatformWriteContext,
   input: CreateEntitlementInput,
 ) {
+  const { tx: db } = requirePlatformWriteContext(context);
   const [entitlement] = await db
     .insert(entitlements)
     .values({ id: createId(), ...input })
@@ -43,10 +59,11 @@ const entitlementWhere = (organizationId: string, entitlementId: string) =>
     eq(entitlements.id, entitlementId),
   );
 export function listEntitlements(
-  executor: Executor,
-  organizationId: string,
+  context: TenantReadContext<"directory">,
   query: EntitlementQuery,
 ) {
+  const { tx: executor, organizationId } =
+    requireTenantDirectoryContext(context);
   return executor
     .select()
     .from(entitlements)
@@ -74,23 +91,44 @@ export function listEntitlements(
     .orderBy(desc(entitlements.id))
     .limit(query.limit + 1);
 }
-export async function findEntitlement(
+function findEntitlementQuery(
   executor: Executor,
   organizationId: string,
   entitlementId: string,
 ) {
-  const [row] = await executor
+  return executor
     .select()
     .from(entitlements)
     .where(entitlementWhere(organizationId, entitlementId));
+}
+export async function findEntitlement(
+  context: TenantReadContext<"directory">,
+  entitlementId: string,
+) {
+  const { tx, organizationId } = requireTenantDirectoryContext(context);
+  const [row] = await findEntitlementQuery(tx, organizationId, entitlementId);
+  return row ?? null;
+}
+export async function findEntitlementForCommand(
+  context: PlatformWriteContext,
+  organizationId: string,
+  entitlementId: string,
+) {
+  const { tx } = requirePlatformWriteContext(context);
+  const [row] = await findEntitlementQuery(
+    tx,
+    organizationId,
+    entitlementId,
+  ).for("update");
   return row ?? null;
 }
 export async function updateEntitlement(
-  executor: Executor,
+  context: PlatformWriteContext,
   organizationId: string,
   entitlementId: string,
   patch: EntitlementPatch,
 ) {
+  const { tx: executor } = requirePlatformWriteContext(context);
   const [row] = await executor
     .update(entitlements)
     .set(patch)
@@ -99,11 +137,12 @@ export async function updateEntitlement(
   return row ?? null;
 }
 export async function setEntitlementStatus(
-  executor: Executor,
+  context: PlatformWriteContext,
   organizationId: string,
   entitlementId: string,
   status: LifecycleStatus,
 ) {
+  const { tx: executor } = requirePlatformWriteContext(context);
   const [row] = await executor
     .update(entitlements)
     .set({ status })
@@ -112,19 +151,75 @@ export async function setEntitlementStatus(
   return row ?? null;
 }
 export async function deleteEntitlement(
-  executor: Executor,
+  context: PlatformWriteContext,
   organizationId: string,
   entitlementId: string,
 ) {
+  const { tx: executor } = requirePlatformWriteContext(context);
   await executor
     .delete(entitlements)
     .where(entitlementWhere(organizationId, entitlementId));
 }
 
+/** The command holds the organisation lock. Capture current source membership,
+ * including ineligible rows, and order parent erasure through audit commit. */
+export function readEntitlementAudience(
+  context: PlatformWriteContext,
+  organizationId: string,
+  groupId: string | null,
+) {
+  const { tx } = requirePlatformWriteContext(context);
+  const membership = {
+    memberId: members.id,
+    userId: members.userId,
+    organizationId: members.organizationId,
+    revision: members.revision,
+    status: members.status,
+    validFrom: members.validFrom,
+    validUntil: members.validUntil,
+  };
+  if (groupId !== null) {
+    return tx
+      .select({
+        ...membership,
+        groupAssignment: {
+          id: groupMembers.id,
+          revision: groupMembers.revision,
+          groupId: groupMembers.groupId,
+          validFrom: groupMembers.validFrom,
+          validUntil: groupMembers.validUntil,
+        },
+      })
+      .from(members)
+      .innerJoin(
+        groupMembers,
+        and(
+          eq(groupMembers.memberId, members.id),
+          eq(groupMembers.organizationId, members.organizationId),
+        ),
+      )
+      .where(
+        and(
+          eq(members.organizationId, organizationId),
+          eq(groupMembers.groupId, groupId),
+        ),
+      )
+      .orderBy(members.id)
+      .for("share", { of: [members, groupMembers] });
+  }
+  return tx
+    .select({ ...membership, groupAssignment: sql<null>`null` })
+    .from(members)
+    .where(eq(members.organizationId, organizationId))
+    .orderBy(members.id)
+    .for("share");
+}
+
 export function listAllEntitlements(
-  executor: Executor,
+  context: PlatformReadContext,
   query: EntitlementQuery,
 ) {
+  const { tx: executor } = requirePlatformReadContext(context);
   return executor
     .select({
       ...getTableColumns(entitlements),

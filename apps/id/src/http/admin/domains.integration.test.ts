@@ -1,12 +1,16 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
 import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
-import { createOrganization } from "../../db/queries/organizations.ts";
-import { auditEvents } from "../../db/schema/index.ts";
+import { createOrganization } from "../../__tests__/organization-queries.ts";
+import {
+  auditEvents,
+  adminOperations,
+  organizationDomains,
+} from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
 let fixture: AdminFixture;
 beforeAll(async () => {
@@ -16,6 +20,120 @@ afterAll(async () => {
   await fixture?.close();
 });
 describeAdminRoutes(routes, () => fixture);
+test("domain creation and deletion recover their committed result without adopting another target", async () => {
+  const headers = fixture.headers("platformAdmin");
+  headers.set("content-type", "application/json");
+  const path = `/api/admin/v1/organizations/${fixture.tenant.organizationId}/domains`;
+  const create = (domain: string) =>
+    fixture.app.request(path, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ domain }),
+    });
+  const first = await create(" REPLAY.EXAMPLE.COM ");
+  expect(first.status).toBe(201);
+  const row = await first.json();
+  const operationId = first.headers.get("Operation-Id");
+  expect(operationId).toBeTruthy();
+  const replay = await create("replay.example.com");
+  expect(replay.status).toBe(201);
+  expect(await replay.json()).toEqual(row);
+  expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
+  expect((await create("different.example.com")).status).toBe(409);
+  expect(
+    await fixture.db
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.operationId, operationId!)),
+  ).toHaveLength(1);
+  headers.set("Idempotency-Key", createId());
+  const remove = () =>
+    fixture.app.request(`${path}/${row.id}`, { method: "DELETE", headers });
+  const deleted = await remove();
+  expect(deleted.status).toBe(204);
+  expect((await remove()).headers.get("Idempotency-Replayed")).toBe("true");
+  expect(
+    await fixture.db
+      .select()
+      .from(organizationDomains)
+      .where(eq(organizationDomains.id, row.id)),
+  ).toHaveLength(0);
+  const [receipt] = await fixture.db
+    .select()
+    .from(adminOperations)
+    .where(eq(adminOperations.id, deleted.headers.get("Operation-Id")!));
+  expect(receipt!.resultReference).toEqual({ type: "domain", id: row.id });
+});
+
+test("domain lifecycle replay preserves original state while new keys record noops", async () => {
+  const created = await request(fixture.tenant.organizationId, "", "POST", {
+    domain: "lifecycle-replay.example.com",
+  });
+  const row = await created.json();
+  const headers = fixture.headers("platformAdmin");
+  for (const verb of ["disable", "enable"]) {
+    headers.set("Idempotency-Key", createId());
+    const send = () =>
+      fixture.app.request(
+        `/api/admin/v1/organizations/${fixture.tenant.organizationId}/domains/${row.id}/${verb}`,
+        { method: "POST", headers },
+      );
+    const first = await send();
+    expect(first.status).toBe(200);
+    const body = await first.json();
+    const replay = await send();
+    expect(await replay.json()).toEqual(body);
+    expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
+    expect(
+      await fixture.db
+        .select()
+        .from(auditEvents)
+        .where(eq(auditEvents.operationId, first.headers.get("Operation-Id")!)),
+    ).toHaveLength(1);
+    headers.set("Idempotency-Key", createId());
+    const unchanged = await send();
+    expect(await unchanged.json()).toEqual(body);
+    const [receipt] = await fixture.db
+      .select()
+      .from(adminOperations)
+      .where(eq(adminOperations.id, unchanged.headers.get("Operation-Id")!));
+    expect(receipt!.outcome).toBe("noop");
+  }
+});
+
+test("a failed domain audit rolls back its assignment and command reservation", async () => {
+  const headers = fixture.headers("platformAdmin");
+  headers.set("content-type", "application/json");
+  const send = () =>
+    fixture.app.request(
+      `/api/admin/v1/organizations/${fixture.tenant.organizationId}/domains`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ domain: "audit-retry.example.com" }),
+      },
+    );
+  const before = await fixture.db.select().from(adminOperations);
+  await fixture.db.execute(
+    sql`alter table audit_events add constraint domain_replay_fault check (action <> 'domain.created') not valid`,
+  );
+  try {
+    expect((await send()).status).toBeGreaterThanOrEqual(400);
+  } finally {
+    await fixture.db.execute(
+      sql`alter table audit_events drop constraint domain_replay_fault`,
+    );
+  }
+  expect(await fixture.db.select().from(adminOperations)).toEqual(before);
+  expect(
+    await fixture.db
+      .select()
+      .from(organizationDomains)
+      .where(eq(organizationDomains.domain, "audit-retry.example.com")),
+  ).toHaveLength(0);
+  expect((await send()).status).toBe(201);
+  expect((await send()).headers.get("Idempotency-Replayed")).toBe("true");
+});
 function request(
   organizationId: string,
   suffix = "",
@@ -37,8 +155,8 @@ function request(
 }
 import { routes, domainSchema } from "./domains.ts";
 import { signInThroughIdp } from "../../__tests__/federation.ts";
-import { createOrganizationDomain } from "../../db/queries/organization-domains.ts";
-import { createSsoProvider } from "../../db/queries/sso-providers.ts";
+import { createOrganizationDomain } from "../../__tests__/domain-queries.ts";
+import { createSsoProvider } from "../../__tests__/sso-queries.ts";
 test("tenantReader lists only its domains; platformReader can read another organisation", async () => {
   const id = fixture.tenant.organizationId;
   const response = await request(id, "", "GET", undefined, "tenantReader");
@@ -102,9 +220,9 @@ test("platformAdmin creates, disables and enables; conflicts and validation are 
     (await request(createId(), "", "POST", { domain: "missing.example.com" }))
       .status,
   ).toBe(404);
-  expect((await request(id, `/${row.id}/enable`, "POST")).status).toBe(409);
+  expect((await request(id, `/${row.id}/enable`, "POST")).status).toBe(200);
   expect((await request(id, `/${row.id}/disable`, "POST")).status).toBe(200);
-  expect((await request(id, `/${row.id}/disable`, "POST")).status).toBe(409);
+  expect((await request(id, `/${row.id}/disable`, "POST")).status).toBe(200);
   const other = await createOrganizationDomain(fixture.db, {
     organizationId: fixture.outsider.organizationId,
     domain: row.domain,
@@ -129,7 +247,9 @@ test("platformAdmin creates, disables and enables; conflicts and validation are 
     .orderBy(auditEvents.id);
   expect(events.map((event) => event.action)).toEqual([
     "domain.created",
+    "domain.enable_unchanged",
     "domain.disabled",
+    "domain.disable_unchanged",
     "domain.enabled",
   ]);
   for (const event of events)

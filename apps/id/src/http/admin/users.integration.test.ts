@@ -1,3 +1,4 @@
+import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import {
@@ -256,7 +257,7 @@ test("platform admin and machine administer a fresh user through revocation, dis
           "POST",
           undefined,
           kind,
-          audit("user.enabled", { status: "active" }),
+          audit("user.enabled", { after: { status: "active" } }),
         )
       ).status,
     ).toBe(200);
@@ -281,7 +282,7 @@ test("platform admin and machine administer a fresh user through revocation, dis
       undefined,
       kind,
       audit("user.email_retired", {
-        retiredEmail: fresh.subject + "@tenant.example.com",
+        after: { emailRetired: true },
       }),
     );
     expect(retired.status).toBe(200);
@@ -329,10 +330,7 @@ test("user pagination, platform reader access, validation and lifecycle conflict
   for (const suffix of ["?status=bad", "?organizationId=bad", "?q=", "/bad-id"])
     expect((await request("/users" + suffix)).status).toBe(400);
   expect((await request(path, "DELETE", {})).status).toBe(400);
-  for (const [suffix, code] of [
-    ["/enable", "user_already_active"],
-    ["/retire-email", "user_not_disabled"],
-  ]) {
+  for (const [suffix, code] of [["/retire-email", "user_not_disabled"]]) {
     const response = await request(path + suffix, "POST");
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ code });
@@ -354,9 +352,14 @@ test("user pagination, platform reader access, validation and lifecycle conflict
       )
     ).status,
   ).toBe(200);
-  const repeat = await request(path + "/disable", "POST");
-  expect(repeat.status).toBe(409);
-  expect(await repeat.json()).toMatchObject({ code: "user_already_disabled" });
+  const repeat = await request(
+    path + "/disable",
+    "POST",
+    undefined,
+    "platformAdmin",
+    audit("user.disable_unchanged"),
+  );
+  expect(repeat.status).toBe(200);
   expect(
     (
       await request(
@@ -368,11 +371,14 @@ test("user pagination, platform reader access, validation and lifecycle conflict
       )
     ).status,
   ).toBe(200);
-  const retire = await request(path + "/retire-email", "POST");
-  expect(retire.status).toBe(409);
-  expect(await retire.json()).toMatchObject({
-    code: "user_email_already_retired",
-  });
+  const retire = await request(
+    path + "/retire-email",
+    "POST",
+    undefined,
+    "platformAdmin",
+    audit("user.email_retirement_unchanged"),
+  );
+  expect(retire.status).toBe(200);
   const inert = createId();
   await fixture.db
     .insert(users)
@@ -430,4 +436,88 @@ test("erase requires a query confirmation and checks existence before mismatch",
   });
   expect(response.status).toBe(400);
   expect(await response.json()).toMatchObject({ code: "validation_failed" });
+});
+
+test("global identity reads reject platform authority revoked after middleware", async () => {
+  const { members } = await import("../../db/schema/index.ts");
+  const { eq } = await import("drizzle-orm");
+  const target = fixture.principals.tenantReader.userId;
+  for (const path of [
+    "/users",
+    `/users/${target}`,
+    `/users/${target}/sessions`,
+  ]) {
+    const original = fixture.db.transaction.bind(fixture.db);
+    fixture.db.transaction = afterBrokerRead(original, (async (
+      ...args: Parameters<typeof original>
+    ) => {
+      fixture.db.transaction = original;
+      await fixture.db
+        .update(members)
+        .set({ status: "revoked", revokedAt: new Date() })
+        .where(eq(members.id, fixture.principals.platformReader.memberId));
+      return original(...args);
+    }) as typeof original);
+    try {
+      const response = await fixture.app.request(`/api/admin/v1${path}`, {
+        headers: fixture.headers("platformReader"),
+      });
+      expect(response.status).toBe(403);
+    } finally {
+      fixture.db.transaction = original;
+      await fixture.db
+        .update(members)
+        .set({ status: "active", revokedAt: null })
+        .where(eq(members.id, fixture.principals.platformReader.memberId));
+    }
+  }
+});
+
+test("global identity services reject copied, expired and tenant contexts", async () => {
+  const userService = await import("../../services/users.ts");
+  const sessionService = await import("../../services/sessions.ts");
+  const { inPlatformRead } =
+    await import("../../__tests__/platform-context.ts");
+  const { inTenantRead } = await import("../../__tests__/tenant-command.ts");
+  type Platform =
+    import("../../services/platform-context.ts").PlatformReadContext;
+  const target = fixture.principals.tenantReader.userId;
+  const readers = [
+    (context: Platform) => userService.listUsers(context, { limit: 1 }),
+    (context: Platform) => userService.getUser(context, target),
+    (context: Platform) =>
+      sessionService.listUserSessions(context, target, { limit: 1 }),
+  ];
+  let saved!: Platform;
+  await inPlatformRead(fixture.db, async (context) => {
+    saved = context;
+    for (const read of readers) {
+      expect(await read(context)).toBeDefined();
+      await expect(read({ ...context })).rejects.toThrow("Invalid or expired");
+    }
+  });
+  for (const read of readers)
+    await expect(read(saved)).rejects.toThrow("Invalid or expired");
+  await inTenantRead(
+    fixture.db,
+    fixture.tenant.organizationId,
+    "directory",
+    async (context) => {
+      for (const read of readers)
+        await expect(read(context as unknown as Platform)).rejects.toThrow(
+          "Invalid or expired",
+        );
+    },
+  );
+  for (const path of [
+    "/users",
+    `/users/${target}`,
+    `/users/${target}/sessions`,
+  ]) {
+    const response = await fixture.app.request(`/api/admin/v1${path}`, {
+      headers: fixture.headers("platformReader"),
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+  }
 });

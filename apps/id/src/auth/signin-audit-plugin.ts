@@ -1,3 +1,4 @@
+import { boundedUserAgent } from "../lib/user-agent.ts";
 import { getCurrentAdapter, type BetterAuthPlugin } from "better-auth";
 import type { GenericEndpointContext } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
@@ -63,8 +64,8 @@ export async function attributeSignIn(
     targetId: session.id,
     outcome: "success",
     requestId: ctx.headers?.get("x-request-id") ?? null,
-    ip: session.ipAddress ?? null,
-    userAgent: session.userAgent ?? null,
+    ip: null,
+    userAgent: boundedUserAgent(session.userAgent),
   });
   return organizationId;
 }

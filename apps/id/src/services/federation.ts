@@ -1,4 +1,7 @@
-import type { SSOUserResolutionInput, SSOUserResolution } from "@better-auth/sso";
+import type {
+  SSOUserResolutionInput,
+  SSOUserResolution,
+} from "@better-auth/sso";
 import type { DBTransactionAdapter } from "better-auth";
 
 import { retiredEmailFor } from "../db/queries/users.ts";
@@ -39,7 +42,25 @@ export function classifyIssuer(issuer: string) {
   return { kind: "oidc" as const };
 }
 
-function reject(code: string, message: string): SSOUserResolution {
+export const federationFailureCodes = [
+  "provider_not_found",
+  "organization_disabled",
+  "directory_mismatch",
+  "guest_account",
+  "personal_account",
+  "email_unverified",
+  "domain_not_allowed",
+  "hosted_domain_mismatch",
+  "user_disabled",
+  "membership_revoked",
+  "identity_conflict",
+  "email_conflict",
+] as const;
+
+function reject(
+  code: (typeof federationFailureCodes)[number],
+  message: string,
+): SSOUserResolution {
   return { action: "reject", code, message };
 }
 
@@ -72,6 +93,21 @@ async function fillDirectoryColumns(
       update,
     });
   }
+}
+
+async function membershipRevoked(
+  database: DBTransactionAdapter,
+  organizationId: string,
+  userId: string,
+) {
+  const member = await database.findOne<{ status: string }>({
+    model: "member",
+    where: [
+      { field: "organizationId", value: organizationId },
+      { field: "userId", value: userId },
+    ],
+  });
+  return member?.status === "revoked";
 }
 
 export async function resolveFederatedUser(
@@ -141,10 +177,7 @@ export async function resolveFederatedUser(
   if (!allowedDomain) {
     return reject("domain_not_allowed", "Email domain is not allowed");
   }
-  if (
-    issuer.kind === "google" &&
-    stringClaim(claims, "hd") !== domain
-  ) {
+  if (issuer.kind === "google" && stringClaim(claims, "hd") !== domain) {
     return reject("hosted_domain_mismatch", "Hosted domain does not match");
   }
 
@@ -161,6 +194,8 @@ export async function resolveFederatedUser(
     if (owner.status === "disabled") {
       return reject("user_disabled", "User is disabled");
     }
+    if (await membershipRevoked(database, provider.organizationId, owner.id))
+      return reject("membership_revoked", "Organisation membership is revoked");
     if (owner.status === "inert") {
       await database.update({
         model: "user",
@@ -190,6 +225,8 @@ export async function resolveFederatedUser(
     if (owner.status === "disabled") {
       return reject("user_disabled", "User is disabled");
     }
+    if (await membershipRevoked(database, provider.organizationId, owner.id))
+      return reject("membership_revoked", "Organisation membership is revoked");
     if (owner.status !== "inert") {
       return reject("identity_conflict", "Identity is already bound");
     }

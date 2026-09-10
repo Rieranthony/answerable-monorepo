@@ -4,6 +4,17 @@ export function answerableSchema(): BetterAuthPlugin {
   return {
     id: "answerable-schema",
     schema: {
+      oauthClient: {
+        fields: {
+          organizationId: { type: "string", required: false, input: false },
+          authorizationVersion: {
+            type: "number",
+            required: true,
+            defaultValue: 1,
+            input: false,
+          },
+        },
+      },
       organizationDomain: {
         fields: {
           organizationId: {

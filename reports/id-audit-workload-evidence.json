@@ -1,0 +1,1554 @@
+{
+  "metadata": {
+    "bun": "1.3.1",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M1 Pro",
+    "logicalCpus": 10,
+    "memoryBytes": 34359738368,
+    "poolMax": 4,
+    "connectionTimeoutMs": 1000,
+    "statementTimeoutMs": 10000,
+    "sizes": [
+      100,
+      1000,
+      10000
+    ],
+    "topology": "one Bun loopback HTTP server and one restricted pool; local PostgreSQL",
+    "limits": "Single observations, not production capacity, percentiles or a peak-memory guarantee. RSS samples include this measurement process and are a lower bound on transient peaks."
+  },
+  "results": [
+    {
+      "size": 100,
+      "name": "other-tenant-baseline",
+      "elapsedMs": 50.79558300000008,
+      "rssBefore": 213811200,
+      "rssSampledMax": 214581248,
+      "maxTimerGapMs": 10.233208000000104,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 23.661124999999856,
+          "replayed": null
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 23.682874999999967
+        }
+      ],
+      "events": []
+    },
+    {
+      "size": 100,
+      "name": "organisation-entitlement-create",
+      "elapsedMs": 27.89995799999997,
+      "rssBefore": 215728128,
+      "rssSampledMax": 216416256,
+      "maxTimerGapMs": 10.28754200000003,
+      "requests": [
+        {
+          "status": 201,
+          "ms": 26.599709000000075,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 7.68487499999992
+        }
+      ],
+      "events": [
+        {
+          "action": "entitlement.created",
+          "json_bytes": 26444,
+          "users": 100
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "group-entitlement-create",
+      "elapsedMs": 25.25579199999993,
+      "rssBefore": 216514560,
+      "rssSampledMax": 216809472,
+      "maxTimerGapMs": 10.151165999999876,
+      "requests": [
+        {
+          "status": 201,
+          "ms": 22.08462499999996,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 4.997749999999996
+        }
+      ],
+      "events": [
+        {
+          "action": "entitlement.created",
+          "json_bytes": 41178,
+          "users": 100
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "group-disable",
+      "elapsedMs": 26.065250000000106,
+      "rssBefore": 216825856,
+      "rssSampledMax": 216956928,
+      "maxTimerGapMs": 10.29016700000011,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 20.30250000000001,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 5.1092499999999745
+        }
+      ],
+      "events": [
+        {
+          "action": "group.disabled",
+          "json_bytes": 32136,
+          "users": 100
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "group-enable",
+      "elapsedMs": 28.606250000000045,
+      "rssBefore": 216989696,
+      "rssSampledMax": 217055232,
+      "maxTimerGapMs": 10.075749999999971,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 23.16449999999986,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 7.495374999999967
+        }
+      ],
+      "events": [
+        {
+          "action": "group.enabled",
+          "json_bytes": 32136,
+          "users": 100
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "group-erase",
+      "elapsedMs": 27.939833000000135,
+      "rssBefore": 217104384,
+      "rssSampledMax": 217169920,
+      "maxTimerGapMs": 10.064292000000023,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 19.05920900000001,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 6.166208999999981
+        }
+      ],
+      "events": [
+        {
+          "action": "group.erased",
+          "json_bytes": 31937,
+          "users": 100
+        }
+      ]
+    },
+    {
+      "size": 100,
+      "name": "eight-same-tenant-commands",
+      "elapsedMs": 141.118291,
+      "rssBefore": 218300416,
+      "rssSampledMax": 218955776,
+      "maxTimerGapMs": 11.121167000000014,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 24.613333999999895,
+          "replayed": "false"
+        },
+        {
+          "status": 200,
+          "ms": 114.66737499999999,
+          "replayed": "false"
+        },
+        {
+          "status": 200,
+          "ms": 129.0435419999999,
+          "replayed": "false"
+        },
+        {
+          "status": 200,
+          "ms": 37.87195799999995,
+          "replayed": "false"
+        },
+        {
+          "status": 200,
+          "ms": 53.44916699999999,
+          "replayed": "false"
+        },
+        {
+          "status": 200,
+          "ms": 73.72208300000011,
+          "replayed": "false"
+        },
+        {
+          "status": 200,
+          "ms": 87.31124999999997,
+          "replayed": "false"
+        },
+        {
+          "status": 200,
+          "ms": 98.65604099999996,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 10.794375000000173
+        },
+        {
+          "status": 200,
+          "ms": 61.327833000000055
+        },
+        {
+          "status": 200,
+          "ms": 6.926459000000023
+        }
+      ],
+      "events": [
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 26753,
+          "users": 100
+        },
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 26753,
+          "users": 100
+        },
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 26753,
+          "users": 100
+        },
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 26753,
+          "users": 100
+        },
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 26753,
+          "users": 100
+        },
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 26753,
+          "users": 100
+        },
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 26753,
+          "users": 100
+        },
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 26753,
+          "users": 100
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "other-tenant-baseline",
+      "elapsedMs": 39.57049999999981,
+      "rssBefore": 228229120,
+      "rssSampledMax": 228605952,
+      "maxTimerGapMs": 10.614000000000033,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 17.89295899999979,
+          "replayed": null
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 17.920040999999856
+        }
+      ],
+      "events": []
+    },
+    {
+      "size": 1000,
+      "name": "organisation-entitlement-create",
+      "elapsedMs": 89.19133300000021,
+      "rssBefore": 228655104,
+      "rssSampledMax": 231718912,
+      "maxTimerGapMs": 11.939957999999933,
+      "requests": [
+        {
+          "status": 201,
+          "ms": 61.39170899999999,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 5.182125000000269
+        },
+        {
+          "status": 200,
+          "ms": 6.935791999999765
+        },
+        {
+          "status": 200,
+          "ms": 14.328167000000121
+        }
+      ],
+      "events": [
+        {
+          "action": "entitlement.created",
+          "json_bytes": 261344,
+          "users": 1000
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "group-entitlement-create",
+      "elapsedMs": 89.53141599999981,
+      "rssBefore": 231784448,
+      "rssSampledMax": 238993408,
+      "maxTimerGapMs": 12.666916000000128,
+      "requests": [
+        {
+          "status": 201,
+          "ms": 72.60866600000008,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 5.5790420000003
+        },
+        {
+          "status": 200,
+          "ms": 5.487041999999747
+        },
+        {
+          "status": 200,
+          "ms": 12.600292000000081
+        }
+      ],
+      "events": [
+        {
+          "action": "entitlement.created",
+          "json_bytes": 408378,
+          "users": 1000
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "group-disable",
+      "elapsedMs": 87.32612500000005,
+      "rssBefore": 239091712,
+      "rssSampledMax": 240287744,
+      "maxTimerGapMs": 11.574958000000152,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 64.88200000000006,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 7.172542000000249
+        },
+        {
+          "status": 200,
+          "ms": 10.54508399999986
+        },
+        {
+          "status": 200,
+          "ms": 5.892374999999902
+        }
+      ],
+      "events": [
+        {
+          "action": "group.disabled",
+          "json_bytes": 313836,
+          "users": 1000
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "group-enable",
+      "elapsedMs": 79.93641600000001,
+      "rssBefore": 240386048,
+      "rssSampledMax": 242286592,
+      "maxTimerGapMs": 11.753292000000329,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 55.49329100000023,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 4.74704200000042
+        },
+        {
+          "status": 200,
+          "ms": 8.927124999999705
+        },
+        {
+          "status": 200,
+          "ms": 3.546625000000404
+        }
+      ],
+      "events": [
+        {
+          "action": "group.enabled",
+          "json_bytes": 313836,
+          "users": 1000
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "group-erase",
+      "elapsedMs": 81.72312499999998,
+      "rssBefore": 242302976,
+      "rssSampledMax": 244318208,
+      "maxTimerGapMs": 13.744916999999987,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 57.37875000000031,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 4.207167000000027
+        },
+        {
+          "status": 200,
+          "ms": 6.886500000000069
+        },
+        {
+          "status": 200,
+          "ms": 8.296832999999879
+        }
+      ],
+      "events": [
+        {
+          "action": "group.erased",
+          "json_bytes": 313637,
+          "users": 1000
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "name": "eight-same-tenant-commands",
+      "elapsedMs": 426.4006250000002,
+      "rssBefore": 244334592,
+      "rssSampledMax": 259751936,
+      "maxTimerGapMs": 14.5985840000003,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 56.96529200000032,
+          "replayed": "false"
+        },
+        {
+          "status": 200,
+          "ms": 403.4058749999999,
+          "replayed": "false"
+        },
+        {
+          "status": 200,
+          "ms": 357.6275840000003,
+          "replayed": "false"
+        },
+        {
+          "status": 200,
+          "ms": 106.93612500000017,
+          "replayed": "false"
+        },
+        {
+          "status": 200,
+          "ms": 161.950875,
+          "replayed": "false"
+        },
+        {
+          "status": 200,
+          "ms": 221.31716700000015,
+          "replayed": "false"
+        },
+        {
+          "status": 200,
+          "ms": 265.5219579999998,
+          "replayed": "false"
+        },
+        {
+          "status": 200,
+          "ms": 306.2267499999998,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 9.254667000000154
+        },
+        {
+          "status": 200,
+          "ms": 239.05279199999995
+        },
+        {
+          "status": 200,
+          "ms": 10.09304099999963
+        },
+        {
+          "status": 200,
+          "ms": 12.748207999999977
+        },
+        {
+          "status": 200,
+          "ms": 5.255292000000281
+        },
+        {
+          "status": 200,
+          "ms": 13.027166000000307
+        }
+      ],
+      "events": [
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 261655,
+          "users": 1000
+        },
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 261655,
+          "users": 1000
+        },
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 261655,
+          "users": 1000
+        },
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 261655,
+          "users": 1000
+        },
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 261655,
+          "users": 1000
+        },
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 261655,
+          "users": 1000
+        },
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 261655,
+          "users": 1000
+        },
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 261655,
+          "users": 1000
+        }
+      ]
+    },
+    {
+      "size": 10000,
+      "name": "other-tenant-baseline",
+      "elapsedMs": 49.83166600000004,
+      "rssBefore": 264044544,
+      "rssSampledMax": 264110080,
+      "maxTimerGapMs": 10.155457999999271,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 26.928875000000517,
+          "replayed": null
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 26.247875000000022
+        }
+      ],
+      "events": []
+    },
+    {
+      "size": 10000,
+      "name": "organisation-entitlement-create",
+      "elapsedMs": 479.8499580000007,
+      "rssBefore": 264126464,
+      "rssSampledMax": 295813120,
+      "maxTimerGapMs": 19.883166999999958,
+      "requests": [
+        {
+          "status": 201,
+          "ms": 457.7802920000004,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 12.736750000000029
+        },
+        {
+          "status": 200,
+          "ms": 30.604208000000654
+        },
+        {
+          "status": 200,
+          "ms": 42.002707999999984
+        },
+        {
+          "status": 200,
+          "ms": 10.952166000000034
+        },
+        {
+          "status": 200,
+          "ms": 9.971666999999798
+        },
+        {
+          "status": 200,
+          "ms": 28.217250000000604
+        },
+        {
+          "status": 200,
+          "ms": 15.051416999999674
+        },
+        {
+          "status": 200,
+          "ms": 14.26812500000051
+        },
+        {
+          "status": 200,
+          "ms": 17.60712499999954
+        },
+        {
+          "status": 200,
+          "ms": 13.047375000000102
+        },
+        {
+          "status": 200,
+          "ms": 4.520708000000013
+        },
+        {
+          "status": 200,
+          "ms": 10.647750000000087
+        }
+      ],
+      "events": [
+        {
+          "action": "entitlement.created",
+          "json_bytes": 2610344,
+          "users": 10000
+        }
+      ]
+    },
+    {
+      "size": 10000,
+      "name": "group-entitlement-create",
+      "elapsedMs": 609.2898749999995,
+      "rssBefore": 295845888,
+      "rssSampledMax": 336592896,
+      "maxTimerGapMs": 18.829666999999972,
+      "requests": [
+        {
+          "status": 201,
+          "ms": 585.3802500000002,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 7.345291999999972
+        },
+        {
+          "status": 200,
+          "ms": 15.390167000000474
+        },
+        {
+          "status": 200,
+          "ms": 11.782333000000108
+        },
+        {
+          "status": 200,
+          "ms": 4.478833000000122
+        },
+        {
+          "status": 200,
+          "ms": 6.2155420000008235
+        },
+        {
+          "status": 200,
+          "ms": 4.987334000000374
+        },
+        {
+          "status": 200,
+          "ms": 5.128458000000137
+        },
+        {
+          "status": 200,
+          "ms": 12.605249999999614
+        },
+        {
+          "status": 200,
+          "ms": 5.318374999999833
+        },
+        {
+          "status": 200,
+          "ms": 9.927792000000409
+        },
+        {
+          "status": 200,
+          "ms": 26.090084000000388
+        },
+        {
+          "status": 200,
+          "ms": 35.59208300000046
+        },
+        {
+          "status": 200,
+          "ms": 10.328292000000147
+        },
+        {
+          "status": 200,
+          "ms": 23.141250000000582
+        },
+        {
+          "status": 200,
+          "ms": 9.616292000000612
+        },
+        {
+          "status": 200,
+          "ms": 5.376792000000023
+        },
+        {
+          "status": 200,
+          "ms": 14.837500000000546
+        },
+        {
+          "status": 200,
+          "ms": 5.230416999999761
+        }
+      ],
+      "events": [
+        {
+          "action": "entitlement.created",
+          "json_bytes": 4080378,
+          "users": 10000
+        }
+      ]
+    },
+    {
+      "size": 10000,
+      "name": "group-disable",
+      "elapsedMs": 503.07666599999993,
+      "rssBefore": 336592896,
+      "rssSampledMax": 342458368,
+      "maxTimerGapMs": 14.320832999999766,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 480.84629100000075,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 6.527457999999569
+        },
+        {
+          "status": 200,
+          "ms": 9.126291999999921
+        },
+        {
+          "status": 200,
+          "ms": 16.183374999999614
+        },
+        {
+          "status": 200,
+          "ms": 5.670667000000321
+        },
+        {
+          "status": 200,
+          "ms": 4.329417000000831
+        },
+        {
+          "status": 200,
+          "ms": 10.078084000000672
+        },
+        {
+          "status": 200,
+          "ms": 26.557875000000422
+        },
+        {
+          "status": 200,
+          "ms": 8.569749999999658
+        },
+        {
+          "status": 200,
+          "ms": 8.269249999999374
+        },
+        {
+          "status": 200,
+          "ms": 9.141999999999825
+        },
+        {
+          "status": 200,
+          "ms": 7.388957999999548
+        },
+        {
+          "status": 200,
+          "ms": 9.110666000000492
+        },
+        {
+          "status": 200,
+          "ms": 5.39587500000016
+        },
+        {
+          "status": 200,
+          "ms": 6.666999999999462
+        },
+        {
+          "status": 200,
+          "ms": 4.285333999999239
+        },
+        {
+          "status": 200,
+          "ms": 4.149042000000009
+        },
+        {
+          "status": 200,
+          "ms": 5.242416000000048
+        }
+      ],
+      "events": [
+        {
+          "action": "group.disabled",
+          "json_bytes": 3130836,
+          "users": 10000
+        }
+      ]
+    },
+    {
+      "size": 10000,
+      "name": "group-enable",
+      "elapsedMs": 729.1812080000009,
+      "rssBefore": 342491136,
+      "rssSampledMax": 344915968,
+      "maxTimerGapMs": 20.271958999999697,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 709.8349589999998,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 4.02087500000016
+        },
+        {
+          "status": 200,
+          "ms": 9.535167000000001
+        },
+        {
+          "status": 200,
+          "ms": 6.9473330000000715
+        },
+        {
+          "status": 200,
+          "ms": 4.680000000000291
+        },
+        {
+          "status": 200,
+          "ms": 4.651458000000275
+        },
+        {
+          "status": 200,
+          "ms": 11.292374999999993
+        },
+        {
+          "status": 200,
+          "ms": 13.049334000000272
+        },
+        {
+          "status": 200,
+          "ms": 13.334334000000126
+        },
+        {
+          "status": 200,
+          "ms": 27.377416999999696
+        },
+        {
+          "status": 200,
+          "ms": 13.312665999999808
+        },
+        {
+          "status": 200,
+          "ms": 16.465707999999722
+        },
+        {
+          "status": 200,
+          "ms": 8.525583000000552
+        },
+        {
+          "status": 200,
+          "ms": 19.14087500000005
+        },
+        {
+          "status": 200,
+          "ms": 11.690292000000227
+        },
+        {
+          "status": 200,
+          "ms": 9.366667000000234
+        },
+        {
+          "status": 200,
+          "ms": 12.547625000000153
+        },
+        {
+          "status": 200,
+          "ms": 13.137832999999773
+        },
+        {
+          "status": 200,
+          "ms": 8.249374999999418
+        },
+        {
+          "status": 200,
+          "ms": 5.914375000000291
+        },
+        {
+          "status": 200,
+          "ms": 23.903792000000067
+        },
+        {
+          "status": 200,
+          "ms": 6.274916999999732
+        },
+        {
+          "status": 200,
+          "ms": 19.294334000000163
+        }
+      ],
+      "events": [
+        {
+          "action": "group.enabled",
+          "json_bytes": 3130836,
+          "users": 10000
+        }
+      ]
+    },
+    {
+      "size": 10000,
+      "name": "group-erase",
+      "elapsedMs": 687.0342499999997,
+      "rssBefore": 302383104,
+      "rssSampledMax": 306233344,
+      "maxTimerGapMs": 17.210541999999805,
+      "requests": [
+        {
+          "status": 204,
+          "ms": 660.46425,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 5.413083999999799
+        },
+        {
+          "status": 200,
+          "ms": 8.192250000000058
+        },
+        {
+          "status": 200,
+          "ms": 27.843708000000333
+        },
+        {
+          "status": 200,
+          "ms": 8.246082999999999
+        },
+        {
+          "status": 200,
+          "ms": 6.614709000000403
+        },
+        {
+          "status": 200,
+          "ms": 5.142707999999402
+        },
+        {
+          "status": 200,
+          "ms": 9.322416999999405
+        },
+        {
+          "status": 200,
+          "ms": 7.554082999999991
+        },
+        {
+          "status": 200,
+          "ms": 18.01025000000027
+        },
+        {
+          "status": 200,
+          "ms": 8.684291999999914
+        },
+        {
+          "status": 200,
+          "ms": 10.742667000000438
+        },
+        {
+          "status": 200,
+          "ms": 11.597792000000481
+        },
+        {
+          "status": 200,
+          "ms": 20.148583000000144
+        },
+        {
+          "status": 200,
+          "ms": 26.965666999999485
+        },
+        {
+          "status": 200,
+          "ms": 7.905874999999469
+        },
+        {
+          "status": 200,
+          "ms": 12.513207999999395
+        },
+        {
+          "status": 200,
+          "ms": 10.59650000000056
+        },
+        {
+          "status": 200,
+          "ms": 15.33733299999949
+        },
+        {
+          "status": 200,
+          "ms": 17.277665999999954
+        },
+        {
+          "status": 200,
+          "ms": 5.644207999999708
+        }
+      ],
+      "events": [
+        {
+          "action": "group.erased",
+          "json_bytes": 3130637,
+          "users": 10000
+        }
+      ]
+    },
+    {
+      "size": 10000,
+      "name": "eight-same-tenant-commands",
+      "elapsedMs": 2986.1394580000006,
+      "rssBefore": 299597824,
+      "rssSampledMax": 305676288,
+      "maxTimerGapMs": 23.341667000000598,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 468.4254999999994,
+          "replayed": "false"
+        },
+        {
+          "status": 503,
+          "ms": 1020.5191659999991,
+          "replayed": null,
+          "code": "database_busy"
+        },
+        {
+          "status": 503,
+          "ms": 1020.5214999999989,
+          "replayed": null,
+          "code": "database_busy"
+        },
+        {
+          "status": 200,
+          "ms": 1901.7977920000012,
+          "replayed": "false"
+        },
+        {
+          "status": 200,
+          "ms": 852.3471659999996,
+          "replayed": "false"
+        },
+        {
+          "status": 200,
+          "ms": 1445.1642080000001,
+          "replayed": "false"
+        },
+        {
+          "status": 200,
+          "ms": 2504.194708000001,
+          "replayed": "false"
+        },
+        {
+          "status": 200,
+          "ms": 2962.803917,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 11.179707999999664
+        },
+        {
+          "status": 503,
+          "ms": 1001.5942080000004
+        },
+        {
+          "status": 200,
+          "ms": 397.94587499999943
+        },
+        {
+          "status": 200,
+          "ms": 22.695166999999856
+        },
+        {
+          "status": 200,
+          "ms": 7.07745900000009
+        },
+        {
+          "status": 200,
+          "ms": 8.632832999999664
+        },
+        {
+          "status": 200,
+          "ms": 9.423333000000639
+        },
+        {
+          "status": 200,
+          "ms": 59.60245800000121
+        },
+        {
+          "status": 200,
+          "ms": 8.365958999998838
+        },
+        {
+          "status": 200,
+          "ms": 10.013417000000118
+        },
+        {
+          "status": 200,
+          "ms": 13.881209000001036
+        },
+        {
+          "status": 200,
+          "ms": 17.720124999999825
+        },
+        {
+          "status": 200,
+          "ms": 9.968458000001192
+        },
+        {
+          "status": 200,
+          "ms": 10.3231250000008
+        },
+        {
+          "status": 200,
+          "ms": 4.995999999999185
+        },
+        {
+          "status": 200,
+          "ms": 13.4045410000017
+        },
+        {
+          "status": 200,
+          "ms": 5.593249999999898
+        },
+        {
+          "status": 200,
+          "ms": 19.454250000000684
+        },
+        {
+          "status": 200,
+          "ms": 13.252250000001368
+        },
+        {
+          "status": 200,
+          "ms": 10.437459000000672
+        },
+        {
+          "status": 200,
+          "ms": 9.379875000000538
+        },
+        {
+          "status": 200,
+          "ms": 8.90350000000035
+        },
+        {
+          "status": 200,
+          "ms": 7.967916999999943
+        },
+        {
+          "status": 200,
+          "ms": 7.011707999999999
+        },
+        {
+          "status": 200,
+          "ms": 8.067500000001019
+        },
+        {
+          "status": 200,
+          "ms": 7.845916000000216
+        },
+        {
+          "status": 200,
+          "ms": 7.1458330000004935
+        },
+        {
+          "status": 200,
+          "ms": 6.12512500000048
+        },
+        {
+          "status": 200,
+          "ms": 7.1536249999990105
+        },
+        {
+          "status": 200,
+          "ms": 8.338999999999942
+        },
+        {
+          "status": 200,
+          "ms": 6.82458299999962
+        },
+        {
+          "status": 200,
+          "ms": 4.300166999999419
+        },
+        {
+          "status": 200,
+          "ms": 5.574415999999474
+        },
+        {
+          "status": 200,
+          "ms": 4.751292000000831
+        },
+        {
+          "status": 200,
+          "ms": 4.7644580000014685
+        },
+        {
+          "status": 200,
+          "ms": 13.907791999999972
+        },
+        {
+          "status": 200,
+          "ms": 7.862124999999651
+        },
+        {
+          "status": 200,
+          "ms": 4.2121250000000146
+        },
+        {
+          "status": 200,
+          "ms": 7.0416669999995065
+        },
+        {
+          "status": 200,
+          "ms": 43.23083299999962
+        },
+        {
+          "status": 200,
+          "ms": 4.956415999999081
+        },
+        {
+          "status": 200,
+          "ms": 10.852208000000246
+        },
+        {
+          "status": 200,
+          "ms": 7.5072500000005675
+        },
+        {
+          "status": 200,
+          "ms": 9.612291999999798
+        },
+        {
+          "status": 200,
+          "ms": 5.048792000001413
+        },
+        {
+          "status": 200,
+          "ms": 17.504499999999098
+        },
+        {
+          "status": 200,
+          "ms": 24.491250000000946
+        },
+        {
+          "status": 200,
+          "ms": 8.051832999999533
+        }
+      ],
+      "events": [
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 2610657,
+          "users": 10000
+        },
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 2610657,
+          "users": 10000
+        },
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 2610657,
+          "users": 10000
+        },
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 2610657,
+          "users": 10000
+        },
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 2610657,
+          "users": 10000
+        },
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 2610657,
+          "users": 10000
+        }
+      ]
+    },
+    {
+      "size": 10000,
+      "name": "recovery-1",
+      "elapsedMs": 516.4700840000005,
+      "rssBefore": 289800192,
+      "rssSampledMax": 296271872,
+      "maxTimerGapMs": 22.368333000000348,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 493.63774999999987,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 7.883584000001065
+        },
+        {
+          "status": 200,
+          "ms": 13.183583999998518
+        },
+        {
+          "status": 200,
+          "ms": 6.360082999999577
+        },
+        {
+          "status": 200,
+          "ms": 11.518959000000905
+        },
+        {
+          "status": 200,
+          "ms": 13.994166999998924
+        },
+        {
+          "status": 200,
+          "ms": 6.034250000000611
+        },
+        {
+          "status": 200,
+          "ms": 5.951999999999316
+        },
+        {
+          "status": 200,
+          "ms": 9.30987499999901
+        },
+        {
+          "status": 200,
+          "ms": 5.977875000000495
+        },
+        {
+          "status": 200,
+          "ms": 7.277250000001004
+        },
+        {
+          "status": 200,
+          "ms": 6.147624999999607
+        },
+        {
+          "status": 200,
+          "ms": 5.773124999999709
+        },
+        {
+          "status": 200,
+          "ms": 6.651832999999897
+        },
+        {
+          "status": 200,
+          "ms": 6.0792920000003505
+        },
+        {
+          "status": 200,
+          "ms": 17.242582999999286
+        },
+        {
+          "status": 200,
+          "ms": 7.119666000000507
+        },
+        {
+          "status": 200,
+          "ms": 15.642542000001413
+        }
+      ],
+      "events": [
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 2610657,
+          "users": 10000
+        }
+      ]
+    },
+    {
+      "size": 10000,
+      "name": "recovery-2",
+      "elapsedMs": 444.376083000001,
+      "rssBefore": 296271872,
+      "rssSampledMax": 296648704,
+      "maxTimerGapMs": 18.447374999999738,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 416.7281669999993,
+          "replayed": "false"
+        }
+      ],
+      "probes": [
+        {
+          "status": 200,
+          "ms": 8.961457999999766
+        },
+        {
+          "status": 200,
+          "ms": 9.674791999999798
+        },
+        {
+          "status": 200,
+          "ms": 4.878875000000335
+        },
+        {
+          "status": 200,
+          "ms": 4.034042000001136
+        },
+        {
+          "status": 200,
+          "ms": 5.8729999999995925
+        },
+        {
+          "status": 200,
+          "ms": 50.24908299999879
+        },
+        {
+          "status": 200,
+          "ms": 7.146792000001369
+        },
+        {
+          "status": 200,
+          "ms": 6.74579199999971
+        },
+        {
+          "status": 200,
+          "ms": 15.195959000000585
+        },
+        {
+          "status": 200,
+          "ms": 13.355207999999038
+        },
+        {
+          "status": 200,
+          "ms": 16.98041699999885
+        },
+        {
+          "status": 200,
+          "ms": 12.751957999998922
+        },
+        {
+          "status": 200,
+          "ms": 4.082083000001148
+        }
+      ],
+      "events": [
+        {
+          "action": "entitlement.disabled",
+          "json_bytes": 2610657,
+          "users": 10000
+        }
+      ]
+    }
+  ]
+}

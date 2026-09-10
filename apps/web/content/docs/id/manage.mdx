@@ -29,7 +29,7 @@ curl https://id.answerable.org/auth/oauth2/token \
 | `platform:users` | Staff: manage users, member windows, removals and session revocation.                                |
 | `platform:write` | Staff: manage organisations, domains, SSO, groups, clients, resources and entitlements.              |
 | `org:read`       | Read your organisation, domains, SSO, members, groups, entitlements, target access and audit events. |
-| `org:users`      | Change member windows, remove members, read member access, and list or revoke member sessions.       |
+| `org:users`      | Change member windows, revoke or reinstate membership, and read member access.                       |
 | `org:write`      | Reserved for organisation configuration; self-service writes: [Not yet.](/docs/id#today-and-next)    |
 
 **Route tiers.** `x-tier: platform` means staff only; `x-tier: tenant` permits an organisation to reach the route for itself. Scopes are separate: request each scope you need. Every write is audited.
@@ -54,6 +54,8 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORGANIZATION_ID/memb
 
 **Member IDs.** Set `MEMBER_ID` to an ID from `items` to read that member's access.
 
+**Current permission.** Member list and detail reads recheck `org:read` inside their database transaction. The configuration view rechecks `org:users` and excludes profile fields. These responses use `Cache-Control: no-store`; a membership revoked before the read transaction cannot authorise that read. Organisation detail/summary, SSO provider, group, group-member, domain and tenant entitlement reads also recheck `org:read` (or staff `platform:read`) inside their transaction and return `no-store`.
+
 ## Read a member's access
 
 ```bash
@@ -68,7 +70,38 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORGANIZATION_ID/memb
   -H "Authorization: Bearer $TOKEN"
 ```
 
-**Required scope.** This view needs `org:users`. It returns the member's effective access through their current grants.
+**Required scope.** This view needs `org:users` (or `platform:read` for staff). It returns assignments from effective membership, organisation and group sources. `effective` describes the member/user/organisation state; it does not mean every assigned target is permitted. Member-access and target-access reads recheck current authority inside their database transaction and return `Cache-Control: no-store`. Target-access reads require `org:read` or `platform:read`. A resource private to another organisation returns `404 not_found`, as does a missing resource, including when a client/resource pair is requested. Shared resources and this organisation’s private resources remain valid targets; their registration alone does not grant access.
+
+**Assigned scopes and permission.** Each target's top-level `scopes` and `via` describe its assignments. Every target also has `permission`, evaluated from current capability ceilings, endpoint configuration and assignment sources. `permission.scopes` contains the approved scopes and can be narrower than the assigned scopes. Allowed decisions include the evaluation time, policy version, membership and contributing capability/assignment revisions.
+
+**Decision identity.** An allowed permission includes `reason: "approved"`, `subjectType: "user"`, its `grantType`, tenant UUID/authorization version, and `subject.userId`/`subject.memberId`. The client snapshot contains its immutable UUID, public ID, revision, authorization version and scope ceiling. The resource snapshot contains its immutable UUID, identifier, revision and scope ceiling. Login has `resource: null`; direct administration has `client: null` and `grantType: "admin_session"`. Access views use `requestedScopes: null` because they calculate the permitted intersection rather than authorising a particular token request.
+
+**Limited public denials.** A denied `permission` contains only `allowed: false` and its coarse `reason`. Internal native policy decisions can retain the trusted identity snapshot, requested scopes and available effective sources for a located grant context. Missing or mismatched grant contexts return a context denial without fabricating an identity. Those internal facts are not returned through public denial views and are not yet production user-grant audit records.
+
+**Removal history.** Member-removal audits already retain this public access projection under `data.before.access`. New allowed snapshots therefore include these identity fields; older version 1 audit rows remain unchanged and can lack them. Internal denied snapshots are not copied into that public projection.
+
+**Unattributed machine attempts.** Version 3 `oauth.token.rejected` records failed client authentication with system actor `oauth-client-authentication`, no tenant, and null `data.authenticatedClient` and `data.decision`. Invalid credentials produce a denial; authentication infrastructure errors produce a failure. These events are platform-only and omit supplied identity, credentials, scope/resource values and exception details. Audit-storage failure preserves rejection and emits the fixed operational signal `token_rejection_audit_unavailable`. Requests rejected by parsing, route filtering or provider rate limiting before this handler are outside this event contract.
+
+**Membership history.** Version 2 `member.updated`, `member.removed`, `member.removal_unchanged`, `member.reinstated` and `member.reinstatement_unchanged` events retain this access projection under both `data.before.access` and `data.after.access`. `permission.scopes` is the approved intersection; top-level target scopes remain assignments. Removal records ineffective access after revocation even if organisation-wide assignments survive; its actual deletion/revocation effects remain separately recorded. Reinstatement can restore an organisation-wide permission without recreating removed direct assignments. An unchanged reinstatement means the membership was already active, not that every permission was unchanged.
+
+**Observation limits.** These reads share the membership command transaction and tenant lock. Each is a separate database statement: elapsed validity windows and independently changed endpoint configuration can affect the result. Allowed decisions retain their evaluation time and source revisions. An empty snapshot has no allowed target decision; it does not carry a fabricated decision time. These observations are not an isolated causal delta, token issuance evidence or proof of remote session termination. Audit/subject failure rolls back the membership change and operation receipt; replay returns the original result without another event. Version 1 history is not backfilled.
+
+| Target            | Permission being explained                                            | Scope meaning                                                                             |
+| ----------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `client`          | Application login admission, shared with native user-resource policy. | Approved client-login scopes.                                                             |
+| `client_resource` | Authorization-code permission for this exact pair.                    | Approved resource scopes; identity scopes are kept separate.                              |
+| `resource`        | Direct session administration through an `admin_session` capability.  | Approved administrator scopes. Only the bound ID admin resource can have this capability. |
+
+An assignment can stay in the response with `permission.allowed: false`. Target-access pagination includes these denied assignments, so an administrator can diagnose them without losing their place in the list. A legacy resource-only assignment for another resource does not grant OAuth access; replace it with explicitly approved client/resource pairs.
+
+| Denial reason | Meaning                                                                               | What to check                                                                                                                                         |
+| ------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `context`     | The current member or endpoint prerequisites are not satisfied.                       | Client/resource enabled state and ownership. Login and pair requests require authorization-code support; a pair also requires its compatibility link. |
+| `login`       | Current client-login assignment and capability scopes do not permit admission.        | The tenant's client-only assignment and platform-approved login ceiling. Pair assignments cannot substitute.                                          |
+| `capability`  | No effective capability exists for the requested pair or direct administrator target. | The tenant, target, grant kind and capability validity window. Direct administration requires the bound ID admin resource.                            |
+| `scope`       | The current permitted scope intersection is empty.                                    | Endpoint vocabulary, capability and applicable assignment scopes.                                                                                     |
+
+**A diagnostic is not admission.** Login and pair views describe authorization-code permission at read time; direct-administrator views use the same calculation as administrative grant lookup and root writer detection. A view supplies no authentication or consent, checks no particular stored grant's original scopes and does not approve refresh. A later command or grant rechecks its own context and current policy. Public user OAuth remains closed. See the [release work](/docs/id/onboard) for the remaining requirements.
 
 ## List audit events
 
@@ -81,32 +114,89 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORGANIZATION_ID/audi
 
 **Time filter.** `from` accepts a UTC timestamp. The response contains only your organisation's events.
 
+**Current authority and retained history.** The organisation read transaction rechecks `org:read` or staff `platform:read`. Fleet-wide and user audit reads require current `platform:read` inside their own transaction. Responses use `Cache-Control: no-store`. Authorised staff can still read retained events after organisation erasure. An unknown organisation with no retained history returns 404; erasure does not bypass permission checks.
+
+**Client-resource links.** Version 2 `client.resource_linked`, `client.resource_unlinked` and `client.resource_unchanged` events record `resourceInstanceId`, `resourceClassification` and `resourceOrganizationId` alongside the resource identifier and link before/after state. Links to shared resources or resources owned by the client's organisation appear in that organisation's history. A foreign private resource, an unknown target on unlink, or a client without an organisation produces a platform-only event.
+
+**Older link history.** Organisation history excludes other versions of these three link actions before filtering pages. Their visibility was not established by the old payload, so the service does not guess from current resource rows. Platform auditors can retrieve the unchanged records through `/api/admin/v1/audit-events`, including after target erasure. This restriction also applies to staff using the organisation endpoint; use the platform endpoint for the complete retained record.
+
+## Read machine issuance evidence
+
+```bash
+curl "https://id.answerable.org/api/admin/v1/organizations/$ORGANIZATION_ID/audit-events?action=oauth.token.issued" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Version 2.** New machine issuance records store `data.decision` plus `data.issuedAt` and `data.expiresAt`. The decision contains its approved outcome, grant and subject type, tenant UUID/version, client UUID/public ID/revision/version, resource UUID/identifier/revision, scope ceilings, approved scopes, and contributing capability ID/revision/window. `decision.evidence.evaluatedAt` is the database evaluation instant; `policyVersion` identifies the permission calculation and is separate from the event payload's `schemaVersion`.
+
+**Requested scopes.** `decision.requestedScopes: null` means the request omitted `scope` and the policy selected the permitted intersection. An explicit request is stored as a sorted, deduplicated list. `decision.scopes` is the approved result.
+
+**Matching the token.** Before recording success or returning the token, issuance checks the signed client ID, subject, audience, immutable client/tenant identity, authorization versions and scope set against that decision. A mismatch returns 500, releases no token and rolls back the transaction. Audit storage failure retains its `503 temporarily_unavailable` response. This protects the issuance integration from producing evidence for different authority; it is not an authentication endpoint for arbitrary JWTs.
+
+**Retained history.** Version 1 machine records keep their original flat fields and `data.policy`; version 2 records use `data.decision`. Readers must support both. The snapshot is not reconstructed from later client/resource configuration. Neither format contains bearer tokens or client secrets. Complete denial decision snapshots and production user-issuance evidence remain unfinished.
+
+## Read rejected machine requests
+
+```bash
+curl "https://id.answerable.org/api/admin/v1/organizations/$ORGANIZATION_ID/audit-events?action=oauth.token.rejected" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**After credential verification.** A rejected machine request records a version 2 `oauth.token.rejected` event after its issuance transaction exits with an error. Its actor and tenant come from the provider-authenticated client. `data.authenticatedClient` retains the immutable client UUID, public ID and owner UUID from that authentication; these identify the attempt and do not prove that the client still has authority. No token was released by this request.
+
+**Outcome and stage.** `denied` identifies a protocol rejection with a 4xx status; `failure` identifies an operational or unexpected failure. `reason` retains an allowlisted OAuth error code, otherwise `request_rejected` or `issuance_failed`. `data.stage` distinguishes request validation, authorisation and issuance. The event excludes rejected request scopes, untrusted targets, foreign private resource configuration, secrets, assertions and tokens. A `failure` does not prove that PostgreSQL rejected a commit: if a commit acknowledgement is lost, inspect retained issuance evidence before drawing that conclusion.
+
+**Evaluated policy.** `data.decision` retains the decision returned before the failed issuance transaction exited. A scope denial includes the trusted tenant/client/resource revisions, ceilings and eligible capability; rejected scope values are omitted. No eligible capability produces a minimal `unauthorized_client` decision with an empty capability list, not a diagnosis of missing versus disabled or expired policy. Failure before evaluation records null. A later issuance failure can carry an approved decision and approved requested scopes; approval is not proof of a committed or delivered token. Version 1 history has no decision snapshot and is not rewritten.
+
+**Audit outage.** If recording the rejection also fails, the original error still reaches the caller. The service emits the safe `token_rejection_audit_unavailable` operational signal. There is no retry queue or guarantee of a durable failed-attempt record during a database outage.
+
+**Not yet.** Requests rejected before successful credential verification, including transport validation and unsupported grant types, are outside this event's coverage. An unverified client ID is never used to attribute an event to a tenant. Production user-grant outcome auditing is also unfinished.
+
+## Request boundaries
+
+**Body limits.** Send at most 262,144 bytes (256 KiB) in the encoded request body. Answerable ID counts received bytes, including streamed bodies, before parsing, authentication or administrative work. The body must finish within five seconds after application body acquisition starts. This deadline does not cover headers, authentication, database execution or the complete HTTP request.
+
+| Status              | Meaning                                      | What to do                                                                          |
+| ------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------- |
+| 413                 | The body exceeds 256 KiB.                    | Reduce the payload. Split independent work into separate commands when appropriate. |
+| 408                 | The body did not finish within five seconds. | Send a complete body in a new request.                                              |
+| 400 with plain text | The body stream could not be read.           | Check the connection and send a complete request.                                   |
+
+These transport errors can be plain text rather than OAuth JSON or problem details. Bun may reject a declared oversized body before application headers are set; do not require a request ID or CORS headers on that response. A body rejection starts no command and adds no operation reservation or audit fact. It does not remove an already committed reservation for the same operation key.
+
+**Correlation IDs.** `x-request-id` accepts 1–128 ASCII letters, digits, dots, underscores, colons or hyphens. Missing, empty, oversized or otherwise invalid values are replaced with a UUIDv7. The accepted/generated value is used consistently by the response, provider and application audit context. It is caller-controlled correlation, not proof of identity or an idempotency key.
+
+**Rejected callback attribution.** A failed SSO callback does not verify the `providerId` query parameter or `x-forwarded-for` header. New rejection events leave `targetId` and `ip` null. Existing history is not rewritten. Administrative HTTP events and new sign-in/sign-out events also omit IP attribution. New sessions store a null IP; legacy session IPs are not copied into new audit events. Existing session/audit IP values are unverified historical metadata and must not establish client origin. User-agent is caller-supplied metadata. A verified ingress rule remains [release work](/docs/id/onboard).
+
+**Bounded audit metadata.** New HTTP/session audit user-agent values contain at most 512 printable ASCII characters. Empty, oversized, control-character and non-ASCII values are omitted, not truncated; user-agent never proves identity. Callback rejection events with `schemaVersion: 2` contain a recognised failure category or `sso_callback_failed` for an unknown error. Free-form `error_description` is not retained. Older events may contain it. These categories describe reported callback failures, not a verified provider identity or independently established root cause.
+
+**Not yet.** Per-tenant/client/IP rate limits, cluster-wide admission limits and database execution bounds are not established by these body limits. Transport rejections are outside durable failed-attempt auditing.
+
 ## What you can do today
 
 Paths below start at `/api/admin/v1`; `{org}` means your organisation ID.
 
-| Family            | Tenant-tier routes                                                                                                                  | Scope                       |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
-| Caller            | `GET /me`                                                                                                                           | Any authenticated principal |
-| Organisation      | `GET /organizations/{org}`                                                                                                          | `org:read`                  |
-| Summary           | `GET /organizations/{org}/summary`                                                                                                  | `org:read`                  |
-| Sign-in diagnosis | `GET /organizations/{org}/sign-in-diagnosis?email=…`                                                                                | `org:users`                 |
-| Domains           | `GET /organizations/{org}/domains`                                                                                                  | `org:read`                  |
-| SSO provider      | `GET /organizations/{org}/sso-provider` (secret redacted)                                                                           | `org:read`                  |
-| Members           | `GET /organizations/{org}/members`, `GET /organizations/{org}/members/{memberId}`                                                   | `org:read`                  |
-| Member changes    | `PATCH /organizations/{org}/members/{memberId}` (window), `DELETE /organizations/{org}/members/{memberId}`                          | `org:users`                 |
-| Member sessions   | `GET` and `DELETE /organizations/{org}/members/{memberId}/sessions`                                                                 | `org:users`                 |
-| Groups            | `GET /organizations/{org}/groups`, `GET /organizations/{org}/groups/{groupId}`, `GET /organizations/{org}/groups/{groupId}/members` | `org:read`                  |
-| Entitlements      | `GET /organizations/{org}/entitlements`, `GET /organizations/{org}/entitlements/{entitlementId}`                                    | `org:read`                  |
-| Member access     | `GET /organizations/{org}/members/{memberId}/access`                                                                                | `org:users`                 |
-| Target access     | `GET /organizations/{org}/access?clientId=…` or `?resource=…`                                                                       | `org:read`                  |
-| Audit events      | `GET /organizations/{org}/audit-events`                                                                                             | `org:read`                  |
+| Family            | Tenant-tier routes                                                                                                                                                                                  | Scope                       |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| Caller            | `GET /me`                                                                                                                                                                                           | Any authenticated principal |
+| Organisation      | `GET /organizations/{org}`                                                                                                                                                                          | `org:read`                  |
+| Summary           | `GET /organizations/{org}/summary`                                                                                                                                                                  | `org:read`                  |
+| Sign-in diagnosis | `GET /organizations/{org}/sign-in-diagnosis?email=…`                                                                                                                                                | `org:users`                 |
+| Domains           | `GET /organizations/{org}/domains`                                                                                                                                                                  | `org:read`                  |
+| SSO provider      | `GET /organizations/{org}/sso-provider` (secret redacted)                                                                                                                                           | `org:read`                  |
+| Members           | `GET /organizations/{org}/members`, `GET /organizations/{org}/members/{memberId}`                                                                                                                   | `org:read`                  |
+| Member changes    | `PATCH /organizations/{org}/members/{memberId}` (window), `DELETE /organizations/{org}/members/{memberId}`                                                                                          | `org:users`                 |
+| Groups            | `GET /organizations/{org}/groups`, `GET /organizations/{org}/groups/{groupId}`, `GET /organizations/{org}/groups/{groupId}/members`, `GET /organizations/{org}/groups/{groupId}/members/{memberId}` | `org:read`                  |
+| Entitlements      | `GET /organizations/{org}/entitlements`, `GET /organizations/{org}/entitlements/{entitlementId}`                                                                                                    | `org:read`                  |
+| Member access     | `GET /organizations/{org}/members/{memberId}/access`                                                                                                                                                | `org:users`                 |
+| Target access     | `GET /organizations/{org}/access?clientId=…` or `?resource=…`                                                                                                                                       | `org:read`                  |
+| Audit events      | `GET /organizations/{org}/audit-events`                                                                                                                                                             | `org:read`                  |
 
 See the staff runbook for [summary fields](/docs/id/onboard#read-an-organisation) and [diagnosis verdicts](/docs/id/onboard#why-cant-someone-sign-in).
 
 ## Use it from an agent
 
-**Contract.** Load [the admin OpenAPI document](https://id.answerable.org/api/admin/openapi.json). Operation IDs are tool names; `x-kind` marks `read`, `write` and `erase`, and `x-scopes` names the platform scope and optional organisation scope a tool needs. `/me` is available to any authenticated principal even with no grants. Erasures require `confirm` equal to the target identifier.
+**Contract.** Load [the admin OpenAPI document](https://id.answerable.org/api/admin/openapi.json). Operation IDs are tool names; `x-kind` marks `read`, `write` and `erase`, and `x-scopes` names fixed platform/organisation scopes; `x-scope-alternatives` lists acceptable handler-checked alternatives. Read each self-service operation description for ownership and context checks. `/me` is available to any authenticated principal even with no grants. Erasures require `confirm` equal to the target identifier.
 
 Every [operation page](/docs/id/admin-api) has a Markdown twin: append `.md` to its URL or send `Accept: text/markdown`. [/llms.txt](/llms.txt) indexes the docs and [/llms-full.txt](/llms-full.txt) contains them.
 
@@ -150,7 +240,7 @@ Every [operation page](/docs/id/admin-api) has a Markdown twin: append `.md` to 
 | `user_disabled`         | The session's user account is disabled.                        | Ask Answerable staff to review the account.                            |
 | `origin_required`       | Cookie-authenticated writes need an `Origin`.                  | Send the trusted browser origin or use a bearer token.                 |
 | `untrusted_origin`      | The origin is not allowed.                                     | Use an approved origin; ask staff to check the allowlist.              |
-| `client_unowned`        | The client has no owning organisation.                         | Ask staff to assign its owner, then obtain a new token.                |
+| `client_unowned`        | The client has no owning organisation.                         | Ask staff for a replacement client created with the correct owner.     |
 | `organization_disabled` | The client's organisation is disabled.                         | Ask staff to review the organisation.                                  |
 | `reference_violation`   | A related record is missing or still referenced.               | Check related IDs and remove dependencies before erasure.              |
 | `constraint_violation`  | A value breaks a data constraint.                              | Check the field requirements and effective windows.                    |
@@ -159,34 +249,116 @@ Every [operation page](/docs/id/admin-api) has a Markdown twin: append `.md` to 
 
 **Staff lifecycle errors.** These apply to platform writes.
 
-| Code                            | Meaning                                         | What to do                                         |
-| ------------------------------- | ----------------------------------------------- | -------------------------------------------------- |
-| `organization_already_active`   | Organisation is already enabled.                | Keep its current state.                            |
-| `organization_already_disabled` | Organisation is already disabled.               | Keep its current state.                            |
-| `organization_has_clients`      | Owned clients prevent erasure.                  | Reassign or erase the clients before erasure.      |
-| `domain_already_active`         | Domain is already enabled.                      | Keep its current state.                            |
-| `domain_already_disabled`       | Domain is already disabled.                     | Keep its current state.                            |
-| `group_already_active`          | Group is already enabled.                       | Keep its current state.                            |
-| `group_already_disabled`        | Group is already disabled.                      | Keep its current state.                            |
-| `group_directory_managed`       | Group membership comes from a directory.        | Change membership in the upstream directory.       |
-| `entitlement_already_active`    | Entitlement is already enabled.                 | Keep its current state.                            |
-| `entitlement_already_disabled`  | Entitlement is already disabled.                | Keep its current state.                            |
-| `client_already_active`         | Client is already enabled.                      | Keep its current state.                            |
-| `client_already_disabled`       | Client is already disabled.                     | Keep its current state.                            |
-| `client_has_entitlements`       | Entitlements prevent client erasure.            | Remove all referencing entitlements first.         |
-| `provider_not_found`            | No provider exists for the SSO test.            | Ask staff to configure the provider.               |
-| `client_has_no_secret`          | Client does not use a shared secret.            | Check the client's authentication method.          |
-| `resource_already_active`       | Resource is already enabled.                    | Keep its current state.                            |
-| `resource_already_disabled`     | Resource is already disabled.                   | Keep its current state.                            |
-| `resource_protected`            | The admin resource cannot be changed this way.  | Leave the protected resource in place.             |
-| `resource_has_entitlements`     | Entitlements prevent resource erasure.          | Remove those entitlements first.                   |
-| `user_already_active`           | User is already active.                         | Keep its current state.                            |
-| `user_already_disabled`         | User is already disabled.                       | Keep its current state.                            |
-| `user_inert`                    | The imported user has not signed in.            | Let the user activate through their first sign-in. |
-| `user_not_disabled`             | Email retirement requires a disabled user.      | Disable the user first.                            |
-| `user_email_retired`            | Email retirement is terminal.                   | Do not try to re-enable this account.              |
-| `user_email_already_retired`    | Email is already retired.                       | Keep its current state.                            |
-| `confirmation_mismatch`         | Erasure confirmation does not match the target. | Check the target and send its exact identifier.    |
+| Code                        | Meaning                                                                             | What to do                                                    |
+| --------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `organization_has_clients`  | Owned clients prevent erasure.                                                      | Reassign or erase the clients before erasure.                 |
+| `group_directory_managed`   | Group membership comes from a directory.                                            | Change membership in the upstream directory.                  |
+| `client_has_entitlements`   | Entitlements prevent client erasure.                                                | Remove all referencing entitlements first.                    |
+| `provider_not_found`        | No provider exists for the SSO test.                                                | Ask staff to configure the provider.                          |
+| `client_has_no_secret`      | Client does not use a shared secret.                                                | Check the client's authentication method.                     |
+| `resource_protected`        | The admin resource cannot be changed this way.                                      | Leave the protected resource in place.                        |
+| `resource_has_clients`      | Client links prevent resource erasure.                                              | Explicitly unlink every client, then retry the erase command. |
+| `resource_has_entitlements` | Entitlements prevent resource erasure.                                              | Remove those entitlements first.                              |
+| `user_inert`                | The imported user has not signed in.                                                | Let the user activate through their first sign-in.            |
+| `user_not_disabled`         | Email retirement requires a disabled user.                                          | Disable the user first.                                       |
+| `user_email_retired`        | Email retirement is terminal.                                                       | Do not try to re-enable this account.                         |
+| `identifier_reserved`       | A client or resource identifier was used before and remains reserved after erasure. | Create the replacement with a new identifier.                 |
+| `ownership_conflict`        | A client owner cannot be changed, attached or removed after creation.               | Create a replacement client with the intended owner.          |
+| `confirmation_mismatch`     | Erasure confirmation does not match the target.                                     | Check the target and send its exact identifier.               |
+
+**Platform identity.** Grants returned by `/me` include `isPlatform`, derived from the persisted platform organisation ID. Organisation slugs are labels and do not confer platform authority.
+
+**Operation audit.** Filter platform or organisation audit history by `operationId` to trace a journalled client creation or rotation. Events expose `schemaVersion`: 0 identifies pre-migration rows, 1 identifies original event payloads, and `oauth.token.issued` version 2 carries the evaluated machine decision. Interpret the version together with the action; retained events are not rewritten. An unlinked event has `operationId: null`; old links are not reconstructed from timestamps. Client creation/update snapshots include selected security settings and omit raw JWK configuration. Rotation records its authorisation version change. Other action payloads remain in their existing formats.
+
+```bash
+curl "$ID_ORIGIN/api/admin/v1/audit-events?operationId=$OPERATION_ID" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+**Historical audit.** User and organisation audit endpoints can return retained history after erasure. A UUID with neither a live record nor retained history returns `not_found`. Person links captured before deletion survive through durable subject references; older missing links cannot be recovered. Platform user history also includes users named in recorded grant-erasure effects, even after their live rows are removed. These global events remain excluded from tenant history because their payload can contain other tenants' details. Older events without recorded affected-user IDs are not reconstructed.
+
+## Operation status
+
+```bash
+curl "$ID_ORIGIN/api/admin/v1/organizations/$ORGANIZATION_ID/operations/$OPERATION_ID" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+**Current receipt visibility.** Audit-wide operation reads recheck permission inside their transaction. Losing platform authority removes access to other actors' receipts, even if middleware admitted the request earlier. A remaining tenant permission allows only that actor's receipts in that tenant. Current platform readers can inspect retained receipts after organisation erasure. Operation-status responses use `Cache-Control: no-store`.
+
+**Committed operations** expose their applied/no-op outcome, original status and result reference. Tenant callers need `org:read` and can read only their own operations. Platform readers can inspect any actor through this route or `/api/admin/v1/operations/{operationId}`. Responses contain no secrets or request fingerprints. `replay` reports `reference`, `available` or `expired`; `replayExpiresAt` is null for reference-only records. Availability describes the stored payload, not whether the deployment has its decryption key.
+
+**Unknown or inaccessible operations** return `not_found`. This includes another actor's operation or an operation in another tenant. It does not prove that a concurrent request is not running. Status remains available after the referenced entity is erased, subject to current access.
+
+**Client creation and secret rotation** require `Idempotency-Key`. Reuse the same key and validated input after a lost response. Both routes recover the original response for up to 24 hours, subject to current authority. `Operation-Id` identifies the journal record; `Idempotency-Replayed: true` marks recovery. Status for these platform commands uses `/api/admin/v1/operations/{operationId}`.
+
+```bash
+curl -X POST "$ID_ORIGIN/api/admin/v1/clients/$CLIENT_ID/rotate-secret" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Idempotency-Key: $ROTATION_KEY"
+```
+
+**A new key is a new command.** For rotation, it replaces the secret again. A recovered creation response is historical; the client may since have been deleted. Replay never recreates it. Expired or purged responses cannot be recovered, and the old key never executes again. A machine rotating its own credential must retain an independent authorised recovery path: its old token is revoked by rotation.
+
+| Code                           | Meaning                                                                                                                       | What to do                                                                       |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `invalid_idempotency_key`      | The required key is absent or longer than 256 characters.                                                                     | Supply a stable key for the logical command.                                     |
+| `idempotency_key_reused`       | The key was committed with different input or target.                                                                         | Correct the input or choose a new key for a deliberate new command.              |
+| `database_busy`                | Tenant command admission is full, a connection checkout/lock/statement timed out, or PostgreSQL aborted a deadlocked command. | Wait for Retry-After, then retry the same key and input with backoff.            |
+| `operation_in_progress`        | A duplicate command is executing.                                                                                             | Retry the same key and input.                                                    |
+| `operation_result_expired`     | The recovery window closed or its payload was purged.                                                                         | Inspect the result reference; use a new key only for a deliberate new operation. |
+| `operation_replay_unavailable` | Encryption configuration or a decryption key is unavailable.                                                                  | Ask the operator to restore the configuration, then retry the same key.          |
+
+**Client configuration patches** also require a key, plus the ETag from `GET /clients/{clientId}`. Read the current registration and keep its ETag, then patch:
+
+```bash
+curl -i "$ID_ORIGIN/api/admin/v1/clients/$CLIENT_ID" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+
+# CLIENT_ETAG includes the quotes returned in the ETag header.
+curl -X PATCH "$ID_ORIGIN/api/admin/v1/clients/$CLIENT_ID" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $UPDATE_KEY" \
+  -H "If-Match: $CLIENT_ETAG" \
+  -d '{"name":"Renamed client"}'
+```
+
+**Retry with the original key, tag and body.** A committed patch recovers its original response for seven days, even if the client has since changed. A new command must use the current ETag. An unchanged patch records a `noop` and leaves its revision unchanged. Resource-link changes advance the client revision too. The response ETag belongs to that operation's result; read again to obtain current state.
+
+| Code                    | Meaning                                                                | What to do                                                               |
+| ----------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `precondition_required` | If-Match is absent (428).                                              | Read the client and supply its ETag.                                     |
+| `invalid_revision`      | The tag is malformed, weak, a wildcard or a list (400).                | Supply one quoted ETag exactly as returned.                              |
+| `revision_mismatch`     | A new command used an outdated revision or another client's tag (412). | Read current state, reconcile the patch and issue a new logical command. |
+
+**All other client mutations** require `Idempotency-Key` and recover for seven days: enable, disable, owner verification, resource link/unlink and erasure. Enable/disable and link/unlink return success with a `noop` operation when the requested state already holds. Ownership changes still return `ownership_conflict`.
+
+**A retry preserves history.** Replaying a link after it was removed returns its original result without restoring it. Replaying disable after enable does not disable the client again. Unlink and erasure replay their original bodyless `204`, even after client deletion. A new erasure key against a missing client returns `404`.
+
+**Resource mutations** also require `Idempotency-Key`, with seven-day recovery for creation, patches, enable/disable and erasure. Resource PATCH requires the ETag from `GET /resources/{resource}` in If-Match. URL-encode the resource identifier in the path. The same precondition errors and historical replay rules apply. Resource enable/disable commands record noops when the state already holds; the admin resource remains protected from disable and erasure. Link changes and client erasure advance affected resource revisions.
+
+**Administrative mutations.** All 49 current administrative mutations require operation keys and support result recovery. Revision checks apply to client, resource, member, organisation, group and entitlement patches.
+
+## Revoke and reinstate membership
+
+```bash
+curl -X DELETE "$ID_ORIGIN/api/admin/v1/organizations/$ORG_ID/members/$MEMBER_ID" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+
+curl -X POST "$ID_ORIGIN/api/admin/v1/organizations/$ORG_ID/members/$MEMBER_ID/reinstate" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+**Removal retains the membership identity.** Its `membershipStatus` becomes `revoked`, `revokedAt` records the time, and `effective` is false. The global user's `status` is separate. Removal deletes this membership's direct grants and group assignments; other memberships remain. Repeating removal leaves the original revocation time unchanged.
+
+**SSO does not reinstate access.** A revoked membership returns `membership_revoked`. An administrator with `org:users` for the organisation or platform user-management authority must explicitly reinstate it. Reinstatement preserves its validity window and does not restore deleted assignments. Global user or organisation erasure removes the membership; later enrolment follows the new-identity rules.
+
+| Code                 | Meaning                                                   | What to do                                                                   |
+| -------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `membership_revoked` | SSO admission or assignment to this membership is denied. | Have an authorised administrator review and explicitly reinstate membership. |
+
+**Complete tenant grant/session isolation: Not yet.** Membership commands already support operation-key replay. These changes establish admission and effective membership denial; they do not establish the complete offboarding contract.
 
 ## Pagination
 
@@ -195,3 +367,461 @@ Pass the returned `nextCursor` as `cursor` on the next request, keeping the same
 Stop when `nextCursor` is `null`.
 
 See the [admin API reference](/docs/id/admin-api) for request and response schemas.
+
+## Organisation disable
+
+**Machine access.** Disabling an organisation advances its authorization version and revokes stored machine access tokens for its owned clients. The admin API checks the version in each machine JWT against current organisation state. Re-enabling the organisation allows fresh tokens; it does not restore old ones. Tokens issued before the organisation-version claim was introduced must also be replaced.
+
+**Global sign-in.** Organisation disable preserves global browser sessions and unbound user tokens. A shared person can still use another organisation. An application's owner does not identify the tenant of every person using it. Stored grant contexts bound to the disabled organisation are irreversibly revoked; re-enable does not restore them. The audit records newly revoked IDs. Organisation erasure records deleted context IDs and affected users. These effects commit with the lifecycle audit or roll back together.
+
+**Remaining work: Not yet.** Production user OAuth, complete lifecycle/writer enforcement and tenant session views are part of the [foundation work](/docs/id#today-and-next). The former member-session GET/DELETE routes have been removed because they exposed and revoked global sessions. They return 404. Global session administration uses the platform-only `/users/{userId}/sessions` routes. Offline resource servers require expiry or an online check to observe a changed authorization version.
+
+**Tenant session API transition.** Remove calls to `/organizations/{org}/members/{memberId}/sessions`. Do not replace them with the platform user-session endpoint in tenant tools: that endpoint acts across organisations. For tenant offboarding, revoke the membership using [removeMember](/docs/id/admin-api/members/removeMember). Tenant grant/delegation views are Not yet; they require verified tenant-bound grant records.
+
+**Resource erasure requires unlinking.** Inspect the resource's client list, then use the [client unlink operation](/docs/id/admin-api/clients/unlinkClientResource) for each link before erasing the resource. `resource_has_clients` returns 409 and leaves the resource and its links intact. A failed erase does not reserve its operation key, so retrying that command after unlinking can commit normally. Client erasure still removes that client's links.
+
+**Member write authority.** Updating, removing or reinstating a member rechecks current authority inside the database transaction. The caller needs `platform:users`, or `org:users` for that organisation. A membership revoked after request admission cannot authorise the pending write. These member operations require `Idempotency-Key`; member PATCH also requires `If-Match` from the configuration read.
+
+## Retrying member commands
+
+```bash
+curl -X DELETE "$ID_URL/api/admin/v1/organizations/$ORG_ID/members/$MEMBER_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Idempotency-Key: $OPERATION_KEY"
+```
+
+Reuse the same operation key and input after a lost response. Member update, removal and reinstatement recover their original result for seven days, without repeating the mutation or its audit event. `Operation-Id` identifies the committed command; `Idempotency-Replayed: true` identifies recovery. A new key deliberately starts a new command; an already reached state produces a recorded no-op. Current authority is required for replay too.
+
+**Removal effects.** Removal revokes stored grant contexts for that membership and organisation in the same transaction as assignment removal and the audit event. The audit records the newly revoked context IDs. Reinstatement does not restore those contexts. Other organisations' contexts and the global browser session remain unchanged. Production user OAuth is **Not yet** available; token cleanup and other lifecycle writers remain part of the [foundation work](/docs/id#today-and-next).
+
+| Code                           | Meaning                                     | Action                                                                     |
+| ------------------------------ | ------------------------------------------- | -------------------------------------------------------------------------- |
+| `invalid_idempotency_key`      | Missing or invalid key                      | Supply a stable key of 1–256 characters                                    |
+| `operation_in_progress`        | The same command is still executing         | Retry the same key and input with backoff                                  |
+| `idempotency_key_reused`       | That key was committed for different input  | Recover the original command, or use a new key for a deliberate new change |
+| `operation_result_expired`     | Recovery data has expired or is unavailable | Inspect the operation reference; the original command will never run again |
+| `operation_replay_unavailable` | Replay encryption is unavailable            | Restore key configuration, then retry the same command                     |
+
+### Updating a member window
+
+```bash
+curl -i "$ID_URL/api/admin/v1/organizations/$ORG_ID/members/$MEMBER_ID/configuration" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Set MEMBER_ETAG to the quoted ETag returned above.
+curl -X PATCH "$ID_URL/api/admin/v1/organizations/$ORG_ID/members/$MEMBER_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $OPERATION_KEY" \
+  -H "If-Match: $MEMBER_ETAG" \
+  --data '{"validUntil":null}'
+```
+
+The [configuration read](/docs/id/admin-api/members/getMemberConfiguration) requires `platform:users` or the tenant's `org:users`. Its ETag describes membership identity, lifecycle and validity, excluding profile details, groups and clock-dependent access. The member detail response carries the revision but no configuration ETag.
+
+Reuse the original key, body and ETag after response loss: a committed replay is recovered before the stale revision check. A new stale command returns `revision_mismatch` (412); read current configuration and review it before submitting a new command. Missing `If-Match` returns `precondition_required` (428); weak, wildcard or malformed tags return `invalid_revision` (400). Unchanged window updates preserve the revision. Removal and reinstatement advance it, so reactivation cannot restore an old configuration ETag.
+
+See [member operations](/docs/id/admin-api/members/updateMember) and [operation status](/docs/id/admin-api/operations/getOrganizationOperationStatus).
+
+**Domain command retries.** Create, enable, disable and delete require `Idempotency-Key` and retain response recovery for seven days. Reuse the key and identical input after response loss. Lifecycle requests with a new key return unchanged state when already enabled/disabled and record a no-op. A committed deletion can be replayed after the row is gone. Creation still rejects an existing conflicting assignment; replay recovers the historical result and does not adopt another organisation's domain. Domain writes remain platform-only.
+
+**Organisation command retries.** Platform staff must send a stable `Idempotency-Key` for create, PATCH, enable, disable and erase. Identical authorised retries recover the original response for seven days, including after erasure; they do not recreate the organisation. New-key unchanged state records a noop. No-op disable preserves the existing tenant epoch and does not repeat revocation. Organisation PATCH requires the strong If-Match ETag returned by getOrganization; stale new commands return 412 and missing preconditions return 428. Keep the original tag with the original key on retry. Use the platform operation-status route for these receipts.
+
+**Edit organisation configuration.** Platform staff read the current ETag before a new PATCH. Copy the returned `ETag` into `ORGANISATION_ETAG`, including its quotes, and set `ORGANISATION_PATCH_KEY` once for this intended edit:
+
+```bash
+curl -i "$ID_URL/api/admin/v1/organizations/$ORG_ID" \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -X PATCH "$ID_URL/api/admin/v1/organizations/$ORG_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Idempotency-Key: $ORGANISATION_PATCH_KEY" \
+  -H "If-Match: $ORGANISATION_ETAG" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Updated organisation"}'
+```
+
+An unchanged patch preserves its ETag. Lifecycle and metadata changes invalidate older tags too. On 412, read the current organisation and review the edit before using a new key and tag; an identical retry uses the original pair and returns the committed response.
+
+**Expired operation keys.** After the recovery payload expires or is purged, an authorised retry returns `410 operation_result_expired`, even if its input differs. The key remains reserved and never executes again. Live results still reject changed input with `409 idempotency_key_reused`. Operators must retain prior replay keys through live recovery windows; a missing live key returns `503 operation_replay_unavailable`.
+
+**SSO command retries.** Platform staff must send Idempotency-Key for SSO PUT and delete. Redacted result recovery lasts seven days. A retry returns the original response; it does not replace later credentials or delete a newly recreated provider. Omitting clientSecret on a new PUT keeps the current secret. Repeating equivalent configuration under a new key records a noop and preserves timestamps. A different supplied secret under an existing live key conflicts. PUT requires exactly one precondition: If-None-Match: \* for creation, or the current provider ETag in If-Match for replacement. Missing headers return 428; stale state returns 412. Keep the original header with its operation key on retry.
+
+**Replace SSO configuration.** Read the redacted provider and copy its `ETag`, including quotes, into `SSO_ETAG`. Set `SSO_OPERATION_KEY` once for this intended replacement. Omitting the secret retains the stored value:
+
+```bash
+curl -i "$ID_URL/api/admin/v1/organizations/$ORG_ID/sso-provider" \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -X PUT "$ID_URL/api/admin/v1/organizations/$ORG_ID/sso-provider" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Idempotency-Key: $SSO_OPERATION_KEY" \
+  -H "If-Match: $SSO_ETAG" \
+  -H "Content-Type: application/json" \
+  -d '{"issuer":"https://login.example.com","domain":"example.com","oidc":{"clientId":"directory-client"}}'
+```
+
+For first creation, use `If-None-Match: *` instead of `If-Match`. Sending both headers is an error. On 412, read and review the current provider before a new command; old tags also fail after deletion and recreation. Secret changes advance the revision even though responses remain redacted.
+
+**Group command retries.** Platform staff must send Idempotency-Key for group create, PATCH, enable, disable and erase, and for group membership PUT/delete. The original result can be recovered for seven days. New-key unchanged configuration, lifecycle state or membership windows records a noop. Omitted window fields retain existing values. A removal retry cannot delete a later re-added assignment. Membership result references identify the group/member pair as `<group UUID>:<member UUID>`; these receipts use the platform operation-status route. Group PATCH requires the strong If-Match ETag from getGroup. Membership PUT requires If-None-Match: \* for creation or the getGroupMember ETag in If-Match for replacement.
+
+**Edit a group.** Read the group's ETag and copy it, including quotes, into `GROUP_ETAG`. Set `GROUP_PATCH_KEY` once for this intended edit:
+
+```bash
+curl -i "$ID_URL/api/admin/v1/organizations/$ORG_ID/groups/$GROUP_ID" \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -X PATCH "$ID_URL/api/admin/v1/organizations/$ORG_ID/groups/$GROUP_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Idempotency-Key: $GROUP_PATCH_KEY" \
+  -H "If-Match: $GROUP_ETAG" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Updated group"}'
+```
+
+Keep the original key and tag on retry. A new edit using an old tag returns 412; read and review current state before issuing another command. A group's tag covers its configuration, not its individual membership windows.
+
+### Group assignment identity
+
+Group membership write responses include an assignment `id` and `revision`. Updating a validity window keeps its ID; removing and re-adding the same member creates a new assignment ID. An unchanged window preserves its revision. The assignment revision is separate from group configuration.
+
+Read the stored assignment with [getGroupMember](/docs/id/admin-api/groups/getGroupMember). Supply its ETag in `If-Match` when replacing its window, or `If-None-Match: *` when creating an absent assignment. Exactly one precondition is required. Missing headers return 428, malformed or conflicting headers return 400, and stale or recreated assignments return 412. Keep the same `Idempotency-Key`, body and original precondition when retrying; successful recovery returns the original body and ETag, even after later changes.
+
+```bash
+ASSIGNMENT_ETAG=$(curl -sS -D - -o /dev/null \
+  "https://id.answerable.org/api/admin/v1/organizations/$ORG/groups/$GROUP/members/$MEMBER" \
+  -H "Authorization: Bearer $TOKEN" | awk 'tolower($1)=="etag:" {gsub("\r", "", $2); print $2}')
+
+curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$ORG/groups/$GROUP/members/$MEMBER" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Idempotency-Key: $ASSIGNMENT_UPDATE_KEY" \
+  -H "If-Match: $ASSIGNMENT_ETAG" \
+  -H "Content-Type: application/json" \
+  -d '{"validUntil":"2026-12-31T00:00:00Z"}'
+```
+
+Set `ASSIGNMENT_UPDATE_KEY` once for this command. Previously committed membership PUT receipts without a precondition stay reserved but cannot match the new request contract. Inspect operation status before deciding whether a new command is needed.
+
+### Entitlement retries
+
+Platform staff must send `Idempotency-Key` when creating, updating, enabling, disabling or removing entitlements. An authorised retry recovers its original response for seven days, including after removal. Reusing a live key with different input returns 409; expired recovery returns 410 without executing again. A new command with unchanged scopes, windows or status records a noop and preserves timestamps. Scopes are treated as a set.
+
+Entitlement PATCH requires the strong ETag from [getEntitlement](/docs/id/admin-api/entitlements/getEntitlement) in `If-Match`. Missing headers return 428; malformed tags return 400; stale or wrong-instance state returns 412. Noops preserve revisions. Lifecycle changes advance them. Keep the original tag, key and body on retry: recovery returns the original result before checking its old revision.
+
+```bash
+ENTITLEMENT_ETAG=$(curl -sS -D - -o /dev/null \
+  "https://id.answerable.org/api/admin/v1/organizations/$ORG/entitlements/$ENTITLEMENT" \
+  -H "Authorization: Bearer $TOKEN" | awk 'tolower($1)=="etag:" {gsub("\r", "", $2); print $2}')
+
+curl -X PATCH "https://id.answerable.org/api/admin/v1/organizations/$ORG/entitlements/$ENTITLEMENT" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Idempotency-Key: $ENTITLEMENT_UPDATE_KEY" \
+  -H "If-Match: $ENTITLEMENT_ETAG" \
+  -H "Content-Type: application/json" \
+  -d '{"scopes":["tutor:read"]}'
+```
+
+Set `ENTITLEMENT_UPDATE_KEY` once for this command. Older PATCH receipts without a precondition remain reserved but cannot match the new input contract; inspect operation status before deciding whether a new command is needed. Tenant configuration writes and user capability policy remain [Not yet.](/docs/id#today-and-next).
+
+### Fleet directory reads
+
+```bash
+curl "$ID_URL/api/admin/v1/platform/summary" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+**Current platform authority.** Client/resource list and detail, fleet summary, organisation listing and fleet-wide entitlement listing require current `platform:read` inside their read transaction. Tenant permissions cannot authorise these reads. Responses use `Cache-Control: no-store`; existing filters and pagination are unchanged.
+
+**Global lifecycle authority.** Disabling, enabling or retiring a user email and revoking global sessions require current `platform:users` at the command boundary, including retries. Tenant or read-only permissions cannot authorise these actions. Client, resource, group, group-assignment, entitlement, domain and SSO configuration writes, global user erasure and organisation creation, update, disable, enable and erasure require current `platform:write` at their service boundary. A users-management context cannot authorise these actions.
+
+**Database isolation.** Groups, stored group assignments and entitlements also have database policies that restrict access to the authorised tenant or explicit platform scope. Global browser sessions and upstream identity records remain separate from tenant data.
+
+### Global identity reads
+
+```bash
+curl "$ID_ORIGIN/api/admin/v1/users/$USER_ID/sessions" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+**Global identity reads.** User list/detail and session listing require current `platform:read` inside their read transaction and return `Cache-Control: no-store`. Tenant permissions do not grant access to these global records. Session responses exclude bearer credentials.
+
+### Global session retries
+
+These routes require `platform:users` and act across all organisations for the target user. Tenant offboarding uses membership revocation.
+
+```bash
+curl -X DELETE "https://id.answerable.org/api/admin/v1/users/$USER/sessions" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Idempotency-Key: $SESSION_REVOKE_KEY"
+```
+
+Set `SESSION_REVOKE_KEY` once for this command. Both revoke-all and single-session revocation require a key. Reuse it on retry: the original response can be recovered for seven days, without revoking sessions created later. Current `platform:users` authority is checked before recovery. Changed-input key reuse returns 409; expired recovery returns 410 without executing again.
+
+A new revoke-all command returns the number of sessions removed. Zero can still mean that active user tokens or stored grant contexts were revoked; when none of those effects changed, the operation records a noop. Single-session revocation returns 204; a new key for a missing session returns 404. Use getMyOperationStatus for your own receipts without platform audit access; audit-wide status reads still require `platform:read`.
+
+**Grant-context scope.** Single-session administrative revocation also revokes contexts established by that session across the user's tenants, preserving contexts from other sessions. Revoke-all covers all of the user's contexts, including those whose original browser session no longer exists. Both record newly revoked IDs and organisations in the same audit transaction. Ordinary browser sign-out preserves existing delegation: native tests exercise cached replay and fresh refresh after the session disappears. Explicit all-session revocation then denies those grants even when it reports zero deleted sessions. Both administrative session commands are tested against in-flight issuance using the shared user lock. Public user OAuth remains closed.
+
+### Global user retries
+
+Disable, enable and email retirement require `platform:users`. Erasure requires `platform:write` and its `confirm` query parameter. Each command also requires `Idempotency-Key`.
+
+```bash
+curl -X POST "https://id.answerable.org/api/admin/v1/users/$USER/disable" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Idempotency-Key: $USER_DISABLE_KEY"
+```
+
+Set `USER_DISABLE_KEY` once for this command. Reuse it after a lost response: recovery returns the original result for seven days, including after later lifecycle changes or erasure. New commands record noops only when both lifecycle state and required cleanup are already satisfied; unchanged user status preserves its timestamps. Inert users still activate at first login; a retired email still prevents re-enabling the user.
+
+**Disabled-user reconciliation.** A new disable command always removes remaining browser sessions and revokes remaining stored tokens and grant contexts, even if the user is already disabled. The operation is applied when any local effect occurs; otherwise it is a no-op. Existing user status timestamps are preserved when status does not change. Replaying an old key returns that command’s original result and does not reconcile later state; use a new key for a new reconciliation. Audit failure rolls back all local effects and the receipt. Token effects retain counts and exact row IDs; see [token revocation history](#token-revocation-history). Local cleanup is not proof of remote session termination.
+
+**Stored grant contexts.** Global disable irreversibly revokes the user's contexts across organisations; enable does not restore them. A disabled user with unrevoked contexts still has work to apply. The audit records newly revoked context IDs and their organisations. Erasure records deleted contexts, including those removed with a user-owned client. These changes share the lifecycle transaction: audit failure rolls them back. Production user OAuth remains **Not yet** available.
+
+**Erasure consistency.** Concurrent writes through owned clients, refresh tokens, memberships and browser sessions are ordered before their erasure effects are captured. Audit records include deleted rows and cleared session references on surviving tokens. These effects and the receipt commit together; failed commands roll back and replay does not erase again.
+
+**Erasure and retained responses.** User responses contain profile fields and remain encrypted for their seven-day replay window, including after operational erasure. New audit facts do not copy names or emails, but historical facts are not rewritten. Erasure must not be described as immediate removal of every identifying copy; the retention decision and backup/key lifecycle remain [release requirements](/docs/id#today-and-next).
+
+### Inspect your own operation
+
+```bash
+curl "https://id.answerable.org/api/admin/v1/me/operations/$OPERATION_ID" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+[getMyOperationStatus](/docs/id/admin-api/operations/getMyOperationStatus) returns only your receipt's outcome, result reference and replay availability. It never returns request fingerprints, keys or historical response bodies. Ownership comes from the authenticated user, client or root identity.
+
+You need a current administrative scope for the receipt: `platform:read`, `platform:write` or `platform:users` for platform operations; a matching tenant's `org:read`, `org:write` or `org:users` also permits its tenant receipts. Platform authority can inspect your own tenant receipts. Read authority is distinct from permission to retry the original command: retaining a read/users scope may permit inspection after write authority is removed, but replay still checks the command's required scope.
+
+| Response | Meaning                                                                              | Action                                                                  |
+| -------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| 400      | Invalid operation UUID.                                                              | Use the returned `Operation-Id`.                                        |
+| 401      | Authentication is absent or no longer valid.                                         | Authenticate again.                                                     |
+| 403      | No current scope permits this receipt's context, or the request origin is untrusted. | Check current grants and the trusted origin.                            |
+| 404      | Receipt is missing, belongs to another actor, or has an unsupported context.         | Do not treat absence as proof that a concurrent command is not running. |
+
+Audit-wide platform and organisation status routes keep their existing read permissions. This endpoint grants no access to another actor's receipts, even to platform staff.
+
+**Administrative lock waits.** Journalled commands set a transaction-local two-second timeout for each database lock wait, including current-authority checks. A lock timeout, statement cancellation or deadlock victim returns `503 database_busy`, `retryable: true` and `Retry-After: 1`. The aborted command leaves no new operation receipt, mutation or mutation audit fact. Retry with the same key and input. Current authority is still checked before recovery, so a blocked duplicate may return this response instead of `operation_in_progress`. Database statements also have a server-side deadline, ten seconds by default (`DATABASE_STATEMENT_TIMEOUT_MS`). These are per-lock and per-statement bounds, not a total transaction or HTTP deadline. PostgreSQL cancels the work before the transaction rolls back; the server does not merely stop waiting for a live mutation.
+
+**Client grant revocation.** Client disable revokes its stored contexts across tenants; re-enable does not restore them. Repeated disable reconciles remaining tokens and contexts before reporting a no-op. Erasure captures deleted contexts before cascade, after existing reference guards. Other clients and browser sessions are preserved.
+
+**Secret rotation.** A new rotation revokes existing client tokens and grant contexts across tenants while changing the credential. Old refresh grants cannot be redeemed with the new secret; a new authorisation is required. The context manifest uses the same platform-only audit event described below. A retry with the original idempotency key recovers the original secret without revoking grants established after that rotation. Browser sessions and other clients remain intact. Already-issued JWTs at offline resource servers remain subject to their verification and expiry policy.
+
+**Grant-effect visibility.** When a client command changes contexts, a platform-only `client.grants_revoked` or `client.grants_erased` audit event records the actual context, tenant and user IDs. The existing owner-scoped lifecycle event links it through `grantEffectsEventId` without including those IDs. The effects, both audit events and command receipt commit in the same transaction. A tenant cannot retrieve the platform event through its audit route. Production user OAuth remains closed; native integration tests verify the refresh behaviour.
+
+**Per-person history.** Migration 0032 indexes the explicit affected-user IDs in successful version-one client grant-effect, resource disable/erasure and organisation disable/erasure events. Those events remain discoverable after operational user deletion. Platform-only events remain platform-only; organisation events retain their tenant boundary. The migration backfills recorded IDs without changing audit facts or recovering names from deleted identities. Older events without those IDs cannot supply this evidence.
+
+**Native code-replay proof.** Migration 0033 adds a unique code-hash binding to the stored grant context. In the native integration proof, successful issuance commits this binding with the tokens; code replay then revokes the context even if no token rows remain. Cleanup failure restores partial deletions but preserves context revocation. Another authenticated client cannot revoke that code's context or token rows. No raw code is stored in this binding. Production user OAuth remains closed, and existing unbound contexts are not backfilled with guessed code identities. This does not make an already-issued JWT disappear from an offline resource server.
+
+**Native grant provenance.** The native proof stores the callback's actual requested scope limit and authenticated session. One database statement derives the tenant from the selected membership and resolves immutable client/resource IDs; current membership, identity, session expiry, client scope, exact client/resource compatibility and resource ownership checks must pass. Creation and expiry use database time and a server-configured lifetime. The restricted database role is tested. These checks do not authenticate a caller merely because it knows the IDs. Public user OAuth, real tenant selection/consent and signed request continuation remain unfinished.
+
+**Native tenant concurrency proof.** User issuance first locks its subject and any client-owner user in UUID order, then its stored organisation, client and resource until the native transaction completes; refresh acquires it before the grant-family lock and cached-response check. Tenant policy writers use the same organisation row exclusively; client/resource configuration writers lock their target rows. A blocked lock wait is limited to two seconds and returns `503 temporarily_unavailable` with `Retry-After: 1`. This is not a total request deadline. The tested capability, scope, unlink and client/resource disable races follow this order. Global-disable ordering and a client-owner erasure/code-binding race are also tested. Administrative single/all-session revocation races are also tested. Grant creation, SSO/credential and multi-operation races, and production user OAuth remain unfinished.
+
+**Native user-policy proof.** The integration proof now requires effective client-login permission, the exact client/resource assignment, a platform capability for that pair, and a separate renewal capability on refresh. It checks the original stored tenant and scope ceiling before cached refresh can return tokens. Login identity scopes are evaluated separately from resource scopes. One SQL statement reads current policy sources and windows; internal decisions include source IDs, revisions and group-membership evidence. The production machine path shares scope intersection logic. Platform user-capability management is available; public user OAuth remains closed; concurrent issuance/revocation ordering, final native scope handling and production decision audit remain unfinished.
+
+### Resource ownership
+
+```bash
+curl -X POST "$ID_ORIGIN/api/admin/v1/resources" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $CREATION_KEY" \
+  -d '{"identifier":"https://api.example.com/private","name":"Private API","allowedScopes":["read"],"classification":"tenant_owned","organizationId":"00000000-0000-7000-8000-000000000000"}'
+```
+
+**Ownership is immutable.** A `tenant_owned` resource requires an organisation UUID. A `platform_shared` resource has no owner; creation defaults to this classification when omitted. Neither classification nor owner can be patched. Replacing ownership requires a new resource identifier. Ownership and classification appear in current resource responses and new audit snapshots. Historical creation retries retain their original response and may omit these fields; read the resource for its current classification. Explicit and omitted shared classification recover the same older creation command.
+
+Private resource assignments must belong to the resource's owner. A machine from another organisation receives `invalid_target` when requesting that resource, even if a client/resource compatibility link exists. Compatibility is not permission. Erasing an owner requires removing its private resources first, after resolving their links and assignments.
+
+Migration 0026 classifies existing global resources as platform-shared. Review that inventory before rollout. Machine capability ceilings and exact-pair assignment configuration are implemented; the complete user policy and tenant-bound user grants are not yet complete; this change does not open user OAuth.
+
+**Resource grant revocation.** Disabling a resource revokes its stored grant contexts across tenants. Re-enabling it does not restore those contexts. Repeating disable also clears any remaining unrevoked contexts before becoming a no-op. Erasure records deleted context IDs, tenant IDs and user IDs before deletion; existing entitlement, client-link and capability guards still apply. These effects stay in the platform audit log and commit with the resource change. Other resources and browser sessions are preserved. Production user OAuth remains closed; the native integration proof verifies that old cached and rotated refresh tokens cannot bypass this revocation.
+
+### Exact client/resource assignments
+
+```bash
+curl -X POST "$ID_ORIGIN/api/admin/v1/organizations/$ORGANIZATION_ID/entitlements" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $ASSIGNMENT_KEY" \
+  -d '{"clientId":"app-client","resource":"https://api.example.com","scopes":["read"]}'
+
+curl --get "$ID_ORIGIN/api/admin/v1/organizations/$ORGANIZATION_ID/access" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  --data-urlencode "clientId=app-client" \
+  --data-urlencode "resource=https://api.example.com"
+```
+
+**Both fields identify one pair.** Its scopes do not combine with another client's pair, another resource, client-only login assignments or resource-only assignments. Member access responses use `kind: "client_resource"`, `id` for the client ID and `resource` for the resource indicator. Existing client-only and resource-only response shapes are unchanged.
+
+An access query with only `clientId` selects client-only assignments; one with only `resource` selects resource-only assignments. Entitlement inventory filters instead list all configured rows matching their supplied fields, including pairs. Pair scopes cannot satisfy direct administrative grants or designate a platform writer.
+
+**Not yet:** tenant-bound user grants and the complete user-grant evaluator. These views describe effective assignment sources, not proof that a user can obtain a token. User OAuth remains closed. Existing resource-only assignments remain for migration; those outside the reserved admin surface must be converted to approved pairs before user OAuth opens. Coordinate migration 0027 with pair-aware workers before creating pairs, since older access readers would lose the resource distinction.
+
+**Active users and effective access.** Effective target views require an active global user and effective tenant membership. Inert and disabled users have no effective client, resource or pair targets, even when their assignments remain configured. They also do not count as platform writers for root lockout. When a previously disabled writer becomes active again and their grants remain effective, root locks again. Re-enabling a user does not recreate revoked sessions or tenant memberships.
+
+### Approve a machine capability
+
+```bash
+curl -X POST "$ID_ORIGIN/api/admin/v1/organizations/$ORG_ID/capabilities" \
+  -H "Authorization: Bearer $PLATFORM_TOKEN" \
+  -H "Idempotency-Key: $CAPABILITY_CREATE_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"clientId":"tenant-machine","resource":"https://api.example.com","grantKind":"client_credentials","scopes":["tool:read"]}'
+```
+
+Set `CAPABILITY_CREATE_KEY` once for this logical approval. Use current platform write credentials in `PLATFORM_TOKEN`; a tenant administrator cannot approve their own ceiling. The client must belong to `ORG_ID`, and scopes must fit its machine scope ceiling and the resource vocabulary. Private resources must belong to the same organisation. The client/resource compatibility link is also required for issuance; approving a capability does not create that link.
+
+**Registration is not approval.** Machine issuance requires an active capability for the exact tenant, client and resource during its effective window. Explicit scopes outside any ceiling return `invalid_scope`; omitted scopes default to the intersection. Successful issuance records the capability ID/revision and evaluation evidence before returning a token. Direct-session administration is described below. Platform writers can also manage user ceilings as described below; public user OAuth remains [Not yet.](/docs/id#today-and-next).
+
+```bash
+curl -i "$ID_ORIGIN/api/admin/v1/organizations/$ORG_ID/capabilities/$CAPABILITY_ID" \
+  -H "Authorization: Bearer $PLATFORM_TOKEN"
+
+curl -X PATCH "$ID_ORIGIN/api/admin/v1/organizations/$ORG_ID/capabilities/$CAPABILITY_ID" \
+  -H "Authorization: Bearer $PLATFORM_TOKEN" \
+  -H "Idempotency-Key: $CAPABILITY_DISABLE_KEY" \
+  -H "If-Match: $CAPABILITY_ETAG" \
+  -H 'Content-Type: application/json' \
+  -d '{"status":"disabled"}'
+```
+
+Copy the exact quoted ETag from GET into `CAPABILITY_ETAG`. Use a separate stable `CAPABILITY_DISABLE_KEY` for this change. Identical authorised retries recover the original result for seven days; a no-op keeps its revision. Target, tenant and grant kind are immutable. Tenant readers with `org:read` may list and inspect their organisation's ceilings.
+
+**User capability configuration.** Use the same POST endpoint, with a separate idempotency key for each approval:
+
+```bash
+curl -X POST "$ID_ORIGIN/api/admin/v1/organizations/$ORG_ID/capabilities" \
+  -H "Authorization: Bearer $PLATFORM_TOKEN" \
+  -H "Idempotency-Key: $USER_PAIR_APPROVAL_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"clientId":"omnichat","resource":"https://mcp.example.com","grantKind":"authorization_code","scopes":["tool:read"]}'
+```
+
+| Purpose                      | Grant kind           | Resource           | Scopes                                                                               |
+| ---------------------------- | -------------------- | ------------------ | ------------------------------------------------------------------------------------ |
+| App login                    | `authorization_code` | `null` or omitted  | Registered identity scopes such as `openid`, `profile`, `email` and `offline_access` |
+| App reaching a server        | `authorization_code` | Exact resource URL | Registered client scopes within the resource vocabulary, excluding identity scopes   |
+| Renewal of that server grant | `refresh_token`      | Exact resource URL | The same resource scope restrictions; renewal grants no initial authority            |
+
+The client must support `authorization_code`, and additionally `refresh_token` for renewal. A user client can serve multiple organisations; each needs its own approvals and assignments. Private resources must belong to the approved organisation. Login-only renewal is not supported. PATCH scopes use the same validation; suspension and removal remain possible after registration changes. The existing replay, revision and audit contracts apply. These commands configure ceilings; **public user OAuth remains closed**. Native integration tests consume these approvals, but production grant integration, concurrency and complete decision audit remain unfinished.
+
+**Evaluation time.** Effective windows use the start of the evaluating SQL statement; issuance evaluates the capability after taking its policy locks. This avoids using the stale start time of a transaction that waited.
+
+**Revocation boundary.** Disabling, expiring or removing the capability denies subsequent machine grants. Online ID administration rechecks the capability and drops unavailable scopes from existing JWT authority. Offline resource servers need token expiry or their own online check; this operation does not prove immediate remote rejection. Assignments remain configuration rows.
+
+```bash
+curl -X DELETE "$ID_ORIGIN/api/admin/v1/organizations/$ORG_ID/capabilities/$CAPABILITY_ID" \
+  -H "Authorization: Bearer $PLATFORM_TOKEN" \
+  -H "Idempotency-Key: $CAPABILITY_REMOVE_KEY"
+```
+
+Set `CAPABILITY_REMOVE_KEY` once. Removal retains before-state in audit history and supports replay after deletion. Remove all referencing ceilings before client/resource erasure, including disabled ceilings. Prefer disabling when you want to preserve the configuration for reactivation.
+
+| Code                          | Meaning                                                                                            | What to do                                                                                                                      |
+| ----------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `unauthorized_client`         | No effective exact machine capability, or the client does not support this grant.                  | Ask platform staff to review the owner, pair, grant kind, status and window. Do not retry unchanged configuration indefinitely. |
+| `invalid_scope`               | Requested scopes exceed the client/resource/capability intersection, or the intersection is empty. | Request a permitted scope set or have staff review the ceilings.                                                                |
+| `capability_references_exist` | A capability still references the client/resource being erased.                                    | List and explicitly remove the relevant ceilings, then retry erasure.                                                           |
+| `validation_failed`           | Invalid fields, unsupported grant kind, foreign target or scopes outside a registration ceiling.   | Correct the request; tenant/target changes need a new capability.                                                               |
+| `not_found`                   | A reference or capability is unavailable in this organisation.                                     | Check immutable IDs and current authority.                                                                                      |
+| `conflict`                    | The exact organisation/target/grant-kind configuration already exists.                             | Read the existing configuration; use its ID and ETag to update.                                                                 |
+| `constraint_violation`        | The configuration violates a database invariant, such as its window.                               | Correct the configuration before submitting a new command.                                                                      |
+
+Revision and replay failures use the existing command error contract above. An audit failure does not commit the new capability state or receipt; retry with the same key and input after recovery.
+
+**Existing installations.** This is an enforcement change. Review and approve existing machines explicitly before enabling compatible workers; there is no automatic capability backfill. Keep old issuers quiesced during cutover.
+
+### Approve direct administrator access
+
+```bash
+curl "$ID_URL/api/admin/v1/organizations/$ORG_ID/capabilities" \
+  -H "Authorization: Bearer $PLATFORM_TOKEN" \
+  -H "Idempotency-Key: $ADMIN_CAPABILITY_CREATE_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"resource":"https://id.answerable.org/api/admin","grantKind":"admin_session","scopes":["org:read","org:users"]}'
+```
+
+Set `ADMIN_CAPABILITY_CREATE_KEY` once for this approval and use the installation's bound admin resource identifier. Omit `clientId` or use `null`. Only a platform writer can approve the ceiling. A person still needs effective membership and matching resource-only assignments: their scopes are the intersection of assignments, the ceiling and the enabled resource vocabulary. A pair assignment or machine approval does not grant direct administration.
+
+The same GET, PATCH, revision and replay contract applies. Removing a tenant ceiling removes its direct administration authority without deleting assignments or another tenant's ceiling. Existing tenants require explicit review and approval before this enforcement is deployed.
+
+The platform ceiling is seeded under the immutable system binding. Restart preserves restrictions. Its deletion is prohibited, and a capability update cannot remove the currently effective last platform writer. Complete protection across all authority-changing commands is **Not yet**; a future expiry can also remove authority without a new write.
+
+| Code                          | Meaning                                                                        | What to do                                                                             |
+| ----------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `last_platform_administrator` | This authority change would remove the current last effective platform writer. | Preserve effective platform-write authority; see the safeguards below before retrying. |
+| `protected_capability`        | The reserved platform administrator ceiling cannot be deleted.                 | Use a permitted conditional PATCH to change its configuration.                         |
+
+**Unavailable authentication or database capacity.** Administrative requests return `503 database_busy` when database checkout times out, including before a command transaction starts. If the session service cannot complete its lookup, they return `503 authentication_unavailable`; that response does not establish the underlying cause. Both include `retryable: true` and `Retry-After: 1`. Wait, then retry a mutation with the same key and input. Reads can be retried normally. Authentication failure never admits the request. A response recovered after an unknown outcome remains subject to current authority.
+
+| Code                         | Meaning                                                         | What to do                                                                                                      |
+| ---------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `authentication_unavailable` | The session service could not establish current authentication. | Wait for Retry-After and retry; if persistent, operators should check authentication and database availability. |
+
+**Admin bearer expiry.** A bearer token must contain a signed `exp` claim. The API checks expiry again after principal lookup and when admitting a command, including replay. If it expires while waiting for database policy locks, admission returns `401 invalid_token`. Obtain a fresh token for the admin resource, then retry the mutation with the same idempotency key and input; current authority still applies.
+
+**Root and first-writer activation.** Normal root command admission is ordered with activation of an effective platform writer. If activation commits first, the command returns `root_locked` before mutation. If the root command was admitted first, it completes before activation commits. `ROOT_ADMIN_BREAK_GLASS=true` retains its explicit override. Contention still follows the existing `database_busy` retry guidance.
+
+**Instance overload.** Before authentication, a full service instance returns plain-text `503 Service Busy` with `Retry-After: 1` and a request ID. This is a transport refusal, not a problem-details body; it can precede CORS headers. No command starts and no new operation receipt is created. Wait and retry with bounded backoff using the same operation key and input. The default bound is 64 active handlers per instance (`MAX_CONCURRENT_REQUESTS`), including body acquisition and authentication. This is not a tenant or cluster quota. Bodyless GET/HEAD liveness checks remain available; readiness can return this overload response.
+
+**Protecting platform membership.** Removing or changing the validity window of the last effective platform writer fails with `409 last_platform_administrator`. The membership change, its successful audit effects and operation receipt roll back. After establishing another effective writer, retry the original key/input and, for a window change, its unchanged ETag. Concurrent removals cannot each rely on the other member remaining. Other tenants retain their existing offboarding semantics. This safeguard does not prevent future expiry or guarantee that an upstream IdP is available.
+
+**Protecting the last writer during global offboarding.** User disable and erasure also reject removal of the last effective platform writer with `409 last_platform_administrator`. Establish a replacement, then retry the same key/input. Refusal leaves the user, successful audit events and operation receipt unchanged. Concurrent platform changes can return retryable `503 database_busy`; respect `Retry-After` and keep the same key/input. Root break-glass obeys this safeguard. Other authority-changing commands still need complete last-writer coverage.
+
+**Group and entitlement writer protection.** Group disable/erasure, assignment removal/window changes and entitlement disable/removal/scope/window changes now preserve an existing effective platform writer. The shared before/after check runs under the existing organisation lock; a refusal rolls back rows, revisions, successful audit effects and the operation receipt. Establish a replacement and retry the same key/input and original precondition. Mixed concurrent restrictions retain one writer; unrelated tenants skip the platform evaluation, and an initially writerless platform can be repaired. Organisation disable and bound-resource scope/lifecycle protection are described below; future expiry and authentication availability remain separate concerns.
+
+**Platform organisation and resource safeguards.** Organisation disable and bound admin-resource scope changes preserve existing effective platform-write authority, returning `409 last_platform_administrator` with transaction rollback when they would remove it. Adding another writer in that same organisation cannot make disabling the whole organisation safe; removing `platform:write` from the shared admin resource vocabulary also affects every writer. Safe scope restrictions retain authority and support ordinary replay. Scope writes acquire the platform lock before the resource lock; unrelated targets avoid it. Resource disable/erasure protection uses the persisted resource UUID, independently of configured names. Recovery can re-enable an already disabled platform organisation. These checks concern current effective permission, not future expiry or upstream availability.
+
+**Group erasure audit (migration 0038).** New `group.erased` events use schema version 2. Alongside group before/after state, `data.effects.removedAssignments` records actual deleted assignment IDs, revisions, tenant/group/member/user UUIDs and validity windows. `removedEntitlements` records actual deleted entitlement IDs/revisions, targets, scopes, status and windows. Expired, disabled and future rows remain part of the evidence. Affected-user UUID history survives later user erasure; another tenant's policy is unaffected. The deletion, event, subject references and operation receipt commit or roll back together. Authorised replay does not repeat them. Apply migration 0038 before deploying the new writer. Older version-one group events lack this complete manifest and are not backfilled from guesses. These are removed policy sources, not a computed proof that every affected user lost all effective access or that remote sessions ended. Maximum supported synchronous deletion size remains a release requirement.
+
+**Direct member-entitlement history (migration 0039).** New successful version-one entitlement create, update, enable, disable, unchanged and removal events capture the affected user UUID in the existing durable subject index. Capture validates the recorded entitlement/tenant identity and resolves its membership during the command transaction; later history reads do not join live identities. The inserted or locked entitlement prevents concurrent parent erasure from committing its cascade before capture. Erasure-first removal returns 404 without a removal event. Subject-write failure rolls back the domain change and receipt; authorised replay adds no duplicate successful fact. Event payloads and public response shapes are unchanged. Apply migration 0039 to enable capture; earlier missing subjects are not backfilled from current memberships. This covers direct member targets, not complete group/organisation entitlement impact or named identity recovery.
+
+**Group status evidence (migration 0040).** Successful `group.disabled` and `group.enabled` events now use schema version 2. `data.policySources.assignments` records assignment IDs/revisions, tenant/group/member/user UUIDs and validity windows; `data.policySources.entitlements` records entitlement IDs/revisions, targets, scopes, status and windows. The existing before/after group fields show the status transition. These source rows are retained, not deleted, and include ineligible policy. They do not prove that every member lost effective access or that a remote session ended. Source capture holds child share locks through event/receipt commit, ordering concurrent user erasure. Recorded user history survives subsequent erasure. Unchanged commands retain version 1 without a source snapshot. Subject failure rolls back the status, revision and operation receipt; replay does not duplicate evidence. Apply migration 0040 before deploying the new version-two writers. Earlier events are not backfilled with inferred sources. Large-group workload bounds and complete effective-permission deltas remain release work.
+
+**Broad entitlement audience (migration 0041).** Changed organisation- and group-targeted entitlement create/update/enable/disable/removal events use schema version 2. `data.audience` retains the tenant-local membership UUID, user UUID, revision, status and validity window. Group targets also retain the assignment UUID/revision/group UUID/window; organisation targets use `groupAssignment: null`. Source rows are included even when ineligible. This is the recorded audience, not an effective-permission delta or evidence of remote revocation. Capture shares the command transaction and share-locks selected memberships/assignments against concurrent erasure. User history survives deletion through the existing durable subject index. Subject failure rolls back mutation and receipt; replay adds no new successful event. Direct-member events and unchanged commands keep version 1; broad unchanged commands omit the audience snapshot. Apply migration 0041 before deploying the version-two writers. Existing events are not backfilled from later membership. Measured audience/workload bounds and complete permission-decision evidence remain release requirements.
+
+**Administrative denial audit outages.** If storing an already-decided `admin.denied` or locked-root refusal fails, the request retains its original 403/404 response and authentication challenge. It still does not reach the protected handler. The service emits `admin_denial_audit_unavailable` with the request ID only; no database exception, credential or event payload is logged by this signal. No durable event is claimed for the failed write, and it is not replayed later. Healthy storage continues to record each refusal. Successful root admission and mutation audit writes remain mandatory: their failure still prevents admission or rolls back the command. This changes neither response schemas nor the journal/replay contract, and does not add evidence for administrative authentication failures that were previously unaudited.
+
+**Grant isolation.** Administrative grant access now follows transaction-local database scope. Tenant commands remain confined to their organisation; global user revocation keeps its explicit platform authority. Migration 0046 requires coordinated deployment with the new writers and no old writer processes serving traffic. Public user OAuth and the tenant SSO trust contract are not yet complete.
+
+**Administrative signing-key lookup.** Each administrative JWT resolver shares one in-flight JWKS load across concurrent verifications. A cold or expired cache loads once and rejects an absent key without immediately loading again. A missing key in a previously cached set still triggers one refresh for rotation; callers reuse a newer set if another verification already refreshed it. Existing cached keys remain usable during that refresh. Failed loads reject their waiting callers and allow a later request to retry. The existing five-minute cache lifetime is unchanged. This bounds concurrent store loads per resolver, not sequential invalid traffic or deployment-wide database use.
+
+**Authentication capacity.** Public `/auth/*` requests share a limit across app instances using the same database pool: `max(1, pool size − 1)`. This limits active handlers, not individual database checkouts, and creates no dedicated connection reservation. Excess requests return plain-text `503 Service Busy` with `Retry-After: 1` before body acquisition or credential checks; retry after that delay. Rejected bodies are cancelled. Admitted work holds its slot through completion and audit, even after disconnect. Requests refused before authentication do not create token-attempt audit events. This protects the measured database-contention case; it is not tenant fairness, a cluster-wide rate limit or a bound on admin-route authentication. A one-connection pool accepts one authentication request and cannot provide spare capacity while it uses the connection.
+
+**Tenant command admission.** Journalled administrative commands with an `organizationId` path parameter admit at most two outstanding commands per target organisation per runtime database pool. Excess commands return `503 database_busy`, `retryable: true` and `Retry-After: 1` before journal checkout, without a new operation receipt. Retry the same key and input. The bound is shared by app/database wrappers using the same pool; slots release after command completion or rollback. Current authority is still checked inside the admitted transaction. This starts after route authentication and validation; global commands, authentication, reads and other pre-admission work are outside it. It is not a deployment-wide quota or a guarantee of spare capacity with pools of two connections or fewer.
+
+**Organisation erasure evidence (migration 0042).** New `organization.erased` events use schema version 2. `data.effects` records actual `removedMembers`, `removedGroups`, `removedAssignments`, `removedEntitlements`, `removedCapabilities`, `removedDomains`, `removedSsoProviders` and `removedInvitations`. Policy fields include immutable IDs, applicable revisions, status, scope/target and validity windows; provider credentials and invitation email are excluded. `clearedSessionSelections` records session/user UUIDs whose `activeOrganizationId` was cleared. Those browser sessions and their immutable authentication origin remain; this is not session revocation. `deletedGrantContexts` remains alongside the manifest and includes each stored grant ID, user ID and organisation ID. Durable affected-user references come from removed memberships, cleared session selections and deleted grants, so members without issued grants retain history after erasure. The query returns actual deleted/updated rows within the same transaction as the event, subjects and operation receipt. Subject-write failure rolls everything back; authorised same-key replay adds no successful effect. Apply migration 0042 before deploying the version-two writer. Earlier events are not reconstructed from current state. This is local configuration/effect evidence, not a complete effective-permission calculation, named-person retention promise or proof of remote revocation. Supported large-tenant erasure bounds remain release work.
+
+**Global user erasure evidence (migration 0043).** New `user.erased` events use schema version 2. Alongside the existing `deletedGrantContexts`, `data.effects` records `removedMembers`, `removedAssignments`, `removedEntitlements`, `deletedAccounts`, `deletedSessions`, `deletedInvitations`, `deletedClients`, `deletedClientResources`, `deletedAccessTokens`, `deletedRefreshTokens` and `deletedConsents`. The manifest includes direct user effects and cascades through owned clients/refresh tokens, which can affect other users. Membership/policy rows retain tenant IDs, applicable revisions, targets, scopes, status and windows. Account records retain only internal account/user UUIDs; credentials, account linkage identifiers, invitation email and provider configuration are excluded. `clearedAccessTokenSessions` and `clearedRefreshTokenSessions` record surviving token IDs/users/clients with their exact `beforeSessionId` and null `afterSessionId`. Those rows survive; clearing a session reference is not token revocation. `detachedSsoProviders` records provider/tenant IDs and actual before/after user attribution and revision. The existing trigger increments the revision when that attribution is cleared; this event does not claim a separate revocation of that tenant's grants. Affected-user subjects from the explicit grant/token/consent effects survive erasure. External entitlement/capability references to an owned client still return `409 reference_violation` and roll back the operation; resolve them deliberately before retrying the same key. The mutation, effect event, subjects and receipt commit together, and replay adds no successful effect. Apply migration 0043 before deploying the new writer. Older events are not backfilled from current rows. This is local deletion/reference-change evidence, not a complete effective-permission snapshot, named-person retention promise or remote-session revocation proof. Representative global-erasure size/capacity bounds remain release work.
+
+### Token revocation history
+
+Version 2 records exact changed token rows under `data.revokedTokens.access` and `data.revokedTokens.refresh`. Each entry contains `id` and `userId`; machine access tokens have a null user. Existing counts remain. Already-revoked and unrelated rows are excluded, as are token values, scopes and credentials.
+
+| Event                                     | Visibility                                  |
+| ----------------------------------------- | ------------------------------------------- |
+| `user.disabled`, `user.disable_unchanged` | Platform history                            |
+| `session.revoked`, `session.revoked_all`  | Platform history                            |
+| `client.grants_revoked`                   | Platform history, alongside `grantContexts` |
+
+Client disable and secret rotation leave counts and `grantEffectsEventId` in the owner's event. Individual users and tokens remain in the restricted effect event. Affected-user UUIDs remain searchable after live rows are erased.
+
+**Deployment:** apply migration 0044 before the new writer. Older events are not backfilled. Mutation, subjects, event and receipt commit together; historical replay adds no revocation.
+
+This records local stored-token revocation. It does not prove termination of downstream sessions or rejection of an already-issued self-contained token. Representative token fan-out capacity remains a release requirement.
+
+### Client erasure history
+
+Version 2 `client.grants_erased` records the actual deleted rows under `data.effects` in platform history:
+
+- `deletedAccessTokens`, including rows reached through a deleted refresh token.
+- `deletedRefreshTokens`, including already-revoked rows.
+- `deletedConsents`.
+- `deletedClientResources`.
+
+Deleted grant contexts remain alongside these arrays. Safe references and applicable policy fields are retained; token values, secrets and consent claim requests are excluded. Affected-user UUIDs remain searchable after erasure. Users and browser sessions are preserved.
+
+The owner's version 2 `client.erased` event contains counts and `grantEffectsEventId`. Individual users, tokens and foreign resources remain restricted. Mutation, both events, subjects and receipt commit together; replay recovers the original result.
+
+**Deployment:** apply migration 0045 before the new writer. Older events are not backfilled. Local deletion is not proof of downstream session termination, and representative cascade capacity remains a release requirement.

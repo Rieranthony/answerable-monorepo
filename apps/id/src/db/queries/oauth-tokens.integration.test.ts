@@ -1,3 +1,7 @@
+import {
+  inPlatformUsers,
+  inPlatformWrite,
+} from "../../__tests__/platform-context.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import { testEnvironment } from "../../__tests__/support.ts";
@@ -15,7 +19,9 @@ beforeAll(() => {
   connection = createDatabase(testEnvironment());
 });
 beforeEach(async () => {
-  await connection.db.execute(sql`truncate table organizations, users cascade`);
+  await connection.db.execute(
+    sql`truncate table audit_events, security_identifiers, organizations, users cascade`,
+  );
 });
 afterAll(async () => {
   await connection.close();
@@ -58,29 +64,52 @@ test("revokes only live tokens by user or client, with exact counts and no doubl
     scopes: [],
     expiresAt: new Date(Date.now() + 60000),
   });
-  expect(await revokeUserTokens(db, [])).toEqual({
-    refreshTokens: 0,
-    accessTokens: 0,
-  });
-  expect(await revokeClientTokens(db, [])).toEqual({
-    refreshTokens: 0,
-    accessTokens: 0,
-  });
-  expect(await revokeUserTokens(db, [userIds[0]])).toEqual({
+  const expected = async (
+    table: typeof oauthAccessTokens | typeof oauthRefreshTokens,
+  ) =>
+    (
+      await db
+        .select({ id: table.id, userId: table.userId, revoked: table.revoked })
+        .from(table)
+    )
+      .filter((row) => row.userId === userIds[0] && row.revoked === null)
+      .map(({ id, userId }) => ({ id, userId: userId! }));
+  const expectedAccess = await expected(oauthAccessTokens);
+  const expectedRefresh = await expected(oauthRefreshTokens);
+  const first = await inPlatformUsers(db, (context) =>
+    revokeUserTokens(context, userIds[0]),
+  );
+  first.revokedTokens.access.sort((a, b) => a.id.localeCompare(b.id));
+  first.revokedTokens.refresh.sort((a, b) => a.id.localeCompare(b.id));
+  expect(first).toEqual({
     refreshTokens: 2,
     accessTokens: 2,
+    revokedTokens: {
+      access: expectedAccess.sort((a, b) => a.id.localeCompare(b.id)),
+      refresh: expectedRefresh.sort((a, b) => a.id.localeCompare(b.id)),
+    },
   });
-  expect(await revokeUserTokens(db, [userIds[0]])).toEqual({
+  expect(
+    await inPlatformUsers(db, (context) =>
+      revokeUserTokens(context, userIds[0]),
+    ),
+  ).toEqual({
     refreshTokens: 0,
     accessTokens: 0,
+    revokedTokens: { access: [], refresh: [] },
   });
-  expect(await revokeClientTokens(db, ["a"])).toEqual({
+  expect(
+    await inPlatformWrite(db, (context) => revokeClientTokens(context, "a")),
+  ).toMatchObject({
     refreshTokens: 1,
     accessTokens: 2,
   });
-  expect(await revokeClientTokens(db, ["a"])).toEqual({
+  expect(
+    await inPlatformWrite(db, (context) => revokeClientTokens(context, "a")),
+  ).toEqual({
     refreshTokens: 0,
     accessTokens: 0,
+    revokedTokens: { access: [], refresh: [] },
   });
   for (const table of [oauthRefreshTokens, oauthAccessTokens]) {
     const rows = await db.select().from(table);
@@ -132,17 +161,22 @@ test("revokes only live tokens of selected sessions and preserves other and unbo
       await db.insert(oauthRefreshTokens).values(value);
       await db.insert(oauthAccessTokens).values({ ...value, id: createId() });
     }
-  expect(await revokeSessionTokens(db, [])).toEqual({
-    refreshTokens: 0,
-    accessTokens: 0,
-  });
-  expect(await revokeSessionTokens(db, [ids[0]])).toEqual({
+  expect(
+    await inPlatformUsers(db, (context) =>
+      revokeSessionTokens(context, ids[0]),
+    ),
+  ).toMatchObject({
     refreshTokens: 1,
     accessTokens: 1,
   });
-  expect(await revokeSessionTokens(db, [ids[0], createId()])).toEqual({
+  expect(
+    await inPlatformUsers(db, (context) =>
+      revokeSessionTokens(context, ids[0]),
+    ),
+  ).toEqual({
     refreshTokens: 0,
     accessTokens: 0,
+    revokedTokens: { access: [], refresh: [] },
   });
   for (const table of [oauthRefreshTokens, oauthAccessTokens]) {
     const rows = await db.select().from(table);

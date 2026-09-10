@@ -1,3 +1,11 @@
+import { platformRead } from "./platform-read.ts";
+import { tenantRead } from "./tenant-read.ts";
+import {
+  requireRevision,
+  revisionTag,
+  revisionParameter,
+  revisionResponseHeaders,
+} from "./revision.ts";
 import {
   json,
   body,
@@ -9,7 +17,12 @@ import {
 import * as service from "../../services/entitlements.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
-import { actorFromContext } from "../../services/actor.ts";
+import {
+  platformCommand,
+  operationJson,
+  idempotencyParameter,
+  commandResponseHeaders,
+} from "./command.ts";
 import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
 import { problemResponses } from "../problem.ts";
@@ -22,6 +35,7 @@ const page = (schema: z.ZodType) =>
 const orgParams = uuidParam("organizationId");
 export const entitlementSchema = z.object({
   id: z.uuid(),
+  revision: z.number().int().positive(),
   organizationId: z.uuid(),
   memberId: z.uuid().nullable(),
   groupId: z.uuid().nullable(),
@@ -111,11 +125,11 @@ export const routes = {
     operationId: "createEntitlement",
     summary: "Create an organisation entitlement",
     description:
-      "Create an organisation, group or member entitlement to exactly one clientId or resource and return the entitlement, granting access during its validity window. Prefer updateEntitlement to change existing scopes or dates; validation_failed rejects invalid targets or scopes, not_found means a referenced parent or target is missing, and conflict or constraint_violation rejects duplicate or inconsistent grants.",
+      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts and expired recovery never re-executes. Create an organisation, group or member entitlement to a client, resource or exact client/resource pair and return the entitlement, granting access during its validity window. Prefer updateEntitlement to change existing scopes or dates; validation_failed rejects invalid targets or scopes, not_found means a referenced parent or target is missing, and conflict or constraint_violation rejects duplicate or inconsistent grants.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
-    parameters: ["organizationId"].map((name) => pathParameter(name, "uuid")),
+    parameters: [pathParameter("organizationId", "uuid"), idempotencyParameter],
     requestBody: body(createSchema),
     example: {
       body: { resource: "https://none.example", scopes: ["tutor:read"] },
@@ -123,8 +137,12 @@ export const routes = {
     responses: standardResponses(
       {},
       {
-        201: { description: "Success", content: json(entitlementSchema) },
-        ...problemResponses(400, 404, 409),
+        201: {
+          description: "Success",
+          headers: commandResponseHeaders,
+          content: json(entitlementSchema),
+        },
+        ...problemResponses(400, 404, 409, 410, 503),
       },
     ),
   },
@@ -145,7 +163,11 @@ export const routes = {
     responses: standardResponses(
       { orgScope: "org:read" },
       {
-        200: { description: "Success", content: json(entitlementSchema) },
+        200: {
+          description: "Success",
+          headers: revisionResponseHeaders,
+          content: json(entitlementSchema),
+        },
         ...problemResponses(400, 404),
       },
     ),
@@ -156,20 +178,28 @@ export const routes = {
     operationId: "updateEntitlement",
     summary: "Update an organisation entitlement",
     description:
-      "Change an entitlement’s scopes or validity window and return the updated entitlement, affecting subsequent access decisions. Prefer createEntitlement to select a different principal or target; validation_failed rejects invalid scopes or an empty patch, not_found means the entitlement is missing, and constraint_violation rejects an invalid window.",
+      "Requires Idempotency-Key and the strong If-Match ETag from getEntitlement. Missing conditions return 428; stale or wrong-instance state returns 412. Committed replay precedes the old revision check. Identical authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts and expired recovery never re-executes. Change an entitlement’s scopes or validity window and return the updated entitlement, affecting subsequent access decisions. Prefer createEntitlement to select a different principal or target; validation_failed rejects invalid scopes or an empty patch, not_found means the entitlement is missing, and constraint_violation rejects an invalid window. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
-    parameters: ["organizationId", "entitlementId"].map((name) =>
-      pathParameter(name, "uuid"),
-    ),
+    parameters: [
+      ...["organizationId", "entitlementId"].map((name) =>
+        pathParameter(name, "uuid"),
+      ),
+      idempotencyParameter,
+      revisionParameter,
+    ],
     requestBody: body(patchSchema),
     example: { body: { scopes: ["tutor:read"] } },
     responses: standardResponses(
       {},
       {
-        200: { description: "Success", content: json(entitlementSchema) },
-        ...problemResponses(400, 404, 409),
+        200: {
+          description: "Success",
+          headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
+          content: json(entitlementSchema),
+        },
+        ...problemResponses(400, 404, 409, 410, 412, 428, 503),
       },
     ),
   },
@@ -179,18 +209,25 @@ export const routes = {
     operationId: "disableEntitlement",
     summary: "Disable an organisation entitlement",
     description:
-      "Disable an organisation entitlement and return the updated record. Prefer enableEntitlement for the opposite transition; not_found means the target is missing and entitlement_already_disabled means no transition is needed.",
+      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts and expired recovery never re-executes. Disable an organisation entitlement and return the updated record. Prefer enableEntitlement for the opposite transition; not_found means the target is missing and unchanged status records a noop without updating timestamps. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
-    parameters: ["organizationId", "entitlementId"].map((name) =>
-      pathParameter(name, "uuid"),
-    ),
+    parameters: [
+      ...["organizationId", "entitlementId"].map((name) =>
+        pathParameter(name, "uuid"),
+      ),
+      idempotencyParameter,
+    ],
     responses: standardResponses(
       {},
       {
-        200: { description: "Success", content: json(entitlementSchema) },
-        ...problemResponses(400, 404, 409),
+        200: {
+          description: "Success",
+          headers: commandResponseHeaders,
+          content: json(entitlementSchema),
+        },
+        ...problemResponses(400, 404, 409, 410, 503),
       },
     ),
   },
@@ -200,18 +237,25 @@ export const routes = {
     operationId: "enableEntitlement",
     summary: "Enable an organisation entitlement",
     description:
-      "Enable an organisation entitlement and return the updated record. Prefer disableEntitlement for the opposite transition; not_found means the target is missing and entitlement_already_active means no transition is needed.",
+      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts and expired recovery never re-executes. Enable an organisation entitlement and return the updated record. Prefer disableEntitlement for the opposite transition; not_found means the target is missing and unchanged status records a noop without updating timestamps.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
-    parameters: ["organizationId", "entitlementId"].map((name) =>
-      pathParameter(name, "uuid"),
-    ),
+    parameters: [
+      ...["organizationId", "entitlementId"].map((name) =>
+        pathParameter(name, "uuid"),
+      ),
+      idempotencyParameter,
+    ],
     responses: standardResponses(
       {},
       {
-        200: { description: "Success", content: json(entitlementSchema) },
-        ...problemResponses(400, 404, 409),
+        200: {
+          description: "Success",
+          headers: commandResponseHeaders,
+          content: json(entitlementSchema),
+        },
+        ...problemResponses(400, 404, 409, 410, 503),
       },
     ),
   },
@@ -221,16 +265,22 @@ export const routes = {
     operationId: "removeEntitlement",
     summary: "Remove an organisation entitlement",
     description:
-      "Remove an organisation entitlement and return no content, removing access supplied by that record. Prefer updateEntitlement to change its validity or scopes; validation_failed rejects malformed ids and not_found means the target is unavailable.",
+      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts and expired recovery never re-executes. Remove an organisation entitlement and return no content, removing access supplied by that record. Prefer updateEntitlement to change its validity or scopes; validation_failed rejects malformed ids and not_found means the target is unavailable. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
-    parameters: ["organizationId", "entitlementId"].map((name) =>
-      pathParameter(name, "uuid"),
-    ),
+    parameters: [
+      ...["organizationId", "entitlementId"].map((name) =>
+        pathParameter(name, "uuid"),
+      ),
+      idempotencyParameter,
+    ],
     responses: standardResponses(
       {},
-      { 204: { description: "Success" }, ...problemResponses(400, 404, 409) },
+      {
+        204: { description: "Success", headers: commandResponseHeaders },
+        ...problemResponses(400, 404, 409, 410, 503),
+      },
     ),
   },
 } satisfies Record<string, AdminRoute>;
@@ -241,9 +291,11 @@ export function register(app: Hono<AppEnvironment>) {
     validate("query", allQuerySchema),
     async (context) =>
       context.json(
-        await service.listAllEntitlements(
-          context.get("db"),
-          allQuerySchema.parse(context.req.query()),
+        await platformRead(context, (platform) =>
+          service.listAllEntitlements(
+            platform,
+            allQuerySchema.parse(context.req.query()),
+          ),
         ),
       ),
   );
@@ -255,10 +307,8 @@ export function register(app: Hono<AppEnvironment>) {
     async (context) => {
       const query = querySchema.parse(context.req.query());
       return context.json(
-        await service.listEntitlements(
-          context.get("db"),
-          context.req.param("organizationId")!,
-          query,
+        await tenantRead(context, "directory", (tenant) =>
+          service.listEntitlements(tenant, query),
         ),
         200,
       );
@@ -270,15 +320,32 @@ export function register(app: Hono<AppEnvironment>) {
     validate("param", orgParams),
     validate("json", createSchema),
     async (context) => {
-      const input = createSchema.parse(await context.req.json());
-      return context.json(
-        await service.createEntitlement(
-          context.get("db"),
-          actorFromContext(context),
-          context.req.param("organizationId")!,
-          { ...input, ...windowDates(input) },
-        ),
+      const organizationId = context.req.param("organizationId")!;
+      const parsed = createSchema.parse(await context.req.json());
+      const input = {
+        ...parsed,
+        ...windowDates(parsed),
+        ...(parsed.scopes === undefined
+          ? {}
+          : { scopes: [...new Set(parsed.scopes)].sort() }),
+      };
+      return platformCommand(
+        context,
+        "createEntitlement",
+        operationJson({ organizationId, input }),
         201,
+        async (platform) => {
+          const row = await service.createEntitlement(
+            platform,
+            organizationId,
+            input,
+          );
+          return {
+            body: row,
+            resultReference: { type: "entitlement", id: row.id },
+          };
+        },
+        { retention: "ordinary" },
       );
     },
   );
@@ -287,14 +354,11 @@ export function register(app: Hono<AppEnvironment>) {
     routes.getEntitlement,
     validate("param", entitlementParams),
     async (context) => {
-      return context.json(
-        await service.getEntitlement(
-          context.get("db"),
-          context.req.param("organizationId")!,
-          context.req.param("entitlementId")!,
-        ),
-        200,
+      const result = await tenantRead(context, "directory", (tenant) =>
+        service.getEntitlement(tenant, context.req.param("entitlementId")!),
       );
+      context.header("ETag", revisionTag(result));
+      return context.json(result);
     },
   );
   registerRoute(
@@ -303,16 +367,43 @@ export function register(app: Hono<AppEnvironment>) {
     validate("param", entitlementParams),
     validate("json", patchSchema),
     async (context) => {
-      const input = patchSchema.parse(await context.req.json());
-      return context.json(
-        await service.updateEntitlement(
-          context.get("db"),
-          actorFromContext(context),
-          context.req.param("organizationId")!,
-          context.req.param("entitlementId")!,
-          { ...input, ...windowDates(input) },
-        ),
+      const expected = requireRevision(context.req.header("If-Match"));
+      const organizationId = context.req.param("organizationId")!;
+      const entitlementId = context.req.param("entitlementId")!;
+      const parsed = patchSchema.parse(await context.req.json());
+      const input = {
+        ...parsed,
+        ...windowDates(parsed),
+        ...(parsed.scopes === undefined
+          ? {}
+          : { scopes: [...new Set(parsed.scopes)].sort() }),
+      };
+      return platformCommand(
+        context,
+        "updateEntitlement",
+        operationJson({ organizationId, entitlementId, expected, input }),
         200,
+        async (platform) => {
+          const result = await service.updateEntitlement(
+            platform,
+            organizationId,
+            entitlementId,
+            input,
+            expected,
+          );
+          return {
+            body: result.row,
+            outcome: result.changed ? "applied" : "noop",
+            resultReference: { type: "entitlement", id: entitlementId },
+          };
+        },
+        {
+          retention: "ordinary",
+          etag: (body) =>
+            revisionTag(
+              entitlementSchema.pick({ id: true, revision: true }).parse(body),
+            ),
+        },
       );
     },
   );
@@ -321,14 +412,26 @@ export function register(app: Hono<AppEnvironment>) {
     routes.disableEntitlement,
     validate("param", entitlementParams),
     async (context) => {
-      return context.json(
-        await service.disableEntitlement(
-          context.get("db"),
-          actorFromContext(context),
-          context.req.param("organizationId")!,
-          context.req.param("entitlementId")!,
-        ),
+      const organizationId = context.req.param("organizationId")!;
+      const entitlementId = context.req.param("entitlementId")!;
+      return platformCommand(
+        context,
+        "disableEntitlement",
+        operationJson({ organizationId, entitlementId }),
         200,
+        async (platform) => {
+          const result = await service.disableEntitlement(
+            platform,
+            organizationId,
+            entitlementId,
+          );
+          return {
+            body: result.row,
+            outcome: result.changed ? "applied" : "noop",
+            resultReference: { type: "entitlement", id: entitlementId },
+          };
+        },
+        { retention: "ordinary" },
       );
     },
   );
@@ -337,14 +440,26 @@ export function register(app: Hono<AppEnvironment>) {
     routes.enableEntitlement,
     validate("param", entitlementParams),
     async (context) => {
-      return context.json(
-        await service.enableEntitlement(
-          context.get("db"),
-          actorFromContext(context),
-          context.req.param("organizationId")!,
-          context.req.param("entitlementId")!,
-        ),
+      const organizationId = context.req.param("organizationId")!;
+      const entitlementId = context.req.param("entitlementId")!;
+      return platformCommand(
+        context,
+        "enableEntitlement",
+        operationJson({ organizationId, entitlementId }),
         200,
+        async (platform) => {
+          const result = await service.enableEntitlement(
+            platform,
+            organizationId,
+            entitlementId,
+          );
+          return {
+            body: result.row,
+            outcome: result.changed ? "applied" : "noop",
+            resultReference: { type: "entitlement", id: entitlementId },
+          };
+        },
+        { retention: "ordinary" },
       );
     },
   );
@@ -353,13 +468,26 @@ export function register(app: Hono<AppEnvironment>) {
     routes.removeEntitlement,
     validate("param", entitlementParams),
     async (context) => {
-      await service.removeEntitlement(
-        context.get("db"),
-        actorFromContext(context),
-        context.req.param("organizationId")!,
-        context.req.param("entitlementId")!,
+      const organizationId = context.req.param("organizationId")!;
+      const entitlementId = context.req.param("entitlementId")!;
+      return platformCommand(
+        context,
+        "removeEntitlement",
+        operationJson({ organizationId, entitlementId }),
+        204,
+        async (platform) => {
+          await service.removeEntitlement(
+            platform,
+            organizationId,
+            entitlementId,
+          );
+          return {
+            body: null,
+            resultReference: { type: "entitlement", id: entitlementId },
+          };
+        },
+        { retention: "ordinary" },
       );
-      return context.body(null, 204);
     },
   );
 }

@@ -1,8 +1,15 @@
+import { listUserAuditEvents } from "./audit.ts";
+import {
+  inPlatformWrite,
+  inPlatformRead,
+} from "../__tests__/platform-context.ts";
+import { inTenantRead } from "../__tests__/tenant-command.ts";
+import type { Database } from "../db/client.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
-import { createOrganization } from "../db/queries/organizations.ts";
+import { createOrganization } from "../__tests__/organization-queries.ts";
 import { createId } from "../lib/id.ts";
 let connection: DatabaseConnection;
 beforeAll(() => {
@@ -10,24 +17,55 @@ beforeAll(() => {
 });
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table audit_events, organizations, users cascade`,
+    sql`truncate table security_identifiers, audit_events, organizations, users cascade`,
   );
 });
 afterAll(async () => {
   await connection.close();
 });
-import { auditEvents } from "../db/schema/index.ts";
+import {
+  auditEvents,
+  grantContexts,
+  members,
+  oauthClients,
+  sessions,
+  users,
+} from "../db/schema/index.ts";
 import type { Actor } from "./actor.ts";
 const actor: Actor = {
-  actorType: "user",
-  actorId: createId(),
+  actorType: "system",
+  actorId: "root",
   requestId: "service-test",
   ip: "192.0.2.1",
   userAgent: "test",
 };
 const invalidActor = { ...actor, requestId: "\0" };
-import * as service from "./sso-providers.ts";
-import { findSsoProviderByOrganization } from "../db/queries/sso-providers.ts";
+import * as implementation from "./sso-providers.ts";
+const service = {
+  ...implementation,
+
+  putSsoProvider: (
+    db: Database,
+    actor: Actor,
+    org: string,
+    input: implementation.SsoProviderInput,
+    expected?: { id: string; revision: number } | null,
+  ) =>
+    inPlatformWrite(
+      db,
+      (context) => implementation.putSsoProvider(context, org, input, expected),
+      actor,
+    ),
+  deleteSsoProvider: (db: Database, actor: Actor, org: string) =>
+    inPlatformWrite(
+      db,
+      (context) => implementation.deleteSsoProvider(context, org),
+      actor,
+    ),
+  getSsoProvider: (db: Database, org: string) =>
+    inTenantRead(db, org, "directory", implementation.getSsoProvider),
+};
+import { findSsoProviderByOrganization } from "../__tests__/sso-queries.ts";
 import { ssoProviders } from "../db/schema/index.ts";
 import { eq } from "drizzle-orm";
 const input = {
@@ -142,4 +180,166 @@ test("secretless and null configurations can be updated, and all audit failures 
   });
   expect(updated.provider.oidc.hasClientSecret).toBe(false);
   expect(await db.select().from(auditEvents)).toHaveLength(2);
+});
+
+async function grantFixture(withProvider = true) {
+  const db = connection.db;
+  const org = await createOrganization(db, { slug: "alpha", name: "Alpha" });
+  const other = await createOrganization(db, { slug: "beta", name: "Beta" });
+  if (withProvider) await service.putSsoProvider(db, actor, org.id, input);
+  const userId = createId();
+  const sessionId = createId();
+  const authTime = new Date();
+  await db.insert(users).values({
+    id: userId,
+    email: `${userId}@example.com`,
+    name: "Shared user",
+    status: "active",
+  });
+  await db.insert(sessions).values({
+    id: sessionId,
+    userId,
+    token: createId(),
+    createdAt: authTime,
+    expiresAt: new Date(Date.now() + 60000),
+  });
+  const [client] = await db
+    .insert(oauthClients)
+    .values({
+      id: createId(),
+      clientId: createId(),
+      redirectUris: [],
+      scopes: ["openid"],
+    })
+    .returning();
+  const contexts = [];
+  for (const tenant of [org, other]) {
+    const memberId = createId();
+    await db
+      .insert(members)
+      .values({ id: memberId, userId, organizationId: tenant.id });
+    const [grant] = await db
+      .insert(grantContexts)
+      .values({
+        id: createId(),
+        organizationId: tenant.id,
+        memberId,
+        userId,
+        clientInstanceId: client!.id,
+        authenticationSessionId: sessionId,
+        authTime,
+        requestedScopes: ["openid"],
+        expiresAt: new Date(Date.now() + 60000),
+      })
+      .returning();
+    contexts.push(grant!);
+  }
+  return { db, org, other, userId, sessionId, contexts };
+}
+const changedInput = {
+  ...input,
+  oidc: { ...input.oidc, clientSecret: "replacement-secret" },
+};
+for (const mode of ["create", "update", "delete"] as const) {
+  test(`SSO ${mode} revokes only its tenant grants with exact audit effects and preserves browser access`, async () => {
+    const { db, org, contexts, sessionId, userId } = await grantFixture(
+      mode !== "create",
+    );
+    if (mode === "delete") await service.deleteSsoProvider(db, actor, org.id);
+    else await service.putSsoProvider(db, actor, org.id, changedInput);
+    const after = await db
+      .select()
+      .from(grantContexts)
+      .orderBy(grantContexts.id);
+    for (const grant of after)
+      expect(grant.revokedAt !== null).toBe(grant.organizationId === org.id);
+    const [event] = await db
+      .select()
+      .from(auditEvents)
+      .orderBy(sql`${auditEvents.id} desc`)
+      .limit(1);
+    expect(event!.data!.effects).toEqual({
+      revokedGrantContexts: [{ id: contexts[0]!.id, userId }],
+    });
+    expect(event!.organizationId).toBe(org.id);
+    expect(JSON.stringify(event)).not.toContain(contexts[1]!.id);
+    expect(
+      await db.select().from(sessions).where(eq(sessions.id, sessionId)),
+    ).toHaveLength(1);
+    const history = await inPlatformRead(db, (context) =>
+      listUserAuditEvents(
+        context,
+        userId,
+        { action: event!.action },
+        { limit: 100 },
+      ),
+    );
+    expect(history.items.map((row) => row.id)).toContain(event!.id);
+    // Restoring configuration or recreating a provider never restores old grants.
+    await service.putSsoProvider(db, actor, org.id, input);
+    expect(
+      await db.select().from(grantContexts).orderBy(grantContexts.id),
+    ).toEqual(after);
+    const [restored] = await db
+      .select()
+      .from(auditEvents)
+      .orderBy(sql`${auditEvents.id} desc`)
+      .limit(1);
+    expect(restored!.data!.effects).toEqual({ revokedGrantContexts: [] });
+    await db.delete(users).where(eq(users.id, userId));
+    const erasedHistory = await inPlatformRead(db, (context) =>
+      listUserAuditEvents(
+        context,
+        userId,
+        { action: event!.action },
+        { limit: 100 },
+      ),
+    );
+    expect(erasedHistory.items.map((row) => row.id)).toContain(event!.id);
+  });
+  test(`SSO ${mode} audit failure rolls back configuration and grant revocation`, async () => {
+    const { db, org } = await grantFixture(mode !== "create");
+    const beforeProvider = await findSsoProviderByOrganization(db, org.id);
+    const beforeGrants = await db
+      .select()
+      .from(grantContexts)
+      .orderBy(grantContexts.id);
+    const beforeEvents = await db
+      .select()
+      .from(auditEvents)
+      .orderBy(auditEvents.id);
+    await expect(
+      mode === "delete"
+        ? service.deleteSsoProvider(db, invalidActor, org.id)
+        : service.putSsoProvider(db, invalidActor, org.id, changedInput),
+    ).rejects.toThrow();
+    expect(await findSsoProviderByOrganization(db, org.id)).toEqual(
+      beforeProvider,
+    );
+    expect(
+      await db.select().from(grantContexts).orderBy(grantContexts.id),
+    ).toEqual(beforeGrants);
+    expect(await db.select().from(auditEvents).orderBy(auditEvents.id)).toEqual(
+      beforeEvents,
+    );
+  });
+}
+test("unchanged SSO configuration preserves active grants and records empty effects", async () => {
+  const { db, org } = await grantFixture();
+  const before = await db
+    .select()
+    .from(grantContexts)
+    .orderBy(grantContexts.id);
+  expect(await service.putSsoProvider(db, actor, org.id, input)).toMatchObject({
+    changed: false,
+  });
+  expect(
+    await db.select().from(grantContexts).orderBy(grantContexts.id),
+  ).toEqual(before);
+  const [event] = await db
+    .select()
+    .from(auditEvents)
+    .orderBy(sql`${auditEvents.id} desc`)
+    .limit(1);
+  expect(event!.data!.effects).toEqual({ revokedGrantContexts: [] });
 });

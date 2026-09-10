@@ -1,8 +1,25 @@
-import { testSsoProvider, ssoProblemCodes } from "../../services/sso-test.ts";
+import { platformRead } from "./platform-read.ts";
+import { tenantRead } from "./tenant-read.ts";
+import {
+  requirePutRevision,
+  revisionTag,
+  revisionParameter,
+  revisionResponseHeaders,
+} from "./revision.ts";
+import {
+  getSsoTestConfiguration,
+  testSsoProvider,
+  ssoProblemCodes,
+} from "../../services/sso-test.ts";
 import { json, body, pathParameter, uuidParam } from "./schemas.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
-import { actorFromContext } from "../../services/actor.ts";
+import {
+  platformCommand,
+  operationJson,
+  idempotencyParameter,
+  commandResponseHeaders,
+} from "./command.ts";
 import type { AppEnvironment } from "../context.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
@@ -35,6 +52,7 @@ const putSchema = z.object({
 });
 export const ssoProviderSchema = z.object({
   id: z.uuid(),
+  revision: z.number().int().positive(),
   organizationId: z.uuid(),
   providerId: z.string(),
   issuer: z.string(),
@@ -104,7 +122,11 @@ export const routes = {
     responses: standardResponses(
       { orgScope: "org:read" },
       {
-        200: { description: "SSO provider", content: json(ssoProviderSchema) },
+        200: {
+          description: "SSO provider",
+          headers: revisionResponseHeaders,
+          content: json(ssoProviderSchema),
+        },
         ...problemResponses(400, 404),
       },
     ),
@@ -115,11 +137,28 @@ export const routes = {
     operationId: "putSsoProvider",
     summary: "Put the SSO provider",
     description:
-      "Create or replace the organisation’s SSO configuration and return the provider with credentials redacted. Prefer getSsoProvider to inspect configuration; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict indicates a duplicate provider.",
+      "Requires Idempotency-Key and exactly one precondition: If-None-Match: * for creation, or the strong If-Match ETag from getSsoProvider for replacement. Missing preconditions return 428; conflicting/malformed headers return 400; stale state returns 412. Committed replay precedes the original precondition. Identical authorised retries recover the original redacted result for seven days without repeating effects. Live changed-input reuse conflicts; expired recovery never repeats the command. Create or replace the organisation’s SSO configuration and return the provider with credentials redacted. A real configuration change, including first creation, irreversibly revokes existing tenant grant contexts in the same audited transaction; unchanged configuration preserves them. Other tenants and global browser sessions are preserved. Prefer getSsoProvider to inspect configuration; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict indicates a duplicate provider.",
     tag: "SSO provider",
     platformScope: "platform:write",
     kind: "write",
-    parameters,
+    parameters: [
+      ...parameters,
+      idempotencyParameter,
+      {
+        ...revisionParameter,
+        required: false,
+        description:
+          "For replacement: supply the current provider ETag. Mutually exclusive with If-None-Match; exactly one precondition is required.",
+      },
+      {
+        in: "header",
+        name: "If-None-Match",
+        required: false,
+        schema: { type: "string", enum: ["*"] },
+        description:
+          "For creation: assert that no provider exists. Mutually exclusive with If-Match; exactly one precondition is required.",
+      },
+    ],
     requestBody: body(putSchema),
     example: {
       body: {
@@ -131,12 +170,17 @@ export const routes = {
     responses: standardResponses(
       {},
       {
-        200: { description: "SSO provider", content: json(ssoProviderSchema) },
-        201: {
-          description: "SSO provider created",
+        200: {
+          description: "SSO provider",
+          headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
           content: json(ssoProviderSchema),
         },
-        ...problemResponses(400, 404, 409),
+        201: {
+          description: "SSO provider created",
+          headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
+          content: json(ssoProviderSchema),
+        },
+        ...problemResponses(400, 404, 409, 410, 412, 428, 503),
       },
     ),
   },
@@ -146,16 +190,19 @@ export const routes = {
     operationId: "deleteSsoProvider",
     summary: "Delete the SSO provider",
     description:
-      "Delete the organisation’s SSO configuration and return no content, preventing future sign-in through that provider. Prefer putSsoProvider to replace its configuration; validation_failed rejects malformed ids and not_found means the organisation or provider is missing.",
+      "Requires Idempotency-Key. Identical authorised retries recover the original redacted result for seven days without repeating effects. Live changed-input reuse conflicts; expired recovery never repeats the command. Delete the organisation’s SSO configuration and return no content, preventing future sign-in through that provider and irreversibly revoking existing tenant grant contexts in the same audited transaction. Recreating the provider does not restore old grants. Other tenants and global browser sessions are preserved. Prefer putSsoProvider to replace its configuration; validation_failed rejects malformed ids and not_found means the organisation or provider is missing.",
     tag: "SSO provider",
     platformScope: "platform:write",
     kind: "write",
-    parameters,
+    parameters: [...parameters, idempotencyParameter],
     responses: standardResponses(
       {},
       {
-        204: { description: "SSO provider deleted" },
-        ...problemResponses(400, 404, 409),
+        204: {
+          description: "SSO provider deleted",
+          headers: commandResponseHeaders,
+        },
+        ...problemResponses(400, 404, 409, 410, 503),
       },
     ),
   },
@@ -169,8 +216,12 @@ export function register(app: Hono<AppEnvironment>) {
     async (context) =>
       context.json(
         await testSsoProvider(
-          context.get("db"),
-          context.req.param("organizationId")!,
+          await platformRead(context, (platform) =>
+            getSsoTestConfiguration(
+              platform,
+              context.req.param("organizationId")!,
+            ),
+          ),
           context.get("ssoTest"),
         ),
       ),
@@ -179,13 +230,15 @@ export function register(app: Hono<AppEnvironment>) {
     app,
     routes.getSsoProvider,
     validate("param", paramSchema),
-    async (context) =>
-      context.json(
-        await service.getSsoProvider(
-          context.get("db"),
-          context.req.param("organizationId")!,
-        ),
-      ),
+    async (context) => {
+      const result = await tenantRead(
+        context,
+        "directory",
+        service.getSsoProvider,
+      );
+      context.header("ETag", revisionTag(result));
+      return context.json(result);
+    },
   );
   registerRoute(
     app,
@@ -193,13 +246,44 @@ export function register(app: Hono<AppEnvironment>) {
     validate("param", paramSchema),
     validate("json", putSchema),
     async (context) => {
-      const result = await service.putSsoProvider(
-        context.get("db"),
-        actorFromContext(context),
-        context.req.param("organizationId")!,
-        putSchema.parse(await context.req.json()),
+      const expected = requirePutRevision(
+        context.req.header("If-Match"),
+        context.req.header("If-None-Match"),
       );
-      return context.json(result.provider, result.created ? 201 : 200);
+      const organizationId = context.req.param("organizationId")!;
+      const input = putSchema.parse(await context.req.json());
+      input.oidc.tokenEndpointAuthentication ??= "client_secret_post";
+      input.oidc.pkce ??= true;
+      input.oidc.discoveryEndpoint ??= `${input.issuer}/.well-known/openid-configuration`;
+      if (input.oidc.scopes)
+        input.oidc.scopes = [...new Set(input.oidc.scopes)].sort();
+      return platformCommand(
+        context,
+        "putSsoProvider",
+        operationJson({ organizationId, expected, input }),
+        200,
+        async (platform) => {
+          const result = await service.putSsoProvider(
+            platform,
+            organizationId,
+            input,
+            expected,
+          );
+          return {
+            body: result.provider,
+            statusCode: result.created ? 201 : 200,
+            outcome: result.changed ? "applied" : "noop",
+            resultReference: { type: "sso_provider", id: result.provider.id },
+          };
+        },
+        {
+          retention: "ordinary",
+          etag: (body) =>
+            revisionTag(
+              ssoProviderSchema.pick({ id: true, revision: true }).parse(body),
+            ),
+        },
+      );
     },
   );
   registerRoute(
@@ -207,12 +291,18 @@ export function register(app: Hono<AppEnvironment>) {
     routes.deleteSsoProvider,
     validate("param", paramSchema),
     async (context) => {
-      await service.deleteSsoProvider(
-        context.get("db"),
-        actorFromContext(context),
-        context.req.param("organizationId")!,
+      const organizationId = context.req.param("organizationId")!;
+      return platformCommand(
+        context,
+        "deleteSsoProvider",
+        { organizationId },
+        204,
+        async (platform) => {
+          const id = await service.deleteSsoProvider(platform, organizationId);
+          return { body: null, resultReference: { type: "sso_provider", id } };
+        },
+        { retention: "ordinary" },
       );
-      return context.body(null, 204);
     },
   );
 }

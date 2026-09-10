@@ -1,11 +1,8 @@
 import dns from "node:dns/promises";
 import { BlockList, isIP } from "node:net";
 import { z } from "zod";
-import type { Database } from "../db/client.ts";
-import {
-  findSsoProviderByOrganization,
-  redactSsoProvider,
-} from "../db/queries/sso-providers.ts";
+import { type PlatformReadContext } from "./platform-context.ts";
+import { readSsoEndpoints } from "../db/queries/sso-providers.ts";
 import { ProblemError } from "../http/problem.ts";
 import { classifyIssuer } from "./federation.ts";
 
@@ -85,18 +82,26 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-export async function testSsoProvider(
-  db: Database,
+/** Read only the endpoint snapshot needed by the connectivity probe. */
+export async function getSsoTestConfiguration(
+  context: PlatformReadContext,
   organizationId: string,
+) {
+  const provider = await readSsoEndpoints(context, organizationId);
+  if (!provider)
+    throw new ProblemError(404, "provider_not_found", "SSO provider not found");
+  return provider;
+}
+
+/** No database access: run after the authorised snapshot transaction closes. */
+export async function testSsoProvider(
+  configuration: { issuer: string; discoveryEndpoint?: string },
   options: SsoTestOptions = {},
 ) {
   const started = performance.now();
-  const provider = await findSsoProviderByOrganization(db, organizationId);
-  if (!provider)
-    throw new ProblemError(404, "provider_not_found", "SSO provider not found");
-  const issuer = provider.issuer;
+  const { issuer } = configuration;
   const url =
-    redactSsoProvider(provider).oidc.discoveryEndpoint ??
+    configuration.discoveryEndpoint ??
     `${issuer.replace(/\/$/, "")}/.well-known/openid-configuration`;
   const result = {
     issuer,

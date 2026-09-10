@@ -62,7 +62,9 @@ function recordingDatabase(...results: unknown[]) {
     },
     create: async (operation: Record<string, unknown>) => {
       creates.push(operation);
-      return (operation.model === "user" ? { id: "new-user" } : operation) as never;
+      return (
+        operation.model === "user" ? { id: "new-user" } : operation
+      ) as never;
     },
   } as unknown as DBTransactionAdapter;
   return { database, updates, creates };
@@ -97,14 +99,15 @@ describe("unit: federated user resolution", () => {
       },
       databaseWithFinds(),
     );
-    expect(result).toMatchObject({ action: "reject", code: "provider_not_found" });
+    expect(result).toMatchObject({
+      action: "reject",
+      code: "provider_not_found",
+    });
   });
 
   test("classifies tenant-scoped Entra, Google, and generic OIDC issuers", () => {
     expect(
-      classifyIssuer(
-        `https://login.microsoftonline.com/${tenantId}/v2.0`,
-      ),
+      classifyIssuer(`https://login.microsoftonline.com/${tenantId}/v2.0`),
     ).toEqual({ kind: "entra", tenantId });
     expect(classifyIssuer("https://accounts.google.com")).toEqual({
       kind: "google",
@@ -138,7 +141,9 @@ describe("unit: federated user resolution", () => {
       );
       expect(result.action).toBe("reject");
       expect(result.action === "reject" ? result.code : "").toBe(
-        claims.tid === "foreign-tenant" ? "directory_mismatch" : "guest_account",
+        claims.tid === "foreign-tenant"
+          ? "directory_mismatch"
+          : "guest_account",
       );
     }
   });
@@ -213,20 +218,17 @@ describe("unit: federated user resolution", () => {
   test("rejects a directory placeholder already owned by a non-inert user", async () => {
     const result = await resolveFederatedUser(
       input(),
-      databaseWithFinds(
-        provider,
-        organization,
-        domain,
-        null,
-        {
-          id: "placeholder-account",
-          userId: "owner",
-          user: { id: "owner", status: "active" },
-        },
-      ),
+      databaseWithFinds(provider, organization, domain, null, {
+        id: "placeholder-account",
+        userId: "owner",
+        user: { id: "owner", status: "active" },
+      }),
     );
 
-    expect(result).toMatchObject({ action: "reject", code: "identity_conflict" });
+    expect(result).toMatchObject({
+      action: "reject",
+      code: "identity_conflict",
+    });
   });
 
   test("handles exact-account lifecycle and only fills empty directory columns", async () => {
@@ -321,16 +323,16 @@ describe("unit: federated user resolution", () => {
     for (const status of ["active", "inert"] as const) {
       const result = await resolveFederatedUser(
         input(),
-        databaseWithFinds(
-          provider,
-          organization,
-          domain,
-          null,
-          null,
-          { id: "holder", email: "person@contoso.com", status },
-        ),
+        databaseWithFinds(provider, organization, domain, null, null, {
+          id: "holder",
+          email: "person@contoso.com",
+          status,
+        }),
       );
-      expect(result).toMatchObject({ action: "reject", code: "email_conflict" });
+      expect(result).toMatchObject({
+        action: "reject",
+        code: "email_conflict",
+      });
     }
   });
 
@@ -389,9 +391,32 @@ describe("unit: federated user resolution", () => {
     ).rejects.toThrow("Federated account has no owner");
     await expect(
       resolveFederatedUser(
-        input({ providerUser: { email: "malformed", emailVerified: false, name: "" } }),
+        input({
+          providerUser: { email: "malformed", emailVerified: false, name: "" },
+        }),
         databaseWithFinds(provider, organization),
       ),
     ).rejects.toThrow("Provider returned an invalid email");
   });
+});
+
+test("revoked imported membership rejects activation before identity mutation", async () => {
+  const database = recordingDatabase(
+    provider,
+    organization,
+    domain,
+    null,
+    {
+      id: "placeholder",
+      userId: "imported",
+      user: { id: "imported", status: "inert" },
+    },
+    { status: "revoked" },
+  );
+  expect(await resolveFederatedUser(input(), database.database)).toMatchObject({
+    action: "reject",
+    code: "membership_revoked",
+  });
+  expect(database.updates).toEqual([]);
+  expect(database.creates).toEqual([]);
 });

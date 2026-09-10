@@ -1,6 +1,15 @@
-import type { Database, Executor } from "../db/client.ts";
+import {
+  revokeSessionGrantContexts,
+  revokeUserGrantContexts,
+} from "../db/queries/grant-contexts.ts";
+import {
+  requirePlatformUsersContext,
+  type PlatformUsersContext,
+} from "./platform-context.ts";
+import { type PlatformReadContext } from "./platform-context.ts";
+import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/sessions.ts";
-import { findUser, lockUser } from "../db/queries/users.ts";
+import { userExists, lockUser } from "../db/queries/users.ts";
 import {
   revokeSessionTokens,
   revokeUserTokens,
@@ -12,97 +21,101 @@ import type { Actor } from "./actor.ts";
 
 function requireRow<T>(row: T | null): T {
   if (!row)
-    throw new ProblemError(
-      404,
-      "not_found",
-      "User, member or session not found",
-    );
+    throw new ProblemError(404, "not_found", "User or session not found");
   return row;
 }
 function audit(
   tx: Executor,
   actor: Actor,
-  organizationId: string | null,
   targetId: string,
   action: string,
   data: Record<string, unknown>,
+  targetType = "session",
 ) {
   return recordAuditEvent(tx, {
     ...actor,
-    organizationId,
+    organizationId: null,
     targetId,
-    targetType: "session",
+    targetType,
     action,
     data,
     outcome: "success",
+    schemaVersion: 2,
   });
 }
 export async function listUserSessions(
-  db: Database,
+  context: PlatformReadContext,
   userId: string,
   page: PageQuery,
 ) {
-  requireRow(await findUser(db, userId));
+  if (!(await userExists(context, userId)))
+    throw new ProblemError(404, "not_found", "User or session not found");
   return cursorPage(
-    await queries.listUserSessions(db, userId, page),
+    await queries.listUserSessions(context, userId, page),
     page.limit,
   );
 }
-export function revokeUserSession(
-  db: Database,
-  actor: Actor,
+export async function revokeUserSession(
+  context: PlatformUsersContext,
   userId: string,
   sessionId: string,
 ) {
-  return db.transaction(async (tx) => {
-    requireRow(await lockUser(tx, userId));
-    requireRow(await queries.findUserSession(tx, userId, sessionId));
-    // Deleting the session clears token sessionId foreign keys.
-    await revokeSessionTokens(tx, [sessionId]);
-    await queries.deleteSession(tx, userId, sessionId);
-    await audit(tx, actor, null, sessionId, "session.revoked", { userId });
-  });
-}
-async function revokeAll(
-  tx: Executor,
-  actor: Actor,
-  userId: string,
-  organizationId: string | null,
-) {
-  requireRow(await lockUser(tx, userId));
-  const revoked = await queries.deleteUserSessions(tx, [userId]);
-  const tokens = await revokeUserTokens(tx, [userId]);
-  await audit(tx, actor, organizationId, userId, "session.revoked_all", {
+  const { tx, actor } = requirePlatformUsersContext(context);
+  requireRow(await lockUser(context, userId));
+  const before = requireRow(
+    await queries.findUserSession(context, userId, sessionId),
+  );
+  // Deleting the session clears token sessionId foreign keys.
+  const tokens = await revokeSessionTokens(context, sessionId);
+  const revokedGrantContexts = await revokeSessionGrantContexts(
+    context,
     userId,
-    sessions: revoked,
+    sessionId,
+  );
+  await queries.deleteSession(context, userId, sessionId);
+  await audit(tx, actor, sessionId, "session.revoked", {
+    userId,
+    before: {
+      id: before.id,
+      createdAt: before.createdAt,
+      expiresAt: before.expiresAt,
+    },
+    after: null,
+    sessionIds: [sessionId],
+    revokedGrantContexts,
     ...tokens,
   });
-  return { revoked };
 }
-export function revokeUserSessions(db: Database, actor: Actor, userId: string) {
-  return db.transaction((tx) => revokeAll(tx, actor, userId, null));
-}
-export async function listMemberSessions(
-  db: Database,
-  organizationId: string,
-  memberId: string,
-  page: PageQuery,
+export async function revokeUserSessions(
+  context: PlatformUsersContext,
+  userId: string,
 ) {
-  const userId = requireRow(
-    await queries.findMemberUserId(db, organizationId, memberId),
+  const { tx, actor } = requirePlatformUsersContext(context);
+  requireRow(await lockUser(context, userId));
+  const sessionIds = await queries.deleteUserSessionIds(context, userId);
+  const revoked = sessionIds.length;
+  const tokens = await revokeUserTokens(context, userId);
+  const revokedGrantContexts = await revokeUserGrantContexts(context, userId);
+  await audit(
+    tx,
+    actor,
+    userId,
+    "session.revoked_all",
+    {
+      userId,
+      sessions: revoked,
+      sessionIds,
+      revokedGrantContexts,
+      ...tokens,
+    },
+    "user",
   );
-  return listUserSessions(db, userId, page);
-}
-export function revokeMemberSessions(
-  db: Database,
-  actor: Actor,
-  organizationId: string,
-  memberId: string,
-) {
-  return db.transaction(async (tx) => {
-    const userId = requireRow(
-      await queries.findMemberUserId(tx, organizationId, memberId),
-    );
-    return revokeAll(tx, actor, userId, organizationId);
-  });
+  return {
+    revoked,
+    changed:
+      revoked > 0 ||
+      tokens.refreshTokens > 0 ||
+      tokens.accessTokens > 0 ||
+      revokedGrantContexts.length > 0,
+  };
 }

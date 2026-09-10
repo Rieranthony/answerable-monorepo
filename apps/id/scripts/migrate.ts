@@ -7,11 +7,13 @@ import {
 } from "../src/__tests__/test-database.ts";
 import { runMigrations } from "../src/db/migrate.ts";
 import * as schema from "../src/db/schema/index.ts";
-import { loadEnvironment } from "../src/env.ts";
+import { z } from "zod";
 
 const isTest = process.argv.includes("--test");
 if (isTest) assertDisposableTestDatabase("migrate");
-const databaseUrl = isTest ? testDatabaseUrl : loadEnvironment().databaseUrl;
+const databaseUrl = isTest
+  ? testDatabaseUrl
+  : z.url().parse(Bun.env.DATABASE_MIGRATION_URL);
 const pool = new Pool({ connectionString: databaseUrl, max: 1 });
 
 try {

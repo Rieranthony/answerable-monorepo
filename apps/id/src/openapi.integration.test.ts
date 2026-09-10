@@ -36,6 +36,14 @@ test("the public OpenAPI snapshot matches the served document", async () => {
   ).json()) as PublicOpenApiDocument;
 
   expect(response.status).toBe(200);
+  for (const field of [
+    "authenticationOrganizationId",
+    "authenticationProviderId",
+    "authenticationProviderRevision",
+  ])
+    expect(JSON.stringify(document.components.schemas?.Session)).not.toContain(
+      field,
+    );
   expect(
     withoutServers(document),
     "Public OpenAPI snapshot drifted; run `bun run openapi:export` from apps/id.",

@@ -37,8 +37,12 @@ test("integration: migrations are idempotent", async () => {
   `);
   expect(tables.rows.map((row) => row.table_name)).toEqual([
     "accounts",
+    "admin_operation_results",
+    "admin_operations",
+    "audit_event_subjects",
     "audit_events",
     "entitlements",
+    "grant_contexts",
     "group_members",
     "groups",
     "invitations",
@@ -51,10 +55,13 @@ test("integration: migrations are idempotent", async () => {
     "oauth_consents",
     "oauth_refresh_tokens",
     "oauth_resources",
+    "organization_capabilities",
     "organization_domains",
     "organizations",
+    "security_identifiers",
     "sessions",
     "sso_providers",
+    "system_bindings",
     "users",
     "verifications",
   ]);

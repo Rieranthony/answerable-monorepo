@@ -1,3 +1,6 @@
+import { inPlatformRead } from "../__tests__/platform-context.ts";
+import { inTenantRead } from "../__tests__/tenant-command.ts";
+import type { Database } from "../db/client.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import { testEnvironment } from "../__tests__/support.ts";
@@ -8,7 +11,10 @@ import {
   ssoProviders,
 } from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
-import { getOrganizationSummary, getPlatformSummary } from "./summary.ts";
+import {
+  getOrganizationSummary as readOrganizationSummary,
+  getPlatformSummary as readPlatformSummary,
+} from "./summary.ts";
 
 let connection: DatabaseConnection;
 const environment = testEnvironment();
@@ -17,7 +23,7 @@ beforeAll(() => {
 });
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table audit_events, organizations, users, oauth_clients, oauth_resources cascade`,
+    sql`truncate table security_identifiers, audit_events, organizations, users, oauth_clients, oauth_resources cascade`,
   );
 });
 afterAll(async () => {
@@ -28,7 +34,7 @@ test("missing organisation is 404 and empty fleet has the public shape", async (
   await expect(
     getOrganizationSummary(connection.db, createId()),
   ).rejects.toMatchObject({ status: 404, code: "not_found" });
-  expect(await getPlatformSummary(connection.db, environment)).toEqual({
+  expect(await getPlatformSummary(connection.db)).toEqual({
     platform: { organizationId: null, groupId: null },
     organizations: { active: 0, disabled: 0 },
     users: { inert: 0, active: 0, disabled: 0 },
@@ -59,7 +65,6 @@ test("organisation shape preserves the row and reports absent configuration", as
       groups: { active: 0, disabled: 0 },
       entitlements: { active: 0, disabled: 0, targets: [] },
       clients: { owned: 0 },
-      sessions: { active: 0 },
       signIns7d: { succeeded: 0, lastSucceededAt: null },
     },
   );
@@ -119,10 +124,16 @@ test("classifies configured issuers and uses distinct seven-day and 24-hour wind
       outcome: "failure",
     });
   const before = await db.select().from(auditEvents);
-  expect((await getPlatformSummary(db, environment)).signIns24h).toEqual({
+  expect((await getPlatformSummary(db)).signIns24h).toEqual({
     succeeded: 3,
     rejected: 1,
     rejectedByReason: { unknown_domain: 1 },
   });
   expect(await db.select().from(auditEvents)).toEqual(before);
 });
+
+const getOrganizationSummary = (db: Database, org: string) =>
+  inTenantRead(db, org, "directory", readOrganizationSummary);
+
+const getPlatformSummary = (db: Database) =>
+  inPlatformRead(db, readPlatformSummary);

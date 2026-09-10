@@ -1,5 +1,12 @@
 import { sql } from "drizzle-orm";
-import { check, pgTable, text, unique, uuid } from "drizzle-orm/pg-core";
+import {
+  check,
+  integer,
+  pgTable,
+  text,
+  unique,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 import { organizations, users } from "./auth.ts";
 import { id, timestamps } from "./columns.ts";
@@ -22,8 +29,10 @@ export const ssoProviders = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     domain: text("domain").notNull(),
     ...timestamps(),
+    revision: integer("revision").default(1).notNull(),
   },
   (table) => [
+    check("sso_providers_revision_check", sql`${table.revision} > 0`),
     unique("sso_providers_organization_id_unique").on(table.organizationId),
     check(
       "sso_providers_domain_normalized_check",

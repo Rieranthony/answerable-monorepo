@@ -1,10 +1,15 @@
+import { revokeMemberGrantContexts } from "../db/queries/grant-contexts.ts";
+import { memberAccess } from "../db/queries/access.ts";
 import * as queries from "../db/queries/members.ts";
 import type { MemberWindow } from "../db/queries/groups.ts";
-import type { Database, Executor } from "../db/client.ts";
+import type { Executor } from "../db/client.ts";
 import {
-  findOrganization,
-  lockOrganization,
-} from "../db/queries/organizations.ts";
+  requireTenantMemberContext,
+  requireTenantDirectoryContext,
+  requireTenantMemberConfigurationContext,
+  type TenantReadContext,
+  type TenantMemberContext,
+} from "./tenant-context.ts";
 import { recordAuditEvent } from "../db/queries/audit.ts";
 import { cursorPage } from "../http/pagination.ts";
 import { ProblemError } from "../http/problem.ts";
@@ -32,59 +37,143 @@ function audit(
     targetId,
     targetType: "member",
     action,
+    schemaVersion: 2,
     data,
     outcome: "success",
   });
 }
 export async function listMembers(
-  db: Database,
-  organizationId: string,
+  context: TenantReadContext<"directory">,
   query: queries.MemberQuery,
 ) {
-  requireRow(await findOrganization(db, organizationId));
-  return cursorPage(
-    await queries.listMembers(db, organizationId, query),
-    query.limit,
-  );
+  requireTenantDirectoryContext(context);
+  return cursorPage(await queries.listMembers(context, query), query.limit);
 }
 export async function getMember(
-  db: Database,
-  organizationId: string,
+  context: TenantReadContext<"directory">,
   memberId: string,
 ) {
-  return requireRow(await queries.findMember(db, organizationId, memberId));
+  requireTenantDirectoryContext(context);
+  return requireRow(await queries.findMember(context, memberId));
 }
-export function updateWindow(
-  db: Database,
-  actor: Actor,
-  organizationId: string,
+export async function updateWindow(
+  context: TenantMemberContext,
   memberId: string,
   patch: MemberWindow,
+  expected?: { id: string; revision: number },
 ) {
-  return db.transaction(async (tx) => {
-    requireRow(await lockOrganization(tx, organizationId));
-    const row = requireRow(
-      await queries.updateMemberWindow(tx, organizationId, memberId, patch),
+  const { tx, organizationId, actor } = requireTenantMemberContext(context);
+  const before = requireRow(
+    await queries.findMemberConfiguration(context, memberId),
+  );
+  if (
+    expected &&
+    (before.id !== expected.id || before.revision !== expected.revision)
+  )
+    throw new ProblemError(
+      412,
+      "revision_mismatch",
+      "Member changed; read its configuration before issuing a new command",
     );
-    await audit(tx, actor, organizationId, memberId, "member.updated", {
-      changes: patch,
-    });
-    return row;
+  const accessBefore = await memberAccess(context, memberId);
+  const row = requireRow(
+    await queries.updateMemberWindow(context, memberId, patch),
+  );
+  const accessAfter = await memberAccess(context, memberId);
+  await audit(tx, actor, organizationId, memberId, "member.updated", {
+    changes: patch,
+    before: { ...before, access: accessBefore },
+    after: {
+      ...before,
+      revision: row.revision,
+      validFrom: row.validFrom,
+      validUntil: row.validUntil,
+      access: accessAfter,
+    },
   });
+  return row;
 }
-export function remove(
-  db: Database,
-  actor: Actor,
-  organizationId: string,
+export async function remove(context: TenantMemberContext, memberId: string) {
+  const { tx, organizationId, actor } = requireTenantMemberContext(context);
+  const before = requireRow(await queries.findMember(context, memberId));
+  const accessBefore = await memberAccess(context, memberId);
+  const row = requireRow(await queries.revokeMember(context, memberId));
+  const { removedGrants, removedGroups } =
+    await queries.removeMemberAssignments(context, memberId);
+  const revokedGrantContexts = await revokeMemberGrantContexts(
+    context,
+    memberId,
+  );
+  const accessAfter = await memberAccess(context, memberId);
+  const unchanged =
+    revokedGrantContexts.length === 0 &&
+    before.membershipStatus === "revoked" &&
+    removedGrants.length === 0 &&
+    removedGroups.length === 0;
+  await audit(
+    tx,
+    actor,
+    organizationId,
+    memberId,
+    unchanged ? "member.removal_unchanged" : "member.removed",
+    {
+      userId: row.userId,
+      reason: "administrative_removal",
+      before: {
+        membershipStatus: before.membershipStatus,
+        revokedAt: before.revokedAt,
+        access: accessBefore,
+      },
+      after: {
+        membershipStatus: row.status,
+        revokedAt: row.revokedAt,
+        access: accessAfter,
+      },
+      effects: { removedGrants, removedGroups, revokedGrantContexts },
+    },
+  );
+  return unchanged ? ("noop" as const) : ("applied" as const);
+}
+
+export async function reinstate(
+  context: TenantMemberContext,
   memberId: string,
 ) {
-  return db.transaction(async (tx) => {
-    requireRow(await lockOrganization(tx, organizationId));
-    const row = requireRow(
-      await queries.removeMember(tx, organizationId, memberId),
-    );
-    await audit(tx, actor, organizationId, memberId, "member.removed", {
+  const { tx, organizationId, actor } = requireTenantMemberContext(context);
+  const before = requireRow(await queries.findMember(context, memberId));
+  const accessBefore = await memberAccess(context, memberId);
+  const row = requireRow(await queries.reinstateMember(context, memberId));
+  const accessAfter = await memberAccess(context, memberId);
+  await audit(
+    tx,
+    actor,
+    organizationId,
+    memberId,
+    before.membershipStatus === "active"
+      ? "member.reinstatement_unchanged"
+      : "member.reinstated",
+    {
       userId: row.userId,
-    });
-  });
+      reason: "administrative_reinstatement",
+      before: {
+        membershipStatus: before.membershipStatus,
+        revokedAt: before.revokedAt,
+        access: accessBefore,
+      },
+      after: {
+        membershipStatus: row.status,
+        revokedAt: row.revokedAt,
+        access: accessAfter,
+      },
+    },
+  );
+  return requireRow(await queries.findMember(context, memberId));
+}
+
+export async function getMemberConfiguration(
+  context: TenantMemberContext | TenantReadContext<"configuration">,
+  memberId: string,
+) {
+  requireTenantMemberConfigurationContext(context);
+  return requireRow(await queries.findMemberConfiguration(context, memberId));
 }

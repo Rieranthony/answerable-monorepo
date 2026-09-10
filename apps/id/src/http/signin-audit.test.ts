@@ -23,7 +23,7 @@ function setup(response: Response, fail = false) {
   });
   return { app, rows };
 }
-test("records redirect failures and their request metadata", async () => {
+test("redirect failure records correlation without trusting claimed provider or forwarded IP", async () => {
   for (const status of [302, 303]) {
     const { app, rows } = setup(
       new Response(null, {
@@ -39,16 +39,18 @@ test("records redirect failures and their request metadata", async () => {
         "user-agent": "agent",
       },
     });
+    expect(rows[0]).not.toHaveProperty("data");
     expect(rows).toEqual([
       expect.objectContaining({
         actorType: "system",
         actorId: "sso-callback",
         action: "auth.signin.rejected",
-        targetId: "tenant",
+        schemaVersion: 2,
+        targetId: null,
         reason: "directory_mismatch",
-        data: { errorDescription: "x" },
+
         requestId: "request",
-        ip: "192.0.2.1",
+        ip: null,
         userAgent: "agent",
         outcome: "failure",
       }),
@@ -65,7 +67,6 @@ test("missing optional metadata stays null", async () => {
       targetId: null,
       ip: null,
       userAgent: null,
-      data: { errorDescription: null },
     }),
   ]);
 });
@@ -97,3 +98,23 @@ test("audit failure preserves the redirect and logs one line", async () => {
     log.mockRestore();
   }
 });
+
+for (const reported of ["private-token-value", "x".repeat(8192), ""]) {
+  test(`unknown callback error is not copied into permanent evidence (${reported.length})`, async () => {
+    const location = new URL("https://example.com/error");
+    location.searchParams.set("error", reported);
+    location.searchParams.set("error_description", "private-upstream-token");
+    const { app, rows } = setup(Response.redirect(location));
+    await app.request("/auth/sso/callback", {
+      headers: { "user-agent": "x".repeat(513) },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      reason: "sso_callback_failed",
+      userAgent: null,
+    });
+    expect(rows[0]).not.toHaveProperty("data");
+    expect(JSON.stringify(rows)).not.toContain("private-upstream-token");
+    if (reported) expect(JSON.stringify(rows)).not.toContain(reported);
+  });
+}

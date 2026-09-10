@@ -1,18 +1,20 @@
+import { setDatabaseScope } from "./db/isolation.ts";
 import { and, eq, isNull, sql } from "drizzle-orm";
 
 import type { Database } from "./db/client.ts";
 import { recordAuditEvent } from "./db/queries/audit.ts";
-import { createEntitlement } from "./db/queries/entitlements.ts";
-import { createGroup } from "./db/queries/groups.ts";
 import {
   entitlements,
+  organizationCapabilities,
   groups,
   oauthResources,
   organizations,
+  systemBindings,
 } from "./db/schema/index.ts";
 import { adminScopes, type AdminScope } from "./http/admin/scopes.ts";
 import { createId } from "./lib/id.ts";
 import type { Actor } from "./services/actor.ts";
+import { ProblemError } from "./http/problem.ts";
 
 export function systemActor(requestId: string): Actor {
   return { actorType: "system", actorId: "startup", requestId };
@@ -60,10 +62,26 @@ export async function bootstrap(
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtext('answerable:bootstrap'))`,
     );
+    const [binding] = await tx
+      .select()
+      .from(systemBindings)
+      .where(eq(systemBindings.name, "platform"));
+    const conflict = () =>
+      new ProblemError(
+        409,
+        "system_binding_conflict",
+        "System identity conflict",
+        "Existing records require an explicitly reviewed system binding; names do not establish ownership.",
+      );
     let [organization] = await tx
       .select()
       .from(organizations)
-      .where(eq(organizations.slug, options.platformOrganizationSlug));
+      .where(
+        binding
+          ? eq(organizations.id, binding.organizationId)
+          : eq(organizations.slug, options.platformOrganizationSlug),
+      );
+    if (!binding && organization) throw conflict();
     const organizationCreated = !organization;
     const organizationUpdated =
       !!organization && organization.name !== options.platformOrganizationName;
@@ -83,6 +101,11 @@ export async function bootstrap(
         .where(eq(organizations.id, organization.id));
     }
     const organizationId = organization!.id;
+    await setDatabaseScope(tx, {
+      kind: "tenant",
+      access: "write",
+      organizationId,
+    });
     const resourceFields = {
       name: "Answerable ID admin API",
       accessTokenTtl: 600,
@@ -91,7 +114,16 @@ export async function bootstrap(
     let [resource] = await tx
       .select()
       .from(oauthResources)
-      .where(eq(oauthResources.identifier, options.adminResourceIdentifier));
+      .where(
+        binding
+          ? eq(oauthResources.id, binding.resourceId)
+          : eq(oauthResources.identifier, options.adminResourceIdentifier),
+      );
+    if (
+      resource &&
+      (!binding || resource.identifier !== options.adminResourceIdentifier)
+    )
+      throw conflict();
     const resourceCreated = !resource;
     const resourceUpdated =
       !!resource &&
@@ -120,16 +152,22 @@ export async function bootstrap(
       .where(
         and(
           eq(groups.organizationId, organizationId),
-          eq(groups.slug, platformAdminsGroupSlug),
+          binding
+            ? eq(groups.id, binding.groupId)
+            : eq(groups.slug, platformAdminsGroupSlug),
         ),
       );
     const groupCreated = !group;
     if (!group)
-      group = await createGroup(tx, {
-        organizationId,
-        slug: platformAdminsGroupSlug,
-        name: "Platform admins",
-      });
+      [group] = await tx
+        .insert(groups)
+        .values({
+          id: createId(),
+          organizationId,
+          slug: platformAdminsGroupSlug,
+          name: "Platform admins",
+        })
+        .returning();
     let [entitlement] = await tx
       .select()
       .from(entitlements)
@@ -146,18 +184,71 @@ export async function bootstrap(
     const entitlementUpdated =
       !!entitlement && !same(entitlement.scopes, platformScopes);
     if (!entitlement)
-      entitlement = await createEntitlement(tx, {
-        organizationId,
-        groupId: group.id,
-        resource: options.adminResourceIdentifier,
-        scopes: [...platformScopes],
-      });
+      [entitlement] = await tx
+        .insert(entitlements)
+        .values({
+          id: createId(),
+          organizationId,
+          groupId: group.id,
+          resource: options.adminResourceIdentifier,
+          scopes: [...platformScopes],
+        })
+        .returning();
     else if (entitlementUpdated)
       await tx
         .update(entitlements)
         .set({ scopes: [...platformScopes] })
         .where(eq(entitlements.id, entitlement.id));
 
+    if (!binding)
+      await tx.insert(systemBindings).values({
+        name: "platform",
+        organizationId,
+        resourceId: resource!.id,
+        groupId: group.id,
+      });
+    // The established immutable binding is the authority for this system ceiling.
+    // Existing restrictions survive restart; only first provision inserts defaults.
+    await setDatabaseScope(tx, { kind: "platform", access: "write" });
+    const insertedCapabilities = await tx
+      .insert(organizationCapabilities)
+      .values({
+        id: createId(),
+        organizationId,
+        resource: options.adminResourceIdentifier,
+        grantKind: "admin_session",
+        scopes: [...adminScopes],
+      })
+      .onConflictDoNothing({
+        target: [
+          organizationCapabilities.organizationId,
+          organizationCapabilities.clientId,
+          organizationCapabilities.resource,
+          organizationCapabilities.grantKind,
+        ],
+      })
+      .returning();
+    const [capability] = insertedCapabilities.length
+      ? insertedCapabilities
+      : await tx
+          .select()
+          .from(organizationCapabilities)
+          .where(
+            and(
+              eq(organizationCapabilities.organizationId, organizationId),
+              eq(
+                organizationCapabilities.resource,
+                options.adminResourceIdentifier,
+              ),
+              isNull(organizationCapabilities.clientId),
+              eq(organizationCapabilities.grantKind, "admin_session"),
+            ),
+          );
+    await setDatabaseScope(tx, {
+      kind: "tenant",
+      access: "write",
+      organizationId,
+    });
     await recordAuditEvent(tx, {
       ...actor,
       organizationId,
@@ -171,6 +262,11 @@ export async function bootstrap(
           updated: organizationUpdated,
         },
         resource: { created: resourceCreated, updated: resourceUpdated },
+        capability: {
+          created: insertedCapabilities.length > 0,
+          updated: false,
+          after: capability!,
+        },
         group: { created: groupCreated, updated: false },
         entitlement: {
           created: entitlementCreated,

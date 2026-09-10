@@ -1,7 +1,6 @@
 import dns from "node:dns/promises";
 import type { LookupAddress } from "node:dns";
 import { expect, test, spyOn, beforeEach, afterEach } from "bun:test";
-import type { Database } from "../db/client.ts";
 import { testSsoProvider, type SsoTestOptions } from "./sso-test.ts";
 
 const resolver = dns as {
@@ -23,24 +22,8 @@ const discovery = {
   token_endpoint: `${issuer}/token`,
   jwks_uri: `${issuer}/jwks`,
 };
-function database(
-  issuerValue = issuer,
-  discoveryEndpoint?: string,
-  missing = false,
-): Database {
-  const rows = missing
-    ? []
-    : [
-        {
-          issuer: issuerValue,
-          oidcConfig: JSON.stringify({ discoveryEndpoint }),
-        },
-      ];
-  return {
-    select: () => ({
-      from: () => ({ where: () => ({ limit: async () => rows }) }),
-    }),
-  } as unknown as Database;
+function configuration(issuerValue = issuer, discoveryEndpoint?: string) {
+  return { issuer: issuerValue, discoveryEndpoint };
 }
 function fetchResponses(...responses: (Response | Error)[]): typeof fetch {
   return (async (_url: unknown, options: RequestInit) => {
@@ -60,9 +43,9 @@ const keys = () => json({ keys: [{ kty: "RSA", kid: "test" }] });
 async function run(
   responses: (Response | Error)[],
   options: SsoTestOptions = {},
-  db = database(),
+  snapshot = configuration(),
 ) {
-  return testSsoProvider(db, "org", {
+  return testSsoProvider(snapshot, {
     fetch: fetchResponses(...responses),
     ...options,
   });
@@ -90,17 +73,12 @@ test("passing discovery, exact issuer and JWKS without credentials", async () =>
   });
   expect(result.elapsedMs).toBeGreaterThanOrEqual(0);
 });
-test("provider not found is a 404", async () => {
-  await expect(
-    testSsoProvider(database(issuer, undefined, true), "org"),
-  ).rejects.toMatchObject({ status: 404, code: "provider_not_found" });
-});
 test("uses configured discovery URL", async () => {
   const custom = `${issuer}/metadata`;
   const result = await run(
     [json(discovery), keys()],
     {},
-    database(issuer, custom),
+    configuration(issuer, custom),
   );
   expect(result.discovery.url).toBe(custom);
 });
@@ -111,11 +89,11 @@ test("rejects malformed and insecure issuer and discovery URLs", async () => {
     "ftp://127.0.0.1",
   ]) {
     expect(
-      codes(await run([], { allowPrivateHosts: true }, database(value))),
+      codes(await run([], { allowPrivateHosts: true }, configuration(value))),
     ).toEqual(["insecure_issuer"]);
   }
   expect(
-    codes(await run([], {}, database(issuer, "http://other.example.com"))),
+    codes(await run([], {}, configuration(issuer, "http://other.example.com"))),
   ).toEqual(["insecure_issuer"]);
 });
 test("refuses private addresses and hostnames by default", async () => {
@@ -141,12 +119,15 @@ test("refuses private addresses and hostnames by default", async () => {
     "a.internal",
     "a.local.",
   ]) {
-    expect(codes(await run([], {}, database(`https://${host}`))), host).toEqual(
-      ["private_host"],
-    );
+    expect(
+      codes(await run([], {}, configuration(`https://${host}`))),
+      host,
+    ).toEqual(["private_host"]);
   }
   expect(
-    codes(await run([], {}, database(issuer, "https://10.0.0.1/discovery"))),
+    codes(
+      await run([], {}, configuration(issuer, "https://10.0.0.1/discovery")),
+    ),
   ).toEqual(["private_host"]);
 });
 test("private test issuers can use HTTP with explicit option", async () => {
@@ -154,7 +135,7 @@ test("private test issuers can use HTTP with explicit option", async () => {
   const result = await run(
     [json({ ...discovery, issuer: local, jwks_uri: `${local}/jwks` }), keys()],
     { allowPrivateHosts: true },
-    database(local),
+    configuration(local),
   );
   expect(result.problems).toEqual([]);
 });
@@ -166,7 +147,7 @@ test("allows public IP literals", async () => {
         await run(
           [json({ ...discovery, issuer: value }), keys()],
           {},
-          database(value),
+          configuration(value),
         ),
       ),
     ).toEqual([]);
@@ -200,7 +181,7 @@ test("timeout aborts the request", async () => {
     })) as typeof fetch;
   expect(
     codes(
-      await testSsoProvider(database(), "org", {
+      await testSsoProvider(configuration(), {
         fetch: fetcher,
         timeoutMs: 1,
       }),
@@ -282,7 +263,7 @@ test("uses the default fetch when none is injected", async () => {
     fetchResponses(json(discovery), keys()),
   );
   try {
-    expect((await testSsoProvider(database(), "org")).problems).toEqual([]);
+    expect((await testSsoProvider(configuration())).problems).toEqual([]);
   } finally {
     fetcher.mockRestore();
   }

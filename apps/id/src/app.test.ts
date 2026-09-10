@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
-import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import type { Database } from "./db/client.ts";
 
 import { ProblemError } from "./http/problem.ts";
@@ -118,7 +117,7 @@ describe("unit: Hono application", () => {
           title: z.literal("Answerable ID Admin API"),
           version: z.literal("1.0.0"),
           description: z.literal(
-            "Platform-tier operations serve Answerable staff and tenant-tier operations serve an organisation, as indicated by x-tier. The six scopes are platform:read, platform:users, platform:write, org:read, org:users and org:write; x-scopes identifies the required platform or organisation scope. The x-kind extension marks read, write and erase operations; erase requires confirm equal to the target id, and operation ids are the tool names.",
+            "Platform-tier operations serve Answerable staff and tenant-tier operations serve an organisation, as indicated by x-tier. The six scopes are platform:read, platform:users, platform:write, org:read, org:users and org:write; x-scopes identifies fixed platform or organisation scopes. Self-service routes use handler checks described on the operation; x-scope-alternatives lists acceptable scope alternatives where present. The x-kind extension marks read, write and erase operations; erase requires confirm equal to the target id, and operation ids are the tool names.",
           ),
         }),
         components: z.object({
@@ -143,6 +142,11 @@ describe("unit: Hono application", () => {
     expect(schemaResponse.status).toBe(200);
     expect(schema.openapi).toStartWith("3.");
     expect(Object.keys(schema.paths)).toEqual([
+      "/api/admin/v1/organizations/{organizationId}/capabilities",
+      "/api/admin/v1/organizations/{organizationId}/capabilities/{capabilityId}",
+      "/api/admin/v1/me/operations/{operationId}",
+      "/api/admin/v1/operations/{operationId}",
+      "/api/admin/v1/organizations/{organizationId}/operations/{operationId}",
       "/api/admin/v1/organizations/{organizationId}/sign-in-diagnosis",
       "/api/admin/v1/platform/summary",
       "/api/admin/v1/me",
@@ -153,7 +157,6 @@ describe("unit: Hono application", () => {
       "/api/admin/v1/users/{userId}/retire-email",
       "/api/admin/v1/users/{userId}/sessions",
       "/api/admin/v1/users/{userId}/sessions/{sessionId}",
-      "/api/admin/v1/organizations/{organizationId}/members/{memberId}/sessions",
       "/api/admin/v1/entitlements",
       "/api/admin/v1/organizations/{organizationId}/entitlements",
       "/api/admin/v1/organizations/{organizationId}/entitlements/{entitlementId}",
@@ -167,6 +170,8 @@ describe("unit: Hono application", () => {
       "/api/admin/v1/organizations/{organizationId}/groups/{groupId}/enable",
       "/api/admin/v1/organizations/{organizationId}/groups/{groupId}/members",
       "/api/admin/v1/organizations/{organizationId}/groups/{groupId}/members/{memberId}",
+      "/api/admin/v1/organizations/{organizationId}/members/{memberId}/configuration",
+      "/api/admin/v1/organizations/{organizationId}/members/{memberId}/reinstate",
       "/api/admin/v1/organizations/{organizationId}/members",
       "/api/admin/v1/organizations/{organizationId}/members/{memberId}",
       "/api/admin/v1/resources",
@@ -438,7 +443,8 @@ test("admin CORS allows trusted preflights", async () => {
       headers: {
         Origin: origin,
         "Access-Control-Request-Method": "GET",
-        "Access-Control-Request-Headers": "Authorization,Content-Type",
+        "Access-Control-Request-Headers":
+          "Authorization,Content-Type,Idempotency-Key,If-Match",
       },
     });
     expect(response.status).toBe(204);
@@ -449,7 +455,7 @@ test("admin CORS allows trusted preflights", async () => {
       "true",
     );
     expect(response.headers.get("access-control-allow-headers")).toBe(
-      "Authorization,Content-Type",
+      "Authorization,Content-Type,Idempotency-Key,If-Match",
     );
   }
 });
@@ -486,52 +492,6 @@ test("mounted me runs principal resolution and the root problem handler", async 
   );
   expect(await response.json()).toMatchObject({ code: "unauthenticated" });
   expect(calls).toHaveLength(1);
-});
-
-test("mounted me returns a client verified through the default dependencies", async () => {
-  const { privateKey, publicKey } = await generateKeyPair("RS256");
-  const jwk = { ...(await exportJWK(publicKey)), kid: "admin-test" };
-  const auth = stubAuth();
-  auth.api.getJwks = (async () => ({ keys: [jwk] })) as typeof auth.api.getJwks;
-  const client = {
-    clientId: "client",
-    disabled: false,
-    clientCredentialsScopes: ["org:read"],
-    organizationId: "own",
-    organization: { id: "own", slug: "tenant", status: "active" },
-  };
-  const db = {
-    select: () => ({
-      from: () => ({
-        leftJoin: () => ({ where: () => ({ limit: async () => [client] }) }),
-      }),
-    }),
-  } as unknown as Database;
-  const environment = testEnvironment();
-  const app = createApp({ auth, db, environment });
-  const token = await new SignJWT({
-    azp: "client",
-    scope: "org:read org:write",
-  })
-    .setProtectedHeader({ alg: "RS256", typ: "at+jwt", kid: jwk.kid })
-    .setIssuer(environment.betterAuthUrl)
-    .setAudience(environment.adminResourceIdentifier)
-    .setExpirationTime("5m")
-    .sign(privateKey);
-  const response = await app.request("/api/admin/v1/me", {
-    headers: { Authorization: `bearer ${token}` },
-  });
-  expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({
-    principal: { type: "client", clientId: "client", organizationId: "own" },
-    grants: [
-      {
-        organizationId: "own",
-        organizationSlug: "tenant",
-        scopes: ["org:read"],
-      },
-    ],
-  });
 });
 
 test("token requests guard grants and preserve bodies for Better Auth", async () => {
@@ -588,6 +548,7 @@ test("auth catch-all propagates request ids and audits rejection redirects", asy
       );
     };
     const db = {
+      ...stubDatabase(),
       insert: () => ({
         values: (row: unknown) => {
           rows.push(row);
@@ -604,13 +565,178 @@ test("auth catch-all propagates request ids and audits rejection redirects", asy
       response.headers.get("x-request-id"),
     );
     expect(received).toBeTruthy();
+    expect(rows[0]).not.toHaveProperty("data");
     expect(rows).toEqual([
       expect.objectContaining({
         action: "auth.signin.rejected",
         reason: "directory_mismatch",
         requestId: received,
-        data: { errorDescription: "x" },
+        schemaVersion: 2,
       }),
     ]);
   }
+});
+
+test("unusable correlation headers are replaced consistently before auth", async () => {
+  for (const supplied of [
+    "x".repeat(129),
+    "contains spaces",
+    "",
+    "comma,separated",
+  ]) {
+    let observed: string | null = null;
+    const app = createApp({
+      environment: testEnvironment(),
+      db: stubDatabase(),
+      auth: {
+        ...stubAuth(),
+        handler: async (request) => {
+          observed = request.headers.get("x-request-id");
+          return Response.json({ ok: true });
+        },
+      },
+    });
+    const response = await app.request("/auth/ok", {
+      headers: { "x-request-id": supplied },
+    });
+    expect(response.status).toBe(200);
+    const actual = response.headers.get("x-request-id")!;
+    expect(isUuidV7(actual)).toBe(true);
+    expect(observed as string | null).toBe(actual);
+    expect(actual).not.toBe(supplied);
+  }
+});
+
+test("body guard counts actual bytes despite a false content length and cancels overflow", async () => {
+  let called = false;
+  let cancelled = false;
+  const app = createApp({
+    db: stubDatabase(),
+    environment: testEnvironment(),
+    auth: {
+      ...stubAuth(),
+      handler: async () => {
+        called = true;
+        return new Response();
+      },
+    },
+  });
+  const response = await app.request("/auth/sign-out", {
+    method: "POST",
+    headers: { "Content-Length": "1" },
+    body: new ReadableStream({
+      pull(output) {
+        output.enqueue(new Uint8Array(16384));
+      },
+      cancel() {
+        cancelled = true;
+        throw new Error("untrusted cancellation error");
+      },
+    }),
+  });
+  expect(response.status).toBe(413);
+  expect(response.headers.get("cache-control")).toBe("no-store");
+  expect(called).toBe(false);
+  expect(cancelled).toBe(true);
+});
+
+test("body deadline cancels a stalled upload before invoking the provider", async () => {
+  let called = false;
+  let cancelled = false;
+  const app = createApp({
+    db: stubDatabase(),
+    environment: testEnvironment(),
+    auth: {
+      ...stubAuth(),
+      handler: async () => {
+        called = true;
+        return new Response();
+      },
+    },
+  });
+  const response = await app.request("/auth/sign-out", {
+    method: "POST",
+    body: new ReadableStream({
+      start(output) {
+        output.enqueue(new Uint8Array([1]));
+      },
+      cancel() {
+        cancelled = true;
+        return new Promise<void>(() => {});
+      },
+    }),
+  });
+  expect(response.status).toBe(408);
+  expect(response.headers.get("cache-control")).toBe("no-store");
+  expect(called).toBe(false);
+  expect(cancelled).toBe(true);
+});
+
+test("unreadable bodies return a safe transport error before provider or admin work", async () => {
+  for (const path of ["/auth/sign-out", "/api/admin/v1/organizations"]) {
+    let called = false;
+    const app = createApp({
+      db: stubDatabase(),
+      environment: testEnvironment(),
+      auth: {
+        ...stubAuth(),
+        handler: async () => {
+          called = true;
+          return new Response();
+        },
+      },
+    });
+    const response = await app.request(path, {
+      method: "POST",
+      body: new ReadableStream({
+        start(output) {
+          output.error(new Error("private-body-error"));
+        },
+      }),
+    });
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("Invalid Request Body");
+    expect(called).toBe(false);
+  }
+});
+
+test("maximum valid correlation ids survive in both context and auth headers", async () => {
+  for (const value of ["a".repeat(128), "trace.00:part_1-final"]) {
+    let received: string | null = null;
+    const app = createApp({
+      db: stubDatabase(),
+      environment: testEnvironment(),
+      auth: {
+        ...stubAuth(),
+        handler: async (request) => {
+          received = request.headers.get("x-request-id");
+          return new Response();
+        },
+      },
+    });
+    const response = await app.request("/auth/ok", {
+      headers: { "x-request-id": value },
+    });
+    expect(response.headers.get("x-request-id")).toBe(value);
+    expect(received as string | null).toBe(value);
+  }
+});
+
+test("preflight cannot bypass the incoming body limit", async () => {
+  const app = createApp({
+    db: stubDatabase(),
+    auth: stubAuth(),
+    environment: testEnvironment({
+      trustedOrigins: ["https://client.example"],
+    }),
+  });
+  const response = await app.request("/auth/sign-out", {
+    method: "OPTIONS",
+    headers: {
+      Origin: "https://client.example",
+      "Access-Control-Request-Method": "POST",
+    },
+    body: new Uint8Array(256 * 1024 + 1),
+  });
+  expect(response.status).toBe(413);
 });

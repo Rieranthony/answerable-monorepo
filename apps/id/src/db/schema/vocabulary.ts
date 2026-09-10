@@ -6,6 +6,8 @@
 export const userStatuses = ["inert", "active", "disabled"] as const;
 export type UserStatus = (typeof userStatuses)[number];
 
+export const membershipStatuses = ["active", "revoked"] as const;
+
 export const lifecycleStatuses = ["active", "disabled"] as const;
 export type LifecycleStatus = (typeof lifecycleStatuses)[number];
 

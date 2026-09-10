@@ -1,5 +1,15 @@
+import {
+  requirePlatformReadContext,
+  requirePlatformWriteContext,
+  type PlatformReadContext,
+  type PlatformWriteContext,
+} from "../../services/platform-context.ts";
+import {
+  requireTenantDirectoryContext,
+  type TenantReadContext,
+} from "../../services/tenant-context.ts";
+import { lockResource } from "../resource-lock.ts";
 import { and, count, desc, eq, ilike, or } from "drizzle-orm";
-import type { Executor } from "../client.ts";
 import {
   oauthResources,
   entitlements,
@@ -9,6 +19,8 @@ import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
 import { createId } from "../../lib/id.ts";
 
 export type ResourceInput = {
+  classification?: "platform_shared" | "tenant_owned";
+  organizationId?: string | null;
   identifier: string;
   name: string;
   accessTokenTtl?: number;
@@ -17,10 +29,17 @@ export type ResourceInput = {
   signingAlgorithm?: "EdDSA" | "ES256" | "RS256";
 };
 export type ResourcePatch = Partial<
-  Omit<ResourceInput, "identifier" | "signingAlgorithm">
+  Omit<
+    ResourceInput,
+    "identifier" | "signingAlgorithm" | "classification" | "organizationId"
+  >
 >;
 export type ResourceQuery = PageQuery & { q?: string; disabled?: boolean };
-export function listResources(executor: Executor, query: ResourceQuery) {
+export function listResources(
+  context: PlatformReadContext,
+  query: ResourceQuery,
+) {
+  const { tx: executor } = requirePlatformReadContext(context);
   return executor
     .select()
     .from(oauthResources)
@@ -41,23 +60,51 @@ export function listResources(executor: Executor, query: ResourceQuery) {
     .orderBy(desc(oauthResources.id))
     .limit(query.limit + 1);
 }
-export async function findResource(executor: Executor, identifier: string) {
-  const [row] = await executor
-    .select()
+export function readResource(context: PlatformReadContext, identifier: string) {
+  const { tx } = requirePlatformReadContext(context);
+  return lockResource(tx, identifier, "share");
+}
+export function readResourceForPolicy(
+  context: PlatformWriteContext,
+  identifier: string,
+) {
+  const { tx } = requirePlatformWriteContext(context);
+  return lockResource(tx, identifier, "share");
+}
+export function lockResourceForCommand(
+  context: PlatformWriteContext,
+  identifier: string,
+) {
+  const { tx } = requirePlatformWriteContext(context);
+  return lockResource(tx, identifier);
+}
+
+/** Shared resources and this tenant's private resources only; registration is not permission. */
+export async function findResourceForAccess(
+  context: TenantReadContext<"directory">,
+  identifier: string,
+) {
+  const { tx, organizationId } = requireTenantDirectoryContext(context);
+  const [row] = await tx
+    .select({ id: oauthResources.id })
     .from(oauthResources)
-    .where(eq(oauthResources.identifier, identifier));
+    .where(
+      and(
+        eq(oauthResources.identifier, identifier),
+        or(
+          eq(oauthResources.classification, "platform_shared"),
+          eq(oauthResources.organizationId, organizationId),
+        ),
+      ),
+    );
   return row ?? null;
 }
-/** Serialise policy and lifecycle writes against erasure. */
-export async function lockResource(executor: Executor, identifier: string) {
-  const [row] = await executor
-    .select()
-    .from(oauthResources)
-    .where(eq(oauthResources.identifier, identifier))
-    .for("update");
-  return row ?? null;
-}
-export async function createResource(executor: Executor, input: ResourceInput) {
+
+export async function createResource(
+  context: PlatformWriteContext,
+  input: ResourceInput,
+) {
+  const { tx: executor } = requirePlatformWriteContext(context);
   const [row] = await executor
     .insert(oauthResources)
     .values({ ...input, id: createId() })
@@ -65,10 +112,11 @@ export async function createResource(executor: Executor, input: ResourceInput) {
   return row!;
 }
 export async function updateResource(
-  executor: Executor,
+  context: PlatformWriteContext,
   identifier: string,
   patch: ResourcePatch,
 ) {
+  const { tx: executor } = requirePlatformWriteContext(context);
   const [row] = await executor
     .update(oauthResources)
     .set(patch)
@@ -77,10 +125,11 @@ export async function updateResource(
   return row ?? null;
 }
 export async function setResourceDisabled(
-  executor: Executor,
+  context: PlatformWriteContext,
   identifier: string,
   disabled: boolean,
 ) {
+  const { tx: executor } = requirePlatformWriteContext(context);
   const [row] = await executor
     .update(oauthResources)
     .set({ disabled })
@@ -88,15 +137,20 @@ export async function setResourceDisabled(
     .returning();
   return row ?? null;
 }
-export async function deleteResource(executor: Executor, identifier: string) {
+export async function deleteResource(
+  context: PlatformWriteContext,
+  identifier: string,
+) {
+  const { tx: executor } = requirePlatformWriteContext(context);
   await executor
     .delete(oauthResources)
     .where(eq(oauthResources.identifier, identifier));
 }
 export async function countResourceEntitlements(
-  executor: Executor,
+  context: PlatformWriteContext,
   identifier: string,
 ) {
+  const { tx: executor } = requirePlatformWriteContext(context);
   const [row] = await executor
     .select({ count: count() })
     .from(entitlements)
@@ -104,10 +158,27 @@ export async function countResourceEntitlements(
   return row!.count;
 }
 
-export function listResourceClients(executor: Executor, resource: string) {
+export function listResourceClients(
+  context: PlatformReadContext,
+  resource: string,
+) {
+  const { tx: executor } = requirePlatformReadContext(context);
   return executor
     .select()
     .from(oauthClientResources)
     .where(eq(oauthClientResources.resourceId, resource))
     .orderBy(desc(oauthClientResources.id));
+}
+
+export async function hasResourceClients(
+  context: PlatformWriteContext,
+  resource: string,
+) {
+  const { tx: executor } = requirePlatformWriteContext(context);
+  const rows = await executor
+    .select({ id: oauthClientResources.id })
+    .from(oauthClientResources)
+    .where(eq(oauthClientResources.resourceId, resource))
+    .limit(1);
+  return rows.length > 0;
 }

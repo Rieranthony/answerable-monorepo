@@ -1,3 +1,4 @@
+import * as productionUsers from "./users.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 
@@ -10,7 +11,7 @@ import {
   retiredEmailFor,
   retireUserEmail,
   UserNotRetirableError,
-} from "./users.ts";
+} from "../../__tests__/user-queries.ts";
 
 let connection: DatabaseConnection;
 
@@ -19,7 +20,9 @@ beforeAll(() => {
 });
 
 beforeEach(async () => {
-  await connection.db.execute(sql`truncate table users cascade`);
+  await connection.db.execute(
+    sql`truncate table security_identifiers, users cascade`,
+  );
 });
 
 afterAll(async () => {
@@ -97,7 +100,7 @@ import {
   lockUser,
   setUserStatus,
   deleteUser,
-} from "./users.ts";
+} from "../../__tests__/user-queries.ts";
 
 test("lists users by email, name, status, organisation and cursor; details expose only account identity", async () => {
   const db = connection.db;
@@ -174,7 +177,7 @@ test("lists users by email, name, status, organisation and cursor; details expos
 test("locks, changes status with the disabled CHECK, deletes, and returns null for missing rows", async () => {
   const db = connection.db;
   const user = await insertUser("status@example.com");
-  expect(await db.transaction((tx) => lockUser(tx, user.id))).toEqual(user);
+  expect(await lockUser(db, user.id)).toEqual(user);
   expect(await lockUser(db, createId())).toBeNull();
   expect(await setUserStatus(db, user.id, "disabled")).toMatchObject({
     status: "disabled",
@@ -193,4 +196,15 @@ test("locks, changes status with the disabled CHECK, deletes, and returns null f
   await expect(retireUserEmail(db, user.id)).rejects.toBeInstanceOf(
     UserNotRetirableError,
   );
+});
+
+test("global user listing rejects raw database authority", async () => {
+  await expect(
+    Promise.resolve().then(() =>
+      Reflect.apply(productionUsers.listUsers, undefined, [
+        connection.db,
+        { limit: 10 },
+      ]),
+    ),
+  ).rejects.toThrow("Invalid or expired");
 });

@@ -1,3 +1,4 @@
+import * as productionSessions from "./sessions.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import { testEnvironment } from "../../__tests__/support.ts";
@@ -10,15 +11,17 @@ beforeAll(() => {
   connection = createDatabase(testEnvironment());
 });
 beforeEach(async () => {
-  await connection.db.execute(sql`truncate table organizations, users cascade`);
+  await connection.db.execute(
+    sql`truncate table audit_events, security_identifiers, organizations, users cascade`,
+  );
 });
 afterAll(async () => {
   await connection.close();
 });
 
-import { deleteUserSessions } from "./sessions.ts";
+import { deleteUserSessionIds } from "../../__tests__/session-queries.ts";
 
-test("deletes all selected users' sessions, preserving other users and counting empty matches", async () => {
+test("deletes one user's sessions with exact IDs, preserving other users", async () => {
   const db = connection.db;
   const ids = [createId(), createId(), createId()];
   for (const id of ids) {
@@ -33,9 +36,16 @@ test("deletes all selected users' sessions, preserving other users and counting 
         expiresAt: new Date(Date.now() + 60000),
       });
   }
-  expect(await deleteUserSessions(db, [])).toBe(0);
-  expect(await deleteUserSessions(db, ids.slice(0, 2))).toBe(4);
-  expect(await deleteUserSessions(db, ids.slice(0, 2))).toBe(0);
+  const expectedIds = (
+    await db
+      .select({ id: sessions.id })
+      .from(sessions)
+      .where(eq(sessions.userId, ids[0]!))
+  )
+    .map((row) => row.id)
+    .sort();
+  expect(await deleteUserSessionIds(db, ids[0]!)).toEqual(expectedIds);
+  expect(await deleteUserSessionIds(db, ids[0]!)).toEqual([]);
   expect(
     await db.select().from(sessions).where(eq(sessions.userId, ids[2])),
   ).toHaveLength(2);
@@ -44,9 +54,8 @@ test("deletes all selected users' sessions, preserving other users and counting 
 import {
   listUserSessions,
   deleteSession,
-  findMemberUserId,
   findUserSession,
-} from "./sessions.ts";
+} from "../../__tests__/session-queries.ts";
 import { members, organizations } from "../schema/index.ts";
 
 test("session queries paginate, hide tokens and enforce user and organisation ownership", async () => {
@@ -85,7 +94,16 @@ test("session queries paginate, hide tokens and enforce user and organisation ow
     .insert(organizations)
     .values({ id: organizationId, slug: organizationId, name: "Org" });
   await db.insert(members).values({ id: memberId, organizationId, userId });
-  expect(await findMemberUserId(db, organizationId, memberId)).toBe(userId);
-  expect(await findMemberUserId(db, createId(), memberId)).toBeNull();
-  expect(await findMemberUserId(db, organizationId, createId())).toBeNull();
+});
+
+test("global session listing rejects raw database authority", async () => {
+  await expect(
+    Promise.resolve().then(() =>
+      Reflect.apply(productionSessions.listUserSessions, undefined, [
+        connection.db,
+        createId(),
+        { limit: 10 },
+      ]),
+    ),
+  ).rejects.toThrow("Invalid or expired");
 });

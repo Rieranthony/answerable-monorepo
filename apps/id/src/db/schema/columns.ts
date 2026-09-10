@@ -12,15 +12,15 @@ export const timestampColumn = (name: string) =>
 
 /**
  * The created_at/updated_at pair. Drizzle writes updated_at on every update
- * it issues, including those from Better Auth's adapter, so there is no
- * trigger and no per-query bookkeeping.
+ * it issues, including those from Better Auth's adapter. Both defaults and
+ * automatic updates use the database clock, without a trigger or per-query code.
  */
 export const timestamps = () => ({
   createdAt: timestampColumn("created_at").defaultNow().notNull(),
   updatedAt: timestampColumn("updated_at")
     .defaultNow()
     .notNull()
-    .$onUpdate(() => new Date()),
+    .$onUpdate(() => sql`statement_timestamp()`),
 });
 
 export const effectiveWindow = () => ({
@@ -55,8 +55,7 @@ export const disabledCheck = (
   name: string,
   status: PgColumn,
   disabledAt: PgColumn,
-) =>
-  check(name, sql`(${status} = 'disabled') = (${disabledAt} is not null)`);
+) => check(name, sql`(${status} = 'disabled') = (${disabledAt} is not null)`);
 
 /** Lowercase labels separated by single hyphens: `contoso`, `omni-chat`. */
 export const slugCheck = (name: string, column: PgColumn) =>

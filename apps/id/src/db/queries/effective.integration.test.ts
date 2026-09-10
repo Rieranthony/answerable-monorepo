@@ -21,7 +21,7 @@ beforeAll(() => {
 
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table users, organizations, oauth_resources cascade`,
+    sql`truncate table audit_events, security_identifiers, users, organizations, oauth_resources cascade`,
   );
 });
 
@@ -134,7 +134,7 @@ test("filters rows by status and effective window", async () => {
     .select({ id: members.id })
     .from(members)
     .where(isEffective(members));
-  expect(
-    effectiveMembers.map((row) => memberNames.get(row.id)).sort(),
-  ).toEqual(["current", "open"]);
+  expect(effectiveMembers.map((row) => memberNames.get(row.id)).sort()).toEqual(
+    ["current", "open"],
+  );
 });

@@ -10,13 +10,16 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src scripts drizzle.config.ts --max-warnings 0",
     "test": "bun run db:test:migrate && bun run test:coverage",
-    "test:coverage": "bun test",
+    "test:coverage": "bun test --timeout 15000",
+    "test:restore": "bun scripts/test-upstream-restore.ts",
+    "measure:audit": "bun scripts/measure-audit-workloads.ts",
     "openapi:export": "bun scripts/export-openapi.ts",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "bun scripts/migrate.ts",
     "db:test:migrate": "bun scripts/reset-test-schema.ts && bun scripts/migrate.ts --test"
   },
   "dependencies": {
+    "@better-auth/core": "1.7.2",
     "@better-auth/drizzle-adapter": "1.7.2",
     "@better-auth/oauth-provider": "1.7.2",
     "@better-auth/sso": "1.7.2",

@@ -1,3 +1,8 @@
+import {
+  limitConcurrentRequests,
+  limitAuthenticationRequests,
+  withAdmissionResponse,
+} from "./http/admission.ts";
 import { Scalar } from "@scalar/hono-api-reference";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -18,7 +23,10 @@ import { buildPublicOpenApiDocument } from "./http/openapi.ts";
 import { problemHandler } from "./http/problem.ts";
 import { recordRejectedSignIn } from "./http/signin-audit.ts";
 import { createId } from "./lib/id.ts";
+import { limitRequestBody } from "./http/request-limits.ts";
 import { checkReadiness } from "./services/readiness.ts";
+
+const requestIdPattern = /^[A-Za-z0-9._:-]{1,128}$/;
 
 const statusSchema = z.object({ status: z.literal("ok") });
 const unavailableSchema = z.object({ status: z.literal("unavailable") });
@@ -36,7 +44,11 @@ export function createApp(services: AppServices) {
   const readinessCheck = services.readinessCheck ?? checkReadiness;
 
   app.use("*", async (context, next) => {
-    const requestId = context.req.header("x-request-id") ?? createId();
+    const suppliedRequestId = context.req.header("x-request-id");
+    const requestId =
+      suppliedRequestId && requestIdPattern.test(suppliedRequestId)
+        ? suppliedRequestId
+        : createId();
 
     context.set("environment", services.environment);
     context.set("auth", services.auth);
@@ -49,6 +61,13 @@ export function createApp(services: AppServices) {
   });
 
   app.use(
+    "*",
+    limitConcurrentRequests(services.environment.maxConcurrentRequests),
+  );
+  app.use("/auth/*", limitAuthenticationRequests(services.db));
+  app.use("*", limitRequestBody);
+
+  app.use(
     "/auth/*",
     cors({ origin: services.environment.trustedOrigins, credentials: true }),
   );
@@ -58,7 +77,13 @@ export function createApp(services: AppServices) {
     cors({
       origin: services.environment.trustedOrigins,
       credentials: true,
-      allowHeaders: ["Authorization", "Content-Type"],
+      allowHeaders: [
+        "Authorization",
+        "Content-Type",
+        "Idempotency-Key",
+        "If-Match",
+      ],
+      exposeHeaders: ["Operation-Id", "Idempotency-Replayed", "ETag"],
     }),
   );
   app.route("/api/admin/v1", createAdminApp(services));
@@ -92,12 +117,12 @@ export function createApp(services: AppServices) {
           description: "The service is ready",
           content: { "application/json": { schema: resolver(statusSchema) } },
         },
-        503: {
+        503: withAdmissionResponse({
           description: "PostgreSQL is unavailable",
           content: {
             "application/json": { schema: resolver(unavailableSchema) },
           },
-        },
+        }),
       },
     }),
     async (context) => {
@@ -129,7 +154,7 @@ export function createApp(services: AppServices) {
             title: "Answerable ID Admin API",
             version: "1.0.0",
             description:
-              "Platform-tier operations serve Answerable staff and tenant-tier operations serve an organisation, as indicated by x-tier. The six scopes are platform:read, platform:users, platform:write, org:read, org:users and org:write; x-scopes identifies the required platform or organisation scope. The x-kind extension marks read, write and erase operations; erase requires confirm equal to the target id, and operation ids are the tool names.",
+              "Platform-tier operations serve Answerable staff and tenant-tier operations serve an organisation, as indicated by x-tier. The six scopes are platform:read, platform:users, platform:write, org:read, org:users and org:write; x-scopes identifies fixed platform or organisation scopes. Self-service routes use handler checks described on the operation; x-scope-alternatives lists acceptable scope alternatives where present. The x-kind extension marks read, write and erase operations; erase requires confirm equal to the target id, and operation ids are the tool names.",
           },
           components: { securitySchemes: adminSecuritySchemes },
           tags: adminTags,
@@ -158,8 +183,7 @@ export function createApp(services: AppServices) {
       if (rejection) return rejection;
     }
     const headers = new Headers(context.req.raw.headers);
-    if (!headers.has("x-request-id"))
-      headers.set("x-request-id", context.get("requestId"));
+    headers.set("x-request-id", context.get("requestId"));
     const response = await context
       .get("auth")
       .handler(new Request(context.req.raw, { headers }));

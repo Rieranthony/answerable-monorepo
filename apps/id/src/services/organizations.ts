@@ -1,11 +1,18 @@
-import type { Database, Executor } from "../db/client.ts";
+import { platformWriterCheck } from "./platform-writer.ts";
+import {
+  revokeOrganizationGrantContexts,
+  deleteOrganizationGrantContexts,
+} from "../db/queries/grant-contexts.ts";
+import {
+  requirePlatformWriteContext,
+  type PlatformWriteContext,
+} from "./platform-context.ts";
+import { type PlatformReadContext } from "./platform-context.ts";
+import { type TenantReadContext } from "./tenant-context.ts";
+import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/organizations.ts";
 import { recordAuditEvent } from "../db/queries/audit.ts";
-import { deleteUserSessions } from "../db/queries/sessions.ts";
-import {
-  revokeUserTokens,
-  revokeClientTokens,
-} from "../db/queries/oauth-tokens.ts";
+import { revokeOrganizationMachineTokens } from "../db/queries/oauth-tokens.ts";
 import { cursorPage } from "../http/pagination.ts";
 import { ProblemError } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
@@ -15,126 +22,203 @@ function requireOrganization<T>(row: T | null): T {
   return row;
 }
 
+function configuration(
+  row: NonNullable<Awaited<ReturnType<typeof queries.readOrganization>>>,
+) {
+  return {
+    id: row.id,
+    revision: row.revision,
+    slug: row.slug,
+    name: row.name,
+    logo: row.logo,
+    status: row.status,
+    authorizationVersion: row.authorizationVersion,
+    disabledAt: row.disabledAt,
+  };
+}
+
 function audit(
   executor: Executor,
   actor: Actor,
   id: string,
   action: string,
   data: Record<string, unknown>,
-  erased = false,
 ) {
   return recordAuditEvent(executor, {
     ...actor,
-    organizationId: erased ? null : id,
+    organizationId: id,
     action,
     targetType: "organization",
     targetId: id,
     outcome: "success",
+    schemaVersion: action === "organization.erased" ? 2 : 1,
     data,
   });
 }
 
 export async function listOrganizations(
-  db: Database,
+  context: PlatformReadContext,
   query: queries.OrganizationQuery,
 ) {
-  return cursorPage(await queries.listOrganizations(db, query), query.limit);
+  return cursorPage(
+    await queries.listOrganizations(context, query),
+    query.limit,
+  );
 }
 
-export async function getOrganization(db: Database, id: string) {
-  return requireOrganization(await queries.findOrganization(db, id));
+export async function getOrganization(context: TenantReadContext<"directory">) {
+  return requireOrganization(await queries.readOrganization(context));
 }
 
-export function createOrganization(
-  db: Database,
-  actor: Actor,
+export async function createOrganization(
+  context: PlatformWriteContext,
   input: queries.OrganizationInput,
 ) {
-  return db.transaction(async (tx) => {
-    const row = await queries.createOrganization(tx, input);
-    await audit(tx, actor, row.id, "organization.created", { ...input });
-    return row;
+  const { tx, actor } = requirePlatformWriteContext(context);
+  const row = await queries.createOrganization(context, input);
+  await audit(tx, actor, row.id, "organization.created", {
+    before: null,
+    after: configuration(row),
   });
+  return row;
 }
 
-export function updateOrganization(
-  db: Database,
-  actor: Actor,
+export async function updateOrganization(
+  context: PlatformWriteContext,
   id: string,
   patch: queries.OrganizationPatch,
+  expected?: { id: string; revision: number },
 ) {
-  return db.transaction(async (tx) => {
-    requireOrganization(await queries.lockOrganization(tx, id));
-    const row = await queries.updateOrganization(tx, id, patch);
-    await audit(tx, actor, id, "organization.updated", { changes: patch });
-    return row!;
-  });
-}
-
-export function disableOrganization(db: Database, actor: Actor, id: string) {
-  return db.transaction(async (tx) => {
-    const existing = requireOrganization(
-      await queries.lockOrganization(tx, id),
+  const { tx, actor } = requirePlatformWriteContext(context);
+  const before = requireOrganization(
+    await queries.lockOrganizationForCommand(context, id),
+  );
+  if (
+    expected &&
+    (before.id !== expected.id || before.revision !== expected.revision)
+  )
+    throw new ProblemError(
+      412,
+      "revision_mismatch",
+      "Organisation changed; read its current revision before issuing a new command",
     );
-    if (existing.status === "disabled")
-      throw new ProblemError(
-        409,
-        "organization_already_disabled",
-        "Organisation is already disabled",
-      );
-    const row = await queries.setOrganizationStatus(tx, id, "disabled");
-    const userIds = await queries.listOrganizationMemberUserIds(tx, id);
-    const clientIds = await queries.listOrganizationClientIds(tx, id);
-    const sessions = await deleteUserSessions(tx, userIds);
-    const userTokens = await revokeUserTokens(tx, userIds);
-    const clientTokens = await revokeClientTokens(tx, clientIds);
-    await audit(tx, actor, id, "organization.disabled", {
-      sessions,
-      refreshTokens: userTokens.refreshTokens + clientTokens.refreshTokens,
-      accessTokens: userTokens.accessTokens + clientTokens.accessTokens,
-    });
-    return row!;
-  });
+  const changed = Object.entries(patch).some(
+    ([key, value]) => before[key as keyof queries.OrganizationPatch] !== value,
+  );
+  const row = changed
+    ? (await queries.updateOrganization(context, id, patch))!
+    : before;
+  await audit(
+    tx,
+    actor,
+    id,
+    changed ? "organization.updated" : "organization.update_unchanged",
+    {
+      before: configuration(before),
+      after: configuration(row),
+      metadataChanged: before.metadata !== row.metadata,
+    },
+  );
+  return { organization: row, changed };
 }
 
-export function enableOrganization(db: Database, actor: Actor, id: string) {
-  return db.transaction(async (tx) => {
-    const existing = requireOrganization(
-      await queries.lockOrganization(tx, id),
-    );
-    if (existing.status === "active")
-      throw new ProblemError(
-        409,
-        "organization_already_active",
-        "Organisation is already active",
-      );
-    const row = await queries.setOrganizationStatus(tx, id, "active");
-    await audit(tx, actor, id, "organization.enabled", { status: "active" });
-    return row!;
-  });
+export async function disableOrganization(
+  context: PlatformWriteContext,
+  id: string,
+) {
+  const { tx, actor } = requirePlatformWriteContext(context);
+  const existing = requireOrganization(
+    await queries.lockOrganizationForCommand(context, id),
+  );
+  const checkWriter = await platformWriterCheck(tx, id);
+  const stateChanged = existing.status !== "disabled";
+  const row = stateChanged
+    ? (await queries.setOrganizationStatus(context, id, "disabled"))!
+    : existing;
+  await checkWriter();
+  const revokedGrantContexts = await revokeOrganizationGrantContexts(
+    context,
+    id,
+  );
+  const changed = stateChanged || revokedGrantContexts.length > 0;
+  const revokedMachineAccessTokenIds = changed
+    ? await revokeOrganizationMachineTokens(context, id)
+    : [];
+  await audit(
+    tx,
+    actor,
+    id,
+    changed ? "organization.disabled" : "organization.disable_unchanged",
+    {
+      before: {
+        status: existing.status,
+        authorizationVersion: existing.authorizationVersion,
+      },
+      after: {
+        status: row.status,
+        authorizationVersion: row.authorizationVersion,
+      },
+      effects: { revokedMachineAccessTokenIds, revokedGrantContexts },
+    },
+  );
+  return { organization: row, changed };
 }
 
-export function eraseOrganization(
-  db: Database,
-  actor: Actor,
+export async function enableOrganization(
+  context: PlatformWriteContext,
+  id: string,
+) {
+  const { tx, actor } = requirePlatformWriteContext(context);
+  const existing = requireOrganization(
+    await queries.lockOrganizationForCommand(context, id),
+  );
+  const changed = existing.status !== "active";
+  const row = changed
+    ? (await queries.setOrganizationStatus(context, id, "active"))!
+    : existing;
+  await audit(
+    tx,
+    actor,
+    id,
+    changed ? "organization.enabled" : "organization.enable_unchanged",
+    {
+      before: configuration(existing),
+      after: configuration(row),
+    },
+  );
+  return { organization: row, changed };
+}
+
+export async function eraseOrganization(
+  context: PlatformWriteContext,
   id: string,
   confirm: string,
 ) {
-  return db.transaction(async (tx) => {
-    requireOrganization(await queries.lockOrganization(tx, id));
-    if (confirm !== id)
-      throw new ProblemError(
-        400,
-        "confirmation_mismatch",
-        "Confirmation must match the organisation ID",
-      );
-    if (await queries.countOrganizationClients(tx, id))
-      throw new ProblemError(
-        409,
-        "organization_has_clients",
-        "Remove the organisation's clients before erasure",
-      );
-    await queries.deleteOrganization(tx, id);
-    await audit(tx, actor, id, "organization.erased", {}, true);
+  const { tx, actor } = requirePlatformWriteContext(context);
+  const before = requireOrganization(
+    await queries.lockOrganizationForCommand(context, id),
+  );
+  if (confirm !== id)
+    throw new ProblemError(
+      400,
+      "confirmation_mismatch",
+      "Confirmation must match the organisation ID",
+    );
+  if (await queries.countOrganizationClients(context, id))
+    throw new ProblemError(
+      409,
+      "organization_has_clients",
+      "Remove the organisation's clients before erasure",
+    );
+  const deletedGrantContexts = await deleteOrganizationGrantContexts(
+    context,
+    id,
+  );
+  const effects = await queries.deleteOrganization(context, id);
+  await audit(tx, actor, id, "organization.erased", {
+    before: configuration(before),
+    after: null,
+    deletedGrantContexts,
+    effects,
   });
 }

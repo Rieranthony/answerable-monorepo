@@ -8,6 +8,79 @@ import {
 import { adminRouteTables } from "./index.ts";
 import { tierOf } from "./route-table.ts";
 
+// Temporary F3 backlog, not exemptions from the final command contract.
+// Remove entries only when the route's replay/revision integration tests pass.
+const pendingReplay: string[] = [];
+const pendingRevision: string[] = [];
+
+test("administrative command contract gaps cannot grow unnoticed", () => {
+  const mutations = adminRouteTables
+    .flatMap((table) => Object.values(table))
+    .filter((route) => route.kind !== "read");
+  const missingReplay: string[] = [];
+  const missingRevision: string[] = [];
+  for (const route of mutations) {
+    const headers =
+      route.parameters?.filter(
+        (parameter) => "in" in parameter && parameter.in === "header",
+      ) ?? [];
+    const requiredHeader = (name: string) =>
+      headers.some(
+        (parameter) =>
+          "name" in parameter &&
+          parameter.name === name &&
+          parameter.required === true,
+      );
+    if (!requiredHeader("Idempotency-Key"))
+      missingReplay.push(route.operationId);
+    else {
+      const success = Object.entries(route.responses ?? {}).filter(([status]) =>
+        /^2\d\d$/.test(status),
+      );
+      expect(success.length, route.operationId).toBeGreaterThan(0);
+      for (const [, response] of success) {
+        expect(response, route.operationId).toHaveProperty(
+          "headers.Operation-Id",
+        );
+        expect(response, route.operationId).toHaveProperty(
+          "headers.Idempotency-Replayed",
+        );
+      }
+      for (const status of ["400", "409", "410", "503"])
+        expect(route.responses, route.operationId).toHaveProperty(status);
+    }
+    // These PUT commands verify immutable ownership or ensure one link exists;
+    // they do not replace mutable configuration read by another administrator.
+    const desiredStatePut = ["setClientOwner", "linkClientResource"].includes(
+      route.operationId,
+    );
+    if (
+      route.method === "patch" ||
+      (route.method === "put" && !desiredStatePut)
+    ) {
+      const conditionalPut = ["putSsoProvider", "putGroupMember"].includes(
+        route.operationId,
+      );
+      if (conditionalPut) {
+        for (const name of ["If-Match", "If-None-Match"])
+          expect(
+            headers.find(
+              (parameter) => "name" in parameter && parameter.name === name,
+            ),
+            name,
+          ).toMatchObject({ required: false });
+      }
+      if (!requiredHeader("If-Match") && !conditionalPut)
+        missingRevision.push(route.operationId);
+      else
+        for (const status of ["412", "428"])
+          expect(route.responses, route.operationId).toHaveProperty(status);
+    }
+  }
+  expect(missingReplay.sort()).toEqual(pendingReplay);
+  expect(missingRevision.sort()).toEqual(pendingRevision);
+});
+
 test("admin route tables equal the OpenAPI operation union", async () => {
   const app = createApp({
     auth: stubAuth(),
@@ -28,6 +101,7 @@ test("admin route tables equal the OpenAPI operation union", async () => {
           "x-tier"?: string;
           "x-kind"?: string;
           "x-scopes"?: unknown;
+          "x-scope-alternatives"?: unknown;
           parameters?: {
             in: string;
             name: string;
@@ -71,7 +145,8 @@ test("admin route tables equal the OpenAPI operation union", async () => {
   for (const table of adminRouteTables) {
     for (const route of Object.values(table)) {
       const label = route.operationId;
-      if (route.open) expect(label).toBe("getAdminMe");
+      if (route.open)
+        expect(["getAdminMe", "getMyOperationStatus"]).toContain(label);
       expect(ids.has(label), `${label}: duplicate operationId`).toBe(false);
       ids.add(label);
       const path = `/api/admin/v1${route.path.replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, "{$1}")}`;
@@ -95,10 +170,17 @@ test("admin route tables equal the OpenAPI operation union", async () => {
         operation?.["x-kind"] ?? "",
       );
       expect(operation?.["x-kind"], label).toBe(route.kind);
-      expect(operation?.["x-scopes"], label).toEqual({
-        platform: route.platformScope,
-        ...(route.orgScope ? { org: route.orgScope } : {}),
-      });
+      expect(operation?.["x-scope-alternatives"], label).toEqual(
+        "scopeAlternatives" in route ? route.scopeAlternatives : undefined,
+      );
+      expect(operation?.["x-scopes"], label).toEqual(
+        route.open
+          ? {}
+          : {
+              platform: route.platformScope,
+              ...(route.orgScope ? { org: route.orgScope } : {}),
+            },
+      );
       const query =
         operation?.parameters?.filter(
           (parameter) => parameter.in === "query",

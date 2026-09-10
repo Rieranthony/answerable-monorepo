@@ -27,6 +27,12 @@ for (const principal of [
       actorId: principal.type,
       requestId: "request",
     });
+    for (const value of ["x".repeat(513), "x\ty"]) {
+      const response = await app.request("/", {
+        headers: { "user-agent": value },
+      });
+      expect(await response.json()).not.toHaveProperty("userAgent");
+    }
     expect(
       await (
         await app.request("/", {
@@ -36,8 +42,10 @@ for (const principal of [
           },
         })
       ).json(),
-    ).toMatchObject({
-      ip: "192.0.2.1",
+    ).toEqual({
+      actorType: principal.type === "root" ? "system" : principal.type,
+      actorId: principal.type,
+      requestId: "request",
       userAgent: "test",
     });
   });

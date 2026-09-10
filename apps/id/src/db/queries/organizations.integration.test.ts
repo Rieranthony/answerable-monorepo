@@ -1,3 +1,4 @@
+import * as productionQueries from "./organizations.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import { testEnvironment } from "../../__tests__/support.ts";
@@ -10,13 +11,15 @@ beforeAll(() => {
   connection = createDatabase(testEnvironment());
 });
 beforeEach(async () => {
-  await connection.db.execute(sql`truncate table organizations, users cascade`);
+  await connection.db.execute(
+    sql`truncate table audit_events, security_identifiers, organizations, users cascade`,
+  );
 });
 afterAll(async () => {
   await connection.close();
 });
 
-import * as queries from "./organizations.ts";
+import * as queries from "../../__tests__/organization-queries.ts";
 
 test("organisation queries: CRUD, filters, cursor, missing rows and related IDs", async () => {
   const db = connection.db;
@@ -67,8 +70,6 @@ test("organisation queries: CRUD, filters, cursor, missing rows and related IDs"
     { disabledAt: null },
   );
   expect(await queries.countOrganizationClients(db, a.id)).toBe(0);
-  expect(await queries.listOrganizationMemberUserIds(db, a.id)).toEqual([]);
-  expect(await queries.listOrganizationClientIds(db, a.id)).toEqual([]);
   const userId = createId();
   await db
     .insert(users)
@@ -82,10 +83,6 @@ test("organisation queries: CRUD, filters, cursor, missing rows and related IDs"
     organizationId: a.id,
     redirectUris: [],
   });
-  expect(await queries.listOrganizationMemberUserIds(db, a.id)).toEqual([
-    userId,
-  ]);
-  expect(await queries.listOrganizationClientIds(db, a.id)).toEqual(["owned"]);
   expect(await queries.countOrganizationClients(db, a.id)).toBe(1);
   await queries.deleteOrganization(db, b.id);
   expect(await queries.findOrganization(db, b.id)).toBeNull();
@@ -95,4 +92,88 @@ test("organisation queries: CRUD, filters, cursor, missing rows and related IDs"
   ).toBeNull();
   expect(await queries.setOrganizationStatus(db, b.id, "disabled")).toBeNull();
   await queries.deleteOrganization(db, b.id);
+});
+
+test("organisation administration rejects raw database authority", async () => {
+  await expect(
+    Promise.resolve().then(() =>
+      Reflect.apply(productionQueries.listOrganizations, undefined, [
+        connection.db,
+        { limit: 10 },
+      ]),
+    ),
+  ).rejects.toThrow("Invalid or expired");
+});
+
+test("organisation query contexts cannot be copied, reused or widened", async () => {
+  const { inPlatformRead, inPlatformWrite } =
+    await import("../../__tests__/platform-context.ts");
+  const { inTenantRead } = await import("../../__tests__/tenant-command.ts");
+  const org = await queries.createOrganization(connection.db, {
+    slug: "context",
+    name: "Context",
+  });
+  const platform = [
+    [productionQueries.listOrganizations, [{ limit: 10 }]],
+  ] as const;
+  const directory = [[productionQueries.readOrganization, []]] as const;
+  const diagnosis = [[productionQueries.readOrganizationStatus, []]] as const;
+  const history = [
+    [productionQueries.organizationExistsForHistory, []],
+  ] as const;
+  const writes = [
+    [productionQueries.lockOrganizationForCommand, [org.id]],
+    [
+      productionQueries.createOrganization,
+      [{ slug: "invalid", name: "Invalid" }],
+    ],
+    [productionQueries.updateOrganization, [org.id, { name: "Invalid" }]],
+    [productionQueries.setOrganizationStatus, [org.id, "disabled"]],
+    [productionQueries.deleteOrganization, [org.id]],
+    [productionQueries.countOrganizationClients, [org.id]],
+  ] as const;
+  const all = [...platform, ...directory, ...diagnosis, ...history, ...writes];
+  async function reject(context: unknown, cases: Readonly<typeof all>) {
+    for (const [fn, args] of cases)
+      await expect(
+        Promise.resolve().then(() =>
+          Reflect.apply(fn, undefined, [context, ...args]),
+        ),
+      ).rejects.toThrow("Invalid or expired");
+  }
+  await reject(connection.db, all);
+  let expired: unknown;
+  await inPlatformWrite(connection.db, async (context) => {
+    expired = context;
+    await reject({ ...context }, all);
+    await reject(context, [
+      ...platform,
+      ...directory,
+      ...diagnosis,
+      ...history,
+    ]);
+  });
+  await reject(expired, all);
+  await inPlatformRead(connection.db, async (context) => {
+    expired = context;
+    await reject({ ...context }, all);
+    await reject(context, [...writes, ...directory, ...diagnosis, ...history]);
+  });
+  await reject(expired, all);
+  for (const access of [
+    "directory",
+    "memberAccess",
+    "history",
+    "configuration",
+  ] as const) {
+    await inTenantRead(connection.db, org.id, access, async (context) => {
+      expired = context;
+      await reject({ ...context }, all);
+      await reject(context, [...writes, ...platform]);
+      if (access !== "directory") await reject(context, directory);
+      if (access !== "memberAccess") await reject(context, diagnosis);
+      if (access !== "history") await reject(context, history);
+    });
+    await reject(expired, all);
+  }
 });

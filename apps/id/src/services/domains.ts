@@ -1,9 +1,11 @@
-import type { Database, Executor } from "../db/client.ts";
-import * as queries from "../db/queries/organization-domains.ts";
 import {
-  findOrganization,
-  lockOrganization,
-} from "../db/queries/organizations.ts";
+  requirePlatformWriteContext,
+  type PlatformWriteContext,
+} from "./platform-context.ts";
+import { type TenantReadContext } from "./tenant-context.ts";
+import type { Executor } from "../db/client.ts";
+import * as queries from "../db/queries/organization-domains.ts";
+import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { recordAuditEvent } from "../db/queries/audit.ts";
 import { cursorPage } from "../http/pagination.ts";
 import { ProblemError } from "../http/problem.ts";
@@ -17,6 +19,18 @@ function requireRow<T>(row: T | null): T {
       "Organisation or domain not found",
     );
   return row;
+}
+function auditDomain(
+  row: NonNullable<
+    Awaited<ReturnType<typeof queries.findOrganizationDomainForCommand>>
+  >,
+) {
+  return {
+    id: row.id,
+    organizationId: row.organizationId,
+    domain: row.domain,
+    status: row.status,
+  };
 }
 function audit(
   tx: Executor,
@@ -37,98 +51,104 @@ function audit(
   });
 }
 export async function listDomains(
-  db: Database,
-  organizationId: string,
+  context: TenantReadContext<"directory">,
   query: queries.DomainQuery,
 ) {
-  requireRow(await findOrganization(db, organizationId));
   return cursorPage(
-    await queries.listOrganizationDomains(db, organizationId, query),
+    await queries.listOrganizationDomains(context, query),
     query.limit,
   );
 }
-export function createDomain(
-  db: Database,
-  actor: Actor,
+export async function createDomain(
+  context: PlatformWriteContext,
   organizationId: string,
   input: { domain: string },
 ) {
-  return db.transaction(async (tx) => {
-    requireRow(await lockOrganization(tx, organizationId));
-    const row = await queries.createOrganizationDomain(tx, {
-      organizationId,
-      ...input,
-    });
-    await audit(tx, actor, organizationId, row.id, "domain.created", {
-      domain: row.domain,
-    });
-    return row;
+  const { tx, actor } = requirePlatformWriteContext(context);
+  requireRow(await lockOrganizationForCommand(context, organizationId));
+  const row = await queries.createOrganizationDomain(context, {
+    organizationId,
+    ...input,
   });
+  await audit(tx, actor, organizationId, row.id, "domain.created", {
+    domain: row.domain,
+    before: null,
+    after: auditDomain(row),
+  });
+  return row;
 }
-function setStatus(
-  db: Database,
-  actor: Actor,
+async function setStatus(
+  context: PlatformWriteContext,
   organizationId: string,
   domainId: string,
   status: "active" | "disabled",
 ) {
-  return db.transaction(async (tx) => {
-    requireRow(await lockOrganization(tx, organizationId));
-    const existing = requireRow(
-      await queries.findOrganizationDomain(tx, organizationId, domainId),
-    );
-    if (existing.status === status)
-      throw new ProblemError(
-        409,
-        `domain_already_${status}`,
-        `Domain is already ${status}`,
-      );
-    const row = await queries.setOrganizationDomainStatus(
-      tx,
+  const { tx, actor } = requirePlatformWriteContext(context);
+  requireRow(await lockOrganizationForCommand(context, organizationId));
+  const existing = requireRow(
+    await queries.findOrganizationDomainForCommand(
+      context,
       organizationId,
       domainId,
-      status,
-    );
-    await audit(
-      tx,
-      actor,
-      organizationId,
-      domainId,
-      status === "active" ? "domain.enabled" : "domain.disabled",
-      { status },
-    );
-    return row!;
-  });
+    ),
+  );
+  const changed = existing.status !== status;
+  const row = changed
+    ? await queries.setOrganizationDomainStatus(
+        context,
+        organizationId,
+        domainId,
+        status,
+      )
+    : existing;
+  await audit(
+    tx,
+    actor,
+    organizationId,
+    domainId,
+    changed
+      ? status === "active"
+        ? "domain.enabled"
+        : "domain.disabled"
+      : status === "active"
+        ? "domain.enable_unchanged"
+        : "domain.disable_unchanged",
+    { status, before: auditDomain(existing), after: auditDomain(row!) },
+  );
+  return { domain: row!, changed };
 }
-export function disableDomain(
-  db: Database,
-  actor: Actor,
+export async function disableDomain(
+  context: PlatformWriteContext,
   organizationId: string,
   domainId: string,
 ) {
-  return setStatus(db, actor, organizationId, domainId, "disabled");
+  return setStatus(context, organizationId, domainId, "disabled");
 }
-export function enableDomain(
-  db: Database,
-  actor: Actor,
+export async function enableDomain(
+  context: PlatformWriteContext,
   organizationId: string,
   domainId: string,
 ) {
-  return setStatus(db, actor, organizationId, domainId, "active");
+  return setStatus(context, organizationId, domainId, "active");
 }
 
-export function deleteOrganizationDomain(
-  db: Database,
-  actor: Actor,
+export async function deleteOrganizationDomain(
+  context: PlatformWriteContext,
   organizationId: string,
   domainId: string,
 ) {
-  return db.transaction(async (tx) => {
-    requireRow(await lockOrganization(tx, organizationId));
-    requireRow(
-      await queries.findOrganizationDomain(tx, organizationId, domainId),
-    );
-    await queries.deleteOrganizationDomain(tx, organizationId, domainId);
-    await audit(tx, actor, organizationId, domainId, "domain.deleted", {});
+  const { tx, actor } = requirePlatformWriteContext(context);
+  requireRow(await lockOrganizationForCommand(context, organizationId));
+  const before = requireRow(
+    await queries.findOrganizationDomainForCommand(
+      context,
+      organizationId,
+      domainId,
+    ),
+  );
+  await queries.deleteOrganizationDomain(context, organizationId, domainId);
+  await audit(tx, actor, organizationId, domainId, "domain.deleted", {
+    before: auditDomain(before),
+    after: null,
   });
 }

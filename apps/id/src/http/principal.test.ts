@@ -1,20 +1,22 @@
+import { APIError } from "better-auth/api";
 import { describe, expect, mock, spyOn, test } from "bun:test";
 import { Hono } from "hono";
 import {
   createLocalJWKSet,
+  jwtVerify,
   exportJWK,
   generateKeyPair,
   SignJWT,
   type JWTPayload,
 } from "jose";
-import type { AuditEventInput } from "../db/queries/audit.ts";
+import type { AuditEventInput } from "../__tests__/audit-queries.ts";
 import type { Auth } from "../auth.ts";
 import {
   stubAuth,
   stubDatabase,
   testEnvironment,
 } from "../__tests__/support.ts";
-import type { ClientPrincipalRow } from "../db/queries/oauth-clients.ts";
+import type { ClientPrincipalRow } from "../__tests__/client-queries.ts";
 import type { AppEnvironment } from "./context.ts";
 import {
   createBearerVerifier,
@@ -30,20 +32,42 @@ const session = {
   user: { id: "user", email: "user@example.com", status: "active" },
 };
 const client: ClientPrincipalRow = {
+  id: "instance",
+  authorizationVersion: 1,
+  isPlatform: false,
   clientId: "client",
   disabled: false,
   organizationId: "org",
-  organization: { id: "org", slug: "tenant", status: "active" },
+  organization: {
+    id: "org",
+    slug: "tenant",
+    status: "active",
+    authorizationVersion: 1,
+  },
   clientCredentialsScopes: ["org:read", "org:write", "unknown"],
+  resourceScopes: null,
 };
 const grants = [
-  { organizationId: "org", organizationSlug: "tenant", scopes: ["org:read"] },
+  {
+    organizationId: "org",
+    organizationSlug: "tenant",
+    isPlatform: false,
+    scopes: ["org:read"],
+  },
 ];
+const verifiedIdentity = {
+  expiresAt: Math.floor(Date.now() / 1000) + 60,
+  clientInstance: "instance",
+  organizationId: "org",
+  authorizationVersion: 1,
+  organizationAuthorizationVersion: 1,
+};
 function setup(overrides: Partial<PrincipalDeps> = {}) {
   const deps: PrincipalDeps = {
     hasPlatformWriter: mock(async () => false),
     getSession: mock(async () => session),
     verifyBearer: mock(async () => ({
+      ...verifiedIdentity,
       clientId: "client",
       scopes: ["org:read"],
     })),
@@ -141,7 +165,12 @@ describe("unit: principal", () => {
   });
   test("rejects delegated credentials including an empty sid", async () => {
     const { app } = setup({
-      verifyBearer: async () => ({ clientId: "client", scopes: [], sid: "" }),
+      verifyBearer: async () => ({
+        ...verifiedIdentity,
+        clientId: "client",
+        scopes: [],
+        sid: "",
+      }),
     });
     const response = await app.request("/", { headers: bearer });
     expect(response.status).toBe(401);
@@ -153,6 +182,7 @@ describe("unit: principal", () => {
   test("intersects and sorts scopes, ignores cookies and skips CSRF", async () => {
     const { app, deps, db } = setup({
       verifyBearer: async () => ({
+        ...verifiedIdentity,
         clientId: "client",
         scopes: [
           "org:write",
@@ -174,7 +204,11 @@ describe("unit: principal", () => {
       organizationId: "org",
       grants: [{ ...grants[0], scopes: ["org:read", "org:write"] }],
     });
-    expect(deps.findClient).toHaveBeenCalledWith(db, "client");
+    expect(deps.findClient).toHaveBeenCalledWith(
+      db,
+      "client",
+      testEnvironment().adminResourceIdentifier,
+    );
     expect(deps.getSession).not.toHaveBeenCalled();
     expect(deps.loadGrants).not.toHaveBeenCalled();
   });
@@ -259,7 +293,7 @@ describe("unit: principal", () => {
 });
 
 describe("unit: bearer verification and JWKS", () => {
-  test("validates claims and identity fallback, issuer, audience, type and expiry", async () => {
+  test("validates the machine identity contract, issuer, audience, type and expiry", async () => {
     const { privateKey, publicKey } = await generateKeyPair("RS256");
     const getKey = createLocalJWKSet({ keys: [await exportJWK(publicKey)] });
     const verify = createBearerVerifier({
@@ -267,11 +301,20 @@ describe("unit: bearer verification and JWKS", () => {
       issuer: "https://issuer",
       audience: "admin",
     });
+    const clientInstance = crypto.randomUUID();
+    const organizationId = crypto.randomUUID();
     async function token(payload: JWTPayload = {}, typ = "at+jwt") {
       return new SignJWT({
         iss: "https://issuer",
         aud: "admin",
-        sub: "sub-client",
+        sub: "client",
+        client_id: "client",
+        azp: "client",
+        client_instance: clientInstance,
+        organization_id: organizationId,
+        authorization_version: 1,
+        organization_authorization_version: 1,
+        subject_type: "client",
         exp: Math.floor(Date.now() / 1000) + 60,
         ...payload,
       })
@@ -280,25 +323,25 @@ describe("unit: bearer verification and JWKS", () => {
     }
     expect(
       await verify(
-        await token({
-          azp: "azp-client",
-          client_id: "other",
-          scope: "org:read  org:write",
-          sid: "session",
-        }),
+        await token({ scope: "org:read  org:write", sid: "session" }),
       ),
     ).toEqual({
-      clientId: "azp-client",
+      clientId: "client",
+      clientInstance,
+      organizationId,
+      expiresAt: expect.any(Number),
+      authorizationVersion: 1,
+      organizationAuthorizationVersion: 1,
       scopes: ["org:read", "org:write"],
       sid: "session",
     });
-    expect(await verify(await token({ client_id: "fallback" }))).toEqual({
-      clientId: "fallback",
-      scopes: [],
-      sid: undefined,
-    });
-    expect(await verify(await token())).toEqual({
-      clientId: "sub-client",
+    expect(await verify(await token({ azp: undefined }))).toEqual({
+      clientId: "client",
+      clientInstance,
+      organizationId,
+      expiresAt: expect.any(Number),
+      authorizationVersion: 1,
+      organizationAuthorizationVersion: 1,
       scopes: [],
       sid: undefined,
     });
@@ -306,9 +349,20 @@ describe("unit: bearer verification and JWKS", () => {
       { aud: "wrong" },
       { iss: "wrong" },
       { exp: 1 },
+      { exp: undefined },
       { sub: undefined },
+      { sub: "another-client" },
+      { client_id: undefined },
+      { client_id: "" },
       { azp: 12 },
-      { azp: "" },
+      { azp: "another-client" },
+      { client_instance: undefined },
+      { organization_id: undefined },
+      { organization_authorization_version: undefined },
+      { organization_authorization_version: 0 },
+      { authorization_version: 0 },
+      { authorization_version: 1.5 },
+      { subject_type: "user" },
     ]) {
       await expect(verify(await token(payload))).rejects.toThrow();
     }
@@ -345,6 +399,103 @@ describe("unit: bearer verification and JWKS", () => {
     await expect(getKey({ alg: "HS256" }, flattened)).rejects.toThrow();
     expect(getJwks).toHaveBeenCalledTimes(4);
   });
+  test("concurrent cold and missing-key verification shares one load and never reloads a fresh miss", async () => {
+    const pair = await generateKeyPair("RS256");
+    const key = { ...(await exportJWK(pair.publicKey)), kid: "known" };
+    let release = Promise.withResolvers<void>();
+    const getJwks = mock(async () => {
+      await release.promise;
+      return { keys: [key] };
+    });
+    const getKey = createJwksResolver({ api: { getJwks } } as unknown as Auth);
+    const token = { payload: "", signature: "" };
+    for (const phase of ["cold", "cached"] as const) {
+      const before = getJwks.mock.calls.length;
+      const pending = Array.from({ length: 8 }, (_, index) =>
+        getKey({ alg: "RS256", kid: `missing-${phase}-${index}` }, token),
+      );
+      const settled = Promise.allSettled(pending);
+      try {
+        await Bun.sleep(0);
+        expect(getJwks.mock.calls.length - before).toBe(1);
+      } finally {
+        release.resolve();
+        await settled;
+      }
+      expect(
+        (await settled).every((result) => result.status === "rejected"),
+      ).toBe(true);
+      expect(getJwks.mock.calls.length - before).toBe(1);
+      release = Promise.withResolvers<void>();
+    }
+    await getKey({ alg: "RS256", kid: "known" }, token);
+    expect(getJwks).toHaveBeenCalledTimes(2);
+  });
+  test("concurrent rotated-key verification shares refresh while cached valid tokens still verify", async () => {
+    const first = await generateKeyPair("RS256");
+    const second = await generateKeyPair("RS256");
+    const firstJwk = { ...(await exportJWK(first.publicKey)), kid: "first" };
+    const secondJwk = { ...(await exportJWK(second.publicKey)), kid: "second" };
+    const release = Promise.withResolvers<void>();
+    let rotating = false;
+    const getJwks = mock(async () => {
+      if (rotating) await release.promise;
+      return { keys: rotating ? [firstJwk, secondJwk] : [firstJwk] };
+    });
+    const getKey = createJwksResolver({ api: { getJwks } } as unknown as Auth);
+    const old = await new SignJWT({ proof: "old" })
+      .setProtectedHeader({ alg: "RS256", kid: "first" })
+      .sign(first.privateKey);
+    const current = await new SignJWT({ proof: "current" })
+      .setProtectedHeader({ alg: "RS256", kid: "second" })
+      .sign(second.privateKey);
+    expect((await jwtVerify(old, getKey)).payload.proof).toBe("old");
+    rotating = true;
+    const pending = Array.from({ length: 8 }, () => jwtVerify(current, getKey));
+    const settled = Promise.allSettled(pending);
+    try {
+      await Bun.sleep(0);
+      expect(getJwks).toHaveBeenCalledTimes(2);
+      expect((await jwtVerify(old, getKey)).payload.proof).toBe("old");
+    } finally {
+      release.resolve();
+      await settled;
+    }
+    for (const result of await Promise.all(pending))
+      expect(result.payload.proof).toBe("current");
+    expect(getJwks).toHaveBeenCalledTimes(2);
+  });
+  test("failed shared key loads reject callers and allow the next request to recover", async () => {
+    const pair = await generateKeyPair("RS256");
+    const key = { ...(await exportJWK(pair.publicKey)), kid: "recovered" };
+    const release = Promise.withResolvers<void>();
+    let fail = true;
+    const getJwks = mock(async () => {
+      await release.promise;
+      if (fail) throw new Error("synthetic unavailable key store");
+      return { keys: [key] };
+    });
+    const getKey = createJwksResolver({ api: { getJwks } } as unknown as Auth);
+    const token = { payload: "", signature: "" };
+    const pending = Promise.allSettled(
+      Array.from({ length: 8 }, () =>
+        getKey({ alg: "RS256", kid: "recovered" }, token),
+      ),
+    );
+    try {
+      await Bun.sleep(0);
+      expect(getJwks).toHaveBeenCalledTimes(1);
+    } finally {
+      release.resolve();
+      await pending;
+    }
+    expect(
+      (await pending).every((result) => result.status === "rejected"),
+    ).toBe(true);
+    fail = false;
+    await getKey({ alg: "RS256", kid: "recovered" }, token);
+    expect(getJwks).toHaveBeenCalledTimes(2);
+  });
   test("default deps use Better Auth's non-refreshing session API", async () => {
     const auth = stubAuth();
     const getSession = mock(async () => null);
@@ -375,7 +526,6 @@ test.each(["GET", "POST"])(
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ type: "root", grants: [] });
     expect(deps.hasPlatformWriter).toHaveBeenCalledWith(db, {
-      organizationSlug: environment.platformOrganizationSlug,
       resource: environment.adminResourceIdentifier,
     });
     expect(deps.verifyBearer).not.toHaveBeenCalled();
@@ -425,6 +575,7 @@ test("root lockout is audited once without credentials", async () => {
       "A platform administrator exists. Set ROOT_ADMIN_BREAK_GLASS=true to use the root secret.",
   });
   expect(rows).toHaveLength(1);
+  expect(rows[0]).not.toHaveProperty("ip");
   expect(rows[0]).toMatchObject({
     actorType: "system",
     actorId: "root",
@@ -434,7 +585,6 @@ test("root lockout is audited once without credentials", async () => {
     targetType: "route",
     targetId: "/",
     requestId: "request",
-    ip: "192.0.2.1",
     userAgent: "test",
   });
   expect(JSON.stringify({ rows, body })).not.toContain(rootSecret);
@@ -452,4 +602,53 @@ test("break-glass skips the writer lookup", async () => {
     ).json(),
   ).toEqual({ type: "root", grants: [] });
   expect(deps.hasPlatformWriter).not.toHaveBeenCalled();
+});
+
+test("session service failures are retryable without hiding unrelated errors", async () => {
+  const auth = stubAuth();
+  const deps = createDefaultPrincipalDeps({
+    auth,
+    environment: testEnvironment(),
+  });
+  for (const error of [
+    new APIError("INTERNAL_SERVER_ERROR", { message: "Failed to get session" }),
+    new APIError("BAD_REQUEST"),
+    new Error("unexpected"),
+  ]) {
+    auth.api.getSession = (async () => {
+      throw error;
+    }) as unknown as Auth["api"]["getSession"];
+    if (error instanceof APIError && error.status === "INTERNAL_SERVER_ERROR")
+      await expect(deps.getSession(new Headers())).rejects.toMatchObject({
+        status: 503,
+        code: "authentication_unavailable",
+      });
+    else await expect(deps.getSession(new Headers())).rejects.toBe(error);
+  }
+});
+
+test("HTTP admission rejects a verified token that expires during principal lookup", async () => {
+  const expiresAt = Math.floor(Date.now() / 1000) + 60;
+  const clock = spyOn(Date, "now");
+  try {
+    const { app } = setup({
+      verifyBearer: async () => ({
+        ...verifiedIdentity,
+        expiresAt,
+        clientId: "client",
+        scopes: ["org:read"],
+      }),
+      findClient: async () => {
+        clock.mockReturnValue((expiresAt + 1) * 1000);
+        return client;
+      },
+    });
+    const response = await app.request("/", {
+      headers: { Authorization: "Bearer token" },
+    });
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({ code: "invalid_token" });
+  } finally {
+    clock.mockRestore();
+  }
 });

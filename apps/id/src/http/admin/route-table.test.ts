@@ -38,6 +38,7 @@ test("registerRoute describes, authorises and handles a route", async () => {
         {
           organizationId: "own",
           organizationSlug: "tenant",
+          isPlatform: false,
           scopes: ["org:read"],
         },
       ],
@@ -101,6 +102,7 @@ test.each(["user", "client"] as const)(
       {
         organizationId: "own",
         organizationSlug: "tenant",
+        isPlatform: false,
         scopes: ["org:read"],
       },
     ];

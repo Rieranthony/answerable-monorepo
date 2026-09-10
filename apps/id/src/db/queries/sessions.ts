@@ -1,19 +1,23 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
-import type { Executor } from "../client.ts";
-import { sessions, members } from "../schema/index.ts";
+import {
+  requirePlatformReadContext,
+  requirePlatformUsersContext,
+  type PlatformReadContext,
+  type PlatformUsersContext,
+} from "../../services/platform-context.ts";
+import { and, desc, eq } from "drizzle-orm";
+import { sessions } from "../schema/index.ts";
 
-export async function deleteUserSessions(
-  executor: Executor,
-  userIds: string[],
-): Promise<number> {
-  if (!userIds.length) return 0;
+export async function deleteUserSessionIds(
+  context: PlatformUsersContext,
+  userId: string,
+): Promise<string[]> {
+  const { tx: executor } = requirePlatformUsersContext(context);
   const rows = await executor
     .delete(sessions)
-    .where(inArray(sessions.userId, userIds))
+    .where(eq(sessions.userId, userId))
     .returning({ id: sessions.id });
-  return rows.length;
+  return rows.map((row) => row.id).sort();
 }
-
 import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
 
 const selection = {
@@ -27,10 +31,11 @@ const selection = {
 };
 
 export function listUserSessions(
-  executor: Executor,
+  context: PlatformReadContext,
   userId: string,
   page: PageQuery,
 ) {
+  const { tx: executor } = requirePlatformReadContext(context);
   return executor
     .select(selection)
     .from(sessions)
@@ -42,10 +47,11 @@ export function listUserSessions(
 }
 
 export async function deleteSession(
-  executor: Executor,
+  context: PlatformUsersContext,
   userId: string,
   sessionId: string,
 ) {
+  const { tx: executor } = requirePlatformUsersContext(context);
   const [row] = await executor
     .delete(sessions)
     .where(and(eq(sessions.userId, userId), eq(sessions.id, sessionId)))
@@ -53,25 +59,12 @@ export async function deleteSession(
   return row ?? null;
 }
 
-export async function findMemberUserId(
-  executor: Executor,
-  organizationId: string,
-  memberId: string,
-) {
-  const [row] = await executor
-    .select({ userId: members.userId })
-    .from(members)
-    .where(
-      and(eq(members.organizationId, organizationId), eq(members.id, memberId)),
-    );
-  return row?.userId ?? null;
-}
-
 export async function findUserSession(
-  executor: Executor,
+  context: PlatformUsersContext,
   userId: string,
   sessionId: string,
 ) {
+  const { tx: executor } = requirePlatformUsersContext(context);
   const [row] = await executor
     .select(selection)
     .from(sessions)

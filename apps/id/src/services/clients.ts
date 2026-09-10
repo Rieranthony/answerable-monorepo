@@ -1,8 +1,21 @@
+import {
+  revokeClientGrantContexts,
+  deleteClientGrantContexts,
+} from "../db/queries/grant-contexts.ts";
+import { requireNoCapabilityReferences } from "./capabilities.ts";
+import {
+  requirePlatformWriteContext,
+  type PlatformWriteContext,
+} from "./platform-context.ts";
+import { type PlatformReadContext } from "./platform-context.ts";
 import { z } from "zod";
-import type { Database, Executor } from "../db/client.ts";
+import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/oauth-clients.ts";
-import { lockResource } from "../db/queries/oauth-resources.ts";
-import { findOrganization } from "../db/queries/organizations.ts";
+import {
+  lockResourceForCommand,
+  readResourceForPolicy,
+} from "../db/queries/oauth-resources.ts";
+import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { revokeClientTokens } from "../db/queries/oauth-tokens.ts";
 import { recordAuditEvent } from "../db/queries/audit.ts";
 import { cursorPage } from "../http/pagination.ts";
@@ -10,7 +23,9 @@ import { ProblemError } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
 import { generateClientSecret, hashClientSecret } from "./client-secrets.ts";
 
-type ClientRow = NonNullable<Awaited<ReturnType<typeof queries.findClient>>>;
+type ClientRow = NonNullable<
+  Awaited<ReturnType<typeof queries.lockClientForCommand>>
+>;
 export type CreateClientInput = {
   clientId?: string;
   name: string;
@@ -38,21 +53,117 @@ function requireRow<T>(row: T | null): T {
 function publicClient({ clientSecret, ...row }: ClientRow) {
   return { ...row, hasClientSecret: clientSecret !== null };
 }
+/** Allowlisted security settings; credentials and raw JWK/provider configuration stay out. */
+function auditClient(row: ClientRow) {
+  return {
+    id: row.id,
+    clientId: row.clientId,
+    organizationId: row.organizationId,
+    name: row.name,
+    tokenEndpointAuthMethod: row.tokenEndpointAuthMethod,
+    grantTypes: row.grantTypes,
+    redirectUris: row.redirectUris,
+    scopes: row.scopes,
+    clientCredentialsScopes: row.clientCredentialsScopes,
+    requirePKCE: row.requirePKCE,
+    skipConsent: row.skipConsent,
+    disabled: row.disabled,
+    revision: row.revision,
+    authorizationVersion: row.authorizationVersion,
+    hasClientSecret: row.clientSecret !== null,
+    hasJwks: row.jwks !== null,
+    hasJwksUri: row.jwksUri !== null,
+  };
+}
 function audit(
   tx: Executor,
   actor: Actor,
   clientId: string,
   action: string,
   data: Record<string, unknown>,
+  organizationId?: string | null,
+  schemaVersion: 1 | 2 = 1,
 ) {
   return recordAuditEvent(tx, {
     ...actor,
+    organizationId,
+    schemaVersion,
     targetType: "client",
     targetId: clientId,
     action,
     outcome: "success",
     data,
   });
+}
+/** Owning a client does not grant visibility into another tenant's private target. */
+function auditResourceLink(
+  tx: Executor,
+  actor: Actor,
+  client: ClientRow,
+  identifier: string,
+  resource: Awaited<ReturnType<typeof readResourceForPolicy>>,
+  before: boolean,
+  after: boolean,
+) {
+  return audit(
+    tx,
+    actor,
+    client.clientId,
+    before === after
+      ? "client.resource_unchanged"
+      : after
+        ? "client.resource_linked"
+        : "client.resource_unlinked",
+    {
+      resource: identifier,
+      resourceInstanceId: resource?.id ?? null,
+      resourceClassification: resource?.classification ?? null,
+      resourceOrganizationId: resource?.organizationId ?? null,
+      before: { linked: before },
+      after: { linked: after },
+    },
+    resource?.classification === "platform_shared" ||
+      resource?.organizationId === client.organizationId
+      ? client.organizationId
+      : null,
+    2,
+  );
+}
+/** A client's owner is not entitled to its other tenants' grant identities. */
+async function auditGrantEffects(
+  tx: Executor,
+  actor: Actor,
+  client: ClientRow,
+  grantContexts: { id: string; organizationId: string; userId: string }[],
+  details:
+    | {
+        action: "client.grants_revoked";
+        revokedTokens: Awaited<
+          ReturnType<typeof revokeClientTokens>
+        >["revokedTokens"];
+      }
+    | {
+        action: "client.grants_erased";
+        effects: Awaited<ReturnType<typeof queries.deleteClient>>;
+      },
+) {
+  const { action, ...payload } = details;
+  const hasEffects =
+    "revokedTokens" in details
+      ? details.revokedTokens.access.length > 0 ||
+        details.revokedTokens.refresh.length > 0
+      : Object.values(details.effects).some((rows) => rows.length > 0);
+  if (!grantContexts.length && !hasEffects) return undefined;
+  const event = await audit(
+    tx,
+    actor,
+    client.clientId,
+    action,
+    { clientInstanceId: client.id, grantContexts, ...payload },
+    null,
+    2,
+  );
+  return event.id;
 }
 const jwkSetSchema = z.object({
   keys: z.array(z.object({ kty: z.string().min(1) }).loose()).min(1),
@@ -125,200 +236,348 @@ function validateClient(
       { errors },
     );
 }
-export async function listClients(db: Database, query: queries.ClientQuery) {
-  const page = cursorPage(await queries.listClients(db, query), query.limit);
-  return { ...page, items: page.items.map(publicClient) };
+export async function listClients(
+  context: PlatformReadContext,
+  query: queries.ClientQuery,
+) {
+  return cursorPage(await queries.listClients(context, query), query.limit);
 }
-export async function getClient(db: Database, clientId: string) {
-  const row = publicClient(requireRow(await queries.findClient(db, clientId)));
+export async function getClient(
+  context: PlatformReadContext,
+  clientId: string,
+) {
+  // Keep the registration and its linked resources on the same revision.
+  const row = requireRow(await queries.readClient(context, clientId));
   return {
     ...row,
-    resources: (await queries.listClientResources(db, clientId)).map(
-      (link) => link.resourceId,
-    ),
+    resources: (await queries.listClientResources(context, clientId))
+      .map((link) => link.resourceId)
+      .sort(),
   };
 }
-export function createClient(
-  db: Database,
-  actor: Actor,
+export async function createClient(
+  context: PlatformWriteContext,
   input: CreateClientInput,
 ) {
+  const { tx, actor } = requirePlatformWriteContext(context);
   validateClient(input);
-  return db.transaction(async (tx) => {
-    if (input.organizationId)
-      requireRow(await findOrganization(tx, input.organizationId));
-    const clientId =
-      input.clientId ??
-      `client_${Buffer.from(crypto.getRandomValues(new Uint8Array(8))).toString("hex")}`;
-    const clientSecret =
-      input.tokenEndpointAuthMethod === "client_secret_basic"
-        ? generateClientSecret()
-        : undefined;
-    const row = await queries.createClient(tx, {
-      ...input,
-      clientId,
-      clientSecret:
-        clientSecret === undefined ? null : hashClientSecret(clientSecret),
-      responseTypes: input.grantTypes.includes("authorization_code")
-        ? ["code"]
-        : [],
-      requirePKCE: true,
-    });
-    await audit(tx, actor, clientId, "client.created", { ...input, clientId });
-    return {
-      ...publicClient(row),
-      ...(clientSecret === undefined ? {} : { clientSecret }),
-    };
+  if (input.organizationId)
+    requireRow(await lockOrganizationForCommand(context, input.organizationId));
+  const clientId =
+    input.clientId ??
+    `client_${Buffer.from(crypto.getRandomValues(new Uint8Array(8))).toString("hex")}`;
+  const clientSecret =
+    input.tokenEndpointAuthMethod === "client_secret_basic"
+      ? generateClientSecret()
+      : undefined;
+  const row = await queries.createClient(context, {
+    ...input,
+    clientId,
+    clientSecret:
+      clientSecret === undefined ? null : hashClientSecret(clientSecret),
+    responseTypes: input.grantTypes.includes("authorization_code")
+      ? ["code"]
+      : [],
+    requirePKCE: true,
   });
+  await audit(
+    tx,
+    actor,
+    clientId,
+    "client.created",
+    { before: null, after: auditClient(row) },
+    row.organizationId,
+  );
+  return {
+    ...publicClient(row),
+    ...(clientSecret === undefined ? {} : { clientSecret }),
+  };
 }
-export function updateClient(
-  db: Database,
-  actor: Actor,
+export async function updateClient(
+  context: PlatformWriteContext,
   clientId: string,
   patch: queries.ClientPatch,
+  expected?: { id: string; revision: number },
 ) {
-  return db.transaction(async (tx) => {
-    const existing = requireRow(await queries.lockClient(tx, clientId));
-    validateClient({ ...existing, ...patch });
-    const row = await queries.updateClient(tx, clientId, patch);
-    await audit(tx, actor, clientId, "client.updated", { changes: patch });
-    return publicClient(row!);
-  });
+  const { tx, actor } = requirePlatformWriteContext(context);
+  const existing = requireRow(
+    await queries.lockClientForCommand(context, clientId),
+  );
+  if (
+    expected &&
+    (existing.id !== expected.id || existing.revision !== expected.revision)
+  )
+    throw new ProblemError(
+      412,
+      "revision_mismatch",
+      "Client changed; read its current revision before issuing a new command",
+    );
+  validateClient({ ...existing, ...patch });
+  const changed = Object.entries(patch).some(
+    ([key, value]) =>
+      value !== undefined &&
+      JSON.stringify(value) !==
+        JSON.stringify(existing[key as keyof ClientRow]),
+  );
+  const row = changed
+    ? await queries.updateClient(context, clientId, patch)
+    : existing;
+  await audit(
+    tx,
+    actor,
+    clientId,
+    changed ? "client.updated" : "client.update_unchanged",
+    {
+      requestedFields: Object.keys(patch).sort(),
+      before: auditClient(existing),
+      after: auditClient(row!),
+    },
+    row!.organizationId,
+  );
+  return publicClient(row!);
 }
-function setDisabled(
-  db: Database,
-  actor: Actor,
+async function setDisabled(
+  context: PlatformWriteContext,
   clientId: string,
   disabled: boolean,
 ) {
-  return db.transaction(async (tx) => {
-    const existing = requireRow(await queries.lockClient(tx, clientId));
-    if (existing.disabled === disabled)
-      throw new ProblemError(
-        409,
-        disabled ? "client_already_disabled" : "client_already_active",
-        "Client is already in the requested state",
-      );
-    const row = await queries.setClientDisabled(tx, clientId, disabled);
-    const data = disabled
-      ? await revokeClientTokens(tx, [clientId])
-      : { disabled };
-    await audit(
-      tx,
-      actor,
-      clientId,
-      disabled ? "client.disabled" : "client.enabled",
-      data,
+  const { tx, actor } = requirePlatformWriteContext(context);
+  const existing = requireRow(
+    await queries.lockClientForCommand(context, clientId),
+  );
+  const stateChanged = existing.disabled !== disabled;
+  const row = stateChanged
+    ? (await queries.setClientDisabled(context, clientId, disabled))!
+    : existing;
+  const { revokedTokens, ...effects } = disabled
+    ? await revokeClientTokens(context, clientId)
+    : {
+        refreshTokens: 0,
+        accessTokens: 0,
+        revokedTokens: { refresh: [], access: [] },
+      };
+  const revokedGrantContexts = disabled
+    ? await revokeClientGrantContexts(context, existing.id)
+    : [];
+  const changed =
+    stateChanged ||
+    effects.refreshTokens > 0 ||
+    effects.accessTokens > 0 ||
+    revokedGrantContexts.length > 0;
+  const grantEffectsEventId = await auditGrantEffects(
+    tx,
+    actor,
+    existing,
+    revokedGrantContexts,
+    { action: "client.grants_revoked", revokedTokens },
+  );
+  await audit(
+    tx,
+    actor,
+    clientId,
+    changed
+      ? disabled
+        ? "client.disabled"
+        : "client.enabled"
+      : "client.state_unchanged",
+    {
+      before: auditClient(existing),
+      after: auditClient(row),
+      effects,
+      ...(grantEffectsEventId ? { grantEffectsEventId } : {}),
+    },
+    row.organizationId,
+  );
+  return { client: publicClient(row), changed };
+}
+export async function disableClient(
+  context: PlatformWriteContext,
+  clientId: string,
+) {
+  return setDisabled(context, clientId, true);
+}
+export async function enableClient(
+  context: PlatformWriteContext,
+  clientId: string,
+) {
+  return setDisabled(context, clientId, false);
+}
+export async function rotateSecret(
+  context: PlatformWriteContext,
+  clientId: string,
+) {
+  const { tx, actor } = requirePlatformWriteContext(context);
+  const existing = requireRow(
+    await queries.lockClientForCommand(context, clientId),
+  );
+  if (existing.tokenEndpointAuthMethod !== "client_secret_basic")
+    throw new ProblemError(
+      409,
+      "client_has_no_secret",
+      "Client does not use a shared secret",
     );
-    return publicClient(row!);
-  });
+  const clientSecret = generateClientSecret();
+  const updated = (await queries.setClientSecret(
+    context,
+    clientId,
+    hashClientSecret(clientSecret),
+  ))!;
+  const { revokedTokens, ...tokens } = await revokeClientTokens(
+    context,
+    clientId,
+  );
+  const revokedGrantContexts = await revokeClientGrantContexts(
+    context,
+    existing.id,
+  );
+  const grantEffectsEventId = await auditGrantEffects(
+    tx,
+    actor,
+    existing,
+    revokedGrantContexts,
+    { action: "client.grants_revoked", revokedTokens },
+  );
+  await audit(
+    tx,
+    actor,
+    clientId,
+    "client.secret_rotated",
+    {
+      before: { authorizationVersion: existing.authorizationVersion },
+      after: { authorizationVersion: updated.authorizationVersion },
+      effects: {
+        credentialChanged: existing.clientSecret !== updated.clientSecret,
+        ...tokens,
+      },
+      ...(grantEffectsEventId ? { grantEffectsEventId } : {}),
+    },
+    updated.organizationId,
+  );
+  return { clientId, clientSecret };
 }
-export function disableClient(db: Database, actor: Actor, clientId: string) {
-  return setDisabled(db, actor, clientId, true);
-}
-export function enableClient(db: Database, actor: Actor, clientId: string) {
-  return setDisabled(db, actor, clientId, false);
-}
-export function rotateSecret(db: Database, actor: Actor, clientId: string) {
-  return db.transaction(async (tx) => {
-    const existing = requireRow(await queries.lockClient(tx, clientId));
-    if (existing.tokenEndpointAuthMethod !== "client_secret_basic")
-      throw new ProblemError(
-        409,
-        "client_has_no_secret",
-        "Client does not use a shared secret",
-      );
-    const clientSecret = generateClientSecret();
-    await queries.setClientSecret(tx, clientId, hashClientSecret(clientSecret));
-    await audit(tx, actor, clientId, "client.secret_rotated", {});
-    return { clientId, clientSecret };
-  });
-}
-export function setOwner(
-  db: Database,
-  actor: Actor,
+export async function setOwner(
+  context: PlatformWriteContext,
   clientId: string,
   organizationId: string | null,
 ) {
-  return db.transaction(async (tx) => {
-    const existing = requireRow(await queries.lockClient(tx, clientId));
-    if (organizationId !== null)
-      requireRow(await findOrganization(tx, organizationId));
-    const row = await queries.assignClientOrganization(tx, {
-      clientId,
-      organizationId,
-    });
-    await audit(tx, actor, clientId, "client.owner_changed", {
-      from: existing.organizationId,
-      to: organizationId,
-    });
-    return publicClient(row);
-  });
+  const { tx, actor } = requirePlatformWriteContext(context);
+  const existing = requireRow(
+    await queries.lockClientForCommand(context, clientId),
+  );
+  if (existing.organizationId !== organizationId)
+    throw new ProblemError(
+      409,
+      "ownership_conflict",
+      "Client ownership is immutable; create a replacement client under the new owner",
+    );
+  await audit(
+    tx,
+    actor,
+    clientId,
+    "client.owner_unchanged",
+    {
+      before: { organizationId },
+      after: { organizationId },
+      changed: false,
+    },
+    existing.organizationId,
+  );
+  return publicClient(existing);
 }
-export function linkResource(
-  db: Database,
-  actor: Actor,
+export async function linkResource(
+  context: PlatformWriteContext,
   clientId: string,
   resource: string,
 ) {
-  return db.transaction(async (tx) => {
-    requireRow(await queries.lockClient(tx, clientId));
-    requireRow(await lockResource(tx, resource));
-    const result = await queries.linkClientResource(tx, clientId, resource);
-    await audit(tx, actor, clientId, "client.resource_linked", {
-      resource,
-      ...result,
-    });
-    return result;
-  });
+  const { tx, actor } = requirePlatformWriteContext(context);
+  const client = requireRow(
+    await queries.lockClientForCommand(context, clientId),
+  );
+  const target = requireRow(await lockResourceForCommand(context, resource));
+  const result = await queries.linkClientResource(context, clientId, resource);
+  await auditResourceLink(
+    tx,
+    actor,
+    client,
+    resource,
+    target,
+    !result.created,
+    true,
+  );
+  return result;
 }
-export function unlinkResource(
-  db: Database,
-  actor: Actor,
+export async function unlinkResource(
+  context: PlatformWriteContext,
   clientId: string,
   resource: string,
 ) {
-  return db.transaction(async (tx) => {
-    requireRow(await queries.lockClient(tx, clientId));
-    if (!(await queries.unlinkClientResource(tx, clientId, resource)))
-      throw new ProblemError(
-        404,
-        "not_found",
-        "Client resource link not found",
-      );
-    await audit(tx, actor, clientId, "client.resource_unlinked", { resource });
-  });
+  const { tx, actor } = requirePlatformWriteContext(context);
+  const client = requireRow(
+    await queries.lockClientForCommand(context, clientId),
+  );
+  const target = await readResourceForPolicy(context, resource);
+  const removed = await queries.unlinkClientResource(
+    context,
+    clientId,
+    resource,
+  );
+  await auditResourceLink(tx, actor, client, resource, target, removed, false);
+  return { removed };
 }
 
-export function eraseClient(
-  db: Database,
-  actor: Actor,
+export async function eraseClient(
+  context: PlatformWriteContext,
   clientId: string,
   confirm: string,
 ) {
-  return db.transaction(async (tx) => {
-    const existing = requireRow(await queries.lockClient(tx, clientId));
-    if (confirm !== clientId)
-      throw new ProblemError(
-        400,
-        "confirmation_mismatch",
-        "Confirmation must match the client ID",
-      );
-    if (await queries.countClientEntitlements(tx, clientId))
-      throw new ProblemError(
-        409,
-        "client_has_entitlements",
-        "Remove the client's entitlements before erasure",
-      );
-    await queries.deleteClient(tx, clientId);
-    await recordAuditEvent(tx, {
-      ...actor,
-      organizationId: existing.organizationId,
-      targetType: "client",
-      targetId: clientId,
-      action: "client.erased",
-      outcome: "success",
-      data: {},
-    });
+  const { tx, actor } = requirePlatformWriteContext(context);
+  const existing = requireRow(
+    await queries.lockClientForCommand(context, clientId),
+  );
+  if (confirm !== clientId)
+    throw new ProblemError(
+      400,
+      "confirmation_mismatch",
+      "Confirmation must match the client ID",
+    );
+  if (await queries.countClientEntitlements(context, clientId))
+    throw new ProblemError(
+      409,
+      "client_has_entitlements",
+      "Remove the client's entitlements before erasure",
+    );
+  await requireNoCapabilityReferences(context, { clientId });
+  const deletedGrantContexts = await deleteClientGrantContexts(
+    context,
+    existing.id,
+  );
+  const effects = await queries.deleteClient(context, clientId);
+  const grantEffectsEventId = await auditGrantEffects(
+    tx,
+    actor,
+    existing,
+    deletedGrantContexts,
+    { action: "client.grants_erased", effects },
+  );
+  await recordAuditEvent(tx, {
+    ...actor,
+    organizationId: existing.organizationId,
+    targetType: "client",
+    targetId: clientId,
+    action: "client.erased",
+    outcome: "success",
+    schemaVersion: 2,
+    data: {
+      effects: {
+        accessTokens: effects.deletedAccessTokens.length,
+        refreshTokens: effects.deletedRefreshTokens.length,
+        consents: effects.deletedConsents.length,
+        resourceLinks: effects.deletedClientResources.length,
+        grantContexts: deletedGrantContexts.length,
+      },
+      before: auditClient(existing),
+      after: null,
+      ...(grantEffectsEventId ? { grantEffectsEventId } : {}),
+    },
   });
 }

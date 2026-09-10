@@ -1,9 +1,4 @@
-import {
-  exportJWK,
-  generateKeyPair,
-  SignJWT,
-  type JWTPayload,
-} from "jose";
+import { exportJWK, generateKeyPair, SignJWT, type JWTPayload } from "jose";
 
 export type OidcClaims = JWTPayload & {
   sub: string;
@@ -18,10 +13,20 @@ export type OidcClaims = JWTPayload & {
   iss?: string;
 };
 
-export async function startOidcIssuer() {
+export async function startOidcIssuer(
+  options: {
+    beforeTokenResponse?: () => Promise<void>;
+    refreshToken?: string;
+  } = {},
+) {
   const { privateKey, publicKey } = await generateKeyPair("RS256");
   const kid = crypto.randomUUID();
-  const jwk = { ...(await exportJWK(publicKey)), kid, alg: "RS256", use: "sig" };
+  const jwk = {
+    ...(await exportJWK(publicKey)),
+    kid,
+    alg: "RS256",
+    use: "sig",
+  };
   const queued: OidcClaims[] = [];
   const codes = new Map<string, OidcClaims>();
   let origin = "";
@@ -31,7 +36,10 @@ export async function startOidcIssuer() {
     port: 0,
     async fetch(request) {
       const url = new URL(request.url);
-      if (request.method === "GET" && url.pathname === "/.well-known/openid-configuration") {
+      if (
+        request.method === "GET" &&
+        url.pathname === "/.well-known/openid-configuration"
+      ) {
         return Response.json({
           issuer: origin,
           authorization_endpoint: `${origin}/authorize`,
@@ -69,11 +77,14 @@ export async function startOidcIssuer() {
         const claims = codes.get(code);
         const clientId =
           String(body.get("client_id") ?? "") ||
-          atob(request.headers.get("authorization")?.replace(/^Basic /, "") ?? ":").split(":")[0]!;
+          atob(
+            request.headers.get("authorization")?.replace(/^Basic /, "") ?? ":",
+          ).split(":")[0]!;
         if (!claims || !clientId) {
           return Response.json({ error: "invalid_grant" }, { status: 400 });
         }
         codes.delete(code);
+        await options.beforeTokenResponse?.();
         const now = Math.floor(Date.now() / 1000);
         const { iss, ...payload } = claims;
         const idToken = await new SignJWT({ ...payload, azp: clientId })
@@ -87,6 +98,9 @@ export async function startOidcIssuer() {
           access_token: crypto.randomUUID(),
           token_type: "Bearer",
           id_token: idToken,
+          ...(options.refreshToken
+            ? { refresh_token: options.refreshToken }
+            : {}),
         });
       }
       return new Response("not found", { status: 404 });
@@ -96,6 +110,10 @@ export async function startOidcIssuer() {
 
   return {
     origin,
+    reset() {
+      queued.length = 0;
+      codes.clear();
+    },
     enqueue(claims: OidcClaims) {
       queued.push(claims);
     },

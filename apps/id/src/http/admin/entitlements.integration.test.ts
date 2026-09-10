@@ -27,6 +27,16 @@ async function request(
   targetId?: string,
 ) {
   const headers = fixture.headers(kind);
+  if (method === "PATCH") {
+    const current = await fixture.app.request(
+      `/api/admin/v1/organizations/${organizationId}/entitlements${suffix}`,
+      { headers },
+    );
+    headers.set(
+      "If-Match",
+      current.headers.get("ETag") ?? '"00000000-0000-7000-8000-000000000000:1"',
+    );
+  }
   const requestId = createId();
   headers.set("x-request-id", requestId);
   if (body !== undefined) headers.set("content-type", "application/json");
@@ -72,9 +82,9 @@ async function request(
   }
   return response;
 }
-import { createGroup } from "../../db/queries/groups.ts";
-import { createResource } from "../../db/queries/oauth-resources.ts";
-import { createEntitlement } from "../../db/queries/entitlements.ts";
+import { createGroup } from "../../__tests__/group-queries.ts";
+import { createResource } from "../../__tests__/resource-queries.ts";
+import { createEntitlement } from "../../__tests__/entitlement-queries.ts";
 const past = "2000-01-01T00:00:00.000Z";
 const future = "2100-01-01T00:00:00.000Z";
 test("platform administrator and machine manage every principal with attributed audits", async () => {
@@ -204,11 +214,11 @@ test("platform administrator and machine manage every principal with attributed 
         "POST",
         undefined,
         kind,
+        `entitlement.${operation}_unchanged`,
+        row.id,
       );
-      expect(repeated.status).toBe(409);
-      expect(await repeated.json()).toMatchObject({
-        code: `entitlement_already_${status}`,
-      });
+      expect(repeated.status).toBe(200);
+      expect(await repeated.json()).toMatchObject({ status });
       const page = await (
         await request(
           id,
@@ -278,7 +288,6 @@ test("client filter, foreign references, tenant isolation and request validation
       memberId: fixture.principals.tenantReader.memberId,
       groupId: foreignGroup.id,
     },
-    { resource, clientId: fixture.platform.client.clientId },
     {},
     { clientId: "" },
     { resource: "bad" },

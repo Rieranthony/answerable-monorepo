@@ -1,3 +1,4 @@
+import { platformWriteService } from "../__tests__/platform-context.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import { testEnvironment } from "../__tests__/support.ts";
@@ -9,28 +10,49 @@ import {
   organizations,
   users,
 } from "../db/schema/index.ts";
-import * as queries from "../db/queries/oauth-clients.ts";
-import { createResource } from "../db/queries/oauth-resources.ts";
+import * as queries from "../__tests__/client-queries.ts";
+import { createResource } from "../__tests__/resource-queries.ts";
 import { createId } from "../lib/id.ts";
 import type { Actor } from "./actor.ts";
 import { hashClientSecret } from "./client-secrets.ts";
-import * as service from "./clients.ts";
+import * as implementation from "./clients.ts";
+import { inPlatformRead } from "../__tests__/platform-context.ts";
+import type { Database } from "../db/client.ts";
+const service = {
+  ...implementation,
+  createClient: platformWriteService(implementation.createClient),
+  updateClient: platformWriteService(implementation.updateClient),
+  disableClient: platformWriteService(implementation.disableClient),
+  enableClient: platformWriteService(implementation.enableClient),
+  rotateSecret: platformWriteService(implementation.rotateSecret),
+  setOwner: platformWriteService(implementation.setOwner),
+  linkResource: platformWriteService(implementation.linkResource),
+  unlinkResource: platformWriteService(implementation.unlinkResource),
+  eraseClient: platformWriteService(implementation.eraseClient),
+  listClients: (
+    db: Database,
+    query: Parameters<typeof implementation.listClients>[1],
+  ) =>
+    inPlatformRead(db, (context) => implementation.listClients(context, query)),
+  getClient: (db: Database, id: string) =>
+    inPlatformRead(db, (context) => implementation.getClient(context, id)),
+};
 
 let connection: DatabaseConnection;
 let organizationId: string;
 const actor: Actor = {
-  actorType: "user",
-  actorId: createId(),
+  actorType: "system",
+  actorId: "root",
   requestId: "client-service-test",
 };
 const resource = "https://mcp.example.com";
-const publicInput: service.CreateClientInput = {
+const publicInput: implementation.CreateClientInput = {
   name: "Browser",
   tokenEndpointAuthMethod: "none",
   grantTypes: ["authorization_code"],
   redirectUris: ["https://app.example/callback"],
 };
-function machineInput(): service.CreateClientInput {
+function machineInput(): implementation.CreateClientInput {
   return {
     clientId: "machine",
     name: "Machine",
@@ -46,7 +68,7 @@ beforeAll(() => {
 });
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table audit_events, organizations, users, oauth_clients, oauth_resources cascade`,
+    sql`truncate table security_identifiers, audit_events, organizations, users, oauth_clients, oauth_resources cascade`,
   );
   organizationId = createId();
   await connection.db
@@ -118,19 +140,19 @@ test("client lifecycle hides digests, returns secrets once, revokes tokens, chan
   };
   await db.insert(oauthAccessTokens).values(token);
   await db.insert(oauthRefreshTokens).values({ ...token, id: createId() });
-  await expect(
-    service.enableClient(db, actor, created.clientId),
-  ).rejects.toMatchObject({ status: 409, code: "client_already_active" });
+  expect(await service.enableClient(db, actor, created.clientId)).toMatchObject(
+    { changed: false, client: { disabled: false } },
+  );
   expect(
     await service.disableClient(db, actor, created.clientId),
-  ).toMatchObject({ disabled: true });
-  await expect(
-    service.disableClient(db, actor, created.clientId),
-  ).rejects.toMatchObject({ status: 409, code: "client_already_disabled" });
+  ).toMatchObject({ changed: true, client: { disabled: true } });
+  expect(
+    await service.disableClient(db, actor, created.clientId),
+  ).toMatchObject({ changed: false, client: { disabled: true } });
   for (const table of [oauthAccessTokens, oauthRefreshTokens])
     expect((await db.select().from(table))[0]?.revoked).toBeInstanceOf(Date);
   expect(await service.enableClient(db, actor, created.clientId)).toMatchObject(
-    { disabled: false },
+    { changed: true, client: { disabled: false } },
   );
   expect(
     await service.linkResource(db, actor, created.clientId, resource),
@@ -143,24 +165,27 @@ test("client lifecycle hides digests, returns secrets once, revokes tokens, chan
   await db
     .insert(organizations)
     .values({ id: otherId, name: "Other", slug: "other" });
+  for (const owner of [otherId, null])
+    await expect(
+      service.setOwner(db, actor, created.clientId, owner),
+    ).rejects.toMatchObject({ status: 409, code: "ownership_conflict" });
   expect(
-    await service.setOwner(db, actor, created.clientId, otherId),
-  ).toMatchObject({ organizationId: otherId });
-  expect(
-    await service.setOwner(db, actor, created.clientId, null),
-  ).toMatchObject({ organizationId: null });
+    await service.setOwner(db, actor, created.clientId, organizationId),
+  ).toMatchObject({ organizationId });
   const events = await db.select().from(auditEvents).orderBy(auditEvents.id);
   expect(events.map((e) => e.action)).toEqual([
     "client.created",
     "client.updated",
     "client.secret_rotated",
+    "client.state_unchanged",
+    "client.grants_revoked",
     "client.disabled",
+    "client.state_unchanged",
     "client.enabled",
     "client.resource_linked",
-    "client.resource_linked",
+    "client.resource_unchanged",
     "client.resource_unlinked",
-    "client.owner_changed",
-    "client.owner_changed",
+    "client.owner_unchanged",
   ]);
   for (const event of events)
     expect(event).toMatchObject({
@@ -169,10 +194,21 @@ test("client lifecycle hides digests, returns secrets once, revokes tokens, chan
       targetId: created.clientId,
       outcome: "success",
     });
-  expect(events[1]?.data).toEqual({ changes: patch });
-  expect(events[3]?.data).toEqual({ accessTokens: 1, refreshTokens: 1 });
-  expect(events[8]?.data).toEqual({ from: organizationId, to: otherId });
-  expect(events[9]?.data).toEqual({ from: otherId, to: null });
+  expect(events[1]?.data).toMatchObject({
+    requestedFields: Object.keys(patch).sort(),
+    before: { name: "Machine", clientCredentialsScopes: ["read"] },
+    after: { name: "Changed", clientCredentialsScopes: ["read", "write"] },
+  });
+  expect(
+    events.find((event) => event.action === "client.disabled")?.data,
+  ).toMatchObject({ effects: { accessTokens: 1, refreshTokens: 1 } });
+  expect(
+    events.find((event) => event.action === "client.owner_unchanged")?.data,
+  ).toEqual({
+    before: { organizationId },
+    after: { organizationId },
+    changed: false,
+  });
   const serialised = JSON.stringify(events);
   for (const secret of [
     created.clientSecret!,
@@ -226,7 +262,7 @@ test("public and private key clients have no secret; generated IDs and response 
 });
 test("every cross-field rule rejects creation with field errors and no audit", async () => {
   const db = connection.db;
-  const invalid: service.CreateClientInput[] = [
+  const invalid: implementation.CreateClientInput[] = [
     { ...machineInput(), tokenEndpointAuthMethod: "none" },
     { ...machineInput(), clientCredentialsScopes: undefined },
     { ...machineInput(), clientCredentialsScopes: [] },
@@ -286,9 +322,15 @@ test("updates recheck the stored configuration, including legacy invalid rows", 
     await expect(
       service.updateClient(db, actor, privateClient.clientId, patch),
     ).rejects.toMatchObject({ code: "validation_failed" });
-  await service.setOwner(db, actor, machine.clientId, null);
+  const unowned = await queries.createClient(db, {
+    clientId: "unowned-machine",
+    redirectUris: [],
+    grantTypes: ["client_credentials"],
+    tokenEndpointAuthMethod: "client_secret_basic",
+    clientCredentialsScopes: ["read"],
+  });
   await expect(
-    service.updateClient(db, actor, machine.clientId, { name: "Unowned" }),
+    service.updateClient(db, actor, unowned.clientId, { name: "Unowned" }),
   ).rejects.toMatchObject({ code: "validation_failed" });
   const legacy = await queries.createClient(db, {
     clientId: "legacy",
@@ -305,6 +347,12 @@ test("updates recheck the stored configuration, including legacy invalid rows", 
     clientId: "empty",
     redirectUris: [],
   });
+  await expect(
+    service.setOwner(db, actor, empty.clientId, organizationId),
+  ).rejects.toMatchObject({ status: 409, code: "ownership_conflict" });
+  expect(await service.setOwner(db, actor, empty.clientId, null)).toMatchObject(
+    { organizationId: null },
+  );
   expect(
     await service.updateClient(db, actor, empty.clientId, { name: "Empty" }),
   ).toMatchObject({ name: "Empty" });
@@ -334,14 +382,14 @@ test("unknown clients, organisations and resources return 404 without successful
   const client = await service.createClient(db, actor, machineInput());
   await expect(
     service.setOwner(db, actor, client.clientId, createId()),
-  ).rejects.toMatchObject({ status: 404, code: "not_found" });
+  ).rejects.toMatchObject({ status: 409, code: "ownership_conflict" });
   await expect(
     service.linkResource(db, actor, client.clientId, "https://missing.example"),
   ).rejects.toMatchObject({ status: 404, code: "not_found" });
-  await expect(
-    service.unlinkResource(db, actor, client.clientId, resource),
-  ).rejects.toMatchObject({ status: 404, code: "not_found" });
-  expect(await db.select().from(auditEvents)).toHaveLength(1);
+  expect(
+    await service.unlinkResource(db, actor, client.clientId, resource),
+  ).toEqual({ removed: false });
+  expect(await db.select().from(auditEvents)).toHaveLength(2);
 });
 test("audit failures roll back client writes, secrets, ownership, links and token revocation", async () => {
   const db = connection.db;
@@ -359,7 +407,7 @@ test("audit failures roll back client writes, secrets, ownership, links and toke
   for (const run of [
     () => service.updateClient(db, bad, client.clientId, { name: "Failed" }),
     () => service.rotateSecret(db, bad, client.clientId),
-    () => service.setOwner(db, bad, client.clientId, null),
+    () => service.setOwner(db, bad, client.clientId, organizationId),
     () => service.linkResource(db, bad, client.clientId, resource),
     () => service.disableClient(db, bad, client.clientId),
   ])
@@ -395,7 +443,7 @@ test("audit failures roll back client writes, secrets, ownership, links and toke
   expect(await service.getClient(db, client.clientId)).toMatchObject({
     disabled: true,
   });
-  expect(await db.select().from(auditEvents)).toHaveLength(3);
+  expect(await db.select().from(auditEvents)).toHaveLength(4);
 });
 
 test("erasure checks existence, confirmation and entitlements in order, and rolls back on audit failure", async () => {
@@ -405,7 +453,7 @@ test("erasure checks existence, confirmation and entitlements in order, and roll
   ).rejects.toMatchObject({ status: 404 });
   const client = await service.createClient(db, actor, machineInput());
   const { createEntitlement, deleteEntitlement } =
-    await import("../db/queries/entitlements.ts");
+    await import("../__tests__/entitlement-queries.ts");
   const grant = await createEntitlement(db, {
     organizationId,
     clientId: client.clientId,
@@ -452,5 +500,51 @@ test("erasure checks existence, confirmation and entitlements in order, and roll
   expect(events[1]).toMatchObject({
     organizationId: null,
     targetId: unowned.clientId,
+  });
+});
+
+test("client audit records allowlist security settings and omit raw JWK configuration", async () => {
+  const client = await service.createClient(connection.db, actor, {
+    clientId: "audit-key-material",
+    name: "Audit keys",
+    tokenEndpointAuthMethod: "private_key_jwt",
+    grantTypes: ["authorization_code"],
+    redirectUris: ["https://client.example/callback"],
+    jwks: JSON.stringify({
+      keys: [
+        { kty: "RSA", n: "public", e: "AQAB", d: "sensitive-private-material" },
+      ],
+    }),
+  });
+  await service.updateClient(connection.db, actor, client.clientId, {
+    jwks: JSON.stringify({
+      keys: [
+        {
+          kty: "RSA",
+          n: "public",
+          e: "AQAB",
+          d: "replacement-private-material",
+        },
+      ],
+    }),
+  });
+  const rows = await connection.db
+    .select()
+    .from(auditEvents)
+    .where(eq(auditEvents.targetId, client.clientId));
+  expect(JSON.stringify(rows)).not.toContain("sensitive-private-material");
+  expect(JSON.stringify(rows)).not.toContain("replacement-private-material");
+  expect(
+    rows.find((row) => row.action === "client.created")!.data,
+  ).toMatchObject({
+    before: null,
+    after: { hasJwks: true, hasClientSecret: false },
+  });
+  expect(
+    rows.find((row) => row.action === "client.updated")!.data,
+  ).toMatchObject({
+    requestedFields: ["jwks"],
+    before: { authorizationVersion: 1 },
+    after: { authorizationVersion: 2 },
   });
 });

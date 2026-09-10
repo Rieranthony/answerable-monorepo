@@ -36,6 +36,11 @@ export function problem(
   context: Context<AppEnvironment>,
   error: ProblemError,
 ): Response {
+  if (
+    error.code === "database_busy" ||
+    error.code === "authentication_unavailable"
+  )
+    context.header("Retry-After", "1");
   return context.json(
     {
       type: "about:blank",
@@ -57,6 +62,10 @@ const descriptions: Record<number, string> = {
   403: "The principal is not allowed",
   404: "Not found",
   409: "Conflict",
+  412: "Configuration revision does not match",
+  428: "A revision precondition is required",
+  410: "Operation result expired",
+  503: "Service unavailable",
   500: "Unexpected error",
 };
 
@@ -66,6 +75,17 @@ export function problemResponses(...statuses: number[]) {
       status,
       {
         description: descriptions[status] ?? "HTTP error",
+        ...(status === 503
+          ? {
+              headers: {
+                "Retry-After": {
+                  description:
+                    "For database_busy or authentication_unavailable, seconds to wait before retrying the same command.",
+                  schema: { type: "string" as const },
+                },
+              },
+            }
+          : {}),
         content: {
           "application/problem+json": { schema: resolver(problemSchema) },
         },
@@ -74,14 +94,51 @@ export function problemResponses(...statuses: number[]) {
   );
 }
 
+export function databaseBusy() {
+  return new ProblemError(
+    503,
+    "database_busy",
+    "Database is busy",
+    "Retry with the same idempotency key and input.",
+    { retryable: true },
+  );
+}
+
 export function mapDatabaseError(error: unknown): ProblemError | undefined {
+  // pg-pool has no error code for checkout/connection timeouts. Keep its exact
+  // pinned-driver messages here; queries wrap them, transaction checkout does not.
+  if (
+    [error, error instanceof Error ? error.cause : undefined].some(
+      (candidate) =>
+        candidate instanceof Error &&
+        (candidate.message === "timeout exceeded when trying to connect" ||
+          candidate.message ===
+            "Connection terminated due to connection timeout"),
+    )
+  )
+    return databaseBusy();
   if (typeof error !== "object" || error === null || !("cause" in error))
     return undefined;
   const cause = error.cause;
   if (typeof cause !== "object" || cause === null || !("code" in cause))
     return undefined;
   switch (cause.code) {
+    case "57014":
+    case "55P03":
+    case "40P01":
+      return databaseBusy();
     case "23505":
+      if (
+        "constraint" in cause &&
+        (cause.constraint === "security_identifiers_kind_identifier_pk" ||
+          cause.constraint === "security_identifiers_kind_instance_unique")
+      )
+        return new ProblemError(
+          409,
+          "identifier_reserved",
+          "Identifier is permanently reserved",
+          "Create a replacement with a new identifier.",
+        );
       return new ProblemError(
         409,
         "conflict",
@@ -125,8 +182,7 @@ export const problemHandler: ErrorHandler<AppEnvironment> = (
     "[id] error",
     JSON.stringify({
       requestId: context.get("requestId"),
-      name: error.name,
-      message: error.message,
+      event: "unexpected_error",
     }),
   );
   return problem(

@@ -4,12 +4,23 @@ import { Pool } from "pg";
 import type { Environment } from "../env.ts";
 import * as schema from "./schema/index.ts";
 
-export function createDatabase(environment: Environment) {
+export function createDatabase(
+  environment: Pick<
+    Environment,
+    | "databaseUrl"
+    | "databasePoolMax"
+    | "databasePoolIdleTimeoutMs"
+    | "databaseConnectionTimeoutMs"
+    | "nodeEnv"
+  > &
+    Partial<Pick<Environment, "databaseStatementTimeoutMs">>,
+) {
   const pool = new Pool({
     connectionString: environment.databaseUrl,
     max: environment.databasePoolMax,
     idleTimeoutMillis: environment.databasePoolIdleTimeoutMs,
     connectionTimeoutMillis: environment.databaseConnectionTimeoutMs,
+    statement_timeout: environment.databaseStatementTimeoutMs ?? 10_000,
     allowExitOnIdle: environment.nodeEnv === "test",
   });
 

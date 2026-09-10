@@ -1,12 +1,18 @@
+import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
 import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
-import { createOrganization } from "../../db/queries/organizations.ts";
-import { auditEvents } from "../../db/schema/index.ts";
+import { createOrganization } from "../../__tests__/organization-queries.ts";
+import {
+  auditEvents,
+  adminOperations,
+  adminOperationResults,
+  members,
+} from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
 let fixture: AdminFixture;
 beforeAll(async () => {
@@ -16,7 +22,7 @@ afterAll(async () => {
   await fixture?.close();
 });
 describeAdminRoutes(routes, () => fixture);
-function request(
+async function request(
   organizationId: string,
   suffix = "",
   method = "GET",
@@ -24,6 +30,14 @@ function request(
   kind: Parameters<AdminFixture["headers"]>[0] = "platformAdmin",
 ) {
   const headers = fixture.headers(kind);
+  if (method === "PUT") {
+    const current = await fixture.app.request(
+      `/api/admin/v1/organizations/${organizationId}/sso-provider`,
+      { headers },
+    );
+    const tag = current.headers.get("ETag");
+    headers.set(tag ? "If-Match" : "If-None-Match", tag ?? "*");
+  }
   headers.set("x-request-id", "sso-provider-http-test");
   if (body !== undefined) headers.set("content-type", "application/json");
   return fixture.app.request(
@@ -36,7 +50,7 @@ function request(
   );
 }
 import { routes, ssoProviderSchema } from "./sso-providers.ts";
-import { findSsoProviderByOrganization } from "../../db/queries/sso-providers.ts";
+import { findSsoProviderByOrganization } from "../../__tests__/sso-queries.ts";
 const input = {
   issuer: "https://login.example.com",
   domain: " ACME.EXAMPLE.COM ",
@@ -206,7 +220,7 @@ test("machine token creates, updates and deletes the provider", async () => {
   expectRedacted(events);
 });
 
-import { createSsoProvider } from "../../db/queries/sso-providers.ts";
+import { createSsoProvider } from "../../__tests__/sso-queries.ts";
 import { ssoTestSchema } from "./sso-providers.ts";
 test("platform admins, readers and a machine test the in-process SSO issuer", async () => {
   for (const kind of [
@@ -256,4 +270,274 @@ test("SSO test reports a missing provider and an unreachable issuer", async () =
       .parse(await unreachable.json())
       .problems.map((problem) => problem.code),
   ).toEqual(["discovery_unreachable"]);
+});
+
+const preconditions = new Map<string, { name: string; value: string }>();
+async function command(
+  org: string,
+  key: string,
+  method: string,
+  body?: unknown,
+) {
+  const headers = fixture.headers("platformAdmin");
+  headers.set("Idempotency-Key", key);
+  if (method === "PUT") {
+    if (!preconditions.has(key)) {
+      const current = await fixture.app.request(
+        `/api/admin/v1/organizations/${org}/sso-provider`,
+        { headers },
+      );
+      const tag = current.headers.get("ETag");
+      preconditions.set(key, {
+        name: tag ? "If-Match" : "If-None-Match",
+        value: tag ?? "*",
+      });
+    }
+    const precondition = preconditions.get(key)!;
+    headers.set(precondition.name, precondition.value);
+  }
+  if (body !== undefined) headers.set("Content-Type", "application/json");
+  return fixture.app.request(
+    `/api/admin/v1/organizations/${org}/sso-provider`,
+    {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    },
+  );
+}
+test("SSO retries recover historical redacted results without replacing later credentials", async () => {
+  const org = await createOrganization(fixture.db, {
+    slug: "sso-replay",
+    name: "SSO replay",
+  });
+  const first = await command(org.id, "sso-create", "PUT", {
+    ...input,
+    oidc: { ...input.oidc, scopes: ["profile", "openid", "profile"] },
+  });
+  expect(first.status).toBe(201);
+  expect(first.headers.get("Operation-Id")).toBeString();
+  const original = await first.json();
+  expectRedacted(original);
+  const replacement = {
+    ...input,
+    oidc: { clientId: "later-client", clientSecret: "later-secret" },
+  };
+  expect(
+    (await command(org.id, "sso-replace", "PUT", replacement)).status,
+  ).toBe(200);
+  const replay = await command(org.id, "sso-create", "PUT", {
+    ...input,
+    domain: "acme.example.com",
+    oidc: {
+      ...input.oidc,
+      scopes: ["openid", "profile"],
+      pkce: true,
+      tokenEndpointAuthentication: "client_secret_post",
+    },
+  });
+  expect(replay.status).toBe(201);
+  expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
+  expect(await replay.json()).toEqual(original);
+  expect(
+    JSON.parse(
+      (await findSsoProviderByOrganization(fixture.db, org.id))!.oidcConfig!,
+    ),
+  ).toMatchObject({ clientId: "later-client", clientSecret: "later-secret" });
+  expect((await command(org.id, "sso-create", "PUT", replacement)).status).toBe(
+    409,
+  );
+  const removed = await command(org.id, "sso-delete", "DELETE");
+  expect(removed.status).toBe(204);
+  expect(
+    (await command(org.id, "sso-recreate", "PUT", replacement)).status,
+  ).toBe(201);
+  const current = await findSsoProviderByOrganization(fixture.db, org.id);
+  expect(current!.id).not.toBe(original.id);
+  const deleteReplay = await command(org.id, "sso-delete", "DELETE");
+  expect(deleteReplay.status).toBe(204);
+  expect(deleteReplay.headers.get("Idempotency-Replayed")).toBe("true");
+  expect((await findSsoProviderByOrganization(fixture.db, org.id))!.id).toBe(
+    current!.id,
+  );
+  const events = await fixture.db
+    .select()
+    .from(auditEvents)
+    .where(eq(auditEvents.operationId, first.headers.get("Operation-Id")!));
+  expect(events).toHaveLength(1);
+  expectRedacted(events);
+});
+
+test("SSO noops preserve timestamps and credentials while secret changes remain fingerprinted", async () => {
+  const org = await createOrganization(fixture.db, {
+    slug: "sso-noop",
+    name: "Noop",
+  });
+  const first = await command(org.id, "sso-noop-create", "PUT", input);
+  const original = await first.json();
+  const noop = await command(org.id, "sso-noop", "PUT", {
+    ...input,
+    oidc: { clientId: input.oidc.clientId },
+  });
+  expect(noop.status).toBe(200);
+  expect(await noop.json()).toEqual(original);
+  const [receipt] = await fixture.db
+    .select()
+    .from(adminOperations)
+    .where(eq(adminOperations.id, noop.headers.get("Operation-Id")!));
+  expect(receipt?.outcome).toBe("noop");
+  expect(receipt?.fingerprint).toStartWith("hmac-v1.");
+  const [event] = await fixture.db
+    .select()
+    .from(auditEvents)
+    .where(eq(auditEvents.operationId, receipt!.id));
+  expect(event).toMatchObject({
+    action: "sso_provider.update_unchanged",
+    data: {
+      before: { issuer: input.issuer },
+      after: { issuer: input.issuer },
+      credentialsChanged: false,
+    },
+  });
+  expectRedacted(event);
+  const rotateInput = {
+    ...input,
+    oidc: { ...input.oidc, clientSecret: "replacement-secret" },
+  };
+  const rotation = await command(org.id, "sso-rotate", "PUT", rotateInput);
+  expect(rotation.status).toBe(200);
+  const [rotationEvent] = await fixture.db
+    .select()
+    .from(auditEvents)
+    .where(eq(auditEvents.operationId, rotation.headers.get("Operation-Id")!));
+  expect(rotationEvent?.data).toMatchObject({ credentialsChanged: true });
+  expect(JSON.stringify(rotationEvent)).not.toContain("replacement-secret");
+  expect(
+    (
+      await command(org.id, "sso-rotate", "PUT", {
+        ...rotateInput,
+        oidc: { ...rotateInput.oidc, clientSecret: "different-secret" },
+      })
+    ).status,
+  ).toBe(409);
+  expect(
+    (await command(org.id, "sso-rotate", "PUT", rotateInput)).headers.get(
+      "Idempotency-Replayed",
+    ),
+  ).toBe("true");
+  const [stored] = await fixture.db
+    .select()
+    .from(adminOperationResults)
+    .where(
+      eq(
+        adminOperationResults.operationId,
+        rotation.headers.get("Operation-Id")!,
+      ),
+    );
+  expect(stored!.ciphertext).not.toContain("replacement-secret");
+});
+
+test("SSO audit failure rolls back credentials and the command reservation", async () => {
+  const org = await createOrganization(fixture.db, {
+    slug: "sso-rollback",
+    name: "Rollback",
+  });
+  await command(org.id, "sso-rollback-create", "PUT", input);
+  const before = await findSsoProviderByOrganization(fixture.db, org.id);
+  const receipts = await fixture.db.select().from(adminOperations);
+  await fixture.db.execute(
+    sql`alter table audit_events add constraint sso_replay_fault check (action <> 'sso_provider.updated') not valid`,
+  );
+  const changed = {
+    ...input,
+    oidc: { clientId: "changed", clientSecret: "failed-secret" },
+  };
+  try {
+    expect(
+      (await command(org.id, "sso-rollback", "PUT", changed)).status,
+    ).toBeGreaterThanOrEqual(400);
+  } finally {
+    await fixture.db.execute(
+      sql`alter table audit_events drop constraint sso_replay_fault`,
+    );
+  }
+  expect(await findSsoProviderByOrganization(fixture.db, org.id)).toEqual(
+    before,
+  );
+  expect(await fixture.db.select().from(adminOperations)).toEqual(receipts);
+  expect((await command(org.id, "sso-rollback", "PUT", changed)).status).toBe(
+    200,
+  );
+  expect(
+    (await command(org.id, "sso-rollback", "PUT", changed)).headers.get(
+      "Idempotency-Replayed",
+    ),
+  ).toBe("true");
+});
+
+test("concurrent SSO creation has one mutation and a recoverable result", async () => {
+  const org = await createOrganization(fixture.db, {
+    slug: "sso-concurrent",
+    name: "Concurrent",
+  });
+  preconditions.set("sso-concurrent", { name: "If-None-Match", value: "*" });
+  const responses = await Promise.all([
+    command(org.id, "sso-concurrent", "PUT", input),
+    command(org.id, "sso-concurrent", "PUT", input),
+  ]);
+  expect(responses.some((response) => response.status === 201)).toBe(true);
+  for (const response of responses) {
+    expect([201, 409]).toContain(response.status);
+    if (response.status === 409)
+      expect(await response.json()).toMatchObject({
+        code: "operation_in_progress",
+      });
+  }
+  const replay = await command(org.id, "sso-concurrent", "PUT", input);
+  expect(replay.status).toBe(201);
+  expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
+  expect(
+    await fixture.db
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.operationId, replay.headers.get("Operation-Id")!)),
+  ).toHaveLength(1);
+});
+
+test("SSO replay rechecks current platform authority", async () => {
+  const org = await createOrganization(fixture.db, {
+    slug: "sso-authority",
+    name: "Authority",
+  });
+  const first = await command(org.id, "sso-authority", "PUT", input);
+  expect(first.status).toBe(201);
+  const original = fixture.db.transaction.bind(fixture.db);
+  const actor = fixture.principals.platformAdmin;
+  fixture.db.transaction = afterBrokerRead(original, (async (
+    ...args: Parameters<typeof original>
+  ) => {
+    fixture.db.transaction = original;
+    await fixture.db
+      .update(members)
+      .set({ status: "revoked", revokedAt: new Date() })
+      .where(eq(members.id, actor.memberId));
+    return original(...args);
+  }) as typeof original);
+  try {
+    const denied = await command(org.id, "sso-authority", "PUT", input);
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toMatchObject({ code: "insufficient_scope" });
+  } finally {
+    fixture.db.transaction = original;
+    await fixture.db
+      .update(members)
+      .set({ status: "active", revokedAt: null })
+      .where(eq(members.id, actor.memberId));
+  }
+  expect(
+    await fixture.db
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.operationId, first.headers.get("Operation-Id")!)),
+  ).toHaveLength(1);
 });

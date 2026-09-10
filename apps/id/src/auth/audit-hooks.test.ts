@@ -49,7 +49,7 @@ for (const [hook, action] of [["delete", "auth.signout"]] as const) {
         targetId: "session",
         outcome: "success",
         requestId: "request",
-        ip: "192.0.2.1",
+        ip: null,
         userAgent: "agent",
       },
     ]);

@@ -1,3 +1,6 @@
+import { bootstrap, systemActor } from "../../bootstrap.ts";
+import { approveAdminCapability } from "../../__tests__/capabilities.ts";
+import { adminScopes } from "../../http/admin/scopes.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 
@@ -5,6 +8,7 @@ import { testEnvironment } from "../../__tests__/support.ts";
 import { createId } from "../../lib/id.ts";
 import { createDatabase, type DatabaseConnection } from "../client.ts";
 import {
+  organizationCapabilities,
   entitlements,
   groupMembers,
   groups,
@@ -13,6 +17,7 @@ import {
   oauthResources,
   organizations,
   users,
+  systemBindings,
 } from "../schema/index.ts";
 import { effectiveGrants, hasPlatformWriter } from "./grants.ts";
 
@@ -27,12 +32,29 @@ beforeAll(() => {
 });
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table users, organizations, oauth_resources cascade`,
+    sql`truncate table audit_events, security_identifiers, users, organizations, oauth_resources cascade`,
   );
-  await connection.db.insert(oauthResources).values([
-    { id: createId(), identifier: resource, name: "Admin" },
-    { id: createId(), identifier: otherResource, name: "Other" },
-  ]);
+  await bootstrap(connection.db, systemActor("grant-fixture"), {
+    platformOrganizationSlug: "bound-platform",
+    platformOrganizationName: "Platform",
+    adminResourceIdentifier: resource,
+  });
+  await connection.db
+    .update(oauthResources)
+    .set({
+      allowedScopes: [
+        ...adminScopes,
+        "read",
+        "write",
+        "admin",
+        "delete",
+        "disabled",
+      ],
+    })
+    .where(eq(oauthResources.identifier, resource));
+  await connection.db
+    .insert(oauthResources)
+    .values({ id: createId(), identifier: otherResource, name: "Other" });
 });
 afterAll(async () => {
   await connection.close();
@@ -52,7 +74,11 @@ async function insertUser() {
 async function insertOrganization(
   slug = "example",
   status: "active" | "disabled" = "active",
+  platform = false,
 ) {
+  if (platform)
+    return (await connection.db.select().from(systemBindings))[0]!
+      .organizationId;
   const id = createId();
   await connection.db.insert(organizations).values({
     id,
@@ -60,6 +86,11 @@ async function insertOrganization(
     slug,
     status,
     disabledAt: status === "disabled" ? new Date() : null,
+  });
+  await approveAdminCapability(connection.db, {
+    organizationId: id,
+    resource,
+    scopes: ["read", "write", "admin", "delete", "disabled"],
   });
   return id;
 }
@@ -95,7 +126,7 @@ async function insertGroupMember(
 ) {
   await connection.db
     .insert(groupMembers)
-    .values({ organizationId, groupId, memberId, ...window });
+    .values({ id: createId(), organizationId, groupId, memberId, ...window });
 }
 
 async function insertEntitlement(
@@ -127,7 +158,14 @@ test("integration: organisation-wide grants require effective membership", async
     await insertMember(organizationId, userId, window);
     expect(await effectiveGrants(connection.db, { userId }, resource)).toEqual(
       effective
-        ? [{ organizationId, organizationSlug: "example", scopes: ["read"] }]
+        ? [
+            {
+              organizationId,
+              organizationSlug: "example",
+              isPlatform: false,
+              scopes: ["read"],
+            },
+          ]
         : [],
     );
   }
@@ -152,7 +190,12 @@ test("integration: group grants require effective group membership and an active
   expect(
     await effectiveGrants(connection.db, { userId: activeUser }, resource),
   ).toEqual([
-    { organizationId, organizationSlug: "example", scopes: ["read"] },
+    {
+      organizationId,
+      organizationSlug: "example",
+      isPlatform: false,
+      scopes: ["read"],
+    },
   ]);
   for (const window of [
     { validUntil: new Date(now - day) },
@@ -186,7 +229,12 @@ test("integration: member grants apply only to that member", async () => {
   await insertMember(organizationId, otherUser);
   await insertEntitlement(organizationId, { memberId });
   expect(await effectiveGrants(connection.db, { userId }, resource)).toEqual([
-    { organizationId, organizationSlug: "example", scopes: ["read"] },
+    {
+      organizationId,
+      organizationSlug: "example",
+      isPlatform: false,
+      scopes: ["read"],
+    },
   ]);
   expect(
     await effectiveGrants(connection.db, { userId: otherUser }, resource),
@@ -216,6 +264,7 @@ test("integration: unions and sorts distinct scopes across matching principals",
     {
       organizationId,
       organizationSlug: "example",
+      isPlatform: false,
       scopes: ["admin", "delete", "read", "write"],
     },
   ]);
@@ -272,8 +321,18 @@ test("integration: isolates scope unions by organisation and orders by slug", as
   await insertEntitlement(zebra, { scopes: ["write"] });
   await insertEntitlement(alpha, { scopes: ["read"] });
   expect(await effectiveGrants(connection.db, { userId }, resource)).toEqual([
-    { organizationId: alpha, organizationSlug: "alpha", scopes: ["read"] },
-    { organizationId: zebra, organizationSlug: "zebra", scopes: ["write"] },
+    {
+      organizationId: alpha,
+      organizationSlug: "alpha",
+      isPlatform: false,
+      scopes: ["read"],
+    },
+    {
+      organizationId: zebra,
+      organizationSlug: "zebra",
+      isPlatform: false,
+      scopes: ["write"],
+    },
   ]);
 });
 
@@ -300,18 +359,24 @@ test("integration: accepts a transaction handle", async () => {
     effectiveGrants(tx, { userId }, resource),
   );
   expect(grants).toEqual([
-    { organizationId, organizationSlug: "example", scopes: ["read"] },
+    {
+      organizationId,
+      organizationSlug: "example",
+      isPlatform: false,
+      scopes: ["read"],
+    },
   ]);
 });
 
 test("integration: root lockout follows effective group grants", async () => {
   const { db } = connection;
-  const input = { organizationSlug: "example", resource };
+  const input = { resource };
   expect(await hasPlatformWriter(db, input)).toBe(false);
-  const organizationId = await insertOrganization();
+  const organizationId = await insertOrganization("platform", "active", true);
   const memberId = await insertMember(organizationId, await insertUser());
   expect(await hasPlatformWriter(db, input)).toBe(false);
   const groupId = await insertGroup(organizationId);
+
   await insertEntitlement(organizationId, {
     groupId,
     scopes: ["platform:write"],
@@ -322,9 +387,7 @@ test("integration: root lockout follows effective group grants", async () => {
   expect(
     await hasPlatformWriter(db, { ...input, resource: otherResource }),
   ).toBe(false);
-  expect(
-    await hasPlatformWriter(db, { ...input, organizationSlug: "other" }),
-  ).toBe(false);
+
   await db
     .update(members)
     .set({ validUntil: new Date(Date.now() - day) })
@@ -370,13 +433,14 @@ test("integration: root lockout follows effective group grants", async () => {
 test.each(["organization", "member"] as const)(
   "integration: root lockout recognises %s entitlements",
   async (target) => {
-    const organizationId = await insertOrganization();
+    const organizationId = await insertOrganization("platform", "active", true);
+
     const memberId = await insertMember(organizationId, await insertUser());
     await insertEntitlement(organizationId, {
       memberId: target === "member" ? memberId : undefined,
       scopes: ["platform:read"],
     });
-    const input = { organizationSlug: "example", resource };
+    const input = { resource };
     expect(await hasPlatformWriter(connection.db, input)).toBe(false);
     await connection.db
       .update(entitlements)
@@ -384,3 +448,108 @@ test.each(["organization", "member"] as const)(
     expect(await hasPlatformWriter(connection.db, input)).toBe(true);
   },
 );
+
+test("effective grants and platform writer detection require an active global user", async () => {
+  const db = connection.db;
+  const organizationId = await insertOrganization("platform", "active", true);
+  const userId = await insertUser();
+  await insertMember(organizationId, userId);
+
+  await insertEntitlement(organizationId, { scopes: ["platform:write"] });
+  for (const status of ["active", "inert", "disabled", "active"] as const) {
+    await db
+      .update(users)
+      .set({ status, disabledAt: status === "disabled" ? new Date() : null })
+      .where(eq(users.id, userId));
+    const grants = await effectiveGrants(db, { userId }, resource);
+    expect(grants).toHaveLength(status === "active" ? 1 : 0);
+    expect(await hasPlatformWriter(db, { resource })).toBe(status === "active");
+  }
+});
+
+test("direct administrator assignments cannot exceed their platform capability", async () => {
+  const organizationId = await insertOrganization("platform", "active", true);
+
+  const userId = await insertUser();
+  await insertMember(organizationId, userId);
+  await insertEntitlement(organizationId, {
+    scopes: ["platform:read", "platform:write"],
+  });
+  await connection.db
+    .update(organizationCapabilities)
+    .set({ scopes: ["platform:read"] })
+    .where(eq(organizationCapabilities.organizationId, organizationId));
+  expect(
+    (await effectiveGrants(connection.db, { userId }, resource))[0]?.scopes,
+  ).toEqual(["platform:read"]);
+  expect(await hasPlatformWriter(connection.db, { resource })).toBe(false);
+});
+
+test("direct-session policy rechecks capability windows and the current enabled resource vocabulary", async () => {
+  const organizationId = await insertOrganization("platform", "active", true);
+  const userId = await insertUser();
+  await insertMember(organizationId, userId);
+  await insertEntitlement(organizationId, {
+    scopes: ["platform:read", "platform:write"],
+  });
+  const [cap] = await connection.db
+    .select()
+    .from(organizationCapabilities)
+    .where(eq(organizationCapabilities.organizationId, organizationId));
+  for (const patch of [
+    { status: "disabled" as const },
+    { status: "active" as const, validFrom: new Date("2100-01-01") },
+    { validFrom: null, validUntil: new Date("2000-01-01") },
+  ]) {
+    await connection.db
+      .update(organizationCapabilities)
+      .set(patch)
+      .where(eq(organizationCapabilities.id, cap!.id));
+    expect(await effectiveGrants(connection.db, { userId }, resource)).toEqual(
+      [],
+    );
+    expect(await hasPlatformWriter(connection.db, { resource })).toBe(false);
+  }
+  await connection.db
+    .update(organizationCapabilities)
+    .set({ validUntil: null })
+    .where(eq(organizationCapabilities.id, cap!.id));
+  expect(await hasPlatformWriter(connection.db, { resource })).toBe(true);
+  await connection.db
+    .update(oauthResources)
+    .set({ allowedScopes: ["platform:read"] })
+    .where(eq(oauthResources.identifier, resource));
+  expect(
+    (await effectiveGrants(connection.db, { userId }, resource))[0]?.scopes,
+  ).toEqual(["platform:read"]);
+  expect(await hasPlatformWriter(connection.db, { resource })).toBe(false);
+  await connection.db
+    .update(oauthResources)
+    .set({ disabled: true })
+    .where(eq(oauthResources.identifier, resource));
+  expect(await effectiveGrants(connection.db, { userId }, resource)).toEqual(
+    [],
+  );
+});
+
+test("removing a tenant admin ceiling leaves assignments but removes their authority", async () => {
+  const organizationId = await insertOrganization();
+  const userId = await insertUser();
+  await insertMember(organizationId, userId);
+  await insertEntitlement(organizationId);
+  expect(
+    await effectiveGrants(connection.db, { userId }, resource),
+  ).toHaveLength(1);
+  await connection.db
+    .delete(organizationCapabilities)
+    .where(eq(organizationCapabilities.organizationId, organizationId));
+  expect(await effectiveGrants(connection.db, { userId }, resource)).toEqual(
+    [],
+  );
+  expect(
+    await connection.db
+      .select()
+      .from(entitlements)
+      .where(eq(entitlements.organizationId, organizationId)),
+  ).toHaveLength(1);
+});

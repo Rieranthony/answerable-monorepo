@@ -1,8 +1,9 @@
+import { platformWriteService } from "../__tests__/platform-context.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
-import { createOrganization } from "../db/queries/organizations.ts";
+import { createOrganization } from "../__tests__/organization-queries.ts";
 import { createId } from "../lib/id.ts";
 import {
   users,
@@ -12,15 +13,15 @@ import {
   oauthResources,
   auditEvents,
 } from "../db/schema/index.ts";
-import { createGroup, addGroupMember } from "../db/queries/groups.ts";
-import { createEntitlement } from "../db/queries/entitlements.ts";
+import { createGroup, addGroupMember } from "../__tests__/group-queries.ts";
+import { createEntitlement } from "../__tests__/entitlement-queries.ts";
 let connection: DatabaseConnection;
 beforeAll(() => {
   connection = createDatabase(testEnvironment());
 });
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table audit_events, organizations, users, oauth_clients, oauth_resources cascade`,
+    sql`truncate table security_identifiers, audit_events, organizations, users, oauth_clients, oauth_resources cascade`,
   );
 });
 afterAll(async () => {
@@ -82,12 +83,38 @@ async function seed() {
     .values({ id: createId(), clientId, redirectUris: [], scopes: ["openid"] });
   return { db, org, other, ids, group, foreignGroup, resource, clientId };
 }
-import * as service from "./entitlements.ts";
+import * as implementation from "./entitlements.ts";
+import { inTenantRead } from "../__tests__/tenant-command.ts";
+import type { Database } from "../db/client.ts";
+const service = {
+  ...implementation,
+  createEntitlement: platformWriteService(implementation.createEntitlement),
+  updateEntitlement: platformWriteService(implementation.updateEntitlement),
+  disableEntitlement: platformWriteService(implementation.disableEntitlement),
+  enableEntitlement: platformWriteService(implementation.enableEntitlement),
+  removeEntitlement: platformWriteService(implementation.removeEntitlement),
+  listEntitlements: (
+    db: Database,
+    org: string,
+    arg1: Parameters<typeof implementation.listEntitlements>[1],
+  ) =>
+    inTenantRead(db, org, "directory", (context) =>
+      implementation.listEntitlements(context, arg1),
+    ),
+  getEntitlement: (
+    db: Database,
+    org: string,
+    arg1: Parameters<typeof implementation.getEntitlement>[1],
+  ) =>
+    inTenantRead(db, org, "directory", (context) =>
+      implementation.getEntitlement(context, arg1),
+    ),
+};
 import type { Actor } from "./actor.ts";
 import { mapDatabaseError } from "../http/problem.ts";
 const actor: Actor = {
-  actorType: "user",
-  actorId: createId(),
+  actorType: "system",
+  actorId: "root",
   requestId: "entitlement-test",
   ip: "192.0.2.1",
   userAgent: "test",
@@ -131,7 +158,10 @@ test("entitlement writes each audit once, keep immutable fields and preserve omi
       scopes: ["write"],
       validFrom: null,
     }),
-  ).toMatchObject({ scopes: ["write"], validFrom: null, validUntil: future });
+  ).toMatchObject({
+    changed: true,
+    row: { scopes: ["write"], validFrom: null, validUntil: future },
+  });
   await service.updateEntitlement(db, actor, org.id, client.id, {
     scopes: ["profile"],
   });
@@ -140,25 +170,22 @@ test("entitlement writes each audit once, keep immutable fields and preserve omi
   });
   expect(
     await service.disableEntitlement(db, actor, org.id, grouped.id),
-  ).toMatchObject({ status: "disabled" });
-  await expect(
-    service.disableEntitlement(db, actor, org.id, grouped.id),
-  ).rejects.toMatchObject({
-    status: 409,
-    code: "entitlement_already_disabled",
-  });
+  ).toMatchObject({ changed: true, row: { status: "disabled" } });
+  expect(
+    await service.disableEntitlement(db, actor, org.id, grouped.id),
+  ).toMatchObject({ changed: false, row: { status: "disabled" } });
   expect(
     await service.enableEntitlement(db, actor, org.id, grouped.id),
-  ).toMatchObject({ status: "active" });
-  await expect(
-    service.enableEntitlement(db, actor, org.id, grouped.id),
-  ).rejects.toMatchObject({ status: 409, code: "entitlement_already_active" });
+  ).toMatchObject({ changed: true, row: { status: "active" } });
+  expect(
+    await service.enableEntitlement(db, actor, org.id, grouped.id),
+  ).toMatchObject({ changed: false, row: { status: "active" } });
   await service.removeEntitlement(db, actor, org.id, grouped.id);
   await expect(
     service.getEntitlement(db, org.id, grouped.id),
   ).rejects.toMatchObject({ status: 404 });
   const events = await db.select().from(auditEvents).orderBy(auditEvents.id);
-  expect(events).toHaveLength(10);
+  expect(events).toHaveLength(12);
   for (const event of events)
     expect(event).toMatchObject({
       ...actor,
@@ -175,36 +202,44 @@ test("entitlement writes each audit once, keep immutable fields and preserve omi
     "entitlement.updated",
     "entitlement.updated",
     "entitlement.disabled",
+    "entitlement.disable_unchanged",
     "entitlement.enabled",
+    "entitlement.enable_unchanged",
     "entitlement.removed",
   ]);
   for (const [index, created] of [row, grouped, personal, client].entries())
     expect(events[index]).toMatchObject({
       targetId: created.id,
       data: {
-        memberId: created.memberId,
-        groupId: created.groupId,
-        clientId: created.clientId,
-        resource: created.resource,
-        scopes: created.scopes,
+        before: null,
+        after: {
+          memberId: created.memberId,
+          groupId: created.groupId,
+          clientId: created.clientId,
+          resource: created.resource,
+          scopes: created.scopes,
+        },
       },
     });
   expect(events[4]).toMatchObject({
     targetId: personal.id,
-    data: { changes: { scopes: ["write"], validFrom: null } },
+    data: { after: { scopes: ["write"], validFrom: null } },
   });
   expect(events[6]).toMatchObject({
-    data: { changes: { validUntil: future.toISOString() } },
+    data: { after: { validUntil: future.toISOString() } },
   });
   expect(events[7]).toMatchObject({
     targetId: grouped.id,
-    data: { status: "disabled" },
+    data: { after: { status: "disabled" } },
   });
-  expect(events[8]).toMatchObject({
+  expect(events[9]).toMatchObject({
     targetId: grouped.id,
-    data: { status: "active" },
+    data: { after: { status: "active" } },
   });
-  expect(events[9]).toMatchObject({ targetId: grouped.id, data: {} });
+  expect(events[11]).toMatchObject({
+    targetId: grouped.id,
+    data: { before: { id: grouped.id }, after: null },
+  });
 });
 test("service validates principal, target, references and resource scopes before creating", async () => {
   const { db, org, other, group, foreignGroup, ids, resource, clientId } =
@@ -212,7 +247,6 @@ test("service validates principal, target, references and resource scopes before
   for (const input of [
     { resource, memberId: ids[0]!, groupId: group.id, scopes: ["read"] },
     { scopes: ["read"] },
-    { resource, clientId, scopes: ["read"] },
     { resource, scopes: ["unknown", "forbidden"] },
   ])
     await expect(

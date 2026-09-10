@@ -1,3 +1,11 @@
+import { platformRead } from "./platform-read.ts";
+import { tenantRead } from "./tenant-read.ts";
+import {
+  requireRevision,
+  revisionTag,
+  revisionParameter,
+  revisionResponseHeaders,
+} from "./revision.ts";
 import {
   json,
   body,
@@ -8,7 +16,11 @@ import {
 import type { Hono } from "hono";
 import { z } from "zod";
 import { lifecycleStatuses } from "../../db/schema/vocabulary.ts";
-import { actorFromContext } from "../../services/actor.ts";
+import {
+  platformCommand,
+  idempotencyParameter,
+  commandResponseHeaders,
+} from "./command.ts";
 import { getOrganizationSummary } from "../../services/summary.ts";
 import * as service from "../../services/organizations.ts";
 import type { AppEnvironment } from "../context.ts";
@@ -20,11 +32,13 @@ import { registerRoute, type AdminRoute } from "./route-table.ts";
 
 export const organizationSchema = z.object({
   id: z.uuid(),
+  revision: z.number().int().positive(),
   name: z.string(),
   slug: z.string(),
   logo: z.string().nullable(),
   metadata: z.string().nullable(),
   status: z.enum(lifecycleStatuses),
+  authorizationVersion: z.number().int().positive(),
   disabledAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
@@ -47,15 +61,23 @@ export const organizationSummarySchema = z.object({
   groups: statusCounts,
   entitlements: statusCounts.extend({
     targets: z.array(
-      z.object({
-        kind: z.enum(["client", "resource"]),
-        id: z.string(),
-        rows: counter,
-      }),
+      z.discriminatedUnion("kind", [
+        z.object({ kind: z.literal("client"), id: z.string(), rows: counter }),
+        z.object({
+          kind: z.literal("resource"),
+          id: z.string(),
+          rows: counter,
+        }),
+        z.object({
+          kind: z.literal("client_resource"),
+          id: z.string(),
+          resource: z.url(),
+          rows: counter,
+        }),
+      ]),
     ),
   }),
   clients: z.object({ owned: counter }),
-  sessions: z.object({ active: counter }),
   signIns7d: z.object({
     succeeded: counter,
     lastSucceededAt: z.iso.datetime().nullable(),
@@ -98,7 +120,7 @@ export const routes = {
     operationId: "getOrganizationSummary",
     summary: "Summarise an organisation",
     description:
-      "Read an organisation and its counts without paging or changing state. Domains, groups and entitlements use stored status; entitlement targets count all rows, including disabled or out-of-window grants, by client id or resource identifier. Members.total includes every membership, effective counts windows with an inclusive start and exclusive end at the current instant, and byStatus counts the linked users regardless of window. Owned clients include disabled clients. Active sessions are unexpired sessions belonging to any member, regardless of membership window or active session organisation. SSO reports the configured issuer and its kind. Successful sign-ins cover the trailing seven days in UTC, including the cutoff instant; lastSucceededAt is the latest success in that window, or null. Rejections carry no organisation and cannot be counted per organisation; use getPlatformSummary for fleet rejections. validation_failed rejects malformed ids; not_found means the organisation is missing or unavailable.",
+      "Read an organisation and its counts without paging or changing state. Domains, groups and entitlements use stored status; entitlement targets count all rows, including disabled or out-of-window grants, by exact client-resource pair or standalone client/resource target. Pair entries use kind client_resource, id for the client and resource for the resource identifier. Counts are not permission decisions. Members.total includes every membership, effective counts windows with an inclusive start and exclusive end at the current instant, and byStatus counts the linked users regardless of window. Owned clients include disabled clients. Global browser session counts are not tenant data and are omitted. SSO reports the configured issuer and its kind. Successful sign-ins cover the trailing seven days in UTC, including the cutoff instant; lastSucceededAt is the latest success in that window, or null. Rejections carry no organisation and cannot be counted per organisation; use getPlatformSummary for fleet rejections. validation_failed rejects malformed ids; not_found means the organisation is missing or unavailable.",
     tag: "Organizations",
     platformScope: "platform:read",
     orgScope: "org:read",
@@ -147,10 +169,11 @@ export const routes = {
     operationId: "createOrganization",
     summary: "Create an organisation",
     description:
-      "Create an organisation and return its generated id and stored fields, recording the creation in the audit log. Prefer updateOrganization when its id already exists; validation_failed rejects malformed input and conflict means the slug is already in use.",
+      "Requires Idempotency-Key. Identical authorised retries recover the original response for seven days; changed input conflicts and expired recovery never repeats effects. Create an organisation and return its generated id and stored fields, recording the creation in the audit log. Prefer updateOrganization when its id already exists; validation_failed rejects malformed input and conflict means the slug is already in use.",
     tag: "Organizations",
     platformScope: "platform:write",
     kind: "write",
+    parameters: [idempotencyParameter],
     requestBody: body(createSchema),
     example: { body: { slug: "acme", name: "Acme" } },
     responses: standardResponses(
@@ -159,8 +182,9 @@ export const routes = {
         201: {
           description: "Organisation created",
           content: json(organizationSchema),
+          headers: commandResponseHeaders,
         },
-        ...problemResponses(400, 409),
+        ...problemResponses(400, 409, 410, 503),
       },
     ),
   },
@@ -178,7 +202,10 @@ export const routes = {
     parameters,
     responses: standardResponses(
       { orgScope: "org:read" },
-      { ...success, ...problemResponses(400) },
+      {
+        200: { ...success[200], headers: revisionResponseHeaders },
+        ...problemResponses(400),
+      },
     ),
   },
   updateOrganization: {
@@ -187,16 +214,22 @@ export const routes = {
     operationId: "updateOrganization",
     summary: "Update an organisation",
     description:
-      "Update an organisation and return the updated record, recording the change in the audit log. Prefer getOrganization to inspect existing state; validation_failed rejects malformed input, not_found identifies missing parents or targets, and conflict or reference_violation identifies conflicting records.",
+      "Requires Idempotency-Key and the If-Match ETag from getOrganization. Missing preconditions return 428; stale new commands return 412. Committed replay precedes its old revision check. An unchanged patch preserves the revision. Identical authorised retries recover the original response for seven days; changed input conflicts and expired recovery never repeats effects. Update an organisation and return the updated record, recording the change in the audit log. Prefer getOrganization to inspect existing state; validation_failed rejects malformed input, not_found identifies missing parents or targets, and conflict or reference_violation identifies conflicting records.",
     tag: "Organizations",
     platformScope: "platform:write",
     kind: "write",
-    parameters,
+    parameters: [...parameters, idempotencyParameter, revisionParameter],
     requestBody: body(patchSchema),
     example: { body: { name: "Acme Ltd" } },
     responses: standardResponses(
       {},
-      { ...success, ...problemResponses(400, 404, 409) },
+      {
+        200: {
+          ...success[200],
+          headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
+        },
+        ...problemResponses(400, 404, 409, 410, 412, 428, 503),
+      },
     ),
   },
   disableOrganization: {
@@ -205,14 +238,17 @@ export const routes = {
     operationId: "disableOrganization",
     summary: "Disable an organisation",
     description:
-      "Disable the organisation, revoke member sessions and user and owned-client tokens, and return the updated organisation. Prefer enableOrganization to allow future access without restoring revoked credentials; validation_failed rejects malformed ids, not_found means the organisation is missing, and organization_already_disabled means no transition is needed.",
+      "Requires Idempotency-Key. Identical authorised retries recover the original response for seven days; changed input conflicts and expired recovery never repeats effects. Disable the organisation, advance its authorizationVersion, revoke stored machine access tokens for its owned clients, and return the updated organisation. Global browser sessions and unbound user tokens are preserved; client ownership does not establish a user grant’s tenant. Complete tenant user-grant revocation is not yet implemented. Prefer enableOrganization to allow future access without restoring revoked credentials; validation_failed rejects malformed ids, not_found means the organisation is missing, and already disabled state returns a noop without another epoch advance. Disabling the bound platform organisation while an effective writer exists raises last_platform_administrator and rolls back the command; adding another writer in that same organisation does not make its disable safe.",
     tag: "Organizations",
     platformScope: "platform:write",
     kind: "write",
-    parameters,
+    parameters: [...parameters, idempotencyParameter],
     responses: standardResponses(
       {},
-      { ...success, ...problemResponses(400, 404, 409) },
+      {
+        200: { ...success[200], headers: commandResponseHeaders },
+        ...problemResponses(400, 404, 409, 410, 503),
+      },
     ),
   },
   enableOrganization: {
@@ -221,14 +257,17 @@ export const routes = {
     operationId: "enableOrganization",
     summary: "Enable an organisation",
     description:
-      "Enable an organisation and return the updated record. Prefer disableOrganization for the opposite transition; not_found means the target is missing and organization_already_active means no transition is needed.",
+      "Requires Idempotency-Key. Identical authorised retries recover the original response for seven days; changed input conflicts and expired recovery never repeats effects. Enable an organisation and return the updated record. Its authorizationVersion stays advanced, so pre-disable machine tokens remain invalid at the admin API; obtain fresh tokens. Prefer disableOrganization for the opposite transition; not_found means the target is missing and already active state returns a noop.",
     tag: "Organizations",
     platformScope: "platform:write",
     kind: "write",
-    parameters,
+    parameters: [...parameters, idempotencyParameter],
     responses: standardResponses(
       {},
-      { ...success, ...problemResponses(400, 404, 409) },
+      {
+        200: { ...success[200], headers: commandResponseHeaders },
+        ...problemResponses(400, 404, 409, 410, 503),
+      },
     ),
   },
   eraseOrganization: {
@@ -237,17 +276,24 @@ export const routes = {
     operationId: "eraseOrganization",
     summary: "Erase an organisation",
     description:
-      "Permanently erase the organization and return no content; organization_has_clients requires reassigning owned clients first. The confirm query parameter must equal the target id. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableOrganization for reversible offboarding.",
+      "Requires Idempotency-Key. Identical authorised retries recover the original response for seven days; changed input conflicts and expired recovery never repeats effects. Permanently erase the organization and return no content; organization_has_clients requires removing owned clients first. The confirm query parameter must equal the target id. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableOrganization for reversible offboarding.",
     tag: "Organizations",
     platformScope: "platform:write",
     kind: "erase",
-    parameters: [...parameters, confirmQuery(eraseSchema.shape.confirm)],
+    parameters: [
+      ...parameters,
+      confirmQuery(eraseSchema.shape.confirm),
+      idempotencyParameter,
+    ],
     example: { query: { confirm: "00000000-0000-7000-8000-000000000000" } },
     responses: standardResponses(
       {},
       {
-        204: { description: "Organisation erased" },
-        ...problemResponses(400, 404, 409),
+        204: {
+          description: "Organisation erased",
+          headers: commandResponseHeaders,
+        },
+        ...problemResponses(400, 404, 409, 410, 503),
       },
     ),
   },
@@ -260,10 +306,7 @@ export function register(app: Hono<AppEnvironment>) {
     validate("param", paramSchema),
     async (context) =>
       context.json(
-        await getOrganizationSummary(
-          context.get("db"),
-          context.req.param("organizationId")!,
-        ),
+        await tenantRead(context, "directory", getOrganizationSummary),
       ),
   );
   registerRoute(
@@ -273,7 +316,9 @@ export function register(app: Hono<AppEnvironment>) {
     async (context) => {
       const query = querySchema.parse(context.req.query());
       return context.json(
-        await service.listOrganizations(context.get("db"), query),
+        await platformRead(context, (platform) =>
+          service.listOrganizations(platform, query),
+        ),
       );
     },
   );
@@ -283,13 +328,19 @@ export function register(app: Hono<AppEnvironment>) {
     validate("json", createSchema),
     async (context) => {
       const input = createSchema.parse(await context.req.json());
-      return context.json(
-        await service.createOrganization(
-          context.get("db"),
-          actorFromContext(context),
-          input,
-        ),
+      return platformCommand(
+        context,
+        "createOrganization",
+        input,
         201,
+        async (platform) => {
+          const body = await service.createOrganization(platform, input);
+          return {
+            body,
+            resultReference: { type: "organization", id: body.id },
+          };
+        },
+        { retention: "ordinary" },
       );
     },
   );
@@ -298,12 +349,13 @@ export function register(app: Hono<AppEnvironment>) {
     routes.getOrganization,
     validate("param", paramSchema),
     async (context) => {
-      return context.json(
-        await service.getOrganization(
-          context.get("db"),
-          context.req.param("organizationId")!,
-        ),
+      const result = await tenantRead(
+        context,
+        "directory",
+        service.getOrganization,
       );
+      context.header("ETag", revisionTag(result));
+      return context.json(result);
     },
   );
   registerRoute(
@@ -313,13 +365,33 @@ export function register(app: Hono<AppEnvironment>) {
     validate("json", patchSchema),
     async (context) => {
       const patch = patchSchema.parse(await context.req.json());
-      return context.json(
-        await service.updateOrganization(
-          context.get("db"),
-          actorFromContext(context),
-          context.req.param("organizationId")!,
-          patch,
-        ),
+      const expected = requireRevision(context.req.header("If-Match"));
+      const organizationId = context.req.param("organizationId")!;
+      return platformCommand(
+        context,
+        "updateOrganization",
+        { organizationId, expected, patch },
+        200,
+        async (platform) => {
+          const result = await service.updateOrganization(
+            platform,
+            organizationId,
+            patch,
+            expected,
+          );
+          return {
+            body: result.organization,
+            outcome: result.changed ? "applied" : "noop",
+            resultReference: { type: "organization", id: organizationId },
+          };
+        },
+        {
+          retention: "ordinary",
+          etag: (body) =>
+            revisionTag(
+              organizationSchema.pick({ id: true, revision: true }).parse(body),
+            ),
+        },
       );
     },
   );
@@ -328,12 +400,24 @@ export function register(app: Hono<AppEnvironment>) {
     routes.disableOrganization,
     validate("param", paramSchema),
     async (context) => {
-      return context.json(
-        await service.disableOrganization(
-          context.get("db"),
-          actorFromContext(context),
-          context.req.param("organizationId")!,
-        ),
+      const organizationId = context.req.param("organizationId")!;
+      return platformCommand(
+        context,
+        "disableOrganization",
+        { organizationId },
+        200,
+        async (platform) => {
+          const result = await service.disableOrganization(
+            platform,
+            organizationId,
+          );
+          return {
+            body: result.organization,
+            outcome: result.changed ? "applied" : "noop",
+            resultReference: { type: "organization", id: organizationId },
+          };
+        },
+        { retention: "ordinary" },
       );
     },
   );
@@ -342,12 +426,24 @@ export function register(app: Hono<AppEnvironment>) {
     routes.enableOrganization,
     validate("param", paramSchema),
     async (context) => {
-      return context.json(
-        await service.enableOrganization(
-          context.get("db"),
-          actorFromContext(context),
-          context.req.param("organizationId")!,
-        ),
+      const organizationId = context.req.param("organizationId")!;
+      return platformCommand(
+        context,
+        "enableOrganization",
+        { organizationId },
+        200,
+        async (platform) => {
+          const result = await service.enableOrganization(
+            platform,
+            organizationId,
+          );
+          return {
+            body: result.organization,
+            outcome: result.changed ? "applied" : "noop",
+            resultReference: { type: "organization", id: organizationId },
+          };
+        },
+        { retention: "ordinary" },
       );
     },
   );
@@ -358,13 +454,21 @@ export function register(app: Hono<AppEnvironment>) {
     validate("query", eraseSchema),
     async (context) => {
       const { confirm } = eraseSchema.parse(context.req.query());
-      await service.eraseOrganization(
-        context.get("db"),
-        actorFromContext(context),
-        context.req.param("organizationId")!,
-        confirm,
+      const organizationId = context.req.param("organizationId")!;
+      return platformCommand(
+        context,
+        "eraseOrganization",
+        { organizationId, confirm },
+        204,
+        async (platform) => {
+          await service.eraseOrganization(platform, organizationId, confirm);
+          return {
+            body: null,
+            resultReference: { type: "organization", id: organizationId },
+          };
+        },
+        { retention: "ordinary" },
       );
-      return context.body(null, 204);
     },
   );
 }
