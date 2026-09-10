@@ -15,8 +15,8 @@ User authorises this task to manage implementation of the six completed plans, i
 
 | Owner | Exact task title | Task ID | State |
 | --- | --- | --- | --- |
-| T1 | Plan ID tenant authentication and authority | 01a08b80-277b-7382-be76-51e1b7c18b10 | Admission integrated; dispatched verified linking and five-minute freshness; sole writer/DB owner |
-| T2 | Plan ID production OAuth and consent | 01a08b80-50b2-79e0-880a-46d1a5a33dfe | Plan complete; implementation not dispatched |
+| T1 | Plan ID tenant authentication and authority | 01a08b80-277b-7382-be76-51e1b7c18b10 | Admission, verified linking and five-minute freshness integrated at c245060; idle |
+| T2 | Plan ID production OAuth and consent | 01a08b80-50b2-79e0-880a-46d1a5a33dfe | Production OAuth and consent dispatched from c245060; sole writer/DB owner |
 | T3 | Plan ID audit lifecycle and retention | 01a08b80-6407-7a03-9ac8-ee28ba12c4f7 | Soft deletion accepted/integrated at 3e09ad1; idle |
 | T4 | Plan ID capacity operations and recovery | 01a08b80-c0dd-7793-858b-678a943deda7 | Plan complete; implementation not dispatched |
 | T5 | Plan ID single initial migration cleanup | 01a08b80-d8c5-7763-99e6-e764415127f7 | Plan complete; implementation not dispatched |
@@ -65,7 +65,7 @@ The user explicitly accepted both recommendations and specified soft deletion:
 
 ## Next coordinator action
 
-The user explicitly approved five-minute freshness and instructed us to continue to completion. T1 was dispatched from 4d660243d1003083984a6937e29aa9127f58a977 to complete deliberate verified identity linking and sensitive-command freshness enforcement. It owns the sole implementation/shared test DB slot. Wait for completion, review actual diff and evidence, integrate, then dispatch T2 production OAuth with the final authentication/deletion contracts. Do not ask the freshness question again. No email merging, identity transfer, implicit tenant trust or automatic membership reinstatement. Required linking audit must commit with the binding. Keep ordinary browsing/session lifetimes separate. No purge or migration squash yet.
+T1 linking and freshness are accepted at c2450604cc1ee523621514cf303078263c1f8c2c (source dfe3cb36546aaad228b778a200aa173a1074bd10). T2 is dispatched from that baseline for its production OAuth/consent implementation through local acceptance, and owns the sole writer/shared disposable test DB slot. Consent per new flow is the explicit conservative default; preserve only server-configured first-party bypass. Do not stall for consent-memory preferences. Read T2 completion, review code/evidence and delete/simplify decisions, integrate accepted commits, then dispatch T4. No purge, non-test reset, push/deployment or migration squash. Real consumer/deployment evidence remains separate from local acceptance.
 
 Review adjustment to T3's proposal: do not accidentally remove the existing explicit membership reinstatement feature. Distinguish reversible membership revocation from product/entity deletion. No automatic SSO resurrection is allowed, but explicit reinstatement of a revoked membership remains a supported command unless the user changes that contract. If a genuine conflict requires changing public semantics, bring that concrete conflict to the coordinator rather than silently making reinstatement unreachable.
 
@@ -94,3 +94,11 @@ Thread heartbeat `coordinate-id-foundation-completion` is active every ten minut
 - Reviewed native-state binding, awaited provider-list/single-read observer, cross-instance callback tests, altered/missing/forged state, secret-only rotation and change-and-revert; native selection and existing callback checks preserved. No schema or grant allowlist change.
 - Verified raw full log: 1,904 pass, zero failures, 25,455 assertions, 100% line/function coverage, 445.02s. Typecheck/lint/build/web71/countries5 pass as recorded in reports/id-sso-initiation-revision.md. Application trees after cherry-pick exactly match the tested worker commit, so no unchanged full-suite rerun is warranted.
 - T3 starts from the latest integration branch commit; all accepted product decisions in this document govern its work. No purge jobs, named-recovery feature or migration squash in T3.
+
+## Integrated verified linking and freshness checkpoint
+
+- Accepted source dfe3cb36546aaad228b778a200aa173a1074bd10 as c2450604cc1ee523621514cf303078263c1f8c2c. Reviewed native server-only single-use purpose state, session/account/provider/revision binding, both independent proofs, no ownership transfer, transaction-bound membership/account/session/audit and post-wait eligibility/freshness checks. No new schema.
+- Reviewed server-owned sensitive command classification, before-replay freshness, target-lock revalidation, final timestamp guard and same-key recovery after reauthentication. Ordinary display edits remain on session lifetime. Minimal /security journey uses actual native endpoints.
+- Verified raw final coverage: 1,985 pass, zero failures, 28,099 assertions, 146 files, 697.97s, 100% line/function coverage, exit 0. Required gates and browser/native evidence recorded in reports/id-verified-linking-and-freshness.md. Cleanup reports no test roles; worker explicitly released DB ownership.
+- Integrated application/docs trees equal the tested source commit; no unchanged full-suite repetition. Reused native verification consumption and existing audit/authority infrastructure rather than new tables or a parallel identity protocol.
+- T2 received final T1/T3 reports, full provenance/policy/replay/audit/browser scope, finite acceptance conditions and exclusive ownership. Other tasks remain idle.
