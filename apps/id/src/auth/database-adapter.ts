@@ -10,6 +10,7 @@ const config = { provider: "pg", schema, usePlural: true } as const;
 export function authDatabaseAdapter(
   db: Database,
   onProviderRead?: (rows: unknown[]) => Promise<void>,
+  beforeTransaction?: (tx: Executor) => Promise<void>,
 ) {
   return (options: BetterAuthOptions) => {
     const adapter = drizzleAdapter(db, { ...config, transaction: true })(
@@ -62,6 +63,7 @@ export function authDatabaseAdapter(
         run: (boundAdapter: typeof adapter) => Promise<T>,
       ) =>
         db.transaction(async (tx) => {
+          await beforeTransaction?.(tx);
           const bound = wrap(drizzleAdapter(tx, config)(options));
           transactions.set(bound, tx);
           try {

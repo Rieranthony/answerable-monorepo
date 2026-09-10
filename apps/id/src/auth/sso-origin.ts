@@ -11,6 +11,7 @@ import { and, isNull, eq } from "drizzle-orm";
 import { accounts, ssoProviders } from "../db/schema/index.ts";
 import { resolveFederatedUser } from "../services/federation.ts";
 import { authTransaction } from "./database-adapter.ts";
+import type { VerifiedSso } from "./verified-sso.ts";
 
 type SessionHooks = NonNullable<
   NonNullable<BetterAuthOptions["databaseHooks"]>["session"]
@@ -27,13 +28,14 @@ type Origin = {
 /** Native SSO resolution and session creation share one transaction adapter.
  * The caller's request fields never supply authentication origin.
  */
-export function createSsoOriginBoundary() {
+export function createSsoOriginBoundary(verifiedSso?: VerifiedSso) {
   const origins = new WeakMap<object, Origin>();
   const requests = new AsyncLocalStorage<Map<string, number>>();
   function run<T>(work: () => T): T {
     return requests.run(new Map(), work);
   }
   async function observeProviders(rows: unknown[]) {
+    await verifiedSso?.observe();
     const request = requests.getStore();
     if (!request) return;
     for (const row of rows) {
@@ -105,7 +107,11 @@ export function createSsoOriginBoundary() {
         code: "invalid_auth_time",
         message: "Upstream authentication time is invalid",
       };
-    const resolution = await resolveFederatedUser(input, database);
+    const upstreamAuthTime =
+      authTime === undefined ? null : new Date((authTime as number) * 1000);
+    const resolution =
+      (await verifiedSso?.resolve(input, database, upstreamAuthTime)) ??
+      (await resolveFederatedUser(input, database));
     if (resolution.action === "reject") return resolution;
     // The resolver has established this exact verified issuer/subject binding.
     // Native authentication must select the same user when it creates a session.
@@ -125,8 +131,7 @@ export function createSsoOriginBoundary() {
       ...provider,
       authenticationAccountId: account.id,
       userId: account.userId,
-      upstreamAuthTime:
-        authTime === undefined ? null : new Date((authTime as number) * 1000),
+      upstreamAuthTime,
     });
     return resolution;
   };
@@ -137,7 +142,10 @@ export function createSsoOriginBoundary() {
       ? await getCurrentAdapter(context.context.adapter)
       : undefined;
     const origin = adapter ? origins.get(adapter) : undefined;
-    if (origin) authTransaction(adapter!);
+    if (origin) {
+      const tx = authTransaction(adapter!);
+      await verifiedSso?.beforeSession(tx, origin.upstreamAuthTime);
+    }
     if (adapter) origins.delete(adapter);
     if (origin && origin.userId !== session.userId)
       throw new APIError("FORBIDDEN", {

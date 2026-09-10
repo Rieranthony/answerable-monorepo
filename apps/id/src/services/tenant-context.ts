@@ -23,6 +23,7 @@ type ScopedContext<Access extends string> = Readonly<{
 }>;
 
 export type TenantMemberContext = ScopedContext<"command"> & {
+  readonly revalidate: () => Promise<void>;
   readonly actor: Readonly<Actor>;
 };
 const readScopes = {
@@ -36,6 +37,7 @@ export type TenantReadContext<Access extends TenantReadAccess> =
   ScopedContext<Access>;
 
 type TenantAuthority = {
+  freshAuthentication?: boolean;
   principal: Principal;
   environment: Environment;
   claims?: BearerClaims;
@@ -47,20 +49,24 @@ export async function authorizeTenantMemberCommand(
   tx: Executor,
   input: TenantAuthority,
 ) {
+  input = { ...input, principal: { ...input.principal } };
   const identity = actorIdentity(input.principal);
   // Serialise member writes with other tenant authority changes.
   // Re-read authority after any preceding tenant revocation has committed.
   const organization = await lockOrganization(tx, input.organizationId);
-  await authorizeCommand(
-    tx,
-    input.principal,
-    input.environment,
-    {
-      platform: "platform:users",
-      tenant: { organizationId: input.organizationId, scope: "org:users" },
-    },
-    input.claims,
-  );
+  const authorize = () =>
+    authorizeCommand(
+      tx,
+      input.principal,
+      input.environment,
+      {
+        platform: "platform:users",
+        tenant: { organizationId: input.organizationId, scope: "org:users" },
+        freshAuthentication: input.freshAuthentication,
+      },
+      input.claims,
+    );
+  await authorize();
   if (!organization)
     throw new ProblemError(404, "not_found", "Organisation not found");
   await setDatabaseScope(tx, {
@@ -86,10 +92,14 @@ export async function authorizeTenantMemberCommand(
         tx,
         organizationId: organization.id,
         actor: commandActor(identity, metadata),
+        async revalidate() {
+          if (input.principal.type === "user") await authorize();
+        },
       });
       issuedContexts.add(context);
       try {
         const checkWriter = await platformWriterCheck(tx, organization.id);
+        await context.revalidate();
         const result = await run(context);
         await checkWriter();
         return result;

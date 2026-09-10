@@ -104,6 +104,7 @@ export async function findOrganizationDomainForCommand(
       ),
     );
   const [row] = await query.for("update");
+  await context.revalidate();
   return row ?? null;
 }
 

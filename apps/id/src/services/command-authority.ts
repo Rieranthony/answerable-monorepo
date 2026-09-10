@@ -7,6 +7,7 @@ import type { Environment } from "../env.ts";
 import type { Principal, BearerClaims } from "../http/principal.ts";
 import { ProblemError } from "../http/problem.ts";
 import type { AdminScope } from "../http/admin/scopes.ts";
+import { freshAuthenticationGuard } from "../auth/fresh-authentication.ts";
 
 /** Re-evaluate current database authority and return the tier that admitted the caller. */
 export async function authorizeCommand(
@@ -14,6 +15,7 @@ export async function authorizeCommand(
   principal: Principal,
   environment: Environment,
   required: {
+    freshAuthentication?: boolean;
     platform: AdminScope | readonly AdminScope[];
     tenant?: {
       organizationId: string;
@@ -85,6 +87,8 @@ export async function authorizeCommand(
         "unauthenticated",
         "Current session is required",
       );
+    if (required.freshAuthentication)
+      await freshAuthenticationGuard(tx, principal.sessionId);
     if (
       grants.some(
         (grant) =>

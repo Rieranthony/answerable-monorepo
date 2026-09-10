@@ -223,6 +223,7 @@ export async function createAdminFixture(
         email,
         email_verified: true,
         name,
+        auth_time: Math.floor(Date.now() / 1000),
       });
       const callbackURL = `${trustedOrigin}/callback`;
       const signedIn = await signInThroughIdp(app, {

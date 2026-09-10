@@ -50,6 +50,7 @@ export const routes = {
     tag: "Sessions",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     parameters: ["userId"].map((name) => pathParameter(name, "uuid")),
     responses: standardResponses(
       {},
@@ -69,6 +70,7 @@ export const routes = {
     tag: "Sessions",
     platformScope: "platform:users",
     kind: "write",
+    freshAuthentication: true,
     parameters: [pathParameter("userId", "uuid"), idempotencyParameter],
     responses: standardResponses(
       {},
@@ -92,6 +94,7 @@ export const routes = {
     tag: "Sessions",
     platformScope: "platform:users",
     kind: "write",
+    freshAuthentication: true,
     parameters: [
       ...["userId", "sessionId"].map((name) => pathParameter(name, "uuid")),
       idempotencyParameter,

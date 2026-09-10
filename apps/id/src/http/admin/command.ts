@@ -20,6 +20,7 @@ import {
 import { executeOperation } from "../../services/operations.ts";
 import type { AppEnvironment } from "../context.ts";
 import { ProblemError } from "../problem.ts";
+import { freshAuthenticationGuard } from "../../auth/fresh-authentication.ts";
 
 export const idempotencyParameter = {
   in: "header" as const,
@@ -63,7 +64,7 @@ async function httpCommand<T>(
   statusCode: number,
   authority: {
     scope: string;
-    authorize: (tx: Executor) => Promise<T>;
+    authorize: (tx: Executor, freshAuthentication: boolean) => Promise<T>;
     release?: (authority: T) => void;
   },
   mutate: (tx: Executor, actor: Actor, authority: T) => Promise<CommandResult>,
@@ -87,6 +88,14 @@ async function httpCommand<T>(
       { retryable: true },
     );
   const actor = actorFromContext(context);
+  const freshnessPolicy = context.get("freshAuthentication");
+  const needsFreshness =
+    typeof freshnessPolicy === "object"
+      ? Object.keys(await context.req.json()).some(
+          (field) => !freshnessPolicy.unlessOnly.includes(field),
+        )
+      : freshnessPolicy;
+  let checkFreshness: (() => Promise<void>) | undefined;
   const result = await withOrganizationCommandSlot(
     context.get("db"),
     context.req.param("organizationId"),
@@ -100,13 +109,29 @@ async function httpCommand<T>(
           key,
           input,
         },
-        authority.authorize,
+        async (tx) => {
+          const authorized = await authority.authorize(
+            tx,
+            Boolean(needsFreshness),
+          );
+          const principal = context.get("principal")!;
+          if (needsFreshness && principal.type === "user")
+            checkFreshness = await freshAuthenticationGuard(
+              tx,
+              principal.sessionId,
+            );
+          return authorized;
+        },
         async (tx, operationId, authorized) => {
+          await checkFreshness?.();
           const result = await mutate(
             tx,
             { ...actor, operationId },
             authorized,
           );
+          // Target-row/audit waits can outlast the freshness window too. Roll
+          // back the whole command and its effects if time elapsed in the body.
+          await checkFreshness?.();
           return {
             outcome: result.outcome ?? "applied",
             statusCode: result.statusCode ?? statusCode,
@@ -148,11 +173,12 @@ export function platformCommand(
     statusCode,
     {
       scope: "platform",
-      authorize: (tx) =>
+      authorize: (tx, freshAuthentication) =>
         authorizePlatformWriteCommand(tx, {
           principal: context.get("principal")!,
           environment: context.get("environment"),
           claims: context.get("bearerClaims"),
+          freshAuthentication,
         }),
       release: (authorized) => authorized.close(),
     },
@@ -176,11 +202,12 @@ export function platformUsersCommand(
     statusCode,
     {
       scope: "platform",
-      authorize: (tx) =>
+      authorize: (tx, freshAuthentication) =>
         authorizePlatformUsersCommand(tx, {
           principal: context.get("principal")!,
           environment: context.get("environment"),
           claims: context.get("bearerClaims"),
+          freshAuthentication,
         }),
       release: (authorized) => authorized.close(),
     },
@@ -204,12 +231,13 @@ export function tenantMemberCommand(
     statusCode,
     {
       scope: `tenant:${organizationId}`,
-      authorize: (tx) =>
+      authorize: (tx, freshAuthentication) =>
         authorizeTenantMemberCommand(tx, {
           principal: context.get("principal")!,
           environment: context.get("environment"),
           claims: context.get("bearerClaims"),
           organizationId,
+          freshAuthentication,
         }),
       release: (authorized) => authorized.close(),
     },

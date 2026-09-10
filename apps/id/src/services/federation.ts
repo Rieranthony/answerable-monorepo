@@ -119,6 +119,7 @@ async function membershipRevoked(
 export async function resolveFederatedUser(
   input: SSOUserResolutionInput,
   database: DBTransactionAdapter,
+  linkUserId?: string,
 ): Promise<SSOUserResolution> {
   if (input.protocol !== "oidc") {
     return reject("provider_not_found", "OIDC provider required");
@@ -200,6 +201,8 @@ export async function resolveFederatedUser(
     join: { user: true },
   });
   if (exactAccount) {
+    if (linkUserId)
+      return reject("identity_conflict", "Identity is already bound");
     const owner = userFrom(exactAccount);
     if (
       exactAccount.deletedAt ||
@@ -235,6 +238,8 @@ export async function resolveFederatedUser(
     join: { user: true },
   });
   if (placeholder) {
+    if (linkUserId)
+      return reject("identity_conflict", "Identity is already reserved");
     const owner = userFrom(placeholder);
     if (
       placeholder.deletedAt ||
@@ -262,6 +267,23 @@ export async function resolveFederatedUser(
       update: { status: "active", emailVerified: true },
     });
     return { action: "continue" };
+  }
+
+  if (linkUserId) {
+    // Only the verified-purpose boundary can supply this independently proven
+    // user. Email is neither a lookup nor a merge instruction for a link.
+    await database.create({
+      model: "account",
+      data: {
+        userId: linkUserId,
+        providerId: input.providerId,
+        issuer: input.accountKey.issuer,
+        accountId: input.accountKey.accountId,
+        directoryId,
+        directoryUserId,
+      },
+    });
+    return { action: "link", userId: linkUserId, profile: "preserve" };
   }
 
   const emailUser = await database.findOne<UserRow>({

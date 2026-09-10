@@ -108,6 +108,7 @@ export const routes = {
     platformScope: "platform:read",
     orgScope: "org:read",
     kind: "read",
+    freshAuthentication: false,
     parameters: [orgParameter],
     responses: standardResponses(
       { orgScope: "org:read" },
@@ -136,6 +137,7 @@ export const routes = {
     platformScope: "platform:read",
     orgScope: "org:read",
     kind: "read",
+    freshAuthentication: false,
     parameters: [orgParameter, idParameter],
     responses: standardResponses(
       { orgScope: "org:read" },
@@ -160,6 +162,7 @@ export const routes = {
     tag: "Capabilities",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [orgParameter, idempotencyParameter],
     requestBody: body(createSchema),
     example: {
@@ -193,6 +196,7 @@ export const routes = {
     tag: "Capabilities",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [
       orgParameter,
       idParameter,
@@ -224,6 +228,7 @@ export const routes = {
     tag: "Capabilities",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [orgParameter, idParameter, idempotencyParameter],
     responses: standardResponses(
       {},

@@ -71,6 +71,7 @@ export const routes = {
     tag: "Users",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     parameters: [],
     responses: standardResponses(
       {},
@@ -90,6 +91,7 @@ export const routes = {
     tag: "Users",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     parameters: ["userId"].map((name) => pathParameter(name, "uuid")),
     responses: standardResponses(
       {},
@@ -109,6 +111,7 @@ export const routes = {
     tag: "Users",
     platformScope: "platform:users",
     kind: "write",
+    freshAuthentication: true,
     parameters: [pathParameter("userId", "uuid"), idempotencyParameter],
     responses: standardResponses(
       {},
@@ -132,6 +135,7 @@ export const routes = {
     tag: "Users",
     platformScope: "platform:users",
     kind: "write",
+    freshAuthentication: true,
     parameters: [pathParameter("userId", "uuid"), idempotencyParameter],
     responses: standardResponses(
       {},
@@ -155,6 +159,7 @@ export const routes = {
     tag: "Users",
     platformScope: "platform:users",
     kind: "write",
+    freshAuthentication: true,
     parameters: [pathParameter("userId", "uuid"), idempotencyParameter],
     responses: standardResponses(
       {},
@@ -178,6 +183,7 @@ export const routes = {
     tag: "Users",
     platformScope: "platform:write",
     kind: "erase",
+    freshAuthentication: true,
     parameters: [
       ...["userId"].map((name) => pathParameter(name, "uuid")),
       confirmQuery(eraseSchema.shape.confirm),

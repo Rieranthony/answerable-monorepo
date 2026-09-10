@@ -95,6 +95,7 @@ export const routes = {
     tag: "Diagnostics",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     parameters,
     responses: standardResponses(
       {},
@@ -117,6 +118,7 @@ export const routes = {
     tag: "SSO provider",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     parameters,
     orgScope: "org:read",
     responses: standardResponses(
@@ -141,6 +143,7 @@ export const routes = {
     tag: "SSO provider",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [
       ...parameters,
       idempotencyParameter,
@@ -194,6 +197,7 @@ export const routes = {
     tag: "SSO provider",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [...parameters, idempotencyParameter],
     responses: standardResponses(
       {},

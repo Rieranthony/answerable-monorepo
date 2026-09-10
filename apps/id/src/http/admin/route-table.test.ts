@@ -56,6 +56,7 @@ test("registerRoute describes, authorises and handles a route", async () => {
     platformScope: "platform:read",
     orgScope: "org:read",
     kind: "read",
+    freshAuthentication: false,
     responses: { 200: { description: "OK" } },
     parameters: [
       {

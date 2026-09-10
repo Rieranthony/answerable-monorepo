@@ -146,7 +146,26 @@ async function ownGrantInput() {
 }
 
 test("native session records the accepted account UUID and leaves absent upstream freshness unknown", async () => {
-  const session = await currentSession();
+  fixture.issuer.enqueue({
+    sub: "tenantAdmin-subject",
+    email: "tenantadmin@tenant.example.com",
+    email_verified: true,
+  });
+  await signInThroughIdp(app, {
+    providerId: "tenant",
+    callbackURL: `${fixture.trustedOrigin}/callback`,
+  });
+  const session = (
+    await fixture.db
+      .select()
+      .from(sessions)
+      .where(
+        and(
+          eq(sessions.userId, fixture.principals.tenantAdmin.userId),
+          sql`${sessions.upstreamAuthTime} is null`,
+        ),
+      )
+  )[0]!;
   const [account] = await fixture.db
     .select()
     .from(accounts)
@@ -596,6 +615,7 @@ test("same-key human replay rechecks current SSO after middleware admission", as
     sub: "tenantAdmin-subject",
     email: "tenantadmin@tenant.example.com",
     email_verified: true,
+    auth_time: Math.floor(Date.now() / 1000),
   });
   const fresh = await signInThroughIdp(app, {
     providerId: "tenant",

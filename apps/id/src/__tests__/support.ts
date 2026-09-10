@@ -84,6 +84,12 @@ export function stubAuth(): Auth {
           },
         },
         paths: {
+          "/sso/reauthenticate": {
+            post: { responses: { "200": { description: "OK" } } },
+          },
+          "/sso/link": {
+            post: { responses: { "200": { description: "OK" } } },
+          },
           "/ok": {
             get: {
               operationId: "betterAuthOk",

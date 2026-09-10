@@ -130,6 +130,7 @@ export async function buildPublicOpenApiDocument(input: {
           operationId: route.operationId,
           summary: route.summary,
           tags: [route.tag],
+          ...(route.security ? { security: route.security } : {}),
           ...(route.description !== undefined
             ? { description: route.description }
             : {}),

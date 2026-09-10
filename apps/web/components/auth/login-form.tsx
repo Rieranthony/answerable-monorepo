@@ -1,6 +1,7 @@
 "use client"
 
 import { type FormEvent, useEffect, useRef, useState } from "react"
+import Link from "next/link"
 
 import { Button } from "@answerable/ui/components/button"
 import { Input } from "@answerable/ui/components/input"
@@ -117,6 +118,11 @@ export function LoginForm({ route, oauthQuery }: LoginFormProps) {
           Signed in
         </h1>
         <p className="mt-2 text-sm/6">Signed in as {sessionEmail}</p>
+        <p className="mt-4 text-sm/6">
+          <Link href="/security" className="underline underline-offset-4">
+            Verify sign-in or connect a work account
+          </Link>
+        </p>
         {oauthQuery && (
           <p className="text-muted-foreground mt-2 text-sm/6">
             Returning you to the app…

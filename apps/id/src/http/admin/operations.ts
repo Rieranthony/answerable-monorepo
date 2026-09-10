@@ -42,6 +42,7 @@ export const routes = {
     tag: "Operations",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     open: true,
     scopeAlternatives: ownOperationScopes,
     description:
@@ -57,6 +58,7 @@ export const routes = {
     tag: "Operations",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     description:
       "Read a committed operation with platform audit authority. Returns its outcome and result reference without request fingerprints, replay keys or secrets. not_found means no committed operation exists; this does not prove that a concurrent request is not running. All 46 administrative mutations create journal records. Use getMyOperationStatus to inspect only your own receipts without platform audit access.",
     parameters: [pathParameter("operationId", "uuid")],
@@ -71,6 +73,7 @@ export const routes = {
     platformScope: "platform:read",
     orgScope: "org:read",
     kind: "read",
+    freshAuthentication: false,
     description:
       "Read a committed operation in this organisation. Tenant callers can read only their own operations; platform readers can audit every actor in the organisation. Missing, foreign-actor and foreign-tenant operations all return not_found. Only result references are returned, including after the referenced entity is erased. Tenant-scoped member mutations create records here. Platform-scoped client, resource, domain, organisation, SSO and group commands use the platform operation-status route.",
     parameters: [

@@ -118,12 +118,14 @@ export async function readClientForPolicy(
   const [row] = await publicClientQuery(tx, clientId);
   return row ?? null;
 }
-export function lockClientForCommand(
+export async function lockClientForCommand(
   context: PlatformWriteContext,
   clientId: string,
 ) {
   const { tx } = requirePlatformWriteContext(context);
-  return lockClient(tx, clientId);
+  const row = await lockClient(tx, clientId);
+  await context.revalidate();
+  return row;
 }
 /** Client registration can be shared; this existence check grants no permission. */
 export async function findClientForAccess(

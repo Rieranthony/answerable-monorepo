@@ -70,6 +70,10 @@ The code arrives on the error page as `?error=<code>`.
 | `authentication_origin_missing` | Sign-in could not retain its verified company authentication.                                                           | Start sign-in again. If it repeats, contact your administrator; no session was created.                  |
 | `authentication_origin_mismatch` | The verified company account did not match the user selected for the session. | Start sign-in again. If it repeats, contact your administrator; no session was created. |
 | `invalid_auth_time` | The signed upstream token supplied an invalid or future authentication time. | Ask your identity-provider administrator to check its `auth_time` claim and clock. |
+| `reauthentication_required` | Fresh upstream evidence is missing, too old or predates the requested verification. | Use [verification](#verify-your-sign-in), then retry the original action. No session-time fallback is available. |
+| `identity_flow_invalid` | The verification expired, was already consumed, used another browser session or no longer matches current authority. | Start again from Account security in the same browser. |
+| `authentication_identity_mismatch` | Reauthentication returned a different upstream identity. | Start again and choose the same work account. |
+| `membership_revoked` | The target membership is revoked, deleted or outside its validity window. | Ask the organisation administrator; linking cannot restore membership. |
 | `organization_disabled`         | Sign-in has been paused for your organisation.                                                                          | Ask your IT team for help.                                                                               |
 | `directory_mismatch`            | The account belongs to a different company directory.                                                                   | Use the work account provided by your organisation.                                                      |
 | `guest_account`                 | The account is a guest in your organisation's directory.                                                                | Use a member account or ask your IT team for help.                                                       |
@@ -78,7 +82,7 @@ The code arrives on the error page as `?error=<code>`.
 | `domain_not_allowed`            | The email domain is not enabled for Answerable ID.                                                                      | Ask your IT team or use another work email.                                                              |
 | `hosted_domain_mismatch`        | The account is managed by a different organisation.                                                                     | Use your company account.                                                                                |
 | `user_disabled`                 | The Answerable ID account is disabled.                                                                                  | Ask your IT team for help.                                                                               |
-| `identity_conflict`             | The company account is connected to another Answerable ID account.                                                      | Ask your IT team for help.                                                                               |
+| `identity_conflict`             | The company identity is already connected or reserved, including an imported identity. | Use its existing sign-in or ask your IT team. Linking never transfers an account. |
 | `email_conflict`                | The email address belongs to another Answerable ID account.                                                             | Ask your IT team for help.                                                                               |
 
 **Unexpected sign-in failure.** HTTP 500 with `code: "authentication_unavailable"` means the authentication handler encountered an unexpected failure. It returns no underlying exception details. Start sign-in again; if it continues to fail, contact Answerable staff. This is an HTTP JSON response, not a redirect error code.
@@ -91,11 +95,45 @@ Sessions use cookies. Browser calls from another origin need `credentials: "incl
 
 **Provider changes.** A session can remain open after SSO configuration changes, but its earlier authentication cannot authorise new tenant grants or administration. Sign in again through the current provider. An unchanged configuration save preserves authority. Deleted accounts, users, organisations and memberships cannot regain authority through sign-in.
 
-**Authentication time.** When the provider supplies a valid signed `auth_time`, Answerable ID stores it separately from session creation. An absent claim stays unknown. No sensitive-command freshness duration is enforced yet; see [the completion plan](/docs/id#today-and-next). Deliberately linking independently verified company identities is also not yet available.
+**Authentication time.** When the provider supplies a valid signed `auth_time`, Answerable ID stores it separately from session creation. An absent claim stays unknown. [Sensitive human commands](/docs/id/manage#fresh-authentication) and identity linking require verified upstream authentication within five minutes. Ordinary browsing keeps the normal session lifetime.
 
 Signing out ends the session.
 
 Sign-in for apps through OIDC is [not yet available](/docs/id#today-and-next).
+
+## Verify your sign-in
+
+```bash
+curl -b cookies.txt -c cookies.txt \
+  https://id.answerable.org/auth/sso/reauthenticate \
+  -H 'Origin: https://answerable.org' \
+  -H 'Content-Type: application/json' \
+  --data '{"callbackURL":"https://answerable.org/security","errorCallbackURL":"https://answerable.org/security"}'
+```
+
+**Browser journey.** Open [Account security](/security) and choose **Verify sign-in**. The API example describes the same request; follow its returned `url` using the browser that holds the initiating session and state cookies. Do not copy only the URL into another browser.
+
+**Upstream proof.** The request uses OIDC `prompt=login` and `max_age=0`. The returned signed `auth_time` must be valid, fresh and at or after the request began. The verified account, user and current provider must match the initiating identity. Missing evidence fails; a newly created broker session does not substitute for upstream authentication.
+
+**Retry.** After verification, return to your action and retry the same input and `Idempotency-Key`. A current account can reauthenticate after its provider configuration revision changes. A deleted or replaced provider binding cannot be adopted by this flow.
+
+## Connect another work account
+
+```bash
+curl -b cookies.txt -c cookies.txt \
+  https://id.answerable.org/auth/sso/link \
+  -H 'Origin: https://answerable.org' \
+  -H 'Content-Type: application/json' \
+  --data '{"providerId":"other-company","callbackURL":"https://answerable.org/security","errorCallbackURL":"https://answerable.org/security"}'
+```
+
+**Two proofs.** Verify your current sign-in first. Then use **Connect another work account** on [Account security](/security), entering the provider ID supplied by the target organisation’s administrator. Sign in independently through that provider. Both identities must still be eligible when the callback commits; the initiating evidence must remain within five minutes.
+
+**One Answerable identity.** A previously unowned upstream identity is bound to your existing global user UUID. Your profile stays unchanged. An absent target membership is created; a revoked, deleted or ineffective membership is rejected. Existing permissions are still required to administer the target organisation.
+
+**No transfer or merge.** An owned or imported identity cannot be moved from another user. Matching email addresses establish no ownership. Replays and concurrent competing links cannot create a second binding. Binding, any new membership and the required `identity.linked` audit fact commit in the native session transaction.
+
+**Expiry and errors.** Each purpose expires after five minutes and can be consumed once, in the initiating browser session. A failed callback requires a new start. Rejected initiation and invalid purpose claims return HTTP JSON errors; other callback failures use `?error=` on the supplied error page. See the [error table](#when-sign-in-is-refused). No unlinking, account transfer or generic recovery journey is available.
 
 ## Machine access
 

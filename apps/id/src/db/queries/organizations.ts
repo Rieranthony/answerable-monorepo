@@ -124,12 +124,14 @@ export async function organizationExistsForHistory(
   return row !== undefined;
 }
 
-export function lockOrganizationForCommand(
+export async function lockOrganizationForCommand(
   context: PlatformWriteContext,
   organizationId: string,
 ) {
   const { tx } = requirePlatformWriteContext(context);
-  return lockOrganization(tx, organizationId);
+  const row = await lockOrganization(tx, organizationId);
+  await context.revalidate();
+  return row;
 }
 
 export async function createOrganization(

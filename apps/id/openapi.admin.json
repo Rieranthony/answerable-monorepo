@@ -489,6 +489,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read",
           "org": "org:read"
@@ -1209,6 +1210,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -1589,6 +1591,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read",
           "org": "org:read"
@@ -2213,6 +2216,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -2576,6 +2580,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -2905,6 +2910,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scope-alternatives": {
           "platform": [
             "platform:read",
@@ -3244,6 +3250,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read"
         }
@@ -3582,6 +3589,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read",
           "org": "org:read"
@@ -4093,6 +4101,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read",
           "org": "org:users"
@@ -4446,6 +4455,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read"
         }
@@ -4718,6 +4728,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {}
       }
     },
@@ -5116,6 +5127,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read"
         }
@@ -5539,6 +5551,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read"
         }
@@ -5906,6 +5919,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "erase",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -6339,6 +6353,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:users"
         }
@@ -6772,6 +6787,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:users"
         }
@@ -7205,6 +7221,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:users"
         }
@@ -7562,6 +7579,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read"
         }
@@ -7933,6 +7951,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:users"
         }
@@ -8298,6 +8317,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:users"
         }
@@ -8715,6 +8735,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read"
         }
@@ -9179,6 +9200,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read",
           "org": "org:read"
@@ -9734,6 +9756,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -10128,6 +10151,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read",
           "org": "org:read"
@@ -10761,6 +10785,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -11124,6 +11149,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -11616,6 +11642,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -12108,6 +12135,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -13919,6 +13947,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read",
           "org": "org:users"
@@ -14713,6 +14742,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read",
           "org": "org:read"
@@ -15091,6 +15121,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read",
           "org": "org:read"
@@ -15546,6 +15577,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -15877,6 +15909,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read",
           "org": "org:read"
@@ -16430,6 +16463,11 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": {
+          "unlessOnly": [
+            "name"
+          ]
+        },
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -16806,6 +16844,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "erase",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -17235,6 +17274,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -17664,6 +17704,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -18027,6 +18068,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read",
           "org": "org:read"
@@ -18377,6 +18419,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read",
           "org": "org:read"
@@ -19066,6 +19109,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -19438,6 +19482,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -19787,6 +19832,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:users",
           "org": "org:users"
@@ -20313,6 +20359,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:users",
           "org": "org:users"
@@ -20745,6 +20792,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read",
           "org": "org:read"
@@ -21165,6 +21213,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read",
           "org": "org:read"
@@ -21815,6 +21864,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:users",
           "org": "org:users"
@@ -22179,6 +22229,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:users",
           "org": "org:users"
@@ -22583,6 +22634,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read"
         }
@@ -23147,6 +23199,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -23588,6 +23641,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read"
         }
@@ -24209,6 +24263,11 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": {
+          "unlessOnly": [
+            "name"
+          ]
+        },
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -24576,6 +24635,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "erase",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -25068,6 +25128,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -25560,6 +25621,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -25926,6 +25988,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "erase",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -26549,6 +26612,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read"
         }
@@ -27444,6 +27508,13 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": {
+          "unlessOnly": [
+            "name",
+            "uri",
+            "contacts"
+          ]
+        },
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -28042,6 +28113,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read"
         }
@@ -28822,6 +28894,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -29500,6 +29573,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -30178,6 +30252,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -30552,6 +30627,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -31262,6 +31338,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -31679,6 +31756,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -32042,6 +32120,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -32407,6 +32486,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -32758,6 +32838,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read",
           "org": "org:read"
@@ -33184,6 +33265,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -33596,6 +33678,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -34008,6 +34091,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -34391,6 +34475,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read"
         }
@@ -34750,6 +34835,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read",
           "org": "org:read"
@@ -35523,6 +35609,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -35877,6 +35964,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -36480,6 +36568,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read",
           "org": "org:read"
@@ -36831,6 +36920,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read"
         }
@@ -37261,6 +37351,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -37603,6 +37694,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read",
           "org": "org:read"
@@ -38177,6 +38269,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -38544,6 +38637,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "erase",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -38984,6 +39078,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -39424,6 +39519,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "write",
+        "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
         }
@@ -39892,6 +39988,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read"
         }
@@ -40352,6 +40449,7 @@
         ],
         "x-tier": "platform",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read"
         }
@@ -40850,6 +40948,7 @@
         ],
         "x-tier": "tenant",
         "x-kind": "read",
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read",
           "org": "org:read"

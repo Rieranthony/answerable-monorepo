@@ -15,5 +15,6 @@ export type AppEnvironment = {
     bearerClaims?: BearerClaims;
     tier?: Tier;
     operationId?: string;
+    freshAuthentication?: boolean | { unlessOnly: readonly string[] };
   };
 };

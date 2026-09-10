@@ -136,6 +136,7 @@ export async function lockUser(
     .from(users)
     .where(and(sql`${users.deletedAt} is null`, eq(users.id, userId)))
     .for("update");
+  await context.revalidate();
   return row ?? null;
 }
 

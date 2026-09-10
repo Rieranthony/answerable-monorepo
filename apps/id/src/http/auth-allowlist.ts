@@ -23,9 +23,26 @@ export type PublicAuthRoute = {
   tag: "Sign-in" | "Session" | "Token";
   description?: string;
   requestBody?: RequestBodyObject;
+  security?: Array<Record<string, string[]>>;
 };
 
 export const publicAuthRoutes: ReadonlyArray<PublicAuthRoute> = [
+  {
+    method: "POST",
+    path: "/auth/sso/reauthenticate",
+    operationId: "reauthenticateSso",
+    security: [{ apiKeyCookie: [] }],
+    summary: "Reauthenticate the current work identity",
+    tag: "Sign-in",
+  },
+  {
+    method: "POST",
+    path: "/auth/sso/link",
+    operationId: "linkSso",
+    security: [{ apiKeyCookie: [] }],
+    summary: "Bind another independently verified work identity",
+    tag: "Sign-in",
+  },
   {
     method: "POST",
     path: "/auth/oauth2/token",

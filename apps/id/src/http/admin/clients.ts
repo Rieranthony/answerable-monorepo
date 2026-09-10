@@ -135,6 +135,7 @@ export const routes = {
     tag: "Clients",
     platformScope: "platform:write",
     kind: "erase",
+    freshAuthentication: true,
     parameters: [
       ...parameters,
       idempotencyParameter,
@@ -158,6 +159,7 @@ export const routes = {
     tag: "Clients",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     responses: standardResponses(
       {},
       {
@@ -184,6 +186,7 @@ export const routes = {
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [idempotencyParameter],
     requestBody: body(createSchema),
     example: {
@@ -220,6 +223,7 @@ export const routes = {
     tag: "Clients",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     parameters,
     responses: standardResponses(
       {},
@@ -245,6 +249,7 @@ export const routes = {
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: { unlessOnly: ["name", "uri", "contacts"] },
     parameters: [...parameters, idempotencyParameter, revisionParameter],
     requestBody: body(patchSchema),
     example: { body: { name: "Renamed" } },
@@ -270,6 +275,7 @@ export const routes = {
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [...parameters, idempotencyParameter],
     responses: standardResponses(
       {},
@@ -293,6 +299,7 @@ export const routes = {
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [...parameters, idempotencyParameter],
     responses: standardResponses(
       {},
@@ -316,6 +323,7 @@ export const routes = {
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [...parameters, idempotencyParameter],
     responses: standardResponses(
       {},
@@ -342,6 +350,7 @@ export const routes = {
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [...parameters, idempotencyParameter],
     requestBody: body(ownerSchema),
     example: {
@@ -369,6 +378,7 @@ export const routes = {
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [...resourceParameters, idempotencyParameter],
     responses: standardResponses(
       {},
@@ -397,6 +407,7 @@ export const routes = {
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [...resourceParameters, idempotencyParameter],
     responses: standardResponses(
       {},

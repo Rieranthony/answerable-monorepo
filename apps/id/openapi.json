@@ -2206,6 +2206,336 @@
         "summary": "Complete sign-in after the identity provider redirects back"
       }
     },
+    "/auth/sso/link": {
+      "post": {
+        "tags": [
+          "Sign-in"
+        ],
+        "description": "Requires a current browser session. Requests prompt=login and max_age=0; verified auth_time and exact current identities are checked on return. Follow the returned URL with the same browser cookies.",
+        "operationId": "linkSso",
+        "security": [
+          {
+            "apiKeyCookie": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "callbackURL": {
+                    "type": "string"
+                  },
+                  "errorCallbackURL": {
+                    "type": "string"
+                  },
+                  "providerId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "callbackURL",
+                  "providerId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authorization URL generated successfully for SSO sign-in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "The authorization URL to redirect the user to for SSO sign-in"
+                    },
+                    "redirect": {
+                      "type": "boolean",
+                      "description": "Indicates that the client should redirect to the provided URL",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "url",
+                    "redirect"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ]
+                }
+              }
+            },
+            "description": "Bad Request. Usually due to missing parameters, or invalid parameters."
+          },
+          "401": {
+            "description": "A current browser session is required."
+          },
+          "403": {
+            "description": "identity_flow_invalid: current identity, provider or membership is unavailable. reauthentication_required: verify the initiating identity before linking. membership_revoked: target membership is ineffective. Callback refusals also include identity_conflict and authentication_identity_mismatch; start again after correcting the cause."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not Found. The requested resource was not found."
+          },
+          "408": {
+            "description": "The request body did not finish within five seconds. Send a complete body in a new request. This is a transport response, not a problem-details response."
+          },
+          "413": {
+            "description": "The request body exceeds 262144 bytes (256 KiB). Reduce the payload. This transport response may precede application headers and is not a problem-details response."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Too Many Requests. You have exceeded the rate limit. Try again later."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Internal Server Error. This is a problem with the server that you cannot fix."
+          },
+          "503": {
+            "description": "Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
+            "headers": {
+              "Retry-After": {
+                "description": "Minimum delay in seconds before retrying.",
+                "schema": {
+                  "type": "string",
+                  "example": "1"
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "Service Busy"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Bind another independently verified work identity"
+      }
+    },
+    "/auth/sso/reauthenticate": {
+      "post": {
+        "tags": [
+          "Sign-in"
+        ],
+        "description": "Requires a current browser session. Requests prompt=login and max_age=0; verified auth_time and exact current identities are checked on return. Follow the returned URL with the same browser cookies.",
+        "operationId": "reauthenticateSso",
+        "security": [
+          {
+            "apiKeyCookie": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "callbackURL": {
+                    "type": "string"
+                  },
+                  "errorCallbackURL": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "callbackURL"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authorization URL generated successfully for SSO sign-in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "The authorization URL to redirect the user to for SSO sign-in"
+                    },
+                    "redirect": {
+                      "type": "boolean",
+                      "description": "Indicates that the client should redirect to the provided URL",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "url",
+                    "redirect"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ]
+                }
+              }
+            },
+            "description": "Bad Request. Usually due to missing parameters, or invalid parameters."
+          },
+          "401": {
+            "description": "A current browser session is required."
+          },
+          "403": {
+            "description": "identity_flow_invalid: current identity, provider or membership is unavailable. reauthentication_required: verify the initiating identity before linking. membership_revoked: target membership is ineffective. Callback refusals also include identity_conflict and authentication_identity_mismatch; start again after correcting the cause."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not Found. The requested resource was not found."
+          },
+          "408": {
+            "description": "The request body did not finish within five seconds. Send a complete body in a new request. This is a transport response, not a problem-details response."
+          },
+          "413": {
+            "description": "The request body exceeds 262144 bytes (256 KiB). Reduce the payload. This transport response may precede application headers and is not a problem-details response."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Too Many Requests. You have exceeded the rate limit. Try again later."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Internal Server Error. This is a problem with the server that you cannot fix."
+          },
+          "503": {
+            "description": "Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
+            "headers": {
+              "Retry-After": {
+                "description": "Minimum delay in seconds before retrying.",
+                "schema": {
+                  "type": "string",
+                  "example": "1"
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "Service Busy"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Reauthenticate the current work identity"
+      }
+    },
     "/healthz": {
       "get": {
         "operationId": "getHealth",

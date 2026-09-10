@@ -36,6 +36,7 @@ export const routes = {
     tag: "Platform",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     responses: standardResponses(
       {},
       {

@@ -25,6 +25,8 @@ curl https://id.answerable.org/auth/oauth2/token \
 
 ## Scopes
 
+See [fresh authentication](#fresh-authentication) for the additional requirement on sensitive human commands.
+
 | Scope            | Allows                                                                                               |
 | ---------------- | ---------------------------------------------------------------------------------------------------- |
 | `platform:read`  | Staff: read across organisations, including users, sessions and audit events.                        |
@@ -35,6 +37,21 @@ curl https://id.answerable.org/auth/oauth2/token \
 | `org:write`      | Reserved for organisation configuration; self-service writes: [Not yet.](/docs/id#today-and-next)    |
 
 **Route tiers.** `x-tier: platform` means staff only; `x-tier: tenant` permits an organisation to reach the route for itself. Scopes are separate: request each scope you need. Every write is audited.
+
+## Fresh authentication
+
+**Five minutes.** Sensitive human commands require a verified upstream `auth_time` within the last five minutes. Missing evidence returns `403 reauthentication_required`, with `reauthenticationPath: /auth/sso/reauthenticate` and `maxAge: 300`. Use [Verify your sign-in](/docs/id/sign-in#verify-your-sign-in), then retry the original key and input.
+
+| Command | Fresh upstream authentication |
+| --- | --- |
+| Domain, SSO, credentials, client/resource security configuration, capabilities, assignments, memberships, account/session lifecycle and deletion | Required |
+| Reads and organisation `name`, `logo` or `metadata` edits | Not required |
+| Client edits containing only `name`, `uri` or `contacts`; resource/group edits containing only `name` | Not required |
+| Machine and root requests | Existing credential and current-authority contract |
+
+**Metadata.** Each route declares `x-fresh-authentication`: `true`, `false`, or `unlessOnly` listing display fields. A mixed display/security patch requires freshness. The requirement is server policy and cannot be supplied or weakened by a request.
+
+**Waits and replay.** Authority and freshness are checked after policy locks and before execution or journal replay. If freshness expires during target-row or audit waits, the complete mutation rolls back. Reauthentication preserves the global actor identity, so the original key can recover the same authorised receipt without another mutation. Ordinary browsing keeps its existing session lifetime.
 
 ## Read your authority
 

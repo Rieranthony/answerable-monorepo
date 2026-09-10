@@ -89,6 +89,7 @@ export function adminRoute(route: AdminRoute) {
     security: [{ cookieAuth: [] }, { bearerAuth: [] }],
     "x-tier": tierOf(route),
     "x-kind": route.kind,
+    "x-fresh-authentication": route.freshAuthentication,
     "x-scope-alternatives": route.scopeAlternatives,
     "x-scopes": route.open
       ? {}

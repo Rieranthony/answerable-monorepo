@@ -21,9 +21,29 @@ import type { Environment } from "./env.ts";
 import { createId } from "./lib/id.ts";
 import { createSsoOriginBoundary } from "./auth/sso-origin.ts";
 import { upstreamTokenStorage } from "./auth/upstream-token-storage.ts";
+import { createVerifiedSso } from "./auth/verified-sso.ts";
 
 export function createAuth(db: Database, environment: Environment) {
-  const ssoOrigin = createSsoOriginBoundary();
+  const verifiedSso = createVerifiedSso(db);
+  const ssoOrigin = createSsoOriginBoundary(verifiedSso);
+  const nativeSso = sso({
+    schema: {
+      ssoProvider: {
+        additionalFields: {
+          revision: {
+            type: "number",
+            required: false,
+            input: false,
+            returned: false,
+          },
+        },
+      },
+    },
+    redirectURI: "/sso/callback",
+    providersLimit: 0,
+    organizationProvisioning: { defaultRole: "member" },
+    resolveUser: ssoOrigin.resolveUser,
+  });
   const auth = betterAuth({
     appName: "Answerable ID",
     onAPIError: {
@@ -55,7 +75,11 @@ export function createAuth(db: Database, environment: Environment) {
     basePath: "/auth",
     secret: environment.betterAuthSecret,
     secrets: environment.betterAuthSecrets,
-    database: authDatabaseAdapter(db, ssoOrigin.observeProviders),
+    database: authDatabaseAdapter(
+      db,
+      ssoOrigin.observeProviders,
+      verifiedSso.beforeTransaction,
+    ),
     databaseHooks: {
       session: {
         ...sessionAuditHooks(db),
@@ -244,24 +268,8 @@ export function createAuth(db: Database, environment: Environment) {
         jwt: { issuer: environment.betterAuthUrl },
         schema: { jwks: { modelName: "jwk" } },
       }),
-      sso({
-        schema: {
-          ssoProvider: {
-            additionalFields: {
-              revision: {
-                type: "number",
-                required: false,
-                input: false,
-                returned: false,
-              },
-            },
-          },
-        },
-        redirectURI: "/sso/callback",
-        providersLimit: 0,
-        organizationProvisioning: { defaultRole: "member" },
-        resolveUser: ssoOrigin.resolveUser,
-      }),
+      nativeSso,
+      verifiedSso.plugin(nativeSso),
       // OIDC provider for our apps and OAuth 2.1 authorization server for MCP
       // servers. The login and consent pages arrive with the federation and
       // provider milestones; until then no OAuth route is allowlisted.
@@ -280,7 +288,8 @@ export function createAuth(db: Database, environment: Environment) {
   });
   return {
     ...auth,
-    handler: (request: Request) => ssoOrigin.run(() => auth.handler(request)),
+    handler: (request: Request) =>
+      verifiedSso.run(() => ssoOrigin.run(() => auth.handler(request))),
   };
 }
 

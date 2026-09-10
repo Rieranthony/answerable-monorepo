@@ -91,6 +91,7 @@ export const routes = {
     tag: "Audit",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     parameters: [pathParameter("userId", "uuid")],
     responses: { ...responses, ...problemResponses(404) },
   },
@@ -104,6 +105,7 @@ export const routes = {
     tag: "Audit",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     responses,
   },
   listOrganizationAuditEvents: {
@@ -117,6 +119,7 @@ export const routes = {
     platformScope: "platform:read",
     orgScope: "org:read",
     kind: "read",
+    freshAuthentication: false,
     responses: { ...responses, ...problemResponses(404) },
     parameters: [pathParameter("organizationId", "uuid")],
   },

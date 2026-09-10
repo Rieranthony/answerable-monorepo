@@ -111,6 +111,7 @@ export async function findSsoProviderForCommand(
 ) {
   const { tx } = requirePlatformWriteContext(context);
   const [provider] = await providerQuery(tx, organizationId).for("update");
+  await context.revalidate();
   return provider ?? null;
 }
 

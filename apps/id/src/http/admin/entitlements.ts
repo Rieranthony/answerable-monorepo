@@ -82,6 +82,7 @@ export const routes = {
     tag: "Entitlements",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     responses: standardResponses(
       {},
       {
@@ -109,6 +110,7 @@ export const routes = {
     tag: "Entitlements",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     parameters: ["organizationId"].map((name) => pathParameter(name, "uuid")),
     orgScope: "org:read",
     responses: standardResponses(
@@ -129,6 +131,7 @@ export const routes = {
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [pathParameter("organizationId", "uuid"), idempotencyParameter],
     requestBody: body(createSchema),
     example: {
@@ -156,6 +159,7 @@ export const routes = {
     tag: "Entitlements",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     parameters: ["organizationId", "entitlementId"].map((name) =>
       pathParameter(name, "uuid"),
     ),
@@ -182,6 +186,7 @@ export const routes = {
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [
       ...["organizationId", "entitlementId"].map((name) =>
         pathParameter(name, "uuid"),
@@ -213,6 +218,7 @@ export const routes = {
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [
       ...["organizationId", "entitlementId"].map((name) =>
         pathParameter(name, "uuid"),
@@ -241,6 +247,7 @@ export const routes = {
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [
       ...["organizationId", "entitlementId"].map((name) =>
         pathParameter(name, "uuid"),
@@ -269,6 +276,7 @@ export const routes = {
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [
       ...["organizationId", "entitlementId"].map((name) =>
         pathParameter(name, "uuid"),

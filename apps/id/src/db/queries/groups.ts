@@ -117,6 +117,7 @@ export async function findGroupForCommand(
 ) {
   const { tx } = requirePlatformWriteContext(context);
   const [row] = await findGroupQuery(tx, organizationId, groupId).for("update");
+  await context.revalidate();
   return row ?? null;
 }
 export async function updateGroup(
@@ -212,6 +213,7 @@ export async function readGroupPolicyForCommand(
     )
     .orderBy(entitlements.id)
     .for("share");
+  await context.revalidate();
   return { assignments, entitlements: policy };
 }
 
@@ -347,6 +349,7 @@ export async function findGroupMemberForCommand(
     groupId,
     memberId,
   ).for("update");
+  await context.revalidate();
   return row ?? null;
 }
 export async function upsertGroupMember(

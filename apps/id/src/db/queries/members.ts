@@ -242,6 +242,7 @@ export async function findMemberConfiguration(
   const [row] = await (context.access === "command"
     ? query.for("update")
     : query);
+  if (context.access === "command") await context.revalidate();
   return row ?? null;
 }
 

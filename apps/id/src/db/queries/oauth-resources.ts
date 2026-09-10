@@ -66,19 +66,23 @@ export function readResource(context: PlatformReadContext, identifier: string) {
   const { tx } = requirePlatformReadContext(context);
   return lockResource(tx, identifier, "share");
 }
-export function readResourceForPolicy(
+export async function readResourceForPolicy(
   context: PlatformWriteContext,
   identifier: string,
 ) {
   const { tx } = requirePlatformWriteContext(context);
-  return lockResource(tx, identifier, "share");
+  const row = await lockResource(tx, identifier, "share");
+  await context.revalidate();
+  return row;
 }
-export function lockResourceForCommand(
+export async function lockResourceForCommand(
   context: PlatformWriteContext,
   identifier: string,
 ) {
   const { tx } = requirePlatformWriteContext(context);
-  return lockResource(tx, identifier);
+  const row = await lockResource(tx, identifier);
+  await context.revalidate();
+  return row;
 }
 
 /** Shared resources and this tenant's private resources only; registration is not permission. */

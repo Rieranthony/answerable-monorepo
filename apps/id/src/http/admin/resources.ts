@@ -101,6 +101,7 @@ export const routes = {
     tag: "Resources",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     responses: standardResponses(
       {},
       {
@@ -127,6 +128,7 @@ export const routes = {
     tag: "Resources",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [idempotencyParameter],
     requestBody: body(createSchema),
     example: {
@@ -158,6 +160,7 @@ export const routes = {
     tag: "Resources",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     parameters,
     responses: standardResponses(
       {},
@@ -183,6 +186,7 @@ export const routes = {
     tag: "Resources",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: { unlessOnly: ["name"] },
     parameters: [...parameters, idempotencyParameter, revisionParameter],
     requestBody: body(patchSchema),
     example: { body: { name: "Renamed" } },
@@ -208,6 +212,7 @@ export const routes = {
     tag: "Resources",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [...parameters, idempotencyParameter],
     responses: standardResponses(
       {},
@@ -231,6 +236,7 @@ export const routes = {
     tag: "Resources",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [...parameters, idempotencyParameter],
     responses: standardResponses(
       {},
@@ -254,6 +260,7 @@ export const routes = {
     tag: "Resources",
     platformScope: "platform:write",
     kind: "erase",
+    freshAuthentication: true,
     parameters: [
       ...parameters,
       idempotencyParameter,

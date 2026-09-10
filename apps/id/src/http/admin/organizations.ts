@@ -125,6 +125,7 @@ export const routes = {
     platformScope: "platform:read",
     orgScope: "org:read",
     kind: "read",
+    freshAuthentication: false,
     parameters,
     responses: standardResponses(
       { orgScope: "org:read" },
@@ -147,6 +148,7 @@ export const routes = {
     tag: "Organizations",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     responses: standardResponses(
       {},
       {
@@ -173,6 +175,7 @@ export const routes = {
     tag: "Organizations",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [idempotencyParameter],
     requestBody: body(createSchema),
     example: { body: { slug: "acme", name: "Acme" } },
@@ -199,6 +202,7 @@ export const routes = {
     platformScope: "platform:read",
     orgScope: "org:read",
     kind: "read",
+    freshAuthentication: false,
     parameters,
     responses: standardResponses(
       { orgScope: "org:read" },
@@ -218,6 +222,7 @@ export const routes = {
     tag: "Organizations",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: false,
     parameters: [...parameters, idempotencyParameter, revisionParameter],
     requestBody: body(patchSchema),
     example: { body: { name: "Acme Ltd" } },
@@ -242,6 +247,7 @@ export const routes = {
     tag: "Organizations",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [...parameters, idempotencyParameter],
     responses: standardResponses(
       {},
@@ -261,6 +267,7 @@ export const routes = {
     tag: "Organizations",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [...parameters, idempotencyParameter],
     responses: standardResponses(
       {},
@@ -280,6 +287,7 @@ export const routes = {
     tag: "Organizations",
     platformScope: "platform:write",
     kind: "erase",
+    freshAuthentication: true,
     parameters: [
       ...parameters,
       confirmQuery(eraseSchema.shape.confirm),

@@ -32,7 +32,12 @@ export type TenantAuthentication = Readonly<{
  */
 export async function tenantAuthentication(
   tx: Executor,
-  input: { userId: string; sessionId: string; organizationId: string },
+  input: {
+    userId: string;
+    sessionId: string;
+    organizationId: string;
+    reauthentication?: true;
+  },
 ): Promise<TenantAuthentication | null> {
   const origin = and(
     eq(sessions.id, input.sessionId),
@@ -80,7 +85,9 @@ export async function tenantAuthentication(
       ssoProviders,
       and(
         eq(ssoProviders.id, sessions.authenticationProviderId),
-        eq(ssoProviders.revision, sessions.authenticationProviderRevision),
+        input.reauthentication
+          ? undefined
+          : eq(ssoProviders.revision, sessions.authenticationProviderRevision),
         eq(ssoProviders.issuer, accounts.issuer),
         eq(ssoProviders.providerId, accounts.providerId),
       ),

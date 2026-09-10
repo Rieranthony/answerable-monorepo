@@ -126,6 +126,7 @@ export async function findEntitlementForCommand(
     organizationId,
     entitlementId,
   ).for("update");
+  await context.revalidate();
   return row ?? null;
 }
 export async function updateEntitlement(
@@ -187,7 +188,7 @@ export async function deleteEntitlement(
 
 /** The command holds the organisation lock. Capture current source membership,
  * including ineligible rows, and order parent erasure through audit commit. */
-export function readEntitlementAudience(
+export async function readEntitlementAudience(
   context: PlatformWriteContext,
   organizationId: string,
   groupId: string | null,
@@ -203,7 +204,7 @@ export function readEntitlementAudience(
     validUntil: members.validUntil,
   };
   if (groupId !== null) {
-    return tx
+    const rows = await tx
       .select({
         ...membership,
         groupAssignment: {
@@ -232,8 +233,10 @@ export function readEntitlementAudience(
       )
       .orderBy(members.id)
       .for("share", { of: [members, groupMembers] });
+    await context.revalidate();
+    return rows;
   }
-  return tx
+  const rows = await tx
     .select({ ...membership, groupAssignment: sql<null>`null` })
     .from(members)
     .where(
@@ -244,6 +247,8 @@ export function readEntitlementAudience(
     )
     .orderBy(members.id)
     .for("share");
+  await context.revalidate();
+  return rows;
 }
 
 export function listAllEntitlements(

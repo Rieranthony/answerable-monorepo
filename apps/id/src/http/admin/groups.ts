@@ -96,6 +96,7 @@ export const routes = {
     tag: "Groups",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     parameters: ["organizationId"].map((name) => pathParameter(name, "uuid")),
     orgScope: "org:read",
     responses: standardResponses(
@@ -116,6 +117,7 @@ export const routes = {
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [
       ...["organizationId"].map((name) => pathParameter(name, "uuid")),
       idempotencyParameter,
@@ -144,6 +146,7 @@ export const routes = {
     tag: "Groups",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     parameters: ["organizationId", "groupId"].map((name) =>
       pathParameter(name, "uuid"),
     ),
@@ -170,6 +173,7 @@ export const routes = {
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: { unlessOnly: ["name"] },
     parameters: [
       ...["organizationId", "groupId"].map((name) =>
         pathParameter(name, "uuid"),
@@ -201,6 +205,7 @@ export const routes = {
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [
       ...["organizationId", "groupId"].map((name) =>
         pathParameter(name, "uuid"),
@@ -229,6 +234,7 @@ export const routes = {
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [
       ...["organizationId", "groupId"].map((name) =>
         pathParameter(name, "uuid"),
@@ -257,6 +263,7 @@ export const routes = {
     tag: "Groups",
     platformScope: "platform:write",
     kind: "erase",
+    freshAuthentication: true,
     parameters: [
       ...[
         ...["organizationId", "groupId"].map((name) =>
@@ -285,6 +292,7 @@ export const routes = {
     tag: "Groups",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     parameters: ["organizationId", "groupId"].map((name) =>
       pathParameter(name, "uuid"),
     ),
@@ -308,6 +316,7 @@ export const routes = {
     platformScope: "platform:read",
     orgScope: "org:read",
     kind: "read",
+    freshAuthentication: false,
     parameters: ["organizationId", "groupId", "memberId"].map((name) =>
       pathParameter(name, "uuid"),
     ),
@@ -333,6 +342,7 @@ export const routes = {
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [
       ...["organizationId", "groupId", "memberId"].map((name) =>
         pathParameter(name, "uuid"),
@@ -382,6 +392,7 @@ export const routes = {
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [
       ...["organizationId", "groupId", "memberId"].map((name) =>
         pathParameter(name, "uuid"),

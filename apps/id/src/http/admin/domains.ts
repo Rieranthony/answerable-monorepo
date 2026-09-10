@@ -54,6 +54,7 @@ export const routes = {
     tag: "Domains",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [...domainParameters, idempotencyParameter],
     responses: standardResponses(
       {},
@@ -73,6 +74,7 @@ export const routes = {
     tag: "Domains",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     parameters,
     orgScope: "org:read",
     responses: standardResponses(
@@ -101,6 +103,7 @@ export const routes = {
     tag: "Domains",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [...parameters, idempotencyParameter],
     requestBody: body(createSchema),
     example: { body: { domain: "acme.example.com" } },
@@ -126,6 +129,7 @@ export const routes = {
     tag: "Domains",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [...domainParameters, idempotencyParameter],
     responses: standardResponses(
       {},
@@ -149,6 +153,7 @@ export const routes = {
     tag: "Domains",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [...domainParameters, idempotencyParameter],
     responses: standardResponses(
       {},

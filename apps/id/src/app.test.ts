@@ -252,6 +252,8 @@ describe("unit: Hono application", () => {
       "/auth/sign-in/sso",
       "/auth/sign-out",
       "/auth/sso/callback",
+      "/auth/sso/link",
+      "/auth/sso/reauthenticate",
       "/healthz",
       "/readyz",
     ]);
@@ -269,6 +271,10 @@ describe("unit: Hono application", () => {
       summary: "Start sign-in through the organisation's identity provider",
       tags: ["Sign-in"],
     });
+    for (const path of ["/auth/sso/link", "/auth/sso/reauthenticate"])
+      expect(schema.paths[path]?.post).toMatchObject({
+        security: [{ apiKeyCookie: [] }],
+      });
     expect(schema.paths["/healthz"]?.get).toMatchObject({
       operationId: "getHealth",
       summary: "Liveness check",
