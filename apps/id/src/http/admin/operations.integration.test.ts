@@ -210,7 +210,7 @@ test("operation audit reads require authority current at transaction entry", asy
   }
 });
 
-test("losing platform authority downgrades receipt visibility to the current tenant actor", async () => {
+test("losing platform authority requires independent tenant SSO before own-receipt access", async () => {
   const { createEntitlement } =
     await import("../../__tests__/entitlement-queries.ts");
   const actor = fixture.principals.platformReader;
@@ -239,10 +239,7 @@ test("losing platform authority downgrades receipt visibility to the current ten
     resultReference: { type: "member", id: createId() },
   });
   try {
-    for (const [operationId, expected] of [
-      [id, 404],
-      [ownId, 200],
-    ] as const) {
+    for (const operationId of [id, ownId]) {
       const original = fixture.db.transaction.bind(fixture.db);
       fixture.db.transaction = afterBrokerRead(original, (async (
         ...args: Parameters<typeof original>
@@ -259,7 +256,7 @@ test("losing platform authority downgrades receipt visibility to the current ten
           `/organizations/${fixture.tenant.organizationId}/operations/${operationId}`,
           "platformReader",
         );
-        expect(response.status).toBe(expected);
+        expect(response.status).toBe(403);
         expect(response.headers.get("Cache-Control")).toBe("no-store");
       } finally {
         fixture.db.transaction = original;
@@ -268,6 +265,40 @@ test("losing platform authority downgrades receipt visibility to the current ten
           .set({ status: "active", revokedAt: null })
           .where(eq(members.id, actor.memberId));
       }
+    }
+    const { accounts } = await import("../../db/schema/index.ts");
+    const { signInThroughIdp } = await import("../../__tests__/federation.ts");
+    await fixture.db
+      .insert(accounts)
+      .values({
+        id: createId(),
+        userId: actor.userId,
+        issuer: fixture.issuer.origin,
+        providerId: "tenant",
+        accountId: "receipt-bound-tenant",
+      });
+    fixture.issuer.enqueue({
+      sub: "receipt-bound-tenant",
+      email: "receipt@tenant.example.com",
+      email_verified: true,
+    });
+    const signedIn = await signInThroughIdp(fixture.app, {
+      providerId: "tenant",
+      callbackURL: `${fixture.trustedOrigin}/callback`,
+    });
+    expect(signedIn.location).toBe(`${fixture.trustedOrigin}/callback`);
+    const cookie = signedIn.cookies
+      .map((value) => value.split(";", 1)[0])
+      .join("; ");
+    for (const [operationId, expected] of [
+      [id, 404],
+      [ownId, 200],
+    ] as const) {
+      const response = await fixture.app.request(
+        `/api/admin/v1/organizations/${fixture.tenant.organizationId}/operations/${operationId}`,
+        { headers: { Cookie: cookie } },
+      );
+      expect(response.status).toBe(expected);
     }
   } finally {
     await fixture.db.delete(members).where(eq(members.id, memberId));

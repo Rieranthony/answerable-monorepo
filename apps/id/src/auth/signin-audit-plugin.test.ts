@@ -46,6 +46,11 @@ const session = {
   token: "token",
   ipAddress: "192.0.2.1",
   userAgent: "agent",
+  authenticationOrganizationId: "org",
+  authenticationProviderId: "provider",
+  authenticationProviderRevision: 4,
+  authenticationAccountId: "account",
+  upstreamAuthTime: new Date(120000),
 };
 
 test("does nothing without a new session", async () => {
@@ -54,7 +59,7 @@ test("does nothing without a new session", async () => {
   expect(h.rows).toEqual([]);
 });
 
-test("attributes the single active organisation, stamps the session and audits", async () => {
+test("attributes verified origin regardless of membership or selected organisation", async () => {
   const h = harness(
     [{ organizationId: "org" }, { organizationId: "org" }],
     [{ id: "org" }],
@@ -62,10 +67,11 @@ test("attributes the single active organisation, stamps the session and audits",
     new Headers({ "x-request-id": "request" }),
   );
   expect(await attributeSignIn(h.db, h.ctx)).toBe("org");
-  expect(h.updates).toEqual([["token", { activeOrganizationId: "org" }]]);
+  expect(h.updates).toEqual([]);
   expect(h.rows).toEqual([
     {
       id: expect.any(String),
+      schemaVersion: 2,
       actorType: "user",
       actorId: "user",
       organizationId: "org",
@@ -76,6 +82,12 @@ test("attributes the single active organisation, stamps the session and audits",
       requestId: "request",
       ip: null,
       userAgent: "agent",
+      data: {
+        authenticationAccountId: "account",
+        authenticationProviderId: "provider",
+        authenticationProviderRevision: 4,
+        upstreamAuthTime: "1970-01-01T00:02:00.000Z",
+      },
     },
   ]);
 });
@@ -89,7 +101,7 @@ test("leaves the session alone when it already carries the organisation", async 
   expect(h.updates).toEqual([]);
 });
 
-test("records an unattributed sign-in without memberships or with several organisations", async () => {
+test("absence stays unattributed and multiple memberships cannot replace verified origin", async () => {
   const none = harness([], [], { id: "s", token: "t" });
   expect(await attributeSignIn(none.db, none.ctx)).toBeNull();
   expect(none.rows).toHaveLength(1);
@@ -104,7 +116,7 @@ test("records an unattributed sign-in without memberships or with several organi
     [{ id: "a" }, { id: "b" }],
     session,
   );
-  expect(await attributeSignIn(several.db, several.ctx)).toBeNull();
+  expect(await attributeSignIn(several.db, several.ctx)).toBe("org");
   expect(several.updates).toEqual([]);
 });
 

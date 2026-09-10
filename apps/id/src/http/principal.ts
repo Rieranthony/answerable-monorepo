@@ -64,7 +64,7 @@ export type PrincipalDeps = {
   verifyBearer(token: string): Promise<BearerClaims>;
   loadGrants(
     db: Database,
-    principal: { userId: string },
+    principal: { userId: string; sessionId: string },
     resource: string,
   ): Promise<Grant[]>;
   findClient(
@@ -336,7 +336,7 @@ export function createPrincipalMiddleware(
         sessionId: session.session.id,
         grants: await deps.loadGrants(
           db,
-          { userId: session.user.id },
+          { userId: session.user.id, sessionId: session.session.id },
           environment.adminResourceIdentifier,
         ),
       };

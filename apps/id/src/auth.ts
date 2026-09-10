@@ -64,6 +64,18 @@ export function createAuth(db: Database, environment: Environment) {
     },
     session: {
       additionalFields: {
+        authenticationAccountId: {
+          type: "string",
+          required: false,
+          input: false,
+          returned: false,
+        },
+        upstreamAuthTime: {
+          type: "date",
+          required: false,
+          input: false,
+          returned: false,
+        },
         authenticationOrganizationId: {
           type: "string",
           required: false,

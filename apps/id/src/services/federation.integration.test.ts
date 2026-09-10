@@ -819,6 +819,8 @@ describe("integration: federated sign-in", () => {
       { authenticationOrganizationId: createId() },
       { authenticationProviderId: createId() },
       { authenticationProviderRevision: provider!.revision + 1 },
+      { authenticationAccountId: createId() },
+      { upstreamAuthTime: new Date(0) },
       {
         authenticationOrganizationId: null,
         authenticationProviderId: null,
@@ -860,7 +862,7 @@ describe("integration: federated sign-in", () => {
         })
         .execute(),
     ).rejects.toMatchObject({
-      cause: { constraint: "sessions_authentication_origin_check" },
+      cause: { constraint: "session_authentication_origin_provider" },
     });
     await connection.db
       .delete(ssoProviders)

@@ -8,7 +8,7 @@ import {
   getOAuthState,
 } from "better-auth/api";
 import { and, isNull, eq } from "drizzle-orm";
-import { ssoProviders } from "../db/schema/index.ts";
+import { accounts, ssoProviders } from "../db/schema/index.ts";
 import { resolveFederatedUser } from "../services/federation.ts";
 import { authTransaction } from "./database-adapter.ts";
 
@@ -19,6 +19,9 @@ type Origin = {
   authenticationOrganizationId: string;
   authenticationProviderId: string;
   authenticationProviderRevision: number;
+  authenticationAccountId: string;
+  upstreamAuthTime: Date | null;
+  userId: string;
 };
 
 /** Native SSO resolution and session creation share one transaction adapter.
@@ -86,9 +89,45 @@ export function createSsoOriginBoundary() {
         code: "SSO_PROVIDER_CHANGED",
         message: "SSO configuration changed. Start sign-in again.",
       };
+    const authTime =
+      input.protocol === "oidc"
+        ? input.verifiedIdTokenClaims.auth_time
+        : undefined;
+    if (
+      authTime !== undefined &&
+      (typeof authTime !== "number" ||
+        !Number.isSafeInteger(authTime) ||
+        authTime < 0 ||
+        authTime > Math.floor(Date.now() / 1000))
+    )
+      return {
+        action: "reject",
+        code: "invalid_auth_time",
+        message: "Upstream authentication time is invalid",
+      };
     const resolution = await resolveFederatedUser(input, database);
     if (resolution.action === "reject") return resolution;
-    origins.set(database, provider);
+    // The resolver has established this exact verified issuer/subject binding.
+    // Native authentication must select the same user when it creates a session.
+    const [account] = await authTransaction(database)
+      .select({ id: accounts.id, userId: accounts.userId })
+      .from(accounts)
+      .where(
+        and(
+          eq(accounts.issuer, input.accountKey.issuer),
+          eq(accounts.accountId, input.accountKey.accountId),
+          isNull(accounts.deletedAt),
+        ),
+      );
+    if (!account)
+      throw new Error("Accepted SSO account is no longer available");
+    origins.set(database, {
+      ...provider,
+      authenticationAccountId: account.id,
+      userId: account.userId,
+      upstreamAuthTime:
+        authTime === undefined ? null : new Date((authTime as number) * 1000),
+    });
     return resolution;
   };
   const before: NonNullable<
@@ -100,6 +139,10 @@ export function createSsoOriginBoundary() {
     const origin = adapter ? origins.get(adapter) : undefined;
     if (origin) authTransaction(adapter!);
     if (adapter) origins.delete(adapter);
+    if (origin && origin.userId !== session.userId)
+      throw new APIError("FORBIDDEN", {
+        code: "authentication_origin_mismatch",
+      });
     if (context?.path === "/sso/callback" && !origin)
       throw new APIError("FORBIDDEN", {
         code: "authentication_origin_missing",
@@ -111,6 +154,9 @@ export function createSsoOriginBoundary() {
         // not verified transport evidence.
         ipAddress: null,
         userAgent: boundedUserAgent(session.userAgent),
+        activeOrganizationId: origin?.authenticationOrganizationId ?? null,
+        authenticationAccountId: origin?.authenticationAccountId ?? null,
+        upstreamAuthTime: origin?.upstreamAuthTime ?? null,
         authenticationOrganizationId:
           origin?.authenticationOrganizationId ?? null,
         authenticationProviderId: origin?.authenticationProviderId ?? null,

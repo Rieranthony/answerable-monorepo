@@ -1,5 +1,5 @@
 import { boundedUserAgent } from "../lib/user-agent.ts";
-import { getCurrentAdapter, type BetterAuthPlugin } from "better-auth";
+import type { BetterAuthPlugin } from "better-auth";
 import type { GenericEndpointContext } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
 
@@ -10,15 +10,18 @@ type SessionRow = {
   id: string;
   token: string;
   activeOrganizationId?: string | null;
+  authenticationOrganizationId?: string | null;
+  authenticationProviderId?: string | null;
+  authenticationProviderRevision?: number | null;
+  authenticationAccountId?: string | null;
+  upstreamAuthTime?: Date | null;
   ipAddress?: string | null;
   userAgent?: string | null;
 };
 
 /**
- * Records a successful sign-in once the SSO plugin has provisioned the
- * membership (its own after-hook runs first because this plugin is listed
- * after it). When the user is an active member of exactly one active
- * organisation, the row and the session carry that organisation.
+ * Version two attributes success to the native session's verified origin.
+ * Memberships and the browser's selected organisation never supply provenance.
  */
 export async function attributeSignIn(
   db: Database,
@@ -29,33 +32,10 @@ export async function attributeSignIn(
     user: { id: string };
   } | null;
   if (!newSession) return null;
-  const adapter = await getCurrentAdapter(ctx.context.adapter);
-  const memberships = await adapter.findMany<{ organizationId: string }>({
-    model: "member",
-    where: [{ field: "userId", value: newSession.user.id }],
-  });
-  const organizationIds = [
-    ...new Set(memberships.map((row) => row.organizationId)),
-  ];
-  const organizations =
-    organizationIds.length === 0
-      ? []
-      : await adapter.findMany<{ id: string }>({
-          model: "organization",
-          where: [
-            { field: "id", value: organizationIds, operator: "in" },
-            { field: "status", value: "active" },
-          ],
-        });
-  const organizationId =
-    organizations.length === 1 ? organizations[0]!.id : null;
   const { session } = newSession;
-  if (organizationId && session.activeOrganizationId !== organizationId) {
-    await ctx.context.internalAdapter.updateSession(session.token, {
-      activeOrganizationId: organizationId,
-    });
-  }
+  const organizationId = session.authenticationOrganizationId ?? null;
   await recordAuditEvent(db, {
+    schemaVersion: 2,
     actorType: "user",
     actorId: newSession.user.id,
     organizationId,
@@ -66,6 +46,13 @@ export async function attributeSignIn(
     requestId: ctx.headers?.get("x-request-id") ?? null,
     ip: null,
     userAgent: boundedUserAgent(session.userAgent),
+    data: {
+      authenticationAccountId: session.authenticationAccountId ?? null,
+      authenticationProviderId: session.authenticationProviderId ?? null,
+      authenticationProviderRevision:
+        session.authenticationProviderRevision ?? null,
+      upstreamAuthTime: session.upstreamAuthTime?.toISOString() ?? null,
+    },
   });
   return organizationId;
 }

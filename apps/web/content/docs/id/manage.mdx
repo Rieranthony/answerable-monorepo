@@ -21,6 +21,8 @@ curl https://id.answerable.org/auth/oauth2/token \
 
 **Browser session.** The [sign-in session cookie](/docs/id/sign-in#sessions) works too. Send a trusted `Origin`; browser calls across origins need `credentials: "include"`.
 
+**Current company authentication.** Human authority requires the session's verified account and current SSO provider to belong to the organisation supplying the permission. A membership in another organisation does not transfer authentication. Platform support requires platform SSO and explicit platform scopes. Provider changes, deletion, account deletion or expired authentication prevent admission, including recovery with an existing operation key. After fresh SSO, retry the original key and input to recover an authorised receipt.
+
 ## Scopes
 
 | Scope            | Allows                                                                                               |
@@ -42,6 +44,8 @@ curl https://id.answerable.org/api/admin/v1/me \
 ```
 
 **Grants.** This endpoint works even with zero grants. The response identifies the caller and their organisation IDs and scopes. Set `ORGANIZATION_ID` to your organisation's ID.
+
+**Sign-in history.** Version 2 `auth.signin.succeeded` attributes the event to the session's verified SSO organisation, even when the user has several memberships. Its actor is the global user UUID and its target is the session UUID. `data` contains the accepted account UUID, provider UUID/revision and nullable upstream `auth_time`. The selected organisation and email are not attribution evidence. Earlier version 1 events retain their historical membership-based attribution.
 
 ## List members
 

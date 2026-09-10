@@ -16,6 +16,7 @@ import {
 import { createId } from "../lib/id.ts";
 import { lockResourceGrantTargets } from "./lock-resource-grant-policy.ts";
 import { rethrowGrantError } from "./grant-error.ts";
+import { tenantAuthentication } from "./tenant-authentication.ts";
 
 /** Native callback supplies authenticated identity/session and validated request scopes.
  * This validates stored provenance; knowing these IDs is not authentication.
@@ -68,6 +69,13 @@ export async function createResourceGrant(
         );
       if (!target) throw new APIError("FORBIDDEN", { error: "access_denied" });
       await lockResourceGrantTargets(tx, target);
+      const authentication = await tenantAuthentication(tx, {
+        userId: input.userId,
+        sessionId: input.sessionId,
+        organizationId: target.organizationId,
+      });
+      if (!authentication || authentication.memberId !== input.memberId)
+        throw new APIError("FORBIDDEN", { error: "access_denied" });
       const [row] = await tx
         .insert(grantContexts)
         .select(
@@ -81,6 +89,8 @@ export async function createResourceGrant(
               resourceInstanceId: oauthResources.id,
               authorizationCodeId: sql<null>`null`.as("authorization_code_id"),
               authenticationSessionId: sessions.id,
+              // Existing context column records broker session creation only.
+              // T2 persists the complete authentication snapshot for user OAuth.
               authTime: sessions.createdAt,
               requestedScopes: scopeArray.as("requested_scopes"),
               createdAt: sql<Date>`statement_timestamp()`.as("created_at"),

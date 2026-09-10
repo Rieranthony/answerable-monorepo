@@ -68,6 +68,8 @@ The code arrives on the error page as `?error=<code>`.
 | `SSO_USER_RESOLUTION_FAILED`    | The service could not safely resolve the verified identity, including when a stored upstream token cannot be decrypted. | Contact Answerable staff. Operators should check identity records, token key versions and cutover state. |
 | `SSO_PROVIDER_CHANGED`          | SSO configuration changed during sign-in, or the server could not verify its original configuration.                    | Start sign-in again; no session was created for this attempt.                                            |
 | `authentication_origin_missing` | Sign-in could not retain its verified company authentication.                                                           | Start sign-in again. If it repeats, contact your administrator; no session was created.                  |
+| `authentication_origin_mismatch` | The verified company account did not match the user selected for the session. | Start sign-in again. If it repeats, contact your administrator; no session was created. |
+| `invalid_auth_time` | The signed upstream token supplied an invalid or future authentication time. | Ask your identity-provider administrator to check its `auth_time` claim and clock. |
 | `organization_disabled`         | Sign-in has been paused for your organisation.                                                                          | Ask your IT team for help.                                                                               |
 | `directory_mismatch`            | The account belongs to a different company directory.                                                                   | Use the work account provided by your organisation.                                                      |
 | `guest_account`                 | The account is a guest in your organisation's directory.                                                                | Use a member account or ask your IT team for help.                                                       |
@@ -84,6 +86,12 @@ The code arrives on the error page as `?error=<code>`.
 ## Sessions
 
 Sessions use cookies. Browser calls from another origin need `credentials: "include"`, and that origin must be trusted by Answerable ID.
+
+**Organisation authority.** Administration requires authentication through that organisation's current SSO configuration, an active account and membership, and the required permissions. Selecting another organisation or holding its membership does not authenticate you there. Answerable staff use platform SSO and explicit platform permissions to manage other organisations. See [browser administration](/docs/id/manage#get-a-token).
+
+**Provider changes.** A session can remain open after SSO configuration changes, but its earlier authentication cannot authorise new tenant grants or administration. Sign in again through the current provider. An unchanged configuration save preserves authority. Deleted accounts, users, organisations and memberships cannot regain authority through sign-in.
+
+**Authentication time.** When the provider supplies a valid signed `auth_time`, Answerable ID stores it separately from session creation. An absent claim stays unknown. No sensitive-command freshness duration is enforced yet; see [the completion plan](/docs/id#today-and-next). Deliberately linking independently verified company identities is also not yet available.
 
 Signing out ends the session.
 

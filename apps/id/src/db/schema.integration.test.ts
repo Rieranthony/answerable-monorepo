@@ -324,6 +324,8 @@ describe("integration: PostgreSQL schema", () => {
         "authentication_organization_id uuid null",
         "authentication_provider_id uuid null",
         "authentication_provider_revision integer null",
+        "authentication_account_id uuid null",
+        "upstream_auth_time timestamptz null",
       ],
       accounts: [
         "id uuid",
@@ -687,6 +689,7 @@ describe("integration: PostgreSQL schema", () => {
         "sessions_authentication_origin_check CHECK ((((authentication_organization_id IS NULL) AND (authentication_provider_id IS NULL) AND (authentication_provider_revision IS NULL)) OR ((authentication_organization_id IS NOT NULL) AND (authentication_provider_id IS NOT NULL) AND (authentication_provider_revision IS NOT NULL) AND (authentication_provider_revision > 0))))",
         "sessions_pkey PRIMARY KEY (id)",
         "sessions_token_unique UNIQUE (token)",
+        "sessions_upstream_auth_time_check CHECK (((upstream_auth_time IS NULL) OR ((authentication_account_id IS NOT NULL) AND (upstream_auth_time >= '1970-01-01 00:00:00+00'::timestamp with time zone) AND (upstream_auth_time <= created_at))))",
         `sessions_user_id_users_id_fk ${cascadeUser}`,
       ],
       accounts: [

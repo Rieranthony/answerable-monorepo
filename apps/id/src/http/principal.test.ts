@@ -263,7 +263,7 @@ describe("unit: principal", () => {
       });
       expect(deps.loadGrants).toHaveBeenCalledWith(
         db,
-        { userId: "user" },
+        { userId: "user", sessionId: "session" },
         environment.adminResourceIdentifier,
       );
     },

@@ -1087,11 +1087,13 @@ test("runtime lifecycle audit indexes recorded users without direct subject writ
 });
 
 test("restricted runtime evaluates exact user pairs through scoped policy reads", async () => {
+  const { createSsoProvider } = await import("../__tests__/sso-queries.ts");
   const { setDatabaseScope, withDatabaseScope } =
     await import("./isolation.ts");
   const { userResourcePolicy } =
     await import("../auth/user-resource-policy.ts");
   const {
+    accounts,
     users,
     members,
     sessions,
@@ -1125,11 +1127,33 @@ test("restricted runtime evaluates exact user pairs through scoped policy reads"
   await owner.db
     .insert(members)
     .values({ id: memberId, organizationId, userId });
+  // Stored policy fixture; native acceptance is covered by the admission suite.
+  const provider = await createSsoProvider(owner.db, {
+    organizationId,
+    providerId: organizationId,
+    issuer: "https://policy.example.com",
+    domain: "example.com",
+    oidc: { clientId: "policy", clientSecret: "secret" },
+  });
+  const accountId = crypto.randomUUID();
+  await owner.db
+    .insert(accounts)
+    .values({
+      id: accountId,
+      userId,
+      issuer: provider.issuer,
+      providerId: provider.providerId,
+      accountId: userId,
+    });
   await owner.db.insert(sessions).values({
     id: sessionId,
     userId,
     token: crypto.randomUUID(),
     createdAt: authTime,
+    authenticationOrganizationId: organizationId,
+    authenticationProviderId: provider.id,
+    authenticationProviderRevision: provider.revision,
+    authenticationAccountId: accountId,
     expiresAt: new Date(Date.now() + 60000),
   });
   await owner.db.insert(oauthClients).values({

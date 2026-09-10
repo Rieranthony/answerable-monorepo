@@ -66,7 +66,7 @@ export async function authorizeCommand(
       );
     const grants = await effectiveGrants(
       tx,
-      { userId: principal.userId },
+      { userId: principal.userId, sessionId: principal.sessionId },
       environment.adminResourceIdentifier,
     );
     // Row locks prevent deletion, not the passage of time while policy locks wait.

@@ -107,6 +107,9 @@ export const sessions = pgTable(
     authenticationOrganizationId: uuid("authentication_organization_id"),
     authenticationProviderId: uuid("authentication_provider_id"),
     authenticationProviderRevision: integer("authentication_provider_revision"),
+    authenticationAccountId: uuid("authentication_account_id"),
+    // Only the validated upstream ID token can supply this; absence stays unknown.
+    upstreamAuthTime: timestampColumn("upstream_auth_time"),
     ...timestamps(),
     ipAddress: text("ip_address"),
     userAgent: text("user_agent"),
@@ -124,6 +127,10 @@ export const sessions = pgTable(
     index("sessions_user_id_idx").on(table.userId),
     index("sessions_active_organization_id_idx").on(table.activeOrganizationId),
     index("sessions_expires_at_idx").on(table.expiresAt),
+    check(
+      "sessions_upstream_auth_time_check",
+      sql`${table.upstreamAuthTime} is null or (${table.authenticationAccountId} is not null and ${table.upstreamAuthTime} >= timestamp with time zone '1970-01-01 00:00:00+00' and ${table.upstreamAuthTime} <= ${table.createdAt})`,
+    ),
     check(
       "sessions_authentication_origin_check",
       sql`
