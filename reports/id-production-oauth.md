@@ -1,5 +1,7 @@
 # Production user OAuth
 
+**Migration baseline:** the development chain and its upgrade/cutover procedures below are historical. First installation now uses one initial migration; see the [consolidation record](id-initial-migration.md). Retained-key custody, native OAuth, deletion and recovery contracts still apply.
+
 Implemented on `codex/id-production-oauth`, based on
 `c2450604cc1ee523621514cf303078263c1f8c2c`. The integration checkout remained
 read-only. Database work is complete and the disposable `answerable_id_test` slot is released.

@@ -120,9 +120,11 @@ export function executeOperation<Authority>(
               resultReference: existing.resultReference,
             },
           );
-        const legacyFingerprint = /^[a-f0-9]{64}$/.test(existing.fingerprint);
+        const referenceFingerprint =
+          existing.replayExpiresAt === null &&
+          /^[a-f0-9]{64}$/.test(existing.fingerprint);
         if (
-          (existing.replayExpiresAt !== null || !legacyFingerprint) &&
+          (existing.replayExpiresAt !== null || !referenceFingerprint) &&
           !replay
         )
           throw new ProblemError(
@@ -133,8 +135,8 @@ export function executeOperation<Authority>(
             { retryable: true },
           );
         let matches: boolean;
-        if (legacyFingerprint) {
-          // Previously committed receipts retain their original fingerprint contract.
+        if (referenceFingerprint) {
+          // Reference-only internal operations do not retain encrypted responses.
           matches = existing.fingerprint === digest(canonicalInput);
         } else {
           try {

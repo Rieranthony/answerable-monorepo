@@ -12,6 +12,7 @@
     "test": "bun run db:test:migrate && bun run test:coverage",
     "test:coverage": "bun test --timeout 15000",
     "test:restore": "bun scripts/test-upstream-restore.ts",
+    "test:migrations": "bun scripts/test-migrations.ts",
     "measure:audit": "bun scripts/measure-audit-workloads.ts",
     "ops:preflight": "bun scripts/operations-preflight.ts",
     "ops:capture-recovery": "bun scripts/capture-recovery.ts",

@@ -1,0 +1,1084 @@
+{
+  "functions": [
+    {
+      "name": "capture_audit_subjects(audit_events,text)",
+      "security_definer": false,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": false,
+      "definitionHash": "8614518725b3fc1f800d0d9b1ac0b863e518a348bf7cf1ecc9057900f8887e06"
+    },
+    {
+      "name": "protect_admin_operation()",
+      "security_definer": false,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": true,
+      "definitionHash": "3f8567e77ecca0947beac2201699f6bf1889f98c6c50a8f39099275e02f92978"
+    },
+    {
+      "name": "protect_capability_target()",
+      "security_definer": false,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": true,
+      "definitionHash": "55fc9593f81465831bd87e02e58e5968082af6faf98280639765a555b1516da0"
+    },
+    {
+      "name": "protect_configuration_revision()",
+      "security_definer": false,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": true,
+      "definitionHash": "9345815edf60a80341ae62190ab67937315ff42327fb2bea06444df78aaf761b"
+    },
+    {
+      "name": "protect_grant_context()",
+      "security_definer": false,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": true,
+      "definitionHash": "13533ef56ff5f4adeb589157620e1225760294386241676ebf8d2f04276aea6a"
+    },
+    {
+      "name": "protect_group_assignment_identity()",
+      "security_definer": false,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": true,
+      "definitionHash": "7f85a4f1fe69ce6f3810dc728f2f65a85f67fc4d51efa6e2de013cb3fea8fac4"
+    },
+    {
+      "name": "protect_member_identity()",
+      "security_definer": false,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": true,
+      "definitionHash": "b0ba4490a066de620e92c3e39036e9f51ac0c53088e33273e777e10f9a857f74"
+    },
+    {
+      "name": "protect_oauth_client_identity()",
+      "security_definer": false,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": true,
+      "definitionHash": "5b7e341369846769ea4338739ef2887d22256b30f4889642a1166871683f462a"
+    },
+    {
+      "name": "protect_oauth_resource_identity()",
+      "security_definer": false,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": true,
+      "definitionHash": "e2af4bd2ca92440f493f103ddd0e1d9b10c7a95195e16b89a651965e8671de8a"
+    },
+    {
+      "name": "protect_organization_authorization_version()",
+      "security_definer": false,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": true,
+      "definitionHash": "ad9abced73db5f825df11fee1effee0d3465cf3dd588f2cff101f315c39e99d0"
+    },
+    {
+      "name": "protect_private_resource_assignment()",
+      "security_definer": false,
+      "settings": null,
+      "public_execute": true,
+      "definitionHash": "935423845385253891f45f7ef89b4e9216ce637fc36276868666df16b2968cbf"
+    },
+    {
+      "name": "protect_product_deletion()",
+      "security_definer": false,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": true,
+      "definitionHash": "d06e7a495995e411e7783d312e1741c1b0df68f814e8c2fb498f01cae6e309f8"
+    },
+    {
+      "name": "protect_product_parents()",
+      "security_definer": false,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": true,
+      "definitionHash": "9f558ff756a1fa5c1d0289949e6c6175afdafb169a195d3a2a9678440efb13cc"
+    },
+    {
+      "name": "protect_reserved_admin_capability()",
+      "security_definer": false,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": true,
+      "definitionHash": "29fc52e3677a05ea71319d5db481fdb698d2e3393a79c8ec8923208c04a086a1"
+    },
+    {
+      "name": "protect_resource_ownership()",
+      "security_definer": false,
+      "settings": null,
+      "public_execute": true,
+      "definitionHash": "3a754d7fc9fd546252dae7cbc52b59ba27c78ca9beae6828197ec5aa30ef903a"
+    },
+    {
+      "name": "protect_security_identifier()",
+      "security_definer": false,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": true,
+      "definitionHash": "3de5a6d57cef18642e0bd61203ecbd2ab0c1e1466babc13397aaf7fdb09805cf"
+    },
+    {
+      "name": "protect_session_authentication_origin()",
+      "security_definer": false,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": true,
+      "definitionHash": "b3a92eb27e25d4516fab6a4c130dfb1e28e0fc838d2b1c699ccd4d95cf5ed4ca"
+    },
+    {
+      "name": "protect_sso_provider_revision()",
+      "security_definer": false,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": true,
+      "definitionHash": "1b447b0083162a374b90d5ce553d34afa51103e179aea1d1ca8a28ae2fa10b1a"
+    },
+    {
+      "name": "protect_system_binding()",
+      "security_definer": false,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": true,
+      "definitionHash": "e406710d1b42afa0e4e4e24a93578ef82f396a78b7211bb287e945b5268cf65c"
+    },
+    {
+      "name": "purge_operation_results(uuid,integer)",
+      "security_definer": true,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": false,
+      "definitionHash": "4ce78841794584a8cb9f64702af15eb66af8e7721a78ded2ad636003a0beab1d"
+    },
+    {
+      "name": "record_audit_subjects()",
+      "security_definer": true,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": false,
+      "definitionHash": "b361a4ef95b235198aec5a8761e2247fd3ff70f65bd4395f27b2bbda486d0943"
+    },
+    {
+      "name": "record_user_oauth_subjects()",
+      "security_definer": true,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": false,
+      "definitionHash": "33f27103a46097f53aa12dd5241a02ff57347bdbe028afa5a8eb8ab714730cc9"
+    },
+    {
+      "name": "require_present_parent(regclass,name,text)",
+      "security_definer": false,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": true,
+      "definitionHash": "5084cdd9b87f5595168a76a79edd841cb6fabe5e434cd1268669b952baea8f7f"
+    },
+    {
+      "name": "reserve_security_identifier()",
+      "security_definer": true,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": false,
+      "definitionHash": "cf9645f1db7e60b218cd085d339428b8add819f948e11d1da963966b22f1a8a0"
+    },
+    {
+      "name": "touch_client_resource_revision()",
+      "security_definer": false,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": true,
+      "definitionHash": "5542db830df1d29b198e604fa16eeb71b23577bff5b0b4c74e40a62c0373ac58"
+    },
+    {
+      "name": "validate_grant_authentication()",
+      "security_definer": false,
+      "settings": ["search_path=pg_catalog, public"],
+      "public_execute": false,
+      "definitionHash": "a0b42bdea85078f2d4c2ef4924f35e2f7a9965767b33bb682754a1bf58daa480"
+    }
+  ],
+  "triggers": [
+    {
+      "table_name": "accounts",
+      "name": "accounts_deletion_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER accounts_deletion_guard BEFORE INSERT OR UPDATE ON public.accounts FOR EACH ROW EXECUTE FUNCTION protect_product_deletion()"
+    },
+    {
+      "table_name": "accounts",
+      "name": "zz_accounts_present_parents",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_accounts_present_parents BEFORE INSERT OR UPDATE ON public.accounts FOR EACH ROW EXECUTE FUNCTION protect_product_parents()"
+    },
+    {
+      "table_name": "admin_operations",
+      "name": "admin_operations_immutable",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER admin_operations_immutable BEFORE DELETE OR UPDATE ON public.admin_operations FOR EACH ROW EXECUTE FUNCTION protect_admin_operation()"
+    },
+    {
+      "table_name": "audit_events",
+      "name": "audit_events_capture_subjects",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER audit_events_capture_subjects AFTER INSERT ON public.audit_events FOR EACH ROW EXECUTE FUNCTION record_audit_subjects()"
+    },
+    {
+      "table_name": "audit_events",
+      "name": "audit_events_user_oauth_subjects",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER audit_events_user_oauth_subjects AFTER INSERT ON public.audit_events FOR EACH ROW EXECUTE FUNCTION record_user_oauth_subjects()"
+    },
+    {
+      "table_name": "entitlements",
+      "name": "entitlements_deletion_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER entitlements_deletion_guard BEFORE INSERT OR UPDATE ON public.entitlements FOR EACH ROW EXECUTE FUNCTION protect_product_deletion()"
+    },
+    {
+      "table_name": "entitlements",
+      "name": "entitlements_revision_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER entitlements_revision_guard BEFORE UPDATE ON public.entitlements FOR EACH ROW EXECUTE FUNCTION protect_configuration_revision()"
+    },
+    {
+      "table_name": "entitlements",
+      "name": "private_resource_assignment",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER private_resource_assignment BEFORE INSERT OR UPDATE ON public.entitlements FOR EACH ROW EXECUTE FUNCTION protect_private_resource_assignment()"
+    },
+    {
+      "table_name": "entitlements",
+      "name": "zz_entitlements_present_parents",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_entitlements_present_parents BEFORE INSERT OR UPDATE ON public.entitlements FOR EACH ROW EXECUTE FUNCTION protect_product_parents()"
+    },
+    {
+      "table_name": "grant_contexts",
+      "name": "grant_authentication_provenance",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER grant_authentication_provenance BEFORE INSERT ON public.grant_contexts FOR EACH ROW EXECUTE FUNCTION validate_grant_authentication()"
+    },
+    {
+      "table_name": "grant_contexts",
+      "name": "grant_context_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER grant_context_guard BEFORE INSERT OR UPDATE ON public.grant_contexts FOR EACH ROW EXECUTE FUNCTION protect_grant_context()"
+    },
+    {
+      "table_name": "group_members",
+      "name": "group_members_deletion_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER group_members_deletion_guard BEFORE INSERT OR UPDATE ON public.group_members FOR EACH ROW EXECUTE FUNCTION protect_product_deletion()"
+    },
+    {
+      "table_name": "group_members",
+      "name": "group_members_identity_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER group_members_identity_guard BEFORE UPDATE ON public.group_members FOR EACH ROW EXECUTE FUNCTION protect_group_assignment_identity()"
+    },
+    {
+      "table_name": "group_members",
+      "name": "group_members_revision_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER group_members_revision_guard BEFORE UPDATE ON public.group_members FOR EACH ROW EXECUTE FUNCTION protect_configuration_revision()"
+    },
+    {
+      "table_name": "group_members",
+      "name": "zz_group_members_present_parents",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_group_members_present_parents BEFORE INSERT OR UPDATE ON public.group_members FOR EACH ROW EXECUTE FUNCTION protect_product_parents()"
+    },
+    {
+      "table_name": "groups",
+      "name": "groups_deletion_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER groups_deletion_guard BEFORE INSERT OR UPDATE ON public.groups FOR EACH ROW EXECUTE FUNCTION protect_product_deletion()"
+    },
+    {
+      "table_name": "groups",
+      "name": "groups_revision_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER groups_revision_guard BEFORE UPDATE ON public.groups FOR EACH ROW EXECUTE FUNCTION protect_configuration_revision()"
+    },
+    {
+      "table_name": "groups",
+      "name": "zz_groups_present_parents",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_groups_present_parents BEFORE INSERT OR UPDATE ON public.groups FOR EACH ROW EXECUTE FUNCTION protect_product_parents()"
+    },
+    {
+      "table_name": "invitations",
+      "name": "invitations_deletion_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER invitations_deletion_guard BEFORE INSERT OR UPDATE ON public.invitations FOR EACH ROW EXECUTE FUNCTION protect_product_deletion()"
+    },
+    {
+      "table_name": "invitations",
+      "name": "zz_invitations_present_parents",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_invitations_present_parents BEFORE INSERT OR UPDATE ON public.invitations FOR EACH ROW EXECUTE FUNCTION protect_product_parents()"
+    },
+    {
+      "table_name": "members",
+      "name": "members_deletion_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER members_deletion_guard BEFORE INSERT OR UPDATE ON public.members FOR EACH ROW EXECUTE FUNCTION protect_product_deletion()"
+    },
+    {
+      "table_name": "members",
+      "name": "members_identity_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER members_identity_guard BEFORE UPDATE ON public.members FOR EACH ROW EXECUTE FUNCTION protect_member_identity()"
+    },
+    {
+      "table_name": "members",
+      "name": "members_revision_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER members_revision_guard BEFORE UPDATE ON public.members FOR EACH ROW EXECUTE FUNCTION protect_configuration_revision()"
+    },
+    {
+      "table_name": "members",
+      "name": "zz_members_present_parents",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_members_present_parents BEFORE INSERT OR UPDATE ON public.members FOR EACH ROW EXECUTE FUNCTION protect_product_parents()"
+    },
+    {
+      "table_name": "oauth_access_tokens",
+      "name": "zz_oauth_access_tokens_present_parents",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_oauth_access_tokens_present_parents BEFORE INSERT OR UPDATE ON public.oauth_access_tokens FOR EACH ROW EXECUTE FUNCTION protect_product_parents()"
+    },
+    {
+      "table_name": "oauth_client_resources",
+      "name": "oauth_client_resources_deletion_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER oauth_client_resources_deletion_guard BEFORE INSERT OR UPDATE ON public.oauth_client_resources FOR EACH ROW EXECUTE FUNCTION protect_product_deletion()"
+    },
+    {
+      "table_name": "oauth_client_resources",
+      "name": "oauth_client_resources_revision",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER oauth_client_resources_revision AFTER INSERT OR DELETE OR UPDATE ON public.oauth_client_resources FOR EACH ROW EXECUTE FUNCTION touch_client_resource_revision()"
+    },
+    {
+      "table_name": "oauth_client_resources",
+      "name": "zz_oauth_client_resources_present_parents",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_oauth_client_resources_present_parents BEFORE INSERT OR UPDATE ON public.oauth_client_resources FOR EACH ROW EXECUTE FUNCTION protect_product_parents()"
+    },
+    {
+      "table_name": "oauth_clients",
+      "name": "oauth_clients_deletion_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER oauth_clients_deletion_guard BEFORE INSERT OR UPDATE ON public.oauth_clients FOR EACH ROW EXECUTE FUNCTION protect_product_deletion()"
+    },
+    {
+      "table_name": "oauth_clients",
+      "name": "oauth_clients_identity_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER oauth_clients_identity_guard BEFORE UPDATE ON public.oauth_clients FOR EACH ROW EXECUTE FUNCTION protect_oauth_client_identity()"
+    },
+    {
+      "table_name": "oauth_clients",
+      "name": "oauth_clients_reserve_identity",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER oauth_clients_reserve_identity AFTER INSERT ON public.oauth_clients FOR EACH ROW EXECUTE FUNCTION reserve_security_identifier()"
+    },
+    {
+      "table_name": "oauth_clients",
+      "name": "oauth_clients_revision_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER oauth_clients_revision_guard BEFORE UPDATE ON public.oauth_clients FOR EACH ROW EXECUTE FUNCTION protect_configuration_revision()"
+    },
+    {
+      "table_name": "oauth_clients",
+      "name": "zz_oauth_clients_present_parents",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_oauth_clients_present_parents BEFORE INSERT OR UPDATE ON public.oauth_clients FOR EACH ROW EXECUTE FUNCTION protect_product_parents()"
+    },
+    {
+      "table_name": "oauth_consents",
+      "name": "oauth_consents_deletion_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER oauth_consents_deletion_guard BEFORE INSERT OR UPDATE ON public.oauth_consents FOR EACH ROW EXECUTE FUNCTION protect_product_deletion()"
+    },
+    {
+      "table_name": "oauth_consents",
+      "name": "zz_oauth_consents_present_parents",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_oauth_consents_present_parents BEFORE INSERT OR UPDATE ON public.oauth_consents FOR EACH ROW EXECUTE FUNCTION protect_product_parents()"
+    },
+    {
+      "table_name": "oauth_refresh_tokens",
+      "name": "zz_oauth_refresh_tokens_present_parents",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_oauth_refresh_tokens_present_parents BEFORE INSERT OR UPDATE ON public.oauth_refresh_tokens FOR EACH ROW EXECUTE FUNCTION protect_product_parents()"
+    },
+    {
+      "table_name": "oauth_resources",
+      "name": "oauth_resources_deletion_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER oauth_resources_deletion_guard BEFORE INSERT OR UPDATE ON public.oauth_resources FOR EACH ROW EXECUTE FUNCTION protect_product_deletion()"
+    },
+    {
+      "table_name": "oauth_resources",
+      "name": "oauth_resources_identity_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER oauth_resources_identity_guard BEFORE UPDATE ON public.oauth_resources FOR EACH ROW EXECUTE FUNCTION protect_oauth_resource_identity()"
+    },
+    {
+      "table_name": "oauth_resources",
+      "name": "oauth_resources_reserve_identity",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER oauth_resources_reserve_identity AFTER INSERT ON public.oauth_resources FOR EACH ROW EXECUTE FUNCTION reserve_security_identifier()"
+    },
+    {
+      "table_name": "oauth_resources",
+      "name": "oauth_resources_revision_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER oauth_resources_revision_guard BEFORE UPDATE ON public.oauth_resources FOR EACH ROW EXECUTE FUNCTION protect_configuration_revision()"
+    },
+    {
+      "table_name": "oauth_resources",
+      "name": "resource_ownership_immutable",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER resource_ownership_immutable BEFORE UPDATE ON public.oauth_resources FOR EACH ROW EXECUTE FUNCTION protect_resource_ownership()"
+    },
+    {
+      "table_name": "oauth_resources",
+      "name": "zz_oauth_resources_present_parents",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_oauth_resources_present_parents BEFORE INSERT OR UPDATE ON public.oauth_resources FOR EACH ROW EXECUTE FUNCTION protect_product_parents()"
+    },
+    {
+      "table_name": "organization_capabilities",
+      "name": "capability_private_resource_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER capability_private_resource_guard BEFORE INSERT OR UPDATE ON public.organization_capabilities FOR EACH ROW EXECUTE FUNCTION protect_private_resource_assignment()"
+    },
+    {
+      "table_name": "organization_capabilities",
+      "name": "capability_revision_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER capability_revision_guard BEFORE UPDATE ON public.organization_capabilities FOR EACH ROW EXECUTE FUNCTION protect_configuration_revision()"
+    },
+    {
+      "table_name": "organization_capabilities",
+      "name": "capability_target_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER capability_target_guard BEFORE INSERT OR UPDATE ON public.organization_capabilities FOR EACH ROW EXECUTE FUNCTION protect_capability_target()"
+    },
+    {
+      "table_name": "organization_capabilities",
+      "name": "organization_capabilities_deletion_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER organization_capabilities_deletion_guard BEFORE INSERT OR UPDATE ON public.organization_capabilities FOR EACH ROW EXECUTE FUNCTION protect_product_deletion()"
+    },
+    {
+      "table_name": "organization_capabilities",
+      "name": "reserved_admin_capability_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER reserved_admin_capability_guard BEFORE DELETE ON public.organization_capabilities FOR EACH ROW EXECUTE FUNCTION protect_reserved_admin_capability()"
+    },
+    {
+      "table_name": "organization_capabilities",
+      "name": "zz_organization_capabilities_present_parents",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_organization_capabilities_present_parents BEFORE INSERT OR UPDATE ON public.organization_capabilities FOR EACH ROW EXECUTE FUNCTION protect_product_parents()"
+    },
+    {
+      "table_name": "organization_domains",
+      "name": "organization_domains_deletion_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER organization_domains_deletion_guard BEFORE INSERT OR UPDATE ON public.organization_domains FOR EACH ROW EXECUTE FUNCTION protect_product_deletion()"
+    },
+    {
+      "table_name": "organization_domains",
+      "name": "zz_organization_domains_present_parents",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_organization_domains_present_parents BEFORE INSERT OR UPDATE ON public.organization_domains FOR EACH ROW EXECUTE FUNCTION protect_product_parents()"
+    },
+    {
+      "table_name": "organizations",
+      "name": "organizations_authorization_version_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER organizations_authorization_version_guard BEFORE UPDATE ON public.organizations FOR EACH ROW EXECUTE FUNCTION protect_organization_authorization_version()"
+    },
+    {
+      "table_name": "organizations",
+      "name": "organizations_deletion_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER organizations_deletion_guard BEFORE INSERT OR UPDATE ON public.organizations FOR EACH ROW EXECUTE FUNCTION protect_product_deletion()"
+    },
+    {
+      "table_name": "organizations",
+      "name": "organizations_revision_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER organizations_revision_guard BEFORE UPDATE ON public.organizations FOR EACH ROW EXECUTE FUNCTION protect_configuration_revision()"
+    },
+    {
+      "table_name": "security_identifiers",
+      "name": "security_identifiers_immutable",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER security_identifiers_immutable BEFORE DELETE OR UPDATE ON public.security_identifiers FOR EACH ROW EXECUTE FUNCTION protect_security_identifier()"
+    },
+    {
+      "table_name": "sessions",
+      "name": "sessions_authentication_origin_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER sessions_authentication_origin_guard BEFORE INSERT OR UPDATE ON public.sessions FOR EACH ROW EXECUTE FUNCTION protect_session_authentication_origin()"
+    },
+    {
+      "table_name": "sessions",
+      "name": "zz_sessions_present_parents",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_sessions_present_parents BEFORE INSERT OR UPDATE ON public.sessions FOR EACH ROW EXECUTE FUNCTION protect_product_parents()"
+    },
+    {
+      "table_name": "sso_providers",
+      "name": "sso_providers_deletion_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER sso_providers_deletion_guard BEFORE INSERT OR UPDATE ON public.sso_providers FOR EACH ROW EXECUTE FUNCTION protect_product_deletion()"
+    },
+    {
+      "table_name": "sso_providers",
+      "name": "sso_providers_revision_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER sso_providers_revision_guard BEFORE UPDATE ON public.sso_providers FOR EACH ROW EXECUTE FUNCTION protect_sso_provider_revision()"
+    },
+    {
+      "table_name": "sso_providers",
+      "name": "zz_sso_providers_present_parents",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_sso_providers_present_parents BEFORE INSERT OR UPDATE ON public.sso_providers FOR EACH ROW EXECUTE FUNCTION protect_product_parents()"
+    },
+    {
+      "table_name": "system_bindings",
+      "name": "system_bindings_immutable",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER system_bindings_immutable BEFORE DELETE OR UPDATE ON public.system_bindings FOR EACH ROW EXECUTE FUNCTION protect_system_binding()"
+    },
+    {
+      "table_name": "users",
+      "name": "users_deletion_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER users_deletion_guard BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW EXECUTE FUNCTION protect_product_deletion()"
+    }
+  ],
+  "policies": [
+    {
+      "tablename": "entitlements",
+      "policyname": "tenant_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "((current_setting('answerable.scope'::text, true) = 'platform-write'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR (current_setting('answerable.scope'::text, true) = 'platform-read'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-read'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR ((current_setting('answerable.scope'::text, true) = 'policy-user'::text) AND (organization_id IN ( SELECT members.organization_id\n   FROM members\n  WHERE (members.user_id = (NULLIF(current_setting('answerable.subject'::text, true), ''::text))::uuid)))) OR ((current_setting('answerable.scope'::text, true) = 'policy-root'::text) AND (organization_id IN ( SELECT system_bindings.organization_id\n   FROM system_bindings))))",
+      "with_check": null
+    },
+    {
+      "tablename": "entitlements",
+      "policyname": "tenant_write",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "((current_setting('answerable.scope'::text, true) = 'platform-write'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)))",
+      "with_check": "((current_setting('answerable.scope'::text, true) = 'platform-write'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)))"
+    },
+    {
+      "tablename": "grant_contexts",
+      "policyname": "grant_delete",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "DELETE",
+      "qual": "(current_setting('answerable.scope'::text, true) = 'platform-write'::text)",
+      "with_check": null
+    },
+    {
+      "tablename": "grant_contexts",
+      "policyname": "grant_insert",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "((current_setting('answerable.scope'::text, true) = 'platform-write'::text) OR ((current_setting('answerable.scope'::text, true) = 'grant-admission'::text) AND (user_id = (NULLIF(current_setting('answerable.subject'::text, true), ''::text))::uuid) AND (authentication_session_id = (NULLIF(current_setting('answerable.session'::text, true), ''::text))::uuid)))"
+    },
+    {
+      "tablename": "grant_contexts",
+      "policyname": "grant_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "((current_setting('answerable.scope'::text, true) = ANY (ARRAY['platform-write'::text, 'platform-users'::text])) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR ((current_setting('answerable.scope'::text, true) = 'grant-client'::text) AND (client_instance_id IN ( SELECT oauth_clients.id\n   FROM oauth_clients\n  WHERE (oauth_clients.client_id = current_setting('answerable.client'::text, true))))) OR (current_setting('answerable.scope'::text, true) = 'platform-read'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-read'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR ((current_setting('answerable.scope'::text, true) = 'policy-user'::text) AND (user_id = (NULLIF(current_setting('answerable.subject'::text, true), ''::text))::uuid)) OR ((current_setting('answerable.scope'::text, true) = 'grant-admission'::text) AND (user_id = (NULLIF(current_setting('answerable.subject'::text, true), ''::text))::uuid) AND (authentication_session_id = (NULLIF(current_setting('answerable.session'::text, true), ''::text))::uuid)))",
+      "with_check": null
+    },
+    {
+      "tablename": "grant_contexts",
+      "policyname": "grant_update",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "UPDATE",
+      "qual": "((current_setting('answerable.scope'::text, true) = ANY (ARRAY['platform-write'::text, 'platform-users'::text])) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR ((current_setting('answerable.scope'::text, true) = 'grant-client'::text) AND (client_instance_id IN ( SELECT oauth_clients.id\n   FROM oauth_clients\n  WHERE (oauth_clients.client_id = current_setting('answerable.client'::text, true))))))",
+      "with_check": "((current_setting('answerable.scope'::text, true) = ANY (ARRAY['platform-write'::text, 'platform-users'::text])) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR ((current_setting('answerable.scope'::text, true) = 'grant-client'::text) AND (client_instance_id IN ( SELECT oauth_clients.id\n   FROM oauth_clients\n  WHERE (oauth_clients.client_id = current_setting('answerable.client'::text, true))))))"
+    },
+    {
+      "tablename": "group_members",
+      "policyname": "tenant_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "((current_setting('answerable.scope'::text, true) = 'platform-write'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR (current_setting('answerable.scope'::text, true) = 'platform-read'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-read'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR ((current_setting('answerable.scope'::text, true) = 'policy-user'::text) AND (organization_id IN ( SELECT members.organization_id\n   FROM members\n  WHERE (members.user_id = (NULLIF(current_setting('answerable.subject'::text, true), ''::text))::uuid)))) OR ((current_setting('answerable.scope'::text, true) = 'policy-root'::text) AND (organization_id IN ( SELECT system_bindings.organization_id\n   FROM system_bindings))))",
+      "with_check": null
+    },
+    {
+      "tablename": "group_members",
+      "policyname": "tenant_write",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "((current_setting('answerable.scope'::text, true) = 'platform-write'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)))",
+      "with_check": "((current_setting('answerable.scope'::text, true) = 'platform-write'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)))"
+    },
+    {
+      "tablename": "groups",
+      "policyname": "tenant_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "((current_setting('answerable.scope'::text, true) = 'platform-write'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR (current_setting('answerable.scope'::text, true) = 'platform-read'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-read'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR ((current_setting('answerable.scope'::text, true) = 'policy-user'::text) AND (organization_id IN ( SELECT members.organization_id\n   FROM members\n  WHERE (members.user_id = (NULLIF(current_setting('answerable.subject'::text, true), ''::text))::uuid)))) OR ((current_setting('answerable.scope'::text, true) = 'policy-root'::text) AND (organization_id IN ( SELECT system_bindings.organization_id\n   FROM system_bindings))))",
+      "with_check": null
+    },
+    {
+      "tablename": "groups",
+      "policyname": "tenant_write",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "((current_setting('answerable.scope'::text, true) = 'platform-write'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)))",
+      "with_check": "((current_setting('answerable.scope'::text, true) = 'platform-write'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)))"
+    },
+    {
+      "tablename": "organization_capabilities",
+      "policyname": "capability_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "((current_setting('answerable.scope'::text, true) = ANY (ARRAY['platform-read'::text, 'platform-write'::text])) OR ((current_setting('answerable.scope'::text, true) = ANY (ARRAY['tenant-read'::text, 'tenant-write'::text])) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR ((current_setting('answerable.scope'::text, true) = 'policy-user'::text) AND (organization_id IN ( SELECT members.organization_id\n   FROM members\n  WHERE (members.user_id = (NULLIF(current_setting('answerable.subject'::text, true), ''::text))::uuid)))) OR ((current_setting('answerable.scope'::text, true) = 'policy-root'::text) AND (organization_id IN ( SELECT system_bindings.organization_id\n   FROM system_bindings))))",
+      "with_check": null
+    },
+    {
+      "tablename": "organization_capabilities",
+      "policyname": "capability_write",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "(current_setting('answerable.scope'::text, true) = 'platform-write'::text)",
+      "with_check": "(current_setting('answerable.scope'::text, true) = 'platform-write'::text)"
+    }
+  ],
+  "rls": [
+    {
+      "table_name": "accounts",
+      "enabled": false,
+      "forced": false
+    },
+    {
+      "table_name": "admin_operation_results",
+      "enabled": false,
+      "forced": false
+    },
+    {
+      "table_name": "admin_operations",
+      "enabled": false,
+      "forced": false
+    },
+    {
+      "table_name": "audit_event_subjects",
+      "enabled": false,
+      "forced": false
+    },
+    {
+      "table_name": "audit_events",
+      "enabled": false,
+      "forced": false
+    },
+    {
+      "table_name": "entitlements",
+      "enabled": true,
+      "forced": false
+    },
+    {
+      "table_name": "grant_contexts",
+      "enabled": true,
+      "forced": false
+    },
+    {
+      "table_name": "group_members",
+      "enabled": true,
+      "forced": false
+    },
+    {
+      "table_name": "groups",
+      "enabled": true,
+      "forced": false
+    },
+    {
+      "table_name": "invitations",
+      "enabled": false,
+      "forced": false
+    },
+    {
+      "table_name": "jwks",
+      "enabled": false,
+      "forced": false
+    },
+    {
+      "table_name": "members",
+      "enabled": false,
+      "forced": false
+    },
+    {
+      "table_name": "oauth_access_tokens",
+      "enabled": false,
+      "forced": false
+    },
+    {
+      "table_name": "oauth_client_assertions",
+      "enabled": false,
+      "forced": false
+    },
+    {
+      "table_name": "oauth_client_resources",
+      "enabled": false,
+      "forced": false
+    },
+    {
+      "table_name": "oauth_clients",
+      "enabled": false,
+      "forced": false
+    },
+    {
+      "table_name": "oauth_consents",
+      "enabled": false,
+      "forced": false
+    },
+    {
+      "table_name": "oauth_refresh_tokens",
+      "enabled": false,
+      "forced": false
+    },
+    {
+      "table_name": "oauth_resources",
+      "enabled": false,
+      "forced": false
+    },
+    {
+      "table_name": "organization_capabilities",
+      "enabled": true,
+      "forced": false
+    },
+    {
+      "table_name": "organization_domains",
+      "enabled": false,
+      "forced": false
+    },
+    {
+      "table_name": "organizations",
+      "enabled": false,
+      "forced": false
+    },
+    {
+      "table_name": "security_identifiers",
+      "enabled": false,
+      "forced": false
+    },
+    {
+      "table_name": "sessions",
+      "enabled": false,
+      "forced": false
+    },
+    {
+      "table_name": "sso_providers",
+      "enabled": false,
+      "forced": false
+    },
+    {
+      "table_name": "system_bindings",
+      "enabled": false,
+      "forced": false
+    },
+    {
+      "table_name": "users",
+      "enabled": false,
+      "forced": false
+    },
+    {
+      "table_name": "verifications",
+      "enabled": false,
+      "forced": false
+    }
+  ],
+  "deferred": [
+    {
+      "table_name": "accounts",
+      "name": "accounts_user_id_users_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "admin_operation_results",
+      "name": "admin_operation_results_operation_id_admin_operations_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "audit_event_subjects",
+      "name": "audit_event_subjects_event_id_audit_events_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "audit_events",
+      "name": "audit_events_operation_id_admin_operations_id_fk",
+      "deferrable": true,
+      "initially_deferred": true
+    },
+    {
+      "table_name": "entitlements",
+      "name": "entitlements_client_id_oauth_clients_client_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "entitlements",
+      "name": "entitlements_organization_id_group_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "entitlements",
+      "name": "entitlements_organization_id_member_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "entitlements",
+      "name": "entitlements_organization_id_organizations_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "entitlements",
+      "name": "entitlements_resource_oauth_resources_identifier_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "grant_contexts",
+      "name": "grant_contexts_client_instance_id_oauth_clients_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "grant_contexts",
+      "name": "grant_contexts_member_id_members_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "grant_contexts",
+      "name": "grant_contexts_organization_id_organizations_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "grant_contexts",
+      "name": "grant_contexts_resource_instance_id_oauth_resources_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "grant_contexts",
+      "name": "grant_contexts_user_id_users_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "group_members",
+      "name": "group_members_organization_id_group_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "group_members",
+      "name": "group_members_organization_id_member_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "groups",
+      "name": "groups_organization_id_organizations_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "invitations",
+      "name": "invitations_inviter_id_users_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "invitations",
+      "name": "invitations_organization_id_organizations_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "members",
+      "name": "members_organization_id_organizations_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "members",
+      "name": "members_user_id_users_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "oauth_access_tokens",
+      "name": "oauth_access_tokens_client_id_oauth_clients_client_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "oauth_access_tokens",
+      "name": "oauth_access_tokens_refresh_id_oauth_refresh_tokens_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "oauth_access_tokens",
+      "name": "oauth_access_tokens_session_id_sessions_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "oauth_access_tokens",
+      "name": "oauth_access_tokens_user_id_users_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "oauth_client_resources",
+      "name": "oauth_client_resources_client_id_oauth_clients_client_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "oauth_client_resources",
+      "name": "oauth_client_resources_resource_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "oauth_clients",
+      "name": "oauth_clients_organization_id_organizations_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "oauth_clients",
+      "name": "oauth_clients_user_id_users_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "oauth_consents",
+      "name": "oauth_consents_client_id_oauth_clients_client_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "oauth_consents",
+      "name": "oauth_consents_user_id_users_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "oauth_refresh_tokens",
+      "name": "oauth_refresh_tokens_client_id_oauth_clients_client_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "oauth_refresh_tokens",
+      "name": "oauth_refresh_tokens_session_id_sessions_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "oauth_refresh_tokens",
+      "name": "oauth_refresh_tokens_user_id_users_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "oauth_resources",
+      "name": "oauth_resources_organization_id_organizations_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "organization_capabilities",
+      "name": "organization_capabilities_client_id_oauth_clients_client_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "organization_capabilities",
+      "name": "organization_capabilities_organization_id_organizations_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "organization_capabilities",
+      "name": "organization_capabilities_resource_oauth_resources_identifier_f",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "organization_domains",
+      "name": "organization_domains_organization_id_organizations_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "sessions",
+      "name": "sessions_active_organization_id_organizations_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "sessions",
+      "name": "sessions_user_id_users_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "sso_providers",
+      "name": "sso_providers_organization_id_organizations_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "sso_providers",
+      "name": "sso_providers_user_id_users_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "system_bindings",
+      "name": "system_bindings_organization_id_group_id_groups_organization_id",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "system_bindings",
+      "name": "system_bindings_organization_id_organizations_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    },
+    {
+      "table_name": "system_bindings",
+      "name": "system_bindings_resource_id_oauth_resources_id_fk",
+      "deferrable": false,
+      "initially_deferred": false
+    }
+  ]
+}

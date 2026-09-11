@@ -519,43 +519,6 @@ test("keyed fingerprints retain rotation recovery, reject changed secrets and ne
   expect(await connection.db.select().from(adminOperations)).toHaveLength(1);
 });
 
-test("legacy encrypted receipts remain recoverable under their original fingerprint", async () => {
-  const { createHash } = await import("node:crypto");
-  const hash = (value: string) =>
-    createHash("sha256").update(value).digest("hex");
-  const legacyCommand = { ...command, input: "legacy-input" };
-  const id = crypto.randomUUID();
-  const cipher = createOperationCipher({
-    activeKeyId: "old",
-    keys: { old: Buffer.alloc(32, 9).toString("base64url") },
-  });
-  await connection.db.insert(adminOperations).values({
-    id,
-    actorInstance: command.actorInstance,
-    authorityScope: command.authorityScope,
-    name: command.name,
-    keyDigest: hash(command.key),
-    fingerprint: hash(JSON.stringify(legacyCommand.input)),
-    ...result,
-    replayExpiresAt: new Date(Date.now() + 60000),
-  });
-  await connection.db.insert(adminOperationResults).values({
-    operationId: id,
-    ciphertext: await cipher.encrypt(id, { legacy: true }),
-  });
-  const replay = await executeOperation(
-    connection.db,
-    legacyCommand,
-    allow,
-    async () => {
-      throw new Error("must not rerun");
-    },
-    { cipher, retention: "ordinary" },
-  );
-  expect(replay).toMatchObject({ replayed: true, body: { legacy: true } });
-  expect(replay.operation.id).toBe(id);
-});
-
 for (const phase of ["authority", "mutation"] as const) {
   test(`lock timeout during ${phase} rolls back every effect and clears pooled settings`, async () => {
     const subject = createDatabase(testEnvironment({ databasePoolMax: 1 }));

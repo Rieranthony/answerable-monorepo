@@ -2,7 +2,10 @@ import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createDatabase, type DatabaseConnection } from "./client.ts";
-import { recordAuditEvent, listAuditEvents } from "../__tests__/audit-queries.ts";
+import {
+  recordAuditEvent,
+  listAuditEvents,
+} from "../__tests__/audit-queries.ts";
 import { executeOperation } from "../services/operations.ts";
 import { adminOperations, auditEvents, verifications } from "./schema/index.ts";
 import { createId } from "../lib/id.ts";
@@ -89,39 +92,4 @@ test("a dangling operation link rejects commit and rolls back its local data and
   expect(await connection.db.select().from(verifications)).toHaveLength(0);
   expect(await connection.db.select().from(auditEvents)).toHaveLength(0);
   expect(await connection.db.select().from(adminOperations)).toHaveLength(0);
-});
-
-test("the committed migration labels existing events as legacy without inventing operation links", async () => {
-  const probe = `audit_migration_${crypto.randomUUID().replaceAll("-", "")}`;
-  const migration = await Bun.file(
-    new URL("../../drizzle/0013_operation_audit.sql", import.meta.url),
-  ).text();
-  await connection.db.transaction(async (tx) => {
-    await tx.execute(sql`create schema ${sql.identifier(probe)}`);
-    await tx.execute(sql`set local search_path to ${sql.identifier(probe)}`);
-    await tx.execute(sql`create table audit_events (id uuid primary key)`);
-    await tx.execute(sql`create table admin_operations (id uuid primary key)`);
-    const legacy = createId();
-    await tx.execute(sql`insert into audit_events (id) values (${legacy})`);
-    for (const statement of migration.split("--> statement-breakpoint"))
-      await tx.execute(
-        sql.raw(
-          statement.replaceAll(
-            '"public"."admin_operations"',
-            `"${probe}"."admin_operations"`,
-          ),
-        ),
-      );
-    const newer = createId();
-    await tx.execute(sql`insert into audit_events (id) values (${newer})`);
-    const result = await tx.execute(
-      sql`select id, schema_version, operation_id from audit_events order by id`,
-    );
-    expect(result.rows).toEqual([
-      { id: legacy, schema_version: 0, operation_id: null },
-      { id: newer, schema_version: 1, operation_id: null },
-    ]);
-    await tx.execute(sql`set constraints all immediate`);
-    await tx.execute(sql`drop schema ${sql.identifier(probe)} cascade`);
-  });
 });

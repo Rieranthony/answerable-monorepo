@@ -31,8 +31,8 @@ jobs:
       - name: Start disposable PostgreSQL
         run: docker compose up -d --wait postgres
 
-      - name: Migrate test schema
-        run: bun --filter @answerable/id db:test:migrate
+      - name: Prove fresh migration and interrupted installation
+        run: bun --filter @answerable/id test:migrations
 
       - name: Type-check
         run: bun run typecheck

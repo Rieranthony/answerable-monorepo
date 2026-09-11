@@ -1,5 +1,7 @@
 # ID soft deletion implementation
 
+**Migration baseline:** the development chain and its upgrade/cutover procedures below are historical. First installation now uses one initial migration; see the [consolidation record](id-initial-migration.md). Retained-key custody, native OAuth, deletion and recovery contracts still apply.
+
 Status: implementation and verification complete; ready for coordinator review and local integration. Local integration handoff only. No production deployment, push, retention-duration decision or release certification.
 
 Base: `7d48cf5c5ede3aca0773f7166309a2c6aedf4dda`, including the accepted SSO initiation fix. Branch: `codex/id-soft-deletion`. Only this worktree and the assigned disposable `answerable_id_test` database were modified.

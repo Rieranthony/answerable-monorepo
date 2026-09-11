@@ -1,0 +1,35 @@
+{
+  "event": "synthetic_recovery_verified",
+  "scope": "local_two_snapshot_rehearsal",
+  "reconciliationSource": "complete_later_dump_of_still_available_synthetic_source",
+  "listedOperations": 4,
+  "trafficRefusedOnGap": true,
+  "productionRtoRpo": "unknown",
+  "custody": {
+    "signingKeys": 1,
+    "accounts": 1,
+    "replayResults": 9
+  },
+  "phases": [
+    {
+      "phase": "prepare_and_original_dump",
+      "elapsedMs": 2009.635667
+    },
+    {
+      "phase": "post_snapshot_commands_and_complete_reconciliation_dump",
+      "elapsedMs": 623.0532910000002
+    },
+    {
+      "phase": "old_snapshot_restored_and_reopening_refused",
+      "elapsedMs": 2492.133959
+    },
+    {
+      "phase": "existing_restore_contracts",
+      "elapsedMs": 1603.9003330000005
+    },
+    {
+      "phase": "complete_reconciliation_restore_custody_and_replay",
+      "elapsedMs": 2698.800375
+    }
+  ]
+}

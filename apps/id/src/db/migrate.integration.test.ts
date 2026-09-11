@@ -5,6 +5,8 @@ import { testEnvironment } from "../__tests__/support.ts";
 import { assertDisposableTestDatabase } from "../__tests__/test-database.ts";
 import { createDatabase, type DatabaseConnection } from "./client.ts";
 import { runMigrations } from "./migrate.ts";
+import { migrationCatalog } from "../__tests__/migration-catalog.ts";
+import approvedCatalog from "../__tests__/migration-catalog.json";
 
 let connection: DatabaseConnection;
 
@@ -15,6 +17,10 @@ beforeAll(() => {
 
 afterAll(async () => {
   await connection.close();
+});
+
+test("custom database objects match the reviewed catalogue", async () => {
+  expect(await migrationCatalog(connection.db)).toEqual(approvedCatalog);
 });
 
 test("integration: migrations are idempotent", async () => {

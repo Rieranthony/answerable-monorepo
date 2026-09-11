@@ -18,7 +18,7 @@ import { createAuth } from "../auth.ts";
 import { createSsoOriginBoundary } from "../auth/sso-origin.ts";
 import { authDatabaseAdapter } from "../auth/database-adapter.ts";
 import { signInThroughIdp } from "../__tests__/federation.ts";
-import { upstreamCutoverFixture } from "../__tests__/upstream-cutover.ts";
+import { runMigrations } from "../db/migrate.ts";
 import {
   startOidcIssuer,
   type OidcClaims,
@@ -193,54 +193,37 @@ async function insertUser(
 }
 
 describe("integration: federated sign-in", () => {
-  test("credential retirement preserves the existing browser session and refills encrypted tokens on SSO", async () => {
+  test("repeated migration preserves native sessions, identity and encrypted upstream tokens", async () => {
     await seedProvider();
     issuer.enqueue(entraClaims());
     const first = await signIn();
     expect(first.location).toBe(callbackURL);
-    const [identity] = await connection.db.select().from(accounts);
-    const [session] = await connection.db.select().from(sessions);
+    const identities = await connection.db.select().from(accounts);
+    const beforeSessions = await connection.db.select().from(sessions);
     const cookie = first.cookies
       .map((value) => value.split(";", 1)[0])
       .join("; ");
-    const cutover = await upstreamCutoverFixture();
-    try {
-      await cutover.run(connection.db);
-      expect((await connection.db.select().from(accounts))[0]).toMatchObject({
-        id: identity!.id,
-        userId: identity!.userId,
-        issuer: identity!.issuer,
-        accountId: identity!.accountId,
-        accessToken: null,
-        refreshToken: null,
-        idToken: null,
-      });
-      const current = await app.request("/auth/get-session", {
-        headers: { Cookie: cookie },
-      });
-      expect(current.status).toBe(200);
-      expect(await current.json()).toMatchObject({
-        session: { id: session!.id, userId: identity!.userId },
-        user: { id: identity!.userId },
-      });
-      issuer.enqueue(entraClaims());
-      expect((await signIn()).location).toBe(callbackURL);
-      const rows = await connection.db.select().from(accounts);
-      expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({
-        id: identity!.id,
-        userId: identity!.userId,
-        issuer: identity!.issuer,
-        accountId: identity!.accountId,
-      });
-      for (const field of ["accessToken", "refreshToken", "idToken"] as const)
-        expect(rows[0]![field]).toStartWith("$ba$1$");
-      const fresh = rows[0]!;
-      await cutover.run(connection.db);
-      expect((await connection.db.select().from(accounts))[0]).toEqual(fresh);
-    } finally {
-      await cutover.close(connection.db);
-    }
+    await runMigrations(connection.db);
+    expect(await connection.db.select().from(accounts)).toEqual(identities);
+    expect(await connection.db.select().from(sessions)).toEqual(beforeSessions);
+    const current = await app.request("/auth/get-session", {
+      headers: { Cookie: cookie },
+    });
+    expect(current.status).toBe(200);
+    expect(await current.json()).toMatchObject({
+      session: { id: beforeSessions[0]!.id, userId: identities[0]!.userId },
+      user: { id: identities[0]!.userId },
+    });
+    issuer.enqueue(entraClaims());
+    expect((await signIn()).location).toBe(callbackURL);
+    const rows = await connection.db.select().from(accounts);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id: identities[0]!.id,
+      userId: identities[0]!.userId,
+    });
+    for (const field of ["accessToken", "refreshToken", "idToken"] as const)
+      expect(rows[0]![field]).toStartWith("$ba$1$");
   });
   test("legacy plaintext fails native sign-in without replacing the account or creating a session", async () => {
     await seedProvider();

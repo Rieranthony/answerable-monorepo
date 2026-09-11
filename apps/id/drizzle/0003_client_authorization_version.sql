@@ -1,2 +1,0 @@
-ALTER TABLE "oauth_clients" ADD COLUMN "authorization_version" integer DEFAULT 1 NOT NULL;--> statement-breakpoint
-ALTER TABLE "oauth_clients" ADD CONSTRAINT "oauth_clients_authorization_version_check" CHECK ("oauth_clients"."authorization_version" > 0);

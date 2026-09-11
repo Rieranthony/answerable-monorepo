@@ -160,7 +160,7 @@ export const groupMembers = pgTable(
  *
  * Principal: the whole organization (member_id and group_id null), one
  * group, or one member. Target: a client, a resource, or an exact client/resource
- * pair. Legacy resource-only assignments remain until capability cutover.
+ * pair. Resource-only assignments cannot grant OAuth service access.
  * Grants are additive within the same exact target: a person is
  * entitled when any active row matches them for the target.
  */

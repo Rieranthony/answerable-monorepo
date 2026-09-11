@@ -213,38 +213,17 @@ test("linked resource erasure fails without reserving its key; unlink permits a 
   expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
 });
 
-test("pre-ownership creation receipts replay with implicit or explicit shared classification", async () => {
-  const { executeOperation } = await import("../../services/operations.ts");
-  const { createOperationCipher } =
-    await import("../../services/operation-cipher.ts");
+test("resource creation normalises omitted and explicit shared defaults for replay", async () => {
   const key = crypto.randomUUID();
   const input = {
-    identifier: `https://${key}.example/legacy`,
-    name: "Legacy",
+    identifier: `https://${key}.example/resource`,
+    name: "Resource",
     allowedScopes: ["read"],
   };
-  const retained = { ...input, id: crypto.randomUUID() };
-  const saved = await executeOperation(
-    fixture.db,
-    {
-      actorInstance: `user:${fixture.principals.platformAdmin.userId}`,
-      authorityScope: "platform",
-      name: "createResource",
-      key,
-      input,
-    },
-    async () => {},
-    async () => ({
-      outcome: "applied",
-      statusCode: 201,
-      resultReference: { type: "resource", id: input.identifier },
-      body: retained,
-    }),
-    {
-      cipher: createOperationCipher(fixture.environment.operationReplay!),
-      retention: "ordinary",
-    },
-  );
+  const created = await request("/resources", "POST", key, input);
+  expect(created.status).toBe(201);
+  const retained = await created.json();
+  const operationId = created.headers.get("Operation-Id");
   for (const body of [
     input,
     { ...input, classification: "platform_shared", organizationId: null },
@@ -252,7 +231,7 @@ test("pre-ownership creation receipts replay with implicit or explicit shared cl
     const response = await request("/resources", "POST", key, body);
     expect(response.status).toBe(201);
     expect(response.headers.get("Idempotency-Replayed")).toBe("true");
-    expect(response.headers.get("Operation-Id")).toBe(saved.operation.id);
+    expect(response.headers.get("Operation-Id")).toBe(operationId);
     expect(await response.json()).toEqual(retained);
   }
   expect(

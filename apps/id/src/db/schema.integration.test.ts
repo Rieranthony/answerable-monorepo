@@ -184,6 +184,15 @@ const allTables = [
   auditEvents,
 ];
 
+// Fresh generation can reorder columns without changing their definitions.
+const sortColumns = (tables: Record<string, string[]>) =>
+  Object.fromEntries(
+    Object.entries(tables).map(([table, columns]) => [
+      table,
+      [...columns].sort(),
+    ]),
+  );
+
 describe("integration: PostgreSQL schema", () => {
   test("freezes the approved column contract", async () => {
     const result = await connection.db.execute<{
@@ -220,7 +229,7 @@ describe("integration: PostgreSQL schema", () => {
     const created = "created_at timestamptz default now()";
     const updated = "updated_at timestamptz default now()";
     const active = "status text default 'active'::text";
-    expect(columns).toEqual({
+    const expectedColumns = {
       grant_contexts: [
         "id uuid",
         "organization_id uuid",
@@ -589,7 +598,8 @@ describe("integration: PostgreSQL schema", () => {
         "operation_id uuid null",
         "schema_version integer default 1",
       ],
-    });
+    };
+    expect(sortColumns(columns)).toEqual(sortColumns(expectedColumns));
   });
 
   test("freezes the approved constraint and index contract", async () => {

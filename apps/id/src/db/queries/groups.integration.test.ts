@@ -5,7 +5,7 @@ import { testEnvironment } from "../../__tests__/support.ts";
 import { createDatabase, type DatabaseConnection } from "../client.ts";
 import { createOrganization } from "../../__tests__/organization-queries.ts";
 import { createId } from "../../lib/id.ts";
-import { users, members, groupMembers } from "../schema/index.ts";
+import { users, members } from "../schema/index.ts";
 let connection: DatabaseConnection;
 beforeAll(() => {
   connection = createDatabase(testEnvironment());
@@ -289,67 +289,4 @@ test("assignment instances and revisions survive updates but not recreation", as
   expect(replacement.created).toBe(true);
   expect(replacement.row.id).not.toBe(first.id);
   expect(replacement.row.revision).toBe(1);
-});
-
-test("assignment migration backfills populated rows without changing their windows", async () => {
-  const { db, org, ids } = await seed();
-  const group = await queries.createGroup(db, {
-    organizationId: org.id,
-    slug: "upgrade",
-    name: "Upgrade",
-  });
-  const first = await queries.addGroupMember(db, {
-    organizationId: org.id,
-    groupId: group.id,
-    memberId: ids[0]!,
-  });
-  const migration = await Bun.file(
-    new URL(
-      "../../../drizzle/0023_group_assignment_identity.sql",
-      import.meta.url,
-    ),
-  ).text();
-  const rollback = new Error("rollback migration rehearsal");
-  await expect(
-    db.transaction(async (tx) => {
-      await tx.execute(
-        sql`drop trigger group_members_revision_guard on group_members`,
-      );
-      await tx.execute(
-        sql`drop function protect_group_assignment_identity() cascade`,
-      );
-      await tx.execute(
-        sql`alter table group_members drop column id, drop column revision`,
-      );
-      for (const statement of migration.split("--> statement-breakpoint"))
-        await tx.execute(sql.raw(statement));
-      const [migrated] = await tx
-        .select()
-        .from(groupMembers)
-        .where(eq(groupMembers.groupId, group.id));
-      expect(migrated).toMatchObject({
-        organizationId: org.id,
-        groupId: group.id,
-        memberId: ids[0],
-        validFrom: first.validFrom,
-        validUntil: first.validUntil,
-        createdAt: first.createdAt,
-        revision: 1,
-      });
-      expect(migrated?.id).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-      );
-      await expect(
-        tx.transaction(async (nested) =>
-          nested.execute(
-            sql`insert into group_members (organization_id, group_id, member_id) values (${org.id}, ${group.id}, ${ids[1]})`,
-          ),
-        ),
-      ).rejects.toThrow();
-      throw rollback;
-    }),
-  ).rejects.toBe(rollback);
-  expect(await queries.findGroupMember(db, org.id, group.id, ids[0]!)).toEqual(
-    first,
-  );
 });

@@ -1,1 +1,0 @@
-ALTER TABLE "oauth_resources" ADD CONSTRAINT "oauth_resources_identity_claims_check" CHECK (NOT ("oauth_resources"."custom_claims" ?| ARRAY['client_instance', 'organization_id', 'authorization_version', 'subject_type']));

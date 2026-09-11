@@ -1,5 +1,3 @@
-import * as productionAuditQueries from "./queries/audit.ts";
-import { inPlatformRead } from "../__tests__/platform-context.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import { createDatabase, type DatabaseConnection } from "./client.ts";
@@ -101,72 +99,3 @@ for (const contract of contracts) {
     });
   });
 }
-
-test("populated lifecycle backfill is repeatable, excludes malformed contracts and preserves original facts", async () => {
-  const legacy = await Bun.file(
-    new URL("../../drizzle/0031_grant_effect_subjects.sql", import.meta.url),
-  ).text();
-  const migration = await Bun.file(
-    new URL("../../drizzle/0032_lifecycle_grant_subjects.sql", import.meta.url),
-  ).text();
-  await inPlatformRead(connection.db, async (context) => {
-    const tx = context.tx;
-    const current = await tx.execute<{ definition: string }>(
-      sql`select pg_get_functiondef('capture_audit_subjects(audit_events, text)'::regprocedure) as definition`,
-    );
-    await tx.execute(sql.raw(legacy.split("--> statement-breakpoint")[0]!));
-    const userId = createId();
-    const valid = [];
-    for (const contract of contracts) {
-      const base = input(contract, userId);
-      valid.push(await recordAuditEvent(tx, base));
-      await recordAuditEvent(tx, { ...base, outcome: "failure" });
-      await recordAuditEvent(tx, {
-        ...base,
-        data: {
-          grantContexts: "bad",
-          deletedGrantContexts: false,
-          effects: [],
-        },
-      });
-      await tx
-        .insert(auditEvents)
-        .values({ ...base, id: createId(), schemaVersion: 0 });
-    }
-    const before = await tx.select().from(auditEvents).orderBy(auditEvents.id);
-    expect(
-      (
-        await productionAuditQueries.listUserAuditEvents(
-          context,
-          userId,
-          {},
-          { limit: 30 },
-        )
-      ).items,
-    ).toEqual([]);
-    for (let run = 0; run < 2; run++) {
-      for (const statement of migration.split("--> statement-breakpoint"))
-        await tx.execute(sql.raw(statement));
-      expect(
-        (
-          await productionAuditQueries.listUserAuditEvents(
-            context,
-            userId,
-            {},
-            { limit: 30 },
-          )
-        ).items,
-      ).toEqual([...valid].sort((a, b) => b.id.localeCompare(a.id)));
-      expect(
-        await tx.select().from(auditEvents).orderBy(auditEvents.id),
-      ).toEqual(before);
-      expect(
-        await tx
-          .select()
-          .from(auditEventSubjects)
-          .where(eq(auditEventSubjects.entityId, userId)),
-      ).toHaveLength(6);
-    }
-    await tx.execute(sql.raw(current.rows[0]!.definition));
-  });
-});

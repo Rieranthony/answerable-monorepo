@@ -1,2 +1,0 @@
-ALTER TABLE "oauth_resources" DROP CONSTRAINT "oauth_resources_identity_claims_check";--> statement-breakpoint
-ALTER TABLE "oauth_resources" ADD CONSTRAINT "oauth_resources_identity_claims_check" CHECK (NOT ("oauth_resources"."custom_claims" ?| ARRAY['client_instance', 'organization_id', 'authorization_version', 'organization_authorization_version', 'subject_type', 'membership_id', 'grant_id', 'resource_instance', 'upstream_auth_time']));

@@ -4,7 +4,7 @@ Monorepo for Answerable's products, program documentation, and the local environ
 
 **Status:** `apps/web` is live. **The current focus is Answerable ID** — the identity service every app and MCP server will authenticate through. Code is written test-first by AI agents from these docs.
 
-The [enterprise foundation](docs/05-id-enterprise-foundation.md) is in progress. Machine tokens bind immutable identities; administrative changes use a transaction-backed operation journal; durable UUID audit subjects and tenant isolation safeguards are implemented. Public user OAuth remains closed. Tenant authentication policy, production user grants and operational release proof remain in the [current checklist](task_plan.md). Existing ID databases require the migration and system-binding review in the [operator instructions](apps/id/README.md) before startup.
+The [enterprise foundation](docs/05-id-enterprise-foundation.md) is in progress. Machine tokens bind immutable identities; administrative changes use a transaction-backed operation journal; durable UUID audit subjects and tenant isolation safeguards are implemented. Production user OAuth and own-tenant SSO are implemented. Operational release proof remains in the [current checklist](task_plan.md). New installations use one initial migration and immutable bootstrap bindings; see [ID setup](apps/id/README.md#commands).
 
 | Workspace | What it is | Status |
 | --- | --- | --- |

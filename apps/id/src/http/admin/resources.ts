@@ -309,16 +309,10 @@ export function register(app: Hono<AppEnvironment>) {
         ...parsed,
         allowedScopes: [...new Set(parsed.allowedScopes)].sort(),
       };
-      const { classification, organizationId, ...configuration } = input;
-      // Keep pre-ownership shared-resource receipts replayable.
-      const canonicalInput =
-        classification === "platform_shared"
-          ? configuration
-          : { ...configuration, classification, organizationId };
       return platformCommand(
         context,
         "createResource",
-        operationJson(canonicalInput),
+        operationJson(input),
         201,
         async (platform) => ({
           body: await service.createResource(platform, input),

@@ -93,30 +93,18 @@ test("subject-write failure rolls back the audit fact", async () => {
   }
 });
 
-test("legacy derivation is labelled and does not invent a removed membership's user", async () => {
+test("recorded subjects do not invent a removed membership's user", async () => {
   const db = connection.db;
   const eventId = createId(),
     missingMemberId = createId();
-  await db.transaction(async (tx) => {
-    await tx.execute(
-      sql`alter table audit_events disable trigger audit_events_capture_subjects`,
-    );
-    await tx.insert(auditEvents).values({
-      id: eventId,
-      actorType: "system",
-      actorId: "legacy",
-      action: "legacy",
-      targetType: "member",
-      targetId: missingMemberId,
-      outcome: "success",
-    });
-    await tx.execute(sql`set constraints all immediate`);
-    await tx.execute(
-      sql`alter table audit_events enable trigger audit_events_capture_subjects`,
-    );
-    await tx.execute(
-      sql`select capture_audit_subjects(event, 'legacy_derived') from audit_events event where id = ${eventId}`,
-    );
+  await db.insert(auditEvents).values({
+    id: eventId,
+    actorType: "system",
+    actorId: "subject-test",
+    action: "test",
+    targetType: "member",
+    targetId: missingMemberId,
+    outcome: "success",
   });
   const subjects = await db.execute(
     sql`select entity_type, entity_id, provenance from audit_event_subjects where event_id = ${eventId} order by entity_type`,
@@ -125,12 +113,12 @@ test("legacy derivation is labelled and does not invent a removed membership's u
     {
       entity_type: "member",
       entity_id: missingMemberId,
-      provenance: "legacy_derived",
+      provenance: "recorded",
     },
     {
       entity_type: "system",
-      entity_id: "legacy",
-      provenance: "legacy_derived",
+      entity_id: "subject-test",
+      provenance: "recorded",
     },
   ]);
 });
