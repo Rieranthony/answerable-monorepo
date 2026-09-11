@@ -16,9 +16,9 @@ User authorises this task to manage implementation of the six completed plans, i
 | Owner | Exact task title | Task ID | State |
 | --- | --- | --- | --- |
 | T1 | Plan ID tenant authentication and authority | 01a08b80-277b-7382-be76-51e1b7c18b10 | Admission, verified linking and five-minute freshness integrated at c245060; idle |
-| T2 | Plan ID production OAuth and consent | 01a08b80-50b2-79e0-880a-46d1a5a33dfe | First implementation 7a1e2fe under review; bounded token-output correction dispatched; sole writer/DB owner |
+| T2 | Plan ID production OAuth and consent | 01a08b80-50b2-79e0-880a-46d1a5a33dfe | Production OAuth and correction integrated at 31c3f46; idle |
 | T3 | Plan ID audit lifecycle and retention | 01a08b80-6407-7a03-9ac8-ee28ba12c4f7 | Soft deletion accepted/integrated at 3e09ad1; idle |
-| T4 | Plan ID capacity operations and recovery | 01a08b80-c0dd-7793-858b-678a943deda7 | Plan complete; implementation not dispatched |
+| T4 | Plan ID capacity operations and recovery | 01a08b80-c0dd-7793-858b-678a943deda7 | Dispatched repository operational/recovery work from 31c3f46; sole writer/DB owner |
 | T5 | Plan ID single initial migration cleanup | 01a08b80-d8c5-7763-99e6-e764415127f7 | Plan complete; implementation not dispatched |
 | T6 | Plan ID release acceptance and documentation | 01a08b80-f14b-70d1-8265-1dd18a2fb232 | Plan complete; implementation not dispatched |
 
@@ -65,7 +65,7 @@ The user explicitly accepted both recommendations and specified soft deletion:
 
 ## Next coordinator action
 
-T1 linking and freshness are accepted at c2450604cc1ee523621514cf303078263c1f8c2c (source dfe3cb36546aaad228b778a200aa173a1074bd10). T2 is dispatched from that baseline for its production OAuth/consent implementation through local acceptance, and owns the sole writer/shared disposable test DB slot. Consent per new flow is the explicit conservative default; preserve only server-configured first-party bypass. Do not stall for consent-memory preferences. Read T2 completion, review code/evidence and delete/simplify decisions, integrate accepted commits, then dispatch T4. No purge, non-test reset, push/deployment or migration squash. Real consumer/deployment evidence remains separate from local acceptance.
+T2 production OAuth and bounded assertion correction are accepted as 2c53316 and 31c3f46c8e835bbcc94e33460850564351e8d372. T4 is dispatched from the canonical baseline for repository-owned operational checks, measured synthetic workload and recovery/reconciliation work. It owns the sole writer/shared disposable DB slot. Missing production topology/traffic/secret service/RTO/RPO facts must be listed as finite external acceptance inputs, never invented or allowed to block useful local work. Review T4 delivery and integrate, then T5 exactly one initial migration after schema freeze, then T6 final acceptance/docs. No domain purge jobs, non-test reset, push/deployment. Existing operation-result expiry is separate from deferred domain purge.
 
 Review adjustment to T3's proposal: do not accidentally remove the existing explicit membership reinstatement feature. Distinguish reversible membership revocation from product/entity deletion. No automatic SSO resurrection is allowed, but explicit reinstatement of a revoked membership remains a supported command unless the user changes that contract. If a genuine conflict requires changing public semantics, bring that concrete conflict to the coordinator rather than silently making reinstatement unreachable.
 
@@ -109,3 +109,10 @@ Thread heartbeat `coordinate-id-foundation-completion` is active every ten minut
 - Reviewed actual native provider composition, signed durable flow/terminal state, per-tenant snapshot/current grant checks, native code/refresh reuse and family-local revocation, atomic OAuth subjects and browser/HTTP evidence.
 - Requested bounded correction to explicit planned issuance assertions: current boundary never checks required/forbidden ID-token presence, nonce/scope-limited claims, complete opaque output persistence, or returned refresh row correspondence; resource JWT checks omit scope/expiry/token-type. The report overstates complete output/persistence agreement. Worker must reproduce divergences with existing fault fixtures, minimally assert actual native contract including cached replay/narrowing, verify rollback, update report and rerun affected gates. No speculative hardening expansion.
 - T2 retains sole writer/shared test DB ownership for correction. Await clean follow-up evidence before integration or T4 dispatch.
+
+## Integrated production OAuth checkpoint
+
+- Reviewed and integrated 7a1e2fe as 2c53316 and f911494 as 31c3f46. Production native flows, tenant provenance, exact-pair and login-only grants, code/refresh policy, consent, audit subjects, UserInfo/revocation, public discovery/OpenAPI and browser journey are implemented.
+- Bounded review correction reproduced missing ID token and wrong replacement refresh scope returning 200 before fix. Shared assertions now verify token presence/kinds/scopes, nonce, native expiry, identity/audience, opaque/refresh persistence, family binding and cached replay; consent narrowing feeds the actual policy/audit decision. Old duplicate inline checks removed. Native token semantics preserved.
+- Raw final log confirms 2,031 pass, zero failures, 29,860 assertions, 147 files, 590.74s, exit 0, 100% line/function coverage. Other required gates and real local-browser journey evidence in reports/id-production-oauth.md. DB handoff log confirms zero other test sessions/roles. Integrated apps/docs/env exactly equal tested worker source; no unchanged suite repetition.
+- External Entra/OmniChat/Claude/consumer revocation/custody/topology acceptance remains explicitly open. Local passes do not certify deployment. T4 now owns bounded operational implementation; T5 migration consolidation remains last after schema changes.
