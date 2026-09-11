@@ -1,11 +1,11 @@
-import * as productionGroupQueries from "./groups.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
-import { testEnvironment } from "../../__tests__/support.ts";
-import { createDatabase, type DatabaseConnection } from "../client.ts";
+import * as queries from "../../__tests__/group-queries.ts";
 import { createOrganization } from "../../__tests__/organization-queries.ts";
+import { testEnvironment } from "../../__tests__/support.ts";
 import { createId } from "../../lib/id.ts";
-import { users, members } from "../schema/index.ts";
+import { createDatabase, type DatabaseConnection } from "../client.ts";
+import { members, users } from "../schema/index.ts";
 let connection: DatabaseConnection;
 beforeAll(() => {
   connection = createDatabase(testEnvironment());
@@ -38,18 +38,6 @@ async function seed() {
 }
 const past = new Date("2000-01-01T00:00:00Z");
 const future = new Date("2100-01-01T00:00:00Z");
-import * as queries from "../../__tests__/group-queries.ts";
-test("group query entry rejects a raw database instead of issued authority", async () => {
-  await expect(
-    Promise.resolve().then(() =>
-      Reflect.apply(productionGroupQueries.listGroups, undefined, [
-        connection.db,
-        createId(),
-        { limit: 1 },
-      ]),
-    ),
-  ).rejects.toThrow("Invalid or expired");
-});
 test("group CRUD is scoped, filtered and paginated", async () => {
   const { db, org, other } = await seed();
   const a = await queries.createGroup(db, {

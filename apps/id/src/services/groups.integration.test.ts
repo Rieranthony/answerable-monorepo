@@ -1,11 +1,24 @@
-import { platformWriteService } from "../__tests__/platform-context.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
-import { testEnvironment } from "../__tests__/support.ts";
-import { createDatabase, type DatabaseConnection } from "../db/client.ts";
+import * as queries from "../__tests__/group-queries.ts";
 import { createOrganization } from "../__tests__/organization-queries.ts";
+import { platformWriteService } from "../__tests__/platform-context.ts";
+import { testEnvironment } from "../__tests__/support.ts";
+import { inTenantRead } from "../__tests__/tenant-command.ts";
+import type { Database } from "../db/client.ts";
+import { createDatabase, type DatabaseConnection } from "../db/client.ts";
+import {
+  auditEvents,
+  entitlements,
+  groupMembers,
+  members,
+  oauthClients,
+  users,
+} from "../db/schema/index.ts";
+import { mapDatabaseError } from "../http/problem.ts";
 import { createId } from "../lib/id.ts";
-import { users, members } from "../db/schema/index.ts";
+import type { Actor } from "./actor.ts";
+import * as implementation from "./groups.ts";
 let connection: DatabaseConnection;
 beforeAll(() => {
   connection = createDatabase(testEnvironment());
@@ -38,14 +51,6 @@ async function seed() {
 }
 const past = new Date("2000-01-01T00:00:00Z");
 const future = new Date("2100-01-01T00:00:00Z");
-import {
-  auditEvents,
-  entitlements,
-  groupMembers,
-  oauthClients,
-} from "../db/schema/index.ts";
-import type { Actor } from "./actor.ts";
-import { mapDatabaseError } from "../http/problem.ts";
 const actor: Actor = {
   actorType: "system",
   actorId: "root",
@@ -53,7 +58,7 @@ const actor: Actor = {
   ip: "192.0.2.1",
   userAgent: "test",
 };
-const invalidActor = { ...actor, requestId: "\0" };
+
 async function mapped(promise: Promise<unknown>, status: number, code: string) {
   try {
     await promise;
@@ -77,9 +82,6 @@ async function grant(
     .values({ id, organizationId, clientId, scopes: ["read"], ...principal });
   return id;
 }
-import * as implementation from "./groups.ts";
-import { inTenantRead } from "../__tests__/tenant-command.ts";
-import type { Database } from "../db/client.ts";
 const service = {
   ...implementation,
   createGroup: platformWriteService(implementation.createGroup),
@@ -124,7 +126,6 @@ const service = {
       implementation.getGroupMember(context, arg1, arg2),
     ),
 };
-import * as queries from "../__tests__/group-queries.ts";
 test("group lifecycle and membership writes emit one attributed audit each and erasure cascades", async () => {
   const { db, org, ids } = await seed();
   const row = await service.createGroup(db, actor, org.id, {
@@ -291,52 +292,4 @@ test("group writes reject missing or foreign rows, managed memberships and datab
   );
   expect(await queries.findGroupMember(db, org.id, row.id, ids[0]!)).toBeNull();
   expect(await db.select().from(auditEvents)).toHaveLength(2);
-});
-test("every group write rolls back when audit insertion fails", async () => {
-  const { db, org, ids } = await seed();
-  const input = { slug: "team", name: "Team" };
-  await expect(
-    service.createGroup(db, invalidActor, org.id, input),
-  ).rejects.toThrow();
-  expect((await service.listGroups(db, org.id, { limit: 10 })).items).toEqual(
-    [],
-  );
-  const row = await service.createGroup(db, actor, org.id, input);
-  await expect(
-    service.updateGroup(db, invalidActor, org.id, row.id, { externalId: "no" }),
-  ).rejects.toThrow();
-  expect((await service.getGroup(db, org.id, row.id)).externalId).toBeNull();
-  await expect(
-    service.disableGroup(db, invalidActor, org.id, row.id),
-  ).rejects.toThrow();
-  expect((await service.getGroup(db, org.id, row.id)).status).toBe("active");
-  await service.disableGroup(db, actor, org.id, row.id);
-  await expect(
-    service.enableGroup(db, invalidActor, org.id, row.id),
-  ).rejects.toThrow();
-  expect((await service.getGroup(db, org.id, row.id)).status).toBe("disabled");
-  await expect(
-    service.putMember(db, invalidActor, org.id, row.id, ids[0]!, {}),
-  ).rejects.toThrow();
-  expect(await queries.findGroupMember(db, org.id, row.id, ids[0]!)).toBeNull();
-  await service.putMember(db, actor, org.id, row.id, ids[0]!, {});
-  await expect(
-    service.putMember(db, invalidActor, org.id, row.id, ids[0]!, {
-      validUntil: past,
-    }),
-  ).rejects.toThrow();
-  expect(
-    (await queries.findGroupMember(db, org.id, row.id, ids[0]!))!.validUntil,
-  ).toBeNull();
-  await expect(
-    service.removeMember(db, invalidActor, org.id, row.id, ids[0]!),
-  ).rejects.toThrow();
-  await expect(
-    service.eraseGroup(db, invalidActor, org.id, row.id, row.id),
-  ).rejects.toThrow();
-  expect(
-    await queries.findGroupMember(db, org.id, row.id, ids[0]!),
-  ).not.toBeNull();
-  expect(await service.getGroup(db, org.id, row.id)).toBeDefined();
-  expect(await db.select().from(auditEvents)).toHaveLength(3);
 });

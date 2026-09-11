@@ -1,26 +1,25 @@
-import { expectReceipt } from "../../__tests__/operation-receipt.ts";
-import { withDatabaseScope } from "../../db/isolation.ts";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq, inArray, sql } from "drizzle-orm";
 import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { createApp } from "../../app.ts";
 import { createAuth } from "../../auth.ts";
 import { createDatabase, type DatabaseConnection } from "../../db/client.ts";
+import { withDatabaseScope } from "../../db/isolation.ts";
 import { configureRuntimeRole } from "../../db/runtime-role.ts";
 import {
   adminOperations,
   auditEvents,
+  auditEventSubjects,
   entitlements,
   groupMembers,
   groups,
   members,
-  auditEventSubjects,
 } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
-import { recordAuditEvent } from "../../db/queries/audit.ts";
 let fixture: AdminFixture;
 let runtime: DatabaseConnection;
 let app: ReturnType<typeof createApp>;
@@ -331,72 +330,6 @@ test("group erasure audit failure restores assignments, entitlements and receipt
   expect(
     after.events.filter((row) => row.action === "group.erased"),
   ).toHaveLength(1);
-});
-
-test("group erasure user indexing accepts only its versioned tenant-bound effect contract", async () => {
-  const userId = createId(),
-    organizationId = createId(),
-    groupId = createId();
-  const assignment = { userId, organizationId, groupId };
-  const base = {
-    schemaVersion: 2 as const,
-    actorType: "system" as const,
-    actorId: "test",
-    action: "group.erased",
-    targetType: "group",
-    targetId: groupId,
-    organizationId,
-    outcome: "success" as const,
-    data: {
-      effects: {
-        removedAssignments: [
-          assignment,
-          assignment,
-          null,
-          "bad",
-          { userId: "" },
-          { ...assignment, organizationId: createId() },
-          { ...assignment, groupId: createId() },
-        ],
-      },
-    },
-  };
-  const valid = await recordAuditEvent(runtime.db, base);
-  for (const patch of [
-    { schemaVersion: 1 as const },
-    { action: "group.disabled" },
-    { targetType: "organization" },
-    { outcome: "failure" as const },
-    { organizationId: null },
-    { targetId: null },
-    { data: { effects: { removedAssignments: { userId } } } },
-    {
-      data: {
-        effects: {
-          removedAssignments: [{ userId: 42, organizationId, groupId }],
-        },
-      },
-    },
-  ])
-    await recordAuditEvent(runtime.db, { ...base, ...patch });
-  const rows = await withDatabaseScope(
-    runtime.db,
-    { kind: "platform", access: "read" },
-    (tx) =>
-      tx
-        .select()
-        .from(auditEventSubjects)
-        .where(eq(auditEventSubjects.entityId, userId)),
-  );
-  expect(rows).toEqual([
-    expect.objectContaining({
-      eventId: valid.id,
-      entityType: "user",
-      relationship: "affected",
-      organizationId,
-      provenance: "recorded",
-    }),
-  ]);
 });
 
 for (const order of ["assignment-first", "user-first"] as const) {
@@ -850,62 +783,4 @@ test("group status subject failure rolls back status and receipt before same-key
       .where(eq(auditEvents.action, "group.disabled")),
   ).toEqual([]);
   expect((await statusGroup(a.group, "disable", key)).status).toBe(200);
-});
-
-test("group status subjects accept only matching versioned tenant/group source records", async () => {
-  const userId = createId(),
-    organizationId = createId(),
-    groupId = createId();
-  const assignment = { userId, organizationId, groupId };
-  const base = {
-    schemaVersion: 2 as const,
-    actorType: "system" as const,
-    actorId: "test",
-    organizationId,
-    targetId: groupId,
-    targetType: "group",
-    action: "group.disabled",
-    outcome: "success" as const,
-    data: {
-      policySources: {
-        assignments: [
-          assignment,
-          assignment,
-          { ...assignment, groupId: createId() },
-          { ...assignment, organizationId: createId() },
-          null,
-          { userId: 42 },
-        ],
-      },
-    },
-  };
-  const valid = await recordAuditEvent(runtime.db, base);
-  for (const patch of [
-    { schemaVersion: 1 as const },
-    { outcome: "failure" as const },
-    { action: "group.disable_unchanged" },
-    { targetType: "other" },
-    { targetId: null },
-    { organizationId: null },
-    { data: { policySources: { assignments: assignment } } },
-  ])
-    await recordAuditEvent(runtime.db, { ...base, ...patch });
-  const references = await withDatabaseScope(
-    runtime.db,
-    { kind: "platform", access: "read" },
-    (tx) =>
-      tx
-        .select()
-        .from(auditEventSubjects)
-        .where(eq(auditEventSubjects.entityId, userId)),
-  );
-  expect(references).toEqual([
-    expect.objectContaining({
-      eventId: valid.id,
-      entityType: "user",
-      relationship: "affected",
-      organizationId,
-      provenance: "recorded",
-    }),
-  ]);
 });

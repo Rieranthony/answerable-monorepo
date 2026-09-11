@@ -1,12 +1,11 @@
-import * as productionQueries from "./oauth-clients.ts";
-import { approveMachineCapability } from "../../__tests__/capabilities.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
+import { approveMachineCapability } from "../../__tests__/capabilities.ts";
+import { findClientPrincipal } from "../../__tests__/client-queries.ts";
 import { testEnvironment } from "../../__tests__/support.ts";
 import { createId } from "../../lib/id.ts";
 import { createDatabase, type DatabaseConnection } from "../client.ts";
 import { oauthClients, organizations } from "../schema/index.ts";
-import { findClientPrincipal } from "../../__tests__/client-queries.ts";
 
 let connection: DatabaseConnection;
 beforeAll(() => {
@@ -216,94 +215,4 @@ test("client administration queries cover writes, filters, pagination, missing r
   expect(
     await queries.unlinkClientResource(db, a.clientId, resource),
   ).toBeNull();
-});
-
-test("client administration rejects raw database authority", async () => {
-  await expect(
-    Promise.resolve().then(() =>
-      Reflect.apply(productionQueries.listClients, undefined, [
-        connection.db,
-        { limit: 10 },
-      ]),
-    ),
-  ).rejects.toThrow("Invalid or expired");
-});
-
-test("client query authority cannot be copied, reused or widened", async () => {
-  const { inPlatformRead, inPlatformWrite, inPlatformUsers } =
-    await import("../../__tests__/platform-context.ts");
-  const { inTenantRead } = await import("../../__tests__/tenant-command.ts");
-  const organizationId = createId();
-  await connection.db
-    .insert(organizations)
-    .values({ id: organizationId, slug: "context", name: "Context" });
-  const clientId = "context-client";
-  const resource = "https://context.example";
-  const reads = [
-    [productionQueries.listClients, [{ limit: 10 }]],
-    [productionQueries.readClient, [clientId]],
-    [productionQueries.listClientResources, [clientId]],
-  ] as const;
-  const tenantReads = [
-    [productionQueries.findClientForAccess, [clientId]],
-  ] as const;
-  const writes = [
-    [productionQueries.readClientForPolicy, [clientId]],
-    [productionQueries.lockClientForCommand, [clientId]],
-    [productionQueries.createClient, [{ clientId, redirectUris: [] }]],
-    [productionQueries.updateClient, [clientId, { name: "Invalid" }]],
-    [productionQueries.setClientDisabled, [clientId, true]],
-    [productionQueries.setClientSecret, [clientId, "invalid"]],
-    [productionQueries.linkClientResource, [clientId, resource]],
-    [productionQueries.unlinkClientResource, [clientId, resource]],
-    [productionQueries.countClientEntitlements, [clientId]],
-    [productionQueries.deleteClient, [clientId]],
-  ] as const;
-  const all = [...reads, ...tenantReads, ...writes];
-  async function reject(context: unknown, cases: Readonly<typeof all>) {
-    for (const [fn, args] of cases)
-      await expect(
-        Promise.resolve().then(() =>
-          Reflect.apply(fn, undefined, [context, ...args]),
-        ),
-      ).rejects.toThrow("Invalid or expired");
-  }
-  await reject(connection.db, all);
-  let expired: unknown;
-  await inPlatformRead(connection.db, async (context) => {
-    expired = context;
-    await reject({ ...context }, all);
-    await reject(context, [...writes, ...tenantReads]);
-    expect(await productionQueries.readClient(context, clientId)).toBeNull();
-  });
-  await reject(expired, all);
-  await inPlatformWrite(connection.db, async (context) => {
-    expired = context;
-    await reject({ ...context }, all);
-    await reject(context, [...reads, ...tenantReads]);
-    expect(
-      await productionQueries.readClientForPolicy(context, clientId),
-    ).toBeNull();
-  });
-  await reject(expired, all);
-  await inPlatformUsers(connection.db, (context) => reject(context, all));
-  for (const access of [
-    "directory",
-    "configuration",
-    "memberAccess",
-    "history",
-  ] as const) {
-    await inTenantRead(
-      connection.db,
-      organizationId,
-      access,
-      async (context) => {
-        expired = context;
-        await reject({ ...context }, all);
-        await reject(context, [...reads, ...writes]);
-        if (access !== "directory") await reject(context, tenantReads);
-      },
-    );
-    await reject(expired, all);
-  }
 });

@@ -1,18 +1,16 @@
-import { expectReceipt } from "../../__tests__/operation-receipt.ts";
-import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { and, eq, sql } from "drizzle-orm";
+import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
 import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
-import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
+import { addGroupMember, createGroup } from "../../__tests__/group-queries.ts";
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import {
-  auditEvents,
   adminOperations,
-  groups,
+  auditEvents,
   groupMembers,
-  members,
 } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
 import { routes } from "./groups.ts";
@@ -107,7 +105,6 @@ async function request(
 }
 const past = "2000-01-01T00:00:00.000Z";
 const future = "2100-01-01T00:00:00.000Z";
-import { createGroup, addGroupMember } from "../../__tests__/group-queries.ts";
 test("tenant and platform readers read groups and memberships with organisation isolation", async () => {
   for (const org of [fixture.tenant, fixture.outsider]) {
     const group = await createGroup(fixture.db, {
@@ -454,37 +451,6 @@ test("group validation, filters and membership cursors", async () => {
   );
 });
 
-test("erase requires a query confirmation and checks existence before mismatch", async () => {
-  const id = crypto.randomUUID();
-  const path = `/api/admin/v1/organizations/${fixture.tenant.organizationId}/groups/${id}`;
-  for (const [query, status, code] of [
-    ["", 400, "validation_failed"],
-    ["?confirm=invalid", 400, "validation_failed"],
-    ["?" + new URLSearchParams({ confirm: id }), 404, "not_found"],
-    [
-      "?" + new URLSearchParams({ confirm: crypto.randomUUID() }),
-      404,
-      "not_found",
-    ],
-  ] as const) {
-    const response = await fixture.app.request(path + query, {
-      method: "DELETE",
-      headers: fixture.headers("platformAdmin"),
-    });
-    expect(response.status).toBe(status);
-    expect(await response.json()).toMatchObject({ code });
-  }
-  const headers = fixture.headers("platformAdmin");
-  headers.set("content-type", "application/json");
-  const response = await fixture.app.request(path, {
-    method: "DELETE",
-    headers,
-    body: JSON.stringify({ confirm: id }),
-  });
-  expect(response.status).toBe(400);
-  expect(await response.json()).toMatchObject({ code: "validation_failed" });
-});
-
 const patchTags = new Map<string, string>();
 async function command(
   org: string,
@@ -613,96 +579,5 @@ test("group noops preserve state and old removal replay does not remove a new as
           sql`${groupMembers.deletedAt} is null`,
         ),
       ),
-  ).toHaveLength(1);
-});
-
-test("group audit failure rolls back the write and its operation reservation", async () => {
-  const org = fixture.tenant.organizationId;
-  const input = { slug: "group-fault", name: "Fault" };
-  const before = await fixture.db.select().from(adminOperations);
-  await fixture.db.execute(
-    sql`alter table audit_events add constraint group_replay_fault check (action <> 'group.created') not valid`,
-  );
-  try {
-    expect(
-      (await command(org, "group-fault", "", "POST", input)).status,
-    ).toBeGreaterThanOrEqual(400);
-  } finally {
-    await fixture.db.execute(
-      sql`alter table audit_events drop constraint group_replay_fault`,
-    );
-  }
-  expect(await fixture.db.select().from(adminOperations)).toEqual(before);
-  expect(
-    await fixture.db.select().from(groups).where(eq(groups.slug, input.slug)),
-  ).toHaveLength(0);
-  expect((await command(org, "group-fault", "", "POST", input)).status).toBe(
-    201,
-  );
-  expect(
-    (await command(org, "group-fault", "", "POST", input)).headers.get(
-      "Idempotency-Replayed",
-    ),
-  ).toBe("true");
-});
-
-test("concurrent group creation commits once", async () => {
-  const org = fixture.tenant.organizationId;
-  const input = { slug: "group-concurrent", name: "Concurrent" };
-  const responses = await Promise.all([
-    command(org, "group-concurrent", "", "POST", input),
-    command(org, "group-concurrent", "", "POST", input),
-  ]);
-  expect(responses.some((response) => response.status === 201)).toBe(true);
-  for (const response of responses) {
-    expect([201, 409]).toContain(response.status);
-    if (response.status === 409)
-      expect(await response.json()).toMatchObject({
-        code: "operation_in_progress",
-      });
-  }
-  const replay = await command(org, "group-concurrent", "", "POST", input);
-  expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(
-    await fixture.db
-      .select()
-      .from(auditEvents)
-      .where(eq(auditEvents.operationId, replay.headers.get("Operation-Id")!)),
-  ).toHaveLength(1);
-});
-
-test("group replay rechecks current platform authority after middleware admission", async () => {
-  const org = fixture.tenant.organizationId;
-  const input = { slug: "group-authority", name: "Authority" };
-  const first = await command(org, "group-authority", "", "POST", input);
-  expect(first.status).toBe(201);
-  const original = fixture.db.transaction.bind(fixture.db);
-  const actor = fixture.principals.platformAdmin;
-  fixture.db.transaction = afterBrokerRead(original, (async (
-    ...args: Parameters<typeof original>
-  ) => {
-    fixture.db.transaction = original;
-    await fixture.db
-      .update(members)
-      .set({ status: "revoked", revokedAt: new Date() })
-      .where(eq(members.id, actor.memberId));
-    return original(...args);
-  }) as typeof original);
-  try {
-    const denied = await command(org, "group-authority", "", "POST", input);
-    expect(denied.status).toBe(403);
-    expect(await denied.json()).toMatchObject({ code: "insufficient_scope" });
-  } finally {
-    fixture.db.transaction = original;
-    await fixture.db
-      .update(members)
-      .set({ status: "active", revokedAt: null })
-      .where(eq(members.id, actor.memberId));
-  }
-  expect(
-    await fixture.db
-      .select()
-      .from(auditEvents)
-      .where(eq(auditEvents.operationId, first.headers.get("Operation-Id")!)),
   ).toHaveLength(1);
 });

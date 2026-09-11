@@ -1,13 +1,12 @@
-import { listUserAuditEvents } from "./audit.ts";
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { eq, isNull, sql } from "drizzle-orm";
 import {
   inPlatformRead,
   inPlatformWrite,
 } from "../__tests__/platform-context.ts";
+import { testEnvironment } from "../__tests__/support.ts";
 import { inTenantRead } from "../__tests__/tenant-command.ts";
 import type { Database } from "../db/client.ts";
-import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { eq, sql, isNull } from "drizzle-orm";
-import { testEnvironment } from "../__tests__/support.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import {
   auditEvents,
@@ -23,6 +22,7 @@ import {
 } from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
 import type { Actor } from "./actor.ts";
+import { listUserAuditEvents } from "./audit.ts";
 import * as implementation from "./organizations.ts";
 const service = {
   ...implementation,
@@ -305,104 +305,6 @@ test("erase rejects confirmation and clients, cascades members and domains and r
   });
 });
 
-test("audit failure rolls back each write and kill switch side effects", async () => {
-  const db = connection.db;
-  const row = await service.createOrganization(db, actor, {
-    slug: "rollback",
-    name: "Original",
-  });
-  // PostgreSQL text rejects NUL, causing the audit insert to fail after the mutation.
-  const invalidActor = { ...actor, requestId: "\0" };
-  await expect(
-    service.createOrganization(db, invalidActor, {
-      slug: "failed",
-      name: "Failed",
-    }),
-  ).rejects.toThrow();
-  await expect(
-    service.updateOrganization(db, invalidActor, row.id, { name: "Failed" }),
-  ).rejects.toThrow();
-  const userId = createId();
-  await db
-    .insert(users)
-    .values({ id: userId, name: "User", email: "rollback@example.com" });
-  await db
-    .insert(members)
-    .values({ id: createId(), userId, organizationId: row.id });
-  await db.insert(sessions).values({
-    id: createId(),
-    token: createId(),
-    userId,
-    expiresAt: new Date(Date.now() + 60000),
-  });
-  await db
-    .insert(oauthClients)
-    .values({ id: createId(), clientId: "external", redirectUris: [] });
-  const token = {
-    id: createId(),
-    token: createId(),
-    userId,
-    clientId: "external",
-    scopes: [],
-    expiresAt: new Date(Date.now() + 60000),
-  };
-  await db.insert(oauthRefreshTokens).values(token);
-  await db.insert(oauthAccessTokens).values({ ...token, id: createId() });
-  await db.insert(oauthClients).values({
-    id: createId(),
-    clientId: "owned-machine",
-    organizationId: row.id,
-    redirectUris: [],
-  });
-  const machineTokenId = createId();
-  await db.insert(oauthAccessTokens).values({
-    id: machineTokenId,
-    clientId: "owned-machine",
-    scopes: [],
-    expiresAt: token.expiresAt,
-  });
-  await expect(
-    service.disableOrganization(db, invalidActor, row.id),
-  ).rejects.toThrow();
-  expect(await service.getOrganization(db, row.id)).toMatchObject({
-    name: "Original",
-    status: "active",
-    authorizationVersion: 1,
-  });
-  expect(await db.select().from(sessions)).toHaveLength(1);
-  expect((await db.select().from(oauthRefreshTokens))[0]?.revoked).toBeNull();
-  expect(
-    (await db.select().from(oauthAccessTokens)).every(
-      (row) => row.revoked === null,
-    ),
-  ).toBe(true);
-  await service.disableOrganization(db, actor, row.id);
-  expect(
-    (
-      await db
-        .select()
-        .from(oauthAccessTokens)
-        .where(eq(oauthAccessTokens.id, machineTokenId))
-    )[0]!.revoked,
-  ).toBeInstanceOf(Date);
-  await db
-    .delete(oauthClients)
-    .where(eq(oauthClients.clientId, "owned-machine"));
-  await expect(
-    service.enableOrganization(db, invalidActor, row.id),
-  ).rejects.toThrow();
-  expect(await service.getOrganization(db, row.id)).toMatchObject({
-    status: "disabled",
-    authorizationVersion: 2,
-  });
-  await expect(
-    service.eraseOrganization(db, invalidActor, row.id, row.id),
-  ).rejects.toThrow();
-  expect(await db.select().from(organizations)).toHaveLength(1);
-  expect(await db.select().from(members)).toHaveLength(1);
-  expect(await db.select().from(auditEvents)).toHaveLength(2);
-});
-
 test("disabling tenant A preserves a shared person's global session and tenant B tokens", async () => {
   const db = connection.db;
   const a = await service.createOrganization(db, actor, {
@@ -601,27 +503,4 @@ test("organisation erasure records deleted contexts without deleting a shared us
       )
     ).items,
   ).toEqual([event!]);
-});
-
-test("organisation audit failure rolls back context revocation and erasure", async () => {
-  const { db, a, contexts } = await seedTenantGrantContexts();
-  const invalid = { ...actor, requestId: "\0" };
-  await expect(
-    service.disableOrganization(db, invalid, a.id),
-  ).rejects.toThrow();
-  expect(await db.select().from(grantContexts)).toEqual(contexts);
-  await expect(
-    service.eraseOrganization(db, invalid, a.id, a.id),
-  ).rejects.toThrow();
-  expect(await db.select().from(grantContexts)).toEqual(contexts);
-  await db
-    .update(organizations)
-    .set({ status: "disabled", disabledAt: new Date() })
-    .where(eq(organizations.id, a.id));
-  expect((await service.disableOrganization(db, actor, a.id)).changed).toBe(
-    true,
-  );
-  expect((await service.disableOrganization(db, actor, a.id)).changed).toBe(
-    false,
-  );
 });

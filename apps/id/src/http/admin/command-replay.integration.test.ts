@@ -11,8 +11,8 @@ import {
   adminOperations,
   auditEvents,
   members,
-  users,
   oauthResources,
+  users,
 } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
 
@@ -28,6 +28,9 @@ const families = [
   "user",
   "session",
   "entitlement",
+  "group",
+  "organization",
+  "member",
 ] as const;
 async function prepare(family: (typeof families)[number]) {
   const id = createId();
@@ -35,6 +38,31 @@ async function prepare(family: (typeof families)[number]) {
   let body: unknown;
   let status = 200;
   switch (family) {
+    case "organization":
+      path = "/organizations";
+      body = { slug: `receipt-${id}`, name: "Receipt" };
+      status = 201;
+      break;
+    case "group":
+      path = `/organizations/${fixture.tenant.organizationId}/groups`;
+      body = { slug: `receipt-${id}`, name: "Receipt" };
+      status = 201;
+      break;
+    case "member":
+      await fixture.db.insert(users).values({
+        id,
+        email: `${id}@receipt.example`,
+        name: "Receipt",
+        status: "active",
+      });
+      await fixture.db.insert(members).values({
+        id,
+        userId: id,
+        organizationId: fixture.tenant.organizationId,
+      });
+      path = `/organizations/${fixture.tenant.organizationId}/members/${id}`;
+      status = 204;
+      break;
     case "client":
       path = "/clients";
       body = {
@@ -88,7 +116,7 @@ async function prepare(family: (typeof families)[number]) {
     return fixture.app.request(
       `/api/admin/v1${different && body === undefined ? path.replace(id, createId()) : path}`,
       {
-        method: family === "session" ? "DELETE" : "POST",
+        method: family === "session" || family === "member" ? "DELETE" : "POST",
         headers,
         body:
           body === undefined
@@ -170,7 +198,9 @@ test.each([...families])(
   },
 );
 
-test.each([...families])(
+// Member admission locks its user before reaching the operation reservation.
+// Its real overlapping-removal case remains in members.integration.test.ts.
+test.each(families.filter((family) => family !== "member"))(
   "%s: overlapping same-key commands commit once and return one 409",
   async (family) => {
     const command = await prepare(family);

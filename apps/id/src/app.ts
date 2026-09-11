@@ -216,6 +216,19 @@ export function createApp(services: AppServices) {
       .get("auth")
       .handler(new Request(context.req.raw, { headers }));
     await recordRejectedSignIn(context, response);
+    if (
+      context.req.path === "/auth/oauth2/token" &&
+      !response.headers.has("cache-control")
+    ) {
+      // Transport-level refusals the provider does not decorate must not be cached.
+      const uncached = new Headers(response.headers);
+      uncached.set("Cache-Control", "no-store");
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: uncached,
+      });
+    }
     return response;
   });
 

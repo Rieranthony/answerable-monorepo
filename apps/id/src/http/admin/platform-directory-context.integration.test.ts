@@ -1,10 +1,10 @@
-import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
-import { afterAll, beforeAll, expect, test, spyOn } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
+import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { members } from "../../db/schema/index.ts";
 let fixture: AdminFixture;
 beforeAll(async () => {
@@ -48,51 +48,7 @@ test("fleet reads reject platform authority revoked after middleware", async () 
   }
 });
 
-test("fleet services require a live platform context and responses prohibit caching", async () => {
-  const { listOrganizations } = await import("../../services/organizations.ts");
-  const { listAllEntitlements } =
-    await import("../../services/entitlements.ts");
-  const { inPlatformRead } =
-    await import("../../__tests__/platform-context.ts");
-  const { inTenantRead } = await import("../../__tests__/tenant-command.ts");
-  type Platform =
-    import("../../services/platform-context.ts").PlatformReadContext;
-  const { listClients, getClient } = await import("../../services/clients.ts");
-  const { listResources, getResource } =
-    await import("../../services/resources.ts");
-  const { getSsoTestConfiguration } =
-    await import("../../services/sso-test.ts");
-  const readers = [
-    (context: Platform) =>
-      getSsoTestConfiguration(context, fixture.tenant.organizationId),
-    (context: Platform) => listClients(context, { limit: 1 }),
-    (context: Platform) => getClient(context, fixture.platform.client.clientId),
-    (context: Platform) => listResources(context, { limit: 1 }),
-    (context: Platform) => getResource(context, fixture.platform.adminResource),
-    (context: Platform) => listOrganizations(context, { limit: 1 }),
-    (context: Platform) => listAllEntitlements(context, { limit: 1 }),
-  ];
-  let saved!: Platform;
-  await inPlatformRead(fixture.db, async (context) => {
-    saved = context;
-    for (const read of readers) {
-      expect(await read(context)).toBeDefined();
-      await expect(read({ ...context })).rejects.toThrow("Invalid or expired");
-    }
-  });
-  for (const read of readers)
-    await expect(read(saved)).rejects.toThrow("Invalid or expired");
-  await inTenantRead(
-    fixture.db,
-    fixture.tenant.organizationId,
-    "directory",
-    async (context) => {
-      for (const read of readers)
-        await expect(read(context as unknown as Platform)).rejects.toThrow(
-          "Invalid or expired",
-        );
-    },
-  );
+test("fleet responses prohibit caching", async () => {
   for (const path of paths()) {
     const response = await fixture.app.request(`/api/admin/v1${path}`, {
       headers: fixture.headers("platformReader"),

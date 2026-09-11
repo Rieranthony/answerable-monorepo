@@ -1,9 +1,9 @@
-import { approveMachineCapability } from "../__tests__/capabilities.ts";
-import { platformWriteService } from "../__tests__/platform-context.ts";
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import { decodeJwt, decodeProtectedHeader } from "jose";
+import { approveMachineCapability } from "../__tests__/capabilities.ts";
 import { startOidcIssuer, type OidcIssuer } from "../__tests__/oidc-issuer.ts";
+import { platformWriteService } from "../__tests__/platform-context.ts";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createApp, type App } from "../app.ts";
 import { createAuth } from "../auth.ts";
@@ -13,20 +13,21 @@ import {
   systemActor,
   type BootstrapResult,
 } from "../bootstrap.ts";
+import { createDatabase, type DatabaseConnection } from "../db/client.ts";
+import {
+  auditEvents,
+  oauthClientResources,
+  oauthClients,
+  oauthResources,
+} from "../db/schema/index.ts";
+import { createId } from "../lib/id.ts";
+import { hashClientSecret } from "../services/client-secrets.ts";
 import {
   createClient as createClientImplementation,
   linkResource as linkResourceImplementation,
 } from "../services/clients.ts";
 const createClient = platformWriteService(createClientImplementation);
 const linkResource = platformWriteService(linkResourceImplementation);
-import { createDatabase, type DatabaseConnection } from "../db/client.ts";
-import {
-  oauthClients,
-  oauthClientResources,
-  oauthResources,
-} from "../db/schema/index.ts";
-import { createId } from "../lib/id.ts";
-import { hashClientSecret } from "../services/client-secrets.ts";
 
 let issuer: OidcIssuer;
 let connection: DatabaseConnection;
@@ -254,12 +255,76 @@ test("integration: an expired resource JWT cannot call the admin API", async () 
     .where(eq(oauthResources.id, bootstrapped.resource.id));
   try {
     const token = await mintedToken();
-    await Bun.sleep(1500);
+    setSystemTime(new Date(Date.now() + 60_000));
     await expectProblem(token, 401, "invalid_token");
   } finally {
+    setSystemTime();
     await connection.db
       .update(oauthResources)
       .set({ accessTokenTtl: 600 })
       .where(eq(oauthResources.id, bootstrapped.resource.id));
   }
 });
+
+for (const malformed of [
+  "duplicate-grant",
+  "large-scope",
+  "invalid-utf8",
+  "json-form",
+  "chunked",
+] as const) {
+  // A valid body may arrive chunked; the other four are refused. A client that
+  // authenticated with its secret before its body was refused may be attributed;
+  // a request refused before client authentication never is.
+  test(`token endpoint handles a ${malformed} request safely`, async () => {
+    const requestId = createId();
+    const body = new URLSearchParams(tokenBody());
+    if (malformed === "duplicate-grant")
+      body.append("grant_type", "refresh_token");
+    if (malformed === "large-scope") body.set("scope", "s".repeat(64 * 1024));
+    const bytes =
+      malformed === "invalid-utf8"
+        ? new Uint8Array([
+            ...new TextEncoder().encode(body + "&scope="),
+            0xc3,
+            0x28,
+          ])
+        : new TextEncoder().encode(body.toString());
+    const response = await app.request("/auth/oauth2/token", {
+      method: "POST",
+      headers: {
+        "x-request-id": requestId,
+        "content-type":
+          malformed === "json-form"
+            ? "application/json"
+            : "application/x-www-form-urlencoded",
+        authorization: `Basic ${Buffer.from(`${clientId}:${secret}`).toString("base64")}`,
+      },
+      body:
+        malformed === "chunked"
+          ? new ReadableStream({
+              start(controller) {
+                controller.enqueue(bytes);
+                controller.close();
+              },
+            })
+          : bytes,
+    });
+    if (malformed === "chunked") expect(response.status).toBe(200);
+    else {
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      expect(response.status).toBeLessThan(500);
+    }
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    const events = await connection.db
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.requestId, requestId));
+    if (malformed === "duplicate-grant" || malformed === "json-form")
+      for (const event of events) {
+        expect(event.actorId).not.toBe(clientId);
+        expect(JSON.stringify(event.data)).not.toContain(clientId);
+        expect(event.actorType).not.toBe("client");
+      }
+  });
+}

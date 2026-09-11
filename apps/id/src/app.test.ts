@@ -3,16 +3,16 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import type { Database } from "./db/client.ts";
 
-import { ProblemError } from "./http/problem.ts";
-import { createApp } from "./app.ts";
-import { isAllowedAuthRoute, publicAuthRoutes } from "./http/auth-allowlist.ts";
-import { buildPublicOpenApiDocument } from "./http/openapi.ts";
 import {
   isUuidV7,
   stubAuth,
   stubDatabase,
   testEnvironment,
 } from "./__tests__/support.ts";
+import { createApp } from "./app.ts";
+import { isAllowedAuthRoute, publicAuthRoutes } from "./http/auth-allowlist.ts";
+import { buildPublicOpenApiDocument } from "./http/openapi.ts";
+import { ProblemError } from "./http/problem.ts";
 
 describe("unit: Hono application", () => {
   test("health is independent from PostgreSQL and creates a UUIDv7 request id", async () => {
@@ -747,3 +747,55 @@ test("preflight cannot bypass the incoming body limit", async () => {
   });
   expect(response.status).toBe(413);
 });
+
+for (const path of [
+  "/auth/sso%2Fregister",
+  "/auth/../auth/sso/register",
+  "//auth/sso/register",
+  "/auth/oauth2/token/",
+  "/AUTH/OK",
+  "/auth/ok/../update-user",
+]) {
+  test(`auth allowlist rejects path bypass ${path}`, async () => {
+    const auth = stubAuth();
+    const reached: string[] = [];
+    const app = createApp({
+      auth: {
+        ...auth,
+        handler: async (request) => {
+          reached.push(new URL(request.url).pathname);
+          return Response.json({ ok: true });
+        },
+      },
+      db: stubDatabase(),
+      environment: testEnvironment(),
+    });
+    const response = await app.fetch(
+      new Request(`http://localhost:47300${path}`, { method: "POST" }),
+    );
+    expect(response.status).toBe(404);
+    expect(reached).toEqual([]);
+  });
+}
+for (const header of ["X-HTTP-Method-Override", "X-Method-Override"]) {
+  test(`auth allowlist ignores ${header} on an allowed route`, async () => {
+    const auth = stubAuth();
+    const reached: string[] = [];
+    const app = createApp({
+      auth: {
+        ...auth,
+        handler: async (request) => {
+          reached.push(`${request.method} ${new URL(request.url).pathname}`);
+          return Response.json({ ok: true });
+        },
+      },
+      db: stubDatabase(),
+      environment: testEnvironment(),
+    });
+    const response = await app.request("/auth/ok", {
+      headers: { [header]: "DELETE" },
+    });
+    expect(response.status).toBe(200);
+    expect(reached).toEqual(["GET /auth/ok"]);
+  });
+}

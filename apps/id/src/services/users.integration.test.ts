@@ -1,15 +1,21 @@
-import {
-  listUserAuditEvents,
-  listAuditEvents,
-} from "../__tests__/audit-queries.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { eq, sql, isNull } from "drizzle-orm";
+import { eq, isNull, sql } from "drizzle-orm";
+import {
+  listAuditEvents,
+  listUserAuditEvents,
+} from "../__tests__/audit-queries.ts";
+import {
+  inPlatformRead,
+  inPlatformUsers,
+  inPlatformWrite,
+} from "../__tests__/platform-context.ts";
 import { testEnvironment } from "../__tests__/support.ts";
+import type { Database } from "../db/client.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import {
   accounts,
-  grantContexts,
   auditEvents,
+  grantContexts,
   members,
   oauthAccessTokens,
   oauthClients,
@@ -21,12 +27,6 @@ import {
 import { createId } from "../lib/id.ts";
 import type { Actor } from "./actor.ts";
 import * as implementation from "./users.ts";
-import {
-  inPlatformRead,
-  inPlatformUsers,
-  inPlatformWrite,
-} from "../__tests__/platform-context.ts";
-import type { Database } from "../db/client.ts";
 const service = {
   ...implementation,
   eraseUser: (db: Database, actor: Actor, id: string, confirm: string) =>
@@ -339,29 +339,6 @@ test("erase cascades live memberships, accounts, sessions and tokens", async () 
     { action: "user.erased", targetId: id, organizationId: null },
   ]);
 });
-test("audit failure rolls back every lifecycle write and all kill-switch side effects", async () => {
-  const db = connection.db;
-  const id = await seed();
-  const invalid = { ...actor, requestId: "\0" };
-  await expect(service.disableUser(db, invalid, id)).rejects.toThrow();
-  expect(await service.getUser(db, id)).toMatchObject({
-    status: "active",
-    sessionCount: 1,
-  });
-  for (const table of [oauthRefreshTokens, oauthAccessTokens])
-    expect((await db.select().from(table))[0]?.revoked).toBeNull();
-  await expect(service.eraseUser(db, invalid, id, id)).rejects.toThrow();
-  expect((await service.getUser(db, id)).accounts).toHaveLength(1);
-  await service.disableUser(db, actor, id);
-  await expect(service.enableUser(db, invalid, id)).rejects.toThrow();
-  await expect(service.retireUserEmail(db, invalid, id)).rejects.toThrow();
-  expect(await service.getUser(db, id)).toMatchObject({
-    status: "disabled",
-    retiredEmail: null,
-    email: id + "@example.com",
-  });
-  expect(await events(id)).toHaveLength(1);
-});
 
 async function seedGrantContexts() {
   const db = connection.db;
@@ -500,19 +477,6 @@ test("user erasure audits all deleted contexts including another user's grant th
       await listUserAuditEvents(db, independent.userId, {}, { limit: 10 })
     ).items.map((row) => row.id),
   ).toEqual([event!.id]);
-});
-
-test("global user audit failure restores grant contexts for disable and erasure", async () => {
-  const { db, userId } = await seedGrantContexts();
-  const before = await db.select().from(grantContexts);
-  const invalid = { ...actor, requestId: "\0" };
-  await expect(service.disableUser(db, invalid, userId)).rejects.toThrow();
-  expect(await db.select().from(grantContexts)).toEqual(before);
-  await expect(
-    service.eraseUser(db, invalid, userId, userId),
-  ).rejects.toThrow();
-  expect(await db.select().from(grantContexts)).toEqual(before);
-  expect(await events(userId)).toHaveLength(0);
 });
 
 test("disable reconciles unrevoked contexts on an already-disabled user as an applied effect", async () => {

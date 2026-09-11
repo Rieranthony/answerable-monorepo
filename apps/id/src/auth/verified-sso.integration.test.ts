@@ -1,25 +1,33 @@
-import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
-import { createAdminFixture, type AdminFixture } from "../__tests__/admin.ts";
-import { signInThroughIdp } from "../__tests__/federation.ts";
+import {
+  afterEach,
+  beforeEach,
+  expect,
+  setSystemTime,
+  spyOn,
+  test,
+} from "bun:test";
 import { and, eq, sql } from "drizzle-orm";
+import { createAdminFixture, type AdminFixture } from "../__tests__/admin.ts";
+import { databaseClock } from "../__tests__/database-clock.ts";
+import { signInThroughIdp } from "../__tests__/federation.ts";
+import { startOidcIssuer, type OidcIssuer } from "../__tests__/oidc-issuer.ts";
+import { inPlatformWrite } from "../__tests__/platform-context.ts";
+import { createApp } from "../app.ts";
+import { createAuth } from "../auth.ts";
+import { createDatabase } from "../db/client.ts";
+import * as audit from "../db/queries/audit.ts";
+import { assertRuntimeRole, configureRuntimeRole } from "../db/runtime-role.ts";
 import {
   accounts,
   auditEvents,
   members,
   sessions,
-  users,
   ssoProviders,
+  users,
   verifications,
 } from "../db/schema/index.ts";
-import * as audit from "../db/queries/audit.ts";
 import { createId } from "../lib/id.ts";
-import { createAuth } from "../auth.ts";
-import { createApp } from "../app.ts";
-import { createDatabase } from "../db/client.ts";
-import { configureRuntimeRole, assertRuntimeRole } from "../db/runtime-role.ts";
 import * as federation from "../services/federation.ts";
-import { startOidcIssuer, type OidcIssuer } from "../__tests__/oidc-issuer.ts";
-import { inPlatformWrite } from "../__tests__/platform-context.ts";
 import { putSsoProvider } from "../services/sso-providers.ts";
 import * as tenantAuthentication from "./tenant-authentication.ts";
 
@@ -27,7 +35,13 @@ let fixture: AdminFixture;
 let runtime: ReturnType<typeof createDatabase>;
 let app: ReturnType<typeof createApp>;
 let role: string;
+let clock: ReturnType<typeof databaseClock>;
 let extraIssuer: OidcIssuer | undefined;
+function setClock(time: Date) {
+  setSystemTime(time);
+  clock.set(time);
+}
+
 beforeEach(async () => {
   fixture = await createAdminFixture();
   role = `id_test_verified_sso_${crypto.randomUUID().replaceAll("-", "")}`;
@@ -44,6 +58,7 @@ beforeEach(async () => {
     databaseUrl: url.toString(),
     databasePoolMax: 3,
   });
+  clock = databaseClock(runtime.pool);
   await assertRuntimeRole(runtime.db);
   app = createApp({
     db: runtime.db,
@@ -52,6 +67,7 @@ beforeEach(async () => {
   });
 });
 afterEach(async () => {
+  setSystemTime();
   extraIssuer?.stop();
   extraIssuer = undefined;
   await runtime?.close();
@@ -695,10 +711,11 @@ for (const replacement of ["another-user", "another-session"] as const) {
 }
 
 test("initiating proof expiring upstream prevents the subsequent binding", async () => {
-  const time = Math.floor(Date.now() / 1000) - 299;
+  setClock(new Date());
+  const time = Math.floor(Date.now() / 1000) - 240;
   const cookie = await login(time);
   const started = await begin("link", cookie);
-  await Bun.sleep(Math.max(0, (time + 300) * 1000 - Date.now() + 30));
+  setClock(new Date((time + 301) * 1000));
   const before = await fixture.db.select().from(sessions);
   const completed = await complete(started, {
     sub: "aged-source",
@@ -884,7 +901,8 @@ test("concurrent independently verified bindings cannot assign one target identi
 });
 
 test("a stale committed replay requires reauthentication and then recovers the original receipt", async () => {
-  const time = Math.floor(Date.now() / 1000) - 297;
+  setClock(new Date());
+  const time = Math.floor(Date.now() / 1000) - 240;
   const cookie = await login(time);
   const url = `/api/admin/v1/organizations/${fixture.tenant.organizationId}/members/${fixture.principals.tenantReader.memberId}`;
   const command = (value: string) =>
@@ -898,7 +916,7 @@ test("a stale committed replay requires reauthentication and then recovers the o
     });
   const first = await command(cookie);
   expect(first.status).toBe(204);
-  await Bun.sleep(Math.max(0, (time + 300) * 1000 - Date.now() + 30));
+  setClock(new Date((time + 301) * 1000));
   const stale = await command(cookie);
   expect(stale.status).toBe(403);
   expect(await stale.json()).toMatchObject({
@@ -979,7 +997,8 @@ test("reauthentication can renew the same account after a provider revision chan
 });
 
 test("a target-row wait cannot let an ageing authentication commit a sensitive command", async () => {
-  const time = Math.floor(Date.now() / 1000) - 299;
+  setClock(new Date());
+  const time = Math.floor(Date.now() / 1000) - 240;
   const cookie = await login(time, "platformAdmin");
   const ready = Promise.withResolvers<void>(),
     resume = Promise.withResolvers<void>();
@@ -1008,9 +1027,9 @@ test("a target-row wait cannot let an ageing authentication commit a sensitive c
     },
   );
   try {
-    const deadline = Date.now() + 1200;
+    const deadline = performance.now() + 1200;
     let blocked = false;
-    while (Date.now() < deadline) {
+    while (performance.now() < deadline) {
       const result = await fixture.db.execute(
         sql`select exists(select 1 from pg_stat_activity where ${blocker} = any(pg_blocking_pids(pid))) as blocked`,
       );
@@ -1021,7 +1040,7 @@ test("a target-row wait cannot let an ageing authentication commit a sensitive c
       await Bun.sleep(10);
     }
     expect(blocked).toBe(true);
-    await Bun.sleep(Math.max(0, (time + 300) * 1000 - Date.now() + 30));
+    setClock(new Date((time + 301) * 1000));
   } finally {
     resume.resolve();
     await held;
@@ -1119,8 +1138,8 @@ test("binding-first holds current provider and source authority until the audite
   });
   try {
     let blocked = false;
-    const deadline = Date.now() + 1200;
-    while (Date.now() < deadline) {
+    const deadline = performance.now() + 1200;
+    while (performance.now() < deadline) {
       if (pid) {
         const result = await fixture.db.execute(
           sql`select cardinality(pg_blocking_pids(${pid})) > 0 as blocked`,
@@ -1243,7 +1262,8 @@ test("a concurrent native state read still allows only one purpose claim and bin
 });
 
 test("human authority expiry during a target-row wait prevents the sensitive mutation", async () => {
-  const expiry = new Date(Date.now() + 900);
+  setClock(new Date());
+  const expiry = new Date(Date.now() + 60_000);
   await fixture.db
     .update(members)
     .set({ validUntil: expiry })
@@ -1276,8 +1296,8 @@ test("human authority expiry during a target-row wait prevents the sensitive mut
   );
   try {
     let blocked = false;
-    const deadline = Date.now() + 700;
-    while (Date.now() < deadline) {
+    const deadline = performance.now() + 700;
+    while (performance.now() < deadline) {
       const result = await fixture.db.execute(
         sql`select exists(select 1 from pg_stat_activity where ${blocker} = any(pg_blocking_pids(pid))) as blocked`,
       );
@@ -1288,7 +1308,7 @@ test("human authority expiry during a target-row wait prevents the sensitive mut
       await Bun.sleep(10);
     }
     expect(blocked).toBe(true);
-    await Bun.sleep(Math.max(0, expiry.getTime() - Date.now() + 30));
+    setClock(new Date(expiry.getTime() + 1));
   } finally {
     resume.resolve();
     await held;

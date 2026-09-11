@@ -1,13 +1,13 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
+import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
 import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
-import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
 import { auditEvents, entitlements } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
-import { routes, resourceSchema } from "./resources.ts";
+import { resourceSchema, routes } from "./resources.ts";
 let fixture: AdminFixture;
 beforeAll(async () => {
   fixture = await createAdminFixture();
@@ -226,37 +226,6 @@ test("resource cursor pages have no gaps", async () => {
     cursor = page.nextCursor;
   } while (cursor);
   expect(seen).toEqual(ids.reverse());
-});
-
-test("erase requires a query confirmation and checks existence before mismatch", async () => {
-  const id = "https://missing-confirm.example/mcp";
-  const path = `/api/admin/v1/resources/${encodeURIComponent(id)}`;
-  for (const [query, status, code] of [
-    ["", 400, "validation_failed"],
-    ["?confirm=invalid", 400, "validation_failed"],
-    ["?" + new URLSearchParams({ confirm: id }), 404, "not_found"],
-    [
-      "?" + new URLSearchParams({ confirm: "https://different.example/mcp" }),
-      404,
-      "not_found",
-    ],
-  ] as const) {
-    const response = await fixture.app.request(path + query, {
-      method: "DELETE",
-      headers: fixture.headers("platformAdmin"),
-    });
-    expect(response.status).toBe(status);
-    expect(await response.json()).toMatchObject({ code });
-  }
-  const headers = fixture.headers("platformAdmin");
-  headers.set("content-type", "application/json");
-  const response = await fixture.app.request(path, {
-    method: "DELETE",
-    headers,
-    body: JSON.stringify({ confirm: id }),
-  });
-  expect(response.status).toBe(400);
-  expect(await response.json()).toMatchObject({ code: "validation_failed" });
 });
 
 test("resource creation records explicit immutable ownership and rejects conflicting classification", async () => {

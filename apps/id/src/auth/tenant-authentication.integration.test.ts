@@ -1,14 +1,19 @@
-import * as auditQueries from "../db/queries/audit.ts";
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { and, eq, sql } from "drizzle-orm";
 import { createAdminFixture, type AdminFixture } from "../__tests__/admin.ts";
+import { afterBrokerRead } from "../__tests__/after-broker-read.ts";
+import { databaseClock } from "../__tests__/database-clock.ts";
 import { signInThroughIdp } from "../__tests__/federation.ts";
+import { inPlatformWrite } from "../__tests__/platform-context.ts";
 import { createApp } from "../app.ts";
 import { createAuth } from "../auth.ts";
 import { createDatabase } from "../db/client.ts";
+import { withDatabaseScope } from "../db/isolation.ts";
+import * as auditQueries from "../db/queries/audit.ts";
 import { assertRuntimeRole, configureRuntimeRole } from "../db/runtime-role.ts";
 import {
   accounts,
+  auditEvents,
   entitlements,
   grantContexts,
   members,
@@ -19,27 +24,24 @@ import {
   ssoProviders,
 } from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
-import { createResourceGrant } from "./create-resource-grant.ts";
-import { inPlatformWrite } from "../__tests__/platform-context.ts";
+import { authorizeCommand } from "../services/command-authority.ts";
+import * as federationResolver from "../services/federation.ts";
+import { updateWindow } from "../services/members.ts";
 import {
   deleteSsoProvider,
   putSsoProvider,
 } from "../services/sso-providers.ts";
-import { authorizeCommand } from "../services/command-authority.ts";
-import { tenantAuthentication } from "./tenant-authentication.ts";
-import { withDatabaseScope } from "../db/isolation.ts";
-import { lockResourceGrantTargets } from "./lock-resource-grant-policy.ts";
 import { authorizeTenantMemberCommand } from "../services/tenant-context.ts";
-import { updateWindow } from "../services/members.ts";
-import { afterBrokerRead } from "../__tests__/after-broker-read.ts";
-import { auditEvents } from "../db/schema/index.ts";
-import * as federationResolver from "../services/federation.ts";
+import { createResourceGrant } from "./create-resource-grant.ts";
+import { lockResourceGrantTargets } from "./lock-resource-grant-policy.ts";
+import { tenantAuthentication } from "./tenant-authentication.ts";
 
 let fixture: AdminFixture;
 let runtime: ReturnType<typeof createDatabase>;
 let app: ReturnType<typeof createApp>;
 let nativeAuth: ReturnType<typeof createAuth>;
 let role: string;
+let clock: ReturnType<typeof databaseClock>;
 let foreignMember: string;
 const clientId = "tenant-authentication-proof";
 const resource = "https://resource.example/tenant-authentication";
@@ -60,6 +62,7 @@ beforeEach(async () => {
     databaseUrl: url.toString(),
     databasePoolMax: 2,
   });
+  clock = databaseClock(runtime.pool);
   await assertRuntimeRole(runtime.db);
   fixture.environment.trustedProxyCidrs = ["10.0.0.0/8"];
   nativeAuth = createAuth(runtime.db, fixture.environment);
@@ -519,7 +522,7 @@ for (const consumer of ["grant", "human"] as const) {
     const input = await ownGrantInput();
     await fixture.db
       .update(sessions)
-      .set({ expiresAt: new Date(Date.now() + 1000) })
+      .set({ expiresAt: new Date(Date.now() + 60_000) })
       .where(eq(sessions.id, input.sessionId));
     const writer = createDatabase(fixture.environment);
     const ready = Promise.withResolvers<void>(),
@@ -570,7 +573,7 @@ for (const consumer of ["grant", "human"] as const) {
       );
     try {
       await waitBlocked(blocker, () => pendingPid);
-      await Bun.sleep(1100);
+      clock.set(new Date(Date.now() + 120_000));
     } finally {
       resume.resolve();
       await held;
@@ -648,7 +651,7 @@ test("human permissions expiring during a provider lock wait cannot authorise a 
   const input = await ownGrantInput();
   await fixture.db
     .update(entitlements)
-    .set({ validUntil: new Date(Date.now() + 1000) })
+    .set({ validUntil: new Date(Date.now() + 60_000) })
     .where(eq(entitlements.memberId, input.memberId));
   const writer = createDatabase(fixture.environment);
   const ready = Promise.withResolvers<void>(),
@@ -698,7 +701,7 @@ test("human permissions expiring during a provider lock wait cannot authorise a 
     );
   try {
     await waitBlocked(blocker, () => pendingPid);
-    await Bun.sleep(1100);
+    clock.set(new Date(Date.now() + 120_000));
   } finally {
     resume.resolve();
     await held;

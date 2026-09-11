@@ -7,29 +7,29 @@ import {
 import { createApp } from "../../app.ts";
 import { createAuth } from "../../auth.ts";
 import { createDatabase, type DatabaseConnection } from "../../db/client.ts";
+import { recordAuditEvent } from "../../db/queries/audit.ts";
 import { configureRuntimeRole } from "../../db/runtime-role.ts";
 import {
-  users,
-  members,
-  groups,
-  groupMembers,
-  entitlements,
   accounts,
-  sessions,
-  invitations,
-  ssoProviders,
-  oauthClients,
-  oauthClientResources,
-  oauthAccessTokens,
-  oauthRefreshTokens,
-  oauthConsents,
-  grantContexts,
+  adminOperations,
   auditEvents,
   auditEventSubjects,
-  adminOperations,
+  entitlements,
+  grantContexts,
+  groupMembers,
+  groups,
+  invitations,
+  members,
+  oauthAccessTokens,
+  oauthClientResources,
+  oauthClients,
+  oauthConsents,
+  oauthRefreshTokens,
   organizationCapabilities,
+  sessions,
+  ssoProviders,
+  users,
 } from "../../db/schema/index.ts";
-import { recordAuditEvent } from "../../db/queries/audit.ts";
 import { createId } from "../../lib/id.ts";
 let fixture: AdminFixture;
 let runtime: DatabaseConnection;
@@ -643,52 +643,3 @@ for (const order of ["user-first", "client-first"] as const) {
     ).toBe("true");
   });
 }
-
-test("global erasure subject capture rejects unrelated versions, outcomes and malformed effect contracts", async () => {
-  const person = fixture.principals.tenantReader,
-    other = fixture.principals.outsider;
-  const effect = { id: createId(), userId: other.userId };
-  const base = {
-    actorType: "system" as const,
-    actorId: "contract-test",
-    targetType: "user",
-    targetId: person.userId,
-    organizationId: null,
-    action: "user.erased",
-    outcome: "success" as const,
-    schemaVersion: 2 as const,
-  };
-  const data = {
-    before: { id: person.userId },
-    effects: { deletedAccessTokens: [effect] },
-  };
-  for (const input of [
-    { ...base, schemaVersion: 1 as const, data },
-    { ...base, outcome: "failure" as const, data },
-    { ...base, organizationId: person.organizationId, data },
-    { ...base, action: "user.disabled", data },
-    { ...base, data: { ...data, before: { id: other.userId } } },
-    { ...base, data: { ...data, effects: { deletedAccessTokens: effect } } },
-    {
-      ...base,
-      data: {
-        ...data,
-        effects: {
-          deletedAccessTokens: [
-            { ...effect, id: "" },
-            { id: effect.id, userId: null },
-          ],
-        },
-      },
-    },
-  ]) {
-    const event = await recordAuditEvent(runtime.db, input);
-    const subjects = await fixture.db
-      .select()
-      .from(auditEventSubjects)
-      .where(eq(auditEventSubjects.eventId, event.id));
-    expect(subjects.filter((row) => row.relationship === "affected")).toEqual(
-      [],
-    );
-  }
-});

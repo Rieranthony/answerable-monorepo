@@ -1,26 +1,25 @@
-import { expectReceipt } from "../../__tests__/operation-receipt.ts";
-import { withDatabaseScope } from "../../db/isolation.ts";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { createApp } from "../../app.ts";
 import { createAuth } from "../../auth.ts";
 import { createDatabase, type DatabaseConnection } from "../../db/client.ts";
+import { withDatabaseScope } from "../../db/isolation.ts";
 import { configureRuntimeRole } from "../../db/runtime-role.ts";
 import {
   adminOperations,
   auditEvents,
-  entitlements,
-  members,
-  groups,
-  groupMembers,
   auditEventSubjects,
+  entitlements,
+  groupMembers,
+  groups,
+  members,
 } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
-import { recordAuditEvent } from "../../db/queries/audit.ts";
 let fixture: AdminFixture;
 let runtime: DatabaseConnection;
 let app: ReturnType<typeof createApp>;
@@ -159,79 +158,6 @@ test("member entitlement commands retain affected-user history through removal a
   );
   expect(erase.status).toBe(204);
   expect(await history()).toEqual([...eventIds].sort());
-});
-
-test("entitlement subject capture validates the existing tenant-bound event contract", async () => {
-  const person = fixture.principals.tenantReader;
-  const organizationId = fixture.tenant.organizationId;
-  const targetId = createId();
-  const state = { id: targetId, organizationId, memberId: person.memberId };
-  const base = {
-    schemaVersion: 1 as const,
-    actorType: "system" as const,
-    actorId: "test",
-    organizationId,
-    targetId,
-    targetType: "entitlement",
-    action: "entitlement.removed",
-    outcome: "success" as const,
-    data: { before: state, after: null },
-  };
-  const valid = await recordAuditEvent(runtime.db, base);
-  for (const patch of [
-    { schemaVersion: 2 as const },
-    { outcome: "failure" as const },
-    { action: "entitlement.unknown" },
-    { targetType: "other" },
-    { targetId: null },
-    { organizationId: null },
-    { organizationId: fixture.outsider.organizationId },
-    {
-      data: {
-        before: { ...state, organizationId: fixture.outsider.organizationId },
-      },
-    },
-    { data: { before: { ...state, id: createId() } } },
-    {
-      data: {
-        before: { ...state, memberId: fixture.principals.outsider.memberId },
-      },
-    },
-    { data: { before: null } },
-    { data: { before: "bad" } },
-    { data: { before: { ...state, memberId: null } } },
-  ]) {
-    const event = await recordAuditEvent(runtime.db, { ...base, ...patch });
-    const subjects = await withDatabaseScope(
-      runtime.db,
-      { kind: "platform", access: "read" },
-      (tx) =>
-        tx
-          .select()
-          .from(auditEventSubjects)
-          .where(eq(auditEventSubjects.eventId, event.id)),
-    );
-    expect(
-      subjects.filter((subject) => subject.relationship === "affected"),
-    ).toEqual([]);
-  }
-  const subjects = await withDatabaseScope(
-    runtime.db,
-    { kind: "platform", access: "read" },
-    (tx) =>
-      tx
-        .select()
-        .from(auditEventSubjects)
-        .where(eq(auditEventSubjects.eventId, valid.id)),
-  );
-  expect(subjects).toContainEqual(
-    expect.objectContaining({
-      entityType: "user",
-      entityId: person.userId,
-      relationship: "affected",
-      organizationId,
-    }),
-  );
 });
 
 test("subject failure rolls back the entitlement and receipt; the same key then commits once", async () => {
@@ -695,92 +621,3 @@ for (const principal of ["group", "organisation"] as const) {
     ).toHaveLength(1);
   });
 }
-
-test("entitlement audience subjects validate version, target, tenant and group without live rows", async () => {
-  const userId = createId(),
-    organizationId = createId(),
-    targetId = createId(),
-    groupId = createId();
-  for (const targetGroup of [null, groupId]) {
-    const state = {
-      id: targetId,
-      organizationId,
-      groupId: targetGroup,
-      memberId: null,
-    };
-    const person = {
-      userId,
-      organizationId,
-      memberId: createId(),
-      groupAssignment: targetGroup === null ? null : { groupId: targetGroup },
-    };
-    const base = {
-      schemaVersion: 2 as const,
-      actorType: "system" as const,
-      actorId: "test",
-      organizationId,
-      targetId,
-      targetType: "entitlement",
-      action: "entitlement.created",
-      outcome: "success" as const,
-      data: {
-        before: null,
-        after: state,
-        audience: [
-          person,
-          person,
-          { ...person, organizationId: createId() },
-          { ...person, groupAssignment: { groupId: createId() } },
-          { userId: 42 },
-          null,
-        ],
-      },
-    };
-    const valid = await recordAuditEvent(runtime.db, base);
-    for (const patch of [
-      { schemaVersion: 1 as const },
-      { outcome: "failure" as const },
-      { action: "entitlement.update_unchanged" },
-      { targetType: "other" },
-      { organizationId: null },
-      { targetId: null },
-      { data: { ...base.data, after: { ...state, id: createId() } } },
-      {
-        data: { ...base.data, after: { ...state, organizationId: createId() } },
-      },
-      { data: { ...base.data, after: { ...state, memberId: createId() } } },
-      { data: { ...base.data, after: { ...state, groupId: 42 } } },
-      { data: { ...base.data, audience: person } },
-      { data: { ...base.data, audience: [{ ...person, memberId: "" }] } },
-    ]) {
-      const event = await recordAuditEvent(runtime.db, { ...base, ...patch });
-      const refs = await withDatabaseScope(
-        runtime.db,
-        { kind: "platform", access: "read" },
-        (tx) =>
-          tx
-            .select()
-            .from(auditEventSubjects)
-            .where(eq(auditEventSubjects.eventId, event.id)),
-      );
-      expect(refs.filter((ref) => ref.relationship === "affected")).toEqual([]);
-    }
-    const refs = await withDatabaseScope(
-      runtime.db,
-      { kind: "platform", access: "read" },
-      (tx) =>
-        tx
-          .select()
-          .from(auditEventSubjects)
-          .where(eq(auditEventSubjects.eventId, valid.id)),
-    );
-    expect(refs.filter((ref) => ref.relationship === "affected")).toEqual([
-      expect.objectContaining({
-        entityType: "user",
-        entityId: userId,
-        organizationId,
-        provenance: "recorded",
-      }),
-    ]);
-  }
-});

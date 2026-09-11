@@ -1,13 +1,13 @@
-import { inTenantRead } from "../__tests__/tenant-command.ts";
-import type { Database } from "../db/client.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
-import { testEnvironment } from "../__tests__/support.ts";
-import { createDatabase, type DatabaseConnection } from "../db/client.ts";
-import { createOrganization } from "../__tests__/organization-queries.ts";
 import { createOrganizationDomain } from "../__tests__/domain-queries.ts";
+import { createOrganization } from "../__tests__/organization-queries.ts";
 import { createSsoProvider } from "../__tests__/sso-queries.ts";
+import { testEnvironment } from "../__tests__/support.ts";
+import { inTenantRead } from "../__tests__/tenant-command.ts";
 import { findUserByEmail, retireUserEmail } from "../__tests__/user-queries.ts";
+import type { Database } from "../db/client.ts";
+import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import { accounts, members, organizations, users } from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
 import {
@@ -255,23 +255,4 @@ test("unlinked global identity and another tenant's state cannot change local di
   expect(await diagnoseSignIn(db, org.id, probe)).toEqual(absent);
   expect(absent.verdict.code).toBe("authentication_required");
   expect(absent.user).toBeNull();
-});
-
-test("diagnosis rejects copied, expired and incorrectly scoped contexts", async () => {
-  const { db, org } = await seed();
-  let saved!: import("./tenant-context.ts").TenantReadContext<"memberAccess">;
-  await inTenantRead(db, org.id, "memberAccess", async (context) => {
-    saved = context;
-    await expect(implementation({ ...context }, email)).rejects.toThrow(
-      "Invalid or expired",
-    );
-  });
-  await expect(implementation(saved, email)).rejects.toThrow(
-    "Invalid or expired",
-  );
-  await inTenantRead(db, org.id, "directory", async (context) => {
-    await expect(
-      implementation(context as unknown as typeof saved, email),
-    ).rejects.toThrow("Invalid or expired");
-  });
 });

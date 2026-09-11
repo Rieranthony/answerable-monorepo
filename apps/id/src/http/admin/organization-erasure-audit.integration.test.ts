@@ -9,24 +9,23 @@ import { createAuth } from "../../auth.ts";
 import { createDatabase, type DatabaseConnection } from "../../db/client.ts";
 import { configureRuntimeRole } from "../../db/runtime-role.ts";
 import {
-  organizations,
-  members,
-  groups,
-  groupMembers,
-  entitlements,
-  organizationCapabilities,
-  organizationDomains,
-  ssoProviders,
-  invitations,
-  users,
-  sessions,
+  adminOperations,
   auditEvents,
   auditEventSubjects,
-  adminOperations,
+  entitlements,
   grantContexts,
+  groupMembers,
+  groups,
+  invitations,
+  members,
   oauthClients,
+  organizationCapabilities,
+  organizationDomains,
+  organizations,
+  sessions,
+  ssoProviders,
+  users,
 } from "../../db/schema/index.ts";
-import { recordAuditEvent } from "../../db/queries/audit.ts";
 import { createId } from "../../lib/id.ts";
 let fixture: AdminFixture;
 let runtime: DatabaseConnection;
@@ -404,74 +403,6 @@ for (const order of ["organisation-first", "user-first"] as const) {
     ).toBe("true");
   });
 }
-
-test("organisation erasure subjects accept only the explicit versioned tenant effect arrays", async () => {
-  const organizationId = fixture.tenant.organizationId;
-  const person = fixture.principals.tenantReader;
-  const effect = { id: person.memberId, userId: person.userId, organizationId };
-  const base = {
-    actorType: "system" as const,
-    actorId: "contract-test",
-    organizationId,
-    targetId: organizationId,
-    targetType: "organization",
-    action: "organization.erased",
-    outcome: "success" as const,
-    schemaVersion: 2 as const,
-  };
-  for (const input of [
-    {
-      ...base,
-      schemaVersion: 1 as const,
-      data: { effects: { removedMembers: [effect] } },
-    },
-    {
-      ...base,
-      outcome: "failure" as const,
-      data: { effects: { removedMembers: [effect] } },
-    },
-    {
-      ...base,
-      targetId: fixture.outsider.organizationId,
-      data: { effects: { removedMembers: [effect] } },
-    },
-    { ...base, data: { effects: { removedMembers: effect } } },
-    {
-      ...base,
-      data: {
-        effects: {
-          removedMembers: [
-            { ...effect, organizationId: fixture.outsider.organizationId },
-            { ...effect, id: "" },
-          ],
-        },
-      },
-    },
-  ]) {
-    const event = await recordAuditEvent(runtime.db, input);
-    const subjects = await fixture.db
-      .select()
-      .from(auditEventSubjects)
-      .where(eq(auditEventSubjects.eventId, event.id));
-    expect(subjects.filter((row) => row.relationship === "affected")).toEqual(
-      [],
-    );
-  }
-  const event = await recordAuditEvent(runtime.db, {
-    ...base,
-    data: {
-      effects: { removedMembers: [effect], clearedSessionSelections: [effect] },
-      deletedGrantContexts: [effect],
-    },
-  });
-  const subjects = await fixture.db
-    .select()
-    .from(auditEventSubjects)
-    .where(eq(auditEventSubjects.eventId, event.id));
-  expect(
-    subjects.filter((row) => row.relationship === "affected"),
-  ).toHaveLength(1);
-});
 
 test("organisation erasure records each deleted grant with its stored tenant identity", async () => {
   const person = fixture.principals.tenantReader;

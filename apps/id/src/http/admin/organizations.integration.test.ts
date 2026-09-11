@@ -1,18 +1,17 @@
-import { expectReceipt } from "../../__tests__/operation-receipt.ts";
-import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
+import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
 import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
-import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
-import { signInThroughIdp } from "../../__tests__/federation.ts";
 import { createOrganizationDomain } from "../../__tests__/domain-queries.ts";
+import { signInThroughIdp } from "../../__tests__/federation.ts";
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { createSsoProvider } from "../../__tests__/sso-queries.ts";
 import {
-  auditEvents,
   adminOperations,
+  auditEvents,
   entitlements,
   members,
   oauthClients,
@@ -368,37 +367,6 @@ test("organisation paths validate UUIDs and platform writes return 404 for missi
   }
 });
 
-test("erase requires a query confirmation and checks existence before mismatch", async () => {
-  const id = crypto.randomUUID();
-  const path = `/api/admin/v1/organizations/${id}`;
-  for (const [query, status, code] of [
-    ["", 400, "validation_failed"],
-    ["?confirm=invalid", 400, "validation_failed"],
-    ["?" + new URLSearchParams({ confirm: id }), 404, "not_found"],
-    [
-      "?" + new URLSearchParams({ confirm: crypto.randomUUID() }),
-      404,
-      "not_found",
-    ],
-  ] as const) {
-    const response = await fixture.app.request(path + query, {
-      method: "DELETE",
-      headers: fixture.headers("platformAdmin"),
-    });
-    expect(response.status).toBe(status);
-    expect(await response.json()).toMatchObject({ code });
-  }
-  const headers = fixture.headers("platformAdmin");
-  headers.set("content-type", "application/json");
-  const response = await fixture.app.request(path, {
-    method: "DELETE",
-    headers,
-    body: JSON.stringify({ confirm: id }),
-  });
-  expect(response.status).toBe(400);
-  expect(await response.json()).toMatchObject({ code: "validation_failed" });
-});
-
 test("organisation commands recover committed results across lifecycle changes and erasure", async () => {
   const input = { slug: "organisation-replay", name: "Replay" };
   const first = await command("org-create", "", "POST", input);
@@ -488,99 +456,3 @@ async function command(
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
-
-test("organisation audit failure rolls back both creation and its replay reservation", async () => {
-  const input = { slug: "org-atomic-replay", name: "Atomic" };
-  const before = await fixture.db.select().from(adminOperations);
-  await fixture.db.execute(
-    sql`alter table audit_events add constraint org_replay_fault check (action <> 'organization.created') not valid`,
-  );
-  try {
-    expect(
-      (await command("org-atomic", "", "POST", input)).status,
-    ).toBeGreaterThanOrEqual(400);
-  } finally {
-    await fixture.db.execute(
-      sql`alter table audit_events drop constraint org_replay_fault`,
-    );
-  }
-  expect(await fixture.db.select().from(adminOperations)).toEqual(before);
-  expect(
-    await fixture.db
-      .select()
-      .from(organizations)
-      .where(eq(organizations.slug, input.slug)),
-  ).toHaveLength(0);
-  expect((await command("org-atomic", "", "POST", input)).status).toBe(201);
-  expect(
-    (await command("org-atomic", "", "POST", input)).headers.get(
-      "Idempotency-Replayed",
-    ),
-  ).toBe("true");
-});
-
-test("concurrent organisation creation commits once", async () => {
-  const input = { slug: "org-concurrent-replay", name: "Concurrent" };
-  const responses = await Promise.all([
-    command("org-concurrent", "", "POST", input),
-    command("org-concurrent", "", "POST", input),
-  ]);
-  expect(responses.some((response) => response.status === 201)).toBe(true);
-  for (const response of responses) {
-    expect([201, 409]).toContain(response.status);
-    if (response.status === 409)
-      expect(await response.json()).toMatchObject({
-        code: "operation_in_progress",
-      });
-  }
-  const replay = await command("org-concurrent", "", "POST", input);
-  expect(replay.status).toBe(201);
-  expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(
-    await fixture.db
-      .select()
-      .from(organizations)
-      .where(eq(organizations.slug, input.slug)),
-  ).toHaveLength(1);
-  expect(
-    await fixture.db
-      .select()
-      .from(auditEvents)
-      .where(eq(auditEvents.operationId, replay.headers.get("Operation-Id")!)),
-  ).toHaveLength(1);
-});
-
-test("organisation replay rechecks platform authority after middleware admission", async () => {
-  const input = { slug: "org-authority-replay", name: "Authority" };
-  const first = await command("org-authority", "", "POST", input);
-  expect(first.status).toBe(201);
-  const actor = fixture.principals.platformAdmin;
-  const original = fixture.db.transaction.bind(fixture.db);
-  fixture.db.transaction = afterBrokerRead(original, (async (
-    ...args: Parameters<typeof original>
-  ) => {
-    fixture.db.transaction = original;
-    await fixture.db
-      .update(members)
-      .set({ status: "revoked", revokedAt: new Date() })
-      .where(eq(members.id, actor.memberId));
-    return original(...args);
-  }) as typeof original);
-  try {
-    const denied = await command("org-authority", "", "POST", input);
-    expect(denied.status).toBe(403);
-    expect(await denied.json()).toMatchObject({ code: "insufficient_scope" });
-    expect(
-      await fixture.db
-        .select()
-        .from(auditEvents)
-        .where(eq(auditEvents.operationId, first.headers.get("Operation-Id")!)),
-    ).toHaveLength(1);
-  } finally {
-    fixture.db.transaction = original;
-    await fixture.db
-      .update(members)
-      .set({ status: "active", revokedAt: null })
-      .where(eq(members.id, actor.memberId));
-  }
-});

@@ -3,20 +3,20 @@ import { describe, expect, mock, spyOn, test } from "bun:test";
 import { Hono } from "hono";
 import {
   createLocalJWKSet,
-  jwtVerify,
   exportJWK,
   generateKeyPair,
+  jwtVerify,
   SignJWT,
   type JWTPayload,
 } from "jose";
 import type { AuditEventInput } from "../__tests__/audit-queries.ts";
-import type { Auth } from "../auth.ts";
+import type { ClientPrincipalRow } from "../__tests__/client-queries.ts";
 import {
   stubAuth,
   stubDatabase,
   testEnvironment,
 } from "../__tests__/support.ts";
-import type { ClientPrincipalRow } from "../__tests__/client-queries.ts";
+import type { Auth } from "../auth.ts";
 import type { AppEnvironment } from "./context.ts";
 import {
   createBearerVerifier,
@@ -405,7 +405,9 @@ describe("unit: bearer verification and JWKS", () => {
     const pair = await generateKeyPair("EdDSA");
     const key = { ...(await exportJWK(pair.publicKey)), kid: "known" };
     let release = Promise.withResolvers<void>();
+    let reached = Promise.withResolvers<void>();
     const getJwks = mock(async () => {
+      reached.resolve();
       await release.promise;
       return { keys: [key] };
     });
@@ -418,7 +420,7 @@ describe("unit: bearer verification and JWKS", () => {
       );
       const settled = Promise.allSettled(pending);
       try {
-        await Bun.sleep(0);
+        await reached.promise;
         expect(getJwks.mock.calls.length - before).toBe(1);
       } finally {
         release.resolve();
@@ -429,6 +431,7 @@ describe("unit: bearer verification and JWKS", () => {
       ).toBe(true);
       expect(getJwks.mock.calls.length - before).toBe(1);
       release = Promise.withResolvers<void>();
+      reached = Promise.withResolvers<void>();
     }
     await getKey({ alg: "EdDSA", kid: "known" }, token);
     expect(getJwks).toHaveBeenCalledTimes(2);
@@ -439,9 +442,13 @@ describe("unit: bearer verification and JWKS", () => {
     const firstJwk = { ...(await exportJWK(first.publicKey)), kid: "first" };
     const secondJwk = { ...(await exportJWK(second.publicKey)), kid: "second" };
     const release = Promise.withResolvers<void>();
+    const reached = Promise.withResolvers<void>();
     let rotating = false;
     const getJwks = mock(async () => {
-      if (rotating) await release.promise;
+      if (rotating) {
+        reached.resolve();
+        await release.promise;
+      }
       return { keys: rotating ? [firstJwk, secondJwk] : [firstJwk] };
     });
     const getKey = createJwksResolver({ api: { getJwks } } as unknown as Auth);
@@ -456,7 +463,7 @@ describe("unit: bearer verification and JWKS", () => {
     const pending = Array.from({ length: 8 }, () => jwtVerify(current, getKey));
     const settled = Promise.allSettled(pending);
     try {
-      await Bun.sleep(0);
+      await reached.promise;
       expect(getJwks).toHaveBeenCalledTimes(2);
       expect((await jwtVerify(old, getKey)).payload.proof).toBe("old");
     } finally {
@@ -471,8 +478,10 @@ describe("unit: bearer verification and JWKS", () => {
     const pair = await generateKeyPair("EdDSA");
     const key = { ...(await exportJWK(pair.publicKey)), kid: "recovered" };
     const release = Promise.withResolvers<void>();
+    const reached = Promise.withResolvers<void>();
     let fail = true;
     const getJwks = mock(async () => {
+      reached.resolve();
       await release.promise;
       if (fail) throw new Error("synthetic unavailable key store");
       return { keys: [key] };
@@ -485,7 +494,7 @@ describe("unit: bearer verification and JWKS", () => {
       ),
     );
     try {
-      await Bun.sleep(0);
+      await reached.promise;
       expect(getJwks).toHaveBeenCalledTimes(1);
     } finally {
       release.resolve();

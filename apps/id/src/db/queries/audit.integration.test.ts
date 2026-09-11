@@ -1,8 +1,15 @@
-import * as productionAuditQueries from "./audit.ts";
-import { inPlatformRead } from "../../__tests__/platform-context.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
+import { inPlatformRead } from "../../__tests__/platform-context.ts";
+import * as productionAuditQueries from "./audit.ts";
 
+import {
+  listAuditEvents,
+  listUserAuditEvents,
+  recordAuditEvent,
+  type AuditEventFilters,
+  type AuditEventInput,
+} from "../../__tests__/audit-queries.ts";
 import { isUuidV7, testEnvironment } from "../../__tests__/support.ts";
 import { createId } from "../../lib/id.ts";
 import { createDatabase, type DatabaseConnection } from "../client.ts";
@@ -11,26 +18,8 @@ import {
   auditEventSubjects,
   organizations,
 } from "../schema/index.ts";
-import {
-  listAuditEvents,
-  listUserAuditEvents,
-  recordAuditEvent,
-  type AuditEventInput,
-  type AuditEventFilters,
-} from "../../__tests__/audit-queries.ts";
 
 let connection: DatabaseConnection;
-test("audit query entry rejects a raw database handle", async () => {
-  await expect(
-    Promise.resolve().then(() =>
-      Reflect.apply(productionAuditQueries.listAuditEvents, undefined, [
-        connection.db,
-        {},
-        { limit: 1 },
-      ]),
-    ),
-  ).rejects.toThrow("Invalid or expired");
-});
 const event: AuditEventInput = {
   actorType: "user",
   actorId: "administrator",

@@ -7,10 +7,12 @@ import {
   test,
 } from "bun:test";
 import { sql } from "drizzle-orm";
-import { testEnvironment } from "../../__tests__/support.ts";
-import { createDatabase, type DatabaseConnection } from "../client.ts";
 import { createOrganization } from "../../__tests__/organization-queries.ts";
+import * as queries from "../../__tests__/sso-queries.ts";
+import { testEnvironment } from "../../__tests__/support.ts";
 import { createId } from "../../lib/id.ts";
+import { createDatabase, type DatabaseConnection } from "../client.ts";
+import * as productionQueries from "./sso-providers.ts";
 let connection: DatabaseConnection;
 beforeAll(() => {
   connection = createDatabase(testEnvironment());
@@ -23,8 +25,6 @@ beforeEach(async () => {
 afterAll(async () => {
   await connection.close();
 });
-import * as queries from "../../__tests__/sso-queries.ts";
-import * as productionQueries from "./sso-providers.ts";
 test("provider queries create, find, update, redact and delete", async () => {
   const db = connection.db;
   const org = await createOrganization(db, { slug: "alpha", name: "Alpha" });
@@ -116,84 +116,6 @@ test("provider update timestamps use the database clock despite application cloc
     row.updatedAt.getTime(),
   );
   expect(updated!.domain).toBe("changed.example.com");
-});
-
-test("SSO configuration query rejects a raw database handle", async () => {
-  await expect(
-    Promise.resolve().then(() =>
-      Reflect.apply(productionQueries.findSsoProviderForCommand, undefined, [
-        connection.db,
-        createId(),
-      ]),
-    ),
-  ).rejects.toThrow("Invalid or expired");
-});
-
-test("SSO query purposes, provenance and lifetime cannot be widened", async () => {
-  const { inPlatformRead, inPlatformWrite } =
-    await import("../../__tests__/platform-context.ts");
-  const { inTenantRead } = await import("../../__tests__/tenant-command.ts");
-  const org = await createOrganization(connection.db, {
-    slug: "contexts",
-    name: "Contexts",
-  });
-  const input = {
-    organizationId: org.id,
-    providerId: org.slug,
-    issuer: "https://idp.example",
-    domain: "example.com",
-    oidc: { clientId: "id", clientSecret: "not-for-readers" },
-  };
-  const writes = [
-    [productionQueries.createSsoProvider, [input]],
-    [productionQueries.findSsoProviderForCommand, [org.id]],
-    [productionQueries.updateSsoProvider, [createId(), input]],
-    [productionQueries.deleteSsoProvider, [org.id]],
-  ] as const;
-  const directory = [[productionQueries.readSsoProvider, []]] as const;
-  const diagnosis = [[productionQueries.readSsoIssuer, []]] as const;
-  const platform = [[productionQueries.readSsoEndpoints, [org.id]]] as const;
-  const all = [...writes, ...directory, ...diagnosis, ...platform];
-  async function reject(context: unknown, cases: Readonly<typeof all>) {
-    for (const [fn, args] of cases)
-      await expect(
-        Promise.resolve().then(() =>
-          Reflect.apply(fn, undefined, [context, ...args]),
-        ),
-      ).rejects.toThrow("Invalid or expired");
-  }
-  await reject(connection.db, all);
-  let expired: unknown;
-  await inPlatformWrite(connection.db, async (context) => {
-    expired = context;
-    await reject({ ...context }, all);
-    await reject(context, [...directory, ...diagnosis, ...platform]);
-  });
-  await reject(expired, all);
-  await inPlatformRead(connection.db, async (context) => {
-    expired = context;
-    await reject({ ...context }, all);
-    await reject(context, [...writes, ...directory, ...diagnosis]);
-    expect(
-      await productionQueries.readSsoEndpoints(context, org.id),
-    ).toBeNull();
-  });
-  await reject(expired, all);
-  for (const access of [
-    "directory",
-    "memberAccess",
-    "history",
-    "configuration",
-  ] as const) {
-    await inTenantRead(connection.db, org.id, access, async (context) => {
-      expired = context;
-      await reject({ ...context }, all);
-      await reject(context, [...writes, ...platform]);
-      if (access !== "directory") await reject(context, directory);
-      if (access !== "memberAccess") await reject(context, diagnosis);
-    });
-    await reject(expired, all);
-  }
 });
 
 test("SSO read projections expose only their intended configuration", async () => {

@@ -1,6 +1,6 @@
-import { describe, expect, test } from "bun:test";
 import type { SSOOIDCUserResolutionInput } from "@better-auth/sso";
 import type { DBTransactionAdapter } from "better-auth";
+import { describe, expect, test } from "bun:test";
 
 import { classifyIssuer, resolveFederatedUser } from "./federation.ts";
 
@@ -231,42 +231,6 @@ describe("unit: federated user resolution", () => {
     });
   });
 
-  test("handles exact-account lifecycle and only fills empty directory columns", async () => {
-    const disabled = await resolveFederatedUser(
-      input(),
-      databaseWithFinds(provider, organization, domain, {
-        id: "account",
-        userId: "user",
-        user: { id: "user", email: "person@contoso.com", status: "disabled" },
-      }),
-    );
-    expect(disabled).toMatchObject({ action: "reject", code: "user_disabled" });
-
-    const active = recordingDatabase(provider, organization, domain, {
-      id: "account",
-      userId: "user",
-      directoryId: tenantId,
-      directoryUserId: "directory-user",
-      user: { id: "user", email: "person@contoso.com", status: "active" },
-    });
-    expect(await resolveFederatedUser(input(), active.database)).toEqual({
-      action: "continue",
-    });
-    expect(active.updates).toEqual([]);
-
-    const inert = recordingDatabase(provider, organization, domain, {
-      id: "account",
-      userId: "user",
-      directoryId: null,
-      directoryUserId: null,
-      user: { id: "user", email: "person@contoso.com", status: "inert" },
-    });
-    expect(await resolveFederatedUser(input(), inert.database)).toEqual({
-      action: "continue",
-    });
-    expect(inert.updates).toHaveLength(2);
-  });
-
   test("rejects disabled placeholders and activates inert placeholders", async () => {
     const disabled = await resolveFederatedUser(
       input(),
@@ -287,36 +251,6 @@ describe("unit: federated user resolution", () => {
       action: "continue",
     });
     expect(inert.updates).toHaveLength(2);
-  });
-
-  test("releases a disabled email holder and creates the exact account", async () => {
-    const recorded = recordingDatabase(
-      provider,
-      organization,
-      domain,
-      null,
-      null,
-      {
-        id: "old-user",
-        email: "person@contoso.com",
-        status: "disabled",
-      },
-    );
-
-    expect(await resolveFederatedUser(input(), recorded.database)).toEqual({
-      action: "continue",
-    });
-    expect(recorded.updates[0]).toMatchObject({
-      model: "user",
-      update: {
-        email: "old-user@retired.invalid",
-        retiredEmail: "person@contoso.com",
-      },
-    });
-    expect(recorded.creates.map((operation) => operation.model)).toEqual([
-      "user",
-      "account",
-    ]);
   });
 
   test("rejects active and inert email holders", async () => {

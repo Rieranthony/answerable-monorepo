@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
-import { createHash } from "node:crypto";
 import type { oauthProvider } from "@better-auth/oauth-provider";
-import type { jwt } from "better-auth/plugins/jwt";
 import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
+import type { jwt } from "better-auth/plugins/jwt";
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { and, eq, sql } from "drizzle-orm";
 import {
   createLocalJWKSet,
   decodeJwt,
@@ -11,29 +11,29 @@ import {
   jwtVerify,
   SignJWT,
 } from "jose";
-import { and, eq, sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import { createAdminFixture, type AdminFixture } from "../__tests__/admin.ts";
 import { inPlatformWrite } from "../__tests__/platform-context.ts";
-import { createAuth } from "../auth.ts";
 import { createApp } from "../app.ts";
+import { createAuth } from "../auth.ts";
 import { createDatabase } from "../db/client.ts";
 import { configureRuntimeRole } from "../db/runtime-role.ts";
 import {
-  entitlements,
-  oauthClients,
-  oauthResources,
-  oauthClientResources,
+  accounts,
   auditEvents,
   auditEventSubjects,
+  entitlements,
   grantContexts,
-  verifications,
   members,
-  sessions,
-  accounts,
-  ssoProviders,
-  oauthRefreshTokens,
   oauthAccessTokens,
+  oauthClientResources,
+  oauthClients,
   oauthConsents,
+  oauthRefreshTokens,
+  oauthResources,
+  sessions,
+  ssoProviders,
+  verifications,
 } from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
 import { createCapability } from "../services/capabilities.ts";
@@ -1838,3 +1838,90 @@ test("the native provider rejects unsupported token grant types", async () => {
     });
   }
 });
+
+for (const invalidated of [false, true]) {
+  test(`another client cannot rotate or invalidate a ${invalidated ? "revoked" : "live"} refresh family`, async () => {
+    const issued = await issue();
+    const otherId = "other-refresh-client";
+    const [original] = await fixture.db
+      .select()
+      .from(oauthClients)
+      .where(eq(oauthClients.clientId, clientId));
+    await fixture.db
+      .insert(oauthClients)
+      .values({ ...original!, id: createId(), clientId: otherId });
+    if (invalidated) {
+      const revoked = await exchange(
+        { token: issued.refresh_token, token_type_hint: "refresh_token" },
+        "revoke",
+      );
+      expect(revoked.status).toBe(200);
+    }
+    const before = {
+      families: await fixture.db.select().from(grantContexts),
+      refresh: await fixture.db.select().from(oauthRefreshTokens),
+      access: await fixture.db.select().from(oauthAccessTokens),
+    };
+    const response = await auth.handler(
+      new Request(`${fixture.environment.betterAuthUrl}/auth/oauth2/token`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          authorization: `Basic ${Buffer.from(`${otherId}:${secret}`).toString("base64")}`,
+        },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: issued.refresh_token,
+          resource,
+        }),
+      }),
+    );
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(response.status).toBeLessThan(500);
+    expect(await response.json()).toMatchObject({ error: "invalid_grant" });
+    expect(await fixture.db.select().from(grantContexts)).toEqual(
+      before.families,
+    );
+    expect(await fixture.db.select().from(oauthRefreshTokens)).toEqual(
+      before.refresh,
+    );
+    expect(await fixture.db.select().from(oauthAccessTokens)).toEqual(
+      before.access,
+    );
+  });
+}
+
+for (const mode of ["plain", "missing-public-challenge"] as const) {
+  test(`authorize refuses PKCE ${mode} before creating a flow`, async () => {
+    if (mode === "missing-public-challenge")
+      await fixture.db
+        .update(oauthClients)
+        .set({ tokenEndpointAuthMethod: "none", clientSecret: null })
+        .where(eq(oauthClients.clientId, clientId));
+    const before = await fixture.db.select().from(verifications);
+    const query = new URLSearchParams({
+      client_id: clientId,
+      response_type: "code",
+      redirect_uri: redirect,
+      scope: "openid offline_access mail:read",
+      resource,
+      state: "pkce-security",
+      ...(mode === "plain"
+        ? { code_challenge_method: "plain", code_challenge: verifier }
+        : {}),
+    });
+    const response = await request(`/oauth2/authorize?${query}`);
+    const location = response.headers.get("location");
+    if (location) {
+      const rejected = new URL(location);
+      expect(rejected.searchParams.get("error")).toBeTruthy();
+      expect(rejected.searchParams.has("code")).toBe(false);
+      expect(rejected.pathname).not.toBe("/authorize");
+    } else {
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      expect(response.status).toBeLessThan(500);
+    }
+    expect(await fixture.db.select().from(verifications)).toEqual(before);
+    expect(await fixture.db.select().from(grantContexts)).toHaveLength(0);
+  });
+}

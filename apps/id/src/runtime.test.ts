@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 import { createConnection } from "node:net";
 
 import { stubAuth, testEnvironment } from "./__tests__/support.ts";
@@ -24,6 +24,21 @@ const seedResult: BootstrapResult = {
 };
 
 test("runtime emits bounded operational summaries and stops the reporter on shutdown", async () => {
+  const callbacks = new Set<() => void>();
+  const interval = spyOn(globalThis, "setInterval").mockImplementation(((
+    callback: () => void,
+  ) => {
+    callbacks.add(callback);
+    return { unref() {}, callback };
+  }) as unknown as typeof setInterval);
+  const clear = spyOn(globalThis, "clearInterval").mockImplementation(((
+    timer: { callback?: () => void } | undefined,
+  ) => {
+    if (timer?.callback) callbacks.delete(timer.callback);
+  }) as typeof clearInterval);
+  const tick = () => {
+    for (const callback of callbacks) callback();
+  };
   const log = console.log;
   const reports: unknown[] = [];
   console.log = (...args: unknown[]) => {
@@ -39,17 +54,18 @@ test("runtime emits bounded operational summaries and stops the reporter on shut
     const response = await fetch(new URL("/healthz", runtime.server.url));
     expect(response.status).toBe(200);
     await response.arrayBuffer();
-    const deadline = Date.now() + 1000;
-    while (!reports.length && Date.now() < deadline) await Bun.sleep(10);
+    tick();
     expect(reports.length).toBeGreaterThan(0);
     expect(reports[0]).toMatchObject({ event: "operational_summary" });
     await runtime.shutdown();
     const count = reports.length;
-    await Bun.sleep(30);
+    tick();
     expect(reports).toHaveLength(count);
   } finally {
     await runtime?.shutdown();
     console.log = log;
+    interval.mockRestore();
+    clear.mockRestore();
   }
 });
 
