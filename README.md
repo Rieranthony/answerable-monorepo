@@ -23,6 +23,7 @@ The [enterprise foundation](docs/05-id-enterprise-foundation.md) implementation 
 | 3   | [`docs/02-plan.md`](docs/02-plan.md) — how we build, build order, the open register                               | 6 min |
 | 4   | [`docs/03-answerable-id.md`](docs/03-answerable-id.md) — **the Answerable ID design (canonical)** — read in full  | 8 min |
 | 5   | [`docs/04-answerable-id-schema.md`](docs/04-answerable-id-schema.md) — implemented schema contract and invariants | 6 min |
+| 6   | [`docs/06-deploying-answerable-id.md`](docs/06-deploying-answerable-id.md) — what a production deployment needs and why   | 6 min |
 
 Current contracts describe implemented behaviour; historical reports retain implementation evidence. Open items use stable IDs such as `Q-PUBLISHER-VERIFICATION`.
 

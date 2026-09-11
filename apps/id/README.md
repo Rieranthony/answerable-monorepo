@@ -20,7 +20,7 @@ The documented production configuration uses `https://id.answerable.org` as `BET
 
 ## Commands
 
-The [operations runbook](OPERATIONS.md) covers process summaries and read-only custody checks. It lists the production inputs that remain unknown.
+The [operations runbook](OPERATIONS.md) covers process summaries and read-only custody checks. It lists the production inputs that remain unknown. The [deployment guide](../../docs/06-deploying-answerable-id.md) explains what a production deployment needs and why.
 
 From the repository root:
 
