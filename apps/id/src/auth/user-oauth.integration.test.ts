@@ -3,7 +3,14 @@ import { createHash } from "node:crypto";
 import type { oauthProvider } from "@better-auth/oauth-provider";
 import type { jwt } from "better-auth/plugins/jwt";
 import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
-import { decodeJwt, exportJWK, generateKeyPair, SignJWT } from "jose";
+import {
+  createLocalJWKSet,
+  decodeJwt,
+  exportJWK,
+  generateKeyPair,
+  jwtVerify,
+  SignJWT,
+} from "jose";
 import { and, eq, sql } from "drizzle-orm";
 import { createAdminFixture, type AdminFixture } from "../__tests__/admin.ts";
 import { inPlatformWrite } from "../__tests__/platform-context.ts";
@@ -1375,6 +1382,88 @@ test("discovery and JWKS describe reachable endpoints and the native issuer", as
     "/oauth2/end-session",
   ])
     expect((await request(path)).status).toBe(404);
+});
+
+test("a consumer verifies production user tokens using public discovery and JWKS", async () => {
+  const issued = await issue();
+  const metadata = await (
+    await auth.handler(
+      new Request(
+        `${fixture.environment.betterAuthUrl}/.well-known/openid-configuration`,
+      ),
+    )
+  ).json();
+  expect(metadata.issuer).toBe(fixture.environment.betterAuthUrl);
+  const jwks = await (
+    await auth.handler(new Request(metadata.jwks_uri))
+  ).json();
+  for (const key of jwks.keys)
+    for (const secretField of ["d", "p", "q", "dp", "dq", "qi", "k"])
+      expect(key[secretField]).toBeUndefined();
+  const keys = createLocalJWKSet(jwks);
+  const options = {
+    issuer: fixture.environment.betterAuthUrl,
+    audience: resource,
+    algorithms: ["EdDSA"],
+    typ: "at+jwt",
+    requiredClaims: ["exp", "iat", "sub"],
+  };
+  const { payload } = await jwtVerify(issued.access_token, keys, options);
+  expect(payload).toMatchObject({
+    sub: fixture.principals.tenantAdmin.userId,
+    organization_id: fixture.tenant.organizationId,
+    membership_id: fixture.principals.tenantAdmin.memberId,
+  });
+  const id = await jwtVerify(issued.id_token, keys, {
+    ...options,
+    audience: clientId,
+    typ: undefined,
+  });
+  expect(id.payload.sub).toBe(payload.sub);
+  expect(id.protectedHeader.typ).not.toBe("at+jwt");
+  expect(id.payload.nonce).toBe("client-nonce");
+  await expect(
+    jwtVerify(issued.access_token, keys, {
+      ...options,
+      issuer: "https://foreign.example",
+    }),
+  ).rejects.toThrow();
+  await expect(
+    jwtVerify(issued.access_token, keys, {
+      ...options,
+      audience: "https://foreign.example/mcp",
+    }),
+  ).rejects.toThrow();
+  await expect(jwtVerify(issued.id_token, keys, options)).rejects.toThrow();
+  await expect(
+    jwtVerify(issued.access_token, keys, {
+      ...options,
+      currentDate: new Date((Number(payload.exp) + 1) * 1000),
+    }),
+  ).rejects.toThrow();
+  const [header, , signature] = issued.access_token.split(".");
+  const forged = Buffer.from(
+    JSON.stringify({
+      ...payload,
+      organization_id: fixture.outsider.organizationId,
+    }),
+  ).toString("base64url");
+  await expect(
+    jwtVerify(`${header}.${forged}.${signature}`, keys, options),
+  ).rejects.toThrow();
+  const refreshed = await exchange({
+    grant_type: "refresh_token",
+    refresh_token: issued.refresh_token,
+    resource,
+  });
+  expect(refreshed.status).toBe(200);
+  const next = await jwtVerify(
+    (await refreshed.json()).access_token,
+    keys,
+    options,
+  );
+  for (const claim of ["sub", "organization_id", "membership_id", "grant_id"])
+    expect(next.payload[claim]).toBe(payload[claim]);
 });
 
 test("cached native refresh responses recheck policy and record replay separately", async () => {

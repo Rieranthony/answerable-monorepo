@@ -96,7 +96,7 @@ Removing `openid` removes the ID token. Removing `offline_access` can return one
 
 Every exchange checks the original authentication tuple, current user/account/provider/membership, client/resource state and permissions. Provider replacement, terminal deletion or administrative grant revocation prevents renewal. Ordinary sign-out preserves delegation; [explicit administrative session revocation](/docs/id/manage#global-session-retries) revokes the affected grants.
 
-**Response retry.** By default, reuse of a rotated refresh token revokes its family. `OAUTH_REFRESH_REUSE_INTERVAL_SECONDS` can enable the native encrypted response cache for an operator-selected retry interval. A matching retry returns the original response only after current policy is checked again. Different scopes or resources do not reuse that response. This is not a longer grant lifetime.
+**Response retry.** By default, reuse of a rotated refresh token revokes its family. `OAUTH_REFRESH_REUSE_INTERVAL_SECONDS` can enable the native encrypted response cache for an operator-selected retry interval. A matching retry returns the cached tokens only after current policy is checked again; expiry fields can reflect the remaining lifetime. Different scopes or resources do not reuse that response. This is not a longer grant lifetime.
 
 ## Revoke access
 
@@ -109,7 +109,7 @@ curl "$ID_URL/auth/oauth2/revoke" \
 
 Refresh revocation closes that authorisation family. Another authorisation for the same user/client remains independent. Opaque access-token revocation removes that token. Unknown or foreign tokens produce an empty success without changing another client's grants.
 
-**Offline JWTs.** Revocation does not remove an already-issued JWT from a resource server. The server must verify its signature, issuer, audience, expiry, user subject and tenant claims, and enforce its own current-authority contract. Native JWT revocation returns `unsupported_token_type`. Consumer integration and operational cutover require separate acceptance; local provider tests do not certify an external application or resource server.
+**Offline JWTs.** Revocation does not remove an already-issued JWT from a resource server. The server must verify its signature, issuer, audience, expiry, user subject and tenant claims, and enforce its own current-authority contract. Native JWT revocation returns `unsupported_token_type`. Consumer integration and first deployment require separate acceptance; local provider tests do not certify an external application or resource server.
 
 ## Errors
 

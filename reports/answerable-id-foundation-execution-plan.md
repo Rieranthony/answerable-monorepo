@@ -1,5 +1,7 @@
 # ID foundation: remaining execution plan
 
+> **Historical execution evidence.** Current implementation and final repository acceptance are in [T6 acceptance](id-release-acceptance.md). Earlier pending/migration/physical-erasure statements below describe their original slices and are superseded by that report and the current design. Production remains subject to the [external checklist](answerable-id-release-decision-plan.md#external-input-and-test-checklist).
+
 **Migration baseline:** the development chain and its upgrade/cutover procedures below are historical. First installation now uses one initial migration; see the [consolidation record](id-initial-migration.md). Retained-key custody, native OAuth, deletion and recovery contracts still apply.
 
 **Current verification:** see [administrative denial audit outage behaviour](#administrative-denial-audit-outage-behaviour). The [current checklist](../task_plan.md) tracks open F0–F7 requirements; the dated slice records below are historical evidence, not additional current checklists.

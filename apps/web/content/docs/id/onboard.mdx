@@ -109,7 +109,7 @@ openssl rand -base64 48
 
 Your browser session is enough for commands you type by hand. For scripts and agents, create a client owned by the platform organisation, allow it to use the admin API, and swap its secret for a token.
 
-Client creation requires configured replay encryption and a stable `Idempotency-Key`. Use a distinct key for each intended registration, and reuse it after a lost response. Recovery lasts 24 hours; see [operation status and retries](/docs/id/manage#operation-status).
+Set `MACHINE_LINK_KEY` and `MACHINE_CAPABILITY_KEY` once for their separate commands. A human cookie requires [fresh authentication](/docs/id/manage#fresh-authentication). Client creation requires configured replay encryption and a stable `Idempotency-Key`. Use a distinct key for each intended registration, and reuse it after a lost response. Recovery lasts 24 hours; see [operation status and retries](/docs/id/manage#operation-status).
 
 ```bash
 curl https://id.answerable.org/api/admin/v1/clients \
@@ -128,8 +128,17 @@ curl https://id.answerable.org/api/admin/v1/clients \
 
 # Save clientId as CLIENT_ID and the returned clientSecret as CLIENT_SECRET.
 curl -X PUT "https://id.answerable.org/api/admin/v1/clients/$CLIENT_ID/resources/https%3A%2F%2Fid.answerable.org%2Fapi%2Fadmin" \
+  -H "Idempotency-Key: $MACHINE_LINK_KEY" \
   -H "Cookie: $SESSION_COOKIE" \
   -H "Origin: https://answerable.org"
+
+# Approve the machine ceiling separately from registration and linking.
+curl "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/capabilities" \
+  -H "Idempotency-Key: $MACHINE_CAPABILITY_KEY" \
+  -H "Cookie: $SESSION_COOKIE" \
+  -H "Origin: https://answerable.org" \
+  -H "Content-Type: application/json" \
+  -d '{"clientId":"'"$CLIENT_ID"'","resource":"https://id.answerable.org/api/admin","grantKind":"client_credentials","scopes":["platform:read","platform:users","platform:write"]}'
 
 curl https://id.answerable.org/auth/oauth2/token \
   --user "$CLIENT_ID:$CLIENT_SECRET" \
@@ -138,7 +147,7 @@ curl https://id.answerable.org/auth/oauth2/token \
   --data-urlencode 'scope=platform:read platform:users platform:write'
 ```
 
-**The secret is shown once.** Save `clientSecret` when the first call returns it; it cannot be read back. Use `clientId`, not the record's `id`, in client URLs. The third call returns `access_token`; set `TOKEN` to it. Every command below uses `TOKEN`, but your browser cookie plus the `Origin` header works just as well.
+**The secret is shown once.** Save `clientSecret` when the first call returns it; it cannot be read back. Use `clientId`, not the record's `id`, in client URLs. The token call returns `access_token`; set `TOKEN` to it. Every command below uses `TOKEN`, but your browser cookie plus the `Origin` header works just as well.
 
 **Why the platform organisation.** A client acts for the organisation that owns it. Only a client owned by the platform organisation gets platform scopes; one owned by a client organisation only ever acts for that organisation, whatever scopes it lists.
 
@@ -274,6 +283,7 @@ curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$ORG/sso-provi
 
 ```bash
 curl https://id.answerable.org/api/admin/v1/resources \
+  -H "Idempotency-Key: $RESOURCE_CREATE_KEY" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"identifier":"https://tutor.answerable.org","name":"Tutor","allowedScopes":["tutor:read"]}'
@@ -290,6 +300,8 @@ curl https://id.answerable.org/api/admin/v1/clients \
     "organizationId": "'"$ORG"'",
     "tokenEndpointAuthMethod": "private_key_jwt",
     "grantTypes": ["authorization_code", "refresh_token"],
+    "scopes": ["openid", "profile", "email", "offline_access", "tutor:read"],
+    "requirePKCE": true,
     "redirectUris": ["https://contoso.omnichat.example/oauth/callback"],
     "jwksUri": "https://contoso.omnichat.example/.well-known/jwks.json"
   }'
@@ -305,23 +317,30 @@ curl "https://id.answerable.org/api/admin/v1/resources/https%3A%2F%2Ftutor.answe
   -H "Authorization: Bearer $TOKEN"
 
 curl -X DELETE "https://id.answerable.org/api/admin/v1/clients/$CLIENT_ID?confirm=$CLIENT_ID" \
+  -H "Idempotency-Key: $CLIENT_DELETE_KEY" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 **Inspect links.** [getClient](/docs/id/admin-api/clients/getClient) includes `resources`; [getResource](/docs/id/admin-api/resources/getResource) includes `clients`. Resource path values are percent-encoded URLs.
 
-**Erase a client.** [eraseClient](/docs/id/admin-api/clients/eraseClient) removes its resource links, tokens and consents. Remove every referencing entitlement first, including disabled rows, or it returns `client_has_entitlements`. Prefer `POST /clients/{clientId}/disable` to suspend use reversibly. Erasures require a `confirm` query parameter equal to the target identifier, with no DELETE body.
+**Delete a client.** [eraseClient](/docs/id/admin-api/clients/eraseClient) tombstones the client, links and consents, clears credentials and revokes grants. Token records follow their separate removal contract. Remove every referencing entitlement and capability first, including disabled/future rows, or deletion returns a reference error. Prefer `POST /clients/{clientId}/disable` to suspend use reversibly. Erasures require a `confirm` query parameter equal to the target identifier, with no DELETE body.
 
 ## Grant access
 
-An **entitlement** says who may obtain tokens for what, with which scopes. Its principal is the whole organisation, one group, or one member. Grants add up; there are no deny rows.
+An **entitlement** assigns scopes to the whole organisation, a group or a member. A matching platform capability is also required. First approve client-only login and the exact client/resource code and refresh ceilings using [capability commands](/docs/id/manage#approve-user-capabilities). Registration and a resource-only assignment do not grant application access.
 
 ```bash
+curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/entitlements" \
+  -H "Idempotency-Key: $LOGIN_ENTITLEMENT_KEY" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"clientId":"omnichat-contoso","scopes":["openid","profile","email","offline_access"]}'
+
 curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/entitlements" \
   -H "Idempotency-Key: $ORG_ENTITLEMENT_KEY" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"resource":"https://tutor.answerable.org","scopes":["tutor:read"]}'
+  -d '{"clientId":"omnichat-contoso","resource":"https://tutor.answerable.org","scopes":["tutor:read"]}'
 ```
 
 **Narrow it to a group.** Create the group, add members, and grant the group instead of the organisation:
@@ -344,7 +363,7 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/entitlements" \
   -H "Idempotency-Key: $GROUP_ENTITLEMENT_KEY" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"groupId":"'"$GROUP"'","resource":"https://tutor.answerable.org","scopes":["tutor:read"]}'
+  -d '{"groupId":"'"$GROUP"'","clientId":"omnichat-contoso","resource":"https://tutor.answerable.org","scopes":["tutor:read"]}'
 ```
 
 **Withhold access.** Do not create the row. **Remove access.** `POST …/entitlements/{id}/disable`, or `DELETE` it. **Time-bound access.** Every membership, group membership and entitlement takes `validFrom` and `validUntil`; outside the window it does not count.
@@ -353,7 +372,7 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/entitlements" \
 
 ## Let the organisation manage itself
 
-Once one of their admins has signed in, grant them scopes on the admin API. Set `MEMBER` from the members list.
+First [approve an admin-session capability](/docs/id/manage#approve-direct-administrator-access) for this organisation and the admin resource. Once its administrator signs in through its own current SSO, assign the same or narrower scopes. Set `MEMBER` from the members list.
 
 ```bash
 curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/entitlements" \
@@ -376,15 +395,15 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/access?resource=
 
 ## Offboard
 
-| Situation                        | Do this                                                                                    | Effect                                                                                                                                                        |
-| -------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A person leaves the organisation | `PATCH …/members/{memberId}` with `validUntil` now, or `DELETE` the membership             | Their admin access and stored user OAuth grants in that organisation stop; other memberships stay. Offline JWTs remain subject to expiry and consumer checks. |
-| A person must be cut off at once | `POST /users/{userId}/disable`                                                             | Every session ends and every token is revoked, in one transaction                                                                                             |
-| Their address will be reused     | `POST /users/{userId}/retire-email` after disabling                                        | The address is released; the old account keeps a tombstone                                                                                                    |
-| The organisation leaves          | `POST /organizations/{org}/disable`                                                        | Sign-in refuses; the tenant epoch advances and owned machine tokens are revoked. Global browser sessions and unbound user grants remain                       |
-| An app is retired                | `DELETE /clients/{clientId}?confirm={clientId}` after removing its entitlements            | Links, tokens and consents are erased; audit rows remain                                                                                                      |
-| A domain no longer belongs here  | `DELETE /organizations/{org}/domains/{domainId}`                                           | Sign-in routing is removed; no confirmation needed                                                                                                            |
-| Data must be erased              | `DELETE /users/{userId}` or `DELETE /organizations/{org}` with `?confirm=<id>` and no body | Cascades; audit rows keep erased IDs. Remove owned clients before organisation erasure                                                                        |
+| Situation                        | Do this                                                                                    | Effect                                                                                                                                                                                            |
+| -------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A person leaves the organisation | `PATCH …/members/{memberId}` with `validUntil` now, or `DELETE` the membership             | Their admin access and stored user OAuth grants in that organisation stop; other memberships stay. Offline JWTs remain subject to expiry and consumer checks.                                     |
+| A person must be cut off at once | `POST /users/{userId}/disable`                                                             | Global browser sessions and local stored grants/tokens are revoked atomically. Offline JWTs and downstream sessions retain separate exposure.                                                     |
+| Their address will be reused     | `POST /users/{userId}/retire-email` after disabling                                        | The address is released; the old account keeps a tombstone                                                                                                                                        |
+| The organisation leaves          | `POST /organizations/{org}/disable`                                                        | Sign-in refuses; the tenant epoch advances and owned machine tokens are revoked. Global browser sessions remain; tenant grants are revoked and old provider/tenant state cannot authorise renewal |
+| An app is retired                | `DELETE /clients/{clientId}?confirm={clientId}` after removing its entitlements            | Client, links and consents are tombstoned; credentials are cleared/revoked and history remains                                                                                                    |
+| A domain no longer belongs here  | `DELETE /organizations/{org}/domains/{domainId}`                                           | Sign-in routing is removed; no confirmation needed                                                                                                                                                |
+| Product access must be removed   | `DELETE /users/{userId}` or `DELETE /organizations/{org}` with `?confirm=<id>` and no body | Terminal tombstones deny ordinary reads/authority; identifying fields and UUID history remain. Remove owned clients/resources and policy references first                                         |
 
 **Bulk import of an existing cell's users.** [Not yet.](/docs/id#today-and-next)
 

@@ -1,0 +1,600 @@
+{
+  "scope": "built static documentation HTTP verification, not real consumer acceptance",
+  "origin": "http://127.0.0.1:47960",
+  "pages": 114,
+  "checkedInternalLinks": 2877,
+  "pageResults": [
+    {
+      "path": "/docs",
+      "markdownSha256": "882b7604e7a2a2622af68c1d66e8433cc58456e77dff6f241e62541f3ac1a92e",
+      "errors": []
+    },
+    {
+      "path": "/docs/id",
+      "markdownSha256": "874359f92a5205d5c521ce0cb850c241458ea04f5176496f2f84bbbc38a470e4",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api",
+      "markdownSha256": "a24fd5f033c7622bd43e3ea0d9806d552fa488fcede95d32669a78625dfa5371",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/access/getMemberAccess",
+      "markdownSha256": "f3ae9f076bbd54ca1e18110348249b7e25f89af218a6222ebca00ef98cd614d5",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/access/listTargetAccess",
+      "markdownSha256": "b201e4c45bef0d40aa545a4fe7cdf78630ea7fc16e711882f0893b4a6a0f4a74",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/audit/listAuditEvents",
+      "markdownSha256": "dea1a4614a12058cb3076c5b45dcf4ec3320225145fa4206095c8abf5f9bcb59",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/audit/listOrganizationAuditEvents",
+      "markdownSha256": "8dc913b2748228f55f485cae7ec92b53843314664a1edbdff82f95142a8d36ab",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/audit/listUserAuditEvents",
+      "markdownSha256": "048b43b9960fdaa5be748390cffa5af899518afc9c9927f92a101d5185a40d7a",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/capabilities/createCapability",
+      "markdownSha256": "ae5cd20d147eb13ad7edc8f63e814a91a70ecef47f2d5143e715c47521f8d29d",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/capabilities/getCapability",
+      "markdownSha256": "18b6340e1b728e0ebd79f7fbd3d0695ef1ed0fa7ae7b98e330a7b4789c3feb8d",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/capabilities/listCapabilities",
+      "markdownSha256": "39ada89c797864ff5cb4eabe1080dc0fa2079d861a1077ed1019dcb511daecf3",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/capabilities/removeCapability",
+      "markdownSha256": "10d526b2c6962ffb8326188eddbd79d44447153ade0731e69b1ff412aebae33a",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/capabilities/updateCapability",
+      "markdownSha256": "9d4ee897c29fe8f5a9c586d3a22349b5a281b1663357b0a37d80286df3c9b192",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/clients/createClient",
+      "markdownSha256": "78f6ffbff51e8b5f5484b89867acf3f61fb5f437ba7fbbde811493b1551c6985",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/clients/disableClient",
+      "markdownSha256": "2ea27d7509574e739141423c0f856db22bee344fb56caf7ec03f28812c517133",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/clients/enableClient",
+      "markdownSha256": "8d9b6837f8b3a44b737be524bce4168bebbb1a748385defded00e0955f9b5a50",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/clients/eraseClient",
+      "markdownSha256": "df4a37c1e423f62c51d632351c61985c52c1109eacb56fc974909b4bd33b7cc1",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/clients/getClient",
+      "markdownSha256": "f9fd60f8ee7208908553d5ff779fe60085df559ddeabe25d1e4d1cb1c0f15fe6",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/clients/linkClientResource",
+      "markdownSha256": "e780e0338b91a4c9e18da0e93ee68a657e00ef8aa3a5c1fce541372746867cb5",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/clients/listClients",
+      "markdownSha256": "c7dced7c10aab3db80efed48b4b1428d350fb3b2087a3184cfc8ae5917a71e88",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/clients/rotateClientSecret",
+      "markdownSha256": "83efd11f3fdba7158e2fe9b791f9b4de9aa00d1432df4ae0e02584a5ccb484bc",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/clients/setClientOwner",
+      "markdownSha256": "862cb30e35a42eb67cd2a2edfe0b50c878467659d3405f1502a9d444b82e0102",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/clients/unlinkClientResource",
+      "markdownSha256": "1b10beb48973f4d7725729ef44f836f7bace029af6f614e5e9dc164958ba4104",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/clients/updateClient",
+      "markdownSha256": "836929830811e3d3d6cfd7f356c58f7f192ff28e0d70668034df65c0e5d8bd3d",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/diagnostics/diagnoseSignIn",
+      "markdownSha256": "9aabc8fb74a0f820752cdccc27a746544bd0b93ae75f33a817259f16fd4d8cf1",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/diagnostics/testSsoProvider",
+      "markdownSha256": "6d559b7277233b5f50419ce318717ea565b22283568ecf198d0a2ba564ab9ca1",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/domains/createOrganizationDomain",
+      "markdownSha256": "b89575250f23de4c227cb28b154dc662a3cdc46fa7ef4cbebc6d5d82d2a3f2f0",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/domains/deleteOrganizationDomain",
+      "markdownSha256": "ce3101a690edd8b60f0ecd20c54cfa2284fbeee8cb725c4969d237ee672b70f2",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/domains/disableOrganizationDomain",
+      "markdownSha256": "4122bdfe64d4d6d8fccac90a134497dbded7a90c242e5ebe52f906eafde7ab4b",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/domains/enableOrganizationDomain",
+      "markdownSha256": "fba73f5a875626cd578189bd8882d0204ed28e1ad7858a42f84ab53ddfff980c",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/domains/listOrganizationDomains",
+      "markdownSha256": "8e698ea1205b00015e5c43c29ff132368f9006d9fd281e5cbb08587d0f5139ab",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/entitlements/createEntitlement",
+      "markdownSha256": "497055ee488bc914f4419847da59473d6cd8d8480ee1a99f6ceaf78a483e9a0e",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/entitlements/disableEntitlement",
+      "markdownSha256": "21cc4260ef7a2683b1eaaea89577819931aaf9d07fdf9e476324a6944624ee30",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/entitlements/enableEntitlement",
+      "markdownSha256": "492c965d8bb745fb2103c1d8ce315d13ca24ef3e2d1282fbe9370f0a123fa803",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/entitlements/getEntitlement",
+      "markdownSha256": "3c8ad7aca76bd817752404a97b64aeddbb5e7204923e1562e3386a707e2b986c",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/entitlements/listAllEntitlements",
+      "markdownSha256": "b3a0a3333340fa32739019b57ec4f4f1411b68b8039fa735de4591669b5781ea",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/entitlements/listEntitlements",
+      "markdownSha256": "37d137ad1895078ebd588e7295489e790e2b8b5cf4296091e2ebcc3e60166128",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/entitlements/removeEntitlement",
+      "markdownSha256": "6e33796f7dfcd5801ac9805d98d37e59839143815abff79508e2e7f6b8fa7ede",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/entitlements/updateEntitlement",
+      "markdownSha256": "6ca57d8930c20679e7a1debc8dd6f1e91fc3d8fa4add78ec343d8a6a19f2835c",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/groups/createGroup",
+      "markdownSha256": "cbf7304b9a228fd030afd2b4b16c7a185ca6cd96891210fe6fdfcc623bb929fa",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/groups/disableGroup",
+      "markdownSha256": "8d0d6e4fdba3dd836d7b025fd3bc6f573bee2eee7f5a1f4fd8042fa68ff88711",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/groups/enableGroup",
+      "markdownSha256": "5f9859d1a56877c7269a60eca812052f3eaf00bd76a848819ca3f7d930d67b5a",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/groups/eraseGroup",
+      "markdownSha256": "d399a4d5b42b4fc4434628b10c4a53dfeeb385045241c130432ed195eb8b06a5",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/groups/getGroup",
+      "markdownSha256": "b309ac4171afb4d96f79b84ddbaf3ce5cd5413db33bc9fe7fc08ff9e8b36738b",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/groups/getGroupMember",
+      "markdownSha256": "50976ba295cb1c7ff4f2fdd200122e3b30c848d8979e34a0ccc69e011787f747",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/groups/listGroupMembers",
+      "markdownSha256": "e5c25aa8799a52a794617b72c174687408852fe084697ca4b6837a8bb4ac38be",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/groups/listGroups",
+      "markdownSha256": "1864184894638a1774f3c9ebbe8202fd15fb25294ec83cb5fdb19a002c432ce8",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/groups/putGroupMember",
+      "markdownSha256": "75afb488fb05fb7d148a24e9418222d65cc8dded53c59ca873ae6091759f9132",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/groups/removeGroupMember",
+      "markdownSha256": "59b696a1ef045acf218c2b013a26ee4787e66afb53e45d7fe2bb4ed1aebb0c29",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/groups/updateGroup",
+      "markdownSha256": "075b0ed303c3f1307f212e0a826a2a0dcd7b323fa94cb4919f34049250ef4eda",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/me/getAdminMe",
+      "markdownSha256": "fa7d5223e421f5b892b1a3ee265f10f4222542f6437ef87582aabd0926d609a8",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/members/getMember",
+      "markdownSha256": "86dcffb4afe6c72c0f1b497371b7518266fd25f6f0e9e33fa844d9af52219921",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/members/getMemberConfiguration",
+      "markdownSha256": "88efc7cd3753bd692970445eb2a0e9241d720ea9d32019a26df3ed58dd11c5cd",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/members/listMembers",
+      "markdownSha256": "b243618b4db61bb60b95a577cfaae32df5407eb743678e9fc0c2b01a0d388e51",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/members/reinstateMember",
+      "markdownSha256": "97a122e877f0d325f918eb73327c921e2aa0909189308e2dd0f921fbf743ce56",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/members/removeMember",
+      "markdownSha256": "00972b518fd1a69c75d37eb4a17a02b282b4fa3e52ae0b5a2ba58492290d7f09",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/members/updateMember",
+      "markdownSha256": "e2d105fa7e9cc2e0e49f3d5811b5faed5cc01e7deff3022005dbe90d558d2eac",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/operations/getMyOperationStatus",
+      "markdownSha256": "2f371db7fa6b1d8b37ff594609cf777defdd4c7355376fb05457d3abf71d0dd9",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/operations/getOperationStatus",
+      "markdownSha256": "e22fe345ba8051e56cc344c588b6e58385d88d4d0c7e90cfddbc639197fefda6",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/operations/getOrganizationOperationStatus",
+      "markdownSha256": "3876601dc6f086b74ad7096d67883534f6695ec2235123dc19c2110b3337c3cd",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/organizations/createOrganization",
+      "markdownSha256": "56b09b1ab4dd348a1865930715606c2c50e425bce2e067d2db34be4addb8a21f",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/organizations/disableOrganization",
+      "markdownSha256": "5bde9e898df77d511c2396156f2b5ad06473cf96edb9d74dfaa3422751611ef4",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/organizations/enableOrganization",
+      "markdownSha256": "acfd75bbffa96690945367a800d172d178212a526a9499009a2562c48244ac80",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/organizations/eraseOrganization",
+      "markdownSha256": "9b440b6c980e41cd73f3c71171c3c7aebfc590bdab082f2b254f9b36c2a88467",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/organizations/getOrganization",
+      "markdownSha256": "a8d1a091a03cba3ca37f2287ac7b3695d0df6dbb27cee8dbcbeadf7570efe3ef",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/organizations/getOrganizationSummary",
+      "markdownSha256": "763251074a0aaa9243012362a4851ae8e98b7a008f30ed641b23f11a7887b484",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/organizations/listOrganizations",
+      "markdownSha256": "ec26964154ff85f81b53553c3f274088af25ef8fa88a3ed32d136e5e87c49d6e",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/organizations/updateOrganization",
+      "markdownSha256": "ceb2da5c7a003ca8ae937a95004e09101fee70ab1f0ed4f1ce29d67b3cb70aba",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/platform/getPlatformSummary",
+      "markdownSha256": "603e6a926d773f8191c2ae69c0b8c16fde89ead9d058a7b11be9eb805adc4b21",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/resources/createResource",
+      "markdownSha256": "47c5ecaa2eb632c53a28c0ea59c3b3bd14fb73fa5278467352eef82a0067cd0e",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/resources/disableResource",
+      "markdownSha256": "51b9931acba494377699f796a60b34ea6d361c61b94ebca7e69db16c07fac1f8",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/resources/enableResource",
+      "markdownSha256": "5aa0abbf47fdab9779a42950c419372ffa05cfba2a3966a7da58938f94b56b44",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/resources/eraseResource",
+      "markdownSha256": "574f672faebdd48fbaa9d24e14f7fc7d3c34cdcaf29014f1685caa5c51ca1fac",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/resources/getResource",
+      "markdownSha256": "618415b516e9227651cc870978369b00081f314303a5077631bd3f278230ab21",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/resources/listResources",
+      "markdownSha256": "034886bd94d6d9e924e800a9c1a94eafb2a5e67730138b40663787a5269f4530",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/resources/updateResource",
+      "markdownSha256": "6edd8fc2467863e6b676bce12cca8bafceecd8fdd1936666c76c27c460c2e23a",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/sessions/listUserSessions",
+      "markdownSha256": "fc9f5995bd0ce6663d930e9c222d77f8b944c18e970ec3832a520a7d0e17bbe6",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/sessions/revokeUserSession",
+      "markdownSha256": "9b11be2d2b05e6138100194a7c9ddb62ca6e1536a2cafe550a417ee00114349c",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/sessions/revokeUserSessions",
+      "markdownSha256": "b0997edf623843a77977939deb53274de60aab6039e31fb423d8b9b9ba8d3b8e",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/sso-provider/deleteSsoProvider",
+      "markdownSha256": "47b3e310ecf4e837056687fdd84c9c05390a235fa8afec2d4dca7b9dabb700ef",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/sso-provider/getSsoProvider",
+      "markdownSha256": "eb7aa371e0896101a3f228a615b0d2879c65c191014972e01cd4c815ba57b1d0",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/sso-provider/putSsoProvider",
+      "markdownSha256": "acecda1072df8150495d59758d529f32302d4449484ff6757c25b235c8a2ebe1",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/users/disableUser",
+      "markdownSha256": "270772e66c1a3d12e5643a34cdaf5fb45be123ddb39e6d53091b66bd2b44cfb7",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/users/enableUser",
+      "markdownSha256": "c648bea6cf0bf3ffa2a1992006796b84dd002d774aa7f6c488d828444e08fae1",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/users/eraseUser",
+      "markdownSha256": "3cd552aadd9ba1367cb1c0a6cf3d79c8d03ebb16eace83487f171d4452eb1e74",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/users/getUser",
+      "markdownSha256": "806680e600dfb88adb5e11913b5f4f845dab13fbdf8bbf325b1746e635c4a34b",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/users/listUsers",
+      "markdownSha256": "67f041e8e6a54e7a04b8b2e5fdf4b795e218b52104062fc0dd1d1b5ed9390f14",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/admin-api/users/retireUserEmail",
+      "markdownSha256": "10ee46168e467bde9773afb2ebe02c23e15a136e1a32381611f28a462afbeea2",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/api",
+      "markdownSha256": "de2580902aaf2bbac05c479a3b679d228f969c7febdf61e77d314295c8517283",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/api/health/getHealth",
+      "markdownSha256": "e7da1d2f8f234b6cadb6751775eb607e0210b4aac7a3ecefb069d8f1c5d7c4f5",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/api/health/getReadiness",
+      "markdownSha256": "12590fc4da93903ea6efb85ec198b5c07425963427db8e2165699e667e76b683",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/api/session/getSession",
+      "markdownSha256": "c7c143fbe036987611c34bc6005dcc64f072d649087dfea9f4797e0ba86a7022",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/api/session/ok",
+      "markdownSha256": "62ee8edd3d8814b613aa3628c1cccb6565410d28b808b19e5aa4d74aa9661189",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/api/session/signOut",
+      "markdownSha256": "6bf333b13411cda67c16f5608127859c7fb34bff51c80df8ac201e99f4b77fad",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/api/sign-in/linkSso",
+      "markdownSha256": "1113b7ab1c834e129890a6e04e654efcaf09c70a7528132d4507b572169966ef",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/api/sign-in/reauthenticateSso",
+      "markdownSha256": "3870919953c9a7988fbda96911e9324348906a34b905fb4013653478b943e515",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/api/sign-in/signInWithSso",
+      "markdownSha256": "9c1ed4c2f13088382c0c49f4f959b393b9a7ba6ff75dab07785ecd14a6308152",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/api/sign-in/ssoCallback",
+      "markdownSha256": "9027b7f54d65431cbedf5ce22055cf5bfd07433c7de272d30e2449ebb7a2e7da",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/api/token/authorizeOAuth",
+      "markdownSha256": "9e52443ec9bafa7facd0e7376d453893e9472070c0016b0ec1d73401f6e4b7a1",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/api/token/consentOAuth",
+      "markdownSha256": "ad5a3499985b165e300137a28db9673976e46b9e8ebb2fd30a334aee5fc9d966",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/api/token/continueOAuthFlow",
+      "markdownSha256": "2b943943c3176d28a02902190cf1d2376840cc8d0615c521a19a5b306adb4059",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/api/token/getJwks",
+      "markdownSha256": "c96072d4d264fb68634938b78714a49f2f921cc3186692f4d09fe0b63b79086f",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/api/token/getOAuthAuthorizationServer",
+      "markdownSha256": "47f68571d771c45b37f1d7e8ebdcad4be57d1a646ebc918373eeb5f8398f8462",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/api/token/getOpenIdConfiguration",
+      "markdownSha256": "6b807343966da9279e2a6a3c31b8c0bb4501769b10fa878499ec56207d954936",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/api/token/getUserInfo",
+      "markdownSha256": "b330c8718690accb1a02ee482569d24a0a69332b9bc4def76b77d5240e697494",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/api/token/issueToken",
+      "markdownSha256": "9e476e3b8f9fd6c0f1da6377b71e693c531b88b84f107acce2915a10216a7980",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/api/token/postUserInfo",
+      "markdownSha256": "379d87c3b8c71ca30f3100c68ddbade52dd16ccf41f2100131a2589b95839b4a",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/api/token/readOAuthFlow",
+      "markdownSha256": "0f296848b694553fc1714bfa6f5c70ecc481eefa7530623663785121adabf199",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/api/token/revokeOAuthToken",
+      "markdownSha256": "543534d9204430a019dd8cc210321a1981a9e29f60fd1d065c5bee4099a268b9",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/manage",
+      "markdownSha256": "fda52bc431b329e9098c50f1da41a54cd9ca4d83101d1037d6fb11ee17069c75",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/oauth",
+      "markdownSha256": "8513f1a910ae7d75239afcad40b908d386d38d6bd66623e5e39ace3764582ed8",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/onboard",
+      "markdownSha256": "5a1861d59fd6c8b903dca66d0c416315cf53c7061c3b11eaf8bb20d3a33d5945",
+      "errors": []
+    },
+    {
+      "path": "/docs/id/sign-in",
+      "markdownSha256": "eb5e08081096a98d3c520730820c97e81e699cf1594805e09b9b36aaa7711288",
+      "errors": []
+    },
+    {
+      "path": "/docs/mcp",
+      "markdownSha256": "334007e8c9e54d8d121ffad6c70bdd62bccf32d6050e3613da84efb501876485",
+      "errors": []
+    }
+  ],
+  "linkErrors": [],
+  "missingFromLlmsIndex": [],
+  "missingFromLlmsFull": [],
+  "llmsFullSha256": "13fe5f16d735874a152ac0619ea7f4019a0c988374d20cde57e095f4132b7cb9",
+  "browserVerification": {
+    "surface": "Codex in-app browser, local production build",
+    "desktop": "ID page title, headings and navigation inspected",
+    "mobileViewport": {
+      "width": 390,
+      "height": 844
+    },
+    "mobilePages": [
+      "/docs/id",
+      "/docs/id/oauth"
+    ],
+    "menu": "Opened labelled sidebar; navigated to OAuth guide; menu collapsed",
+    "oauthDocumentWidth": 390,
+    "oauthH1Count": 1,
+    "imagesWithoutAlt": 0,
+    "scopeLimit": "Visual and accessible-control/navigation checks, not a comprehensive WCAG audit; no motion code changed",
+    "viewportOverrideReset": true
+  }
+}

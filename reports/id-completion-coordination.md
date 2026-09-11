@@ -20,7 +20,7 @@ User authorises this task to manage implementation of the six completed plans, i
 | T3 | Plan ID audit lifecycle and retention | 01a08b80-6407-7a03-9ac8-ee28ba12c4f7 | Soft deletion accepted/integrated at 3e09ad1; idle |
 | T4 | Plan ID capacity operations and recovery | 01a08b80-c0dd-7793-858b-678a943deda7 | Operational/recovery slice integrated at fcea297; idle |
 | T5 | Plan ID single initial migration cleanup | 01a08b80-d8c5-7763-99e6-e764415127f7 | Single initial migration accepted at a35df30; idle |
-| T6 | Plan ID release acceptance and documentation | 01a08b80-f14b-70d1-8265-1dd18a2fb232 | Final repository acceptance/docs dispatched from a35df30; sole writer/DB owner |
+| T6 | Plan ID release acceptance and documentation | 01a08b80-f14b-70d1-8265-1dd18a2fb232 | Final repository acceptance/docs accepted; idle |
 
 Read the final answers in those tasks before delegating or changing scope. Their proposals are not user decisions. The app list may omit these worktree tasks; the IDs above work with read_thread/send_message_to_thread/wait_threads.
 
@@ -65,7 +65,7 @@ The user explicitly accepted both recommendations and specified soft deletion:
 
 ## Next coordinator action
 
-T5 single initial migration is accepted at a35df30141f0eb65751197b5014a8b266fbfea03. T6 now owns final repository acceptance and documentation from this consolidated candidate, with sole writer/shared disposable test DB ownership. Review its exact-source F0–F7 evidence, final docs/checklist, gates and finite external release inputs, integrate accepted commits and report repository completion separately from unverified deployment/consumer gates. No new schema, repeated broad hardening, domain purge, non-test reset, push/deployment or invented production facts. Runtime defects require concrete reproduction and coordinator handoff.
+All six repository implementation/acceptance slices are reviewed and integrated. No active writer or shared test DB owner remains. Repository foundation is complete; production remains NO-GO on reports/answerable-id-release-decision-plan.md E1–E8 (E8 conditional Circle). Report completion and concrete external/missing-capability gates once, then stay quiet until new inputs or authorised scope arrive. Do not restart speculative work or repeat unchanged gates. Remote upstream-disable detection/downstream logout and consumer registration integration are Not yet; external configuration alone cannot close missing capabilities. No domain purge, non-test reset, push/deployment.
 
 Review adjustment to T3's proposal: do not accidentally remove the existing explicit membership reinstatement feature. Distinguish reversible membership revocation from product/entity deletion. No automatic SSO resurrection is allowed, but explicit reinstatement of a revoked membership remains a supported command unless the user changes that contract. If a genuine conflict requires changing public semantics, bring that concrete conflict to the coordinator rather than silently making reinstatement unreachable.
 
@@ -132,3 +132,11 @@ Thread heartbeat `coordinate-id-foundation-completion` is active every ten minut
 - Removed 53-step development chain, binding importer, upstream cutover fixtures/tests and obsolete encrypted SHA-256 replay compatibility; reference-only SHA-256 and active event contracts retained. Current resource fingerprint normalisation has same-key default equivalence regression.
 - Raw full ID evidence: 2,027 pass, zero failures, 29,829 assertions, 149 files, 560.43s, exit 0, 100% coverage. Required gates, future generation and consolidated T4 restore passed. Zero other test connections/roles; clean handoff. Integrated apps/docs/CI/env exactly match tested source, no unchanged rerun. Report: reports/id-initial-migration.md.
 - T6 final acceptance/docs dispatched; external consumer/deployment acceptance remains explicit.
+
+## Final repository acceptance checkpoint
+
+- Accepted source a38b0ff69200c2ff56f0c21dbc87027c882dad70. One independent public discovery/JWKS jose verifier test covers production code/refresh tokens and negative issuer/audience/type/signature cases. No runtime/schema/dependency/OpenAPI change.
+- Reconciled canonical docs, guides, inventories and current checklist. Removed stale chronological appendages; preserved historical evidence and explicit unimplemented remote/consumer capabilities.
+- Verified raw final suite: 2,028 pass, zero failures, 29,883 assertions, 149 files, 611.95s, 100% line/function coverage, exit 0. Migration proof, root gates, web71/countries5, zero-drift exporter, consolidated restore and 114-page rendered docs/2,877 links passed. DB handoff: zero other sessions/roles. Exactly one SQL/snapshot/journal remains, unchanged SHA-256.
+- Coordination-only cherry-pick conflict resolved by preserving this manager history and recording final state. Tested application/docs tree comparison required before final response; do not rerun unchanged runtime tests.
+- Current evidence: reports/id-release-acceptance.md; single outstanding production checklist: reports/answerable-id-release-decision-plan.md. Repository completion does not certify production or waive remote lifecycle/actual consumer/custody/deployment requirements.

@@ -1,6 +1,6 @@
 ---
 title: Answerable ID
-description: "One sign-in for every Answerable app and MCP server, backed by your organisation's own directory."
+description: "Organisation SSO, application login and resource access through Answerable ID."
 ---
 
 ## What it does
@@ -30,13 +30,13 @@ description: "One sign-in for every Answerable app and MCP server, backed by you
 | Order | Capability                                                                                                                                                                                                                                          |
 | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Today | Organisation sign-in through your identity provider, sessions, health endpoints, the admin API (platform and tenant reads, member management, summaries and sign-in diagnosis), machine access with client credentials, and tenant-bound user OAuth |
-| Next  | External consumer acceptance and operational cutover, then broader self-service                                                                                                                                                                     |
+| Next  | Real consumer and first-deployment acceptance; broader self-service and remote lifecycle work remain planned                                                                                                                                        |
 
-This is an order, not a timeline.
+**Not yet:** dynamic client registration, upstream directory polling and downstream logout delivery. Local tests do not certify real tenant, consumer or deployment behaviour.
 
 ## Endpoints
 
-The base URL is `https://id.answerable.org`.
+Examples use `https://id.answerable.org`; replace it with your installation's issuer. Answerable ID has not yet been deployed to production.
 
 | Endpoint                         | Purpose                                                                               |
 | -------------------------------- | ------------------------------------------------------------------------------------- |
