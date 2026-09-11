@@ -167,7 +167,7 @@ Receipt inspection requires current platform audit authority and exposes the out
 
 ## Organisation capability ceilings
 
-Only platform writers approve ceilings. Registration, assignment and approval remain independent. Last-platform-writer guards cover capability, membership, group, entitlement, user, organisation and admin-resource changes.
+Only platform writers approve ceilings. Registration, assignment and approval remain independent.
 
 ## User grant context
 

@@ -1,3 +1,5 @@
+Historical evidence from the v0 candidate (tree da6acc8, tag id-v0-evidence). The restore rehearsal, capacity generator, encrypted replay results and admission mechanisms it describes were removed afterwards; current behaviour is documented in the READMEs and docs.
+
 # ID release acceptance
 
 **Local acceptance passed; production no-go.** This is T6's finite acceptance record, not deployment approval. The sole remaining external input/test list is in the [release decision](answerable-id-release-decision-plan.md#external-input-and-test-checklist).

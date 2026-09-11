@@ -1,3 +1,5 @@
+Historical evidence from the v0 candidate (tree da6acc8, tag id-v0-evidence). The restore rehearsal, capacity generator, encrypted replay results and admission mechanisms it describes were removed afterwards; current behaviour is documented in the READMEs and docs.
+
 # Upstream token custody: evidence and next change
 
 **Migration baseline:** the development chain and its upgrade/cutover procedures below are historical. First installation now uses one initial migration; see the [consolidation record](id-initial-migration.md). Retained-key custody, native OAuth, deletion and recovery contracts still apply.
