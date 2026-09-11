@@ -148,7 +148,7 @@ describe("unit: Hono application", () => {
       "/api/admin/v1/operations/{operationId}",
       "/api/admin/v1/organizations/{organizationId}/operations/{operationId}",
       "/api/admin/v1/organizations/{organizationId}/sign-in-diagnosis",
-      "/api/admin/v1/platform/summary",
+
       "/api/admin/v1/me",
       "/api/admin/v1/users",
       "/api/admin/v1/users/{userId}",
@@ -191,7 +191,7 @@ describe("unit: Hono application", () => {
       "/api/admin/v1/organizations/{organizationId}/domains/{domainId}/enable",
       "/api/admin/v1/organizations/{organizationId}/sso-provider/test",
       "/api/admin/v1/organizations/{organizationId}/sso-provider",
-      "/api/admin/v1/organizations/{organizationId}/summary",
+
       "/api/admin/v1/organizations",
       "/api/admin/v1/organizations/{organizationId}",
       "/api/admin/v1/organizations/{organizationId}/disable",
@@ -512,7 +512,7 @@ test("mounted me runs principal resolution and the root problem handler", async 
   expect(calls).toHaveLength(1);
 });
 
-test("token requests guard grants and preserve bodies for Better Auth", async () => {
+test("token requests preserve grants and bodies for Better Auth", async () => {
   const auth = stubAuth();
   const received: string[] = [];
   auth.handler = async (request: Request) => {
@@ -526,6 +526,7 @@ test("token requests guard grants and preserve bodies for Better Auth", async ()
   });
   for (const [contentType, body] of [
     ["application/x-www-form-urlencoded", "grant_type=client_credentials"],
+    ["application/x-www-form-urlencoded", "grant_type=unsupported"],
     ["application/json", '{"grant_type":"authorization_code"}'],
     ["application/x-www-form-urlencoded", "resource=https%3A%2F%2Fexample.com"],
   ] as const) {
@@ -538,19 +539,8 @@ test("token requests guard grants and preserve bodies for Better Auth", async ()
     expect(await response.json()).toEqual({ handled: true });
     expect(received.at(-1)).toBe(body);
   }
-  const rejected = await app.request("/auth/oauth2/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "grant_type=unsupported",
-  });
-  expect(rejected.status).toBe(400);
-  expect(rejected.headers.get("cache-control")).toBe("no-store");
-  expect(await rejected.json()).toEqual({
-    error: "unsupported_grant_type",
-    error_description: "This grant type is not supported.",
-  });
   expect((await app.request("/auth/oauth2/token")).status).toBe(404);
-  expect(received).toHaveLength(3);
+  expect(received).toHaveLength(4);
 });
 
 test("auth catch-all propagates request ids and audits rejection redirects", async () => {

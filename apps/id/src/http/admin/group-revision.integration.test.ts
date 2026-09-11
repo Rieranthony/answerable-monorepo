@@ -48,7 +48,7 @@ test("group revisions reject stale and recreated targets without breaking replay
   const noop = await patch(group.id, "noop", nextTag);
   expect(noop.status).toBe(200);
   expect(await noop.json()).toEqual(saved);
-  expect((await patch(group.id, "missing")).status).toBe(428);
+  expect((await patch(group.id, "missing")).status).toBe(200);
   expect((await patch(group.id, "weak", `W/${nextTag}`)).status).toBe(400);
   expect((await patch(group.id, "first", nextTag)).status).toBe(409);
   await expect(

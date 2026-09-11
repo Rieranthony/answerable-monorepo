@@ -17,7 +17,6 @@ const paths = () => [
   `/clients/${fixture.platform.client.clientId}`,
   "/resources",
   `/resources/${encodeURIComponent(fixture.platform.adminResource)}`,
-  "/platform/summary",
   "/organizations",
   "/entitlements",
 ];
@@ -50,7 +49,6 @@ test("fleet reads reject platform authority revoked after middleware", async () 
 });
 
 test("fleet services require a live platform context and responses prohibit caching", async () => {
-  const { getPlatformSummary } = await import("../../services/summary.ts");
   const { listOrganizations } = await import("../../services/organizations.ts");
   const { listAllEntitlements } =
     await import("../../services/entitlements.ts");
@@ -71,7 +69,6 @@ test("fleet services require a live platform context and responses prohibit cach
     (context: Platform) => getClient(context, fixture.platform.client.clientId),
     (context: Platform) => listResources(context, { limit: 1 }),
     (context: Platform) => getResource(context, fixture.platform.adminResource),
-    getPlatformSummary,
     (context: Platform) => listOrganizations(context, { limit: 1 }),
     (context: Platform) => listAllEntitlements(context, { limit: 1 }),
   ];

@@ -73,7 +73,7 @@ export async function createAdminFixture(
   }
   try {
     await db.execute(sql`
-      truncate table security_identifiers, audit_events, entitlements, group_members, groups,
+      truncate table audit_events, entitlements, group_members, groups,
       organization_domains, sso_providers, oauth_client_assertions,
       oauth_access_tokens, oauth_refresh_tokens, oauth_consents,
       oauth_client_resources, oauth_resources, oauth_clients, jwks,

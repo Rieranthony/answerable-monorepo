@@ -1,6 +1,6 @@
+import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { eq } from "drizzle-orm";
 import { oauthResources, systemBindings } from "../db/schema/index.ts";
-import { platformWriterCheck } from "./platform-writer.ts";
 import { revokeResourceGrantContexts } from "../db/queries/grant-contexts.ts";
 import { requireNoCapabilityReferences } from "./capabilities.ts";
 import {
@@ -107,9 +107,7 @@ export async function updateResource(
   expected?: { id: string; revision: number },
 ) {
   const { tx, actor } = requirePlatformWriteContext(context);
-  // Scope changes to the bound resource use the platform organisation lock
-  // before the resource lock, matching other administrative policy writers.
-  let checkWriter: (() => Promise<void>) | undefined;
+  // Preserve root admission ordering when this resource can activate platform authority.
   if (patch.allowedScopes !== undefined) {
     const [binding] = await tx
       .select({ organizationId: systemBindings.organizationId })
@@ -120,7 +118,7 @@ export async function updateResource(
       )
       .where(eq(oauthResources.identifier, identifier));
     if (binding)
-      checkWriter = await platformWriterCheck(tx, binding.organizationId);
+      await lockOrganizationForCommand(context, binding.organizationId);
   }
   const existing = requireResource(
     await queries.lockResourceForCommand(context, identifier),
@@ -143,7 +141,6 @@ export async function updateResource(
   const row = changed
     ? await queries.updateResource(context, identifier, patch)
     : existing;
-  await checkWriter?.();
   await audit(
     tx,
     actor,
@@ -155,7 +152,7 @@ export async function updateResource(
       after: auditResource(row!),
     },
   );
-  return row!;
+  return { body: row!, changed };
 }
 export async function disableResource(
   context: PlatformWriteContext,

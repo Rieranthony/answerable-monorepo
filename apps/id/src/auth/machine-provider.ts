@@ -1,5 +1,4 @@
 import { rethrowGrantError } from "./grant-error.ts";
-import { admitMachineIssuance } from "./machine-admission.ts";
 import { identityScopes } from "./grant-scopes.ts";
 import { machineCapability } from "./machine-capability.ts";
 import {
@@ -97,10 +96,6 @@ export function machineOAuthProvider(
                 adapter,
                 authenticated.client,
                 resource,
-              );
-              await admitMachineIssuance(
-                authTransaction(adapter),
-                client.organizationId,
               );
               if (!client.grantTypes?.includes("client_credentials"))
                 throw new APIError("BAD_REQUEST", {

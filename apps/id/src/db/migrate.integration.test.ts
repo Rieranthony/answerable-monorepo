@@ -64,7 +64,7 @@ test("integration: migrations are idempotent", async () => {
     "organization_capabilities",
     "organization_domains",
     "organizations",
-    "security_identifiers",
+
     "sessions",
     "sso_providers",
     "system_bindings",

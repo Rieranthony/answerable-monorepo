@@ -75,14 +75,14 @@ function configureRole(
     );
     await tx.execute(sql`revoke update, delete on audit_events from ${role}`);
     await tx.execute(
-      sql`revoke insert, update, delete on audit_event_subjects, security_identifiers from ${role}`,
+      sql`revoke insert, update, delete on audit_event_subjects from ${role}`,
     );
     await tx.execute(
       sql`revoke update, delete on system_bindings, admin_operations, admin_operation_results from ${role}`,
     );
     // Trigger invocation needs no direct EXECUTE grant. Block calls that could forge subjects.
     await tx.execute(
-      sql`revoke execute on function capture_audit_subjects(audit_events, text), record_audit_subjects(), reserve_security_identifier() from public, ${role}`,
+      sql`revoke execute on function capture_audit_subjects(audit_events, text), record_audit_subjects() from public, ${role}`,
     );
   });
 }
@@ -98,7 +98,6 @@ export async function assertRuntimeRole(db: Database) {
       or has_schema_privilege(current_user, 'public', 'CREATE')
       or has_table_privilege(current_user, 'audit_events', 'UPDATE,DELETE,TRUNCATE,TRIGGER')
       or has_table_privilege(current_user, 'audit_event_subjects', 'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER')
-      or has_table_privilege(current_user, 'security_identifiers', 'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER')
       or has_table_privilege(current_user, 'system_bindings', 'UPDATE,DELETE,TRUNCATE,TRIGGER')
       or has_table_privilege(current_user, 'admin_operations', 'UPDATE,DELETE,TRUNCATE,TRIGGER')
       or has_table_privilege(current_user, 'admin_operation_results', 'UPDATE,DELETE,TRUNCATE,TRIGGER')

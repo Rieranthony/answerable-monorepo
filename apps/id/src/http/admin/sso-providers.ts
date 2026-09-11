@@ -140,7 +140,7 @@ export const routes = {
     operationId: "putSsoProvider",
     summary: "Put the SSO provider",
     description:
-      "Requires Idempotency-Key and exactly one precondition: If-None-Match: * for creation, or the strong If-Match ETag from getSsoProvider for replacement. Missing preconditions return 428; conflicting/malformed headers return 400; stale state returns 412. Committed replay precedes the original precondition. Identical authorised retries recover the original redacted result for seven days without repeating effects. Live changed-input reuse conflicts; expired recovery never repeats the command. Create or replace the organisation’s SSO configuration and return the provider with credentials redacted. A real configuration change, including first creation, irreversibly revokes existing tenant grant contexts in the same audited transaction; unchanged configuration preserves them. Other tenants and global browser sessions are preserved. Prefer getSsoProvider to inspect configuration; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict indicates a duplicate provider.",
+      "Requires Idempotency-Key. Accepts the strong If-Match ETag from getSsoProvider for conditional replacement; conflicting/malformed headers return 400; stale state returns 412. Committed replay precedes the original precondition. Identical authorised retries recover the original redacted result for seven days without repeating effects. Live changed-input reuse conflicts; expired recovery never repeats the command. Create or replace the organisation’s SSO configuration and return the provider with credentials redacted. A real configuration change, including first creation, irreversibly revokes existing tenant grant contexts in the same audited transaction; unchanged configuration preserves them. Other tenants and global browser sessions are preserved. Prefer getSsoProvider to inspect configuration; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict indicates a duplicate provider.",
     tag: "SSO provider",
     platformScope: "platform:write",
     kind: "write",
@@ -152,7 +152,7 @@ export const routes = {
         ...revisionParameter,
         required: false,
         description:
-          "For replacement: supply the current provider ETag. Mutually exclusive with If-None-Match; exactly one precondition is required.",
+          "For replacement: supply the current provider ETag. Mutually exclusive with If-None-Match; preconditions are optional.",
       },
       {
         in: "header",
@@ -160,7 +160,7 @@ export const routes = {
         required: false,
         schema: { type: "string", enum: ["*"] },
         description:
-          "For creation: assert that no provider exists. Mutually exclusive with If-Match; exactly one precondition is required.",
+          "For creation: assert that no provider exists. Mutually exclusive with If-Match; preconditions are optional.",
       },
     ],
     requestBody: body(putSchema),
@@ -184,7 +184,7 @@ export const routes = {
           headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
           content: json(ssoProviderSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 412, 428, 503),
+        ...problemResponses(400, 404, 409, 410, 412, 503),
       },
     ),
   },

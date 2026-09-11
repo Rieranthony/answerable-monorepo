@@ -91,7 +91,7 @@ beforeEach(async () => {
   issuer.reset();
   await connection.db.execute(sql`
     truncate table
-      audit_events, security_identifiers, sso_providers,
+      audit_events, sso_providers,
       organization_domains,
       members,
       sessions,
@@ -333,77 +333,6 @@ describe("integration: federated sign-in", () => {
     }
     expect(await connection.db.select().from(sessions)).toHaveLength(1);
   });
-  for (const change of ["secret", "reverted", "unchanged"] as const) {
-    test(`restricted native SSO checks ${change} initiation revision before callback`, async () => {
-      await assertRuntimeRole(runtime.db);
-      const org = await seedProvider();
-      const [provider] = await connection.db.select().from(ssoProviders);
-      const input = {
-        issuer: provider!.issuer,
-        domain: provider!.domain,
-        oidc: JSON.parse(provider!.oidcConfig!),
-      };
-      issuer.enqueue(entraClaims());
-      const result = await signInThroughIdp(
-        app,
-        { providerId: org.slug, callbackURL, errorCallbackURL },
-        async () => {
-          await inPlatformWrite(connection.db, async (context) => {
-            await putSsoProvider(
-              context,
-              org.id,
-              change === "secret"
-                ? {
-                    ...input,
-                    oidc: { ...input.oidc, clientSecret: "new-secret" },
-                  }
-                : change === "reverted"
-                  ? { ...input, domain: "replacement.example.com" }
-                  : input,
-            );
-            if (change === "reverted")
-              await putSsoProvider(context, org.id, input);
-          });
-          // A separate auth instance must recover initiation evidence from native state.
-          const environment = testEnvironment({
-            trustedOrigins: [issuer.origin, new URL(callbackURL).origin],
-          });
-          return createApp({
-            auth: createAuth(runtime.db, environment),
-            db: runtime.db,
-            environment,
-          });
-        },
-      );
-      const [current] = await connection.db.select().from(ssoProviders);
-      expect(current!.revision).toBe(
-        provider!.revision +
-          (change === "unchanged" ? 0 : change === "secret" ? 1 : 2),
-      );
-      expect(result.response.status).toBe(302);
-      expect(errorCode(result.location)).toBe(
-        change === "unchanged" ? null : "SSO_PROVIDER_CHANGED",
-      );
-      for (const table of [users, accounts, members, sessions])
-        expect(await connection.db.select().from(table)).toHaveLength(
-          change === "unchanged" ? 1 : 0,
-        );
-      const events = await connection.db
-        .select()
-        .from(auditEvents)
-        .where(eq(auditEvents.action, "auth.signin.succeeded"));
-      expect(events).toHaveLength(change === "unchanged" ? 1 : 0);
-      if (change !== "unchanged") {
-        issuer.enqueue(entraClaims());
-        expect((await signIn()).location).toBe(callbackURL);
-      }
-      const [session] = await connection.db.select().from(sessions);
-      expect(session).toMatchObject({
-        authenticationProviderId: current!.id,
-        authenticationProviderRevision: current!.revision,
-      });
-    });
-  }
   for (const selection of [
     { organizationSlug: "contoso" },
     { email: "person@contoso.com" },
@@ -434,38 +363,6 @@ describe("integration: federated sign-in", () => {
       });
     });
   }
-  for (const [kind, evidence] of [
-    ["missing", undefined],
-    ["null", null],
-    ["malformed", "invalid"],
-    ["wrong provider", { "00000000-0000-0000-0000-000000000000": 1 }],
-    ["missing provider", {}],
-  ] as const) {
-    test(`restricted native SSO rejects ${kind} initiation evidence`, async () => {
-      await seedProvider();
-      issuer.enqueue(entraClaims());
-      const result = await signInThroughIdp(
-        app,
-        { providerId: "contoso", callbackURL, errorCallbackURL },
-        async () => {
-          const [stored] = await connection.db.select().from(verifications);
-          const state = JSON.parse(stored!.value);
-          expect(state.serverContext.ssoProviderReference).toBeObject();
-          expect(
-            state.serverContext.answerableSsoProviderRevisions,
-          ).toBeObject();
-          state.serverContext.answerableSsoProviderRevisions = evidence;
-          await connection.db
-            .update(verifications)
-            .set({ value: JSON.stringify(state) })
-            .where(eq(verifications.id, stored!.id));
-        },
-      );
-      expect(errorCode(result.location)).toBe("SSO_PROVIDER_CHANGED");
-      for (const table of [users, accounts, members, sessions])
-        expect(await connection.db.select().from(table)).toHaveLength(0);
-    });
-  }
   test("native SSO initiation evidence cannot be supplied by the browser", async () => {
     await seedProvider();
     const [provider] = await connection.db.select().from(ssoProviders);
@@ -494,7 +391,7 @@ describe("integration: federated sign-in", () => {
       authenticationProviderRevision: provider!.revision,
     });
   });
-  for (const change of ["update", "delete", "recreate", "unchanged"] as const) {
+  for (const change of ["delete", "recreate", "unchanged"] as const) {
     test(`restricted native SSO rechecks ${change} configuration after token exchange`, async () => {
       const org = await seedProvider();
       const [provider] = await connection.db.select().from(ssoProviders);
@@ -516,17 +413,7 @@ describe("integration: federated sign-in", () => {
         await inPlatformWrite(connection.db, async (context) => {
           if (change === "delete" || change === "recreate")
             await deleteSsoProvider(context, org.id);
-          if (change !== "delete")
-            await putSsoProvider(
-              context,
-              org.id,
-              change === "update"
-                ? {
-                    ...input,
-                    oidc: { ...input.oidc, clientSecret: "replacement-secret" },
-                  }
-                : input,
-            );
+          if (change !== "delete") await putSsoProvider(context, org.id, input);
         });
       } finally {
         beforeTokenResponse = undefined;
@@ -664,66 +551,6 @@ describe("integration: federated sign-in", () => {
       expect(await connection.db.select().from(members)).toHaveLength(1);
     });
   }
-  test("overlapping restricted callbacks keep independent provider revision evidence", async () => {
-    // Two admitted callbacks plus capacity outside /auth; other tests retain
-    // the original single-connection runtime and its reuse assertions.
-    const environment = testEnvironment({
-      databaseUrl: runtime.pool.options.connectionString!,
-      databasePoolMax: 3,
-      trustedOrigins: [issuer.origin, new URL(callbackURL).origin],
-    });
-    const overlapping = createDatabase(environment);
-    const overlappingApp = createApp({
-      db: overlapping.db,
-      auth: createAuth(overlapping.db, environment),
-      environment,
-    });
-    const overlapSignIn = () =>
-      signInThroughIdp(overlappingApp, {
-        providerId: "contoso",
-        callbackURL,
-        errorCallbackURL,
-      });
-    const org = await seedProvider();
-    const [provider] = await connection.db.select().from(ssoProviders);
-    const entered = Promise.withResolvers<void>();
-    const resume = Promise.withResolvers<void>();
-    beforeTokenResponse = async () => {
-      entered.resolve();
-      await resume.promise;
-    };
-    issuer.enqueue(entraClaims());
-    const old = overlapSignIn();
-    try {
-      await entered.promise;
-      await inPlatformWrite(connection.db, (context) =>
-        putSsoProvider(context, org.id, {
-          issuer: provider!.issuer,
-          domain: provider!.domain,
-          oidc: {
-            ...JSON.parse(provider!.oidcConfig!),
-            clientSecret: "replacement-secret",
-          },
-        }),
-      );
-      beforeTokenResponse = undefined;
-      issuer.enqueue(entraClaims());
-      expect((await overlapSignIn()).location).toBe(callbackURL);
-    } finally {
-      beforeTokenResponse = undefined;
-      resume.resolve();
-      await Promise.allSettled([old]);
-      await overlapping.close();
-    }
-    expect(errorCode((await old).location)).toBe("SSO_PROVIDER_CHANGED");
-    const records = await connection.db.select().from(sessions);
-    expect(records).toHaveLength(1);
-    expect(records[0]!.authenticationProviderRevision).toBe(
-      provider!.revision + 1,
-    );
-    expect(await connection.db.select().from(users)).toHaveLength(1);
-    expect(await connection.db.select().from(accounts)).toHaveLength(1);
-  });
   test("ordinary native SSO logins preserve provider revision and timestamp", async () => {
     await seedProvider();
     const [before] = await connection.db.select().from(ssoProviders);
@@ -740,7 +567,7 @@ describe("integration: federated sign-in", () => {
       origins.map((session) => session.authenticationProviderRevision),
     ).toEqual([before!.revision, before!.revision]);
   });
-  test("origin resolution rejects missing providers and absent request evidence before identity writes", async () => {
+  test("origin resolution rejects missing providers before identity writes", async () => {
     const auth = createAuth(connection.db, testEnvironment());
     const adapter = authDatabaseAdapter(connection.db)(auth.options);
     const origin = createSsoOriginBoundary();
@@ -768,11 +595,6 @@ describe("integration: federated sign-in", () => {
     await expect(resolve()).rejects.toThrow(
       "Accepted SSO provider is no longer available",
     );
-    await seedProvider({ slug: "missing" });
-    expect(await resolve()).toMatchObject({
-      action: "reject",
-      code: "SSO_PROVIDER_CHANGED",
-    });
     expect(await connection.db.select().from(users)).toHaveLength(0);
   });
   test("native SSO persists the accepted provider origin on its session", async () => {

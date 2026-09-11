@@ -1,6 +1,5 @@
 import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import * as organizations from "../../services/organizations.ts";
-import * as summaries from "../../services/summary.ts";
 import * as providers from "../../services/sso-providers.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
@@ -44,7 +43,6 @@ beforeAll(async () => {
 afterAll(async () => fixture?.close());
 const readers = () => [
   organizations.getOrganization,
-  summaries.getOrganizationSummary,
   providers.getSsoProvider,
   (context: TenantReadContext<"directory">) =>
     groups.listGroups(context, { limit: 10 }),
@@ -102,7 +100,6 @@ test("all ten tenant configuration routes recheck membership inside their read t
   const actor = fixture.principals.tenantReader;
   const paths = [
     "",
-    "/summary",
     "/sso-provider",
     "/groups",
     `/groups/${groupId}`,

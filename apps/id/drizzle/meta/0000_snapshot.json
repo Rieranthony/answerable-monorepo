@@ -3733,59 +3733,6 @@
       },
       "isRLSEnabled": true
     },
-    "public.security_identifiers": {
-      "name": "security_identifiers",
-      "schema": "",
-      "columns": {
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "identifier": {
-          "name": "identifier",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "instance_id": {
-          "name": "instance_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "security_identifiers_kind_identifier_pk": {
-          "name": "security_identifiers_kind_identifier_pk",
-          "columns": [
-            "kind",
-            "identifier"
-          ]
-        }
-      },
-      "uniqueConstraints": {
-        "security_identifiers_kind_instance_unique": {
-          "name": "security_identifiers_kind_instance_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "kind",
-            "instance_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "security_identifiers_kind_check": {
-          "name": "security_identifiers_kind_check",
-          "value": "\"security_identifiers\".\"kind\" in ('client', 'resource')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.system_bindings": {
       "name": "system_bindings",
       "schema": "",

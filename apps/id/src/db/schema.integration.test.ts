@@ -59,7 +59,7 @@ beforeAll(() => {
 beforeEach(async () => {
   await connection.db.execute(sql`
     truncate table
-      security_identifiers, audit_events,
+      audit_events,
       entitlements,
       group_members,
       groups,
@@ -288,11 +288,6 @@ describe("integration: PostgreSQL schema", () => {
         "organization_id uuid",
         "resource_id uuid",
         "group_id uuid",
-      ],
-      security_identifiers: [
-        "kind text",
-        "identifier text",
-        "instance_id uuid",
       ],
       users: [
         "id uuid",
@@ -665,11 +660,6 @@ describe("integration: PostgreSQL schema", () => {
         "organization_capabilities_status_check CHECK ((status = ANY (ARRAY['active'::text, 'disabled'::text])))",
         "organization_capabilities_target_check CHECK ((((grant_kind = 'admin_session'::text) AND (client_id IS NULL) AND (resource IS NOT NULL)) OR ((grant_kind = ANY (ARRAY['authorization_code'::text, 'refresh_token'::text])) AND (client_id IS NOT NULL)) OR ((grant_kind = 'client_credentials'::text) AND (client_id IS NOT NULL) AND (resource IS NOT NULL))))",
         "organization_capabilities_window_check CHECK ((valid_from < valid_until))",
-      ],
-      security_identifiers: [
-        "security_identifiers_kind_check CHECK ((kind = ANY (ARRAY['client'::text, 'resource'::text])))",
-        "security_identifiers_kind_identifier_pk PRIMARY KEY (kind, identifier)",
-        "security_identifiers_kind_instance_unique UNIQUE (kind, instance_id)",
       ],
       system_bindings: [
         "system_bindings_name_check CHECK ((name = 'platform'::text))",

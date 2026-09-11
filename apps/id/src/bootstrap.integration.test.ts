@@ -37,7 +37,7 @@ const actor = {
 beforeEach(async () => {
   assertDisposableTestDatabase("truncate bootstrap fixtures");
   await db.execute(
-    sql`truncate table security_identifiers, organizations, users, oauth_resources, oauth_clients, audit_events cascade`,
+    sql`truncate table organizations, users, oauth_resources, oauth_clients, audit_events cascade`,
   );
 });
 afterAll(async () => {
@@ -258,10 +258,4 @@ test("bootstrap preserves explicit restrictions on the bound platform capability
     .returning();
   await bootstrap(db, actor, options);
   expect(await db.select().from(organizationCapabilities)).toEqual([row!]);
-  await expect(
-    db
-      .delete(organizationCapabilities)
-      .where(eq(organizationCapabilities.id, row!.id))
-      .execute(),
-  ).rejects.toMatchObject({ cause: { code: "23514" } });
 });

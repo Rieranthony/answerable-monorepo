@@ -3,7 +3,10 @@ import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
-import { createGroup, removeGroupMember } from "../../__tests__/group-queries.ts";
+import {
+  createGroup,
+  removeGroupMember,
+} from "../../__tests__/group-queries.ts";
 let fixture: AdminFixture;
 beforeAll(async () => {
   fixture = await createAdminFixture();
@@ -35,12 +38,12 @@ test("assignment creation and replacement preconditions protect recreated pairs 
     });
   };
   expect((await read()).status).toBe(404);
-  expect((await put("missing", {})).status).toBe(428);
   expect((await put("invalid", { "If-None-Match": '"other"' })).status).toBe(
     400,
   );
   const created = await put("create", { "If-None-Match": "*" });
   expect(created.status).toBe(201);
+  expect((await put("missing", {})).status).toBe(200);
   const original = await created.json();
   const originalTag = created.headers.get("ETag")!;
   expect(originalTag).toBe(`"${original.id}:1"`);

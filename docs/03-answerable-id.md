@@ -100,13 +100,11 @@ Registration is platform administration, not permission. Clients require configu
 
 Retained signing keys use Better Auth application-secret encryption. Upstream tokens and secret-bearing operation results use separate key rings. Secrets never belong in audit evidence.
 
-The [operations runbook](../apps/id/OPERATIONS.md) covers custody preflight, retained-key dependencies, replay cipher expiry and negative recovery verification. External secret delivery and emergency rotation require the intended deployment. No KMS-backed signing or secret-store operator has been selected here.
+The [operations runbook](../apps/id/OPERATIONS.md) covers custody preflight, retained-key dependencies and replay cipher expiry. Restore drills: Not yet. A restore drill against production-shaped data is a release input. External secret delivery and emergency rotation require the intended deployment. No KMS-backed signing or secret-store operator has been selected here.
 
 ## Availability and failure modes
 
-Handlers and public authentication have admission bounds; pool checkout, statements and request bodies have limits. Successful effects, audit, subjects and receipts share the local transaction. Failed commit cannot produce a valid success.
-
-Bounds are not fairness guarantees. T4's synthetic saturation caused tenant B OAuth to return 503; dense global deletion caused one B read to return 503. These are disclosed limits, not accepted production budgets. See [capacity evidence](../reports/id-operations.md).
+Pool checkout, statements and request bodies have limits. Successful effects, audit, subjects and receipts share the local transaction. Failed commit cannot produce a valid success.
 
 ## Hosting
 

@@ -47,7 +47,7 @@ openssl rand -base64 48
    ```bash
    export ROOT_ADMIN_SECRET="paste the secret here"
 
-   curl https://id.answerable.org/api/admin/v1/platform/summary \
+   curl https://id.answerable.org/api/admin/v1/organizations \
      -H "Authorization: Bearer $ROOT_ADMIN_SECRET"
    ```
 
@@ -154,20 +154,20 @@ curl https://id.answerable.org/auth/oauth2/token \
 ## Read the platform
 
 ```bash
-curl https://id.answerable.org/api/admin/v1/platform/summary \
+curl https://id.answerable.org/api/admin/v1/organizations \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-[getPlatformSummary](/docs/id/admin-api/platform/getPlatformSummary) returns organisation and user counts by status, clients (including disabled and unowned), resources, active sessions, and sign-ins and admin denials over the trailing 24 hours. `platform` contains the seeded organisation and group IDs. Rejected sign-ins have no organisation, so rejection counts are available only across the platform.
+[listOrganizations](/docs/id/admin-api/organizations/listOrganizations) returns a cursor page of organisations.
 
 ## Read an organisation
 
 ```bash
-curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/summary" \
+curl "https://id.answerable.org/api/admin/v1/organizations/$ORG" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-Set `ORG` to an organisation ID from creation or the organisations list. [getOrganizationSummary](/docs/id/admin-api/organizations/getOrganizationSummary) returns the organisation, domain and SSO configuration summary, member counts and effective windows, groups, entitlement targets, owned clients and successful sign-ins over the trailing seven days. Status counts include stored rows; entitlement target counts include disabled and out-of-window rows. Exact app–resource pairs use `kind: "client_resource"`, `id` for the client and `resource` for the resource identifier. Standalone targets use `kind: "client"` or `kind: "resource"`. These counts describe stored assignments, not effective permission. Global browser session counts are omitted from organisation summaries. There is no per-organisation rejection count.
+Set `ORG` to an organisation ID from creation or the organisations list. [getOrganization](/docs/id/admin-api/organizations/getOrganization) returns its configuration and ETag.
 
 ## Why can't someone sign in
 
@@ -225,7 +225,7 @@ curl https://id.answerable.org/api/admin/v1/organizations \
   -d '{"slug":"contoso","name":"Contoso"}'
 ```
 
-**Retry key.** Set `ORGANISATION_CREATE_KEY` once for this intended creation and reuse it with identical input after a lost response. All organisation mutations require keys; ordinary result recovery lasts seven days. PATCH also requires the strong If-Match ETag from getOrganization; see [editing organisation configuration](/docs/id/manage#operation-status).
+**Retry key.** Set `ORGANISATION_CREATE_KEY` once for this intended creation and reuse it with identical input after a lost response. All organisation mutations require keys; ordinary result recovery lasts seven days. PATCH also accepts the optional strong If-Match ETag from getOrganization; see [editing organisation configuration](/docs/id/manage#operation-status).
 
 **Slug.** Lowercase labels joined by single hyphens, the same grammar as the Omni-Weaver tenant id. It cannot change later. Set `ORG` to the returned `id`.
 
@@ -255,7 +255,7 @@ curl -X DELETE "https://id.answerable.org/api/admin/v1/organizations/$ORG/domain
 
 **Changing the directory.** Creating, replacing or deleting SSO configuration revokes existing user authorisations for that organisation. An unchanged configuration preserves them. Restoring an earlier configuration does not restore revoked grants. Other organisations and global browser sessions are preserved. [User OAuth](/docs/id/oauth) validates the selected organisation's accepted account, provider UUID and configuration revision before creating or using a grant.
 
-Set `SSO_OPERATION_KEY` once for this configuration command and reuse it with identical input on retry. PUT and delete require keys; redacted result recovery lasts seven days. Omit `clientSecret` to retain the stored secret on a new update. Creation requires `If-None-Match: *`; replacement requires the current provider ETag in `If-Match`. Send exactly one precondition and retain it with the key on retry.
+Set `SSO_OPERATION_KEY` once for this configuration command and reuse it with identical input on retry. PUT and delete require keys; redacted result recovery lasts seven days. Omit `clientSecret` to retain the stored secret on a new update. Creation and replacement accept optional preconditions. Supply the current provider ETag in `If-Match` to refuse stale changes, and retain it with the key on retry.
 
 ```bash
 curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$ORG/sso-provider" \
@@ -463,6 +463,6 @@ See [all admin error codes](/docs/id/manage#errors), including confirmation and 
 | Bulk import of existing users             | [Not yet.](/docs/id#today-and-next) |
 | SCIM provisioning                         | [Not yet.](/docs/id#today-and-next) |
 
-**Group operation keys.** Set `GROUP_CREATE_KEY` and `GROUP_MEMBER_KEY` once for their respective creation and membership commands, and reuse it with identical input after a lost response. Use a different key for each separate command. Group PATCH requires the current getGroup ETag in If-Match. Membership PUT requires If-None-Match: \* for creation or the getGroupMember ETag in If-Match for replacement. Keep the original precondition when retrying a key.
+**Group operation keys.** Set `GROUP_CREATE_KEY` and `GROUP_MEMBER_KEY` once for their respective creation and membership commands, and reuse it with identical input after a lost response. Use a different key for each separate command. Group PATCH accepts the optional current getGroup ETag in If-Match. Membership PUT accepts optional If-Match from getGroupMember; omitted preconditions use the current row. Keep the original precondition when retrying a key.
 
-**Entitlement operation keys.** Set `ORG_ENTITLEMENT_KEY`, `GROUP_ENTITLEMENT_KEY` or `ADMIN_ENTITLEMENT_KEY` once for the corresponding creation command. Reuse that key with identical input after a lost response; use a new key for a separate command. Entitlement create, PATCH, enable, disable and delete all require keys and recover committed responses for seven days. Unchanged scopes/windows or lifecycle state records a noop and preserves timestamps. Scope order and duplicates do not change the command's meaning. PATCH requires the getEntitlement ETag in If-Match. Keep that original precondition when retrying its key.
+**Entitlement operation keys.** Set `ORG_ENTITLEMENT_KEY`, `GROUP_ENTITLEMENT_KEY` or `ADMIN_ENTITLEMENT_KEY` once for the corresponding creation command. Reuse that key with identical input after a lost response; use a new key for a separate command. Entitlement create, PATCH, enable, disable and delete all require keys and recover committed responses for seven days. Unchanged scopes/windows or lifecycle state records a noop and preserves timestamps. Scope order and duplicates do not change the command's meaning. PATCH accepts the optional getEntitlement ETag in If-Match. Keep that original precondition when retrying its key.

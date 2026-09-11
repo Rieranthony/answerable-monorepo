@@ -475,3 +475,21 @@ test.each([false, true])(
     );
   },
 );
+
+test("global user offboarding retains the last-writer safeguard", async () => {
+  const id = fixture.principals.platformAdmin.userId;
+  const receipts = await fixture.db.$count(adminOperations);
+  for (const action of ["disable", "erase"]) {
+    const response = await command(createId(), id, action);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: "last_platform_administrator",
+    });
+    const [person] = await fixture.db
+      .select()
+      .from(users)
+      .where(eq(users.id, id));
+    expect(person).toMatchObject({ status: "active", deletedAt: null });
+    expect(await fixture.db.$count(adminOperations)).toBe(receipts);
+  }
+});

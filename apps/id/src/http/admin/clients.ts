@@ -182,7 +182,7 @@ export const routes = {
     operationId: "createClient",
     summary: "Create client",
     description:
-      "Create an OAuth client with a required Idempotency-Key. Identical authorised retries recover the original registration and secret for up to 24 hours, without another creation. Operation-Id identifies the journal record and Idempotency-Replayed marks recovery. A changed input returns idempotency_key_reused; a running duplicate returns retryable operation_in_progress; expired recovery returns operation_result_expired and never recreates the client. validation_failed rejects incompatible settings, not_found means the owner is missing, and identifier_reserved prevents identity reuse.",
+      "Create an OAuth client with a required Idempotency-Key. Identical authorised retries recover the original registration and secret for up to 24 hours, without another creation. Operation-Id identifies the journal record and Idempotency-Replayed marks recovery. A changed input returns idempotency_key_reused; a running duplicate returns retryable operation_in_progress; expired recovery returns operation_result_expired and never recreates the client. validation_failed rejects incompatible settings, not_found means the owner is missing, and conflict prevents identity reuse.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
@@ -245,7 +245,7 @@ export const routes = {
     operationId: "updateClient",
     summary: "Update client",
     description:
-      "Update a client with Idempotency-Key and the If-Match ETag from getClient. A committed retry returns its original result for seven days before evaluating its old revision. New stale commands return revision_mismatch (412); missing If-Match returns precondition_required (428). An unchanged patch records a noop without advancing the revision. Invalid input returns validation_failed; unknown clients return not_found.",
+      "Update a client with Idempotency-Key and optionally the If-Match ETag from getClient. A committed retry returns its original result for seven days before evaluating its old revision. New stale commands return revision_mismatch (412). An unchanged patch records a noop without advancing the revision. Invalid input returns validation_failed; unknown clients return not_found.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
@@ -261,7 +261,7 @@ export const routes = {
           description: "Client updated",
           content: json(clientSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 412, 428, 503),
+        ...problemResponses(400, 404, 409, 410, 412, 503),
       },
     ),
   },
@@ -527,7 +527,7 @@ export function register(app: Hono<AppEnvironment>) {
         operationJson({ clientId, expected, patch: input }),
         200,
         async (platform) => {
-          const body = await service.updateClient(
+          const { body, changed } = await service.updateClient(
             platform,
             clientId,
             input,
@@ -535,7 +535,7 @@ export function register(app: Hono<AppEnvironment>) {
           );
           return {
             body,
-            outcome: body.revision === expected.revision ? "noop" : "applied",
+            outcome: changed ? "applied" : "noop",
             resultReference: { type: "client", id: clientId },
           };
         },

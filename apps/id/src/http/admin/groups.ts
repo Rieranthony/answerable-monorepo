@@ -169,7 +169,7 @@ export const routes = {
     operationId: "updateGroup",
     summary: "Update an organisation group",
     description:
-      "Requires Idempotency-Key and the If-Match ETag from getGroup. Missing preconditions return 428 and stale or wrong-instance state returns 412. Committed replay precedes the old revision check. Noops preserve the revision. Identical authorised retries recover the original result for seven days without repeating effects; live changed-input reuse conflicts and expired recovery never executes again. Update an organisation group and return the updated record, recording the change in the audit log. Prefer getGroup to inspect existing state; validation_failed rejects malformed input, not_found identifies missing parents or targets, and conflict or reference_violation identifies conflicting records.",
+      "Requires Idempotency-Key and optionally the If-Match ETag from getGroup. Stale or wrong-instance supplied revisions return 412. Committed replay precedes the old revision check. Noops preserve the revision. Identical authorised retries recover the original result for seven days without repeating effects; live changed-input reuse conflicts and expired recovery never executes again. Update an organisation group and return the updated record, recording the change in the audit log. Prefer getGroup to inspect existing state; validation_failed rejects malformed input, not_found identifies missing parents or targets, and conflict or reference_violation identifies conflicting records.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
@@ -191,7 +191,7 @@ export const routes = {
           headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
           content: json(groupSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 412, 428, 503),
+        ...problemResponses(400, 404, 409, 410, 412, 503),
       },
     ),
   },
@@ -201,7 +201,7 @@ export const routes = {
     operationId: "disableGroup",
     summary: "Disable an organisation group",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects; live changed-input reuse conflicts and expired recovery never executes again. Disable an organisation group and return the updated record. Prefer enableGroup for the opposite transition; not_found means the target is missing and already disabled state returns a noop. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input.",
+      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects; live changed-input reuse conflicts and expired recovery never executes again. Disable an organisation group and return the updated record. Prefer enableGroup for the opposite transition; not_found means the target is missing and already disabled state returns a noop.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
@@ -259,7 +259,7 @@ export const routes = {
     operationId: "eraseGroup",
     summary: "Erase an organisation group",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects; live changed-input reuse conflicts and expired recovery never executes again. Soft-delete the group and return no content; related group assignments and entitlements also receive terminal deletedAt markers. The version-3 group.erased audit records actual soft-deleted policy rows and retains affected-user UUID history. This records removed assignments, not a claim that every affected user lost all effective access. The confirm query parameter must equal the target id. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableGroup for reversible offboarding. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
+      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects; live changed-input reuse conflicts and expired recovery never executes again. Soft-delete the group and return no content; related group assignments and entitlements also receive terminal deletedAt markers. The version-3 group.erased audit records actual soft-deleted policy rows and retains affected-user UUID history. This records removed assignments, not a claim that every affected user lost all effective access. The confirm query parameter must equal the target id. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableGroup for reversible offboarding. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "erase",
@@ -338,7 +338,7 @@ export const routes = {
     operationId: "putGroupMember",
     summary: "Add or update a group member",
     description:
-      "Requires Idempotency-Key and exactly one precondition: If-None-Match: * for creation, or the strong If-Match ETag from getGroupMember for replacement. Missing preconditions return 428; conflicting/malformed headers return 400; stale or recreated state returns 412. Committed replay precedes the precondition check. Identical authorised retries recover the original result for seven days without repeating effects; live changed-input reuse conflicts and expired recovery never executes again. Create or update a manual group membership validity window and return the membership, with 201 for creation and 200 for an update. Prefer removeGroupMember to end membership; validation_failed rejects malformed input, not_found means a parent is missing, and group_directory_managed prevents manual changes to directory groups. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input.",
+      "Requires Idempotency-Key. Accepts the strong If-Match ETag from getGroupMember for conditional replacement; conflicting/malformed headers return 400; stale or recreated state returns 412. Committed replay precedes the precondition check. Identical authorised retries recover the original result for seven days without repeating effects; live changed-input reuse conflicts and expired recovery never executes again. Create or update a manual group membership validity window and return the membership, with 201 for creation and 200 for an update. Prefer removeGroupMember to end membership; validation_failed rejects malformed input, not_found means a parent is missing, and group_directory_managed prevents manual changes to directory groups.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
@@ -352,7 +352,7 @@ export const routes = {
         ...revisionParameter,
         required: false,
         description:
-          "For replacement, supply the assignment ETag. Exactly one precondition is required.",
+          "For conditional replacement, supply the assignment ETag. Preconditions are optional.",
       },
       {
         in: "header",
@@ -378,7 +378,7 @@ export const routes = {
           headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
           content: json(membershipSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 412, 428, 503),
+        ...problemResponses(400, 404, 409, 410, 412, 503),
       },
     ),
   },
@@ -388,7 +388,7 @@ export const routes = {
     operationId: "removeGroupMember",
     summary: "Remove a group member",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects; live changed-input reuse conflicts and expired recovery never executes again. Remove a manual group membership and return no content, removing access inherited through that membership. Prefer putGroupMember to change its validity window; not_found means a parent or membership is missing and group_directory_managed prevents manual changes to directory groups. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input.",
+      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects; live changed-input reuse conflicts and expired recovery never executes again. Remove a manual group membership and return no content, removing access inherited through that membership. Prefer putGroupMember to change its validity window; not_found means a parent or membership is missing and group_directory_managed prevents manual changes to directory groups.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",

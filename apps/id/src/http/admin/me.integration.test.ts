@@ -123,14 +123,14 @@ test("platform authority and root lockout follow the binding after slugs change"
     ])
       expect(
         (
-          await fixture.app.request("/api/admin/v1/platform/summary", {
+          await fixture.app.request("/api/admin/v1/organizations", {
             headers,
           })
         ).status,
       ).toBe(200);
     expect(
       (
-        await fixture.app.request("/api/admin/v1/platform/summary", {
+        await fixture.app.request("/api/admin/v1/organizations", {
           headers: fixture.headers("tenantAdmin"),
         })
       ).status,

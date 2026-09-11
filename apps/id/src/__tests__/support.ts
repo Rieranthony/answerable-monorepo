@@ -29,7 +29,6 @@ export function testEnvironment(
     trustedProxyCidrs: [],
     authPagesUrl: "http://localhost:47100",
     oauthRefreshReuseIntervalSeconds: 0,
-    maxConcurrentRequests: 64,
     operationalLogIntervalMs: 0,
     databasePoolMax: 1,
     databasePoolIdleTimeoutMs: 1_000,

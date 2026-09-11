@@ -1,4 +1,3 @@
-import { platformWriterCheck } from "./platform-writer.ts";
 import { revokeOrganizationGrantContexts } from "../db/queries/grant-contexts.ts";
 import {
   requirePlatformWriteContext,
@@ -128,12 +127,10 @@ export async function disableOrganization(
   const existing = requireOrganization(
     await queries.lockOrganizationForCommand(context, id),
   );
-  const checkWriter = await platformWriterCheck(tx, id);
   const stateChanged = existing.status !== "disabled";
   const row = stateChanged
     ? (await queries.setOrganizationStatus(context, id, "disabled"))!
     : existing;
-  await checkWriter();
   const revokedGrantContexts = await revokeOrganizationGrantContexts(
     context,
     id,

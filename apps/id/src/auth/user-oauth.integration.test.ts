@@ -607,7 +607,7 @@ test("divergent returned refresh persistence rolls back native rotation and audi
   expect((await exchange(input)).status).toBe(200);
 });
 
-test("native JWT scope, lifetime, type and ID nonce or profile divergences preserve the code", async () => {
+test("native JWT scope, lifetime, type and ID nonce divergences preserve the code", async () => {
   const code = await authorize();
   const signer = auth.options.plugins.find(
     (plugin) => plugin.id === "jwt",
@@ -630,9 +630,6 @@ test("native JWT scope, lifetime, type and ID nonce or profile divergences prese
     "access-type",
     "id-expiry",
     "id-nonce",
-    "id-access-hash",
-    "id-email",
-    "id-name",
   ] as const) {
     signer.options.jwt!.sign = async (payload, header) => {
       const changed = { ...payload };
@@ -642,10 +639,6 @@ test("native JWT scope, lifetime, type and ID nonce or profile divergences prese
         changed.exp = Number(payload.exp) + 60;
       if (isId && fault === "id-expiry") changed.exp = Number(payload.exp) + 60;
       if (isId && fault === "id-nonce") changed.nonce = "wrong-nonce";
-      if (isId && fault === "id-access-hash")
-        changed.at_hash = "wrong-access-hash";
-      if (isId && fault === "id-email") changed.email = "private@example.com";
-      if (isId && fault === "id-name") changed.name = "Unconsented name";
       return new SignJWT(changed)
         .setProtectedHeader({
           alg: "EdDSA",
@@ -668,7 +661,7 @@ test("native JWT scope, lifetime, type and ID nonce or profile divergences prese
   expect((await exchange(input)).status).toBe(200);
 });
 
-test("opaque and refresh rows must match returned scopes, resource, reference and native expiry", async () => {
+test("opaque and refresh rows must match returned scopes, resource, reference and authentication", async () => {
   const code = await authorize("openid email offline_access", null);
   const input = {
     grant_type: "authorization_code",
@@ -683,18 +676,10 @@ test("opaque and refresh rows must match returned scopes, resource, reference an
       "NEW.resources := ARRAY['https://wrong.example/mcp']",
     ],
     [
-      "oauth_access_tokens",
-      "NEW.expires_at := NEW.expires_at + interval '1 second'",
-    ],
-    [
       "oauth_refresh_tokens",
       "NEW.resources := ARRAY['https://wrong.example/mcp']",
     ],
     ["oauth_refresh_tokens", "NEW.reference_id := 'wrong-grant'"],
-    [
-      "oauth_refresh_tokens",
-      "NEW.expires_at := NEW.expires_at + interval '1 second'",
-    ],
     [
       "oauth_refresh_tokens",
       "NEW.auth_time := NEW.auth_time - interval '1 second'",
@@ -1842,4 +1827,14 @@ test("one global user needs independently verified target SSO for a second tenan
       })
     ).status,
   ).toBe(200);
+});
+
+test("the native provider rejects unsupported token grant types", async () => {
+  for (const grant_type of ["password", "implicit", "unsupported"]) {
+    const response = await exchange({ grant_type });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: "unsupported_grant_type",
+    });
+  }
 });

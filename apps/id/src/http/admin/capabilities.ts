@@ -192,7 +192,7 @@ export const routes = {
     summary: "Update an organisation capability",
     description:
       recovery +
-      "Requires the strong If-Match ETag from getCapability: missing returns 428, stale returns 412. Committed replay precedes that check. Change scopes, effective windows or active/disabled status; unchanged configuration records a noop. Disabling prevents subsequent machine grants and removes authority supplied by direct-session assignments, but does not revoke already-issued offline JWTs. last_platform_administrator rejects a change that removes the last effective platform writer. Assignments remain. Tenant and target are immutable. validation_failed rejects unsupported fields, grant kinds or scopes; not_found means the capability is missing; constraint_violation rejects inconsistent windows.",
+      "Accepts the strong If-Match ETag from getCapability; stale returns 412. Committed replay precedes that check. Change scopes, effective windows or active/disabled status; unchanged configuration records a noop. Disabling prevents subsequent machine grants and removes authority supplied by direct-session assignments, but does not revoke already-issued offline JWTs. Assignments remain. Tenant and target are immutable. validation_failed rejects unsupported fields, grant kinds or scopes; not_found means the capability is missing; constraint_violation rejects inconsistent windows.",
     tag: "Capabilities",
     platformScope: "platform:write",
     kind: "write",
@@ -213,7 +213,7 @@ export const routes = {
           headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
           content: json(capabilitySchema),
         },
-        ...problemResponses(400, 404, 409, 410, 412, 428, 503),
+        ...problemResponses(400, 404, 409, 410, 412, 503),
       },
     ),
   },
@@ -224,7 +224,7 @@ export const routes = {
     summary: "Remove an organisation capability",
     description:
       recovery +
-      "Soft-delete a user, machine or tenant direct-session capability, retaining its disabled row and before/after audit state. Deletion is terminal; an explicit replacement gets a new UUID. Subsequent grants are denied; existing offline tokens remain bounded by expiry. Assignments remain. Remove references before erasing a client or resource. Prefer updateCapability with disabled status for a reversible suspension. validation_failed rejects malformed input; not_found means the capability is unavailable. protected_capability means the bound platform ceiling cannot be removed.",
+      "Soft-delete a user, machine or tenant direct-session capability, retaining its disabled row and before/after audit state. Deletion is terminal; an explicit replacement gets a new UUID. Subsequent grants are denied; existing offline tokens remain bounded by expiry. Assignments remain. Remove references before erasing a client or resource. Prefer updateCapability with disabled status for a reversible suspension. validation_failed rejects malformed input; not_found means the capability is unavailable.",
     tag: "Capabilities",
     platformScope: "platform:write",
     kind: "write",

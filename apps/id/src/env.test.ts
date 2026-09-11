@@ -74,7 +74,6 @@ describe("unit: environment", () => {
       trustedProxyCidrs: [],
       authPagesUrl: "http://localhost:47100",
       oauthRefreshReuseIntervalSeconds: 0,
-      maxConcurrentRequests: 64,
       operationalLogIntervalMs: 30_000,
       databasePoolMax: 20,
       databasePoolIdleTimeoutMs: 10_000,
@@ -131,7 +130,6 @@ describe("unit: environment", () => {
       NODE_ENV: "production",
       TRUSTED_PROXY_CIDRS: "10.0.0.0/8",
       PORT: "8080",
-      MAX_CONCURRENT_REQUESTS: "12",
       DATABASE_POOL_MAX: "7",
       DATABASE_LOCK_TIMEOUT_MS: "900",
       DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS: "12000",
@@ -150,7 +148,6 @@ describe("unit: environment", () => {
     expect(environment).toMatchObject({
       nodeEnv: "production",
       port: 8080,
-      maxConcurrentRequests: 12,
       databasePoolMax: 7,
       databasePoolIdleTimeoutMs: 2_000,
       databaseConnectionTimeoutMs: 3_000,
@@ -325,16 +322,6 @@ test("statement deadline rejects disabled, fractional and out-of-range values", 
         DATABASE_STATEMENT_TIMEOUT_MS: value,
       }),
     ).toThrow("DATABASE_STATEMENT_TIMEOUT_MS");
-});
-
-test("request admission rejects disabled, fractional and excessive limits", () => {
-  for (const value of ["0", "-1", "1.5", "9007199254740992", "invalid"])
-    expect(() =>
-      parseEnvironment({
-        ...requiredEnvironment,
-        MAX_CONCURRENT_REQUESTS: value,
-      }),
-    ).toThrow("MAX_CONCURRENT_REQUESTS");
 });
 
 const production = {

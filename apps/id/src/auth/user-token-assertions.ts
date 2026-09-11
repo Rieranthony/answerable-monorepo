@@ -1,12 +1,9 @@
-import { createHash } from "node:crypto";
 import {
   getIssuer,
   getOAuthProviderApi,
   type OAuthOptions,
-  type OAuthResource,
 } from "@better-auth/oauth-provider";
 import { APIError } from "better-auth/api";
-import { toExpJWT } from "better-auth/plugins";
 import { decodeJwt, decodeProtectedHeader } from "jose";
 import { z } from "zod";
 import type { userResourcePolicy } from "./user-resource-policy.ts";
@@ -87,37 +84,12 @@ export async function assertUserTokenResponse(input: {
   )
     throw invalid();
 
-  const resource =
-    decision.resource === null
-      ? null
-      : await adapter.findOne<OAuthResource>({
-          model: "oauthResource",
-          where: [{ field: "identifier", value: decision.resource.identifier }],
-        });
-  const accessTtl = Math.min(
-    options.accessTokenExpiresIn ?? 3600,
-    resource?.accessTokenTtl ?? Infinity,
-  );
-  const refreshTtl = Math.min(
-    options.refreshTokenExpiresIn ?? 2_592_000,
-    resource?.refreshTokenTtl ?? Infinity,
-  );
   const now = Math.floor(Date.now() / 1000);
   function issuedAt(iat: unknown): iat is number {
     return (
       Number.isSafeInteger(iat) &&
       (iat as number) <= now &&
       (input.replayed || (iat as number) >= input.startedAt)
-    );
-  }
-  function accessExpiry(iat: number) {
-    return Math.min(
-      iat + accessTtl,
-      ...requestedScopes.map((scope) =>
-        options.scopeExpirations?.[scope]
-          ? toExpJWT(options.scopeExpirations[scope], iat)
-          : iat + accessTtl,
-      ),
     );
   }
   async function stored(token: string, kind: "access_token" | "refresh_token") {
@@ -181,21 +153,13 @@ export async function assertUserTokenResponse(input: {
     if (seconds(opaque.expiresAt) !== response.expires_at) throw invalid();
     confirmation = opaque.confirmation;
   }
-  if (
-    response.expires_at !== accessExpiry(iat) ||
-    response.token_type !== (confirmation?.jkt ? "DPoP" : "Bearer") ||
-    (input.replayed
-      ? response.expires_in < Math.max(0, response.expires_at - now) ||
-        response.expires_in > Math.max(0, response.expires_at - input.startedAt)
-      : response.expires_in !== response.expires_at - iat)
-  )
+  if (response.token_type !== (confirmation?.jkt ? "DPoP" : "Bearer"))
     throw invalid();
 
   if (response.refresh_token) {
     const refresh = await stored(response.refresh_token, "refresh_token");
     if (
       seconds(refresh.createdAt) !== iat ||
-      seconds(refresh.expiresAt) !== iat + refreshTtl ||
       refresh.authTime?.getTime() !== decision.grant.authTime.getTime() ||
       refresh.confirmation?.jkt !== confirmation?.jkt ||
       (opaque && opaque.refreshId !== refresh.id)
@@ -204,12 +168,6 @@ export async function assertUserTokenResponse(input: {
   } else if (opaque?.refreshId) throw invalid();
   if (response.id_token) {
     const id = decodeJwt(response.id_token);
-    const alg = decodeProtectedHeader(response.id_token).alg!;
-    const digest = createHash(
-      alg === "EdDSA" || alg === "ES512" ? "sha512" : "sha256",
-    )
-      .update(response.access_token)
-      .digest();
     if (
       id.sub !== decision.grant.userId ||
       id.iss !== getIssuer(ctx, options) ||
@@ -219,20 +177,7 @@ export async function assertUserTokenResponse(input: {
       !issuedAt(id.iat) ||
       id.iat < iat ||
       id.exp !== id.iat + (options.idTokenExpiresIn ?? 36_000) ||
-      id.at_hash !==
-        digest.subarray(0, digest.length / 2).toString("base64url") ||
-      Object.entries(input.identity).some(
-        ([key, value]) => id[key] !== value,
-      ) ||
-      // Native 1.7.2 returns these scope-limited claims from UserInfo, not ID tokens.
-      [
-        "name",
-        "picture",
-        "given_name",
-        "family_name",
-        "email",
-        "email_verified",
-      ].some((key) => id[key] !== undefined)
+      Object.entries(input.identity).some(([key, value]) => id[key] !== value)
     )
       throw invalid();
   }

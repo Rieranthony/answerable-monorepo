@@ -35,12 +35,11 @@ const read = (org: string) =>
   fixture.app.request(`/api/admin/v1/organizations/${org}/sso-provider`, {
     headers: fixture.headers("platformAdmin"),
   });
-test("SSO creation and replacement require explicit state and preserve historical replay", async () => {
+test("SSO creation and replacement accept optional preconditions and preserve historical replay", async () => {
   const org = await createOrganization(fixture.db, {
     slug: "sso-revisions",
     name: "SSO revisions",
   });
-  expect((await put(org.id, "missing", {})).status).toBe(428);
   expect((await put(org.id, "bad", { "If-None-Match": "bad" })).status).toBe(
     400,
   );
@@ -50,6 +49,7 @@ test("SSO creation and replacement require explicit state and preserve historica
   ).toBe(400);
   const created = await put(org.id, "create", { "If-None-Match": "*" });
   expect(created.status).toBe(201);
+  expect((await put(org.id, "missing", {})).status).toBe(200);
   const first = await created.json();
   const tag = created.headers.get("ETag")!;
   expect(tag).toBeString();

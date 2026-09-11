@@ -81,7 +81,7 @@ test("resource creation and revision-aware edits replay before stale checks", as
 test("resource preconditions and concurrent edits reject lost updates", async () => {
   expect(
     (await request(path, "PATCH", "missing-tag", { name: "Invalid" })).status,
-  ).toBe(428);
+  ).toBe(200);
   expect(
     (
       await request(

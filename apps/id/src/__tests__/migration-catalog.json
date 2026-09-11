@@ -82,7 +82,7 @@
       "security_definer": false,
       "settings": ["search_path=pg_catalog, public"],
       "public_execute": true,
-      "definitionHash": "d06e7a495995e411e7783d312e1741c1b0df68f814e8c2fb498f01cae6e309f8"
+      "definitionHash": "526b67883fe6cc7bb4f5353d681e1fdfb4440ef9b8c71fdde41ebe45282367ee"
     },
     {
       "name": "protect_product_parents()",
@@ -92,25 +92,11 @@
       "definitionHash": "9f558ff756a1fa5c1d0289949e6c6175afdafb169a195d3a2a9678440efb13cc"
     },
     {
-      "name": "protect_reserved_admin_capability()",
-      "security_definer": false,
-      "settings": ["search_path=pg_catalog, public"],
-      "public_execute": true,
-      "definitionHash": "29fc52e3677a05ea71319d5db481fdb698d2e3393a79c8ec8923208c04a086a1"
-    },
-    {
       "name": "protect_resource_ownership()",
       "security_definer": false,
       "settings": null,
       "public_execute": true,
       "definitionHash": "3a754d7fc9fd546252dae7cbc52b59ba27c78ca9beae6828197ec5aa30ef903a"
-    },
-    {
-      "name": "protect_security_identifier()",
-      "security_definer": false,
-      "settings": ["search_path=pg_catalog, public"],
-      "public_execute": true,
-      "definitionHash": "3de5a6d57cef18642e0bd61203ecbd2ab0c1e1466babc13397aaf7fdb09805cf"
     },
     {
       "name": "protect_session_authentication_origin()",
@@ -160,13 +146,6 @@
       "settings": ["search_path=pg_catalog, public"],
       "public_execute": true,
       "definitionHash": "5084cdd9b87f5595168a76a79edd841cb6fabe5e434cd1268669b952baea8f7f"
-    },
-    {
-      "name": "reserve_security_identifier()",
-      "security_definer": true,
-      "settings": ["search_path=pg_catalog, public"],
-      "public_execute": false,
-      "definitionHash": "cf9645f1db7e60b218cd085d339428b8add819f948e11d1da963966b22f1a8a0"
     },
     {
       "name": "touch_client_resource_revision()",
@@ -373,12 +352,6 @@
     },
     {
       "table_name": "oauth_clients",
-      "name": "oauth_clients_reserve_identity",
-      "enabled": "O",
-      "definition": "CREATE TRIGGER oauth_clients_reserve_identity AFTER INSERT ON public.oauth_clients FOR EACH ROW EXECUTE FUNCTION reserve_security_identifier()"
-    },
-    {
-      "table_name": "oauth_clients",
       "name": "oauth_clients_revision_guard",
       "enabled": "O",
       "definition": "CREATE TRIGGER oauth_clients_revision_guard BEFORE UPDATE ON public.oauth_clients FOR EACH ROW EXECUTE FUNCTION protect_configuration_revision()"
@@ -418,12 +391,6 @@
       "name": "oauth_resources_identity_guard",
       "enabled": "O",
       "definition": "CREATE TRIGGER oauth_resources_identity_guard BEFORE UPDATE ON public.oauth_resources FOR EACH ROW EXECUTE FUNCTION protect_oauth_resource_identity()"
-    },
-    {
-      "table_name": "oauth_resources",
-      "name": "oauth_resources_reserve_identity",
-      "enabled": "O",
-      "definition": "CREATE TRIGGER oauth_resources_reserve_identity AFTER INSERT ON public.oauth_resources FOR EACH ROW EXECUTE FUNCTION reserve_security_identifier()"
     },
     {
       "table_name": "oauth_resources",
@@ -469,12 +436,6 @@
     },
     {
       "table_name": "organization_capabilities",
-      "name": "reserved_admin_capability_guard",
-      "enabled": "O",
-      "definition": "CREATE TRIGGER reserved_admin_capability_guard BEFORE DELETE ON public.organization_capabilities FOR EACH ROW EXECUTE FUNCTION protect_reserved_admin_capability()"
-    },
-    {
-      "table_name": "organization_capabilities",
       "name": "zz_organization_capabilities_present_parents",
       "enabled": "O",
       "definition": "CREATE TRIGGER zz_organization_capabilities_present_parents BEFORE INSERT OR UPDATE ON public.organization_capabilities FOR EACH ROW EXECUTE FUNCTION protect_product_parents()"
@@ -508,12 +469,6 @@
       "name": "organizations_revision_guard",
       "enabled": "O",
       "definition": "CREATE TRIGGER organizations_revision_guard BEFORE UPDATE ON public.organizations FOR EACH ROW EXECUTE FUNCTION protect_configuration_revision()"
-    },
-    {
-      "table_name": "security_identifiers",
-      "name": "security_identifiers_immutable",
-      "enabled": "O",
-      "definition": "CREATE TRIGGER security_identifiers_immutable BEFORE DELETE OR UPDATE ON public.security_identifiers FOR EACH ROW EXECUTE FUNCTION protect_security_identifier()"
     },
     {
       "table_name": "sessions",
@@ -884,11 +839,6 @@
     },
     {
       "table_name": "organizations",
-      "enabled": false,
-      "forced": false
-    },
-    {
-      "table_name": "security_identifiers",
       "enabled": false,
       "forced": false
     },

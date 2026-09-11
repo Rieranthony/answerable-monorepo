@@ -11,7 +11,6 @@ import type { Environment } from "../env.ts";
 import type { Principal, BearerClaims } from "../http/principal.ts";
 import { ProblemError } from "../http/problem.ts";
 import { authorizeCommand } from "./command-authority.ts";
-import { platformWriterCheck } from "./platform-writer.ts";
 
 const tenantCommand = Symbol("tenantCommand");
 const issuedContexts = new WeakSet<object>();
@@ -98,10 +97,8 @@ export async function authorizeTenantMemberCommand(
       });
       issuedContexts.add(context);
       try {
-        const checkWriter = await platformWriterCheck(tx, organization.id);
         await context.revalidate();
         const result = await run(context);
-        await checkWriter();
         return result;
       } finally {
         issuedContexts.delete(context);

@@ -15,7 +15,7 @@ test("operational summaries retain in-flight work across windows without request
   const app = createApp({
     db,
     metrics,
-    environment: testEnvironment({ maxConcurrentRequests: 1 }),
+    environment: testEnvironment(),
     auth: {
       ...stubAuth(),
       handler: async () => {
@@ -33,12 +33,12 @@ test("operational summaries retain in-flight work across windows without request
   });
   await entered.promise;
   expect(metrics.snapshot().active).toBe(1);
-  const refused = await app.request("/api/admin/v1/clients/private-client");
-  expect(refused.status).toBe(503);
+  const refused = await app.request("/private-client");
+  expect(refused.status).toBe(404);
   const during = metrics.snapshot();
   expect(during.active).toBe(1);
   expect(during.requests).toContainEqual(
-    expect.objectContaining({ route: "admin", status: 503, count: 1 }),
+    expect.objectContaining({ route: "other", status: 404, count: 1 }),
   );
   release.resolve();
   await pending;

@@ -4,35 +4,14 @@ These commands cover repository-owned checks. Production topology, traffic targe
 secret delivery, backup retention and recovery objectives have not been supplied.
 The [local evidence](../../reports/id-operations.md) cannot establish production capacity or readiness.
 
-## Observe capacity
+## Runtime bounds
 
-```bash
-# From apps/id. Destructive: exclusive ownership of answerable_id_test is required.
-bun run measure:audit ../../reports/id-operations-capacity.json mixed
-```
-
-The finite workload runs two production-mode Bun processes through loopback HTTP,
-each with a restricted four-connection pool. Native SSO fixtures supply tenant
-sessions; the workload exercises resource-bearing code exchange, refresh, cached
-refresh replay across processes, administrative commands and unknown-client rejection.
-Controlled database barriers hold tenant A work while B attempts requests. Every
-refused command retries with its original key and input. Measurements contain
-statuses, elapsed times and fixed pool/request summaries; credentials stay in memory.
-
-This tests contention behaviour, including overload refusal and recovery. It is not
-a sustained throughput test, a percentile estimate or evidence about a real ingress.
-Do not run it alongside migrations, coverage, another workload or restore rehearsal.
-
-| Boundary                       | Repository default or behaviour                                                       | Limit of the claim                                                         |
-| ------------------------------ | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Active request handlers        | 64 per process; excess receives 503 and `Retry-After: 1`                              | No cluster quota; bodyless liveness bypasses it                            |
-| Public authentication handlers | `max(1, pool maximum − 1)` per pool                                                   | A shared lane; B OAuth can be refused when A fills it                      |
-| Tenant administrative commands | Two per organisation per pool after authentication                                    | Global commands and authentication are outside this bound                  |
-| Machine issuance               | Two per owner organisation across the database, after authentication and policy locks | Does not bound checkout, lock waits or rejected-token audits               |
-| Database pool                  | 20 connections (1 in tests); checkout 5 seconds; idle 10 seconds                      | Multiply pools by processes and include other database users               |
-| Database statements            | 10 seconds per statement; lock wait 2 seconds; idle transaction 15 seconds            | Not a whole-request deadline; transactions may execute multiple statements |
-| Request body                   | 256 KiB; acquisition deadline 5 seconds                                               | Does not bound response streaming or socket count                          |
-| Forwarded IP                   | Rightmost untrusted address after listed ingress proxies                              | Requires proxy-only network access and TRUSTED_PROXY_CIDRS                 |
+| Boundary            | Repository default or behaviour                                            | Limit of the claim                                                         |
+| ------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Database pool       | 20 connections (1 in tests); checkout 5 seconds; idle 10 seconds           | Multiply pools by processes and include other database users               |
+| Database statements | 10 seconds per statement; lock wait 2 seconds; idle transaction 15 seconds | Not a whole-request deadline; transactions may execute multiple statements |
+| Request body        | 256 KiB; acquisition deadline 5 seconds                                    | Does not bound response streaming or socket count                          |
+| Forwarded IP        | Rightmost untrusted address after listed ingress proxies                   | Requires proxy-only network access and TRUSTED_PROXY_CIDRS                 |
 
 **Runtime summaries.** `OPERATIONAL_LOG_INTERVAL_MS` defaults to 30000; zero disables
 reporting, otherwise the minimum is 1000. Each process writes `[id] operations`
@@ -54,18 +33,12 @@ signals to an operator. No destination or numerical alert budget is configured h
 
 | Signal                                                                  | Operator check                                                                                                                               |
 | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Rising 503 counts, active work and pool waiters                         | Compare with traffic and the specific admission boundary; inspect authorised audit/history for context                                       |
+| Rising 503 counts, active work and pool waiters                         | Compare with traffic and database limits; inspect authorised audit/history for context                                                       |
 | `admin_denial_audit_unavailable` or `token_rejection_audit_unavailable` | Investigate database/audit availability; refusal remains refusal                                                                             |
-| `custody_preflight_failed` or `recovery_verification_failed`            | Keep recovery traffic closed and inspect key/source delivery                                                                                 |
+| `custody_preflight_failed`                                              | Keep recovery traffic closed and inspect key/source delivery                                                                                 |
 | Missing process summaries                                               | Check process health and collector delivery before interpreting demand                                                                       |
 | Expiry job nonzero exit or missed scheduled run                         | Inspect scheduler state and repeat the existing bounded purge; successful nonempty batches retain atomic `operation.results_purged` evidence |
 | Backup age or retrieval failure                                         | Use the backup service's independently monitored completion/recovery evidence; `/readyz` cannot detect this                                  |
-
-**Global lifecycle pressure.** The separate `user-erasure` density mode observed one
-B read returning `503 database_busy` while eight global deletions each retired two
-memberships with 1000 assignments and 1000 direct grants per membership. Those
-commands bypass tenant admission. Completion and replay succeeded, but this workload
-does not support a claim that B reads always progress under global lifecycle pressure.
 
 ## Deliver and check keys
 
@@ -121,72 +94,6 @@ or an emergency signing-key cutover. Do not edit JWKS rows or delete a key to fo
 rotation. A production emergency rotation procedure, verification overlap and
 offline token exposure window still require a deployment rehearsal. In a custody
 incident, close traffic and preserve recovery evidence before changing keys.
-
-## Restore with a known gap
-
-```bash
-# From apps/id. Resets only the guarded local answerable_id_test database.
-bun run test:restore ../../reports/id-operations-recovery.json
-```
-
-The rehearsal acknowledges membership revocation and client creation, rotation and
-soft deletion **after** the first snapshot. Restoring that snapshot leaves the member
-active and the client/operation receipts absent. A closed loopback listener refuses
-the original keyed request with 503. The verifier refuses reopening. It then restores
-a complete later dump of the still-available synthetic source, checks the barriers,
-and replays all four original operations with the same IDs and response bodies.
-The other tenant's membership and the global user UUID remain intact.
-
-This later full dump is an explicit reconciliation source. It is not a simulation
-of losing the source database, managed point-in-time recovery, WAL archiving or
-repairing individual receipts. Phase timings are local elapsed observations, not
-production RTO or RPO.
-
-**Retain listed evidence outside the backup.** While a trusted source is available
-and writers are stopped, prepare an input file listing acknowledged operation IDs
-and the specific membership/client barriers that must survive. Use immutable row
-UUIDs, not public client identifiers:
-
-```json
-{
-  "operationIds": ["<operation UUID>"],
-  "revokedMemberIds": ["<membership UUID>"],
-  "deletedClientIds": ["<client row UUID>"]
-}
-```
-
-```bash
-bun run ops:capture-recovery /secure/acknowledged-ids.json /secure/new-evidence.json
-# After recovery, using restored restricted runtime credentials and retained keys:
-bun run ops:preflight
-bun run ops:verify-recovery /secure/new-evidence.json
-```
-
-Capture creates a new mode-0600 file and refuses to overwrite it. The version-1
-format hashes each listed permanent receipt, its audit events and ordered subject
-references; it checks listed membership revocations, client tombstones and identifier
-reservations. Files are limited to 1 MiB and each list to 1000 entries. Use multiple
-files if needed and verify every one. Pin the application/schema version used for
-capture and verification. Evidence contains internal identifiers; retain it in an
-independent controlled location with provenance and integrity protection.
-
-**Reopening procedure.** Stop writers, scheduled jobs and external traffic before
-restore. Preserve the damaged source and available logs according to the incident
-procedure. Recover a consistent database from an independently established complete
-source, provision fresh restricted database credentials and deliver retained keys.
-Run the two checks above before starting traffic. Exercise native SSO and OAuth plus
-known same-key command replays in the isolated deployment; preserve UUIDs and original
-keys. Confirm downstream trust in restored issuer/JWKS state before operator release.
-`/readyz` only checks database reachability and cannot authorise reopening.
-
-A missing or changed listed fact requires keeping traffic closed. Never replay a
-missing receipt against an older snapshot to manufacture recovery evidence, copy a
-receipt without its transaction's state and audit, use a new idempotency key, or
-create replacement UUIDs. A matching file proves only its listed facts. The file is
-not a complete external acknowledgement ledger; no check here establishes that
-unlisted post-snapshot revocations or secret rotations were recovered. If completeness
-cannot be established from the recovery source, operator release remains unresolved.
-The CLI never changes traffic routing; the rehearsal's closed listener is test scaffolding.
 
 ## Retention and external decisions
 

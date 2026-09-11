@@ -18,7 +18,7 @@ let resource: string;
 beforeAll(async () => {
   connection = createDatabase(testEnvironment());
   await connection.db.execute(
-    sql`truncate security_identifiers, organizations, oauth_clients, oauth_resources cascade`,
+    sql`truncate organizations, oauth_clients, oauth_resources cascade`,
   );
   const seeded = await bootstrap(
     connection.db,
@@ -36,24 +36,20 @@ beforeAll(async () => {
   await connection.db
     .insert(organizations)
     .values({ id: organizationId, slug: "capability-owner", name: "Owner" });
-  await connection.db
-    .insert(oauthClients)
-    .values({
-      id: createId(),
-      clientId,
-      name: "Machine",
-      organizationId,
-      redirectUris: [],
-    });
-  await connection.db
-    .insert(oauthResources)
-    .values({
-      id: createId(),
-      identifier: resource,
-      name: "Private",
-      classification: "tenant_owned",
-      organizationId,
-    });
+  await connection.db.insert(oauthClients).values({
+    id: createId(),
+    clientId,
+    name: "Machine",
+    organizationId,
+    redirectUris: [],
+  });
+  await connection.db.insert(oauthResources).values({
+    id: createId(),
+    identifier: resource,
+    name: "Private",
+    classification: "tenant_owned",
+    organizationId,
+  });
 });
 afterAll(async () => connection.close());
 const input = () => ({

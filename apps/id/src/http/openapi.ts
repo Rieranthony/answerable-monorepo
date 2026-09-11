@@ -1,4 +1,3 @@
-import { withAdmissionResponse } from "./admission.ts";
 import { generateSpecs } from "hono-openapi";
 
 import type { App } from "../app.ts";
@@ -122,10 +121,6 @@ export async function buildPublicOpenApiDocument(input: {
           responses: {
             ...operation.responses,
             ...requestBoundaryResponses,
-            503: withAdmissionResponse(
-              operation.responses?.[503],
-              "authentication",
-            ),
           },
           operationId: route.operationId,
           summary: route.summary,

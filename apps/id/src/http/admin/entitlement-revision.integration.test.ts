@@ -60,7 +60,7 @@ test("entitlement revisions reject stale and recreated targets without breaking 
   const noop = await patch(entitlement.id, "noop", nextTag);
   expect(noop.status).toBe(200);
   expect(await noop.json()).toEqual(saved);
-  expect((await patch(entitlement.id, "missing")).status).toBe(428);
+  expect((await patch(entitlement.id, "missing")).status).toBe(200);
   expect((await patch(entitlement.id, "weak", `W/${nextTag}`)).status).toBe(
     400,
   );

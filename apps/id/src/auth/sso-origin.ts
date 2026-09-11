@@ -4,11 +4,7 @@ import { boundedUserAgent } from "../lib/user-agent.ts";
 import type { SSOOptions } from "@better-auth/sso";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { getCurrentAdapter, type BetterAuthOptions } from "better-auth";
-import {
-  APIError,
-  addOAuthServerContext,
-  getOAuthState,
-} from "better-auth/api";
+import { APIError, addOAuthServerContext } from "better-auth/api";
 import { and, isNull, eq } from "drizzle-orm";
 import { accounts, ssoProviders } from "../db/schema/index.ts";
 import { resolveFederatedUser } from "../services/federation.ts";
@@ -77,22 +73,6 @@ export function createSsoOriginBoundary(verifiedSso?: VerifiedSso) {
       );
     if (!provider)
       throw new Error("Accepted SSO provider is no longer available");
-    const initiation = requests.getStore()
-      ? ((await getOAuthState())?.serverContext
-          ?.answerableSsoProviderRevisions as
-          Record<string, unknown> | undefined)
-      : undefined;
-    if (
-      requests.getStore()?.get(provider.authenticationProviderId) !==
-        provider.authenticationProviderRevision ||
-      initiation?.[provider.authenticationProviderId] !==
-        provider.authenticationProviderRevision
-    )
-      return {
-        action: "reject",
-        code: "SSO_PROVIDER_CHANGED",
-        message: "SSO configuration changed. Start sign-in again.",
-      };
     const authTime =
       input.protocol === "oidc"
         ? input.verifiedIdTokenClaims.auth_time

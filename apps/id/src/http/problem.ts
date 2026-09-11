@@ -63,7 +63,6 @@ const descriptions: Record<number, string> = {
   404: "Not found",
   409: "Conflict",
   412: "Configuration revision does not match",
-  428: "A revision precondition is required",
   410: "Operation result expired",
   503: "Service unavailable",
   500: "Unexpected error",
@@ -128,17 +127,6 @@ export function mapDatabaseError(error: unknown): ProblemError | undefined {
     case "40P01":
       return databaseBusy();
     case "23505":
-      if (
-        "constraint" in cause &&
-        (cause.constraint === "security_identifiers_kind_identifier_pk" ||
-          cause.constraint === "security_identifiers_kind_instance_unique")
-      )
-        return new ProblemError(
-          409,
-          "identifier_reserved",
-          "Identifier is permanently reserved",
-          "Create a replacement with a new identifier.",
-        );
       return new ProblemError(
         409,
         "conflict",

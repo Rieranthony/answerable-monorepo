@@ -20,9 +20,7 @@ afterAll(async () => connection.close());
 
 test("person and tenant audit history survive membership and identity erasure", async () => {
   const db = connection.db;
-  await db.execute(
-    sql`truncate security_identifiers, audit_events, users, organizations cascade`,
-  );
+  await db.execute(sql`truncate audit_events, users, organizations cascade`);
   const organizationId = createId(),
     userId = createId(),
     memberId = createId();

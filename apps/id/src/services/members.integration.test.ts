@@ -18,7 +18,7 @@ beforeAll(() => {
 });
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table security_identifiers, audit_events, organizations, users cascade`,
+    sql`truncate table audit_events, organizations, users cascade`,
   );
 });
 afterAll(async () => {
@@ -117,7 +117,9 @@ const service = {
       db,
       org,
       (context) =>
-        memberService.updateWindow(context, memberId, patch, expected),
+        memberService
+          .updateWindow(context, memberId, patch, expected)
+          .then((result) => result.body),
       actor,
     ),
   remove: (db: Executor, actor: Actor, org: string, memberId: string) =>

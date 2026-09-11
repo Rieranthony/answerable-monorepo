@@ -90,12 +90,11 @@ test("configuration patches reject stale revisions but replay an already committ
   });
 });
 
-test("missing, weak, wildcard, malformed and unrelated tags do not update a client", async () => {
+test("weak, wildcard, malformed and unrelated tags do not update a client", async () => {
   const initial = await read();
   const tag = initial.headers.get("ETag")!;
   const before = await initial.json();
   for (const [value, status, code] of [
-    [undefined, 428, "precondition_required"],
     [`W/${tag}`, 400, "invalid_revision"],
     ["*", 400, "invalid_revision"],
     [`${tag}, ${tag}`, 400, "invalid_revision"],
@@ -175,4 +174,15 @@ test("linked resource changes invalidate the client ETag, but duplicate links do
   const unlinked = await read();
   expect(unlinked.headers.get("ETag")).not.toBe(linkedTag);
   expect((await unlinked.json()).resources).not.toContain(resource);
+});
+
+test("a client patch accepts a missing If-Match", async () => {
+  const headers = fixture.headers("platformAdmin");
+  headers.set("Content-Type", "application/json");
+  const response = await fixture.app.request(
+    "/api/admin/v1/clients/revision-client",
+    { method: "PATCH", headers, body: JSON.stringify({ name: "Headerless" }) },
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("ETag")).toBeString();
 });

@@ -124,7 +124,7 @@ export const routes = {
     operationId: "createResource",
     summary: "Create resource",
     description:
-      "Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Create an OAuth resource and return its generated id, URL identifier and configuration, recording the creation in the audit log. Prefer updateResource for an existing URL identifier; validation_failed rejects malformed input conflict means the identifier already exists, and identifier_reserved means a retired identity cannot be reused.",
+      "Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Create an OAuth resource and return its generated id, URL identifier and configuration, recording the creation in the audit log. Prefer updateResource for an existing URL identifier; validation_failed rejects malformed input conflict means the identifier already exists including retired identifiers.",
     tag: "Resources",
     platformScope: "platform:write",
     kind: "write",
@@ -182,7 +182,7 @@ export const routes = {
     operationId: "updateResource",
     summary: "Update resource (URL-encode {resource})",
     description:
-      "Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Requires the If-Match ETag from getResource. Missing preconditions return 428, stale new commands return 412; committed replay precedes the old revision check. An unchanged patch records noop without advancing the revision. Change the resource configuration and return the updated record, recording the change in the audit log. The {resource} URL must be percent-encoded in the path; prefer getResource to inspect settings, and validation_failed or not_found identifies malformed input or a missing resource. Scope changes to the bound admin resource cannot remove existing effective platform-write authority; last_platform_administrator rolls back the command. Retain that authority in any new scope configuration.",
+      "Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Accepts the If-Match ETag from getResource. Stale supplied revisions return 412; committed replay precedes the old revision check. An unchanged patch records noop without advancing the revision. Change the resource configuration and return the updated record, recording the change in the audit log. The {resource} URL must be percent-encoded in the path; prefer getResource to inspect settings, and validation_failed or not_found identifies malformed input or a missing resource.",
     tag: "Resources",
     platformScope: "platform:write",
     kind: "write",
@@ -198,7 +198,7 @@ export const routes = {
           description: "Resource updated",
           content: json(replayedResourceSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 412, 428, 503),
+        ...problemResponses(400, 404, 409, 410, 412, 503),
       },
     ),
   },
@@ -351,7 +351,7 @@ export function register(app: Hono<AppEnvironment>) {
         operationJson({ identifier, expected, patch: input }),
         200,
         async (platform) => {
-          const body = await service.updateResource(
+          const { body, changed } = await service.updateResource(
             platform,
             identifier,
             input,
@@ -359,7 +359,7 @@ export function register(app: Hono<AppEnvironment>) {
           );
           return {
             body,
-            outcome: body.revision === expected.revision ? "noop" : "applied",
+            outcome: changed ? "applied" : "noop",
             resultReference: { type: "resource", id: identifier },
           };
         },

@@ -17,7 +17,7 @@ beforeAll(() => {
 });
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table security_identifiers, audit_events, organizations, users cascade`,
+    sql`truncate table audit_events, organizations, users cascade`,
   );
 });
 afterAll(async () => {

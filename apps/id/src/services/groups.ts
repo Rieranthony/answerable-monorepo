@@ -1,4 +1,3 @@
-import { platformWriterCheck } from "./platform-writer.ts";
 import {
   requirePlatformWriteContext,
   type PlatformWriteContext,
@@ -150,7 +149,6 @@ async function setStatus(
 ) {
   const { tx, actor } = requirePlatformWriteContext(context);
   const existing = await lockedGroup(context, organizationId, groupId);
-  const checkWriter = await platformWriterCheck(tx, organizationId);
   const changed = existing.status !== status;
   const policySources = changed
     ? await queries.readGroupPolicyForCommand(context, organizationId, groupId)
@@ -158,7 +156,6 @@ async function setStatus(
   const row = changed
     ? (await queries.setGroupStatus(context, organizationId, groupId, status))!
     : existing;
-  await checkWriter();
   await audit(
     tx,
     actor,
@@ -207,13 +204,11 @@ export async function eraseGroup(
       "confirmation_mismatch",
       "Confirmation must match the group ID",
     );
-  const checkWriter = await platformWriterCheck(tx, organizationId);
   const { row, effects } = await queries.deleteGroup(
     context,
     organizationId,
     groupId,
   );
-  await checkWriter();
   await audit(tx, actor, organizationId, groupId, "group.erased", {
     before: configuration(before),
     after: configuration(row),
@@ -295,7 +290,6 @@ export async function putMember(
       window.validFrom?.getTime() !== before.validFrom?.getTime()) ||
     (window.validUntil !== undefined &&
       window.validUntil?.getTime() !== before.validUntil?.getTime());
-  const checkWriter = await platformWriterCheck(tx, organizationId);
   const result =
     !changed && before
       ? { row: before, created: false }
@@ -305,7 +299,6 @@ export async function putMember(
           memberId,
           ...window,
         });
-  await checkWriter();
   await audit(
     tx,
     actor,
@@ -341,14 +334,12 @@ export async function removeMember(
       memberId,
     ),
   );
-  const checkWriter = await platformWriterCheck(tx, organizationId);
   const row = await queries.removeGroupMember(
     context,
     organizationId,
     groupId,
     memberId,
   );
-  await checkWriter();
   await audit(
     tx,
     actor,

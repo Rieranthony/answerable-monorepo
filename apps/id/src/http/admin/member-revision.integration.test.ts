@@ -54,7 +54,7 @@ test("member configuration revisions prevent stale writes and preserve committed
   const unchanged = await patch("noop", currentTag);
   expect(unchanged.status).toBe(200);
   expect((await read()).headers.get("ETag")).toBe(currentTag);
-  expect((await patch("missing")).status).toBe(428);
+  expect((await patch("missing")).status).toBe(200);
   expect((await patch("weak", `W/${currentTag}`)).status).toBe(400);
   const original = await fixture.db
     .select()

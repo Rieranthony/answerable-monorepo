@@ -75,7 +75,7 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORGANIZATION_ID/memb
 
 **Member IDs.** Set `MEMBER_ID` to an ID from `items` to read that member's access.
 
-**Current permission.** Member list and detail reads recheck `org:read` inside their database transaction. The configuration view rechecks `org:users` and excludes profile fields. These responses use `Cache-Control: no-store`; a membership revoked before the read transaction cannot authorise that read. Organisation detail/summary, SSO provider, group, group-member, domain and tenant entitlement reads also recheck `org:read` (or staff `platform:read`) inside their transaction and return `no-store`.
+**Current permission.** Member list and detail reads recheck `org:read` inside their database transaction. The configuration view rechecks `org:users` and excludes profile fields. These responses use `Cache-Control: no-store`; a membership revoked before the read transaction cannot authorise that read. Organisation detail, SSO provider, group, group-member, domain and tenant entitlement reads also recheck `org:read` (or staff `platform:read`) inside their transaction and return `no-store`.
 
 ## Read a member's access
 
@@ -171,7 +171,7 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORGANIZATION_ID/audi
 
 **Audit outage.** If recording the rejection also fails, the original error still reaches the caller. The service emits the safe `token_rejection_audit_unavailable` operational signal. There is no retry queue or guarantee of a durable failed-attempt record during a database outage.
 
-**Authentication failures.** Native failed client authentication records version 3 with a system actor and null client/tenant/decision. Transport, body and admission refusals occur before that boundary. An unverified client ID never attributes an event to a tenant. [User OAuth](/docs/id/oauth) has separate atomic outcome events for authorisation, issuance, response replay and revocation.
+**Authentication failures.** Native failed client authentication records version 3 with a system actor and null client/tenant/decision. Transport and body refusals occur before that boundary. An unverified client ID never attributes an event to a tenant. [User OAuth](/docs/id/oauth) has separate atomic outcome events for authorisation, issuance, response replay and revocation.
 
 ## Request boundaries
 
@@ -191,7 +191,7 @@ These transport errors can be plain text rather than OAuth JSON or problem detai
 
 **Bounded audit metadata.** New HTTP/session audit user-agent values contain at most 512 printable ASCII characters. Empty, oversized, control-character and non-ASCII values are omitted, not truncated; user-agent never proves identity. Callback rejection events with `schemaVersion: 2` contain a recognised failure category or `sso_callback_failed` for an unknown error. Free-form `error_description` is not retained. Older events may contain it. These categories describe reported callback failures, not a verified provider identity or independently established root cause.
 
-**Not yet.** Body limits do not establish tenant/client/IP rates or overall cluster capacity. Separate pool/statement deadlines and shared machine issuance slots apply as documented in [sign-in](/docs/id/sign-in). Transport rejections are outside durable failed-attempt auditing.
+**Not yet.** Body limits do not establish tenant/client/IP rates or overall cluster capacity. Separate pool/statement deadlines apply as documented in [sign-in](/docs/id/sign-in). Transport rejections are outside durable failed-attempt auditing.
 
 ## What you can do today
 
@@ -201,7 +201,6 @@ Paths below start at `/api/admin/v1`; `{org}` means your organisation ID.
 | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
 | Caller            | `GET /me`                                                                                                                                                                                           | Any authenticated principal |
 | Organisation      | `GET /organizations/{org}`                                                                                                                                                                          | `org:read`                  |
-| Summary           | `GET /organizations/{org}/summary`                                                                                                                                                                  | `org:read`                  |
 | Sign-in diagnosis | `GET /organizations/{org}/sign-in-diagnosis?email=…`                                                                                                                                                | `org:users`                 |
 | Domains           | `GET /organizations/{org}/domains`                                                                                                                                                                  | `org:read`                  |
 | SSO provider      | `GET /organizations/{org}/sso-provider` (secret redacted)                                                                                                                                           | `org:read`                  |
@@ -213,7 +212,7 @@ Paths below start at `/api/admin/v1`; `{org}` means your organisation ID.
 | Target access     | `GET /organizations/{org}/access?clientId=…` or `?resource=…`                                                                                                                                       | `org:read`                  |
 | Audit events      | `GET /organizations/{org}/audit-events`                                                                                                                                                             | `org:read`                  |
 
-See the staff runbook for [summary fields](/docs/id/onboard#read-an-organisation) and [diagnosis verdicts](/docs/id/onboard#why-cant-someone-sign-in).
+See the staff runbook for [diagnosis verdicts](/docs/id/onboard#why-cant-someone-sign-in).
 
 ## Use it from an agent
 
@@ -316,7 +315,7 @@ curl -X DELETE "https://id.answerable.org/api/admin/v1/users/$USER_ID?confirm=$U
 | `user_inert`                | The imported user has not signed in.                                                | Let the user activate through their first sign-in.                                            |
 | `user_not_disabled`         | Email retirement requires a disabled user.                                          | Disable the user first.                                                                       |
 | `user_email_retired`        | Email retirement is terminal.                                                       | Do not try to re-enable this account.                                                         |
-| `identifier_reserved`       | A client or resource identifier was used before and remains reserved after erasure. | Create the replacement with a new identifier.                                                 |
+| `conflict`                  | A client or resource identifier was used before and remains reserved after erasure. | Create the replacement with a new identifier.                                                 |
 | `ownership_conflict`        | A client owner cannot be changed, attached or removed after creation.               | Create a replacement client with the intended owner.                                          |
 | `confirmation_mismatch`     | Erasure confirmation does not match the target.                                     | Check the target and send its exact identifier.                                               |
 
@@ -354,14 +353,14 @@ curl -X POST "$ID_ORIGIN/api/admin/v1/clients/$CLIENT_ID/rotate-secret" \
 
 **A new key is a new command.** For rotation, it replaces the secret again. A recovered creation response is historical; the client may since have been deleted. Replay never recreates it. Expired or purged responses cannot be recovered, and the old key never executes again. A machine rotating its own credential must retain an independent authorised recovery path: its old token is revoked by rotation.
 
-| Code                           | Meaning                                                                                                                       | What to do                                                                       |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `invalid_idempotency_key`      | The required key is absent or longer than 256 characters.                                                                     | Supply a stable key for the logical command.                                     |
-| `idempotency_key_reused`       | The key was committed with different input or target.                                                                         | Correct the input or choose a new key for a deliberate new command.              |
-| `database_busy`                | Tenant command admission is full, a connection checkout/lock/statement timed out, or PostgreSQL aborted a deadlocked command. | Wait for Retry-After, then retry the same key and input with backoff.            |
-| `operation_in_progress`        | A duplicate command is executing.                                                                                             | Retry the same key and input.                                                    |
-| `operation_result_expired`     | The recovery window closed or its payload was purged.                                                                         | Inspect the result reference; use a new key only for a deliberate new operation. |
-| `operation_replay_unavailable` | Encryption configuration or a decryption key is unavailable.                                                                  | Ask the operator to restore the configuration, then retry the same key.          |
+| Code                           | Meaning                                                                                     | What to do                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `invalid_idempotency_key`      | The required key is absent or longer than 256 characters.                                   | Supply a stable key for the logical command.                                     |
+| `idempotency_key_reused`       | The key was committed with different input or target.                                       | Correct the input or choose a new key for a deliberate new command.              |
+| `database_busy`                | A connection checkout/lock/statement timed out, or PostgreSQL aborted a deadlocked command. | Wait for Retry-After, then retry the same key and input with backoff.            |
+| `operation_in_progress`        | A duplicate command is executing.                                                           | Retry the same key and input.                                                    |
+| `operation_result_expired`     | The recovery window closed or its payload was purged.                                       | Inspect the result reference; use a new key only for a deliberate new operation. |
+| `operation_replay_unavailable` | Encryption configuration or a decryption key is unavailable.                                | Ask the operator to restore the configuration, then retry the same key.          |
 
 **Client configuration patches** also require a key, plus the ETag from `GET /clients/{clientId}`. Read the current registration and keep its ETag, then patch:
 
@@ -378,19 +377,18 @@ curl -X PATCH "$ID_ORIGIN/api/admin/v1/clients/$CLIENT_ID" \
   -d '{"name":"Renamed client"}'
 ```
 
-**Retry with the original key, tag and body.** A committed patch recovers its original response for seven days, even if the client has since changed. A new command must use the current ETag. An unchanged patch records a `noop` and leaves its revision unchanged. Resource-link changes advance the client revision too. The response ETag belongs to that operation's result; read again to obtain current state.
+**Retry with the original key, tag and body.** A committed patch recovers its original response for seven days, even if the client has since changed. A new command can supply the current ETag to refuse a stale edit; without If-Match it uses the current row. An unchanged patch records a `noop` and leaves its revision unchanged. Resource-link changes advance the client revision too. The response ETag belongs to that operation's result; read again to obtain current state.
 
-| Code                    | Meaning                                                                | What to do                                                               |
-| ----------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `precondition_required` | If-Match is absent (428).                                              | Read the client and supply its ETag.                                     |
-| `invalid_revision`      | The tag is malformed, weak, a wildcard or a list (400).                | Supply one quoted ETag exactly as returned.                              |
-| `revision_mismatch`     | A new command used an outdated revision or another client's tag (412). | Read current state, reconcile the patch and issue a new logical command. |
+| Code                | Meaning                                                                | What to do                                                               |
+| ------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `invalid_revision`  | The tag is malformed, weak, a wildcard or a list (400).                | Supply one quoted ETag exactly as returned.                              |
+| `revision_mismatch` | A new command used an outdated revision or another client's tag (412). | Read current state, reconcile the patch and issue a new logical command. |
 
 **All other client mutations** require `Idempotency-Key` and recover for seven days: enable, disable, owner verification, resource link/unlink and erasure. Enable/disable and link/unlink return success with a `noop` operation when the requested state already holds. Ownership changes still return `ownership_conflict`.
 
 **A retry preserves history.** Replaying a link after it was removed returns its original result without restoring it. Replaying disable after enable does not disable the client again. Unlink and erasure replay their original bodyless `204`, even after client deletion. A new erasure key against a missing client returns `404`.
 
-**Resource mutations** also require `Idempotency-Key`, with seven-day recovery for creation, patches, enable/disable and erasure. Resource PATCH requires the ETag from `GET /resources/{resource}` in If-Match. URL-encode the resource identifier in the path. The same precondition errors and historical replay rules apply. Resource enable/disable commands record noops when the state already holds; the admin resource remains protected from disable and erasure. Link changes and client erasure advance affected resource revisions.
+**Resource mutations** also require `Idempotency-Key`, with seven-day recovery for creation, patches, enable/disable and erasure. Resource PATCH accepts the optional ETag from `GET /resources/{resource}` in If-Match. URL-encode the resource identifier in the path. The same precondition errors and historical replay rules apply. Resource enable/disable commands record noops when the state already holds; the admin resource remains protected from disable and erasure. Link changes and client erasure advance affected resource revisions.
 
 **Administrative mutations.** All 49 current administrative mutations require operation keys and support result recovery. Revision checks apply to client, resource, member, organisation, group and entitlement patches.
 
@@ -436,7 +434,7 @@ See the [admin API reference](/docs/id/admin-api) for request and response schem
 
 **Resource erasure requires unlinking.** Inspect the resource's client list, then use the [client unlink operation](/docs/id/admin-api/clients/unlinkClientResource) for each link before erasing the resource. `resource_has_clients` returns 409 and leaves the resource and its links intact. A failed erase does not reserve its operation key, so retrying that command after unlinking can commit normally. Client deletion retires that client's links with `deletedAt`.
 
-**Member write authority.** Updating, removing or reinstating a member rechecks current authority inside the database transaction. The caller needs `platform:users`, or `org:users` for that organisation. A membership revoked after request admission cannot authorise the pending write. These member operations require `Idempotency-Key`; member PATCH also requires `If-Match` from the configuration read.
+**Member write authority.** Updating, removing or reinstating a member rechecks current authority inside the database transaction. The caller needs `platform:users`, or `org:users` for that organisation. A membership revoked after request admission cannot authorise the pending write. These member operations require `Idempotency-Key`; member PATCH also accepts optional `If-Match` from the configuration read.
 
 ## Retrying member commands
 
@@ -475,13 +473,13 @@ curl -X PATCH "$ID_URL/api/admin/v1/organizations/$ORG_ID/members/$MEMBER_ID" \
 
 The [configuration read](/docs/id/admin-api/members/getMemberConfiguration) requires `platform:users` or the tenant's `org:users`. Its ETag describes membership identity, lifecycle and validity, excluding profile details, groups and clock-dependent access. The member detail response carries the revision but no configuration ETag.
 
-Reuse the original key, body and ETag after response loss: a committed replay is recovered before the stale revision check. A new stale command returns `revision_mismatch` (412); read current configuration and review it before submitting a new command. Missing `If-Match` returns `precondition_required` (428); weak, wildcard or malformed tags return `invalid_revision` (400). Unchanged window updates preserve the revision. Removal and reinstatement advance it, so reactivation cannot restore an old configuration ETag.
+Reuse the original key, body and ETag after response loss: a committed replay is recovered before the stale revision check. A new stale command returns `revision_mismatch` (412); read current configuration and review it before submitting a new command. Weak, wildcard or malformed tags return `invalid_revision` (400). Unchanged window updates preserve the revision. Removal and reinstatement advance it, so reactivation cannot restore an old configuration ETag.
 
 See [member operations](/docs/id/admin-api/members/updateMember) and [operation status](/docs/id/admin-api/operations/getOrganizationOperationStatus).
 
 **Domain command retries.** Create, enable, disable and delete require `Idempotency-Key` and retain response recovery for seven days. Reuse the key and identical input after response loss. Lifecycle requests with a new key return unchanged state when already enabled/disabled and record a no-op. A committed deletion can be replayed after the row is gone. Creation still rejects an existing conflicting assignment; replay recovers the historical result and does not adopt another organisation's domain. Domain writes remain platform-only.
 
-**Organisation command retries.** Platform staff must send a stable `Idempotency-Key` for create, PATCH, enable, disable and erase. Identical authorised retries recover the original response for seven days, including after erasure; they do not recreate the organisation. New-key unchanged state records a noop. No-op disable preserves the existing tenant epoch and does not repeat revocation. Organisation PATCH requires the strong If-Match ETag returned by getOrganization; stale new commands return 412 and missing preconditions return 428. Keep the original tag with the original key on retry. Use the platform operation-status route for these receipts.
+**Organisation command retries.** Platform staff must send a stable `Idempotency-Key` for create, PATCH, enable, disable and erase. Identical authorised retries recover the original response for seven days, including after erasure; they do not recreate the organisation. New-key unchanged state records a noop. No-op disable preserves the existing tenant epoch and does not repeat revocation. Organisation PATCH accepts the optional strong If-Match ETag returned by getOrganization; stale new commands return 412. Keep the original tag with the original key on retry. Use the platform operation-status route for these receipts.
 
 **Edit organisation configuration.** Platform staff read the current ETag before a new PATCH. Copy the returned `ETag` into `ORGANISATION_ETAG`, including its quotes, and set `ORGANISATION_PATCH_KEY` once for this intended edit:
 
@@ -501,7 +499,7 @@ An unchanged patch preserves its ETag. Lifecycle and metadata changes invalidate
 
 **Expired operation keys.** After the recovery payload expires or is purged, an authorised retry returns `410 operation_result_expired`, even if its input differs. The key remains reserved and never executes again. Live results still reject changed input with `409 idempotency_key_reused`. Operators must retain prior replay keys through live recovery windows; a missing live key returns `503 operation_replay_unavailable`.
 
-**SSO command retries.** Platform staff must send Idempotency-Key for SSO PUT and delete. Redacted result recovery lasts seven days. A retry returns the original response; it does not replace later credentials or delete a newly recreated provider. Omitting clientSecret on a new PUT keeps the current secret. Repeating equivalent configuration under a new key records a noop and preserves timestamps. A different supplied secret under an existing live key conflicts. PUT requires exactly one precondition: If-None-Match: \* for creation, or the current provider ETag in If-Match for replacement. Missing headers return 428; stale state returns 412. Keep the original header with its operation key on retry.
+**SSO command retries.** Platform staff must send Idempotency-Key for SSO PUT and delete. Redacted result recovery lasts seven days. A retry returns the original response; it does not replace later credentials or delete a newly recreated provider. Omitting clientSecret on a new PUT keeps the current secret. Repeating equivalent configuration under a new key records a noop and preserves timestamps. A different supplied secret under an existing live key conflicts. PUT accepts optional If-Match with the current provider ETag. Without a precondition it uses the current row; stale supplied state returns 412. Keep the original header with its operation key on retry.
 
 **Replace SSO configuration.** Read the redacted provider and copy its `ETag`, including quotes, into `SSO_ETAG`. Set `SSO_OPERATION_KEY` once for this intended replacement. Omitting the secret retains the stored value:
 
@@ -519,7 +517,7 @@ curl -X PUT "$ID_URL/api/admin/v1/organizations/$ORG_ID/sso-provider" \
 
 For first creation, use `If-None-Match: *` instead of `If-Match`. Sending both headers is an error. On 412, read and review the current provider before a new command; old tags also fail after deletion and recreation. Secret changes advance the revision even though responses remain redacted.
 
-**Group command retries.** Platform staff must send Idempotency-Key for group create, PATCH, enable, disable and erase, and for group membership PUT/delete. The original result can be recovered for seven days. New-key unchanged configuration, lifecycle state or membership windows records a noop. Omitted window fields retain existing values. A removal retry cannot delete a later re-added assignment. Membership result references identify the group/member pair as `<group UUID>:<member UUID>`; these receipts use the platform operation-status route. Group PATCH requires the strong If-Match ETag from getGroup. Membership PUT requires If-None-Match: \* for creation or the getGroupMember ETag in If-Match for replacement.
+**Group command retries.** Platform staff must send Idempotency-Key for group create, PATCH, enable, disable and erase, and for group membership PUT/delete. The original result can be recovered for seven days. New-key unchanged configuration, lifecycle state or membership windows records a noop. Omitted window fields retain existing values. A removal retry cannot delete a later re-added assignment. Membership result references identify the group/member pair as `<group UUID>:<member UUID>`; these receipts use the platform operation-status route. Group PATCH accepts the optional strong If-Match ETag from getGroup. Membership PUT accepts optional If-Match from getGroupMember; omitted preconditions use the current row.
 
 **Edit a group.** Read the group's ETag and copy it, including quotes, into `GROUP_ETAG`. Set `GROUP_PATCH_KEY` once for this intended edit:
 
@@ -541,7 +539,7 @@ Keep the original key and tag on retry. A new edit using an old tag returns 412;
 
 Group membership write responses include an assignment `id` and `revision`. Updating a validity window keeps its ID; removing and re-adding the same member creates a new assignment ID. An unchanged window preserves its revision. The assignment revision is separate from group configuration.
 
-Read the stored assignment with [getGroupMember](/docs/id/admin-api/groups/getGroupMember). Supply its ETag in `If-Match` when replacing its window, or `If-None-Match: *` when creating an absent assignment. Exactly one precondition is required. Missing headers return 428, malformed or conflicting headers return 400, and stale or recreated assignments return 412. Keep the same `Idempotency-Key`, body and original precondition when retrying; successful recovery returns the original body and ETag, even after later changes.
+Read the stored assignment with [getGroupMember](/docs/id/admin-api/groups/getGroupMember). Supply its ETag in `If-Match` when replacing its window, or `If-None-Match: *` when creating an absent assignment. Preconditions are optional. Malformed or conflicting headers return 400, and stale or recreated assignments return 412. Keep the same `Idempotency-Key`, body and original precondition when retrying; successful recovery returns the original body and ETag, even after later changes.
 
 ```bash
 ASSIGNMENT_ETAG=$(curl -sS -D - -o /dev/null \
@@ -556,13 +554,13 @@ curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$ORG/groups/$G
   -d '{"validUntil":"2026-12-31T00:00:00Z"}'
 ```
 
-Set `ASSIGNMENT_UPDATE_KEY` once for this command. Previously committed membership PUT receipts without a precondition stay reserved but cannot match the new request contract. Inspect operation status before deciding whether a new command is needed.
+Set `ASSIGNMENT_UPDATE_KEY` once for this command. Retain the same supplied precondition, if any, on retry.
 
 ### Entitlement retries
 
 Platform staff must send `Idempotency-Key` when creating, updating, enabling, disabling or removing entitlements. An authorised retry recovers its original response for seven days, including after removal. Reusing a live key with different input returns 409; expired recovery returns 410 without executing again. A new command with unchanged scopes, windows or status records a noop and preserves timestamps. Scopes are treated as a set.
 
-Entitlement PATCH requires the strong ETag from [getEntitlement](/docs/id/admin-api/entitlements/getEntitlement) in `If-Match`. Missing headers return 428; malformed tags return 400; stale or wrong-instance state returns 412. Noops preserve revisions. Lifecycle changes advance them. Keep the original tag, key and body on retry: recovery returns the original result before checking its old revision.
+Entitlement PATCH accepts the optional strong ETag from [getEntitlement](/docs/id/admin-api/entitlements/getEntitlement) in `If-Match`. Malformed tags return 400; stale or wrong-instance state returns 412. Noops preserve revisions. Lifecycle changes advance them. Keep the original tag, key and body on retry: recovery returns the original result before checking its old revision.
 
 ```bash
 ENTITLEMENT_ETAG=$(curl -sS -D - -o /dev/null \
@@ -582,11 +580,11 @@ Set `ENTITLEMENT_UPDATE_KEY` once for this command.
 ### Fleet directory reads
 
 ```bash
-curl "$ID_URL/api/admin/v1/platform/summary" \
+curl "$ID_URL/api/admin/v1/organizations" \
   -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
-**Current platform authority.** Client/resource list and detail, fleet summary, organisation listing and fleet-wide entitlement listing require current `platform:read` inside their read transaction. Tenant permissions cannot authorise these reads. Responses use `Cache-Control: no-store`; existing filters and pagination are unchanged.
+**Current platform authority.** Client/resource list and detail, organisation listing and fleet-wide entitlement listing require current `platform:read` inside their read transaction. Tenant permissions cannot authorise these reads. Responses use `Cache-Control: no-store`; existing filters and pagination are unchanged.
 
 **Global lifecycle authority.** Disabling, enabling or retiring a user email and revoking global sessions require current `platform:users` at the command boundary, including retries. Tenant or read-only permissions cannot authorise these actions. Client, resource, group, group-assignment, entitlement, domain and SSO configuration writes, global user erasure and organisation creation, update, disable, enable and erasure require current `platform:write` at their service boundary. A users-management context cannot authorise these actions.
 
@@ -803,12 +801,11 @@ Set `ADMIN_CAPABILITY_CREATE_KEY` once for this approval and use the installatio
 
 The same GET, PATCH, revision and replay contract applies. Removing a tenant ceiling removes its direct administration authority without deleting assignments or another tenant's ceiling. Existing tenants require explicit review and approval before this enforcement is deployed.
 
-The platform ceiling is seeded under the immutable system binding. Restart preserves restrictions. Its deletion is prohibited, and a capability update cannot remove the currently effective last platform writer. See the last-writer protections below.
+The platform ceiling is seeded under the immutable system binding. Restart preserves restrictions on existing capability rows; an absent live ceiling is seeded again. Its capability can be changed or removed. Recover lost platform authority with the root secret and `ROOT_ADMIN_BREAK_GLASS=true`.
 
-| Code                          | Meaning                                                                        | What to do                                                                             |
-| ----------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| `last_platform_administrator` | This authority change would remove the current last effective platform writer. | Preserve effective platform-write authority; see the safeguards below before retrying. |
-| `protected_capability`        | The reserved platform administrator ceiling cannot be deleted.                 | Use a permitted conditional PATCH to change its configuration.                         |
+| Code                          | Meaning                                                                         | What to do                                                                             |
+| ----------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `last_platform_administrator` | Global user disable or erasure would remove the last effective platform writer. | Preserve effective platform-write authority; see the safeguards below before retrying. |
 
 **Unavailable authentication or database capacity.** Administrative requests return `503 database_busy` when database checkout times out, including before a command transaction starts. If the session service cannot complete its lookup, they return `503 authentication_unavailable`; that response does not establish the underlying cause. Both include `retryable: true` and `Retry-After: 1`. Wait, then retry a mutation with the same key and input. Reads can be retried normally. Authentication failure never admits the request. A response recovered after an unknown outcome remains subject to current authority.
 
@@ -820,15 +817,9 @@ The platform ceiling is seeded under the immutable system binding. Restart prese
 
 **Root and first-writer activation.** Normal root command admission is ordered with activation of an effective platform writer. If activation commits first, the command returns `root_locked` before mutation. If the root command was admitted first, it completes before activation commits. `ROOT_ADMIN_BREAK_GLASS=true` retains its explicit override. Contention still follows the existing `database_busy` retry guidance.
 
-**Instance overload.** Before authentication, a full service instance returns plain-text `503 Service Busy` with `Retry-After: 1` and a request ID. This is a transport refusal, not a problem-details body; it can precede CORS headers. No command starts and no new operation receipt is created. Wait and retry with bounded backoff using the same operation key and input. The default bound is 64 active handlers per instance (`MAX_CONCURRENT_REQUESTS`), including body acquisition and authentication. This is not a tenant or cluster quota. Bodyless GET/HEAD liveness checks remain available; readiness can return this overload response.
+**Protecting the last writer during global offboarding.** User disable and erasure also reject removal of the last effective platform writer with `409 last_platform_administrator`. Establish a replacement, then retry the same key/input. Refusal leaves the user, successful audit events and operation receipt unchanged. Concurrent platform changes can return retryable `503 database_busy`; respect `Retry-After` and keep the same key/input. Root break-glass obeys this safeguard. Membership, group and capability changes may remove the last writer; recover with the root secret and `ROOT_ADMIN_BREAK_GLASS=true`.
 
-**Protecting platform membership.** Removing or changing the validity window of the last effective platform writer fails with `409 last_platform_administrator`. The membership change, its successful audit effects and operation receipt roll back. After establishing another effective writer, retry the original key/input and, for a window change, its unchanged ETag. Concurrent removals cannot each rely on the other member remaining. Other tenants retain their existing offboarding semantics. This safeguard does not prevent future expiry or guarantee that an upstream IdP is available.
-
-**Protecting the last writer during global offboarding.** User disable and erasure also reject removal of the last effective platform writer with `409 last_platform_administrator`. Establish a replacement, then retry the same key/input. Refusal leaves the user, successful audit events and operation receipt unchanged. Concurrent platform changes can return retryable `503 database_busy`; respect `Retry-After` and keep the same key/input. Root break-glass obeys this safeguard. Other authority-changing commands still need complete last-writer coverage.
-
-**Group and entitlement writer protection.** Group disable/erasure, assignment removal/window changes and entitlement disable/removal/scope/window changes now preserve an existing effective platform writer. The shared before/after check runs under the existing organisation lock; a refusal rolls back rows, revisions, successful audit effects and the operation receipt. Establish a replacement and retry the same key/input and original precondition. Mixed concurrent restrictions retain one writer; unrelated tenants skip the platform evaluation, and an initially writerless platform can be repaired. Organisation disable and bound-resource scope/lifecycle protection are described below; future expiry and authentication availability remain separate concerns.
-
-**Platform organisation and resource safeguards.** Organisation disable and bound admin-resource scope changes preserve existing effective platform-write authority, returning `409 last_platform_administrator` with transaction rollback when they would remove it. Adding another writer in that same organisation cannot make disabling the whole organisation safe; removing `platform:write` from the shared admin resource vocabulary also affects every writer. Safe scope restrictions retain authority and support ordinary replay. Scope writes acquire the platform lock before the resource lock; unrelated targets avoid it. Resource disable/erasure protection uses the persisted resource UUID, independently of configured names. Recovery can re-enable an already disabled platform organisation. These checks concern current effective permission, not future expiry or upstream availability.
+**Platform objects.** The bound organisation, group and resource retain deletion protection; the bound admin resource also retains disable protection.
 
 **Current deletion history.** User, organisation, group and client commands write version-three soft-deletion facts. Smaller product deletions and assignment/member removals use the versions listed in [deletion and retained data](#deletion-and-retained-data). Read action and schema version together; older physical-erasure payloads are historical contracts.
 

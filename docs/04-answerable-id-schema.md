@@ -45,7 +45,7 @@ Live uniqueness permits replacements only where explicitly defined. Group assign
 ## Invariants
 
 - Composite foreign keys reject cross-tenant member/group references.
-- Identifier reservations survive product deletion. Platform identity comes from immutable `system_bindings`; matching slugs cannot adopt it.
+- Tombstone rows keep unique public identifiers reserved after product deletion. Platform identity comes from immutable `system_bindings`; matching slugs cannot adopt it.
 - Parent guards reject active children of deleted parents under locks.
 - Session authentication and grant provenance cannot be rewritten by tenant selection.
 - Native transaction/savepoint scope restores on success/failure; pooled connections retain no tenant authority.
@@ -79,7 +79,7 @@ Reservations are permanent. Secret-bearing response ciphertext has a separate ex
 
 ## Contract test
 
-[Migration proof](../reports/id-initial-migration.md) covers empty installation, final-statement failure, SIGKILL before/after commit, retry, concurrent bootstrap and repeated startup preserving real writes. Catalogue checks cover functions, triggers, policies, constraints and permissions. Recovery separately checks retained keys, receipts, reservations and revocation facts.
+[Migration proof](../reports/id-initial-migration.md) covers empty installation, final-statement failure, SIGKILL before/after commit, retry, concurrent bootstrap and repeated startup preserving real writes. Catalogue checks cover functions, triggers, policies, constraints and permissions. A restore drill against production-shaped data remains a release input.
 
 ## Deferred
 
@@ -135,15 +135,15 @@ Secret-bearing commands use keyed fingerprints with retained replay keys. Refere
 
 ## SSO command receipts
 
-PUT requires expected absence or current revision. Old provider revisions cannot confer current authority. Audit redacts provider secrets.
+PUT accepts optional expected absence or current revision; without a precondition it uses the current row. Old provider revisions cannot confer current authority. Audit redacts provider secrets.
 
 ## Group command receipts
 
-Lifecycle shares journal, revision and last-platform-writer guards. Deletion captures actual assignment/entitlement UUIDs.
+Lifecycle shares the journal and revision checks. Deletion captures actual assignment/entitlement UUIDs.
 
 ### Group assignment identities
 
-Every assignment has its own UUID/revision. Window PUT requires an absence/revision precondition. Removal and re-creation are distinct identities.
+Every assignment has its own UUID/revision. Window PUT accepts an optional absence/revision precondition. Removal and re-creation are distinct identities.
 
 ### Entitlement command recovery
 

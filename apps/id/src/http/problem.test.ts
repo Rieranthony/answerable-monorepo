@@ -113,13 +113,6 @@ describe("unit: HTTP problems", () => {
   });
 
   test("names unique constraints and handles missing constraints", () => {
-    for (const constraint of [
-      "security_identifiers_kind_identifier_pk",
-      "security_identifiers_kind_instance_unique",
-    ])
-      expect(
-        mapDatabaseError(databaseError("23505", constraint)),
-      ).toMatchObject({ status: 409, code: "identifier_reserved" });
     expect(
       mapDatabaseError(databaseError("23505", "slug_unique"))?.detail,
     ).toContain("slug_unique");

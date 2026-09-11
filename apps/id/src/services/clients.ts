@@ -342,7 +342,7 @@ export async function updateClient(
     },
     row!.organizationId,
   );
-  return publicClient(row!);
+  return { body: publicClient(row!), changed };
 }
 async function setDisabled(
   context: PlatformWriteContext,

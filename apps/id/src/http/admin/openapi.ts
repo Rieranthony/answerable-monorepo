@@ -1,4 +1,3 @@
-import { withAdmissionResponse } from "../admission.ts";
 import { describeRoute, type DescribeRouteOptions } from "hono-openapi";
 import { problemResponses } from "../problem.ts";
 import { requestBoundaryResponses } from "../request-limits.ts";
@@ -50,7 +49,7 @@ export function standardResponses(
     ...success,
     ...requestBoundaryResponses,
     ...problemResponses(401, 403, 503),
-    503: withAdmissionResponse(problemResponses(503)[503]),
+    503: problemResponses(503)[503],
     ...(route.orgScope ? problemResponses(404) : {}),
   };
 }

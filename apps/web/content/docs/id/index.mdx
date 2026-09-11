@@ -38,13 +38,12 @@ description: "Organisation SSO, application login and resource access through An
 
 Examples use `https://id.answerable.org`; replace it with your installation's issuer. Answerable ID has not yet been deployed to production.
 
-| Endpoint                         | Purpose                                                                               |
-| -------------------------------- | ------------------------------------------------------------------------------------- |
-| `/auth`                          | Better Auth sign-in and session routes                                                |
-| `/auth/oauth2/token`             | Code exchange, refresh and client credentials                                         |
-| `/api/admin/v1`                  | [Admin API](/docs/id/admin-api)                                                       |
-| `/api/admin/v1/platform/summary` | [Platform counts and recent sign-ins](/docs/id/admin-api/platform/getPlatformSummary) |
-| `/healthz`                       | Liveness                                                                              |
-| `/readyz`                        | Readiness                                                                             |
+| Endpoint             | Purpose                                       |
+| -------------------- | --------------------------------------------- |
+| `/auth`              | Better Auth sign-in and session routes        |
+| `/auth/oauth2/token` | Code exchange, refresh and client credentials |
+| `/api/admin/v1`      | [Admin API](/docs/id/admin-api)               |
+| `/healthz`           | Liveness                                      |
+| `/readyz`            | Readiness                                     |
 
 Start an organisation sign-in from the [sign-in page](https://answerable.org/login), or read [how sign-in works](/docs/id/sign-in).

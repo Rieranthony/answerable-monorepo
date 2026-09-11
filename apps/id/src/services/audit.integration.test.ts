@@ -112,9 +112,7 @@ test("audit queries bind authority and reject caller-supplied tenant substitutio
 });
 test("audit reads filter, paginate, force the organisation and reject missing organisations", async () => {
   const db = connection.db;
-  await db.execute(
-    sql`truncate table security_identifiers, audit_events, organizations cascade`,
-  );
+  await db.execute(sql`truncate table audit_events, organizations cascade`);
   const org = await createOrganization(db, { slug: "audit", name: "Audit" });
   const other = await createOrganization(db, { slug: "other", name: "Other" });
   const rows = [];

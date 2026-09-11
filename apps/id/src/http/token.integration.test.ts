@@ -41,7 +41,7 @@ beforeAll(async () => {
   issuer = await startOidcIssuer();
   connection = createDatabase(environment);
   await connection.db.execute(
-    sql`truncate table security_identifiers, users, organizations, oauth_clients, oauth_resources, audit_events cascade`,
+    sql`truncate table users, organizations, oauth_clients, oauth_resources, audit_events cascade`,
   );
   app = createApp({
     auth: createAuth(connection.db, environment),

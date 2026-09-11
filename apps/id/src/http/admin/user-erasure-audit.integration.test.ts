@@ -27,7 +27,6 @@ import {
   auditEvents,
   auditEventSubjects,
   adminOperations,
-  securityIdentifiers,
   organizationCapabilities,
 } from "../../db/schema/index.ts";
 import { recordAuditEvent } from "../../db/queries/audit.ts";
@@ -266,7 +265,7 @@ function erase(id: string, key: string) {
   });
 }
 test("global user erasure records actual cross-tenant and owned-client effects without credentials", async () => {
-  const { person, other, owned } = await seed();
+  const { person, other } = await seed();
   const before = await state();
   const key = createId();
   const response = await erase(person.userId, key);
@@ -449,12 +448,6 @@ test("global user erasure records actual cross-tenant and owned-client effects w
   expect(
     (await history.json()).items.map((row: { id: string }) => row.id),
   ).toEqual([event!.id]);
-  expect(
-    await fixture.db
-      .select()
-      .from(securityIdentifiers)
-      .where(eq(securityIdentifiers.instanceId, owned.id)),
-  ).toHaveLength(1);
 
   // Isolate each real producer array: another effect must not mask a missing subject contract.
   for (const name of [

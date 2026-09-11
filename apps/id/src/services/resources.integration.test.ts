@@ -19,7 +19,10 @@ import type { Database } from "../db/client.ts";
 const service = {
   ...implementation,
   createResource: platformWriteService(implementation.createResource),
-  updateResource: platformWriteService(implementation.updateResource),
+  updateResource: platformWriteService(
+    async (...args: Parameters<typeof implementation.updateResource>) =>
+      (await implementation.updateResource(...args)).body,
+  ),
   disableResource: platformWriteService(implementation.disableResource),
   enableResource: platformWriteService(implementation.enableResource),
   eraseResource: platformWriteService(implementation.eraseResource),
@@ -51,7 +54,7 @@ beforeAll(() => {
 });
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table security_identifiers, audit_events, organizations, oauth_resources cascade`,
+    sql`truncate table audit_events, organizations, oauth_resources cascade`,
   );
 });
 afterAll(async () => {

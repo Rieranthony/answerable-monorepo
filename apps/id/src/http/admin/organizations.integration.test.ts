@@ -15,16 +15,11 @@ import {
   entitlements,
   members,
   oauthClients,
-  oauthResources,
   organizations,
   users,
 } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
-import {
-  organizationSchema,
-  organizationSummarySchema,
-  routes,
-} from "./organizations.ts";
+import { organizationSchema, routes } from "./organizations.ts";
 
 let fixture: AdminFixture;
 beforeAll(async () => {
@@ -78,59 +73,6 @@ async function create(slug: string) {
   expect(response.status).toBe(201);
   return organizationSchema.parse(await response.json());
 }
-
-test("getOrganizationSummary: tenant reader, platform reader and machine see counts; outsider is hidden", async () => {
-  const token = await fixture.mintMachineToken(["platform:read"]);
-  for (const kind of [
-    "tenantReader",
-    "platformReader",
-    { bearer: token },
-  ] as const) {
-    const response = await request(
-      "/" + fixture.tenant.organizationId + "/summary",
-      "GET",
-      undefined,
-      kind,
-    );
-    expect(response.status).toBe(200);
-    const summary = organizationSummarySchema.parse(await response.json());
-    expect(summary).toMatchObject({
-      organization: { id: fixture.tenant.organizationId },
-      domains: { active: 1, disabled: 0 },
-      ssoProvider: {
-        configured: true,
-        kind: "oidc",
-        issuer: fixture.issuer.origin,
-      },
-      members: {
-        total: 6,
-        effective: 5,
-        byStatus: { inert: 0, active: 5, disabled: 1 },
-      },
-      groups: { active: 0, disabled: 0 },
-      entitlements: {
-        active: 5,
-        disabled: 0,
-        targets: [
-          { kind: "resource", id: fixture.platform.adminResource, rows: 5 },
-        ],
-      },
-      clients: { owned: 0 },
-      signIns7d: { succeeded: 6, lastSucceededAt: expect.any(String) },
-    });
-  }
-  expect(
-    (
-      await request(
-        "/" + fixture.outsider.organizationId + "/summary",
-        "GET",
-        undefined,
-        "tenantReader",
-      )
-    ).status,
-  ).toBe(404);
-  expect((await request("/invalid/summary")).status).toBe(400);
-});
 
 test("listOrganizations: platform admin pagination has no gaps and filters name, slug and status", async () => {
   const a = await create("pagination-a");
@@ -640,29 +582,4 @@ test("organisation replay rechecks platform authority after middleware admission
       .set({ status: "active", revokedAt: null })
       .where(eq(members.id, actor.memberId));
   }
-});
-
-test("getOrganizationSummary: exact pairs retain both identifiers in the HTTP contract", async () => {
-  const organization = await create("summary-pairs");
-  const clientId = createId();
-  const resource = `https://${createId()}.example`;
-  await fixture.db
-    .insert(oauthClients)
-    .values({ id: createId(), clientId, redirectUris: [] });
-  await fixture.db
-    .insert(oauthResources)
-    .values({ id: createId(), identifier: resource, name: "Summary" });
-  await fixture.db.insert(entitlements).values({
-    id: createId(),
-    organizationId: organization.id,
-    clientId,
-    resource,
-    scopes: ["read"],
-  });
-  const response = await request(`/${organization.id}/summary`);
-  expect(response.status).toBe(200);
-  const summary = organizationSummarySchema.parse(await response.json());
-  expect(summary.entitlements.targets).toEqual([
-    { kind: "client_resource", id: clientId, resource, rows: 1 },
-  ]);
 });

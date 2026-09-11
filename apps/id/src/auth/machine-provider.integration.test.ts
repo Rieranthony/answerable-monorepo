@@ -26,7 +26,7 @@ const resource = "https://resource.example/proof";
 beforeAll(async () => {
   connection = createDatabase(environment);
   await connection.db.execute(
-    sql`truncate security_identifiers, organizations, oauth_clients, oauth_resources, verifications cascade`,
+    sql`truncate organizations, oauth_clients, oauth_resources, verifications cascade`,
   );
   await connection.db
     .insert(schema.organizations)

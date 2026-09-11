@@ -111,7 +111,7 @@ export const publicAuthRoutes: ReadonlyArray<PublicAuthRoute> = [
       "Exchange an authorisation code, refresh token or client credentials",
     tag: "Token",
     description:
-      "Supports authorization_code with S256 PKCE, refresh_token and client_credentials. User flows bind a single independently authenticated membership, registered client and optional exact resource. Login requires a client-only authorization_code capability and assignment; resource access additionally requires an exact-pair capability and assignment. Renewal requires a separate matching refresh_token capability. Consent applies to each new flow except explicit first-party bypass. Codes and refresh tokens retain native expiry, single-use and rotation checks. Current authentication provenance, deletion state, grant revocation and permissions are rechecked before every exchange, including cached native refresh responses. Login-only access tokens are opaque; resource access tokens are JWTs. Client credentials require exactly one resource and an effective owner/client/resource capability. Scope widening is refused. Required issuance audit and native effects commit together. Lock contention, statement cancellation or unavailable audit storage returns 503 temporarily_unavailable with Retry-After: 1. Retry with fresh client authentication; a new assertion is required for private_key_jwt. Machine issuance retains its existing per-organisation concurrency limit of two.",
+      "Supports authorization_code with S256 PKCE, refresh_token and client_credentials. User flows bind a single independently authenticated membership, registered client and optional exact resource. Login requires a client-only authorization_code capability and assignment; resource access additionally requires an exact-pair capability and assignment. Renewal requires a separate matching refresh_token capability. Consent applies to each new flow except explicit first-party bypass. Codes and refresh tokens retain native expiry, single-use and rotation checks. Current authentication provenance, deletion state, grant revocation and permissions are rechecked before every exchange, including cached native refresh responses. Login-only access tokens are opaque; resource access tokens are JWTs. Client credentials require exactly one resource and an effective owner/client/resource capability. Scope widening is refused. Required issuance audit and native effects commit together. Lock contention, statement cancellation or unavailable audit storage returns 503 temporarily_unavailable with Retry-After: 1. Retry with fresh client authentication; a new assertion is required for private_key_jwt.",
     requestBody: {
       required: true,
       content: {
@@ -187,37 +187,4 @@ const allowedAuthRoutes = new Set(
 
 export function isAllowedAuthRoute(method: string, path: string): boolean {
   return allowedAuthRoutes.has(`${method.toUpperCase()} ${path}`);
-}
-
-export const allowedTokenGrantTypes = new Set([
-  "client_credentials",
-  "authorization_code",
-  "refresh_token",
-]);
-
-export async function inspectTokenRequest(
-  request: Request,
-): Promise<Response | null> {
-  const contentType = request.headers
-    .get("content-type")
-    ?.split(";", 1)[0]
-    ?.trim()
-    .toLowerCase();
-  if (contentType !== "application/x-www-form-urlencoded") return null;
-  try {
-    const form = await request.clone().formData();
-    const grantType = form.get("grant_type");
-    if (grantType !== null && !allowedTokenGrantTypes.has(String(grantType))) {
-      return Response.json(
-        {
-          error: "unsupported_grant_type",
-          error_description: "This grant type is not supported.",
-        },
-        { status: 400, headers: { "Cache-Control": "no-store" } },
-      );
-    }
-  } catch {
-    return null;
-  }
-  return null;
 }

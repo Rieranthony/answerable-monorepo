@@ -1,9 +1,4 @@
 import { getIP } from "@better-auth/core/utils/ip";
-import {
-  limitConcurrentRequests,
-  limitAuthenticationRequests,
-  withAdmissionResponse,
-} from "./http/admission.ts";
 import { Scalar } from "@scalar/hono-api-reference";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -15,10 +10,7 @@ import type { Database } from "./db/client.ts";
 import type { Environment } from "./env.ts";
 import { createAdminApp } from "./http/admin/index.ts";
 import { adminSecuritySchemes, adminTags } from "./http/admin/openapi.ts";
-import {
-  inspectTokenRequest,
-  isAllowedAuthRoute,
-} from "./http/auth-allowlist.ts";
+import { isAllowedAuthRoute } from "./http/auth-allowlist.ts";
 import type { AppEnvironment } from "./http/context.ts";
 import { buildPublicOpenApiDocument } from "./http/openapi.ts";
 import { problemHandler } from "./http/problem.ts";
@@ -80,11 +72,6 @@ export function createApp(services: AppServices) {
     }
   });
 
-  app.use(
-    "*",
-    limitConcurrentRequests(services.environment.maxConcurrentRequests),
-  );
-  app.use("/auth/*", limitAuthenticationRequests(services.db));
   app.use("*", limitRequestBody);
 
   app.use(
@@ -162,12 +149,12 @@ export function createApp(services: AppServices) {
           description: "The service is ready",
           content: { "application/json": { schema: resolver(statusSchema) } },
         },
-        503: withAdmissionResponse({
+        503: {
           description: "PostgreSQL is unavailable",
           content: {
             "application/json": { schema: resolver(unavailableSchema) },
           },
-        }),
+        },
       },
     }),
     async (context) => {
@@ -223,10 +210,6 @@ export function createApp(services: AppServices) {
       return context.notFound();
     }
 
-    if (context.req.path === "/auth/oauth2/token") {
-      const rejection = await inspectTokenRequest(context.req.raw);
-      if (rejection) return rejection;
-    }
     const headers = new Headers(context.req.raw.headers);
     headers.set("x-request-id", context.get("requestId"));
     const response = await context

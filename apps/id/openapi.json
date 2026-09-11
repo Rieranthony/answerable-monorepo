@@ -1224,26 +1224,6 @@
               }
             },
             "description": "Internal Server Error. This is a problem with the server that you cannot fix."
-          },
-          "503": {
-            "description": "Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
-            "headers": {
-              "Retry-After": {
-                "description": "Minimum delay in seconds before retrying.",
-                "schema": {
-                  "type": "string",
-                  "example": "1"
-                }
-              }
-            },
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string",
-                  "example": "Service Busy"
-                }
-              }
-            }
           }
         },
         "summary": "Read the current session"
@@ -1438,26 +1418,6 @@
               }
             },
             "description": "Internal Server Error. This is a problem with the server that you cannot fix."
-          },
-          "503": {
-            "description": "Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
-            "headers": {
-              "Retry-After": {
-                "description": "Minimum delay in seconds before retrying.",
-                "schema": {
-                  "type": "string",
-                  "example": "1"
-                }
-              }
-            },
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string",
-                  "example": "Service Busy"
-                }
-              }
-            }
           }
         },
         "summary": "Read public token signing keys"
@@ -1710,26 +1670,6 @@
               }
             },
             "description": "Internal Server Error. This is a problem with the server that you cannot fix."
-          },
-          "503": {
-            "description": "Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
-            "headers": {
-              "Retry-After": {
-                "description": "Minimum delay in seconds before retrying.",
-                "schema": {
-                  "type": "string",
-                  "example": "1"
-                }
-              }
-            },
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string",
-                  "example": "Service Busy"
-                }
-              }
-            }
           }
         },
         "summary": "Start a user authorisation with PKCE"
@@ -1911,26 +1851,6 @@
               }
             },
             "description": "Internal Server Error. This is a problem with the server that you cannot fix."
-          },
-          "503": {
-            "description": "Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
-            "headers": {
-              "Retry-After": {
-                "description": "Minimum delay in seconds before retrying.",
-                "schema": {
-                  "type": "string",
-                  "example": "1"
-                }
-              }
-            },
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string",
-                  "example": "Service Busy"
-                }
-              }
-            }
           }
         },
         "summary": "Accept or deny access for this authorisation"
@@ -2103,26 +2023,6 @@
               }
             },
             "description": "Internal Server Error. This is a problem with the server that you cannot fix."
-          },
-          "503": {
-            "description": "Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
-            "headers": {
-              "Retry-After": {
-                "description": "Minimum delay in seconds before retrying.",
-                "schema": {
-                  "type": "string",
-                  "example": "1"
-                }
-              }
-            },
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string",
-                  "example": "Service Busy"
-                }
-              }
-            }
           }
         },
         "summary": "Select an independently authenticated organisation"
@@ -2391,26 +2291,6 @@
               }
             },
             "description": "Internal Server Error. This is a problem with the server that you cannot fix."
-          },
-          "503": {
-            "description": "Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
-            "headers": {
-              "Retry-After": {
-                "description": "Minimum delay in seconds before retrying.",
-                "schema": {
-                  "type": "string",
-                  "example": "1"
-                }
-              }
-            },
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string",
-                  "example": "Service Busy"
-                }
-              }
-            }
           }
         },
         "summary": "Read the validated application request and available organisations"
@@ -2579,26 +2459,6 @@
               }
             },
             "description": "Internal Server Error. This is a problem with the server that you cannot fix."
-          },
-          "503": {
-            "description": "Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
-            "headers": {
-              "Retry-After": {
-                "description": "Minimum delay in seconds before retrying.",
-                "schema": {
-                  "type": "string",
-                  "example": "1"
-                }
-              }
-            },
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string",
-                  "example": "Service Busy"
-                }
-              }
-            }
           }
         },
         "summary": "Revoke an opaque access token or refresh family"
@@ -2609,7 +2469,7 @@
         "tags": [
           "Token"
         ],
-        "description": "Supports authorization_code with S256 PKCE, refresh_token and client_credentials. User flows bind a single independently authenticated membership, registered client and optional exact resource. Login requires a client-only authorization_code capability and assignment; resource access additionally requires an exact-pair capability and assignment. Renewal requires a separate matching refresh_token capability. Consent applies to each new flow except explicit first-party bypass. Codes and refresh tokens retain native expiry, single-use and rotation checks. Current authentication provenance, deletion state, grant revocation and permissions are rechecked before every exchange, including cached native refresh responses. Login-only access tokens are opaque; resource access tokens are JWTs. Client credentials require exactly one resource and an effective owner/client/resource capability. Scope widening is refused. Required issuance audit and native effects commit together. Lock contention, statement cancellation or unavailable audit storage returns 503 temporarily_unavailable with Retry-After: 1. Retry with fresh client authentication; a new assertion is required for private_key_jwt. Machine issuance retains its existing per-organisation concurrency limit of two.",
+        "description": "Supports authorization_code with S256 PKCE, refresh_token and client_credentials. User flows bind a single independently authenticated membership, registered client and optional exact resource. Login requires a client-only authorization_code capability and assignment; resource access additionally requires an exact-pair capability and assignment. Renewal requires a separate matching refresh_token capability. Consent applies to each new flow except explicit first-party bypass. Codes and refresh tokens retain native expiry, single-use and rotation checks. Current authentication provenance, deletion state, grant revocation and permissions are rechecked before every exchange, including cached native refresh responses. Login-only access tokens are opaque; resource access tokens are JWTs. Client credentials require exactly one resource and an effective owner/client/resource capability. Scope widening is refused. Required issuance audit and native effects commit together. Lock contention, statement cancellation or unavailable audit storage returns 503 temporarily_unavailable with Retry-After: 1. Retry with fresh client authentication; a new assertion is required for private_key_jwt.",
         "operationId": "issueToken",
         "security": [
           {
@@ -2837,7 +2697,7 @@
             "description": "Internal Server Error. This is a problem with the server that you cannot fix."
           },
           "503": {
-            "description": "Tenant issuance capacity or authorization state is busy, a database statement was cancelled, or issuance audit storage is unavailable. Retry after the indicated delay with fresh client authentication. Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
+            "description": "Tenant issuance capacity or authorization state is busy, a database statement was cancelled, or issuance audit storage is unavailable. Retry after the indicated delay with fresh client authentication.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2856,12 +2716,6 @@
                   "required": [
                     "error"
                   ]
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string",
-                  "example": "Service Busy"
                 }
               }
             },
@@ -3073,26 +2927,6 @@
               }
             },
             "description": "Internal Server Error. This is a problem with the server that you cannot fix."
-          },
-          "503": {
-            "description": "Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
-            "headers": {
-              "Retry-After": {
-                "description": "Minimum delay in seconds before retrying.",
-                "schema": {
-                  "type": "string",
-                  "example": "1"
-                }
-              }
-            },
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string",
-                  "example": "Service Busy"
-                }
-              }
-            }
           }
         },
         "summary": "Read identity claims using an active access token"
@@ -3305,26 +3139,6 @@
               }
             },
             "description": "Internal Server Error. This is a problem with the server that you cannot fix."
-          },
-          "503": {
-            "description": "Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
-            "headers": {
-              "Retry-After": {
-                "description": "Minimum delay in seconds before retrying.",
-                "schema": {
-                  "type": "string",
-                  "example": "1"
-                }
-              }
-            },
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string",
-                  "example": "Service Busy"
-                }
-              }
-            }
           }
         },
         "summary": "Read identity claims using an active access token"
@@ -3464,26 +3278,6 @@
               }
             },
             "description": "Internal Server Error. This is a problem with the server that you cannot fix."
-          },
-          "503": {
-            "description": "Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
-            "headers": {
-              "Retry-After": {
-                "description": "Minimum delay in seconds before retrying.",
-                "schema": {
-                  "type": "string",
-                  "example": "1"
-                }
-              }
-            },
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string",
-                  "example": "Service Busy"
-                }
-              }
-            }
           }
         },
         "summary": "Check that Answerable ID is reachable"
@@ -3704,26 +3498,6 @@
               }
             },
             "description": "Internal Server Error. This is a problem with the server that you cannot fix."
-          },
-          "503": {
-            "description": "Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
-            "headers": {
-              "Retry-After": {
-                "description": "Minimum delay in seconds before retrying.",
-                "schema": {
-                  "type": "string",
-                  "example": "1"
-                }
-              }
-            },
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string",
-                  "example": "Service Busy"
-                }
-              }
-            }
           }
         },
         "summary": "Start sign-in through the organisation's identity provider"
@@ -3891,26 +3665,6 @@
               }
             },
             "description": "Internal Server Error. This is a problem with the server that you cannot fix."
-          },
-          "503": {
-            "description": "Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
-            "headers": {
-              "Retry-After": {
-                "description": "Minimum delay in seconds before retrying.",
-                "schema": {
-                  "type": "string",
-                  "example": "1"
-                }
-              }
-            },
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string",
-                  "example": "Service Busy"
-                }
-              }
-            }
           }
         },
         "summary": "End the current session"
@@ -4063,26 +3817,6 @@
               }
             },
             "description": "Internal Server Error. This is a problem with the server that you cannot fix."
-          },
-          "503": {
-            "description": "Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
-            "headers": {
-              "Retry-After": {
-                "description": "Minimum delay in seconds before retrying.",
-                "schema": {
-                  "type": "string",
-                  "example": "1"
-                }
-              }
-            },
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string",
-                  "example": "Service Busy"
-                }
-              }
-            }
           }
         },
         "summary": "Complete sign-in after the identity provider redirects back"
@@ -4231,26 +3965,6 @@
               }
             },
             "description": "Internal Server Error. This is a problem with the server that you cannot fix."
-          },
-          "503": {
-            "description": "Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
-            "headers": {
-              "Retry-After": {
-                "description": "Minimum delay in seconds before retrying.",
-                "schema": {
-                  "type": "string",
-                  "example": "1"
-                }
-              }
-            },
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string",
-                  "example": "Service Busy"
-                }
-              }
-            }
           }
         },
         "summary": "Bind another independently verified work identity"
@@ -4393,26 +4107,6 @@
               }
             },
             "description": "Internal Server Error. This is a problem with the server that you cannot fix."
-          },
-          "503": {
-            "description": "Request admission may also return plain text Service Busy before authentication or body acquisition when this instance or its pool’s authentication capacity is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
-            "headers": {
-              "Retry-After": {
-                "description": "Minimum delay in seconds before retrying.",
-                "schema": {
-                  "type": "string",
-                  "example": "1"
-                }
-              }
-            },
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string",
-                  "example": "Service Busy"
-                }
-              }
-            }
           }
         },
         "summary": "Reauthenticate the current work identity"
@@ -4478,7 +4172,7 @@
             }
           },
           "503": {
-            "description": "PostgreSQL is unavailable Request admission may also return plain text Service Busy before authentication or body acquisition when this instance is full. Retry after the indicated delay; retain the same key and input for an administrative command.",
+            "description": "PostgreSQL is unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -4492,21 +4186,6 @@
                   "required": [
                     "status"
                   ]
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "string",
-                  "example": "Service Busy"
-                }
-              }
-            },
-            "headers": {
-              "Retry-After": {
-                "description": "Minimum delay in seconds before retrying.",
-                "schema": {
-                  "type": "string",
-                  "example": "1"
                 }
               }
             }

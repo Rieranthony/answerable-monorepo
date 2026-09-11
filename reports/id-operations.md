@@ -1,3 +1,5 @@
+The workload generator was removed; the numbers in this report are historical.
+
 # ID operations evidence
 
 T4 repository-owned implementation on `codex/id-operations-foundation`, based on
@@ -15,14 +17,14 @@ used exclusive serial ownership of the guarded `answerable_id_test` database.
   provider secret configuration, upstream transform and operation cipher. Read-only
   scans verify retained signing pairs, upstream fields and live replay ciphertext.
   Incorrect/missing material refuses without replacement keys or secret-bearing errors.
-- [Recovery evidence](../apps/id/src/operations/recovery.ts) captures explicitly
+- Recovery evidence (historical; artefact removed) captures explicitly
   listed immutable receipts and audit/subject digests, membership revocations and
   client tombstones/reservations. Verification refuses absent or changed listed
   facts. Three operator CLIs support custody checking and evidence capture/verification.
-- [Mixed workload](../apps/id/src/__tests__/capacity-workload.ts) runs separate
+- Mixed workload (historical; artefact removed) runs separate
   production-mode processes and actual HTTP/native OAuth. Existing limits are measured,
   with no new admission quotas, forwarding trust, policy or token changes.
-- [Restore rehearsal](../apps/id/scripts/test-upstream-restore.ts) now starts from a
+- Restore rehearsal (historical; script removed) now starts from a
   complete synthetic key inventory and tests acknowledged post-snapshot changes,
   traffic closure on a known gap, and reconciliation from a later complete dump.
 - [Operator runbook](../apps/id/OPERATIONS.md) documents delivery, rotation boundaries,
@@ -57,7 +59,7 @@ received 503, then 200 with the same unused code after release. Cached refresh r
 across processes preserved credentials and absolute expiry; native `expires_in`
 decreased with elapsed time. All early refusals carried `Retry-After: 1`.
 
-Raw evidence: [first mixed run](id-operations-capacity.json),
+Raw evidence: first mixed run (historical; artefact removed),
 [repeat](id-operations-capacity-repeat.json).
 
 **Global lifecycle limit remains observable.** The updated
@@ -76,7 +78,7 @@ not overwritten or relabelled as current evidence.
 
 ## Recovery and custody evidence
 
-[Recovery timings](id-operations-recovery.json) record a local two-snapshot exercise:
+Recovery timings (historical; artefact removed) record a local two-snapshot exercise:
 
 1. Seed complete synthetic state, retained keys and native sessions; take the first dump.
 2. Acknowledge four real commands: revoke A membership, create a client, rotate its
@@ -128,15 +130,15 @@ Initial rehearsal failures were corrected rather than counted as successful evid
 
 Final gates passed:
 
-| Gate | Result | Local log |
-| --- | --- | --- |
-| Root build | Both apps built | `/private/tmp/id-ops-build-permitted.log` |
-| Root typecheck | Four packages passed | `/private/tmp/id-ops-typecheck-final.log` |
-| Root lint | Four packages passed | `/private/tmp/id-ops-lint-final-2.log` |
-| Web tests | 71 passed, zero failed | `/private/tmp/id-ops-web-tests.log` |
-| Country-data tests | Five passed, zero failed | `/private/tmp/id-ops-countries-tests.log` |
-| Full ID coverage | 2037 passed, zero failed; 100% lines/functions; 561.07 seconds | `/private/tmp/id-ops-coverage.log` |
-| Restore and operator CLIs | Passed after full coverage | `/private/tmp/id-ops-restore-final.log` |
+| Gate                      | Result                                                         | Local log                                 |
+| ------------------------- | -------------------------------------------------------------- | ----------------------------------------- |
+| Root build                | Both apps built                                                | `/private/tmp/id-ops-build-permitted.log` |
+| Root typecheck            | Four packages passed                                           | `/private/tmp/id-ops-typecheck-final.log` |
+| Root lint                 | Four packages passed                                           | `/private/tmp/id-ops-lint-final-2.log`    |
+| Web tests                 | 71 passed, zero failed                                         | `/private/tmp/id-ops-web-tests.log`       |
+| Country-data tests        | Five passed, zero failed                                       | `/private/tmp/id-ops-countries-tests.log` |
+| Full ID coverage          | 2037 passed, zero failed; 100% lines/functions; 561.07 seconds | `/private/tmp/id-ops-coverage.log`        |
+| Restore and operator CLIs | Passed after full coverage                                     | `/private/tmp/id-ops-restore-final.log`   |
 
 The full suite includes provider/application-secret rotation, retained replay-key
 rotation, body/disconnect, admission, database failure/rollback, runtime/retention

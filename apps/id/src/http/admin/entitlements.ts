@@ -182,7 +182,7 @@ export const routes = {
     operationId: "updateEntitlement",
     summary: "Update an organisation entitlement",
     description:
-      "Requires Idempotency-Key and the strong If-Match ETag from getEntitlement. Missing conditions return 428; stale or wrong-instance state returns 412. Committed replay precedes the old revision check. Identical authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts and expired recovery never re-executes. Change an entitlement’s scopes or validity window and return the updated entitlement, affecting subsequent access decisions. Prefer createEntitlement to select a different principal or target; validation_failed rejects invalid scopes or an empty patch, not_found means the entitlement is missing, and constraint_violation rejects an invalid window. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input.",
+      "Requires Idempotency-Key and optionally the strong If-Match ETag from getEntitlement. Stale or wrong-instance supplied revisions return 412. Committed replay precedes the old revision check. Identical authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts and expired recovery never re-executes. Change an entitlement’s scopes or validity window and return the updated entitlement, affecting subsequent access decisions. Prefer createEntitlement to select a different principal or target; validation_failed rejects invalid scopes or an empty patch, not_found means the entitlement is missing, and constraint_violation rejects an invalid window.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
@@ -204,7 +204,7 @@ export const routes = {
           headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
           content: json(entitlementSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 412, 428, 503),
+        ...problemResponses(400, 404, 409, 410, 412, 503),
       },
     ),
   },
@@ -214,7 +214,7 @@ export const routes = {
     operationId: "disableEntitlement",
     summary: "Disable an organisation entitlement",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts and expired recovery never re-executes. Disable an organisation entitlement and return the updated record. Prefer enableEntitlement for the opposite transition; not_found means the target is missing and unchanged status records a noop without updating timestamps. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input.",
+      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts and expired recovery never re-executes. Disable an organisation entitlement and return the updated record. Prefer enableEntitlement for the opposite transition; not_found means the target is missing and unchanged status records a noop without updating timestamps.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
@@ -272,7 +272,7 @@ export const routes = {
     operationId: "removeEntitlement",
     summary: "Remove an organisation entitlement",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts and expired recovery never re-executes. Soft-delete an organisation entitlement and return no content, removing access supplied by that record. Deletion is terminal; an explicit replacement gets a new UUID. Prefer updateEntitlement to change its validity or scopes; validation_failed rejects malformed ids and not_found means the target is unavailable. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input.",
+      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts and expired recovery never re-executes. Soft-delete an organisation entitlement and return no content, removing access supplied by that record. Deletion is terminal; an explicit replacement gets a new UUID. Prefer updateEntitlement to change its validity or scopes; validation_failed rejects malformed ids and not_found means the target is unavailable.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",

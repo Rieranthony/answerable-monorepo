@@ -94,7 +94,7 @@ export async function updateWindow(
       access: accessAfter,
     },
   });
-  return row;
+  return { body: row, changed: row.revision !== before.revision };
 }
 export async function remove(context: TenantMemberContext, memberId: string) {
   const { tx, organizationId, actor } = requireTenantMemberContext(context);

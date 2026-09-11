@@ -116,7 +116,6 @@ const environmentSchema = z
       .min(0)
       .max(Number.MAX_SAFE_INTEGER)
       .default(0),
-    MAX_CONCURRENT_REQUESTS: z.coerce.number().int().min(1).default(64),
     OPERATIONAL_LOG_INTERVAL_MS: z.coerce
       .number()
       .int()
@@ -221,7 +220,6 @@ const environmentSchema = z
     trustedProxyCidrs: environment.TRUSTED_PROXY_CIDRS ?? [],
     oauthRefreshReuseIntervalSeconds:
       environment.OAUTH_REFRESH_REUSE_INTERVAL_SECONDS,
-    maxConcurrentRequests: environment.MAX_CONCURRENT_REQUESTS,
     operationalLogIntervalMs: environment.OPERATIONAL_LOG_INTERVAL_MS,
     databasePoolMax:
       environment.DATABASE_POOL_MAX ??

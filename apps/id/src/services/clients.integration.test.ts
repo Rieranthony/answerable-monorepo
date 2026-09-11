@@ -21,7 +21,10 @@ import type { Database } from "../db/client.ts";
 const service = {
   ...implementation,
   createClient: platformWriteService(implementation.createClient),
-  updateClient: platformWriteService(implementation.updateClient),
+  updateClient: platformWriteService(
+    async (...args: Parameters<typeof implementation.updateClient>) =>
+      (await implementation.updateClient(...args)).body,
+  ),
   disableClient: platformWriteService(implementation.disableClient),
   enableClient: platformWriteService(implementation.enableClient),
   rotateSecret: platformWriteService(implementation.rotateSecret),
@@ -68,7 +71,7 @@ beforeAll(() => {
 });
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table security_identifiers, audit_events, organizations, users, oauth_clients, oauth_resources cascade`,
+    sql`truncate table audit_events, organizations, users, oauth_clients, oauth_resources cascade`,
   );
   organizationId = createId();
   await connection.db

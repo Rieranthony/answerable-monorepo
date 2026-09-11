@@ -48,7 +48,7 @@ test("organisation revision rejects stale edits while replay preserves its origi
   expect(replay.headers.get("ETag")).toBe(currentTag);
   expect(await replay.json()).toEqual(saved);
   expect((await patch("org-revision-first", currentTag)).status).toBe(409);
-  expect((await patch("org-revision-missing")).status).toBe(428);
+  expect((await patch("org-revision-missing")).status).toBe(200);
   expect((await patch("org-revision-weak", `W/${currentTag}`)).status).toBe(
     400,
   );

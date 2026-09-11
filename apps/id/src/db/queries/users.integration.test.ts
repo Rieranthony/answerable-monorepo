@@ -20,9 +20,7 @@ beforeAll(() => {
 });
 
 beforeEach(async () => {
-  await connection.db.execute(
-    sql`truncate table security_identifiers, users cascade`,
-  );
+  await connection.db.execute(sql`truncate table users cascade`);
 });
 
 afterAll(async () => {

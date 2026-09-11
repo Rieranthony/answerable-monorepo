@@ -70,10 +70,17 @@ test("administrative command contract gaps cannot grow unnoticed", () => {
             name,
           ).toMatchObject({ required: false });
       }
-      if (!requiredHeader("If-Match") && !conditionalPut)
+      if (
+        !headers.some(
+          (parameter) =>
+            "name" in parameter &&
+            parameter.name === "If-Match" &&
+            parameter.required === false,
+        )
+      )
         missingRevision.push(route.operationId);
       else
-        for (const status of ["412", "428"])
+        for (const status of ["412"])
           expect(route.responses, route.operationId).toHaveProperty(status);
     }
   }

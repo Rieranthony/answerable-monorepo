@@ -244,11 +244,7 @@ export function createUserTokenBoundary() {
               });
               if (row) {
                 const code = codeSchema.safeParse(JSON.parse(row.value));
-                if (
-                  !code.success ||
-                  code.data.query.client_id !== authenticated.clientId
-                )
-                  throw invalid();
+                if (!code.success) throw invalid();
                 reference = {
                   id: code.data.referenceId,
                   userId: code.data.userId,
@@ -265,11 +261,7 @@ export function createUserTokenBoundary() {
                   where: [{ field: "token", value: hash }],
                 }),
               );
-              if (
-                !stored.success ||
-                stored.data.clientId !== authenticated.clientId
-              )
-                throw invalid();
+              if (!stored.success) throw invalid();
               reference = {
                 id: stored.data.referenceId,
                 userId: stored.data.userId,

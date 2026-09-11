@@ -153,7 +153,7 @@ try {
   assert.equal(
     (
       await control.query(
-        "select (select count(*) from audit_events) + (select count(*) from system_bindings) + (select count(*) from admin_operations) + (select count(*) from security_identifiers) as count",
+        "select (select count(*) from audit_events) + (select count(*) from system_bindings) + (select count(*) from admin_operations) as count",
       )
     ).rows[0].count,
     "0",
@@ -177,7 +177,7 @@ try {
   assert.equal(seeds[0]!.organization.id, seeds[1]!.organization.id);
   const before = (
     await control.query(
-      "select (select jsonb_agg(b) from system_bindings b) as bindings, (select jsonb_agg(a order by id) from audit_events a) as audit, (select jsonb_agg(s order by kind, identifier) from security_identifiers s) as reservations",
+      "select (select jsonb_agg(b) from system_bindings b) as bindings, (select jsonb_agg(a order by id) from audit_events a) as audit",
     )
   ).rows;
   await runMigrations(connection.db);
@@ -185,7 +185,7 @@ try {
   assert.deepEqual(
     (
       await control.query(
-        "select (select jsonb_agg(b) from system_bindings b) as bindings, (select jsonb_agg(a order by id) from audit_events a) as audit, (select jsonb_agg(s order by kind, identifier) from security_identifiers s) as reservations",
+        "select (select jsonb_agg(b) from system_bindings b) as bindings, (select jsonb_agg(a order by id) from audit_events a) as audit",
       )
     ).rows,
     before,

@@ -1,4 +1,3 @@
-import { withOrganizationCommandSlot } from "./command-admission.ts";
 import {
   authorizePlatformUsersCommand,
   authorizePlatformWriteCommand,
@@ -28,7 +27,7 @@ export const idempotencyParameter = {
   required: true,
   schema: { type: "string" as const, minLength: 1, maxLength: 256 },
   description:
-    "Stable key for this logical command. Reuse it with identical input after a lost response. Journalled commands with an organizationId path parameter admit at most two outstanding commands per target organisation per runtime database pool after route authentication. Excess commands return 503 database_busy with Retry-After: 1 before journal checkout; retry the same key and input. This is not a deployment-wide quota or an authentication/checkout bound.",
+    "Stable key for this logical command. Reuse it with identical input after a lost response.",
 };
 
 export const commandResponseHeaders = {
@@ -96,55 +95,43 @@ async function httpCommand<T>(
         )
       : freshnessPolicy;
   let checkFreshness: (() => Promise<void>) | undefined;
-  const result = await withOrganizationCommandSlot(
+  const result = await executeOperation(
     context.get("db"),
-    context.req.param("organizationId"),
-    () =>
-      executeOperation(
-        context.get("db"),
-        {
-          actorInstance: `${actor.actorType}:${actor.actorId}`,
-          authorityScope: authority.scope,
-          name,
-          key,
-          input,
-        },
-        async (tx) => {
-          const authorized = await authority.authorize(
-            tx,
-            Boolean(needsFreshness),
-          );
-          const principal = context.get("principal")!;
-          if (needsFreshness && principal.type === "user")
-            checkFreshness = await freshAuthenticationGuard(
-              tx,
-              principal.sessionId,
-            );
-          return authorized;
-        },
-        async (tx, operationId, authorized) => {
-          await checkFreshness?.();
-          const result = await mutate(
-            tx,
-            { ...actor, operationId },
-            authorized,
-          );
-          // Target-row/audit waits can outlast the freshness window too. Roll
-          // back the whole command and its effects if time elapsed in the body.
-          await checkFreshness?.();
-          return {
-            outcome: result.outcome ?? "applied",
-            statusCode: result.statusCode ?? statusCode,
-            resultReference: result.resultReference,
-            body: operationJson(result.body),
-          };
-        },
-        {
-          cipher: createOperationCipher(replayConfiguration),
-          retention: options.retention ?? "secret",
-        },
-        authority.release,
-      ),
+    {
+      actorInstance: `${actor.actorType}:${actor.actorId}`,
+      authorityScope: authority.scope,
+      name,
+      key,
+      input,
+    },
+    async (tx) => {
+      const authorized = await authority.authorize(tx, Boolean(needsFreshness));
+      const principal = context.get("principal")!;
+      if (needsFreshness && principal.type === "user")
+        checkFreshness = await freshAuthenticationGuard(
+          tx,
+          principal.sessionId,
+        );
+      return authorized;
+    },
+    async (tx, operationId, authorized) => {
+      await checkFreshness?.();
+      const result = await mutate(tx, { ...actor, operationId }, authorized);
+      // Target-row/audit waits can outlast the freshness window too. Roll
+      // back the whole command and its effects if time elapsed in the body.
+      await checkFreshness?.();
+      return {
+        outcome: result.outcome ?? "applied",
+        statusCode: result.statusCode ?? statusCode,
+        resultReference: result.resultReference,
+        body: operationJson(result.body),
+      };
+    },
+    {
+      cipher: createOperationCipher(replayConfiguration),
+      retention: options.retention ?? "secret",
+    },
+    authority.release,
   );
   if (options.etag) context.header("ETag", options.etag(result.body!));
   context.header("Operation-Id", result.operation.id);

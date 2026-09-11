@@ -395,15 +395,6 @@ CREATE TABLE "audit_events" (
 	CONSTRAINT "audit_events_outcome_check" CHECK ("audit_events"."outcome" in ('success', 'failure', 'denied'))
 );
 --> statement-breakpoint
-CREATE TABLE "security_identifiers" (
-	"kind" text NOT NULL,
-	"identifier" text NOT NULL,
-	"instance_id" uuid NOT NULL,
-	CONSTRAINT "security_identifiers_kind_identifier_pk" PRIMARY KEY("kind","identifier"),
-	CONSTRAINT "security_identifiers_kind_instance_unique" UNIQUE("kind","instance_id"),
-	CONSTRAINT "security_identifiers_kind_check" CHECK ("security_identifiers"."kind" in ('client', 'resource'))
-);
---> statement-breakpoint
 CREATE TABLE "system_bindings" (
 	"name" text PRIMARY KEY NOT NULL,
 	"organization_id" uuid NOT NULL,
@@ -709,28 +700,6 @@ BEGIN
       USING ERRCODE = '23514', CONSTRAINT = 'oauth_resources_identity_immutable';
   END IF;
   RETURN NEW;
-END;
-$$;
---> statement-breakpoint
-CREATE FUNCTION reserve_security_identifier() RETURNS trigger
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
-BEGIN
-  IF TG_TABLE_NAME = 'oauth_clients' THEN
-    INSERT INTO public.security_identifiers (kind, identifier, instance_id)
-    VALUES ('client', NEW.client_id, NEW.id);
-  ELSE
-    INSERT INTO public.security_identifiers (kind, identifier, instance_id)
-    VALUES ('resource', NEW.identifier, NEW.id);
-  END IF;
-  RETURN NEW;
-END;
-$$;
---> statement-breakpoint
-CREATE FUNCTION protect_security_identifier() RETURNS trigger
-LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
-BEGIN
-  RAISE EXCEPTION 'Security identifier reservations are permanent'
-    USING ERRCODE = '23514', CONSTRAINT = 'security_identifiers_immutable';
 END;
 $$;
 --> statement-breakpoint
@@ -1104,20 +1073,6 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
-CREATE FUNCTION protect_reserved_admin_capability() RETURNS trigger
-LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
-BEGIN
-  IF OLD.grant_kind = 'admin_session' AND EXISTS (
-    SELECT 1 FROM system_bindings b JOIN oauth_resources r ON r.id = b.resource_id
-    WHERE b.organization_id = OLD.organization_id AND r.identifier = OLD.resource
-  ) THEN
-    RAISE EXCEPTION 'The bound platform capability cannot be removed; change its configuration explicitly'
-      USING ERRCODE = '23514', CONSTRAINT = 'reserved_admin_capability';
-  END IF;
-  RETURN OLD;
-END;
-$$;
---> statement-breakpoint
 -- The fixed provenance guard must lock members without granting admission callers UPDATE.
 CREATE FUNCTION protect_grant_context() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
@@ -1222,10 +1177,6 @@ BEGIN
         OR (TG_TABLE_NAME = 'oauth_resources' AND b.resource_id = OLD.id)
     ) THEN
       RAISE EXCEPTION 'Bound platform objects cannot be deleted' USING ERRCODE = '23514', CONSTRAINT = 'system_binding_protected';
-    END IF;
-    IF TG_TABLE_NAME = 'organization_capabilities' AND to_jsonb(OLD)->>'grant_kind' = 'admin_session'
-      AND EXISTS (SELECT 1 FROM public.system_bindings WHERE organization_id = (to_jsonb(OLD)->>'organization_id')::uuid) THEN
-      RAISE EXCEPTION 'Bound platform capability cannot be deleted' USING ERRCODE = '23514', CONSTRAINT = 'reserved_admin_capability';
     END IF;
   END IF;
   IF TG_OP = 'UPDATE' AND OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL THEN
@@ -1368,15 +1319,6 @@ FOR EACH ROW EXECUTE FUNCTION protect_oauth_client_identity();
 CREATE TRIGGER oauth_resources_identity_guard BEFORE UPDATE ON oauth_resources
 FOR EACH ROW EXECUTE FUNCTION protect_oauth_resource_identity();
 --> statement-breakpoint
-CREATE TRIGGER oauth_clients_reserve_identity AFTER INSERT ON oauth_clients
-FOR EACH ROW EXECUTE FUNCTION reserve_security_identifier();
---> statement-breakpoint
-CREATE TRIGGER oauth_resources_reserve_identity AFTER INSERT ON oauth_resources
-FOR EACH ROW EXECUTE FUNCTION reserve_security_identifier();
---> statement-breakpoint
-CREATE TRIGGER security_identifiers_immutable BEFORE UPDATE OR DELETE ON security_identifiers
-FOR EACH ROW EXECUTE FUNCTION protect_security_identifier();
---> statement-breakpoint
 CREATE TRIGGER system_bindings_immutable BEFORE UPDATE OR DELETE ON system_bindings
 FOR EACH ROW EXECUTE FUNCTION protect_system_binding();
 --> statement-breakpoint
@@ -1431,9 +1373,6 @@ CREATE TRIGGER capability_target_guard BEFORE INSERT OR UPDATE ON organization_c
 CREATE TRIGGER capability_private_resource_guard BEFORE INSERT OR UPDATE ON organization_capabilities FOR EACH ROW EXECUTE FUNCTION protect_private_resource_assignment();
 --> statement-breakpoint
 CREATE TRIGGER capability_revision_guard BEFORE UPDATE ON organization_capabilities FOR EACH ROW EXECUTE FUNCTION protect_configuration_revision();
---> statement-breakpoint
-CREATE TRIGGER reserved_admin_capability_guard BEFORE DELETE ON organization_capabilities
-FOR EACH ROW EXECUTE FUNCTION protect_reserved_admin_capability();
 --> statement-breakpoint
 CREATE TRIGGER grant_context_guard BEFORE INSERT OR UPDATE ON grant_contexts
 FOR EACH ROW EXECUTE FUNCTION protect_grant_context();
@@ -1509,4 +1448,4 @@ FOR EACH ROW EXECUTE FUNCTION validate_grant_authentication();
 CREATE TRIGGER audit_events_user_oauth_subjects AFTER INSERT ON audit_events
 FOR EACH ROW EXECUTE FUNCTION record_user_oauth_subjects();
 --> statement-breakpoint
-REVOKE EXECUTE ON FUNCTION protect_grant_context(), capture_audit_subjects(audit_events, text), record_audit_subjects(), reserve_security_identifier(), public.purge_operation_results(uuid, integer), record_user_oauth_subjects(), validate_grant_authentication() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION protect_grant_context(), capture_audit_subjects(audit_events, text), record_audit_subjects(), public.purge_operation_results(uuid, integer), record_user_oauth_subjects(), validate_grant_authentication() FROM PUBLIC;

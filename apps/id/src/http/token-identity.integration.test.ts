@@ -53,7 +53,7 @@ afterAll(async () => connection.close());
 beforeEach(async () => {
   const db = connection.db;
   await db.execute(
-    sql`truncate security_identifiers, users, organizations, oauth_clients, oauth_resources, audit_events cascade`,
+    sql`truncate users, organizations, oauth_clients, oauth_resources, audit_events cascade`,
   );
   orgId = (await createOrganization(db, { slug: "tenant-a", name: "A" })).id;
   otherOrgId = (await createOrganization(db, { slug: "tenant-b", name: "B" }))
@@ -175,7 +175,8 @@ test("a deleted client identifier cannot be recreated and its old token is rejec
     .delete(organizationCapabilities)
     .where(eq(organizationCapabilities.clientId, client.clientId));
   await connection.db
-    .delete(oauthClients)
+    .update(oauthClients)
+    .set({ deletedAt: new Date(), disabled: true, clientSecret: null })
     .where(eq(oauthClients.clientId, client.clientId));
   await expect(
     connection.db

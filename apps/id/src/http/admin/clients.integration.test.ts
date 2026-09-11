@@ -406,3 +406,26 @@ test("client cursor pages have no gaps and do not expose digests", async () => {
   } while (cursor);
   expect(seen).toEqual(ids.reverse());
 });
+
+test("a soft-deleted client's public identifier still conflicts", async () => {
+  const input = {
+    clientId: "tombstone-reservation",
+    name: "Retired",
+    tokenEndpointAuthMethod: "none",
+    grantTypes: ["authorization_code"],
+    redirectUris: ["https://retired.example/callback"],
+  };
+  const created = await request("", "POST", input);
+  expect(created.status).toBe(201);
+  expect(
+    (
+      await request(
+        `/tombstone-reservation?confirm=tombstone-reservation`,
+        "DELETE",
+      )
+    ).status,
+  ).toBe(204);
+  const replacement = await request("", "POST", input);
+  expect(replacement.status).toBe(409);
+  expect(await replacement.json()).toMatchObject({ code: "conflict" });
+});

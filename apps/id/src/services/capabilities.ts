@@ -1,5 +1,4 @@
 import { identityScopes } from "../auth/grant-scopes.ts";
-import { hasPlatformWriter } from "../db/queries/grants.ts";
 import { adminScopes } from "../http/admin/scopes.ts";
 import { sql, and, desc, eq } from "drizzle-orm";
 import {
@@ -216,7 +215,7 @@ export async function updateCapability(
   organizationId: string,
   id: string,
   patch: CapabilityPatch,
-  expected: { id: string; revision: number },
+  expected?: { id: string; revision: number },
 ) {
   const { tx } = requirePlatformWriteContext(context);
   required(await lockOrganizationForCommand(context, organizationId));
@@ -228,7 +227,10 @@ export async function updateCapability(
         .where(where(organizationId, id))
     )[0],
   );
-  if (before.id !== expected.id || before.revision !== expected.revision)
+  if (
+    expected &&
+    (before.id !== expected.id || before.revision !== expected.revision)
+  )
     throw new ProblemError(
       412,
       "revision_mismatch",
@@ -253,10 +255,6 @@ export async function updateCapability(
       value !== undefined &&
       JSON.stringify(value) !== JSON.stringify(before[key as keyof Row]),
   );
-  const protectedWriter =
-    before.grantKind === "admin_session" &&
-    before.scopes.includes("platform:write") &&
-    (await hasPlatformWriter(tx, { resource: before.resource! }));
   const row = changed
     ? (
         await tx
@@ -266,15 +264,6 @@ export async function updateCapability(
           .returning()
       )[0]!
     : before;
-  if (
-    protectedWriter &&
-    !(await hasPlatformWriter(tx, { resource: before.resource! }))
-  )
-    throw new ProblemError(
-      409,
-      "last_platform_administrator",
-      "Keep an effective platform administrator before restricting this ceiling",
-    );
   await audit(context, row, before, changed);
   return { row, changed };
 }
@@ -294,20 +283,6 @@ export async function removeCapability(
         .where(where(organizationId, id))
     )[0],
   );
-  if (
-    before.grantKind === "admin_session" &&
-    (
-      await tx
-        .select()
-        .from(systemBindings)
-        .where(eq(systemBindings.organizationId, organizationId))
-    ).length
-  )
-    throw new ProblemError(
-      409,
-      "protected_capability",
-      "The bound platform capability cannot be removed",
-    );
   const [after] = await tx
     .update(organizationCapabilities)
     .set({ deletedAt: sql`now()`, status: "disabled" })

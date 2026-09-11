@@ -25,8 +25,6 @@ import * as sessions from "./sessions.ts";
 
 import * as auditEvents from "./audit-events.ts";
 
-import * as platform from "./platform.ts";
-
 import * as diagnostics from "./diagnostics.ts";
 
 import * as capabilities from "./capabilities.ts";
@@ -36,7 +34,6 @@ const families = [
   capabilities,
   operations,
   diagnostics,
-  platform,
   me,
   users,
   sessions,

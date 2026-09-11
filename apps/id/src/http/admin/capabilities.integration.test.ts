@@ -96,9 +96,7 @@ test("capability commands recover outcomes, preserve revisions on noops, audit t
   const read = await request("GET", path);
   const etag = read.headers.get("ETag")!;
   expect(etag).toBeString();
-  expect((await request("PATCH", path, { status: "disabled" })).status).toBe(
-    428,
-  );
+  expect((await request("PATCH", path, { status: "active" })).status).toBe(200);
   expect(
     (
       await request(
@@ -168,6 +166,7 @@ test("capability commands recover outcomes, preserve revisions on noops, audit t
   expect(events.map((event) => event.action)).toEqual([
     "capability.created",
     "capability.update_unchanged",
+    "capability.update_unchanged",
     "capability.updated",
   ]);
   expect(
@@ -178,7 +177,7 @@ test("capability commands recover outcomes, preserve revisions on noops, audit t
         event.operationId !== null,
     ),
   ).toBe(true);
-  expect(events[2]!.data).toMatchObject({
+  expect(events[3]!.data).toMatchObject({
     before: { status: "active", revision: 1 },
     after: { status: "disabled", revision: 2 },
   });
@@ -426,44 +425,6 @@ test("direct-session ceilings narrow assignments and can be removed/recreated wi
   expect((await request("GET", `${base()}/${row.id}`)).status).toBe(200);
 });
 
-test("platform ceiling changes cannot remove the last effective writer and the reserved row cannot be deleted", async () => {
-  const [cap] = await fixture.db
-    .select()
-    .from(organizationCapabilities)
-    .where(
-      and(
-        eq(
-          organizationCapabilities.organizationId,
-          fixture.platform.organizationId,
-        ),
-        eq(organizationCapabilities.grantKind, "admin_session"),
-      ),
-    );
-  const path = `/api/admin/v1/organizations/${fixture.platform.organizationId}/capabilities/${cap!.id}`;
-  const etag = (await request("GET", path)).headers.get("ETag")!;
-  for (const patch of [
-    { scopes: ["platform:read"] },
-    { status: "disabled" },
-    { validUntil: "2000-01-01T00:00:00Z" },
-  ]) {
-    const response = await request("PATCH", path, patch, createId(), etag);
-    expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({
-      code: "last_platform_administrator",
-    });
-    expect((await request("GET", path)).headers.get("ETag")).toBe(etag);
-  }
-  const removed = await request("DELETE", path);
-  expect(removed.status).toBe(409);
-  expect(await removed.json()).toMatchObject({ code: "protected_capability" });
-  await expect(
-    fixture.db
-      .delete(organizationCapabilities)
-      .where(eq(organizationCapabilities.id, cap!.id))
-      .execute(),
-  ).rejects.toMatchObject({ cause: { code: "23514" } });
-});
-
 test("direct-session approval rejects foreign resources, platform scopes for tenants and non-admin scope vocabulary", async () => {
   for (const input of [
     { resource: "https://missing.example", scopes: ["org:read"] },
@@ -649,4 +610,28 @@ test("user approvals reject unsupported registration and foreign private resourc
   );
   expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
   expect(await replay.json()).toEqual(row);
+});
+
+test("the bound platform ceiling can be removed even when it supplies the last writer", async () => {
+  const { hasPlatformWriter } = await import("../../db/queries/grants.ts");
+  const policy = { resource: fixture.platform.adminResource };
+  expect(await hasPlatformWriter(fixture.db, policy)).toBe(true);
+  const [ceiling] = await fixture.db
+    .select()
+    .from(organizationCapabilities)
+    .where(
+      and(
+        eq(
+          organizationCapabilities.organizationId,
+          fixture.platform.organizationId,
+        ),
+        eq(organizationCapabilities.grantKind, "admin_session"),
+      ),
+    );
+  const response = await request(
+    "DELETE",
+    `/api/admin/v1/organizations/${fixture.platform.organizationId}/capabilities/${ceiling!.id}`,
+  );
+  expect(response.status).toBe(204);
+  expect(await hasPlatformWriter(fixture.db, policy)).toBe(false);
 });
