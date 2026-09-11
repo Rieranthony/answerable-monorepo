@@ -19,8 +19,8 @@ User authorises this task to manage implementation of the six completed plans, i
 | T2 | Plan ID production OAuth and consent | 01a08b80-50b2-79e0-880a-46d1a5a33dfe | Production OAuth and correction integrated at 31c3f46; idle |
 | T3 | Plan ID audit lifecycle and retention | 01a08b80-6407-7a03-9ac8-ee28ba12c4f7 | Soft deletion accepted/integrated at 3e09ad1; idle |
 | T4 | Plan ID capacity operations and recovery | 01a08b80-c0dd-7793-858b-678a943deda7 | Operational/recovery slice integrated at fcea297; idle |
-| T5 | Plan ID single initial migration cleanup | 01a08b80-d8c5-7763-99e6-e764415127f7 | Single initial migration consolidation dispatched from fcea297; sole writer/DB owner |
-| T6 | Plan ID release acceptance and documentation | 01a08b80-f14b-70d1-8265-1dd18a2fb232 | Plan complete; implementation not dispatched |
+| T5 | Plan ID single initial migration cleanup | 01a08b80-d8c5-7763-99e6-e764415127f7 | Single initial migration accepted at a35df30; idle |
+| T6 | Plan ID release acceptance and documentation | 01a08b80-f14b-70d1-8265-1dd18a2fb232 | Final repository acceptance/docs dispatched from a35df30; sole writer/DB owner |
 
 Read the final answers in those tasks before delegating or changing scope. Their proposals are not user decisions. The app list may omit these worktree tasks; the IDs above work with read_thread/send_message_to_thread/wait_threads.
 
@@ -65,7 +65,7 @@ The user explicitly accepted both recommendations and specified soft deletion:
 
 ## Next coordinator action
 
-T4 operational/recovery work is integrated at fa297 (correct baseline fcea297). T1–T4 schema is frozen. T5 is dispatched from fcea297 for exactly one initial SQL migration, one generated initial snapshot and one journal entry, removal of obsolete unshipped upgrade machinery, preserved final custom SQL/security behaviour, fresh/repeat/interrupted install and consolidated restore proof. It owns the sole writer/shared disposable DB slot. Review actual consolidated SQL/catalogue and cleanup evidence, integrate, then dispatch T6 final acceptance/docs. Unknown production topology, traffic, key delivery, RTO/RPO and real consumers remain external gates, not grounds to stall local consolidation. No domain purge jobs, non-test reset, push/deployment.
+T5 single initial migration is accepted at a35df30141f0eb65751197b5014a8b266fbfea03. T6 now owns final repository acceptance and documentation from this consolidated candidate, with sole writer/shared disposable test DB ownership. Review its exact-source F0–F7 evidence, final docs/checklist, gates and finite external release inputs, integrate accepted commits and report repository completion separately from unverified deployment/consumer gates. No new schema, repeated broad hardening, domain purge, non-test reset, push/deployment or invented production facts. Runtime defects require concrete reproduction and coordinator handoff.
 
 Review adjustment to T3's proposal: do not accidentally remove the existing explicit membership reinstatement feature. Distinguish reversible membership revocation from product/entity deletion. No automatic SSO resurrection is allowed, but explicit reinstatement of a revoked membership remains a supported command unless the user changes that contract. If a genuine conflict requires changing public semantics, bring that concrete conflict to the coordinator rather than silently making reinstatement unreachable.
 
@@ -124,3 +124,11 @@ Thread heartbeat `coordinate-id-foundation-completion` is active every ten minut
 - Synthetic stale-snapshot recovery fails listed-fact verification and keeps traffic closed; later complete source dump restores four original operation receipts/tombstone/reservation/revocation and custody. Negative check is explicitly not a complete acknowledgement ledger or source-loss proof.
 - Raw full ID log: 2,037 pass, zero failures, 29,967 assertions, 150 files, 561.07s, exit 0 and 100% coverage. Required gates and final restore passed; zero other test sessions/roles. Evidence in reports/id-operations.md. Integrated apps/docs/env exactly match tested source; no unchanged rerun.
 - T5 owns consolidation and consolidated restore. T6 inherits finite external topology/traffic, custody/operator, recovery/reconciliation and monitoring inputs.
+
+## Integrated single migration checkpoint
+
+- Accepted source 36b5e326320ad3d3307b697a9582409168167f95 as a35df30141f0eb65751197b5014a8b266fbfea03. Verified exactly 0000_initial.sql, one genuine initial snapshot and one journal entry. SQL SHA-256 12ca325eb13bc4d57007c1cacaf71842a9aa867debb40937d902c2a2909920a3 matches installed/restored receipt.
+- Raw before/after PostgreSQL custom catalogue JSONs compare exactly: 26 functions, 61 triggers, 12 policies and five RLS tables. Final 28-table schema preserved, deferred audit-operation FK and partial NULLS NOT DISTINCT uniqueness retained. Reviewed actual catalogue introspection and failure/SIGKILL/retry/repeated migration proof.
+- Removed 53-step development chain, binding importer, upstream cutover fixtures/tests and obsolete encrypted SHA-256 replay compatibility; reference-only SHA-256 and active event contracts retained. Current resource fingerprint normalisation has same-key default equivalence regression.
+- Raw full ID evidence: 2,027 pass, zero failures, 29,829 assertions, 149 files, 560.43s, exit 0, 100% coverage. Required gates, future generation and consolidated T4 restore passed. Zero other test connections/roles; clean handoff. Integrated apps/docs/CI/env exactly match tested source, no unchanged rerun. Report: reports/id-initial-migration.md.
+- T6 final acceptance/docs dispatched; external consumer/deployment acceptance remains explicit.
