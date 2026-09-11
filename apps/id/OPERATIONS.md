@@ -32,7 +32,7 @@ Do not run it alongside migrations, coverage, another workload or restore rehear
 | Database pool                  | Five connections; checkout 5 seconds; idle 10 seconds                                 | Multiply pools by processes and include other database users               |
 | Database statements            | 10 seconds per statement                                                              | Not a whole-request deadline; transactions may execute multiple statements |
 | Request body                   | 256 KiB; acquisition deadline 5 seconds                                               | Does not bound response streaming or socket count                          |
-| Forwarded IP                   | Untrusted; no forwarded-IP extraction                                                 | No claim of real client-IP rate limiting                                   |
+| Forwarded IP                   | Rightmost untrusted address after listed ingress proxies                                                 | Requires proxy-only network access and TRUSTED_PROXY_CIDRS                                   |
 
 **Runtime summaries.** `OPERATIONAL_LOG_INTERVAL_MS` defaults to 30000; zero disables
 reporting, otherwise the minimum is 1000. Each process writes `[id] operations`
@@ -198,8 +198,9 @@ No production scheduler is installed by this slice.
 
 Before deployment, assign owners and supply:
 
-1. Process/pool topology, database capacity, ingress limits and any explicitly trusted
-   proxy boundary. Forwarded IP stays untrusted until that boundary is implemented and tested.
+1. Process/pool topology, database capacity, ingress limits and `TRUSTED_PROXY_CIDRS`.
+   Restrict service access to those proxies; refuse other traffic at the network boundary.
+   Production auth/admin requests with no resolvable address receive `403 untrusted_ingress`.
 2. Representative traffic mix, burst/concurrency targets and acceptable refusal/latency
    budgets for each flow, including unauthenticated traffic and tenant B OAuth.
 3. Secret-store delivery, access control, version inventory, promotion/rollback and

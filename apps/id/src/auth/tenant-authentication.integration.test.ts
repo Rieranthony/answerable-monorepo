@@ -1,3 +1,4 @@
+import * as auditQueries from "../db/queries/audit.ts";
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { and, eq, sql } from "drizzle-orm";
 import { createAdminFixture, type AdminFixture } from "../__tests__/admin.ts";
@@ -60,6 +61,7 @@ beforeEach(async () => {
     databasePoolMax: 2,
   });
   await assertRuntimeRole(runtime.db);
+  fixture.environment.trustedProxyCidrs = ["10.0.0.0/8"];
   nativeAuth = createAuth(runtime.db, fixture.environment);
   app = createApp({
     db: runtime.db,
@@ -882,3 +884,79 @@ for (const missing of [
     });
   });
 }
+
+test("native sign-in commits the client address with session and audit", async () => {
+  fixture.issuer.enqueue({
+    sub: "ip-proof",
+    email: "ip@tenant.example.com",
+    email_verified: true,
+  });
+  const result = await signInThroughIdp(
+    app,
+    { providerId: "tenant", callbackURL: `${fixture.trustedOrigin}/callback` },
+    undefined,
+    { "x-forwarded-for": "192.0.2.44, 10.0.0.1", "x-request-id": "ip-proof" },
+  );
+  expect(result.response.status).toBe(302);
+  const [event] = await fixture.db
+    .select()
+    .from(auditEvents)
+    .where(eq(auditEvents.requestId, "ip-proof"));
+  expect(event).toMatchObject({
+    action: "auth.signin.succeeded",
+    ip: "192.0.2.44",
+    organizationId: fixture.tenant.organizationId,
+  });
+  const [session] = await fixture.db
+    .select()
+    .from(sessions)
+    .where(eq(sessions.id, event!.targetId!));
+  expect(session).toMatchObject({
+    ipAddress: "192.0.2.44",
+    userId: event!.actorId,
+  });
+});
+
+test("session reads do not emit a signed JWT header", async () => {
+  const response = await app.request("/auth/get-session", {
+    headers: fixture.headers("tenantAdmin"),
+  });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toHaveProperty("session.id");
+  expect(response.headers.get("set-auth-jwt")).toBeNull();
+  expect(
+    response.headers.get("access-control-expose-headers") ?? "",
+  ).not.toContain("set-auth-jwt");
+});
+
+test("sign-in audit failure rolls back the new session", async () => {
+  const previous = await fixture.db.select({ id: sessions.id }).from(sessions);
+  fixture.issuer.enqueue({
+    sub: "audit-failure",
+    email: "audit@tenant.example.com",
+    email_verified: true,
+  });
+  const original = auditQueries.recordAuditEvent;
+  const failure = spyOn(auditQueries, "recordAuditEvent").mockImplementation(
+    async (db, event) => {
+      if (event.action === "auth.signin.succeeded")
+        throw new Error("synthetic audit failure");
+      return original(db, event);
+    },
+  );
+  try {
+    const result = await signInThroughIdp(app, {
+      providerId: "tenant",
+      callbackURL: `${fixture.trustedOrigin}/callback`,
+    });
+    expect(result.response.status).toBe(500);
+    expect(await result.response.json()).toMatchObject({
+      code: "authentication_unavailable",
+    });
+  } finally {
+    failure.mockRestore();
+  }
+  expect(await fixture.db.select({ id: sessions.id }).from(sessions)).toEqual(
+    previous,
+  );
+});

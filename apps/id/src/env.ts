@@ -1,3 +1,4 @@
+import { findInvalidTrustedProxies } from "@better-auth/core/utils/ip";
 import { z } from "zod";
 import { createOperationCipher } from "./services/operation-cipher.ts";
 import { upstreamTokenSecretsSchema } from "./auth/upstream-token-storage.ts";
@@ -100,7 +101,15 @@ const environmentSchema = z
     ROOT_ADMIN_SECRET: z.string().min(32).optional(),
     /** Override the human platform administrator lockout for break-glass use. */
     ROOT_ADMIN_BREAK_GLASS: z.enum(["true", "false"]).default("false"),
-    AUTH_PAGES_URL: z.url().default("http://localhost:47100"),
+    AUTH_PAGES_URL: z.url().optional(),
+    TRUSTED_PROXY_CIDRS: z
+      .string()
+      .transform((value) => value.split(",").map((entry) => entry.trim()))
+      .refine(
+        (entries) => findInvalidTrustedProxies(entries).length === 0,
+        "Expected valid proxy IP addresses or CIDRs",
+      )
+      .optional(),
     OAUTH_REFRESH_REUSE_INTERVAL_SECONDS: z.coerce
       .number()
       .int()
@@ -135,7 +144,7 @@ const environmentSchema = z
       .int()
       .min(1)
       .default(5_000),
-    OPENAPI_ENABLED: z.enum(["true", "false"]).default("true"),
+    OPENAPI_ENABLED: z.enum(["true", "false"]).optional(),
   })
   .refine(
     (environment) =>
@@ -143,6 +152,38 @@ const environmentSchema = z
       environment.ROOT_ADMIN_SECRET !== undefined,
     { message: "ROOT_ADMIN_BREAK_GLASS requires ROOT_ADMIN_SECRET" },
   )
+  .superRefine((environment, context) => {
+    if (environment.NODE_ENV !== "production") return;
+    if (!environment.AUTH_PAGES_URL)
+      context.addIssue({
+        code: "custom",
+        path: ["AUTH_PAGES_URL"],
+        message: "Required in production",
+      });
+    if (!environment.TRUSTED_PROXY_CIDRS?.length)
+      context.addIssue({
+        code: "custom",
+        path: ["TRUSTED_PROXY_CIDRS"],
+        message: "Required in production",
+      });
+    const origins = environment.BETTER_AUTH_TRUSTED_ORIGINS.split(",").map(
+      (origin) => origin.trim(),
+    );
+    if (
+      origins.some((origin) => {
+        try {
+          return new URL(origin).origin !== origin || !/^https?:/.test(origin);
+        } catch {
+          return true;
+        }
+      })
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["BETTER_AUTH_TRUSTED_ORIGINS"],
+        message: "Required origin-only HTTP(S) URLs in production",
+      });
+  })
   .transform((environment) => ({
     nodeEnv: environment.NODE_ENV,
     port: environment.PORT,
@@ -154,7 +195,7 @@ const environmentSchema = z
     operationReplay: environment.OPERATION_REPLAY_CONFIG,
     trustedOrigins: parseTrustedOrigins(
       environment.BETTER_AUTH_TRUSTED_ORIGINS,
-      environment.AUTH_PAGES_URL,
+      environment.AUTH_PAGES_URL ?? "http://localhost:47100",
     ),
     platformOrganizationSlug: environment.PLATFORM_ORGANIZATION_SLUG,
     platformOrganizationName: environment.PLATFORM_ORGANIZATION_NAME,
@@ -164,7 +205,8 @@ const environmentSchema = z
     ).replace(/\/+$/, ""),
     rootAdminSecret: environment.ROOT_ADMIN_SECRET,
     rootAdminBreakGlass: environment.ROOT_ADMIN_BREAK_GLASS === "true",
-    authPagesUrl: environment.AUTH_PAGES_URL,
+    authPagesUrl: environment.AUTH_PAGES_URL ?? "http://localhost:47100",
+    trustedProxyCidrs: environment.TRUSTED_PROXY_CIDRS ?? [],
     oauthRefreshReuseIntervalSeconds:
       environment.OAUTH_REFRESH_REUSE_INTERVAL_SECONDS,
     maxConcurrentRequests: environment.MAX_CONCURRENT_REQUESTS,
@@ -175,7 +217,10 @@ const environmentSchema = z
     databasePoolIdleTimeoutMs: environment.DATABASE_POOL_IDLE_TIMEOUT_MS,
     databaseConnectionTimeoutMs: environment.DATABASE_CONNECTION_TIMEOUT_MS,
     databaseStatementTimeoutMs: environment.DATABASE_STATEMENT_TIMEOUT_MS,
-    openApiEnabled: environment.OPENAPI_ENABLED === "true",
+    openApiEnabled:
+      environment.OPENAPI_ENABLED === undefined
+        ? environment.NODE_ENV !== "production"
+        : environment.OPENAPI_ENABLED === "true",
   }));
 
 export type Environment = z.output<typeof environmentSchema>;

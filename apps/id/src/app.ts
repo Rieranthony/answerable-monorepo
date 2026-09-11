@@ -1,3 +1,4 @@
+import { getIP } from "@better-auth/core/utils/ip";
 import {
   limitConcurrentRequests,
   limitAuthenticationRequests,
@@ -60,6 +61,17 @@ export function createApp(services: AppServices) {
     context.set("requestId", requestId);
     context.header("x-request-id", requestId);
 
+    const clientIp = getIP(context.req.raw, services.auth.options);
+    context.set("clientIp", clientIp);
+    if (
+      services.environment.nodeEnv === "production" &&
+      clientIp === null &&
+      (context.req.path.startsWith("/auth/") ||
+        context.req.path.startsWith("/api/admin/"))
+    ) {
+      context.header("Cache-Control", "no-store");
+      return context.json({ error: "untrusted_ingress" }, 403);
+    }
     const finish = services.metrics?.begin(context.req.path);
     try {
       await next();

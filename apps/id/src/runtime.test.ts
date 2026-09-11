@@ -141,28 +141,31 @@ describe("unit: process runtime", () => {
   });
 });
 
-test("production refuses an unsafe database role before seeding or listening", async () => {
-  const database = createDatabase(testEnvironment());
-  const seed = mock(async () => seedResult);
-  const serve = mock(() => {
-    throw new Error("must not listen");
-  });
-  const verifyDatabaseRole = mock(async () => {
-    throw new Error("unsafe role");
-  });
-  await expect(
-    startRuntime(testEnvironment({ nodeEnv: "production" }), {
-      databaseFactory: () => database,
-      seed,
-      serve: serve as unknown as typeof Bun.serve,
-      verifyDatabaseRole,
-    }),
-  ).rejects.toThrow("unsafe role");
-  expect(verifyDatabaseRole).toHaveBeenCalledWith(database.db);
-  expect(seed).not.toHaveBeenCalled();
-  expect(serve).not.toHaveBeenCalled();
-  expect(database.pool.ended).toBe(true);
-});
+test.each(["production", "development"] as const)(
+  "%s refuses an unsafe database role before seeding or listening",
+  async (nodeEnv) => {
+    const database = createDatabase(testEnvironment());
+    const seed = mock(async () => seedResult);
+    const serve = mock(() => {
+      throw new Error("must not listen");
+    });
+    const verifyDatabaseRole = mock(async () => {
+      throw new Error("unsafe role");
+    });
+    await expect(
+      startRuntime(testEnvironment({ nodeEnv }), {
+        databaseFactory: () => database,
+        seed,
+        serve: serve as unknown as typeof Bun.serve,
+        verifyDatabaseRole,
+      }),
+    ).rejects.toThrow("unsafe role");
+    expect(verifyDatabaseRole).toHaveBeenCalledWith(database.db);
+    expect(seed).not.toHaveBeenCalled();
+    expect(serve).not.toHaveBeenCalled();
+    expect(database.pool.ended).toBe(true);
+  },
+);
 
 test("runtime caps declared and streamed request bodies before provider work", async () => {
   const accepted: number[] = [];

@@ -9,6 +9,7 @@ function setup(response: Response, fail = false) {
   const app = new Hono<AppEnvironment>();
   app.all("*", async (context) => {
     context.set("requestId", "request");
+    context.set("clientIp", null);
     context.set("db", {
       insert: () => ({
         values: (row: unknown) => {

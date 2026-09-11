@@ -114,6 +114,8 @@ Bun runs in production, with TLS at ingress and no CDN/WAF for now. `https://id.
 
 ## Tailnet hardening
 
+The service must be reachable only through the ingress proxies listed in `TRUSTED_PROXY_CIDRS` (comma-separated IPv4/IPv6 networks). Network rules must refuse traffic that does not arrive through those proxies. The ingress supplies `x-forwarded-for`; Better Auth walks it from the right, skips listed proxies and selects the first untrusted address. The same resolver supplies rate-limit keys, session IPs and administrative/sign-in audit IPs. In production, unresolved addresses on `/auth/*` and `/api/admin/*` receive `403 {"error":"untrusted_ingress"}`, `Cache-Control: no-store` and a request ID before authentication, with no audit event. Health and readiness remain reachable. The header resolver cannot verify the socket peer; the network restriction is required.
+
 Browser authorisation and callbacks must be reachable from the browser. Public/tailnet exposure must be tested at actual ingress; an in-process allowlist does not prove network isolation. No particular ACL or split-listener deployment is certified.
 
 ## Security posture

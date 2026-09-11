@@ -87,7 +87,7 @@ test("integration: root locks after a human administrator and supports break-gla
     actorId: "root",
     outcome: "success",
     targetId: "getAdminMe",
-    ip: null,
+    ip: "127.0.0.1",
     userAgent: "root-test",
     requestId: response.headers.get("x-request-id"),
   });

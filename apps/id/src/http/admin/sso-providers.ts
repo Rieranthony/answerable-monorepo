@@ -32,7 +32,7 @@ const paramSchema = uuidParam("organizationId");
 const parameters = [
   pathParameter("organizationId", "uuid"),
 ] satisfies AdminRoute["parameters"];
-const oidcSchema = z.object({
+const oidcSchema = z.strictObject({
   clientId: z.string().min(1),
   clientSecret: z.string().min(1).optional(),
   tokenEndpointAuthentication: z
@@ -43,7 +43,6 @@ const oidcSchema = z.object({
   tokenEndpoint: z.url().optional(),
   jwksEndpoint: z.url().optional(),
   scopes: z.array(z.string()).optional(),
-  pkce: z.boolean().optional(),
 });
 const putSchema = z.object({
   issuer: z.url(),
@@ -57,9 +56,11 @@ export const ssoProviderSchema = z.object({
   providerId: z.string(),
   issuer: z.string(),
   domain: z.string(),
-  oidc: oidcSchema
-    .omit({ clientSecret: true })
-    .extend({ clientId: z.string().optional(), hasClientSecret: z.boolean() }),
+  oidc: oidcSchema.omit({ clientSecret: true }).extend({
+    clientId: z.string().optional(),
+    hasClientSecret: z.boolean(),
+    pkce: z.boolean().optional(),
+  }),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -257,7 +258,6 @@ export function register(app: Hono<AppEnvironment>) {
       const organizationId = context.req.param("organizationId")!;
       const input = putSchema.parse(await context.req.json());
       input.oidc.tokenEndpointAuthentication ??= "client_secret_post";
-      input.oidc.pkce ??= true;
       input.oidc.discoveryEndpoint ??= `${input.issuer}/.well-known/openid-configuration`;
       if (input.oidc.scopes)
         input.oidc.scopes = [...new Set(input.oidc.scopes)].sort();

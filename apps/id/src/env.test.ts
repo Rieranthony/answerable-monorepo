@@ -71,6 +71,7 @@ describe("unit: environment", () => {
       betterAuthSecrets: undefined,
       upstreamTokenSecrets: undefined,
       trustedOrigins: ["http://localhost:47100"],
+      trustedProxyCidrs: [],
       authPagesUrl: "http://localhost:47100",
       oauthRefreshReuseIntervalSeconds: 0,
       maxConcurrentRequests: 64,
@@ -126,6 +127,7 @@ describe("unit: environment", () => {
     const environment = parseEnvironment({
       ...requiredEnvironment,
       NODE_ENV: "production",
+      TRUSTED_PROXY_CIDRS: "10.0.0.0/8",
       PORT: "8080",
       MAX_CONCURRENT_REQUESTS: "12",
       DATABASE_POOL_MAX: "7",
@@ -327,4 +329,52 @@ test("request admission rejects disabled, fractional and excessive limits", () =
         MAX_CONCURRENT_REQUESTS: value,
       }),
     ).toThrow("MAX_CONCURRENT_REQUESTS");
+});
+
+const production = {
+  ...requiredEnvironment,
+  NODE_ENV: "production",
+  AUTH_PAGES_URL: "https://auth.example.com",
+  BETTER_AUTH_TRUSTED_ORIGINS: "https://auth.example.com",
+  TRUSTED_PROXY_CIDRS: "10.0.0.0/8, 2001:db8::/32",
+};
+test("production disables OpenAPI unless explicitly enabled", () => {
+  expect(parseEnvironment(production).openApiEnabled).toBe(false);
+  expect(
+    parseEnvironment({ ...production, OPENAPI_ENABLED: "true" }).openApiEnabled,
+  ).toBe(true);
+});
+for (const key of [
+  "AUTH_PAGES_URL",
+  "BETTER_AUTH_TRUSTED_ORIGINS",
+  "TRUSTED_PROXY_CIDRS",
+])
+  test(`production requires ${key}`, () => {
+    expect(() => parseEnvironment({ ...production, [key]: undefined })).toThrow(
+      key,
+    );
+  });
+for (const origin of [
+  "https://example.com/",
+  "https://example.com/path",
+  "invalid",
+  "https://example.com?x=1",
+  "https://example.com#x",
+])
+  test(`production rejects non-origin ${origin}`, () => {
+    expect(() =>
+      parseEnvironment({ ...production, BETTER_AUTH_TRUSTED_ORIGINS: origin }),
+    ).toThrow("BETTER_AUTH_TRUSTED_ORIGINS");
+  });
+for (const cidr of ["", "garbage", "10.0.0.0/33", "::/129", "10.0.0.0/-1"])
+  test(`rejects invalid proxy CIDR ${cidr}`, () => {
+    expect(() =>
+      parseEnvironment({ ...requiredEnvironment, TRUSTED_PROXY_CIDRS: cidr }),
+    ).toThrow("TRUSTED_PROXY_CIDRS");
+  });
+test("parses IPv4 and IPv6 proxy networks", () => {
+  expect(parseEnvironment(production).trustedProxyCidrs).toEqual([
+    "10.0.0.0/8",
+    "2001:db8::/32",
+  ]);
 });

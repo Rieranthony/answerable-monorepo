@@ -1,3 +1,4 @@
+import { configureRuntimeRole } from "../src/db/runtime-role.ts";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
@@ -17,7 +18,13 @@ const databaseUrl = isTest
 const pool = new Pool({ connectionString: databaseUrl, max: 1 });
 
 try {
-  await runMigrations(drizzle({ client: pool, schema }));
+  const db = drizzle({ client: pool, schema });
+  await runMigrations(db);
+  if (!isTest)
+    await configureRuntimeRole(
+      db,
+      Bun.env.DATABASE_RUNTIME_ROLE ?? "answerable_id_runtime",
+    );
 } finally {
   await pool.end();
 }

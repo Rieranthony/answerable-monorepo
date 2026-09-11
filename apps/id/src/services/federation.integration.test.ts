@@ -960,13 +960,13 @@ describe("integration: federated sign-in", () => {
       expect(successes).toHaveLength(1);
       expect(successes[0]).toMatchObject({
         actorId: user!.id,
-        ip: null,
+        ip: "192.0.2.1",
         userAgent: expectedAgent,
         outcome: "success",
       });
       const storedSessions = await connection.db.select().from(sessions);
       expect(storedSessions).toHaveLength(1);
-      expect(storedSessions[0]!.ipAddress).toBeNull();
+      expect(storedSessions[0]!.ipAddress).toBe("192.0.2.1");
       expect(storedSessions[0]!.userAgent).toBe(expectedAgent);
       // Legacy session metadata was never verified either.
       await connection.db

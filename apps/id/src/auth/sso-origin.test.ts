@@ -40,7 +40,7 @@ test("session input cannot manufacture origin without trusted resolution", async
   ]) {
     expect(await boundary.before(session, context)).toMatchObject({
       data: {
-        ipAddress: null,
+        ipAddress: "192.0.2.1",
         userAgent: null,
         authenticationAccountId: null,
         upstreamAuthTime: null,

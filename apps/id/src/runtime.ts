@@ -29,8 +29,7 @@ export async function startRuntime(
   let server: Bun.Server<undefined>;
   const metrics = createOperationalMetrics(database.pool);
   try {
-    if (environment.nodeEnv === "production")
-      await verifyDatabaseRole(database.db);
+    if (environment.nodeEnv !== "test") await verifyDatabaseRole(database.db);
     const seeded = await seed(database.db, systemActor("startup"), {
       platformOrganizationSlug: environment.platformOrganizationSlug,
       platformOrganizationName: environment.platformOrganizationName,

@@ -10,6 +10,7 @@ export type AppEnvironment = {
     db: Database;
     ssoTest?: { allowPrivateHosts: boolean };
     requestId: string;
+    clientIp: string | null;
     environment: Environment;
     principal?: Principal;
     bearerClaims?: BearerClaims;

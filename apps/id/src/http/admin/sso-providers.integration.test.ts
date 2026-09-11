@@ -332,7 +332,6 @@ test("SSO retries recover historical redacted results without replacing later cr
     oidc: {
       ...input.oidc,
       scopes: ["openid", "profile"],
-      pkce: true,
       tokenEndpointAuthentication: "client_secret_post",
     },
   });
@@ -541,3 +540,24 @@ test("SSO replay rechecks current platform authority", async () => {
       .where(eq(auditEvents.operationId, first.headers.get("Operation-Id")!)),
   ).toHaveLength(1);
 });
+
+for (const existing of [false, true])
+  for (const pkce of [false, true])
+    test(`${existing ? "replacement" : "new"} provider rejects supplied pkce ${pkce}`, async () => {
+      const organizationId = existing
+        ? fixture.tenant.organizationId
+        : (
+            await createOrganization(fixture.db, {
+              slug: `pkce-${crypto.randomUUID()}`,
+              name: "PKCE test",
+            })
+          ).id;
+      const response = await request(organizationId, "", "PUT", {
+        ...input,
+        oidc: { ...input.oidc, pkce },
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        code: "validation_failed",
+      });
+    });

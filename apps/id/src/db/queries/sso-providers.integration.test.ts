@@ -70,6 +70,7 @@ test("provider queries create, find, update, redact and delete", async () => {
   );
   expect(queries.redactSsoProvider(updated).oidc).toEqual({
     ...oidc,
+    pkce: true,
     hasClientSecret: false,
   });
   expect(

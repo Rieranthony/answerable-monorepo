@@ -19,6 +19,7 @@ export async function signInThroughIdp(
   app: App,
   input: SignInInput,
   beforeCallback?: () => Promise<App | void>,
+  callbackHeaders?: Record<string, string>,
 ) {
   const start = await app.request("/auth/sign-in/sso", {
     method: "POST",
@@ -43,7 +44,7 @@ export async function signInThroughIdp(
   const completed = await callbackApp.request(
     `${callback.pathname}${callback.search}`,
     {
-      headers: { Cookie: stateCookie },
+      headers: { ...callbackHeaders, Cookie: stateCookie },
     },
   );
 

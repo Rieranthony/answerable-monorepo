@@ -63,7 +63,7 @@ async function request(
   }
 
   headers.set("x-request-id", "organizations-http-test");
-  headers.set("x-forwarded-for", "192.0.2.1, 198.51.100.1");
+  headers.set("x-forwarded-for", "192.0.2.55");
   headers.set("user-agent", "organisation-test");
   if (body !== undefined) headers.set("content-type", "application/json");
   return fixture.app.request("/api/admin/v1/organizations" + path, {
@@ -204,7 +204,7 @@ test("createOrganization: cookie and machine writes return 201 and attributed au
           ? fixture.principals.platformAdmin.userId
           : fixture.platform.client.clientId,
       requestId: "organizations-http-test",
-      ip: null,
+      ip: "192.0.2.55",
       userAgent: "organisation-test",
       organizationId: row.id,
       targetType: "organization",

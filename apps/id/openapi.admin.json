@@ -34584,16 +34584,17 @@
                             "type": "string"
                           }
                         },
-                        "pkce": {
+                        "hasClientSecret": {
                           "type": "boolean"
                         },
-                        "hasClientSecret": {
+                        "pkce": {
                           "type": "boolean"
                         }
                       },
                       "required": [
                         "hasClientSecret"
-                      ]
+                      ],
+                      "additionalProperties": false
                     },
                     "createdAt": {
                       "type": "string",
@@ -34950,9 +34951,6 @@
                         "items": {
                           "type": "string"
                         }
-                      },
-                      "pkce": {
-                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -35077,16 +35075,17 @@
                             "type": "string"
                           }
                         },
-                        "pkce": {
+                        "hasClientSecret": {
                           "type": "boolean"
                         },
-                        "hasClientSecret": {
+                        "pkce": {
                           "type": "boolean"
                         }
                       },
                       "required": [
                         "hasClientSecret"
-                      ]
+                      ],
+                      "additionalProperties": false
                     },
                     "createdAt": {
                       "type": "string",
@@ -35206,16 +35205,17 @@
                             "type": "string"
                           }
                         },
-                        "pkce": {
+                        "hasClientSecret": {
                           "type": "boolean"
                         },
-                        "hasClientSecret": {
+                        "pkce": {
                           "type": "boolean"
                         }
                       },
                       "required": [
                         "hasClientSecret"
-                      ]
+                      ],
+                      "additionalProperties": false
                     },
                     "createdAt": {
                       "type": "string",

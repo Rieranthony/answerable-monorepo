@@ -1,3 +1,5 @@
+import { recordAuditEvent } from "../db/queries/audit.ts";
+import { createId } from "../lib/id.ts";
 import { boundedUserAgent } from "../lib/user-agent.ts";
 import type { SSOOptions } from "@better-auth/sso";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -155,12 +157,35 @@ export function createSsoOriginBoundary(verifiedSso?: VerifiedSso) {
       throw new APIError("FORBIDDEN", {
         code: "authentication_origin_missing",
       });
+    const id = session.id ?? createId();
+    if (origin) {
+      // The native create.after hook is deferred until commit. Insert here using
+      // the transaction and reserve the session ID before the adapter creates it.
+      await recordAuditEvent(authTransaction(adapter!), {
+        schemaVersion: 2,
+        actorType: "user",
+        actorId: session.userId,
+        organizationId: origin.authenticationOrganizationId,
+        action: "auth.signin.succeeded",
+        targetType: "session",
+        targetId: id,
+        outcome: "success",
+        requestId: context?.headers?.get("x-request-id") ?? null,
+        ip: session.ipAddress,
+        userAgent: boundedUserAgent(session.userAgent),
+        data: {
+          userId: session.userId,
+          authenticationAccountId: origin.authenticationAccountId,
+          authenticationProviderId: origin.authenticationProviderId,
+          authenticationProviderRevision: origin.authenticationProviderRevision,
+          upstreamAuthTime: origin.upstreamAuthTime?.toISOString() ?? null,
+        },
+      });
+    }
     return {
       data: {
         ...session,
-        // Header-derived addresses and the provider's development fallback are
-        // not verified transport evidence.
-        ipAddress: null,
+        id,
         userAgent: boundedUserAgent(session.userAgent),
         activeOrganizationId: origin?.authenticationOrganizationId ?? null,
         authenticationAccountId: origin?.authenticationAccountId ?? null,

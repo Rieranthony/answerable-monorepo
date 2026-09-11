@@ -8,7 +8,6 @@ import { jwt } from "better-auth/plugins/jwt";
 import { organization } from "better-auth/plugins/organization";
 
 import { sessionAuditHooks } from "./auth/audit-hooks.ts";
-import { signInAudit } from "./auth/signin-audit-plugin.ts";
 import type { Database } from "./db/client.ts";
 import { answerableSchema } from "./auth/answerable-schema.ts";
 import {
@@ -174,9 +173,10 @@ export function createAuth(db: Database, environment: Environment) {
       },
     },
     advanced: {
-      // No verified ingress/peer contract yet. Keep the native shared rate limit;
-      // disableIpTracking would bypass it when no address is available.
-      ipAddress: { ipAddressHeaders: [] },
+      ipAddress: {
+        ipAddressHeaders: ["x-forwarded-for"],
+        trustedProxies: environment.trustedProxyCidrs,
+      },
       database: {
         generateId: createId,
         joins: true,
@@ -264,6 +264,7 @@ export function createAuth(db: Database, environment: Environment) {
       // The issuer is the bare origin (id.answerable.org), not the /auth
       // mount; discovery is served at the root in the provider milestone.
       jwt({
+        disableSettingJwtHeader: true,
         jwt: { issuer: environment.betterAuthUrl },
         schema: { jwks: { modelName: "jwk" } },
       }),
@@ -283,9 +284,6 @@ export function createAuth(db: Database, environment: Environment) {
         `${environment.authPagesUrl}/authorize`,
       ),
       openAPI({ disableDefaultReference: true }),
-      // Listed last so its after-hook runs once the SSO plugin has provisioned
-      // the membership.
-      signInAudit(db),
     ],
   });
   return {

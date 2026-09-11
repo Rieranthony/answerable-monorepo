@@ -32,7 +32,6 @@ export type CreateSsoProviderInput = {
     jwksEndpoint?: string;
     tokenEndpointAuthentication?: TokenEndpointAuthentication;
     scopes?: string[];
-    pkce?: boolean;
     discoveryEndpoint?: string;
   };
 };
@@ -51,7 +50,7 @@ export function serializeSsoProviderConfig(
     privateKeyId: undefined,
     privateKeyAlgorithm: undefined,
     jwksEndpoint: input.oidc.jwksEndpoint,
-    pkce: input.oidc.pkce ?? true,
+    pkce: true,
     discoveryEndpoint:
       input.oidc.discoveryEndpoint ??
       `${input.issuer}/.well-known/openid-configuration`,
@@ -221,7 +220,7 @@ export function redactSsoProvider(row: typeof ssoProviders.$inferSelect) {
       tokenEndpoint: config.tokenEndpoint,
       jwksEndpoint: config.jwksEndpoint,
       scopes: config.scopes,
-      pkce: config.pkce,
+      pkce: (config as { pkce?: boolean }).pkce,
       hasClientSecret: Boolean(config.clientSecret),
     },
     createdAt: row.createdAt,

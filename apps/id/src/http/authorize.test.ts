@@ -44,6 +44,7 @@ function setup(
     c.set("db", { insert } as unknown as Database);
     c.set("environment", testEnvironment());
     c.set("requestId", "request");
+    c.set("clientIp", "192.0.2.1");
     c.set("operationId", "testOperation");
     c.set(
       "principal",
@@ -133,7 +134,7 @@ test.each([
     const known = grants.some(
       (grant) => grant.organizationId === path.slice(1),
     );
-    expect(rows[0]).not.toHaveProperty("ip");
+    expect(rows[0]!.ip).toBe("192.0.2.1");
     expect(rows[0]).toMatchObject({
       actorType: client ? "client" : "user",
       actorId: client ? "client" : "user",
@@ -152,7 +153,7 @@ test.each([
 test("an org scope without an organisation parameter cannot authorise", async () => {
   const { app, rows } = setup([own], { org: true, path: "/" });
   expect((await app.request("/")).status).toBe(403);
-  expect(rows[0]).not.toHaveProperty("ip");
+  expect(rows[0]!.ip).toBe("192.0.2.1");
   expect(rows[0]).toMatchObject({
     organizationId: undefined,
     userAgent: undefined,
@@ -180,7 +181,7 @@ test.each([
     ).json(),
   ).toEqual({ tier: "platform" });
   expect(rows).toHaveLength(1);
-  expect(rows[0]).not.toHaveProperty("ip");
+  expect(rows[0]!.ip).toBe("192.0.2.1");
   expect(rows[0]).toMatchObject({
     actorType: "system",
     actorId: "root",

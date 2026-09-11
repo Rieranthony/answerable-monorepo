@@ -33,6 +33,8 @@ Current contracts describe implemented behaviour; historical reports retain impl
 ```bash
 bun install
 cp .env.example .env
+bun run env:up
+bun --env-file=.env run --filter @answerable/id db:migrate
 bun dev
 ```
 

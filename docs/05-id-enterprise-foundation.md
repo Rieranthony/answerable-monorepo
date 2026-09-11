@@ -79,6 +79,8 @@ Recovery must preserve retained keys, reservations, receipts and revocation barr
 
 ## 7. Enterprise and adversarial operation
 
+The service must be reachable only through the ingress proxies listed in `TRUSTED_PROXY_CIDRS` (comma-separated IPv4/IPv6 networks). Network rules must refuse traffic that does not arrive through those proxies. The ingress supplies `x-forwarded-for`; Better Auth walks it from the right, skips listed proxies and selects the first untrusted address. The same resolver supplies rate-limit keys, session IPs and administrative/sign-in audit IPs. In production, unresolved addresses on `/auth/*` and `/api/admin/*` receive `403 {"error":"untrusted_ingress"}`, `Cache-Control: no-store` and a request ID before authentication, with no audit event. Health and readiness remain reachable. The header resolver cannot verify the socket peer; the network restriction is required.
+
 Request/body, application admission, auth admission, pool and statement limits fail with documented retryable responses. Sensitive human changes/linking need verified upstream authentication within five minutes; broker time is not an acceptable substitute. Machine/root authority remains explicit.
 
 Custody preflight, bounded replay-retention maintenance, fixed-cardinality process summaries and synthetic recovery are implemented. [T4 evidence](../reports/id-operations.md) discloses B OAuth refusal during shared saturation and one B read refusal during dense global deletion. No production capacity, tenant fairness, percentile latency, ingress or RTO/RPO is certified.

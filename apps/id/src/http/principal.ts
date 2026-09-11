@@ -5,6 +5,7 @@ import type { MiddlewareHandler } from "hono";
 import { machineIdentitySchema } from "../auth/machine-identity.ts";
 import {
   createLocalJWKSet,
+  decodeJwt,
   errors,
   jwtVerify,
   type JWTVerifyGetKey,
@@ -88,6 +89,7 @@ export function createBearerVerifier({
       issuer,
       audience,
       typ: "at+jwt",
+      algorithms: ["EdDSA"],
       requiredClaims: ["exp"],
     });
     const clientId = payload.client_id;
@@ -118,6 +120,7 @@ export function createBearerVerifier({
 export function createJwksResolver(auth: Pick<Auth, "api">): JWTVerifyGetKey {
   let cached: ReturnType<typeof createLocalJWKSet> | undefined;
   let expiresAt = 0;
+  let unknownKeyReloadAt = -Infinity;
   let loading: Promise<ReturnType<typeof createLocalJWKSet>> | undefined;
   function refresh() {
     // Share store work, not verification results or attacker-supplied key IDs.
@@ -140,6 +143,10 @@ export function createJwksResolver(auth: Pick<Auth, "api">): JWTVerifyGetKey {
       // A just-loaded set cannot improve by immediately loading it again.
       if (!(error instanceof errors.JWKSNoMatchingKey) || fresh) throw error;
       // Another verification may have refreshed while this one inspected its set.
+      if (cached === resolver && !loading) {
+        if (Date.now() - unknownKeyReloadAt < 30_000) throw error;
+        unknownKeyReloadAt = Date.now();
+      }
       const current = cached !== resolver ? cached! : await refresh();
       return current(header, token);
     }
@@ -190,156 +197,203 @@ export function createPrincipalMiddleware(
     const environment = context.get("environment");
     const db = context.get("db");
     const authorization = context.req.header("Authorization");
+    let clientId: string | undefined;
+    let claimedClientId: string | undefined;
     let principal: Principal;
-    if (authorization && /^Bearer(?:\s|$)/i.test(authorization)) {
-      const invalidToken = (detail?: string) => {
-        context.header("WWW-Authenticate", 'Bearer error="invalid_token"');
-        return new ProblemError(401, "invalid_token", "Invalid token", detail);
-      };
-      const token = /^Bearer +([^\s]+)$/i.exec(authorization)?.[1];
-      if (!token) throw invalidToken();
-      if (
-        environment.rootAdminSecret &&
-        secretMatches(environment.rootAdminSecret, token)
-      ) {
+    try {
+      if (authorization && /^Bearer(?:\s|$)/i.test(authorization)) {
+        const invalidToken = (detail?: string) => {
+          context.header("WWW-Authenticate", 'Bearer error="invalid_token"');
+          return new ProblemError(
+            401,
+            "invalid_token",
+            "Invalid token",
+            detail,
+          );
+        };
+        const token = /^Bearer +([^\s]+)$/i.exec(authorization)?.[1];
+        if (!token) throw invalidToken();
         if (
-          !environment.rootAdminBreakGlass &&
-          (await deps.hasPlatformWriter(db, {
-            resource: environment.adminResourceIdentifier,
-          }))
+          environment.rootAdminSecret &&
+          secretMatches(environment.rootAdminSecret, token)
         ) {
-          await recordAdministrativeDenial(db, {
-            actorType: "system",
-            actorId: "root",
-            action: "admin.root_request",
-            reason: "root_locked",
-            targetType: "route",
-            targetId: context.req.path,
-            requestId: context.get("requestId"),
-            userAgent:
-              boundedUserAgent(context.req.header("user-agent")) ?? undefined,
-          });
-          throw new ProblemError(
-            403,
-            "root_locked",
-            "Root is locked",
-            "A platform administrator exists. Set ROOT_ADMIN_BREAK_GLASS=true to use the root secret.",
+          if (
+            !environment.rootAdminBreakGlass &&
+            (await deps.hasPlatformWriter(db, {
+              resource: environment.adminResourceIdentifier,
+            }))
+          ) {
+            await recordAdministrativeDenial(db, {
+              actorType: "system",
+              actorId: "root",
+              action: "admin.root_request",
+              reason: "root_locked",
+              targetType: "route",
+              targetId: context.req.path,
+              requestId: context.get("requestId"),
+              ip: context.get("clientIp"),
+              userAgent:
+                boundedUserAgent(context.req.header("user-agent")) ?? undefined,
+            });
+            throw new ProblemError(
+              403,
+              "root_locked",
+              "Root is locked",
+              "A platform administrator exists. Set ROOT_ADMIN_BREAK_GLASS=true to use the root secret.",
+            );
+          }
+          principal = { type: "root", grants: [] };
+        } else {
+          // An unverified claim is recorded as metadata only; the actor is
+          // attributed solely after signature verification.
+          try {
+            const claimed = decodeJwt(token).client_id;
+            if (typeof claimed === "string" && claimed)
+              claimedClientId = claimed;
+          } catch {
+            /* Malformed credentials remain anonymous. */
+          }
+          let claims: BearerClaims;
+          try {
+            claims = await deps.verifyBearer(token);
+            clientId = claims.clientId;
+          } catch {
+            throw invalidToken();
+          }
+          const client = await deps.findClient(
+            db,
+            claims.clientId,
+            environment.adminResourceIdentifier,
           );
-        }
-        principal = { type: "root", grants: [] };
-      } else {
-        let claims: BearerClaims;
-        try {
-          claims = await deps.verifyBearer(token);
-        } catch {
-          throw invalidToken();
-        }
-        const client = await deps.findClient(
-          db,
-          claims.clientId,
-          environment.adminResourceIdentifier,
-        );
-        if (
-          !client ||
-          client.disabled ||
-          !Number.isFinite(claims.expiresAt) ||
-          claims.expiresAt <= Date.now() / 1000
-        )
-          throw invalidToken();
-        if (!client.organizationId)
-          throw new ProblemError(
-            403,
-            "client_unowned",
-            "Client has no organisation",
-          );
-        if (client.organization?.status !== "active")
-          throw new ProblemError(
-            403,
-            "organization_disabled",
-            "Organisation is disabled",
-          );
-        if (
-          claims.clientInstance !== client.id ||
-          claims.organizationId !== client.organizationId ||
-          claims.authorizationVersion !== client.authorizationVersion ||
-          claims.organizationAuthorizationVersion !==
-            client.organization.authorizationVersion
-        )
-          throw invalidToken();
-        if (claims.sid !== undefined)
-          throw invalidToken(
-            "User-delegated tokens are not admin credentials.",
-          );
-        context.set("bearerClaims", claims);
-        const scopes = [
-          ...new Set(
-            claims.scopes.filter(
-              (scope) =>
-                isAdminScope(scope) &&
-                client.clientCredentialsScopes?.includes(scope) &&
-                (client.resourceScopes === null ||
-                  client.resourceScopes.includes(scope)),
+          if (
+            !client ||
+            client.disabled ||
+            !Number.isFinite(claims.expiresAt) ||
+            claims.expiresAt <= Date.now() / 1000
+          )
+            throw invalidToken();
+          if (!client.organizationId)
+            throw new ProblemError(
+              403,
+              "client_unowned",
+              "Client has no organisation",
+            );
+          if (client.organization?.status !== "active")
+            throw new ProblemError(
+              403,
+              "organization_disabled",
+              "Organisation is disabled",
+            );
+          if (
+            claims.clientInstance !== client.id ||
+            claims.organizationId !== client.organizationId ||
+            claims.authorizationVersion !== client.authorizationVersion ||
+            claims.organizationAuthorizationVersion !==
+              client.organization.authorizationVersion
+          )
+            throw invalidToken();
+          if (claims.sid !== undefined)
+            throw invalidToken(
+              "User-delegated tokens are not admin credentials.",
+            );
+          context.set("bearerClaims", claims);
+          const scopes = [
+            ...new Set(
+              claims.scopes.filter(
+                (scope) =>
+                  isAdminScope(scope) &&
+                  client.clientCredentialsScopes?.includes(scope) &&
+                  (client.resourceScopes === null ||
+                    client.resourceScopes.includes(scope)),
+              ),
             ),
-          ),
-        ].sort();
+          ].sort();
+          principal = {
+            type: "client",
+            clientId: client.clientId,
+            organizationId: client.organizationId,
+            grants: [
+              {
+                organizationId: client.organizationId,
+                organizationSlug: client.organization.slug,
+                isPlatform: client.isPlatform,
+                scopes,
+              },
+            ],
+          };
+        }
+      } else {
+        const session = await deps.getSession(context.req.raw.headers);
+        if (!session) {
+          context.header(
+            "WWW-Authenticate",
+            'Bearer realm="answerable-id-admin"',
+          );
+          throw new ProblemError(
+            401,
+            "unauthenticated",
+            "Authentication is required",
+          );
+        }
+        if (session.user.status !== "active")
+          throw new ProblemError(403, "user_disabled", "User is disabled");
+        const origin = context.req.header("Origin");
+        if (
+          origin !== undefined &&
+          !environment.trustedOrigins.includes(origin) &&
+          origin !== new URL(environment.betterAuthUrl).origin
+        ) {
+          throw new ProblemError(
+            403,
+            "untrusted_origin",
+            "Origin is not trusted",
+          );
+        }
+        if (
+          !["GET", "HEAD", "OPTIONS"].includes(context.req.method) &&
+          origin === undefined
+        ) {
+          throw new ProblemError(403, "origin_required", "Origin is required");
+        }
         principal = {
-          type: "client",
-          clientId: client.clientId,
-          organizationId: client.organizationId,
-          grants: [
-            {
-              organizationId: client.organizationId,
-              organizationSlug: client.organization.slug,
-              isPlatform: client.isPlatform,
-              scopes,
-            },
-          ],
+          type: "user",
+          userId: session.user.id,
+          email: session.user.email,
+          sessionId: session.session.id,
+          grants: await deps.loadGrants(
+            db,
+            { userId: session.user.id, sessionId: session.session.id },
+            environment.adminResourceIdentifier,
+          ),
         };
       }
-    } else {
-      const session = await deps.getSession(context.req.raw.headers);
-      if (!session) {
-        context.header(
-          "WWW-Authenticate",
-          'Bearer realm="answerable-id-admin"',
-        );
-        throw new ProblemError(
-          401,
+    } catch (error) {
+      if (
+        error instanceof ProblemError &&
+        [
+          "invalid_token",
           "unauthenticated",
-          "Authentication is required",
-        );
-      }
-      if (session.user.status !== "active")
-        throw new ProblemError(403, "user_disabled", "User is disabled");
-      const origin = context.req.header("Origin");
-      if (
-        origin !== undefined &&
-        !environment.trustedOrigins.includes(origin) &&
-        origin !== new URL(environment.betterAuthUrl).origin
-      ) {
-        throw new ProblemError(
-          403,
+          "user_disabled",
           "untrusted_origin",
-          "Origin is not trusted",
-        );
-      }
-      if (
-        !["GET", "HEAD", "OPTIONS"].includes(context.req.method) &&
-        origin === undefined
+          "origin_required",
+          "client_unowned",
+          "organization_disabled",
+        ].includes(error.code)
       ) {
-        throw new ProblemError(403, "origin_required", "Origin is required");
+        await recordAdministrativeDenial(db, {
+          actorType: clientId ? "client" : "system",
+          actorId: clientId ?? "anonymous",
+          action: "admin.auth_failed",
+          reason: error.code,
+          targetType: "route",
+          targetId: context.req.path,
+          requestId: context.get("requestId"),
+          ip: context.get("clientIp"),
+          userAgent: boundedUserAgent(context.req.header("user-agent")),
+          data: claimedClientId ? { claimedClientId } : undefined,
+        });
       }
-      principal = {
-        type: "user",
-        userId: session.user.id,
-        email: session.user.email,
-        sessionId: session.session.id,
-        grants: await deps.loadGrants(
-          db,
-          { userId: session.user.id, sessionId: session.session.id },
-          environment.adminResourceIdentifier,
-        ),
-      };
+      throw error;
     }
     context.set("principal", principal);
     await next();

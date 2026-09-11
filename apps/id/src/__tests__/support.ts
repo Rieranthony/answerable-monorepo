@@ -26,6 +26,7 @@ export function testEnvironment(
       { version: 1, value: Buffer.alloc(32, 73).toString("base64url") },
     ],
     trustedOrigins: [],
+    trustedProxyCidrs: [],
     authPagesUrl: "http://localhost:47100",
     oauthRefreshReuseIntervalSeconds: 0,
     maxConcurrentRequests: 64,
