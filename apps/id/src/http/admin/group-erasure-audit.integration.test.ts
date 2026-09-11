@@ -1,3 +1,4 @@
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { withDatabaseScope } from "../../db/isolation.ts";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq, inArray, sql } from "drizzle-orm";
@@ -632,7 +633,7 @@ test("group status changes retain their policy sources and affected users after 
     );
     const replay = await statusGroup(a.group, status, key);
     expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-    expect(await replay.json()).toEqual(await response.json());
+    await expectReceipt(fixture.db, replay);
     expect(
       await fixture.db
         .select()

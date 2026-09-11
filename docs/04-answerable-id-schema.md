@@ -67,15 +67,15 @@ Current deletion manifests describe product tombstones and actual credential cle
 
 ## Runtime database permissions
 
-Schema owner, runtime and replay-retention roles are separate. Runtime cannot DELETE/TRUNCATE product rows, rewrite audit, directly alter subjects/reservations or change system binding. Protocol records retain their consumption contract. Startup checks protected privileges, ownership and required RLS before listening.
+Schema owner and runtime roles are separate. Runtime cannot DELETE/TRUNCATE product rows, rewrite audit, directly alter subjects/reservations or change system binding. Protocol records retain their consumption contract. Startup checks protected privileges, ownership and required RLS before listening.
 
 RLS protects `groups`, `group_members`, `entitlements`, `organization_capabilities`, `grant_contexts`, `members`, `invitations`, `organization_domains`, `sso_providers`, `audit_events` and `audit_event_subjects`. Routing SELECT and audit INSERT remain available without scope. Native broker transactions use protocol scope; the fixed grant-provenance triggers run as their owner to validate parents and retain locks without granting membership writes to grant admission. This is targeted protection, not universal RLS. The [isolation inventory](../reports/answerable-id-isolation-inventory.md) records scopes and trusted exceptions.
 
 ## Completed administrative operations
 
-All 49 mutations share the journal. Actor, tenant scope, operation kind, target and normalised input identify a reservation. Matching retries require current authority and return the existing result without repeating effects; mismatches conflict.
+All 49 mutations share the journal. Actor, tenant scope, operation kind, target and normalised input identify a reservation. Matching retries require current authority and return the receipt without repeating effects; mismatches conflict.
 
-Reservations are permanent. Secret-bearing response ciphertext has a separate expiry/key ring. Purging expired ciphertext cannot execute the command again.
+Reservations are permanent. Replays return receipts at the original status code, with an empty body for 204. Response bodies are not stored.
 
 ## Contract test
 
@@ -131,7 +131,7 @@ Creation/configuration/lifecycle share the journal. Deletion retains tenant chil
 
 ## Keyed command fingerprints
 
-Secret-bearing commands use keyed fingerprints with retained replay keys. Reference-only commands still use their digest format; the helper name “legacy” does not make it obsolete.
+Administrative commands use a SHA-256 digest of canonical identity and input. Permanent reservations retain outcome, status and result reference, without response bodies.
 
 ## SSO command receipts
 
@@ -147,7 +147,7 @@ Every assignment has its own UUID/revision. Window PUT accepts an optional absen
 
 ### Entitlement command recovery
 
-Original keys recover exact principal/target/scopes/window results; replay cannot broaden permission.
+Original keys return receipts; replay cannot broaden permission.
 
 ### Entitlement revisions
 
@@ -161,9 +161,9 @@ Revocation records actual session/token/grant effects. Old keys recover old comm
 
 Disable reconciles remaining local credentials even for an already-disabled user. Deletion retains UUID history and denies authority atomically with its receipt.
 
-### Own operation status
+### Operation status
 
-Receipt inspection is actor-scoped with current administrative authority. It exposes a reference projection, not another actor's recovered secret.
+Receipt inspection requires current platform audit authority and exposes the outcome, status and result reference.
 
 ## Organisation capability ceilings
 

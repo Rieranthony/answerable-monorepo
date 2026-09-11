@@ -1,3 +1,4 @@
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import {
@@ -88,7 +89,7 @@ test("SSO creation and replacement accept optional preconditions and preserve hi
     changedInput,
   );
   expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(await replay.json()).toEqual(after);
+  await expectReceipt(fixture.db, replay);
   const noop = await put(
     org.id,
     "noop",

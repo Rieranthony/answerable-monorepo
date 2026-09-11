@@ -1,3 +1,4 @@
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { and, eq, sql } from "drizzle-orm";
 import {
@@ -37,7 +38,7 @@ test("domain creation and deletion recover their committed result without adopti
   expect(operationId).toBeTruthy();
   const replay = await create("replay.example.com");
   expect(replay.status).toBe(201);
-  expect(await replay.json()).toEqual(row);
+  await expectReceipt(fixture.db, replay);
   expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
   expect((await create("different.example.com")).status).toBe(409);
   expect(
@@ -82,7 +83,7 @@ test("domain lifecycle replay preserves original state while new keys record noo
     expect(first.status).toBe(200);
     const body = await first.json();
     const replay = await send();
-    expect(await replay.json()).toEqual(body);
+    await expectReceipt(fixture.db, replay);
     expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
     expect(
       await fixture.db

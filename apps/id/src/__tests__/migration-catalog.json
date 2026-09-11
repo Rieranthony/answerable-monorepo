@@ -120,13 +120,6 @@
       "definitionHash": "e406710d1b42afa0e4e4e24a93578ef82f396a78b7211bb287e945b5268cf65c"
     },
     {
-      "name": "purge_operation_results(uuid,integer)",
-      "security_definer": true,
-      "settings": ["search_path=pg_catalog, public"],
-      "public_execute": false,
-      "definitionHash": "4ce78841794584a8cb9f64702af15eb66af8e7721a78ded2ad636003a0beab1d"
-    },
-    {
       "name": "record_audit_subjects()",
       "security_definer": true,
       "settings": ["search_path=pg_catalog, public"],
@@ -738,11 +731,6 @@
       "forced": false
     },
     {
-      "table_name": "admin_operation_results",
-      "enabled": false,
-      "forced": false
-    },
-    {
       "table_name": "admin_operations",
       "enabled": false,
       "forced": false
@@ -872,12 +860,6 @@
     {
       "table_name": "accounts",
       "name": "accounts_user_id_users_id_fk",
-      "deferrable": false,
-      "initially_deferred": false
-    },
-    {
-      "table_name": "admin_operation_results",
-      "name": "admin_operation_results_operation_id_admin_operations_id_fk",
       "deferrable": false,
       "initially_deferred": false
     },

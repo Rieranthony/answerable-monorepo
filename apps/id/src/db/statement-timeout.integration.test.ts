@@ -1,3 +1,4 @@
+import { expectReceipt } from "../__tests__/operation-receipt.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import { createAdminFixture, type AdminFixture } from "../__tests__/admin.ts";
@@ -125,11 +126,11 @@ test("timed-out command rolls back domain, audit and receipt and retries the sam
   }
   const committed = await request();
   expect(committed.status).toBe(201);
-  const body = await committed.json();
+  await committed.json();
   const replayed = await request();
   expect(replayed.status).toBe(201);
   expect(replayed.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(await replayed.json()).toEqual(body);
+  await expectReceipt(fixture.db, replayed);
   expect(await events()).toHaveLength(before.length + 1);
   expect(await fixture.db.select().from(adminOperations)).toHaveLength(
     operationsBefore.length + 1,

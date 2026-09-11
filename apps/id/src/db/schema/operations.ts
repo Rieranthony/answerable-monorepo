@@ -1,11 +1,4 @@
-import {
-  integer,
-  jsonb,
-  pgTable,
-  text,
-  unique,
-  uuid,
-} from "drizzle-orm/pg-core";
+import { integer, jsonb, pgTable, text, unique } from "drizzle-orm/pg-core";
 import { id, timestampColumn, vocabularyCheck } from "./columns.ts";
 
 /** Permanent command reservations contain references, never response secrets. */
@@ -23,7 +16,6 @@ export const adminOperations = pgTable(
     resultReference: jsonb("result_reference")
       .$type<{ type: string; id: string }>()
       .notNull(),
-    replayExpiresAt: timestampColumn("replay_expires_at"),
     committedAt: timestampColumn("committed_at").defaultNow().notNull(),
   },
   (table) => [
@@ -39,11 +31,3 @@ export const adminOperations = pgTable(
     ]),
   ],
 );
-
-/** Payloads may be purged without releasing their permanent command reservation. */
-export const adminOperationResults = pgTable("admin_operation_results", {
-  operationId: uuid("operation_id")
-    .primaryKey()
-    .references(() => adminOperations.id, { onDelete: "restrict" }),
-  ciphertext: text("ciphertext").notNull(),
-});

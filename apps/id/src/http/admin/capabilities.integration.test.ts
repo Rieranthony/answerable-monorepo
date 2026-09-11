@@ -1,3 +1,4 @@
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { and, eq, sql } from "drizzle-orm";
 import {
@@ -86,7 +87,7 @@ test("capability commands recover outcomes, preserve revisions on noops, audit t
   );
   expect(replay.status).toBe(201);
   expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(await replay.json()).toEqual(row);
+  await expectReceipt(fixture.db, replay);
   expect(
     (await request("POST", base(), { ...input, scopes: ["tool:read"] }, key))
       .status,
@@ -140,7 +141,7 @@ test("capability commands recover outcomes, preserve revisions on noops, audit t
     etag,
   );
   expect(recovered.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(await recovered.json()).toEqual(disabledRow);
+  await expectReceipt(fixture.db, recovered);
   const tenantRead = await fixture.app.request(path, {
     headers: fixture.headers("tenantReader"),
   });
@@ -486,7 +487,7 @@ test("platform user approvals distinguish login, exact pair and renewal across t
       const row = await created.json();
       const replay = await request("POST", endpoint, input, key);
       expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-      expect(await replay.json()).toEqual(row);
+      await expectReceipt(fixture.db, replay);
       const path = `${endpoint}/${row.id}`;
       const etag = (await request("GET", path)).headers.get("ETag")!;
       const narrowed = await request(
@@ -609,7 +610,7 @@ test("user approvals reject unsupported registration and foreign private resourc
     key,
   );
   expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(await replay.json()).toEqual(row);
+  await expectReceipt(fixture.db, replay);
 });
 
 test("the bound platform ceiling can be removed even when it supplies the last writer", async () => {

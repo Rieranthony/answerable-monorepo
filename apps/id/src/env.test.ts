@@ -81,7 +81,6 @@ describe("unit: environment", () => {
       databaseStatementTimeoutMs: 10_000,
       databaseLockTimeoutMs: 2_000,
       databaseIdleInTransactionTimeoutMs: 15_000,
-      operationReplay: undefined,
       rootAdminSecret: undefined,
       rootAdminBreakGlass: false,
       openApiEnabled: true,
@@ -240,40 +239,6 @@ test("validates root configuration", () => {
     rootAdminSecret: "x".repeat(32),
     rootAdminBreakGlass: true,
   });
-});
-
-test("replay configuration validates dedicated versioned keys without exposing their values", () => {
-  const config = {
-    activeKeyId: "current",
-    keys: { current: Buffer.alloc(32, 7).toString("base64url") },
-  };
-  expect(
-    parseEnvironment({
-      ...requiredEnvironment,
-      OPERATION_REPLAY_CONFIG: JSON.stringify(config),
-    }),
-  ).toMatchObject({ operationReplay: config });
-  for (const value of [
-    "not-json-secret",
-    JSON.stringify({ ...config, activeKeyId: "missing" }),
-    JSON.stringify({
-      activeKeyId: "current",
-      keys: { current: "invalid-key-secret" },
-    }),
-  ]) {
-    try {
-      parseEnvironment({
-        ...requiredEnvironment,
-        OPERATION_REPLAY_CONFIG: value,
-      });
-      throw new Error("configuration was accepted");
-    } catch (error) {
-      expect(error).toBeInstanceOf(EnvironmentValidationError);
-      expect((error as Error).message).not.toContain(value);
-      expect((error as Error).message).not.toContain("invalid-key-secret");
-      expect((error as Error).message).toContain("OPERATION_REPLAY_CONFIG");
-    }
-  }
 });
 
 test("application secret rotation validates every retained version without leaking values", () => {

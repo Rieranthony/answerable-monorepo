@@ -37,10 +37,6 @@ test("integration: root locks after a human administrator and supports break-gla
   const { db } = connection;
   const secret = "integration-root-secret-at-least-32-characters";
   const environment = testEnvironment({
-    operationReplay: {
-      activeKeyId: "test",
-      keys: { test: Buffer.alloc(32, 3).toString("base64url") },
-    },
     rootAdminSecret: secret,
     rootAdminBreakGlass: false,
     trustedOrigins: [issuer.origin, "https://console.example.com"],

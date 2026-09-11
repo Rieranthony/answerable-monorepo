@@ -36,7 +36,6 @@ export function testEnvironment(
     databaseStatementTimeoutMs: 10_000,
     databaseLockTimeoutMs: 2_000,
     databaseIdleInTransactionTimeoutMs: 15_000,
-    operationReplay: undefined,
     rootAdminSecret: undefined,
     rootAdminBreakGlass: false,
     openApiEnabled: true,

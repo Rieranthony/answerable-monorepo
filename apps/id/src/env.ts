@@ -1,6 +1,5 @@
 import { findInvalidTrustedProxies } from "@better-auth/core/utils/ip";
 import { z } from "zod";
-import { createOperationCipher } from "./services/operation-cipher.ts";
 import { upstreamTokenSecretsSchema } from "./auth/upstream-token-storage.ts";
 
 const applicationSecrets = z.string().transform((value, context) => {
@@ -46,26 +45,6 @@ const upstreamTokenSecrets = z.string().transform((value, context) => {
   }
 });
 
-const replayConfig = z.string().transform((value, context) => {
-  try {
-    const config = z
-      .object({
-        activeKeyId: z.string(),
-        keys: z.record(z.string(), z.string()),
-      })
-      .parse(JSON.parse(value));
-    createOperationCipher(config);
-    return config;
-  } catch {
-    context.addIssue({
-      code: "custom",
-      message:
-        "Expected a valid activeKeyId and canonical 256-bit base64url keys",
-    });
-    return z.NEVER;
-  }
-});
-
 /** Browser origins Better Auth trusts; the pages origin when none is set. */
 const parseTrustedOrigins = (value: string, fallback: string) => {
   const origins = value
@@ -86,7 +65,6 @@ const environmentSchema = z
     BETTER_AUTH_SECRET: z.string().min(32),
     BETTER_AUTH_SECRETS: applicationSecrets.optional(),
     UPSTREAM_TOKEN_SECRETS: upstreamTokenSecrets.optional(),
-    OPERATION_REPLAY_CONFIG: replayConfig.optional(),
     BETTER_AUTH_TRUSTED_ORIGINS: z.string().default(""),
     /** Initial platform slug; persisted system bindings determine authority afterwards. */
     PLATFORM_ORGANIZATION_SLUG: z
@@ -203,7 +181,6 @@ const environmentSchema = z
     betterAuthSecret: environment.BETTER_AUTH_SECRET,
     betterAuthSecrets: environment.BETTER_AUTH_SECRETS,
     upstreamTokenSecrets: environment.UPSTREAM_TOKEN_SECRETS,
-    operationReplay: environment.OPERATION_REPLAY_CONFIG,
     trustedOrigins: parseTrustedOrigins(
       environment.BETTER_AUTH_TRUSTED_ORIGINS,
       environment.AUTH_PAGES_URL ?? "http://localhost:47100",

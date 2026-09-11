@@ -37,7 +37,6 @@ signals to an operator. No destination or numerical alert budget is configured h
 | `admin_denial_audit_unavailable` or `token_rejection_audit_unavailable` | Investigate database/audit availability; refusal remains refusal                                                                             |
 | `custody_preflight_failed`                                              | Keep recovery traffic closed and inspect key/source delivery                                                                                 |
 | Missing process summaries                                               | Check process health and collector delivery before interpreting demand                                                                       |
-| Expiry job nonzero exit or missed scheduled run                         | Inspect scheduler state and repeat the existing bounded purge; successful nonempty batches retain atomic `operation.results_purged` evidence |
 | Backup age or retrieval failure                                         | Use the backup service's independently monitored completion/recovery evidence; `/readyz` cannot detect this                                  |
 
 ## Deliver and check keys
@@ -51,12 +50,10 @@ bun run ops:preflight
 The preflight performs read-only, paged database scans. It decrypts every retained
 signing private key with the provider's supported secret configuration, verifies a
 local canary against its public key, reads each account's upstream token fields via
-the supported storage transform, and decrypts retained, unexpired command results.
-It also checks availability of their fingerprint keys. It does not validate the
-unknown original request against its fingerprint. Only counts are printed. Missing
+the supported storage transform. Only counts are printed. Missing
 or incorrect keys, invalid ciphertext, a mismatched key pair or no signing key fails
 with exit status 1. It never generates replacement keys or rewrites credentials.
-It does not detect an absent result row, prove backup completeness, or validate
+It does not prove backup completeness or validate
 cookies, external IdP private keys and every provider credential family.
 
 On a **new installation**, initialise native JWKS in the isolated runtime before
@@ -68,8 +65,7 @@ failure; do not use initialisation to replace missing restored keys.
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | Application secret       | `BETTER_AUTH_SECRET`; optional native `BETTER_AUTH_SECRETS` ring. Encrypts provider material including signing private keys; active secret signs browser cookies | Retained ciphertext and every required backup; promotion requires fresh browser sign-in                |
 | Upstream token keys      | `UPSTREAM_TOKEN_SECRETS`; first version writes, listed versions read account access, refresh and ID tokens                                                       | All surviving fields and required backups decrypt without the retiring version                         |
-| Command replay keys      | `OPERATION_REPLAY_CONFIG`; active key writes encrypted results and fingerprint MACs                                                                              | All live replay windows, retained backups and recovery requirements                                    |
-| Database credentials     | Separate migration, runtime and expiry-maintenance logins                                                                                                        | Provision new credentials and permissions after restore; do not restore owner credentials into runtime |
+| Database credentials     | Separate migration and runtime logins                                                                                                        | Provision new credentials and permissions after restore; do not restore owner credentials into runtime |
 | Root and IdP credentials | Deployment-managed root bootstrap secret and configured SSO credentials                                                                                          | Separate inventory and provider-specific revocation/rotation checks                                    |
 
 Keep these families independent and outside PostgreSQL backups. The repository
@@ -78,7 +74,7 @@ access to one, or prove that every replica received a version.
 
 **Normal rotation.** Inventory current ciphertext, backups and replicas first.
 Distribute a new version to every replica while keeping the current active version
-first (or retaining the current `activeKeyId`). Run the preflight against stopped
+first. Run the preflight against stopped
 writers with the staged configuration. Coordinate promotion across replicas, then
 recheck and exercise a synthetic native sign-in, issuance, refresh and command replay.
 Changing the active application secret requires fresh sign-in; staged old cookies
@@ -99,9 +95,7 @@ incident, close traffic and preserve recovery evidence before changing keys.
 
 Product deletion remains terminal `deletedAt` soft deletion with immediate credential
 clearing and durable UUID/identifier reservations. Physical domain-data purge jobs and
-durations are deferred. The existing bounded command-result expiry job is separate;
-its runtime-independent role and invocation are documented in the [ID README](README.md#replay-keys-and-retention).
-No production scheduler is installed by this slice.
+durations are deferred.
 
 Before deployment, assign owners and supply:
 
@@ -114,5 +108,4 @@ Before deployment, assign owners and supply:
    signing-key emergency rotation/verification overlap.
 4. Backup/key retention, a complete post-snapshot recovery source, independent
    acknowledgement evidence, recovery RTO/RPO, and authority to reopen traffic.
-5. Monitoring and incident ownership, and deployment scheduling for existing replay
-   ciphertext expiry. Domain-data purge policy remains a separate deferred decision.
+5. Monitoring and incident ownership. Domain-data purge policy remains a separate deferred decision.

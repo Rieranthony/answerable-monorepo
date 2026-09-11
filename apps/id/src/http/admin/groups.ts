@@ -1,3 +1,4 @@
+import { commandJson } from "./schemas.ts";
 import { tenantRead } from "./tenant-read.ts";
 import {
   requireRevision,
@@ -102,7 +103,10 @@ export const routes = {
     responses: standardResponses(
       { orgScope: "org:read" },
       {
-        200: { description: "Success", content: json(page(groupSchema)) },
+        200: {
+          description: "Success",
+          content: commandJson(page(groupSchema)),
+        },
         ...problemResponses(400, 404),
       },
     ),
@@ -113,7 +117,7 @@ export const routes = {
     operationId: "createGroup",
     summary: "Create an organisation group",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects; live changed-input reuse conflicts and expired recovery never executes again. Create an organisation group and return the created record, recording the change in the audit log. Prefer getGroup to inspect existing state; validation_failed rejects malformed input, not_found identifies missing parents or targets, and conflict or reference_violation identifies conflicting records.",
+      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects; changed-input reuse conflicts. Create an organisation group and return the created record, recording the change in the audit log. Prefer getGroup to inspect existing state; validation_failed rejects malformed input, not_found identifies missing parents or targets, and conflict or reference_violation identifies conflicting records.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
@@ -130,9 +134,9 @@ export const routes = {
         201: {
           description: "Success",
           headers: commandResponseHeaders,
-          content: json(groupSchema),
+          content: commandJson(groupSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -169,7 +173,7 @@ export const routes = {
     operationId: "updateGroup",
     summary: "Update an organisation group",
     description:
-      "Requires Idempotency-Key and optionally the If-Match ETag from getGroup. Stale or wrong-instance supplied revisions return 412. Committed replay precedes the old revision check. Noops preserve the revision. Identical authorised retries recover the original result for seven days without repeating effects; live changed-input reuse conflicts and expired recovery never executes again. Update an organisation group and return the updated record, recording the change in the audit log. Prefer getGroup to inspect existing state; validation_failed rejects malformed input, not_found identifies missing parents or targets, and conflict or reference_violation identifies conflicting records.",
+      "Requires Idempotency-Key and optionally the If-Match ETag from getGroup. Stale or wrong-instance supplied revisions return 412. Committed replay precedes the old revision check. Noops preserve the revision. Identical authorised retries return the receipt without repeating effects; changed-input reuse conflicts. Update an organisation group and return the updated record, recording the change in the audit log. Prefer getGroup to inspect existing state; validation_failed rejects malformed input, not_found identifies missing parents or targets, and conflict or reference_violation identifies conflicting records.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
@@ -189,9 +193,9 @@ export const routes = {
         200: {
           description: "Success",
           headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
-          content: json(groupSchema),
+          content: commandJson(groupSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 412, 503),
+        ...problemResponses(400, 404, 409, 412, 503),
       },
     ),
   },
@@ -201,7 +205,7 @@ export const routes = {
     operationId: "disableGroup",
     summary: "Disable an organisation group",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects; live changed-input reuse conflicts and expired recovery never executes again. Disable an organisation group and return the updated record. Prefer enableGroup for the opposite transition; not_found means the target is missing and already disabled state returns a noop.",
+      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects; changed-input reuse conflicts. Disable an organisation group and return the updated record. Prefer enableGroup for the opposite transition; not_found means the target is missing and already disabled state returns a noop.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
@@ -218,9 +222,9 @@ export const routes = {
         200: {
           description: "Success",
           headers: commandResponseHeaders,
-          content: json(groupSchema),
+          content: commandJson(groupSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -230,7 +234,7 @@ export const routes = {
     operationId: "enableGroup",
     summary: "Enable an organisation group",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects; live changed-input reuse conflicts and expired recovery never executes again. Enable an organisation group and return the updated record. Prefer disableGroup for the opposite transition; not_found means the target is missing and already active state returns a noop.",
+      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects; changed-input reuse conflicts. Enable an organisation group and return the updated record. Prefer disableGroup for the opposite transition; not_found means the target is missing and already active state returns a noop.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
@@ -247,9 +251,9 @@ export const routes = {
         200: {
           description: "Success",
           headers: commandResponseHeaders,
-          content: json(groupSchema),
+          content: commandJson(groupSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -259,7 +263,7 @@ export const routes = {
     operationId: "eraseGroup",
     summary: "Erase an organisation group",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects; live changed-input reuse conflicts and expired recovery never executes again. Soft-delete the group and return no content; related group assignments and entitlements also receive terminal deletedAt markers. The version-3 group.erased audit records actual soft-deleted policy rows and retains affected-user UUID history. This records removed assignments, not a claim that every affected user lost all effective access. The confirm query parameter must equal the target id. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableGroup for reversible offboarding. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
+      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects; changed-input reuse conflicts. Soft-delete the group and return no content; related group assignments and entitlements also receive terminal deletedAt markers. The version-3 group.erased audit records actual soft-deleted policy rows and retains affected-user UUID history. This records removed assignments, not a claim that every affected user lost all effective access. The confirm query parameter must equal the target id. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableGroup for reversible offboarding. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "erase",
@@ -278,7 +282,7 @@ export const routes = {
       {},
       {
         204: { description: "Success", headers: commandResponseHeaders },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -338,7 +342,7 @@ export const routes = {
     operationId: "putGroupMember",
     summary: "Add or update a group member",
     description:
-      "Requires Idempotency-Key. Accepts the strong If-Match ETag from getGroupMember for conditional replacement; conflicting/malformed headers return 400; stale or recreated state returns 412. Committed replay precedes the precondition check. Identical authorised retries recover the original result for seven days without repeating effects; live changed-input reuse conflicts and expired recovery never executes again. Create or update a manual group membership validity window and return the membership, with 201 for creation and 200 for an update. Prefer removeGroupMember to end membership; validation_failed rejects malformed input, not_found means a parent is missing, and group_directory_managed prevents manual changes to directory groups.",
+      "Requires Idempotency-Key. Accepts the strong If-Match ETag from getGroupMember for conditional replacement; conflicting/malformed headers return 400; stale or recreated state returns 412. Committed replay precedes the precondition check. Identical authorised retries return the receipt without repeating effects; changed-input reuse conflicts. Create or update a manual group membership validity window and return the membership, with 201 for creation and 200 for an update. Prefer removeGroupMember to end membership; validation_failed rejects malformed input, not_found means a parent is missing, and group_directory_managed prevents manual changes to directory groups.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
@@ -371,14 +375,14 @@ export const routes = {
         200: {
           description: "Success",
           headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
-          content: json(membershipSchema),
+          content: commandJson(membershipSchema),
         },
         201: {
           description: "Membership created",
           headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
-          content: json(membershipSchema),
+          content: commandJson(membershipSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 412, 503),
+        ...problemResponses(400, 404, 409, 412, 503),
       },
     ),
   },
@@ -388,7 +392,7 @@ export const routes = {
     operationId: "removeGroupMember",
     summary: "Remove a group member",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects; live changed-input reuse conflicts and expired recovery never executes again. Remove a manual group membership and return no content, removing access inherited through that membership. Prefer putGroupMember to change its validity window; not_found means a parent or membership is missing and group_directory_managed prevents manual changes to directory groups.",
+      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects; changed-input reuse conflicts. Remove a manual group membership and return no content, removing access inherited through that membership. Prefer putGroupMember to change its validity window; not_found means a parent or membership is missing and group_directory_managed prevents manual changes to directory groups.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
@@ -403,7 +407,7 @@ export const routes = {
       {},
       {
         204: { description: "Success", headers: commandResponseHeaders },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -444,7 +448,6 @@ export function register(app: Hono<AppEnvironment>) {
           );
           return { body: row, resultReference: { type: "group", id: row.id } };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -490,7 +493,6 @@ export function register(app: Hono<AppEnvironment>) {
           };
         },
         {
-          retention: "ordinary",
           etag: (body) =>
             revisionTag(
               groupSchema.pick({ id: true, revision: true }).parse(body),
@@ -523,7 +525,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "group", id: groupId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -551,7 +552,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "group", id: groupId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -576,7 +576,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "group", id: groupId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -653,7 +652,6 @@ export function register(app: Hono<AppEnvironment>) {
           };
         },
         {
-          retention: "ordinary",
           etag: (body) =>
             revisionTag(
               membershipSchema.pick({ id: true, revision: true }).parse(body),
@@ -690,7 +688,6 @@ export function register(app: Hono<AppEnvironment>) {
             },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );

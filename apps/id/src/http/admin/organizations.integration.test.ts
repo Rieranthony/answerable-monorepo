@@ -1,3 +1,4 @@
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -406,7 +407,7 @@ test("organisation commands recover committed results across lifecycle changes a
   expect(first.headers.get("Operation-Id")).toBeString();
   const duplicate = await command("org-create", "", "POST", input);
   expect(duplicate.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(await duplicate.json()).toEqual(original);
+  await expectReceipt(fixture.db, duplicate);
   expect(
     (await command("org-create", "", "POST", { ...input, name: "Other" }))
       .status,
@@ -426,7 +427,7 @@ test("organisation commands recover committed results across lifecycle changes a
       changed.headers.get("Operation-Id"),
     );
     expect(repeated.headers.get("Idempotency-Replayed")).toBe("true");
-    expect(await repeated.json()).toEqual(saved);
+    await expectReceipt(fixture.db, repeated);
     expect(
       await fixture.db
         .select()
@@ -458,7 +459,7 @@ test("organisation commands recover committed results across lifecycle changes a
   ).toMatchObject([{ status: "disabled", deletedAt: expect.any(Date) }]);
   const creationReplay = await command("org-create", "", "POST", input);
   expect(creationReplay.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(await creationReplay.json()).toEqual(original);
+  await expectReceipt(fixture.db, creationReplay);
 });
 
 const patchTags = new Map<string, string>();

@@ -1,3 +1,4 @@
+import { commandJson } from "./schemas.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
 import type { AppEnvironment } from "../context.ts";
@@ -95,7 +96,7 @@ const patchSchema = windowSchema
 const orgParameter = pathParameter("organizationId", "uuid");
 const idParameter = pathParameter("capabilityId", "uuid");
 const recovery =
-  "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days; changed input returns idempotency_key_reused and expired recovery returns 410 without repeating effects. ";
+  "Requires Idempotency-Key. Identical authorised retries return the receipt; changed input returns idempotency_key_reused. ";
 export const routes = {
   listCapabilities: {
     method: "get",
@@ -179,9 +180,9 @@ export const routes = {
         201: {
           description: "Created capability",
           headers: commandResponseHeaders,
-          content: json(capabilitySchema),
+          content: commandJson(capabilitySchema),
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -211,9 +212,9 @@ export const routes = {
         200: {
           description: "Capability",
           headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
-          content: json(capabilitySchema),
+          content: commandJson(capabilitySchema),
         },
-        ...problemResponses(400, 404, 409, 410, 412, 503),
+        ...problemResponses(400, 404, 409, 412, 503),
       },
     ),
   },
@@ -237,7 +238,7 @@ export const routes = {
           description: "Removed capability",
           headers: commandResponseHeaders,
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -302,7 +303,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "capability", id: row.id },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -343,7 +343,6 @@ export function register(app: Hono<AppEnvironment>) {
           };
         },
         {
-          retention: "ordinary",
           etag: (value) =>
             revisionTag(
               capabilitySchema.pick({ id: true, revision: true }).parse(value),
@@ -375,7 +374,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "capability", id: capabilityId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );

@@ -1,3 +1,4 @@
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { withDatabaseScope } from "../../db/isolation.ts";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
@@ -270,7 +271,7 @@ test("subject failure rolls back the entitlement and receipt; the same key then 
   const replay = await command(path, "POST", input, key);
   expect(replay.status).toBe(201);
   expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(await replay.json()).toEqual(await response.json());
+  await expectReceipt(fixture.db, replay);
   expect(
     await fixture.db
       .select()
@@ -589,7 +590,7 @@ for (const principal of ["group", "organisation"] as const) {
         );
         expect(replay.status).toBe(200);
         expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-        expect(await replay.json()).toEqual(await response.json());
+        await expectReceipt(fixture.db, replay);
       }
       if (method !== "DELETE") {
         const noop = await command(`${base}/${row.id}${suffix}`, method, body);
@@ -683,7 +684,7 @@ for (const principal of ["group", "organisation"] as const) {
     expect(response.status).toBe(201);
     const replay = await command(path, "POST", input, key);
     expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-    expect(await replay.json()).toEqual(await response.json());
+    await expectReceipt(fixture.db, replay);
     expect(
       await fixture.db
         .select()

@@ -1,3 +1,4 @@
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import {
@@ -45,8 +46,7 @@ test("organisation revision rejects stale edits while replay preserves its origi
   expect(noop.headers.get("ETag")).toBe(currentTag);
   const replay = await patch("org-revision-first", tag);
   expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(replay.headers.get("ETag")).toBe(currentTag);
-  expect(await replay.json()).toEqual(saved);
+  await expectReceipt(fixture.db, replay);
   expect((await patch("org-revision-first", currentTag)).status).toBe(409);
   expect((await patch("org-revision-missing")).status).toBe(200);
   expect((await patch("org-revision-weak", `W/${currentTag}`)).status).toBe(

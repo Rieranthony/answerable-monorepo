@@ -1,9 +1,10 @@
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { z } from "zod";
 import { clientSchema } from "./clients.ts";
 import { createId } from "../../lib/id.ts";
 import { authorizeCommand } from "../../services/command-authority.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   createAdminFixture,
   type AdminFixture,
@@ -12,8 +13,6 @@ import {
   auditEvents,
   grantContexts,
   oauthClients,
-  adminOperationResults,
-  adminOperations,
   sessions,
 } from "../../db/schema/index.ts";
 let fixture: AdminFixture;
@@ -31,7 +30,7 @@ function request(path: string, key: string, body?: unknown) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
-test("client creation and rotation recover lost responses without repeating their effects", async () => {
+test("client creation and rotation return receipts without repeating their effects", async () => {
   const input = {
     clientId: "replay-client",
     name: "Replay client",
@@ -59,7 +58,7 @@ test("client creation and rotation recover lost responses without repeating thei
     clientCredentialsScopes: ["tool:read", "tool:write", "tool:read"],
   });
   expect(second.status).toBe(201);
-  expect(await second.json()).toEqual(created);
+  await expectReceipt(fixture.db, second);
   expect(second.headers.get("Idempotency-Replayed")).toBe("true");
   expect(second.headers.get("Operation-Id")).toBe(
     first.headers.get("Operation-Id"),
@@ -78,7 +77,7 @@ test("client creation and rotation recover lost responses without repeating thei
     `/${created.clientId}/rotate-secret`,
     "rotate-key",
   );
-  expect(await recovered.json()).toEqual(secret);
+  await expectReceipt(fixture.db, recovered);
   const [after] = await fixture.db
     .select()
     .from(oauthClients)
@@ -127,7 +126,7 @@ test("client creation and rotation recover lost responses without repeating thei
   ).toBe(rotated.headers.get("Operation-Id"));
 });
 
-test("key errors, missing configuration and purged results cannot repeat a rotation", async () => {
+test("key errors cannot repeat a rotation", async () => {
   const path = "/replay-client/rotate-secret";
   const invalidHeaders = fixture.headers("platformAdmin");
   invalidHeaders.delete("Idempotency-Key");
@@ -139,13 +138,6 @@ test("key errors, missing configuration and purged results cannot repeat a rotat
       })
     ).status,
   ).toBe(400);
-  const config = fixture.environment.operationReplay;
-  fixture.environment.operationReplay = undefined;
-  try {
-    expect((await request(path, "not-configured")).status).toBe(503);
-  } finally {
-    fixture.environment.operationReplay = config;
-  }
   const different = await request(
     "/different-client/rotate-secret",
     "rotate-key",
@@ -155,27 +147,6 @@ test("key errors, missing configuration and purged results cannot repeat a rotat
     code: "idempotency_key_reused",
     retryable: false,
   });
-  const replay = await request(path, "rotate-key");
-  const operationId = replay.headers.get("Operation-Id")!;
-  await fixture.db
-    .delete(adminOperationResults)
-    .where(eq(adminOperationResults.operationId, operationId));
-  const before = await fixture.db
-    .select()
-    .from(oauthClients)
-    .where(eq(oauthClients.clientId, "replay-client"));
-  const expired = await request(path, "rotate-key");
-  expect(expired.status).toBe(410);
-  expect(await expired.json()).toMatchObject({
-    code: "operation_result_expired",
-    operationId,
-  });
-  expect(
-    await fixture.db
-      .select()
-      .from(oauthClients)
-      .where(eq(oauthClients.clientId, "replay-client")),
-  ).toEqual(before);
 });
 
 test("transactional authority rejects stale admitted users, root and machine credentials", async () => {
@@ -244,68 +215,6 @@ test("transactional authority rejects stale admitted users, root and machine cre
   ).rejects.toMatchObject({ code: "invalid_token" });
 });
 
-test("an audit failure rolls back the HTTP rotation and leaves its key retryable", async () => {
-  const before = await fixture.db
-    .select()
-    .from(oauthClients)
-    .where(eq(oauthClients.clientId, "replay-client"));
-  const operationsBefore = await fixture.db.select().from(adminOperations);
-  await fixture.db.execute(
-    sql`alter table audit_events add constraint replay_audit_fault check (action <> 'client.secret_rotated') not valid`,
-  );
-  try {
-    expect(
-      (await request("/replay-client/rotate-secret", "audit-retry")).status,
-    ).toBeGreaterThanOrEqual(400);
-  } finally {
-    await fixture.db.execute(
-      sql`alter table audit_events drop constraint replay_audit_fault`,
-    );
-  }
-  expect(
-    await fixture.db
-      .select()
-      .from(oauthClients)
-      .where(eq(oauthClients.clientId, "replay-client")),
-  ).toEqual(before);
-  expect(await fixture.db.select().from(adminOperations)).toEqual(
-    operationsBefore,
-  );
-  expect(
-    (await request("/replay-client/rotate-secret", "audit-retry")).status,
-  ).toBe(200);
-});
-
-test("concurrent HTTP creation has one committed result", async () => {
-  const input = {
-    clientId: "concurrent-replay-client",
-    name: "Concurrent",
-    organizationId: fixture.tenant.organizationId,
-    tokenEndpointAuthMethod: "client_secret_basic",
-    grantTypes: ["client_credentials"],
-    clientCredentialsScopes: ["tool:read"],
-  };
-  const responses = await Promise.all([
-    request("", "concurrent-key", input),
-    request("", "concurrent-key", input),
-  ]);
-  expect(responses.some((response) => response.status === 201)).toBe(true);
-  for (const response of responses)
-    expect([201, 409]).toContain(response.status);
-  const success = await responses
-    .find((response) => response.status === 201)!
-    .json();
-  const replay = await request("", "concurrent-key", input);
-  expect(replay.status).toBe(201);
-  expect(await replay.json()).toEqual(success);
-  expect(
-    await fixture.db
-      .select()
-      .from(oauthClients)
-      .where(eq(oauthClients.clientId, input.clientId)),
-  ).toHaveLength(1);
-});
-
 test("deletion replay uses the retained operation, and a revoked session cannot recover it", async () => {
   await fixture.db
     .delete(oauthClients)
@@ -320,7 +229,7 @@ test("deletion replay uses the retained operation, and a revoked session cannot 
   };
   const replay = await request("", "create-key", input);
   expect(replay.status).toBe(201);
-  expect(await replay.json()).toMatchObject({ clientId: "replay-client" });
+  await expectReceipt(fixture.db, replay);
   expect(
     await fixture.db
       .select()
@@ -333,7 +242,7 @@ test("deletion replay uses the retained operation, and a revoked session cannot 
   expect((await request("", "create-key", input)).status).toBe(401);
 });
 
-test("rotation replay recovers its credential without revoking grants established afterwards", async () => {
+test("rotation replay returns its receipt without revoking grants established afterwards", async () => {
   const f = await createAdminFixture({ databasePoolMax: 1 });
   try {
     const post = (path: string, key: string, body?: unknown) => {
@@ -360,15 +269,13 @@ test("rotation replay recovers its credential without revoking grants establishe
     const sessionId = createId(),
       authTime = new Date();
     const principal = f.principals.tenantAdmin;
-    await f.db
-      .insert(sessions)
-      .values({
-        id: sessionId,
-        userId: principal.userId,
-        token: createId(),
-        createdAt: authTime,
-        expiresAt: new Date(Date.now() + 60000),
-      });
+    await f.db.insert(sessions).values({
+      id: sessionId,
+      userId: principal.userId,
+      token: createId(),
+      createdAt: authTime,
+      expiresAt: new Date(Date.now() + 60000),
+    });
     const grant = async () =>
       (
         await f.db
@@ -392,7 +299,7 @@ test("rotation replay recovers its credential without revoking grants establishe
       "rotate-context-key",
     );
     expect(first.status).toBe(200);
-    const credential = await first.json();
+    expect((await first.json()).clientSecret).toBeString();
     const [old] = await f.db
       .select()
       .from(grantContexts)
@@ -408,7 +315,7 @@ test("rotation replay recovers its credential without revoking grants establishe
       "rotate-context-key",
     );
     expect(replay.status).toBe(200);
-    expect(await replay.json()).toEqual(credential);
+    await expectReceipt(f.db, replay);
     expect(
       await f.db
         .select()

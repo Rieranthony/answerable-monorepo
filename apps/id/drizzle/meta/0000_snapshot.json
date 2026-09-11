@@ -3817,45 +3817,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.admin_operation_results": {
-      "name": "admin_operation_results",
-      "schema": "",
-      "columns": {
-        "operation_id": {
-          "name": "operation_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "ciphertext": {
-          "name": "ciphertext",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "admin_operation_results_operation_id_admin_operations_id_fk": {
-          "name": "admin_operation_results_operation_id_admin_operations_id_fk",
-          "tableFrom": "admin_operation_results",
-          "tableTo": "admin_operations",
-          "columnsFrom": [
-            "operation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.admin_operations": {
       "name": "admin_operations",
       "schema": "",
@@ -3913,12 +3874,6 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
-        },
-        "replay_expires_at": {
-          "name": "replay_expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
         },
         "committed_at": {
           "name": "committed_at",

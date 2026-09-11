@@ -11,18 +11,6 @@ const ownsObjects = sql`
 
 /** Provision permissions only; login credentials belong to deployment tooling. */
 export function configureRuntimeRole(db: Database, roleName: string) {
-  return configureRole(db, roleName, "runtime");
-}
-
-export function configureRetentionRole(db: Database, roleName: string) {
-  return configureRole(db, roleName, "retention");
-}
-
-function configureRole(
-  db: Database,
-  roleName: string,
-  purpose: "runtime" | "retention",
-) {
   if (!/^[a-z][a-z0-9_]{0,62}$/.test(roleName))
     throw new Error("Invalid runtime role name");
   return db.transaction(async (tx) => {
@@ -59,15 +47,6 @@ function configureRole(
       sql`revoke execute on all functions in schema public from ${role}`,
     );
     await tx.execute(
-      sql`revoke execute on function public.purge_operation_results(uuid, integer) from public`,
-    );
-    if (purpose === "retention") {
-      await tx.execute(
-        sql`grant execute on function public.purge_operation_results(uuid, integer) to ${role}`,
-      );
-      return;
-    }
-    await tx.execute(
       sql`grant select, insert, update, delete on all tables in schema public to ${role}`,
     );
     await tx.execute(
@@ -78,7 +57,7 @@ function configureRole(
       sql`revoke insert, update, delete on audit_event_subjects from ${role}`,
     );
     await tx.execute(
-      sql`revoke update, delete on system_bindings, admin_operations, admin_operation_results from ${role}`,
+      sql`revoke update, delete on system_bindings, admin_operations from ${role}`,
     );
     // Trigger invocation needs no direct EXECUTE grant. Block calls that could forge subjects.
     await tx.execute(
@@ -100,8 +79,6 @@ export async function assertRuntimeRole(db: Database) {
       or has_table_privilege(current_user, 'audit_event_subjects', 'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER')
       or has_table_privilege(current_user, 'system_bindings', 'UPDATE,DELETE,TRUNCATE,TRIGGER')
       or has_table_privilege(current_user, 'admin_operations', 'UPDATE,DELETE,TRUNCATE,TRIGGER')
-      or has_table_privilege(current_user, 'admin_operation_results', 'UPDATE,DELETE,TRUNCATE,TRIGGER')
-      or has_function_privilege(current_user, 'public.purge_operation_results(uuid,integer)', 'EXECUTE')
       or has_function_privilege(current_user, 'capture_audit_subjects(audit_events,text)', 'EXECUTE')
       as unsafe
     from pg_roles r where rolname = current_user

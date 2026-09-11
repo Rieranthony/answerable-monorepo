@@ -53,10 +53,10 @@ Actual signed/opaque token outputs, persisted token/grant state and mandatory us
 All 49 mutations require idempotency keys and expose operation/replay headers. Seven PATCH routes accept If-Match; SSO and assignment replacement PUTs also accept optional revision preconditions. Without If-Match, commands use the current row. Keep actor, tenant, command, target and normalised input fixed when retrying.
 
 - Before commit, interruption leaves no successful effect, fact or completed receipt.
-- After commit, a lost response is recovered with the same key/input and current authority.
+- After commit, the same key/input and current authority return a receipt with the original status code; 204 stays empty. Read the current representation through the result reference.
 - Mismatched input conflicts; a stale supplied revision fails without overwrite.
 - A matching key never repeats later effects, even after enable/delete/replacement.
-- Permanent reservations outlive response recovery. Expired secret ciphertext cannot rerun the command.
+- Reservations are permanent. Response bodies are not stored. A lost client creation or rotation secret requires another rotation with a new key.
 - Replays recheck current authority and required human freshness, including after lock waits.
 
 Native client assertions remain consumed even when later issuance rolls back. Grant/security changes share deterministic lock ordering; revocation-first denies, while issuance-first retains the documented offline-token exposure. See [mutation inventory](../reports/answerable-id-mutation-inventory.md).
@@ -69,7 +69,7 @@ Production user outcomes use version 4; machine issuance uses version 2. Unauthe
 
 ### Erasure and identifying a person
 
-Product deletion uses terminal `deletedAt` on 15 tables, ordinary read/eligibility denial and credential clearing/revocation. Retained rows may contain identifying fields: this is not anonymisation. UUID audit remains queryable with current authority. No named-identity recovery feature is required. Domain purge jobs and their retention duration are deferred; native protocol expiry and operational replay-cipher expiry remain active separate contracts.
+Product deletion uses terminal `deletedAt` on 15 tables, ordinary read/eligibility denial and credential clearing/revocation. Retained rows may contain identifying fields: this is not anonymisation. UUID audit remains queryable with current authority. No named-identity recovery feature is required. Domain purge jobs and their retention duration are deferred; native protocol expiry remains a separate contract.
 
 Current user/organisation/group/client deletion facts use version 3; smaller product deletion facts and relationship/member removals use their documented versions. [T3's report](../reports/id-soft-deletion.md) defines exact manifests and reader compatibility.
 
@@ -85,7 +85,7 @@ The service must be reachable only through the ingress proxies listed in `TRUSTE
 
 Request-body, pool and statement limits remain in effect. Sensitive human changes/linking need verified upstream authentication within five minutes; broker time is not an acceptable substitute. Machine/root authority remains explicit.
 
-Custody preflight, bounded replay-retention maintenance and fixed-cardinality process summaries are implemented. Not yet. A restore drill against production-shaped data is a release input. No production capacity, tenant fairness, percentile latency, ingress or RTO/RPO is certified.
+Custody preflight and fixed-cardinality process summaries are implemented. Not yet. A restore drill against production-shaped data is a release input. No production capacity, tenant fairness, percentile latency, ingress or RTO/RPO is certified.
 
 Upstream-disable detection, downstream logout and actual consumer cache/session behaviour remain release requirements. Their wider mechanisms are **Not yet**, rather than hidden behind a green local suite.
 
@@ -101,7 +101,7 @@ Removing the last platform administrator through membership, group or capability
 | F3  | All 49 mutations, current-authority replay, revisions and crash proof               | Route inventory and command/process tests; intended-environment recovery remains.     |
 | F4  | Own-tenant SSO, deliberate linking, tenant-local lifecycle and eleven-table RLS     | T1/T2/T3 restricted A/B tests; real multi-provider acceptance remains.                |
 | F5  | Shared exact-pair evaluator, scope narrowing and actual claim/audit binding         | Production code/refresh/machine and access tests; consumer denial matrix remains.     |
-| F6  | Fresh sensitive authority, local revocation, body limits, custody/retention tooling | T1–T4 tests and measured limits; remote offboarding, capacity/ingress/custody remain. |
+| F6  | Fresh sensitive authority, local revocation, body limits, custody tooling | T1–T4 tests and measured limits; remote offboarding, capacity/ingress/custody remain. |
 | F7  | Exactly one migration, installation proof, reconciled docs and local gates          | Final report; production remains no-go until the external checklist closes.           |
 
 Mandatory fixtures remain two unrelated tenants, shared A+B user, platform staff, private/shared resources, shared login client, separate machine clients, unowned external registration, disabled/revoked/expired rows and duplicate display names with distinct IDs. Apply each where relevant; do not generate a redundant Cartesian product. Include duplicate commands, both grant/revocation orders, process death, pool reuse and restored state.

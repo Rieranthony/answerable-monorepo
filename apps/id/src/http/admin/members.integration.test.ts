@@ -1,3 +1,4 @@
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { approveMachineCapability } from "../../__tests__/capabilities.ts";
 import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { platformWriteService } from "../../__tests__/platform-context.ts";
@@ -17,10 +18,7 @@ const clients = {
   createClient: platformWriteService(clientsImplementation.createClient),
   linkResource: platformWriteService(clientsImplementation.linkResource),
 };
-import {
-  adminOperations,
-  adminOperationResults,
-} from "../../db/schema/index.ts";
+import { adminOperations } from "../../db/schema/index.ts";
 let fixture: AdminFixture;
 beforeAll(async () => {
   fixture = await createAdminFixture();
@@ -543,10 +541,10 @@ test("member commands recover the same result without repeating their audit effe
     expect(first.status).toBe(method === "DELETE" ? 204 : 200);
     const operationId = first.headers.get("Operation-Id");
     expect(operationId).toBeTruthy();
-    const firstBody = await first.text();
+    await first.text();
     const replay = await send();
     expect(replay.status).toBe(first.status);
-    expect(await replay.text()).toBe(firstBody);
+    await expectReceipt(fixture.db, replay);
     expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
     expect(replay.headers.get("Operation-Id")).toBe(operationId);
     expect(
@@ -616,15 +614,7 @@ test("member replay requires current authority and cannot rerun after recovery d
       .set({ status: "active", revokedAt: null })
       .where(eq(members.id, actor.memberId));
   }
-  await fixture.db
-    .delete(adminOperationResults)
-    .where(eq(adminOperationResults.operationId, operationId));
-  const expired = await send();
-  expect(expired.status).toBe(410);
-  expect(await expired.json()).toMatchObject({
-    code: "operation_result_expired",
-    operationId,
-  });
+  await expectReceipt(fixture.db, await send());
   expect(
     await fixture.db
       .select()

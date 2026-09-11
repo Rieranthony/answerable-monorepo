@@ -194,16 +194,12 @@ test("runtime cannot mutate evidence, forge subjects, truncate, alter schema or 
     "delete from admin_operations",
     "update admin_operations set outcome = 'noop'",
     "truncate admin_operations",
-    "update admin_operation_results set ciphertext = 'forged'",
-    "delete from admin_operation_results",
-    "truncate admin_operation_results",
     "truncate audit_events cascade",
     "delete from audit_event_subjects",
     "insert into audit_event_subjects select * from audit_event_subjects",
     "alter table audit_events disable trigger all",
     "create table public.runtime_forgery (id int)",
     "select capture_audit_subjects(event, 'recorded') from audit_events event limit 1",
-    "select public.purge_operation_results('00000000-0000-7000-8000-000000000001'::uuid, 1)",
     "set role answerable",
   ])
     await expect(

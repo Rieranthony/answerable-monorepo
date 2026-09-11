@@ -28,9 +28,9 @@ A new service has no accounts at all. You get in with the root secret, sign in w
 openssl rand -base64 48
 ```
 
-1. **Start the service with the secret.** Set `ROOT_ADMIN_SECRET` to that value and configure `OPERATION_REPLAY_CONFIG` in deployment secret storage, independently of `BETTER_AUTH_SECRET`. Its JSON shape is `{"activeKeyId":"v1","keys":{"v1":"<canonical-base64url-encoded random 32-byte key>"}}`. Generate a dedicated random key; the placeholder is not a usable key. Keep older keys until their replay windows close. Without this configuration, domain commands return `503` before changing state.
+1. **Start the service with the secret.** Set `ROOT_ADMIN_SECRET` to that value.
 
-   Also configure independent upstream token keys before sign-in: `UPSTREAM_TOKEN_SECRETS=[{"version":1,"value":"<canonical-base64url-encoded random 32-byte key>"}]`. The first version encrypts upstream access, refresh and ID tokens; retain previous versions for reads. Missing keys make sign-in fail with `500 authentication_unavailable`. For rotation, distribute the new key to every instance before making it the first entry. Do not reuse authentication or replay keys.
+   Also configure independent upstream token keys before sign-in: `UPSTREAM_TOKEN_SECRETS=[{"version":1,"value":"<canonical-base64url-encoded random 32-byte key>"}]`. The first version encrypts upstream access, refresh and ID tokens; retain previous versions for reads. Missing keys make sign-in fail with `500 authentication_unavailable`. For rotation, distribute the new key to every instance before making it the first entry. Do not reuse authentication keys.
 
    Apply the initial migration, then provision the restricted runtime database role before starting the service. On an empty database, startup creates and binds the platform organisation, the admin API resource and the `platform-admins` group. Repeated migration and startup preserve those IDs. `PLATFORM_ORGANIZATION_NAME` names the organisation; the default is `Answerable`. Production key delivery, capacity and recovery objectives remain release work.
 
@@ -109,7 +109,7 @@ openssl rand -base64 48
 
 Your browser session is enough for commands you type by hand. For scripts and agents, create a client owned by the platform organisation, allow it to use the admin API, and swap its secret for a token.
 
-Set `MACHINE_LINK_KEY` and `MACHINE_CAPABILITY_KEY` once for their separate commands. A human cookie requires [fresh authentication](/docs/id/manage#fresh-authentication). Client creation requires configured replay encryption and a stable `Idempotency-Key`. Use a distinct key for each intended registration, and reuse it after a lost response. Recovery lasts 24 hours; see [operation status and retries](/docs/id/manage#operation-status).
+Set `MACHINE_LINK_KEY` and `MACHINE_CAPABILITY_KEY` once for their separate commands. A human cookie requires [fresh authentication](/docs/id/manage#fresh-authentication). Client creation requires a stable `Idempotency-Key`. Use a distinct key for each intended registration, and reuse it after a lost response. A retry returns the receipt; a lost secret requires another rotation with a new key; see [operation status and retries](/docs/id/manage#operation-status).
 
 ```bash
 curl https://id.answerable.org/api/admin/v1/clients \
@@ -225,7 +225,7 @@ curl https://id.answerable.org/api/admin/v1/organizations \
   -d '{"slug":"contoso","name":"Contoso"}'
 ```
 
-**Retry key.** Set `ORGANISATION_CREATE_KEY` once for this intended creation and reuse it with identical input after a lost response. All organisation mutations require keys; ordinary result recovery lasts seven days. PATCH also accepts the optional strong If-Match ETag from getOrganization; see [editing organisation configuration](/docs/id/manage#operation-status).
+**Retry key.** Set `ORGANISATION_CREATE_KEY` once for this intended creation and reuse it with identical input after a lost response. All organisation mutations require keys; retries return receipts. PATCH also accepts the optional strong If-Match ETag from getOrganization; see [editing organisation configuration](/docs/id/manage#operation-status).
 
 **Slug.** Lowercase labels joined by single hyphens, the same grammar as the Omni-Weaver tenant id. It cannot change later. Set `ORG` to the returned `id`.
 
@@ -247,7 +247,7 @@ curl -X DELETE "https://id.answerable.org/api/admin/v1/organizations/$ORG/domain
   -H "Authorization: Bearer $TOKEN"
 ```
 
-**Domain operation keys.** Set `DOMAIN_OPERATION_KEY` and `DOMAIN_DELETE_KEY` to different stable keys for the two logical commands. Reuse each key with identical input when retrying; recoverable responses last seven days. The root setup example also uses a stable key. Repeated enable/disable under a new key records a no-op; changed input under an existing key conflicts.
+**Domain operation keys.** Set `DOMAIN_OPERATION_KEY` and `DOMAIN_DELETE_KEY` to different stable keys for the two logical commands. Reuse each key with identical input when retrying; retries return receipts. The root setup example also uses a stable key. Repeated enable/disable under a new key records a no-op; changed input under an existing key conflicts.
 
 **Delete an assignment.** Set `DOMAIN` to its domain row ID. [deleteOrganizationDomain](/docs/id/admin-api/domains/deleteOrganizationDomain) removes sign-in routing and records `domain.deleted`. No `confirm` is required; disable the assignment for a reversible suspension.
 
@@ -255,7 +255,7 @@ curl -X DELETE "https://id.answerable.org/api/admin/v1/organizations/$ORG/domain
 
 **Changing the directory.** Creating, replacing or deleting SSO configuration revokes existing user authorisations for that organisation. An unchanged configuration preserves them. Restoring an earlier configuration does not restore revoked grants. Other organisations and global browser sessions are preserved. [User OAuth](/docs/id/oauth) validates the selected organisation's accepted account, provider UUID and configuration revision before creating or using a grant.
 
-Set `SSO_OPERATION_KEY` once for this configuration command and reuse it with identical input on retry. PUT and delete require keys; redacted result recovery lasts seven days. Omit `clientSecret` to retain the stored secret on a new update. Creation and replacement accept optional preconditions. Supply the current provider ETag in `If-Match` to refuse stale changes, and retain it with the key on retry.
+Set `SSO_OPERATION_KEY` once for this configuration command and reuse it with identical input on retry. PUT and delete require keys; retries return receipts. Omit `clientSecret` to retain the stored secret on a new update. Creation and replacement accept optional preconditions. Supply the current provider ETag in `If-Match` to refuse stale changes, and retain it with the key on retry.
 
 ```bash
 curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$ORG/sso-provider" \
@@ -465,4 +465,4 @@ See [all admin error codes](/docs/id/manage#errors), including confirmation and 
 
 **Group operation keys.** Set `GROUP_CREATE_KEY` and `GROUP_MEMBER_KEY` once for their respective creation and membership commands, and reuse it with identical input after a lost response. Use a different key for each separate command. Group PATCH accepts the optional current getGroup ETag in If-Match. Membership PUT accepts optional If-Match from getGroupMember; omitted preconditions use the current row. Keep the original precondition when retrying a key.
 
-**Entitlement operation keys.** Set `ORG_ENTITLEMENT_KEY`, `GROUP_ENTITLEMENT_KEY` or `ADMIN_ENTITLEMENT_KEY` once for the corresponding creation command. Reuse that key with identical input after a lost response; use a new key for a separate command. Entitlement create, PATCH, enable, disable and delete all require keys and recover committed responses for seven days. Unchanged scopes/windows or lifecycle state records a noop and preserves timestamps. Scope order and duplicates do not change the command's meaning. PATCH accepts the optional getEntitlement ETag in If-Match. Keep that original precondition when retrying its key.
+**Entitlement operation keys.** Set `ORG_ENTITLEMENT_KEY`, `GROUP_ENTITLEMENT_KEY` or `ADMIN_ENTITLEMENT_KEY` once for the corresponding creation command. Reuse that key with identical input after a lost response; use a new key for a separate command. Entitlement create, PATCH, enable, disable and delete all require keys and return receipts on retry. Unchanged scopes/windows or lifecycle state records a noop and preserves timestamps. Scope order and duplicates do not change the command's meaning. PATCH accepts the optional getEntitlement ETag in If-Match. Keep that original precondition when retrying its key.

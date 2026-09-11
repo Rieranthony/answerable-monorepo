@@ -13,10 +13,9 @@ import {
   type TenantMemberContext,
 } from "../../services/tenant-context.ts";
 import {
-  createOperationCipher,
+  executeOperation,
   type OperationJson,
-} from "../../services/operation-cipher.ts";
-import { executeOperation } from "../../services/operations.ts";
+} from "../../services/operations.ts";
 import type { AppEnvironment } from "../context.ts";
 import { ProblemError } from "../problem.ts";
 import { freshAuthenticationGuard } from "../../auth/fresh-authentication.ts";
@@ -41,7 +40,7 @@ export const commandResponseHeaders = {
   },
 };
 
-/** HTTP JSON representation is also the encrypted replay representation. */
+/** Normalise first-response values to their HTTP JSON representation. */
 export const operationJson = (value: unknown): OperationJson =>
   JSON.parse(JSON.stringify(value));
 
@@ -52,7 +51,6 @@ type CommandResult = {
   resultReference: { type: string; id: string };
 };
 type CommandOptions = {
-  retention?: "secret" | "ordinary";
   etag?: (body: OperationJson) => string;
 };
 
@@ -75,16 +73,6 @@ async function httpCommand<T>(
       400,
       "invalid_idempotency_key",
       "A 1–256 character Idempotency-Key is required",
-    );
-  const environment = context.get("environment");
-  const replayConfiguration = environment.operationReplay;
-  if (!replayConfiguration)
-    throw new ProblemError(
-      503,
-      "operation_replay_unavailable",
-      "Replay encryption is not configured",
-      undefined,
-      { retryable: true },
     );
   const actor = actorFromContext(context);
   const freshnessPolicy = context.get("freshAuthentication");
@@ -127,13 +115,10 @@ async function httpCommand<T>(
         body: operationJson(result.body),
       };
     },
-    {
-      cipher: createOperationCipher(replayConfiguration),
-      retention: options.retention ?? "secret",
-    },
     authority.release,
   );
-  if (options.etag) context.header("ETag", options.etag(result.body!));
+  if (options.etag && !result.replayed)
+    context.header("ETag", options.etag(result.body!));
   context.header("Operation-Id", result.operation.id);
   context.header("Idempotency-Replayed", String(result.replayed));
   context.header("Cache-Control", "no-store");
@@ -229,6 +214,6 @@ export function tenantMemberCommand(
       release: (authorized) => authorized.close(),
     },
     (_tx, actor, tenant) => tenant.run(mutate, actor),
-    { retention: "ordinary" },
+    {},
   );
 }

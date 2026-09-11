@@ -362,7 +362,6 @@ test("concurrent policy lock upgrades roll back one command and permit same-key 
           },
           { requestId: name },
         ),
-      undefined,
       (authority) => authority.close(),
     );
   const outcomes = await Promise.all(

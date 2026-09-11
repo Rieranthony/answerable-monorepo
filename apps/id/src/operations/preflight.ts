@@ -1,35 +1,25 @@
-import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { asc, gt, sql } from "drizzle-orm";
 import { symmetricDecrypt } from "better-auth/crypto";
 import { importJWK, SignJWT, jwtVerify } from "jose";
 import { createAuth } from "../auth.ts";
 import { upstreamTokenStorage } from "../auth/upstream-token-storage.ts";
 import type { Database } from "../db/client.ts";
-import {
-  accounts,
-  adminOperations,
-  adminOperationResults,
-  jwks,
-} from "../db/schema/index.ts";
+import { accounts, jwks } from "../db/schema/index.ts";
 import type { Environment } from "../env.ts";
-import { createOperationCipher } from "../services/operation-cipher.ts";
 
 /** Read-only, paged verification while writers are stopped. Returns counts, never credential material.
  * This checks retained ciphertext, not secret-manager delivery, backup completeness or traffic readiness.
  */
 export async function checkKeyCustody(db: Database, environment: Environment) {
   try {
-    if (
-      !environment.upstreamTokenSecrets?.length ||
-      !environment.operationReplay
-    )
+    if (!environment.upstreamTokenSecrets?.length)
       throw new Error("Required key configuration is absent");
-    const cipher = createOperationCipher(environment.operationReplay);
     const upstream = upstreamTokenStorage(environment.upstreamTokenSecrets)
       .schema.account.fields.accessToken.transform.output;
     const { secretConfig } = await createAuth(db, environment).$context;
     return await db.transaction(async (tx) => {
       await tx.execute(sql`set transaction read only`);
-      const counts = { signingKeys: 0, accounts: 0, replayResults: 0 };
+      const counts = { signingKeys: 0, accounts: 0 };
       let after: string | undefined;
       for (;;) {
         const rows = await tx
@@ -78,37 +68,6 @@ export async function checkKeyCustody(db: Database, environment: Environment) {
           for (const value of [row.access, row.refresh, row.identity])
             await upstream(value);
           counts.accounts++;
-        }
-        after = rows.at(-1)!.id;
-      }
-      after = undefined;
-      for (;;) {
-        const rows = await tx
-          .select({
-            id: adminOperations.id,
-            fingerprint: adminOperations.fingerprint,
-            ciphertext: adminOperationResults.ciphertext,
-          })
-          .from(adminOperations)
-          .innerJoin(
-            adminOperationResults,
-            eq(adminOperationResults.operationId, adminOperations.id),
-          )
-          .where(
-            and(
-              sql`${adminOperations.replayExpiresAt} > statement_timestamp()`,
-              after ? gt(adminOperations.id, after) : undefined,
-            ),
-          )
-          .orderBy(asc(adminOperations.id))
-          .limit(100);
-        if (!rows.length) break;
-        for (const row of rows) {
-          // This confirms retained MAC-key availability, not the unknown original request input.
-          if (row.fingerprint.startsWith("hmac-v1."))
-            cipher.matchesFingerprint("", row.fingerprint);
-          await cipher.decrypt(row.id, row.ciphertext);
-          counts.replayResults++;
         }
         after = rows.at(-1)!.id;
       }

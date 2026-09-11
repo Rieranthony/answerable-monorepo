@@ -1,3 +1,4 @@
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import {
@@ -55,8 +56,7 @@ test("entitlement revisions reject stale and recreated targets without breaking 
   );
   const replay = await patch(entitlement.id, "first", tag);
   expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(await replay.json()).toEqual(saved);
-  expect(replay.headers.get("ETag")).toBe(nextTag);
+  await expectReceipt(fixture.db, replay);
   const noop = await patch(entitlement.id, "noop", nextTag);
   expect(noop.status).toBe(200);
   expect(await noop.json()).toEqual(saved);

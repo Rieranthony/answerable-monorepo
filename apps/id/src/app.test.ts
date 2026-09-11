@@ -144,9 +144,7 @@ describe("unit: Hono application", () => {
     expect(Object.keys(schema.paths)).toEqual([
       "/api/admin/v1/organizations/{organizationId}/capabilities",
       "/api/admin/v1/organizations/{organizationId}/capabilities/{capabilityId}",
-      "/api/admin/v1/me/operations/{operationId}",
       "/api/admin/v1/operations/{operationId}",
-      "/api/admin/v1/organizations/{organizationId}/operations/{operationId}",
       "/api/admin/v1/organizations/{organizationId}/sign-in-diagnosis",
 
       "/api/admin/v1/me",

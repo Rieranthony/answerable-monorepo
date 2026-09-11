@@ -1,3 +1,4 @@
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import {
   createAdminFixture,
@@ -74,8 +75,7 @@ test("assignment creation and replacement preconditions protect recreated pairs 
   const replayCreate = await put("create", { "If-None-Match": "*" });
   expect(replayCreate.status).toBe(201);
   expect(replayCreate.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(await replayCreate.json()).toEqual(original);
-  expect(replayCreate.headers.get("ETag")).toBe(originalTag);
+  await expectReceipt(fixture.db, replayCreate);
   const noop = await put("noop", { "If-Match": nextTag });
   expect(noop.status).toBe(200);
   expect(await noop.json()).toEqual(saved);
@@ -117,7 +117,6 @@ test("assignment creation and replacement preconditions protect recreated pairs 
     { validUntil: "2100-01-01T00:00:00.000Z" },
   );
   expect(historical.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(await historical.json()).toEqual(saved);
-  expect(historical.headers.get("ETag")).toBe(nextTag);
+  await expectReceipt(fixture.db, historical);
   expect(await (await read()).json()).toEqual(replacement);
 });

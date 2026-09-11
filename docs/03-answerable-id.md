@@ -18,7 +18,7 @@ The [public guides](../apps/web/content/docs/id/index.mdx) document reachable be
 
 Corporate IdP → Answerable ID → registered application or resource. Postgres owns sessions, native OAuth state, policy, audit and command receipts. Redis is reserved for later caching. Better Auth verifies the protocol; Answerable plugins bind verified state to current tenant policy.
 
-Only allowlisted authentication routes are public. Administrative routes use typed Hono contracts, service contexts and transactionally rechecked authority. Schema owners, runtime processes and replay-retention jobs use separate database roles.
+Only allowlisted authentication routes are public. Administrative routes use typed Hono contracts, service contexts and transactionally rechecked authority. Schema owners and runtime processes use separate database roles.
 
 ### How client organizations connect (upstream federation)
 
@@ -98,9 +98,9 @@ Registration is platform administration, not permission. Clients require configu
 
 ## Keys and credential custody (non-negotiable)
 
-Retained signing keys use Better Auth application-secret encryption. Upstream tokens and secret-bearing operation results use separate key rings. Secrets never belong in audit evidence.
+Retained signing keys use Better Auth application-secret encryption. Upstream tokens use a separate key ring. Secrets never belong in audit evidence.
 
-The [operations runbook](../apps/id/OPERATIONS.md) covers custody preflight, retained-key dependencies and replay cipher expiry. Restore drills: Not yet. A restore drill against production-shaped data is a release input. External secret delivery and emergency rotation require the intended deployment. No KMS-backed signing or secret-store operator has been selected here.
+The [operations runbook](../apps/id/OPERATIONS.md) covers custody preflight and retained-key dependencies. Restore drills: Not yet. A restore drill against production-shaped data is a release input. External secret delivery and emergency rotation require the intended deployment. No KMS-backed signing or secret-store operator has been selected here.
 
 ## Availability and failure modes
 

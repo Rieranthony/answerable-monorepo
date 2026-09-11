@@ -1,3 +1,4 @@
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import {
@@ -158,7 +159,7 @@ for (const mode of ["user", "session", "all", "client", "rotate"] as const) {
     }
     const applied = await request(path, method, key);
     expect(applied.status).toBe(mode === "session" ? 204 : 200);
-    const responseBody = await applied.text();
+    await applied.text();
     const operationId = applied.headers.get("Operation-Id")!;
     const events = await db
       .select()
@@ -221,7 +222,7 @@ for (const mode of ["user", "session", "all", "client", "rotate"] as const) {
     ).toBe(true);
     const replay = await request(path, method, key);
     expect(replay.status).toBe(applied.status);
-    expect(await replay.text()).toBe(responseBody);
+    await expectReceipt(fixture.db, replay);
     expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
     expect(replay.headers.get("Operation-Id")).toBe(operationId);
     expect(

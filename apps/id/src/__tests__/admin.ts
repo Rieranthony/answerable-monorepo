@@ -59,10 +59,6 @@ export async function createAdminFixture(
     trustedOrigins: [issuer.origin, trustedOrigin],
     rootAdminSecret: "fixture-root-secret-at-least-32-characters",
     rootAdminBreakGlass: true,
-    operationReplay: {
-      activeKeyId: "test",
-      keys: { test: Buffer.alloc(32, 3).toString("base64url") },
-    },
     ...overrides,
   });
   const connection = createDatabase(environment);

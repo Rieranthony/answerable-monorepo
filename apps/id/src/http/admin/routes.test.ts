@@ -46,7 +46,7 @@ test("administrative command contract gaps cannot grow unnoticed", () => {
           "headers.Idempotency-Replayed",
         );
       }
-      for (const status of ["400", "409", "410", "503"])
+      for (const status of ["400", "409", "503"])
         expect(route.responses, route.operationId).toHaveProperty(status);
     }
     // These PUT commands verify immutable ownership or ensure one link exists;
@@ -123,7 +123,10 @@ test("admin route tables equal the OpenAPI operation union", async () => {
             {
               content?: {
                 "application/json"?: {
-                  schema?: { properties?: Record<string, unknown> };
+                  schema?: {
+                    properties?: Record<string, unknown>;
+                    anyOf?: { properties?: Record<string, unknown> }[];
+                  };
                 };
               };
             }
@@ -152,8 +155,7 @@ test("admin route tables equal the OpenAPI operation union", async () => {
   for (const table of adminRouteTables) {
     for (const route of Object.values(table)) {
       const label = route.operationId;
-      if (route.open)
-        expect(["getAdminMe", "getMyOperationStatus"]).toContain(label);
+      if (route.open) expect(label).toBe("getAdminMe");
       expect(ids.has(label), `${label}: duplicate operationId`).toBe(false);
       ids.add(label);
       const path = `/api/admin/v1${route.path.replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, "{$1}")}`;
@@ -166,6 +168,27 @@ test("admin route tables equal the OpenAPI operation union", async () => {
       const operation = document.paths[path]?.[route.method];
       expect(operation, `${label}: missing OpenAPI operation`).toBeDefined();
       expect(operation?.operationId, label).toBe(label);
+      if (route.kind !== "read") {
+        expect(operation?.responses).not.toHaveProperty("410");
+        for (const [status, response] of Object.entries(operation!.responses)) {
+          if (!/^2\d\d$/.test(status) || status === "204") continue;
+          const variants =
+            response.content?.["application/json"]?.schema?.anyOf;
+          expect(variants, `${label}: receipt response`).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                properties: expect.objectContaining({
+                  operationId: expect.anything(),
+                  outcome: expect.anything(),
+                  statusCode: expect.anything(),
+                  resultReference: expect.anything(),
+                }),
+              }),
+            ]),
+          );
+        }
+      }
+
       expect(operation?.security, `${label}: security`).toEqual([
         { cookieAuth: [] },
         { bearerAuth: [] },

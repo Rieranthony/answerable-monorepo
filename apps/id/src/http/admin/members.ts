@@ -1,3 +1,4 @@
+import { commandJson } from "./schemas.ts";
 import { tenantRead } from "./tenant-read.ts";
 import {
   requireRevision,
@@ -126,7 +127,10 @@ export const routes = {
     responses: standardResponses(
       { orgScope: "org:read" },
       {
-        200: { description: "Success", content: json(page(memberSchema)) },
+        200: {
+          description: "Success",
+          content: commandJson(page(memberSchema)),
+        },
         ...problemResponses(400, 404),
       },
     ),
@@ -149,7 +153,7 @@ export const routes = {
     responses: standardResponses(
       { orgScope: "org:read" },
       {
-        200: { description: "Success", content: json(detailSchema) },
+        200: { description: "Success", content: commandJson(detailSchema) },
         ...problemResponses(400, 404),
       },
     ),
@@ -160,7 +164,7 @@ export const routes = {
     operationId: "updateMember",
     summary: "Update a member window",
     description:
-      "Requires Idempotency-Key and optionally the If-Match ETag from getMemberConfiguration. Stale supplied revisions return 412. A committed replay is recovered before checking the old revision. The response includes the current member revision; read getMemberConfiguration for the next ETag. Identical authorised retries recover the original result for seven days without repeating the mutation or its audit event. Changed input returns idempotency_key_reused; expired recovery returns operation_result_expired and never reruns the command. Change a member’s validity window and return the member with group memberships, affecting when organisation access is effective. Prefer removeMember for offboarding; validation_failed rejects an empty or malformed patch, not_found means the member or organisation is unavailable, and constraint_violation rejects an invalid validity window.",
+      "Requires Idempotency-Key and optionally the If-Match ETag from getMemberConfiguration. Stale supplied revisions return 412. A committed replay is recovered before checking the old revision. The response includes the current member revision; read getMemberConfiguration for the next ETag. Identical authorised retries return the receipt without repeating the mutation or its audit event. Changed input returns idempotency_key_reused. Change a member’s validity window and return the member with group memberships, affecting when organisation access is effective. Prefer removeMember for offboarding; validation_failed rejects an empty or malformed patch, not_found means the member or organisation is unavailable, and constraint_violation rejects an invalid validity window.",
     tag: "Members",
     platformScope: "platform:users",
     kind: "write",
@@ -180,10 +184,10 @@ export const routes = {
       {
         200: {
           description: "Success",
-          content: json(detailSchema),
+          content: commandJson(detailSchema),
           headers: commandResponseHeaders,
         },
-        ...problemResponses(400, 404, 409, 410, 412, 503),
+        ...problemResponses(400, 404, 409, 412, 503),
       },
     ),
   },
@@ -193,7 +197,7 @@ export const routes = {
     operationId: "reinstateMember",
     summary: "Reinstate an organisation member",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating the mutation or its audit event. Changed input returns idempotency_key_reused; expired recovery returns operation_result_expired and never reruns the command. Explicitly reactivate a revoked membership, preserving its UUID and validity window. Removed direct grants and group assignments are not restored. Already active memberships return unchanged state with an audit event. validation_failed rejects malformed IDs and not_found means the member is unavailable. ",
+      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating the mutation or its audit event. Changed input returns idempotency_key_reused. Explicitly reactivate a revoked membership, preserving its UUID and validity window. Removed direct grants and group assignments are not restored. Already active memberships return unchanged state with an audit event. validation_failed rejects malformed IDs and not_found means the member is unavailable. ",
     tag: "Members",
     platformScope: "platform:users",
     orgScope: "org:users",
@@ -211,9 +215,9 @@ export const routes = {
         200: {
           description: "Membership reinstated",
           headers: commandResponseHeaders,
-          content: json(detailSchema),
+          content: commandJson(detailSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -223,7 +227,7 @@ export const routes = {
     operationId: "removeMember",
     summary: "Remove an organisation member",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating the mutation or its audit event. Changed input returns idempotency_key_reused; expired recovery returns operation_result_expired and never reruns the command. Revoke an organisation membership and return no content. Retain its UUID and revoked state to prevent automatic SSO re-enrolment; remove its direct grants and group assignments. The global user and other memberships remain. Repeating removal records an unchanged event. Prefer updateMember to change its validity or scopes; validation_failed rejects malformed ids and not_found means the target is unavailable.",
+      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating the mutation or its audit event. Changed input returns idempotency_key_reused. Revoke an organisation membership and return no content. Retain its UUID and revoked state to prevent automatic SSO re-enrolment; remove its direct grants and group assignments. The global user and other memberships remain. Repeating removal records an unchanged event. Prefer updateMember to change its validity or scopes; validation_failed rejects malformed ids and not_found means the target is unavailable.",
     tag: "Members",
     platformScope: "platform:users",
     kind: "write",
@@ -239,7 +243,7 @@ export const routes = {
       { orgScope: "org:users" },
       {
         204: { description: "Success", headers: commandResponseHeaders },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },

@@ -1,3 +1,4 @@
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { eq } from "drizzle-orm";
 import { auditEvents } from "../../db/schema/index.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
@@ -53,7 +54,7 @@ test("configuration patches reject stale revisions but replay an already committ
   expect(after.revision).toBe(before.revision + 1);
   const replay = await patch("change-once", tag!, "After");
   expect(replay.status).toBe(200);
-  expect(await replay.json()).toEqual(after);
+  await expectReceipt(fixture.db, replay);
   expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
   const stale = await patch("stale-change", tag!, "Overwrite");
   expect(stale.status).toBe(412);
@@ -71,10 +72,6 @@ test("configuration patches reject stale revisions but replay an already committ
   );
   const operation = await status.json();
   expect(operation).toMatchObject({ outcome: "noop" });
-  expect(
-    new Date(operation.replayExpiresAt).getTime() -
-      new Date(operation.committedAt).getTime(),
-  ).toBeCloseTo(7 * 24 * 60 * 60 * 1000, -3);
   const events = await fixture.db
     .select()
     .from(auditEvents)

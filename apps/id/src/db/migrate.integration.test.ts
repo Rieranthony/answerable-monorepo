@@ -43,7 +43,6 @@ test("integration: migrations are idempotent", async () => {
   `);
   expect(tables.rows.map((row) => row.table_name)).toEqual([
     "accounts",
-    "admin_operation_results",
     "admin_operations",
     "audit_event_subjects",
     "audit_events",

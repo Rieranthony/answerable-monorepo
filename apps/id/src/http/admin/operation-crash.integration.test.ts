@@ -9,7 +9,6 @@ import { assertDisposableTestDatabase } from "../../__tests__/test-database.ts";
 import { configureRuntimeRole } from "../../db/runtime-role.ts";
 import {
   adminOperations,
-  adminOperationResults,
   auditEvents,
   organizations,
   oauthClients,
@@ -17,7 +16,6 @@ import {
   groups,
 } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
-import { createOperationCipher } from "../../services/operation-cipher.ts";
 
 let fixture: AdminFixture;
 let roleName: string;
@@ -187,10 +185,6 @@ for (const action of ["create", "rotate", "erase"] as const)
         const ids = operations.map((row) => row.id);
         return {
           operations,
-          results: await fixture.db
-            .select()
-            .from(adminOperationResults)
-            .where(inArray(adminOperationResults.operationId, ids)),
           events: await fixture.db
             .select()
             .from(auditEvents)
@@ -239,7 +233,6 @@ for (const action of ["create", "rotate", "erase"] as const)
           expect(await targets()).toEqual(before);
           expect(await evidence()).toEqual({
             operations: [],
-            results: [],
             events: [],
           });
         } else {
@@ -247,7 +240,6 @@ for (const action of ["create", "rotate", "erase"] as const)
           saved = await evidence();
           committed = await targets();
           expect(saved.operations).toHaveLength(1);
-          expect(saved.results).toHaveLength(1);
           expect(saved.events).toHaveLength(1);
         }
         first.child.kill("SIGKILL");
@@ -281,7 +273,6 @@ for (const action of ["create", "rotate", "erase"] as const)
         expect(await targets()).toEqual(before);
         expect(await evidence()).toEqual({
           operations: [],
-          results: [],
           events: [],
         });
       } else {
@@ -300,16 +291,19 @@ for (const action of ["create", "rotate", "erase"] as const)
       const body = expectedStatus === 204 ? null : await recovered.json();
       const after = await evidence();
       expect(after.operations).toHaveLength(1);
-      expect(after.results).toHaveLength(1);
       expect(after.events).toHaveLength(1);
       expect(recovered.headers.get("Operation-Id")).toBe(
         after.operations[0]!.id,
       );
-      expect(body).toEqual(
-        await createOperationCipher(
-          fixture.environment.operationReplay!,
-        ).decrypt(after.operations[0]!.id, after.results[0]!.ciphertext),
-      );
+      if (phase === "after-commit" && expectedStatus !== 204) {
+        const receipt = after.operations[0]!;
+        expect(body).toEqual({
+          operationId: receipt.id,
+          outcome: receipt.outcome,
+          statusCode: receipt.statusCode,
+          resultReference: receipt.resultReference,
+        });
+      }
       if (phase === "after-commit") {
         expect(after).toEqual(saved!);
         expect(await targets()).toEqual(committed!);
@@ -341,15 +335,29 @@ for (const action of ["create", "rotate", "erase"] as const)
         expect(await rejected.json()).toMatchObject({
           error: "invalid_client",
         });
-        const accepted = await mint(body.clientSecret);
-        expect(accepted.status).toBe(200);
-        const token = await accepted.json();
-        expect(token.access_token).toBeString();
-        const authorised = await fetch(`${restarted.url}/api/admin/v1/me`, {
-          headers: { Authorization: `Bearer ${token.access_token}` },
-        });
-        expect(authorised.status).toBe(200);
-        await authorised.arrayBuffer();
+        let secret = body.clientSecret;
+        if (phase === "after-commit") {
+          const headers = new Headers(request.headers);
+          headers.set("Idempotency-Key", createId());
+          const replacement = await fetch(
+            `${restarted.url}/api/admin/v1${path}`,
+            { ...request, headers },
+          );
+          expect(replacement.status).toBe(200);
+          expect(replacement.headers.get("Idempotency-Replayed")).toBe("false");
+          secret = (await replacement.json()).clientSecret;
+        }
+        {
+          const accepted = await mint(secret);
+          expect(accepted.status).toBe(200);
+          const token = await accepted.json();
+          expect(token.access_token).toBeString();
+          const authorised = await fetch(`${restarted.url}/api/admin/v1/me`, {
+            headers: { Authorization: `Bearer ${token.access_token}` },
+          });
+          expect(authorised.status).toBe(200);
+          await authorised.arrayBuffer();
+        }
       }
       if (action === "erase") {
         for (const key of ["organizations", "members", "groups"] as const) {

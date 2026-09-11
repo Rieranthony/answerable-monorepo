@@ -1,3 +1,4 @@
+import { commandJson } from "./schemas.ts";
 import { platformRead } from "./platform-read.ts";
 import {
   requireRevision,
@@ -131,7 +132,7 @@ export const routes = {
     operationId: "eraseClient",
     summary: "Erase client",
     description:
-      "capability_references_exist requires removing all referencing capabilities before erasure. Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Soft-delete a client, its resource links and consents, clear its secret and delete its token rows, returning no content and recording client.erased. Prefer disableClient for reversible suspension; enabling does not restore revoked grant contexts. Supply confirm equal to clientId; not_found is checked before confirmation_mismatch, then client_has_entitlements requires removing every referencing entitlement before retrying. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
+      "capability_references_exist requires removing all referencing capabilities before erasure. Requires Idempotency-Key; identical authorised retries return the receipt. Soft-delete a client, its resource links and consents, clear its secret and delete its token rows, returning no content and recording client.erased. Prefer disableClient for reversible suspension; enabling does not restore revoked grant contexts. Supply confirm equal to clientId; not_found is checked before confirmation_mismatch, then client_has_entitlements requires removing every referencing entitlement before retrying. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "erase",
@@ -145,7 +146,7 @@ export const routes = {
       {},
       {
         204: { headers: commandResponseHeaders, description: "Client erased" },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -182,7 +183,7 @@ export const routes = {
     operationId: "createClient",
     summary: "Create client",
     description:
-      "Create an OAuth client with a required Idempotency-Key. Identical authorised retries recover the original registration and secret for up to 24 hours, without another creation. Operation-Id identifies the journal record and Idempotency-Replayed marks recovery. A changed input returns idempotency_key_reused; a running duplicate returns retryable operation_in_progress; expired recovery returns operation_result_expired and never recreates the client. validation_failed rejects incompatible settings, not_found means the owner is missing, and conflict prevents identity reuse.",
+      "Create an OAuth client with a required Idempotency-Key. Identical authorised retries return the receipt, without another creation. Operation-Id identifies the journal record and Idempotency-Replayed marks recovery. A changed input returns idempotency_key_reused; a running duplicate returns retryable operation_in_progress. validation_failed rejects incompatible settings, not_found means the owner is missing, and conflict prevents identity reuse.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
@@ -204,12 +205,12 @@ export const routes = {
         201: {
           headers: commandResponseHeaders,
           description:
-            "Client created; the original response is recoverable with the same key for 24 hours",
-          content: json(
+            "Client created; a retry returns the receipt. A lost secret requires a new rotation",
+          content: commandJson(
             clientSchema.extend({ clientSecret: z.string().optional() }),
           ),
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -245,7 +246,7 @@ export const routes = {
     operationId: "updateClient",
     summary: "Update client",
     description:
-      "Update a client with Idempotency-Key and optionally the If-Match ETag from getClient. A committed retry returns its original result for seven days before evaluating its old revision. New stale commands return revision_mismatch (412). An unchanged patch records a noop without advancing the revision. Invalid input returns validation_failed; unknown clients return not_found.",
+      "Update a client with Idempotency-Key and optionally the If-Match ETag from getClient. A committed retry returns its receipt before evaluating its old revision. New stale commands return revision_mismatch (412). An unchanged patch records a noop without advancing the revision. Invalid input returns validation_failed; unknown clients return not_found.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
@@ -259,9 +260,9 @@ export const routes = {
         200: {
           headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
           description: "Client updated",
-          content: json(clientSchema),
+          content: commandJson(clientSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 412, 503),
+        ...problemResponses(400, 404, 409, 412, 503),
       },
     ),
   },
@@ -271,7 +272,7 @@ export const routes = {
     operationId: "disableClient",
     summary: "Disable client",
     description:
-      "Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Disable the client, revoke its tokens and stored grant contexts across tenants, and return the updated registration. Prefer enableClient to restore future use; not_found means it is missing; an already disabled client reconciles remaining tokens and contexts, returning 200 with a noop outcome only when nothing changes.",
+      "Requires Idempotency-Key; identical authorised retries return the receipt. Disable the client, revoke its tokens and stored grant contexts across tenants, and return the updated registration. Prefer enableClient to restore future use; not_found means it is missing; an already disabled client reconciles remaining tokens and contexts, returning 200 with a noop outcome only when nothing changes.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
@@ -283,9 +284,9 @@ export const routes = {
         200: {
           headers: commandResponseHeaders,
           description: "Client disabled and tokens revoked",
-          content: json(clientSchema),
+          content: commandJson(clientSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -295,7 +296,7 @@ export const routes = {
     operationId: "enableClient",
     summary: "Enable client",
     description:
-      "Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Enable client and return the updated record without restoring revoked grant contexts. Prefer disableClient for the opposite transition; not_found means the target is missing; an already active client returns 200 with a noop outcome.",
+      "Requires Idempotency-Key; identical authorised retries return the receipt. Enable client and return the updated record without restoring revoked grant contexts. Prefer disableClient for the opposite transition; not_found means the target is missing; an already active client returns 200 with a noop outcome.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
@@ -307,9 +308,9 @@ export const routes = {
         200: {
           headers: commandResponseHeaders,
           description: "Client enabled",
-          content: json(clientSchema),
+          content: commandJson(clientSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -319,7 +320,7 @@ export const routes = {
     operationId: "rotateClientSecret",
     summary: "Rotate client secret",
     description:
-      "Rotate the client secret with a required Idempotency-Key, revoking existing client tokens and stored grant contexts across tenants in the same transaction. Identical authorised retries recover the same secret for up to 24 hours without rotating again, advancing the authorisation version or revoking grants established afterwards. A new key deliberately rotates again. Operation-Id identifies the result and Idempotency-Replayed marks recovery. operation_result_expired requires a deliberate new rotation; operation_in_progress is retryable with the same key. not_found means the client is missing and client_has_no_secret rejects another authentication method.",
+      "Rotate the client secret with a required Idempotency-Key, revoking existing client tokens and stored grant contexts across tenants in the same transaction. Identical authorised retries return the receipt without rotating again, advancing the authorisation version or revoking grants established afterwards. A new key deliberately rotates again. Operation-Id identifies the result and Idempotency-Replayed marks recovery. If the first response is lost, rotate again with a new key to obtain a secret. operation_in_progress is retryable with the same key. not_found means the client is missing and client_has_no_secret rejects another authentication method.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
@@ -331,12 +332,12 @@ export const routes = {
         200: {
           headers: commandResponseHeaders,
           description:
-            "Original rotation result, recoverable for 24 hours with the same key",
-          content: json(
+            "New secret; a retry returns the receipt. A lost secret requires a new rotation",
+          content: commandJson(
             z.object({ clientId: z.string(), clientSecret: z.string() }),
           ),
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -346,7 +347,7 @@ export const routes = {
     operationId: "setClientOwner",
     summary: "Verify unchanged client owner",
     description:
-      "Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Client ownership is immutable. Supplying the current owner returns the registration without changing it; any different owner, including adding or removing one, returns ownership_conflict. Create a replacement client under the new owner and retire the old client. validation_failed rejects malformed ids; not_found means the client is missing.",
+      "Requires Idempotency-Key; identical authorised retries return the receipt. Client ownership is immutable. Supplying the current owner returns the registration without changing it; any different owner, including adding or removing one, returns ownership_conflict. Create a replacement client under the new owner and retire the old client. validation_failed rejects malformed ids; not_found means the client is missing.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
@@ -362,9 +363,9 @@ export const routes = {
         200: {
           headers: commandResponseHeaders,
           description: "Client owner unchanged",
-          content: json(clientSchema),
+          content: commandJson(clientSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -374,7 +375,7 @@ export const routes = {
     operationId: "linkClientResource",
     summary: "Link client resource (URL-encode {resource})",
     description:
-      "Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Link an OAuth client to a resource and return the link, with 201 on creation and 200 when it already exists. The {resource} URL must be percent-encoded in the path; prefer unlinkClientResource to remove the link, and validation_failed or not_found identifies malformed input or a missing target.",
+      "Requires Idempotency-Key; identical authorised retries return the receipt. Link an OAuth client to a resource and return the link, with 201 on creation and 200 when it already exists. The {resource} URL must be percent-encoded in the path; prefer unlinkClientResource to remove the link, and validation_failed or not_found identifies malformed input or a missing target.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
@@ -386,14 +387,14 @@ export const routes = {
         200: {
           headers: commandResponseHeaders,
           description: "Resource link already exists",
-          content: json(z.object({ created: z.boolean() })),
+          content: commandJson(z.object({ created: z.boolean() })),
         },
         201: {
           headers: commandResponseHeaders,
           description: "Resource linked",
-          content: json(z.object({ created: z.boolean() })),
+          content: commandJson(z.object({ created: z.boolean() })),
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -403,7 +404,7 @@ export const routes = {
     operationId: "unlinkClientResource",
     summary: "Unlink client resource (URL-encode {resource})",
     description:
-      "Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Remove the client-to-resource link and return no content. The {resource} URL must be percent-encoded in the path; prefer linkClientResource to add a link, validation_failed identifies malformed input; not_found means the client is missing. An absent link returns 204 with a noop outcome.",
+      "Requires Idempotency-Key; identical authorised retries return the receipt. Remove the client-to-resource link and return no content. The {resource} URL must be percent-encoded in the path; prefer linkClientResource to add a link, validation_failed identifies malformed input; not_found means the client is missing. An absent link returns 204 with a noop outcome.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
@@ -416,7 +417,7 @@ export const routes = {
           headers: commandResponseHeaders,
           description: "Resource unlinked",
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -442,7 +443,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "client", id: clientId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -540,7 +540,6 @@ export function register(app: Hono<AppEnvironment>) {
           };
         },
         {
-          retention: "ordinary",
           etag: (body) =>
             revisionTag(
               clientSchema.pick({ id: true, revision: true }).parse(body),
@@ -568,7 +567,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "client", id: clientId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -591,7 +589,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "client", id: clientId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -635,7 +632,6 @@ export function register(app: Hono<AppEnvironment>) {
           outcome: "noop",
           resultReference: { type: "client", id: clientId },
         }),
-        { retention: "ordinary" },
       );
     },
   );
@@ -664,7 +660,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "client", id: clientId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -692,7 +687,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "client", id: clientId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );

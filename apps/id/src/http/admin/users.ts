@@ -1,5 +1,6 @@
+import { commandJson } from "./schemas.ts";
 import { platformRead } from "./platform-read.ts";
-import { json, pathParameter, uuidParam, confirmQuery } from "./schemas.ts";
+import { pathParameter, uuidParam, confirmQuery } from "./schemas.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
 import {
@@ -76,7 +77,7 @@ export const routes = {
     responses: standardResponses(
       {},
       {
-        200: { description: "Success", content: json(page(userSchema)) },
+        200: { description: "Success", content: commandJson(page(userSchema)) },
         ...problemResponses(400, 404),
       },
     ),
@@ -96,7 +97,7 @@ export const routes = {
     responses: standardResponses(
       {},
       {
-        200: { description: "Success", content: json(detailSchema) },
+        200: { description: "Success", content: commandJson(detailSchema) },
         ...problemResponses(400, 404),
       },
     ),
@@ -107,7 +108,7 @@ export const routes = {
     operationId: "disableUser",
     summary: "Disable user",
     description:
-      "Requires Idempotency-Key. Authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts; expired recovery never re-executes. Disable the user, revoke sessions and tokens and return the updated user. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input. Prefer removeMember to offboard from only one organisation; not_found means the user is missing. A new command reconciles remaining sessions, tokens and grant contexts even when the user is already disabled; only zero actual effects and unchanged status record a noop. Replaying an old key recovers its original result without performing a new reconciliation.",
+      "Requires Idempotency-Key. Authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Disable the user, revoke sessions and tokens and return the updated user. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input. Prefer removeMember to offboard from only one organisation; not_found means the user is missing. A new command reconciles remaining sessions, tokens and grant contexts even when the user is already disabled; only zero actual effects and unchanged status record a noop. Replaying an old key returns its receipt without performing a new reconciliation.",
     tag: "Users",
     platformScope: "platform:users",
     kind: "write",
@@ -119,9 +120,9 @@ export const routes = {
         200: {
           description: "Success",
           headers: commandResponseHeaders,
-          content: json(userSchema),
+          content: commandJson(userSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -131,7 +132,7 @@ export const routes = {
     operationId: "enableUser",
     summary: "Enable user",
     description:
-      "Requires Idempotency-Key. Authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts; expired recovery never re-executes. Enable a disabled user and return the updated user without restoring revoked sessions. Prefer getUser to inspect blockers; not_found, user_email_retired and user_inert identify missing users or states that cannot be enabled.",
+      "Requires Idempotency-Key. Authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Enable a disabled user and return the updated user without restoring revoked sessions. Prefer getUser to inspect blockers; not_found, user_email_retired and user_inert identify missing users or states that cannot be enabled.",
     tag: "Users",
     platformScope: "platform:users",
     kind: "write",
@@ -143,9 +144,9 @@ export const routes = {
         200: {
           description: "Success",
           headers: commandResponseHeaders,
-          content: json(userSchema),
+          content: commandJson(userSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -155,7 +156,7 @@ export const routes = {
     operationId: "retireUserEmail",
     summary: "Retire user email",
     description:
-      "Requires Idempotency-Key. Authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts; expired recovery never re-executes. Replace a disabled user’s email with a tombstone and return the updated user, freeing the original email for reuse. Prefer disableUser for reversible offboarding; not_found and user_not_disabled identify missing users or invalid lifecycle states.",
+      "Requires Idempotency-Key. Authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Replace a disabled user’s email with a tombstone and return the updated user, freeing the original email for reuse. Prefer disableUser for reversible offboarding; not_found and user_not_disabled identify missing users or invalid lifecycle states.",
     tag: "Users",
     platformScope: "platform:users",
     kind: "write",
@@ -167,9 +168,9 @@ export const routes = {
         200: {
           description: "Success",
           headers: commandResponseHeaders,
-          content: json(userSchema),
+          content: commandJson(userSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -179,7 +180,7 @@ export const routes = {
     operationId: "eraseUser",
     summary: "Erase user",
     description:
-      "Requires Idempotency-Key. Authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts; expired recovery never re-executes. Soft-delete the profile, account bindings, memberships, assignments, owned clients, links, consents and sent invitations. Clear account/client credentials, revoke grant contexts and delete affected session/token rows. Return no content. Concurrent writes through owned clients, memberships, sessions and refresh tokens are ordered before actual deletion and reference-clearing effects are captured. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input. The confirm query parameter must equal the target id. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableUser for reversible offboarding. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
+      "Requires Idempotency-Key. Authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Soft-delete the profile, account bindings, memberships, assignments, owned clients, links, consents and sent invitations. Clear account/client credentials, revoke grant contexts and delete affected session/token rows. Return no content. Concurrent writes through owned clients, memberships, sessions and refresh tokens are ordered before actual deletion and reference-clearing effects are captured. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input. The confirm query parameter must equal the target id. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableUser for reversible offboarding. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
     tag: "Users",
     platformScope: "platform:write",
     kind: "erase",
@@ -194,7 +195,7 @@ export const routes = {
       {},
       {
         204: { description: "Success", headers: commandResponseHeaders },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -246,7 +247,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "user", id: userId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -269,7 +269,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "user", id: userId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -292,7 +291,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "user", id: userId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -313,7 +311,6 @@ export function register(app: Hono<AppEnvironment>) {
           await service.eraseUser(platform, userId, confirm);
           return { body: null, resultReference: { type: "user", id: userId } };
         },
-        { retention: "ordinary" },
       );
     },
   );

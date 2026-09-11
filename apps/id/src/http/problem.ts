@@ -63,7 +63,6 @@ const descriptions: Record<number, string> = {
   404: "Not found",
   409: "Conflict",
   412: "Configuration revision does not match",
-  410: "Operation result expired",
   503: "Service unavailable",
   500: "Unexpected error",
 };

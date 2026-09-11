@@ -261,7 +261,6 @@ describe("integration: PostgreSQL schema", () => {
         "revision integer default 1",
         "deleted_at timestamptz null",
       ],
-      admin_operation_results: ["operation_id uuid", "ciphertext text"],
       admin_operations: [
         "id uuid",
         "actor_instance text",
@@ -273,7 +272,6 @@ describe("integration: PostgreSQL schema", () => {
         "status_code integer",
         "result_reference jsonb",
         "committed_at timestamptz default now()",
-        "replay_expires_at timestamptz null",
       ],
       audit_event_subjects: [
         "event_id uuid",
@@ -804,10 +802,6 @@ describe("integration: PostgreSQL schema", () => {
         `entitlements_status_check ${lifecycle}`,
         "entitlements_target_check CHECK ((num_nonnulls(client_id, resource) >= 1))",
         "entitlements_window_check CHECK ((valid_from < valid_until))",
-      ],
-      admin_operation_results: [
-        "admin_operation_results_operation_id_admin_operations_id_fk FOREIGN KEY (operation_id) REFERENCES admin_operations(id) ON DELETE RESTRICT",
-        "admin_operation_results_pkey PRIMARY KEY (operation_id)",
       ],
       admin_operations: [
         "admin_operations_key_unique UNIQUE (actor_instance, authority_scope, name, key_digest)",

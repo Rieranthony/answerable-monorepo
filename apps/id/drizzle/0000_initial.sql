@@ -403,11 +403,6 @@ CREATE TABLE "system_bindings" (
 	CONSTRAINT "system_bindings_name_check" CHECK ("system_bindings"."name" in ('platform'))
 );
 --> statement-breakpoint
-CREATE TABLE "admin_operation_results" (
-	"operation_id" uuid PRIMARY KEY NOT NULL,
-	"ciphertext" text NOT NULL
-);
---> statement-breakpoint
 CREATE TABLE "admin_operations" (
 	"id" uuid PRIMARY KEY NOT NULL,
 	"actor_instance" text NOT NULL,
@@ -418,7 +413,6 @@ CREATE TABLE "admin_operations" (
 	"outcome" text NOT NULL,
 	"status_code" integer NOT NULL,
 	"result_reference" jsonb NOT NULL,
-	"replay_expires_at" timestamp with time zone,
 	"committed_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "admin_operations_key_unique" UNIQUE("actor_instance","authority_scope","name","key_digest"),
 	CONSTRAINT "admin_operations_outcome_check" CHECK ("admin_operations"."outcome" in ('applied', 'noop'))
@@ -509,7 +503,6 @@ ALTER TABLE "audit_events" ADD CONSTRAINT "audit_events_operation_id_admin_opera
 ALTER TABLE "system_bindings" ADD CONSTRAINT "system_bindings_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "system_bindings" ADD CONSTRAINT "system_bindings_resource_id_oauth_resources_id_fk" FOREIGN KEY ("resource_id") REFERENCES "public"."oauth_resources"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "system_bindings" ADD CONSTRAINT "system_bindings_organization_group_fk" FOREIGN KEY ("organization_id","group_id") REFERENCES "public"."groups"("organization_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "admin_operation_results" ADD CONSTRAINT "admin_operation_results_operation_id_admin_operations_id_fk" FOREIGN KEY ("operation_id") REFERENCES "public"."admin_operations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organization_capabilities" ADD CONSTRAINT "organization_capabilities_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organization_capabilities" ADD CONSTRAINT "organization_capabilities_client_id_oauth_clients_client_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."oauth_clients"("client_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organization_capabilities" ADD CONSTRAINT "organization_capabilities_resource_fk" FOREIGN KEY ("resource") REFERENCES "public"."oauth_resources"("identifier") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -920,35 +913,6 @@ LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
 BEGIN
   RAISE EXCEPTION 'Completed operations are immutable'
     USING ERRCODE = '23514', CONSTRAINT = 'admin_operations_immutable';
-END;
-$$;
---> statement-breakpoint
-CREATE FUNCTION public.purge_operation_results(audit_id uuid, batch_size integer)
-RETURNS integer LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
-DECLARE
-  removed uuid[];
-BEGIN
-  IF batch_size IS NULL OR batch_size < 1 OR batch_size > 1000 THEN
-    RAISE EXCEPTION 'Retention batch size must be between 1 and 1000' USING ERRCODE = '22023';
-  END IF;
-  WITH candidates AS (
-    SELECT result.operation_id
-    FROM public.admin_operation_results result
-    JOIN public.admin_operations operation ON operation.id = result.operation_id
-    WHERE operation.replay_expires_at <= statement_timestamp()
-    ORDER BY operation.replay_expires_at, result.operation_id
-    LIMIT batch_size FOR UPDATE OF result SKIP LOCKED
-  ), deleted AS (
-    DELETE FROM public.admin_operation_results result USING candidates
-    WHERE result.operation_id = candidates.operation_id RETURNING result.operation_id
-  )
-  SELECT coalesce(array_agg(operation_id ORDER BY operation_id), '{}'::uuid[]) INTO removed FROM deleted;
-  IF cardinality(removed) > 0 THEN
-    INSERT INTO public.audit_events (id, actor_type, actor_id, action, target_type, outcome, data)
-    VALUES (audit_id, 'system', 'operation-retention', 'operation.results_purged', 'operation_result', 'success',
-      jsonb_build_object('count', cardinality(removed), 'operationIds', to_jsonb(removed)));
-  END IF;
-  RETURN cardinality(removed);
 END;
 $$;
 --> statement-breakpoint
@@ -1448,4 +1412,4 @@ FOR EACH ROW EXECUTE FUNCTION validate_grant_authentication();
 CREATE TRIGGER audit_events_user_oauth_subjects AFTER INSERT ON audit_events
 FOR EACH ROW EXECUTE FUNCTION record_user_oauth_subjects();
 --> statement-breakpoint
-REVOKE EXECUTE ON FUNCTION protect_grant_context(), capture_audit_subjects(audit_events, text), record_audit_subjects(), public.purge_operation_results(uuid, integer), record_user_oauth_subjects(), validate_grant_authentication() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION protect_grant_context(), capture_audit_subjects(audit_events, text), record_audit_subjects(), record_user_oauth_subjects(), validate_grant_authentication() FROM PUBLIC;

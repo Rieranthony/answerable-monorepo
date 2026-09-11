@@ -1,3 +1,4 @@
+import { commandJson } from "./schemas.ts";
 import { platformRead } from "./platform-read.ts";
 import { tenantRead } from "./tenant-read.ts";
 import {
@@ -140,7 +141,7 @@ export const routes = {
     operationId: "putSsoProvider",
     summary: "Put the SSO provider",
     description:
-      "Requires Idempotency-Key. Accepts the strong If-Match ETag from getSsoProvider for conditional replacement; conflicting/malformed headers return 400; stale state returns 412. Committed replay precedes the original precondition. Identical authorised retries recover the original redacted result for seven days without repeating effects. Live changed-input reuse conflicts; expired recovery never repeats the command. Create or replace the organisation’s SSO configuration and return the provider with credentials redacted. A real configuration change, including first creation, irreversibly revokes existing tenant grant contexts in the same audited transaction; unchanged configuration preserves them. Other tenants and global browser sessions are preserved. Prefer getSsoProvider to inspect configuration; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict indicates a duplicate provider.",
+      "Requires Idempotency-Key. Accepts the strong If-Match ETag from getSsoProvider for conditional replacement; conflicting/malformed headers return 400; stale state returns 412. Committed replay precedes the original precondition. Identical authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Create or replace the organisation’s SSO configuration and return the provider with credentials redacted. A real configuration change, including first creation, irreversibly revokes existing tenant grant contexts in the same audited transaction; unchanged configuration preserves them. Other tenants and global browser sessions are preserved. Prefer getSsoProvider to inspect configuration; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict indicates a duplicate provider.",
     tag: "SSO provider",
     platformScope: "platform:write",
     kind: "write",
@@ -177,14 +178,14 @@ export const routes = {
         200: {
           description: "SSO provider",
           headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
-          content: json(ssoProviderSchema),
+          content: commandJson(ssoProviderSchema),
         },
         201: {
           description: "SSO provider created",
           headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
-          content: json(ssoProviderSchema),
+          content: commandJson(ssoProviderSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 412, 503),
+        ...problemResponses(400, 404, 409, 412, 503),
       },
     ),
   },
@@ -194,7 +195,7 @@ export const routes = {
     operationId: "deleteSsoProvider",
     summary: "Delete the SSO provider",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original redacted result for seven days without repeating effects. Live changed-input reuse conflicts; expired recovery never repeats the command. Delete the organisation’s SSO configuration and return no content, preventing future sign-in through that provider and irreversibly revoking existing tenant grant contexts in the same audited transaction. Recreating the provider does not restore old grants. Other tenants and global browser sessions are preserved. Prefer putSsoProvider to replace its configuration; validation_failed rejects malformed ids and not_found means the organisation or provider is missing. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
+      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Delete the organisation’s SSO configuration and return no content, preventing future sign-in through that provider and irreversibly revoking existing tenant grant contexts in the same audited transaction. Recreating the provider does not restore old grants. Other tenants and global browser sessions are preserved. Prefer putSsoProvider to replace its configuration; validation_failed rejects malformed ids and not_found means the organisation or provider is missing. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
     tag: "SSO provider",
     platformScope: "platform:write",
     kind: "write",
@@ -207,7 +208,7 @@ export const routes = {
           description: "SSO provider deleted",
           headers: commandResponseHeaders,
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -281,7 +282,6 @@ export function register(app: Hono<AppEnvironment>) {
           };
         },
         {
-          retention: "ordinary",
           etag: (body) =>
             revisionTag(
               ssoProviderSchema.pick({ id: true, revision: true }).parse(body),
@@ -305,7 +305,6 @@ export function register(app: Hono<AppEnvironment>) {
           const id = await service.deleteSsoProvider(platform, organizationId);
           return { body: null, resultReference: { type: "sso_provider", id } };
         },
-        { retention: "ordinary" },
       );
     },
   );

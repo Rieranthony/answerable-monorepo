@@ -1,3 +1,4 @@
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import {
   createAdminFixture,
@@ -51,7 +52,7 @@ test("resource creation and revision-aware edits replay before stale checks", as
     allowedScopes: ["read", "write"],
   });
   expect(replay.status).toBe(201);
-  expect(await replay.json()).toEqual(body);
+  await expectReceipt(fixture.db, replay);
   expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
   const current = await request(path, "GET", "read");
   const tag = current.headers.get("ETag");
@@ -61,9 +62,10 @@ test("resource creation and revision-aware edits replay before stale checks", as
   expect(changed.status).toBe(200);
   const after = await changed.json();
   expect(after.revision).toBe(body.revision + 1);
-  expect(
-    await (await request(path, "PATCH", "patch", patch, tag!)).json(),
-  ).toEqual(after);
+  await expectReceipt(
+    fixture.db,
+    await request(path, "PATCH", "patch", patch, tag!),
+  );
   const stale = await request(path, "PATCH", "stale", { name: "Lost" }, tag!);
   expect(stale.status).toBe(412);
   expect(await stale.json()).toMatchObject({ code: "revision_mismatch" });
@@ -157,9 +159,10 @@ test("resource lifecycle noops and historical erasure recovery preserve later st
   const enableNoop = await request(path + "/enable", "POST", "enable-noop");
   expect(await enableNoop.json()).toEqual(enabledBody);
   expect(await operation(enableNoop)).toMatchObject({ outcome: "noop" });
-  expect(
-    await (await request(path + "/disable", "POST", "disable")).json(),
-  ).toEqual(disabledBody);
+  await expectReceipt(
+    fixture.db,
+    await request(path + "/disable", "POST", "disable"),
+  );
   expect(await (await request(path, "GET", "read")).json()).toMatchObject({
     disabled: false,
   });
@@ -168,7 +171,7 @@ test("resource lifecycle noops and historical erasure recovery preserve later st
   expect(erased.status).toBe(204);
   const replay = await request(erasePath, "DELETE", "erase");
   expect(replay.status).toBe(204);
-  expect(await replay.text()).toBe("");
+  await expectReceipt(fixture.db, replay);
   expect(replay.headers.get("Operation-Id")).toBe(
     erased.headers.get("Operation-Id"),
   );
@@ -222,7 +225,7 @@ test("resource creation normalises omitted and explicit shared defaults for repl
   };
   const created = await request("/resources", "POST", key, input);
   expect(created.status).toBe(201);
-  const retained = await created.json();
+  await created.json();
   const operationId = created.headers.get("Operation-Id");
   for (const body of [
     input,
@@ -232,7 +235,7 @@ test("resource creation normalises omitted and explicit shared defaults for repl
     expect(response.status).toBe(201);
     expect(response.headers.get("Idempotency-Replayed")).toBe("true");
     expect(response.headers.get("Operation-Id")).toBe(operationId);
-    expect(await response.json()).toEqual(retained);
+    await expectReceipt(fixture.db, response);
   }
   expect(
     (

@@ -1,3 +1,4 @@
+import { commandJson } from "./schemas.ts";
 import { platformRead } from "./platform-read.ts";
 import { tenantRead } from "./tenant-read.ts";
 import {
@@ -106,7 +107,7 @@ export const routes = {
     operationId: "createOrganization",
     summary: "Create an organisation",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original response for seven days; changed input conflicts and expired recovery never repeats effects. Create an organisation and return its generated id and stored fields, recording the creation in the audit log. Prefer updateOrganization when its id already exists; validation_failed rejects malformed input and conflict means the slug is already in use.",
+      "Requires Idempotency-Key. Identical authorised retries return the receipt; changed input conflicts. Create an organisation and return its generated id and stored fields, recording the creation in the audit log. Prefer updateOrganization when its id already exists; validation_failed rejects malformed input and conflict means the slug is already in use.",
     tag: "Organizations",
     platformScope: "platform:write",
     kind: "write",
@@ -119,10 +120,10 @@ export const routes = {
       {
         201: {
           description: "Organisation created",
-          content: json(organizationSchema),
+          content: commandJson(organizationSchema),
           headers: commandResponseHeaders,
         },
-        ...problemResponses(400, 409, 410, 503),
+        ...problemResponses(400, 409, 503),
       },
     ),
   },
@@ -153,7 +154,7 @@ export const routes = {
     operationId: "updateOrganization",
     summary: "Update an organisation",
     description:
-      "Requires Idempotency-Key and optionally the If-Match ETag from getOrganization. Stale supplied revisions return 412. Committed replay precedes its old revision check. An unchanged patch preserves the revision. Identical authorised retries recover the original response for seven days; changed input conflicts and expired recovery never repeats effects. Update an organisation and return the updated record, recording the change in the audit log. Prefer getOrganization to inspect existing state; validation_failed rejects malformed input, not_found identifies missing parents or targets, and conflict or reference_violation identifies conflicting records.",
+      "Requires Idempotency-Key and optionally the If-Match ETag from getOrganization. Stale supplied revisions return 412. Committed replay precedes its old revision check. An unchanged patch preserves the revision. Identical authorised retries return the receipt; changed input conflicts. Update an organisation and return the updated record, recording the change in the audit log. Prefer getOrganization to inspect existing state; validation_failed rejects malformed input, not_found identifies missing parents or targets, and conflict or reference_violation identifies conflicting records.",
     tag: "Organizations",
     platformScope: "platform:write",
     kind: "write",
@@ -166,9 +167,10 @@ export const routes = {
       {
         200: {
           ...success[200],
+          content: commandJson(organizationSchema),
           headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
         },
-        ...problemResponses(400, 404, 409, 410, 412, 503),
+        ...problemResponses(400, 404, 409, 412, 503),
       },
     ),
   },
@@ -178,7 +180,7 @@ export const routes = {
     operationId: "disableOrganization",
     summary: "Disable an organisation",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original response for seven days; changed input conflicts and expired recovery never repeats effects. Disable the organisation, advance its authorizationVersion, revoke stored machine access tokens for its owned clients, and return the updated organisation. Global browser sessions and unbound user tokens are preserved; client ownership does not establish a user grant’s tenant. Complete tenant user-grant revocation is not yet implemented. Prefer enableOrganization to allow future access without restoring revoked credentials; validation_failed rejects malformed ids, not_found means the organisation is missing, and already disabled state returns a noop without another epoch advance.",
+      "Requires Idempotency-Key. Identical authorised retries return the receipt; changed input conflicts. Disable the organisation, advance its authorizationVersion, revoke stored machine access tokens for its owned clients, and return the updated organisation. Global browser sessions and unbound user tokens are preserved; client ownership does not establish a user grant’s tenant. Complete tenant user-grant revocation is not yet implemented. Prefer enableOrganization to allow future access without restoring revoked credentials; validation_failed rejects malformed ids, not_found means the organisation is missing, and already disabled state returns a noop without another epoch advance.",
     tag: "Organizations",
     platformScope: "platform:write",
     kind: "write",
@@ -187,8 +189,12 @@ export const routes = {
     responses: standardResponses(
       {},
       {
-        200: { ...success[200], headers: commandResponseHeaders },
-        ...problemResponses(400, 404, 409, 410, 503),
+        200: {
+          ...success[200],
+          content: commandJson(organizationSchema),
+          headers: commandResponseHeaders,
+        },
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -198,7 +204,7 @@ export const routes = {
     operationId: "enableOrganization",
     summary: "Enable an organisation",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original response for seven days; changed input conflicts and expired recovery never repeats effects. Enable an organisation and return the updated record. Its authorizationVersion stays advanced, so pre-disable machine tokens remain invalid at the admin API; obtain fresh tokens. Prefer disableOrganization for the opposite transition; not_found means the target is missing and already active state returns a noop.",
+      "Requires Idempotency-Key. Identical authorised retries return the receipt; changed input conflicts. Enable an organisation and return the updated record. Its authorizationVersion stays advanced, so pre-disable machine tokens remain invalid at the admin API; obtain fresh tokens. Prefer disableOrganization for the opposite transition; not_found means the target is missing and already active state returns a noop.",
     tag: "Organizations",
     platformScope: "platform:write",
     kind: "write",
@@ -207,8 +213,12 @@ export const routes = {
     responses: standardResponses(
       {},
       {
-        200: { ...success[200], headers: commandResponseHeaders },
-        ...problemResponses(400, 404, 409, 410, 503),
+        200: {
+          ...success[200],
+          content: commandJson(organizationSchema),
+          headers: commandResponseHeaders,
+        },
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -218,7 +228,7 @@ export const routes = {
     operationId: "eraseOrganization",
     summary: "Erase an organisation",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original response for seven days; changed input conflicts and expired recovery never repeats effects. Soft-delete the organisation and its tenant configuration, memberships and assignments. Clear provider credentials, revoke tenant grant contexts and clear browser-session selections. Global profiles and sessions remain. organization_has_clients requires removing owned clients first; undeleted owned resources also block deletion. The confirm query parameter must equal the target id. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableOrganization for reversible offboarding. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
+      "Requires Idempotency-Key. Identical authorised retries return the receipt; changed input conflicts. Soft-delete the organisation and its tenant configuration, memberships and assignments. Clear provider credentials, revoke tenant grant contexts and clear browser-session selections. Global profiles and sessions remain. organization_has_clients requires removing owned clients first; undeleted owned resources also block deletion. The confirm query parameter must equal the target id. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableOrganization for reversible offboarding. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
     tag: "Organizations",
     platformScope: "platform:write",
     kind: "erase",
@@ -236,7 +246,7 @@ export const routes = {
           description: "Organisation erased",
           headers: commandResponseHeaders,
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -274,7 +284,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "organization", id: body.id },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -320,7 +329,6 @@ export function register(app: Hono<AppEnvironment>) {
           };
         },
         {
-          retention: "ordinary",
           etag: (body) =>
             revisionTag(
               organizationSchema.pick({ id: true, revision: true }).parse(body),
@@ -351,7 +359,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "organization", id: organizationId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -377,7 +384,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "organization", id: organizationId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -401,7 +407,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "organization", id: organizationId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );

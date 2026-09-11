@@ -1,3 +1,4 @@
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { and, eq, sql } from "drizzle-orm";
@@ -515,7 +516,7 @@ async function command(
     },
   );
 }
-test("group commands recover their original results without repeating membership or erasure effects", async () => {
+test("group commands return receipts without repeating membership or erasure effects", async () => {
   const org = fixture.tenant.organizationId;
   const input = { slug: "group-replay", name: "Replay" };
   const created = await command(org, "group-create", "", "POST", input);
@@ -546,10 +547,9 @@ test("group commands recover their original results without repeating membership
   ] as const) {
     const first = await command(org, key, path, method, body);
     expect(first.status).toBe(status);
-    const saved = await first.text();
     const retry = await command(org, key, path, method, body);
     expect(retry.status).toBe(status);
-    expect(await retry.text()).toBe(saved);
+    await expectReceipt(fixture.db, retry);
     expect(retry.headers.get("Idempotency-Replayed")).toBe("true");
     expect(retry.headers.get("Operation-Id")).toBe(
       first.headers.get("Operation-Id"),
