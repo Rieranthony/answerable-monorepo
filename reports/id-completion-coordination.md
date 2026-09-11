@@ -18,8 +18,8 @@ User authorises this task to manage implementation of the six completed plans, i
 | T1 | Plan ID tenant authentication and authority | 01a08b80-277b-7382-be76-51e1b7c18b10 | Admission, verified linking and five-minute freshness integrated at c245060; idle |
 | T2 | Plan ID production OAuth and consent | 01a08b80-50b2-79e0-880a-46d1a5a33dfe | Production OAuth and correction integrated at 31c3f46; idle |
 | T3 | Plan ID audit lifecycle and retention | 01a08b80-6407-7a03-9ac8-ee28ba12c4f7 | Soft deletion accepted/integrated at 3e09ad1; idle |
-| T4 | Plan ID capacity operations and recovery | 01a08b80-c0dd-7793-858b-678a943deda7 | Dispatched repository operational/recovery work from 31c3f46; sole writer/DB owner |
-| T5 | Plan ID single initial migration cleanup | 01a08b80-d8c5-7763-99e6-e764415127f7 | Plan complete; implementation not dispatched |
+| T4 | Plan ID capacity operations and recovery | 01a08b80-c0dd-7793-858b-678a943deda7 | Operational/recovery slice integrated at fcea297; idle |
+| T5 | Plan ID single initial migration cleanup | 01a08b80-d8c5-7763-99e6-e764415127f7 | Single initial migration consolidation dispatched from fcea297; sole writer/DB owner |
 | T6 | Plan ID release acceptance and documentation | 01a08b80-f14b-70d1-8265-1dd18a2fb232 | Plan complete; implementation not dispatched |
 
 Read the final answers in those tasks before delegating or changing scope. Their proposals are not user decisions. The app list may omit these worktree tasks; the IDs above work with read_thread/send_message_to_thread/wait_threads.
@@ -65,7 +65,7 @@ The user explicitly accepted both recommendations and specified soft deletion:
 
 ## Next coordinator action
 
-T2 production OAuth and bounded assertion correction are accepted as 2c53316 and 31c3f46c8e835bbcc94e33460850564351e8d372. T4 is dispatched from the canonical baseline for repository-owned operational checks, measured synthetic workload and recovery/reconciliation work. It owns the sole writer/shared disposable DB slot. Missing production topology/traffic/secret service/RTO/RPO facts must be listed as finite external acceptance inputs, never invented or allowed to block useful local work. Review T4 delivery and integrate, then T5 exactly one initial migration after schema freeze, then T6 final acceptance/docs. No domain purge jobs, non-test reset, push/deployment. Existing operation-result expiry is separate from deferred domain purge.
+T4 operational/recovery work is integrated at fa297 (correct baseline fcea297). T1–T4 schema is frozen. T5 is dispatched from fcea297 for exactly one initial SQL migration, one generated initial snapshot and one journal entry, removal of obsolete unshipped upgrade machinery, preserved final custom SQL/security behaviour, fresh/repeat/interrupted install and consolidated restore proof. It owns the sole writer/shared disposable DB slot. Review actual consolidated SQL/catalogue and cleanup evidence, integrate, then dispatch T6 final acceptance/docs. Unknown production topology, traffic, key delivery, RTO/RPO and real consumers remain external gates, not grounds to stall local consolidation. No domain purge jobs, non-test reset, push/deployment.
 
 Review adjustment to T3's proposal: do not accidentally remove the existing explicit membership reinstatement feature. Distinguish reversible membership revocation from product/entity deletion. No automatic SSO resurrection is allowed, but explicit reinstatement of a revoked membership remains a supported command unless the user changes that contract. If a genuine conflict requires changing public semantics, bring that concrete conflict to the coordinator rather than silently making reinstatement unreachable.
 
@@ -116,3 +116,11 @@ Thread heartbeat `coordinate-id-foundation-completion` is active every ten minut
 - Bounded review correction reproduced missing ID token and wrong replacement refresh scope returning 200 before fix. Shared assertions now verify token presence/kinds/scopes, nonce, native expiry, identity/audience, opaque/refresh persistence, family binding and cached replay; consent narrowing feeds the actual policy/audit decision. Old duplicate inline checks removed. Native token semantics preserved.
 - Raw final log confirms 2,031 pass, zero failures, 29,860 assertions, 147 files, 590.74s, exit 0, 100% line/function coverage. Other required gates and real local-browser journey evidence in reports/id-production-oauth.md. DB handoff log confirms zero other test sessions/roles. Integrated apps/docs/env exactly equal tested worker source; no unchanged suite repetition.
 - External Entra/OmniChat/Claude/consumer revocation/custody/topology acceptance remains explicitly open. Local passes do not certify deployment. T4 now owns bounded operational implementation; T5 migration consolidation remains last after schema changes.
+
+## Integrated operational checkpoint
+
+- Accepted source 23bfa60fac95435ffb89d7fefb85e2d3daac1b45 as fcea297. Reviewed fixed-cardinality in-process summaries, supported read-only custody scan, explicit listed-fact recovery digest/barriers and CLIs. No schema changes, new quota framework or forwarding trust.
+- Mixed two-process OAuth/command synthetic probes preserve B reads; B OAuth under shared auth saturation returns recoverable 503. Dense global deletions reproduced one B database_busy refusal at 1000 assignment density. This limit remains documented; no production throughput or unconditional fairness claim.
+- Synthetic stale-snapshot recovery fails listed-fact verification and keeps traffic closed; later complete source dump restores four original operation receipts/tombstone/reservation/revocation and custody. Negative check is explicitly not a complete acknowledgement ledger or source-loss proof.
+- Raw full ID log: 2,037 pass, zero failures, 29,967 assertions, 150 files, 561.07s, exit 0 and 100% coverage. Required gates and final restore passed; zero other test sessions/roles. Evidence in reports/id-operations.md. Integrated apps/docs/env exactly match tested source; no unchanged rerun.
+- T5 owns consolidation and consolidated restore. T6 inherits finite external topology/traffic, custody/operator, recovery/reconciliation and monitoring inputs.
