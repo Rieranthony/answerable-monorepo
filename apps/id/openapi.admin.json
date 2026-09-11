@@ -2949,7 +2949,7 @@
           }
         ],
         "summary": "Get an operation status",
-        "description": "Read a committed operation with platform audit authority. Returns its outcome and result reference without request fingerprints, replay keys or secrets. not_found means no committed operation exists; this does not prove that a concurrent request is not running. All 46 administrative mutations create journal records. Use getMyOperationStatus to inspect only your own receipts without platform audit access.",
+        "description": "Read a committed operation with platform audit authority. Returns its outcome and result reference without request fingerprints, replay keys or secrets. not_found means no committed operation exists; this does not prove that a concurrent request is not running. Every administrative mutation creates a journal record. Use getMyOperationStatus to inspect only your own receipts without platform audit access.",
         "tags": [
           "Operations"
         ],
