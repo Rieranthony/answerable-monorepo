@@ -5,6 +5,7 @@ import { createAuth } from "./auth.ts";
 import { createDatabase } from "./db/client.ts";
 import type { Environment } from "./env.ts";
 import { assertRuntimeRole } from "./db/runtime-role.ts";
+import { createOperationalMetrics } from "./operations/metrics.ts";
 
 export async function startRuntime(
   environment: Environment,
@@ -26,6 +27,7 @@ export async function startRuntime(
 ) {
   const database = databaseFactory(environment);
   let server: Bun.Server<undefined>;
+  const metrics = createOperationalMetrics(database.pool);
   try {
     if (environment.nodeEnv === "production")
       await verifyDatabaseRole(database.db);
@@ -44,7 +46,7 @@ export async function startRuntime(
       `[id] seeded platform organisation ${seeded.organization.slug} (${summary})`,
     );
     const auth = authFactory(database.db, environment);
-    const app = appFactory({ auth, db: database.db, environment });
+    const app = appFactory({ auth, db: database.db, environment, metrics });
     server = serve({
       port: environment.port,
       maxRequestBodySize: maxRequestBodyBytes,
@@ -55,14 +57,24 @@ export async function startRuntime(
     throw error;
   }
   let isShuttingDown = false;
+  const reporter =
+    environment.operationalLogIntervalMs > 0
+      ? setInterval(
+          () =>
+            console.log("[id] operations", JSON.stringify(metrics.snapshot())),
+          environment.operationalLogIntervalMs,
+        )
+      : undefined;
+  reporter?.unref();
 
   async function shutdown(): Promise<void> {
     if (isShuttingDown) return;
     isShuttingDown = true;
+    clearInterval(reporter);
 
     server.stop(false);
     await database.close();
   }
 
-  return { database, server, shutdown };
+  return { database, server, shutdown, metrics };
 }

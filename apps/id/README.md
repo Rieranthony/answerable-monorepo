@@ -4,7 +4,7 @@ Identity and authorization service for Answerable. The schema, organisation sign
 
 ## HTTP surface
 
-- Better Auth: `/auth/*` behind an explicit allowlist: `GET /auth/ok`, `POST /auth/sign-in/sso`, `GET /auth/sso/callback`, `GET /auth/get-session`, and `POST /auth/sign-out`; it also exposes `POST /auth/oauth2/token` for `client_credentials` only. Every SSO administration/SAML route and every other OAuth-provider route remains unreachable until a later milestone. The provider's admin endpoints also require a session and privilege hooks that deny by default; client administration uses the admin API
+- Better Auth: `/auth/*` behind an explicit allowlist, including SSO, session routes and production OAuth authorisation-code, refresh and machine grants. The [production OAuth report](../../reports/id-production-oauth.md) describes the reachable routes and policy checks. SSO administration/SAML and provider client-administration routes remain closed; client administration uses the admin API
 - Admin API: `/api/admin/v1` — caller, organisations, domains, SSO provider, users, sessions, members, groups and group members, clients and their owners/resource links, resources, entitlements, access views and audit events
 - Public OpenAPI contract: `/openapi.json` — the reachable routes only; snapshot: `apps/id/openapi.json`
 - Admin OpenAPI: `/api/admin/openapi.json` — snapshot: `apps/id/openapi.admin.json`; regenerate both snapshots with `bun run openapi:export`
@@ -25,6 +25,10 @@ Production uses `https://id.answerable.org` as `BETTER_AUTH_URL`; Better Auth's 
 A slot is released when the handler finishes, including errors. Disconnecting a client does not free capacity while its handler continues. Retry with backoff; keep the same idempotency key and input for an administrative command. This early transport refusal can precede CORS headers. It is not a per-tenant/IP rate limit, cross-replica quota, TCP connection limit, total request deadline or bound on future streaming-response lifetime. Tune the default using production capacity evidence; the implementation does not claim that 64 is a measured optimum.
 
 ## Commands
+
+The [operations runbook](OPERATIONS.md) covers process summaries, the finite mixed
+capacity workload, read-only custody checks and recovery with known post-snapshot
+gaps. It lists the production inputs that remain unknown.
 
 From the repository root:
 

@@ -74,6 +74,7 @@ describe("unit: environment", () => {
       authPagesUrl: "http://localhost:47100",
       oauthRefreshReuseIntervalSeconds: 0,
       maxConcurrentRequests: 64,
+      operationalLogIntervalMs: 30_000,
       databasePoolMax: 5,
       databasePoolIdleTimeoutMs: 10_000,
       databaseConnectionTimeoutMs: 5_000,
@@ -100,6 +101,25 @@ describe("unit: environment", () => {
         DATABASE_POOL_MAX: "3",
       }).databasePoolMax,
     ).toBe(3);
+  });
+
+  test("bounds operational reporting and permits explicit disabling", () => {
+    for (const value of ["0", "1000", "2147483647"]) {
+      expect(
+        parseEnvironment({
+          ...requiredEnvironment,
+          OPERATIONAL_LOG_INTERVAL_MS: value,
+        }).operationalLogIntervalMs,
+      ).toBe(Number(value));
+    }
+    for (const value of ["-1", "999", "1000.5", "2147483648"]) {
+      expect(() =>
+        parseEnvironment({
+          ...requiredEnvironment,
+          OPERATIONAL_LOG_INTERVAL_MS: value,
+        }),
+      ).toThrow(EnvironmentValidationError);
+    }
   });
 
   test("parses explicit runtime options", () => {

@@ -108,6 +108,16 @@ const environmentSchema = z
       .max(Number.MAX_SAFE_INTEGER)
       .default(0),
     MAX_CONCURRENT_REQUESTS: z.coerce.number().int().min(1).default(64),
+    OPERATIONAL_LOG_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(2_147_483_647)
+      .refine(
+        (value) => value === 0 || value >= 1000,
+        "Use zero to disable or at least 1000 milliseconds",
+      )
+      .default(30_000),
     DATABASE_POOL_MAX: z.coerce.number().int().min(1).optional(),
     DATABASE_POOL_IDLE_TIMEOUT_MS: z.coerce
       .number()
@@ -158,6 +168,7 @@ const environmentSchema = z
     oauthRefreshReuseIntervalSeconds:
       environment.OAUTH_REFRESH_REUSE_INTERVAL_SECONDS,
     maxConcurrentRequests: environment.MAX_CONCURRENT_REQUESTS,
+    operationalLogIntervalMs: environment.OPERATIONAL_LOG_INTERVAL_MS,
     databasePoolMax:
       environment.DATABASE_POOL_MAX ??
       (environment.NODE_ENV === "test" ? 1 : 5),

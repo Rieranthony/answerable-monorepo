@@ -26,6 +26,7 @@ import { createId } from "./lib/id.ts";
 import { limitRequestBody } from "./http/request-limits.ts";
 import { checkReadiness } from "./services/readiness.ts";
 import { publicOAuthMetadata } from "./http/oauth-metadata.ts";
+import type { OperationalMetrics } from "./operations/metrics.ts";
 
 const requestIdPattern = /^[A-Za-z0-9._:-]{1,128}$/;
 
@@ -38,6 +39,7 @@ export type AppServices = {
   environment: Environment;
   readinessCheck?: typeof checkReadiness;
   ssoTest?: { allowPrivateHosts: boolean };
+  metrics?: OperationalMetrics;
 };
 
 export function createApp(services: AppServices) {
@@ -58,7 +60,12 @@ export function createApp(services: AppServices) {
     context.set("requestId", requestId);
     context.header("x-request-id", requestId);
 
-    await next();
+    const finish = services.metrics?.begin(context.req.path);
+    try {
+      await next();
+    } finally {
+      finish?.(context.res.status);
+    }
   });
 
   app.use(

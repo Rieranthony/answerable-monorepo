@@ -1,0 +1,580 @@
+{
+  "metadata": {
+    "scope": "synthetic_local_contention",
+    "bun": "1.3.1",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M1 Pro",
+    "logicalCpus": 10,
+    "hostMemoryBytes": 34359738368,
+    "processes": 2,
+    "poolMaxPerProcess": 4,
+    "connectionTimeoutMs": 1000,
+    "statementTimeoutMs": 10000,
+    "requestMaxPerProcess": 64,
+    "authenticationHandlersPerPool": 3,
+    "peakBurstPerProcess": 4,
+    "network": "loopback HTTP; local PostgreSQL; no ingress",
+    "authentication": "native fixture SSO cookies, client_secret_basic, root commands; NODE_ENV=production workers",
+    "productionTopologyTrafficRtoRpo": "unknown",
+    "limitation": "Finite observations and maxima, not percentiles, throughput promises or cluster fairness. Fully occupied auth lanes can refuse B OAuth."
+  },
+  "results": [
+    {
+      "phase": "native_resource_code_refresh_and_cross_process_cached_replay",
+      "requests": [
+        {
+          "status": 200,
+          "ms": 91.21541699999989,
+          "retryAfter": null
+        },
+        {
+          "status": 200,
+          "ms": 69.6902500000001,
+          "retryAfter": null
+        },
+        {
+          "status": 200,
+          "ms": 149.12104100000033,
+          "retryAfter": null
+        }
+      ]
+    },
+    {
+      "phase": "user_issuance",
+      "blockedDatabaseConnections": 6,
+      "requests": [
+        {
+          "status": 200,
+          "ms": 481.60508400000026,
+          "retryAfter": null
+        },
+        {
+          "status": 200,
+          "ms": 525.6153340000005,
+          "retryAfter": null
+        },
+        {
+          "status": 200,
+          "ms": 503.30645799999957,
+          "retryAfter": null
+        },
+        {
+          "status": 503,
+          "ms": 9.810750000000098,
+          "retryAfter": "1"
+        },
+        {
+          "status": 200,
+          "ms": 503.4667919999997,
+          "retryAfter": null
+        },
+        {
+          "status": 200,
+          "ms": 545.2317500000004,
+          "retryAfter": null
+        },
+        {
+          "status": 200,
+          "ms": 554.3281659999998,
+          "retryAfter": null
+        },
+        {
+          "status": 503,
+          "ms": 8.392791000000216,
+          "retryAfter": "1"
+        }
+      ],
+      "bReads": [
+        {
+          "status": 200,
+          "ms": 161.5665829999998,
+          "retryAfter": null
+        },
+        {
+          "status": 200,
+          "ms": 114.46533399999953,
+          "retryAfter": null
+        }
+      ],
+      "bOAuth": [
+        {
+          "status": 503,
+          "ms": 0.7858750000004875,
+          "retryAfter": "1"
+        },
+        {
+          "status": 200,
+          "ms": 163.21612500000083,
+          "retryAfter": null
+        }
+      ],
+      "recoveries": [
+        {
+          "status": 200,
+          "ms": 126.95858299999963,
+          "retryAfter": null
+        },
+        {
+          "status": 200,
+          "ms": 81.74612499999967,
+          "retryAfter": null
+        }
+      ],
+      "during": [
+        {
+          "event": "operational_summary",
+          "windowMs": 2372.858542,
+          "active": 3,
+          "peakActive": 4,
+          "pool": {
+            "total": 4,
+            "idle": 1,
+            "waiting": 0
+          },
+          "requests": [
+            {
+              "route": "token",
+              "status": 200,
+              "count": 1,
+              "totalMs": 142.782958,
+              "maxMs": 142.782958
+            },
+            {
+              "route": "authentication",
+              "status": 302,
+              "count": 4,
+              "totalMs": 107.33708400000023,
+              "maxMs": 28.688209000000143
+            },
+            {
+              "route": "authentication",
+              "status": 200,
+              "count": 8,
+              "totalMs": 635.249165,
+              "maxMs": 94.38795800000003
+            },
+            {
+              "route": "token",
+              "status": 503,
+              "count": 1,
+              "totalMs": 0.2362079999998059,
+              "maxMs": 0.2362079999998059
+            },
+            {
+              "route": "admin",
+              "status": 200,
+              "count": 1,
+              "totalMs": 159.2237500000001,
+              "maxMs": 159.2237500000001
+            }
+          ]
+        },
+        {
+          "event": "operational_summary",
+          "windowMs": 2073.932667,
+          "active": 3,
+          "peakActive": 4,
+          "pool": {
+            "total": 4,
+            "idle": 1,
+            "waiting": 0
+          },
+          "requests": [
+            {
+              "route": "authentication",
+              "status": 302,
+              "count": 6,
+              "totalMs": 118.10504200000008,
+              "maxMs": 38.41062500000004
+            },
+            {
+              "route": "authentication",
+              "status": 200,
+              "count": 12,
+              "totalMs": 988.0886679999996,
+              "maxMs": 116.26445799999988
+            },
+            {
+              "route": "token",
+              "status": 200,
+              "count": 2,
+              "totalMs": 159.6734580000001,
+              "maxMs": 90.58850000000007
+            },
+            {
+              "route": "token",
+              "status": 503,
+              "count": 1,
+              "totalMs": 0.28879200000005767,
+              "maxMs": 0.28879200000005767
+            },
+            {
+              "route": "admin",
+              "status": 200,
+              "count": 1,
+              "totalMs": 113.00487500000008,
+              "maxMs": 113.00487500000008
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase": "tenant_commands",
+      "blockedDatabaseConnections": 4,
+      "requests": [
+        {
+          "status": 201,
+          "ms": 293.4129579999999,
+          "retryAfter": null
+        },
+        {
+          "status": 201,
+          "ms": 276.0044170000001,
+          "retryAfter": null
+        },
+        {
+          "status": 503,
+          "ms": 31.262917000000016,
+          "retryAfter": "1",
+          "code": "database_busy"
+        },
+        {
+          "status": 503,
+          "ms": 31.271625000000313,
+          "retryAfter": "1",
+          "code": "database_busy"
+        },
+        {
+          "status": 201,
+          "ms": 250.70487500000036,
+          "retryAfter": null
+        },
+        {
+          "status": 201,
+          "ms": 261.1514159999997,
+          "retryAfter": null
+        },
+        {
+          "status": 503,
+          "ms": 23.65925000000061,
+          "retryAfter": "1",
+          "code": "database_busy"
+        },
+        {
+          "status": 503,
+          "ms": 24.221708000000035,
+          "retryAfter": "1",
+          "code": "database_busy"
+        }
+      ],
+      "bReads": [
+        {
+          "status": 200,
+          "ms": 81.64441699999952,
+          "retryAfter": null
+        },
+        {
+          "status": 200,
+          "ms": 93.66304199999922,
+          "retryAfter": null
+        }
+      ],
+      "bOAuth": [],
+      "recoveries": [
+        {
+          "status": 201,
+          "ms": 25.847625000000335,
+          "retryAfter": null
+        },
+        {
+          "status": 201,
+          "ms": 25.491291999999703,
+          "retryAfter": null
+        },
+        {
+          "status": 201,
+          "ms": 28.572041999999783,
+          "retryAfter": null
+        },
+        {
+          "status": 201,
+          "ms": 25.722791000000143,
+          "retryAfter": null
+        }
+      ],
+      "during": [
+        {
+          "event": "operational_summary",
+          "windowMs": 712.6947500000001,
+          "active": 2,
+          "peakActive": 4,
+          "pool": {
+            "total": 4,
+            "idle": 2,
+            "waiting": 0
+          },
+          "requests": [
+            {
+              "route": "token",
+              "status": 200,
+              "count": 4,
+              "totalMs": 1603.263750999999,
+              "maxMs": 515.4432499999998
+            },
+            {
+              "route": "admin",
+              "status": 503,
+              "count": 2,
+              "totalMs": 23.725915999999415,
+              "maxMs": 11.943124999999782
+            },
+            {
+              "route": "admin",
+              "status": 200,
+              "count": 1,
+              "totalMs": 74.42679199999975,
+              "maxMs": 74.42679199999975
+            }
+          ]
+        },
+        {
+          "event": "operational_summary",
+          "windowMs": 691.0812500000002,
+          "active": 2,
+          "peakActive": 4,
+          "pool": {
+            "total": 4,
+            "idle": 2,
+            "waiting": 0
+          },
+          "requests": [
+            {
+              "route": "token",
+              "status": 503,
+              "count": 1,
+              "totalMs": 0.07537500000034925,
+              "maxMs": 0.07537500000034925
+            },
+            {
+              "route": "token",
+              "status": 200,
+              "count": 5,
+              "totalMs": 1827.1965409999996,
+              "maxMs": 548.1716659999997
+            },
+            {
+              "route": "admin",
+              "status": 503,
+              "count": 2,
+              "totalMs": 29.788125000000036,
+              "maxMs": 15.20724999999993
+            },
+            {
+              "route": "admin",
+              "status": 200,
+              "count": 1,
+              "totalMs": 92.919625,
+              "maxMs": 92.919625
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase": "unauthenticated_rejection",
+      "blockedDatabaseConnections": 6,
+      "requests": [
+        {
+          "status": 401,
+          "ms": 221.828708,
+          "retryAfter": null,
+          "code": "invalid_client"
+        },
+        {
+          "status": 401,
+          "ms": 222.4639589999997,
+          "retryAfter": null,
+          "code": "invalid_client"
+        },
+        {
+          "status": 401,
+          "ms": 230.06883300000027,
+          "retryAfter": null,
+          "code": "invalid_client"
+        },
+        {
+          "status": 503,
+          "ms": 12.8897079999997,
+          "retryAfter": "1"
+        },
+        {
+          "status": 401,
+          "ms": 225.7772500000001,
+          "retryAfter": null,
+          "code": "invalid_client"
+        },
+        {
+          "status": 401,
+          "ms": 245.79316599999947,
+          "retryAfter": null,
+          "code": "invalid_client"
+        },
+        {
+          "status": 401,
+          "ms": 246.7089589999996,
+          "retryAfter": null,
+          "code": "invalid_client"
+        },
+        {
+          "status": 503,
+          "ms": 9.433208000000377,
+          "retryAfter": "1"
+        }
+      ],
+      "bReads": [
+        {
+          "status": 200,
+          "ms": 104.55774999999994,
+          "retryAfter": null
+        },
+        {
+          "status": 200,
+          "ms": 80.24145799999951,
+          "retryAfter": null
+        }
+      ],
+      "bOAuth": [],
+      "recoveries": [
+        {
+          "status": 401,
+          "ms": 12.779000000000451,
+          "retryAfter": null,
+          "code": "invalid_client"
+        },
+        {
+          "status": 401,
+          "ms": 27.568707999999788,
+          "retryAfter": null,
+          "code": "invalid_client"
+        }
+      ],
+      "during": [
+        {
+          "event": "operational_summary",
+          "windowMs": 497.2232909999998,
+          "active": 3,
+          "peakActive": 4,
+          "pool": {
+            "total": 4,
+            "idle": 1,
+            "waiting": 0
+          },
+          "requests": [
+            {
+              "route": "admin",
+              "status": 201,
+              "count": 6,
+              "totalMs": 612.1198330000002,
+              "maxMs": 275.67854199999965
+            },
+            {
+              "route": "token",
+              "status": 503,
+              "count": 1,
+              "totalMs": 0.03312499999992724,
+              "maxMs": 0.03312499999992724
+            },
+            {
+              "route": "admin",
+              "status": 200,
+              "count": 1,
+              "totalMs": 102.00229199999967,
+              "maxMs": 102.00229199999967
+            }
+          ]
+        },
+        {
+          "event": "operational_summary",
+          "windowMs": 483.8432499999999,
+          "active": 3,
+          "peakActive": 4,
+          "pool": {
+            "total": 4,
+            "idle": 1,
+            "waiting": 0
+          },
+          "requests": [
+            {
+              "route": "admin",
+              "status": 201,
+              "count": 6,
+              "totalMs": 592.2302909999999,
+              "maxMs": 257.9604999999997
+            },
+            {
+              "route": "token",
+              "status": 503,
+              "count": 1,
+              "totalMs": 0.10137499999973443,
+              "maxMs": 0.10137499999973443
+            },
+            {
+              "route": "admin",
+              "status": 200,
+              "count": 1,
+              "totalMs": 79.035167,
+              "maxMs": 79.035167
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase": "drained",
+      "summaries": [
+        {
+          "event": "operational_summary",
+          "windowMs": 161.3364590000001,
+          "active": 0,
+          "peakActive": 3,
+          "pool": {
+            "total": 4,
+            "idle": 4,
+            "waiting": 0
+          },
+          "requests": [
+            {
+              "route": "token",
+              "status": 401,
+              "count": 4,
+              "totalMs": 662.8550410000003,
+              "maxMs": 219.3465839999999
+            }
+          ]
+        },
+        {
+          "event": "operational_summary",
+          "windowMs": 80.81174999999985,
+          "active": 0,
+          "peakActive": 3,
+          "pool": {
+            "total": 4,
+            "idle": 4,
+            "waiting": 0
+          },
+          "requests": [
+            {
+              "route": "token",
+              "status": 401,
+              "count": 4,
+              "totalMs": 728.9891259999999,
+              "maxMs": 239.84495900000002
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

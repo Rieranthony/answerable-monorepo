@@ -17,6 +17,7 @@ import {
   entitlements,
 } from "../src/db/schema/index.ts";
 import { createId } from "../src/lib/id.ts";
+import { measureMixedCapacity } from "../src/__tests__/capacity-workload.ts";
 
 // Destructive synthetic measurement, deliberately separate from the correctness suite.
 // Never run concurrently with other database tests. No production URL is accepted.
@@ -28,7 +29,13 @@ assert.equal(databaseTarget.search, "");
 const output = process.argv[2];
 assert.ok(output, "Pass an output JSON path");
 const mode = process.argv[3] ?? "audience";
-assert.ok(["audience", "member-assignments", "user-erasure"].includes(mode));
+assert.ok(
+  ["audience", "member-assignments", "user-erasure", "mixed"].includes(mode),
+);
+if (mode === "mixed") {
+  await measureMixedCapacity(output);
+  process.exit(0);
+}
 const sizes = mode !== "audience" ? [10, 100, 1_000] : [100, 1_000, 10_000];
 const results: unknown[] = [];
 const checks: unknown[] = [];
@@ -50,6 +57,8 @@ const metadata = {
         ? "effective group assignments per member; eight members share the groups and one admin resource"
         : "members per organisation",
   countedUserRelationship: mode === "user-erasure" ? "target" : "affected",
+  deletionCounts:
+    "Live rows exclude deletedAt tombstones; user-erasure also checks retained row counts",
   topology:
     "one Bun loopback HTTP server and one restricted pool; local PostgreSQL",
   limits:
@@ -342,10 +351,10 @@ for (const size of sizes) {
           events: number;
         }>(sql`
           select
-            (select count(*)::int from users where id = ${target.id}::uuid) as users,
-            (select count(*)::int from members where user_id = ${target.id}::uuid) as memberships,
-            (select count(*)::int from group_members gm join members m on m.id = gm.member_id where m.user_id = ${target.id}::uuid) as assignments,
-            (select count(*)::int from entitlements e join members m on m.id = e.member_id where m.user_id = ${target.id}::uuid) as entitlements,
+            (select count(*)::int from users where id = ${target.id}::uuid and deleted_at is null) as users,
+            (select count(*)::int from members where user_id = ${target.id}::uuid and deleted_at is null) as memberships,
+            (select count(*)::int from group_members gm join members m on m.id = gm.member_id where m.user_id = ${target.id}::uuid and gm.deleted_at is null) as assignments,
+            (select count(*)::int from entitlements e join members m on m.id = e.member_id where m.user_id = ${target.id}::uuid and e.deleted_at is null) as entitlements,
             (select count(*)::int from audit_events where action = 'user.erased' and target_id = ${target.id}) as events`);
         const committed = final.status === 204;
         assert.deepEqual(state.rows[0], {
@@ -355,12 +364,24 @@ for (const size of sizes) {
           entitlements: committed ? 0 : size * 2,
           events: committed ? 1 : 0,
         });
+        const tombstones = await fixture.db.execute(sql`
+          select
+            (select count(*)::int from users where id = ${target.id}::uuid) as users,
+            (select count(*)::int from members where user_id = ${target.id}::uuid) as memberships,
+            (select count(*)::int from group_members gm join members m on m.id = gm.member_id where m.user_id = ${target.id}::uuid) as assignments,
+            (select count(*)::int from entitlements e join members m on m.id = e.member_id where m.user_id = ${target.id}::uuid) as entitlements`);
+        assert.deepEqual(tombstones.rows[0], {
+          users: 1,
+          memberships: 2,
+          assignments: size * 2,
+          entitlements: size * 2,
+        });
         let manifest: unknown = null;
         if (committed) {
           const evidence = await fixture.db.execute(sql`
-            select jsonb_array_length(data #> '{effects,removedMembers}') as memberships,
-              jsonb_array_length(data #> '{effects,removedAssignments}') as assignments,
-              jsonb_array_length(data #> '{effects,removedEntitlements}') as entitlements
+            select jsonb_array_length(data #> '{effects,softDeletedMembers}') as memberships,
+              jsonb_array_length(data #> '{effects,softDeletedAssignments}') as assignments,
+              jsonb_array_length(data #> '{effects,softDeletedEntitlements}') as entitlements
             from audit_events where operation_id = ${final.operationId}::uuid`);
           manifest = evidence.rows[0];
           assert.deepEqual(manifest, {
@@ -388,6 +409,7 @@ for (const size of sizes) {
           user: index,
           status: final.status,
           ...state.rows[0],
+          retainedRows: tombstones.rows[0],
           manifest,
         });
         await save();
@@ -395,7 +417,10 @@ for (const size of sizes) {
       const retained = await fixture.db.execute(sql`
         select id, organization_id, user_id, status from members
         where organization_id = ${otherId}::uuid and user_id not in
-          (select id from users where email like ${organizationId + "-erase-%"}) order by id`);
+          (${sql.join(
+            targets.map((target) => sql`${target.id}::uuid`),
+            sql`, `,
+          )}) order by id`);
       assert.deepEqual(retained.rows, unaffected.rows);
       const retainedGroups = await fixture.db.execute(sql`
         select count(*)::int as n from groups where organization_id in (${organizationId}::uuid, ${otherId}::uuid) and slug like 'erase-density-%'`);

@@ -23,6 +23,36 @@ const seedResult: BootstrapResult = {
   entitlement: { id: "entitlement", created: false, updated: false },
 };
 
+test("runtime emits bounded operational summaries and stops the reporter on shutdown", async () => {
+  const log = console.log;
+  const reports: unknown[] = [];
+  console.log = (...args: unknown[]) => {
+    if (args[0] === "[id] operations")
+      reports.push(JSON.parse(String(args[1])));
+  };
+  let runtime: Awaited<ReturnType<typeof startRuntime>> | undefined;
+  try {
+    runtime = await startRuntime(
+      testEnvironment({ port: 0, operationalLogIntervalMs: 10 }),
+      { seed: async () => seedResult, authFactory: stubAuth },
+    );
+    const response = await fetch(new URL("/healthz", runtime.server.url));
+    expect(response.status).toBe(200);
+    await response.arrayBuffer();
+    const deadline = Date.now() + 1000;
+    while (!reports.length && Date.now() < deadline) await Bun.sleep(10);
+    expect(reports.length).toBeGreaterThan(0);
+    expect(reports[0]).toMatchObject({ event: "operational_summary" });
+    await runtime.shutdown();
+    const count = reports.length;
+    await Bun.sleep(30);
+    expect(reports).toHaveLength(count);
+  } finally {
+    await runtime?.shutdown();
+    console.log = log;
+  }
+});
+
 describe("unit: process runtime", () => {
   test("seeds once with environment values before listening and shuts down idempotently", async () => {
     const environment = testEnvironment({
