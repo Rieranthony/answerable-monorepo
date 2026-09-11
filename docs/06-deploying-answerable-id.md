@@ -50,7 +50,7 @@ openssl rand -base64 48
 | `BETTER_AUTH_TRUSTED_ORIGINS` | comma-separated origins, at least `AUTH_PAGES_URL`; no paths, no trailing slash | CORS and CSRF for cookie calls |
 | `TRUSTED_PROXY_CIDRS` | comma-separated IPv4/IPv6 networks of the ingress proxies | Client address resolution |
 | `DATABASE_URL` | `postgres://answerable_id_runtime:…@host/answerable_id` | Application connection, restricted role |
-| `DATABASE_MIGRATION_URL` | owner login, used only by `db:migrate` and `ops:preflight` runs you start by hand | DDL and permission provisioning |
+| `DATABASE_MIGRATION_URL` | owner login, used only by `db:migrate` runs you start by hand; never given to the service | DDL and permission provisioning |
 | `DATABASE_RUNTIME_ROLE` | `answerable_id_runtime` unless you named it differently | Which role `db:migrate` provisions |
 | `BETTER_AUTH_SECRET` | ≥ 32 characters, high entropy | Cookie signing, JWKS private-key encryption |
 | `UPSTREAM_TOKEN_SECRETS` | `[{"version":1,"value":"<base64url key>"}]` | Upstream token encryption; required before the first SSO login |
