@@ -3,6 +3,8 @@ import type { BetterAuthOptions } from "better-auth";
 import type { Database, Executor } from "../db/client.ts";
 import * as schema from "../db/schema/index.ts";
 
+import { setDatabaseScope, withDatabaseScope } from "../db/isolation.ts";
+
 const transactions = new WeakMap<object, Executor>();
 const config = { provider: "pg", schema, usePlural: true } as const;
 
@@ -57,12 +59,42 @@ export function authDatabaseAdapter(
       },
       count: (input) => base.count(visible(input)),
     });
+    // Native SSO provisions organisation membership after its callback transaction.
+    // Give standalone member/invitation operations their own protocol transaction.
+    const unbound = new Proxy(adapter, {
+      get(target, key, receiver) {
+        const method = Reflect.get(target, key, receiver);
+        if (
+          typeof method !== "function" ||
+          ![
+            "create",
+            "findOne",
+            "findMany",
+            "count",
+            "update",
+            "updateMany",
+            "delete",
+            "deleteMany",
+          ].includes(String(key))
+        )
+          return method;
+        return (input: { model: string }) => {
+          if (!["member", "invitation"].includes(input.model))
+            return Reflect.apply(method, target, [input]);
+          return withDatabaseScope(db, { kind: "protocol" }, async (tx) => {
+            const bound = drizzleAdapter(tx, config)(options);
+            return Reflect.apply(Reflect.get(bound, key), bound, [input]);
+          });
+        };
+      },
+    });
     return {
-      ...wrap(adapter),
+      ...wrap(unbound),
       transaction: async <T>(
         run: (boundAdapter: typeof adapter) => Promise<T>,
       ) =>
         db.transaction(async (tx) => {
+          await setDatabaseScope(tx, { kind: "protocol" });
           await beforeTransaction?.(tx);
           const bound = wrap(drizzleAdapter(tx, config)(options));
           transactions.set(bound, tx);

@@ -659,7 +659,7 @@ describe("integration: PostgreSQL schema", () => {
         "organization_capabilities_kind_check CHECK ((grant_kind = ANY (ARRAY['admin_session'::text, 'authorization_code'::text, 'refresh_token'::text, 'client_credentials'::text])))",
         "organization_capabilities_organization_id_organizations_id_fk FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
         "organization_capabilities_pkey PRIMARY KEY (id)",
-        "organization_capabilities_resource_oauth_resources_identifier_f FOREIGN KEY (resource) REFERENCES oauth_resources(identifier) ON DELETE RESTRICT",
+        "organization_capabilities_resource_fk FOREIGN KEY (resource) REFERENCES oauth_resources(identifier) ON DELETE RESTRICT",
         "organization_capabilities_revision_check CHECK ((revision > 0))",
         "organization_capabilities_scopes_check CHECK (((cardinality(scopes) > 0) AND (array_position(scopes, ''::text) IS NULL) AND (array_position(scopes, NULL::text) IS NULL)))",
         "organization_capabilities_status_check CHECK ((status = ANY (ARRAY['active'::text, 'disabled'::text])))",
@@ -673,7 +673,7 @@ describe("integration: PostgreSQL schema", () => {
       ],
       system_bindings: [
         "system_bindings_name_check CHECK ((name = 'platform'::text))",
-        "system_bindings_organization_id_group_id_groups_organization_id FOREIGN KEY (organization_id, group_id) REFERENCES groups(organization_id, id) ON DELETE RESTRICT",
+        "system_bindings_organization_group_fk FOREIGN KEY (organization_id, group_id) REFERENCES groups(organization_id, id) ON DELETE RESTRICT",
         "system_bindings_organization_id_organizations_id_fk FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT",
         "system_bindings_pkey PRIMARY KEY (name)",
         "system_bindings_resource_id_oauth_resources_id_fk FOREIGN KEY (resource_id) REFERENCES oauth_resources(id) ON DELETE RESTRICT",
@@ -826,7 +826,7 @@ describe("integration: PostgreSQL schema", () => {
       ],
       audit_event_subjects: [
         "audit_event_subjects_event_id_audit_events_id_fk FOREIGN KEY (event_id) REFERENCES audit_events(id) ON DELETE CASCADE",
-        "audit_event_subjects_event_id_entity_type_entity_id_relationshi PRIMARY KEY (event_id, entity_type, entity_id, relationship)",
+        "audit_event_subjects_pkey PRIMARY KEY (event_id, entity_type, entity_id, relationship)",
         "audit_event_subjects_provenance_check CHECK ((provenance = ANY (ARRAY['recorded'::text, 'legacy_derived'::text])))",
       ],
       audit_events: [
@@ -857,6 +857,7 @@ describe("integration: PostgreSQL schema", () => {
       grant_contexts: [
         "grant_contexts_client_instance_id_idx (client_instance_id)",
         "grant_contexts_member_id_idx (member_id)",
+        "grant_contexts_organization_id_idx (organization_id)",
         "grant_contexts_resource_instance_id_idx (resource_instance_id)",
         "grant_contexts_user_id_idx (user_id)",
       ],
@@ -897,12 +898,14 @@ describe("integration: PostgreSQL schema", () => {
       oauth_refresh_tokens: [
         "oauth_refresh_tokens_authorization_code_id_idx (authorization_code_id)",
         "oauth_refresh_tokens_client_id_idx (client_id)",
+        "oauth_refresh_tokens_expires_at_idx (expires_at)",
         "oauth_refresh_tokens_session_id_idx (session_id)",
         "oauth_refresh_tokens_user_id_idx (user_id)",
       ],
       oauth_access_tokens: [
         "oauth_access_tokens_authorization_code_id_idx (authorization_code_id)",
         "oauth_access_tokens_client_id_idx (client_id)",
+        "oauth_access_tokens_expires_at_idx (expires_at)",
         "oauth_access_tokens_refresh_id_idx (refresh_id)",
         "oauth_access_tokens_session_id_idx (session_id)",
         "oauth_access_tokens_user_id_idx (user_id)",
@@ -931,6 +934,7 @@ describe("integration: PostgreSQL schema", () => {
         "entitlements_resource_idx (resource)",
       ],
       audit_events: [
+        "audit_events_action_occurred_at_idx (action, occurred_at)",
         "audit_events_actor_id_idx (actor_id)",
         "audit_events_operation_id_idx (operation_id)",
         "audit_events_organization_id_id_idx (organization_id, id)",

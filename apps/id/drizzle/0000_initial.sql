@@ -370,7 +370,7 @@ CREATE TABLE "audit_event_subjects" (
 	"relationship" text NOT NULL,
 	"organization_id" uuid,
 	"provenance" text DEFAULT 'recorded' NOT NULL,
-	CONSTRAINT "audit_event_subjects_event_id_entity_type_entity_id_relationship_pk" PRIMARY KEY("event_id","entity_type","entity_id","relationship"),
+	CONSTRAINT "audit_event_subjects_pkey" PRIMARY KEY("event_id","entity_type","entity_id","relationship"),
 	CONSTRAINT "audit_event_subjects_provenance_check" CHECK ("audit_event_subjects"."provenance" in ('recorded', 'legacy_derived'))
 );
 --> statement-breakpoint
@@ -517,11 +517,11 @@ ALTER TABLE "audit_event_subjects" ADD CONSTRAINT "audit_event_subjects_event_id
 ALTER TABLE "audit_events" ADD CONSTRAINT "audit_events_operation_id_admin_operations_id_fk" FOREIGN KEY ("operation_id") REFERENCES "public"."admin_operations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "system_bindings" ADD CONSTRAINT "system_bindings_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "system_bindings" ADD CONSTRAINT "system_bindings_resource_id_oauth_resources_id_fk" FOREIGN KEY ("resource_id") REFERENCES "public"."oauth_resources"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "system_bindings" ADD CONSTRAINT "system_bindings_organization_id_group_id_groups_organization_id_id_fk" FOREIGN KEY ("organization_id","group_id") REFERENCES "public"."groups"("organization_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "system_bindings" ADD CONSTRAINT "system_bindings_organization_group_fk" FOREIGN KEY ("organization_id","group_id") REFERENCES "public"."groups"("organization_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "admin_operation_results" ADD CONSTRAINT "admin_operation_results_operation_id_admin_operations_id_fk" FOREIGN KEY ("operation_id") REFERENCES "public"."admin_operations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organization_capabilities" ADD CONSTRAINT "organization_capabilities_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organization_capabilities" ADD CONSTRAINT "organization_capabilities_client_id_oauth_clients_client_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."oauth_clients"("client_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "organization_capabilities" ADD CONSTRAINT "organization_capabilities_resource_oauth_resources_identifier_fk" FOREIGN KEY ("resource") REFERENCES "public"."oauth_resources"("identifier") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "organization_capabilities" ADD CONSTRAINT "organization_capabilities_resource_fk" FOREIGN KEY ("resource") REFERENCES "public"."oauth_resources"("identifier") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "grant_contexts" ADD CONSTRAINT "grant_contexts_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "grant_contexts" ADD CONSTRAINT "grant_contexts_member_id_members_id_fk" FOREIGN KEY ("member_id") REFERENCES "public"."members"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "grant_contexts" ADD CONSTRAINT "grant_contexts_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -582,7 +582,7 @@ CREATE POLICY "tenant_read" ON "entitlements" AS PERMISSIVE FOR SELECT TO public
     or current_setting('answerable.scope', true) = 'platform-read'
     or (current_setting('answerable.scope', true) = 'tenant-read' and "entitlements"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid)
     or (current_setting('answerable.scope', true) = 'policy-user' and "entitlements"."organization_id" in (
-      select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid
+      select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid and deleted_at is null and status = 'active' and (valid_from is null or valid_from <= statement_timestamp()) and (valid_until is null or valid_until > statement_timestamp())
     ))
     or (current_setting('answerable.scope', true) = 'policy-root' and "entitlements"."organization_id" in (select organization_id from system_bindings))));--> statement-breakpoint
 CREATE POLICY "tenant_write" ON "group_members" AS PERMISSIVE FOR ALL TO public USING ((current_setting('answerable.scope', true) = 'platform-write' or (current_setting('answerable.scope', true) = 'tenant-write' and "group_members"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid))) WITH CHECK ((current_setting('answerable.scope', true) = 'platform-write' or (current_setting('answerable.scope', true) = 'tenant-write' and "group_members"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid)));--> statement-breakpoint
@@ -590,7 +590,7 @@ CREATE POLICY "tenant_read" ON "group_members" AS PERMISSIVE FOR SELECT TO publi
     or current_setting('answerable.scope', true) = 'platform-read'
     or (current_setting('answerable.scope', true) = 'tenant-read' and "group_members"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid)
     or (current_setting('answerable.scope', true) = 'policy-user' and "group_members"."organization_id" in (
-      select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid
+      select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid and deleted_at is null and status = 'active' and (valid_from is null or valid_from <= statement_timestamp()) and (valid_until is null or valid_until > statement_timestamp())
     ))
     or (current_setting('answerable.scope', true) = 'policy-root' and "group_members"."organization_id" in (select organization_id from system_bindings))));--> statement-breakpoint
 CREATE POLICY "tenant_write" ON "groups" AS PERMISSIVE FOR ALL TO public USING ((current_setting('answerable.scope', true) = 'platform-write' or (current_setting('answerable.scope', true) = 'tenant-write' and "groups"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid))) WITH CHECK ((current_setting('answerable.scope', true) = 'platform-write' or (current_setting('answerable.scope', true) = 'tenant-write' and "groups"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid)));--> statement-breakpoint
@@ -598,19 +598,82 @@ CREATE POLICY "tenant_read" ON "groups" AS PERMISSIVE FOR SELECT TO public USING
     or current_setting('answerable.scope', true) = 'platform-read'
     or (current_setting('answerable.scope', true) = 'tenant-read' and "groups"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid)
     or (current_setting('answerable.scope', true) = 'policy-user' and "groups"."organization_id" in (
-      select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid
+      select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid and deleted_at is null and status = 'active' and (valid_from is null or valid_from <= statement_timestamp()) and (valid_until is null or valid_until > statement_timestamp())
     ))
     or (current_setting('answerable.scope', true) = 'policy-root' and "groups"."organization_id" in (select organization_id from system_bindings))));--> statement-breakpoint
 CREATE POLICY "capability_write" ON "organization_capabilities" AS PERMISSIVE FOR ALL TO public USING (current_setting('answerable.scope', true) = 'platform-write') WITH CHECK (current_setting('answerable.scope', true) = 'platform-write');--> statement-breakpoint
 CREATE POLICY "capability_read" ON "organization_capabilities" AS PERMISSIVE FOR SELECT TO public USING (current_setting('answerable.scope', true) in ('platform-read', 'platform-write')
       or (current_setting('answerable.scope', true) in ('tenant-read', 'tenant-write') and "organization_capabilities"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid)
-      or (current_setting('answerable.scope', true) = 'policy-user' and "organization_capabilities"."organization_id" in (select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid))
+      or (current_setting('answerable.scope', true) = 'policy-user' and "organization_capabilities"."organization_id" in (select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid and deleted_at is null and status = 'active' and (valid_from is null or valid_from <= statement_timestamp()) and (valid_until is null or valid_until > statement_timestamp())))
       or (current_setting('answerable.scope', true) = 'policy-root' and "organization_capabilities"."organization_id" in (select organization_id from system_bindings)));--> statement-breakpoint
 CREATE POLICY "grant_read" ON "grant_contexts" AS PERMISSIVE FOR SELECT TO public USING ((current_setting('answerable.scope', true) in ('platform-write', 'platform-users') or (current_setting('answerable.scope', true) = 'tenant-write' and "grant_contexts"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid) or (current_setting('answerable.scope', true) = 'grant-client' and "grant_contexts"."client_instance_id" in (select id from oauth_clients where client_id = current_setting('answerable.client', true)))) or current_setting('answerable.scope', true) = 'platform-read' or (current_setting('answerable.scope', true) = 'tenant-read' and "grant_contexts"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid) or (current_setting('answerable.scope', true) = 'policy-user' and "grant_contexts"."user_id" = nullif(current_setting('answerable.subject', true), '')::uuid) or (current_setting('answerable.scope', true) = 'grant-admission' and "grant_contexts"."user_id" = nullif(current_setting('answerable.subject', true), '')::uuid and "grant_contexts"."authentication_session_id" = nullif(current_setting('answerable.session', true), '')::uuid));--> statement-breakpoint
 CREATE POLICY "grant_insert" ON "grant_contexts" AS PERMISSIVE FOR INSERT TO public WITH CHECK (current_setting('answerable.scope', true) = 'platform-write' or (current_setting('answerable.scope', true) = 'grant-admission' and "grant_contexts"."user_id" = nullif(current_setting('answerable.subject', true), '')::uuid and "grant_contexts"."authentication_session_id" = nullif(current_setting('answerable.session', true), '')::uuid));--> statement-breakpoint
 CREATE POLICY "grant_update" ON "grant_contexts" AS PERMISSIVE FOR UPDATE TO public USING ((current_setting('answerable.scope', true) in ('platform-write', 'platform-users') or (current_setting('answerable.scope', true) = 'tenant-write' and "grant_contexts"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid) or (current_setting('answerable.scope', true) = 'grant-client' and "grant_contexts"."client_instance_id" in (select id from oauth_clients where client_id = current_setting('answerable.client', true))))) WITH CHECK ((current_setting('answerable.scope', true) in ('platform-write', 'platform-users') or (current_setting('answerable.scope', true) = 'tenant-write' and "grant_contexts"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid) or (current_setting('answerable.scope', true) = 'grant-client' and "grant_contexts"."client_instance_id" in (select id from oauth_clients where client_id = current_setting('answerable.client', true)))));--> statement-breakpoint
 CREATE POLICY "grant_delete" ON "grant_contexts" AS PERMISSIVE FOR DELETE TO public USING (current_setting('answerable.scope', true) = 'platform-write');
 --> statement-breakpoint
+ALTER TABLE "invitations" ENABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "members" ENABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "organization_domains" ENABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "sso_providers" ENABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "audit_event_subjects" ENABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "audit_events" ENABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
+CREATE INDEX "oauth_access_tokens_expires_at_idx" ON "oauth_access_tokens" USING btree ("expires_at");
+--> statement-breakpoint
+CREATE INDEX "oauth_refresh_tokens_expires_at_idx" ON "oauth_refresh_tokens" USING btree ("expires_at");
+--> statement-breakpoint
+CREATE INDEX "audit_events_action_occurred_at_idx" ON "audit_events" USING btree ("action","occurred_at");
+--> statement-breakpoint
+CREATE INDEX "grant_contexts_organization_id_idx" ON "grant_contexts" USING btree ("organization_id");
+--> statement-breakpoint
+CREATE POLICY "tenant_write" ON "invitations" AS PERMISSIVE FOR ALL TO public USING ((current_setting('answerable.scope', true) in ('platform-write', 'protocol') or (current_setting('answerable.scope', true) = 'tenant-write' and "invitations"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid))) WITH CHECK ((current_setting('answerable.scope', true) in ('platform-write', 'protocol') or (current_setting('answerable.scope', true) = 'tenant-write' and "invitations"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid)));
+--> statement-breakpoint
+CREATE POLICY "tenant_read" ON "invitations" AS PERMISSIVE FOR SELECT TO public USING ((current_setting('answerable.scope', true) in ('platform-write', 'protocol') or (current_setting('answerable.scope', true) = 'tenant-write' and "invitations"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid))
+      or current_setting('answerable.scope', true) in ('platform-read', 'platform-users')
+      or (current_setting('answerable.scope', true) = 'tenant-read' and "invitations"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid)
+      or false
+      or (current_setting('answerable.scope', true) = 'policy-root' and "invitations"."organization_id" in (select organization_id from system_bindings)));
+--> statement-breakpoint
+CREATE POLICY "tenant_write" ON "members" AS PERMISSIVE FOR ALL TO public USING ((current_setting('answerable.scope', true) in ('platform-write', 'protocol') or (current_setting('answerable.scope', true) = 'tenant-write' and "members"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid))) WITH CHECK ((current_setting('answerable.scope', true) in ('platform-write', 'protocol') or (current_setting('answerable.scope', true) = 'tenant-write' and "members"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid)));
+--> statement-breakpoint
+CREATE POLICY "tenant_read" ON "members" AS PERMISSIVE FOR SELECT TO public USING ((current_setting('answerable.scope', true) in ('platform-write', 'protocol') or (current_setting('answerable.scope', true) = 'tenant-write' and "members"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid))
+      or current_setting('answerable.scope', true) in ('platform-read', 'platform-users')
+      or (current_setting('answerable.scope', true) = 'tenant-read' and "members"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid)
+      or (current_setting('answerable.scope', true) in ('policy-user', 'grant-admission') and "members"."user_id" = nullif(current_setting('answerable.subject', true), '')::uuid)
+      or (current_setting('answerable.scope', true) = 'policy-root' and "members"."organization_id" in (select organization_id from system_bindings)));
+--> statement-breakpoint
+CREATE POLICY "routing_read" ON "organization_domains" AS PERMISSIVE FOR SELECT TO public USING (true);
+--> statement-breakpoint
+CREATE POLICY "routing_write" ON "organization_domains" AS PERMISSIVE FOR ALL TO public USING ((current_setting('answerable.scope', true) = 'platform-write'
+    or (current_setting('answerable.scope', true) = 'tenant-write' and "organization_domains"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid)
+    or (false and current_setting('answerable.scope', true) = 'protocol'))) WITH CHECK ((current_setting('answerable.scope', true) = 'platform-write'
+    or (current_setting('answerable.scope', true) = 'tenant-write' and "organization_domains"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid)
+    or (false and current_setting('answerable.scope', true) = 'protocol')));
+--> statement-breakpoint
+CREATE POLICY "routing_read" ON "sso_providers" AS PERMISSIVE FOR SELECT TO public USING (true);
+--> statement-breakpoint
+CREATE POLICY "routing_write" ON "sso_providers" AS PERMISSIVE FOR ALL TO public USING ((current_setting('answerable.scope', true) = 'platform-write'
+    or (current_setting('answerable.scope', true) = 'tenant-write' and "sso_providers"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid)
+    or (true and current_setting('answerable.scope', true) = 'protocol'))) WITH CHECK ((current_setting('answerable.scope', true) = 'platform-write'
+    or (current_setting('answerable.scope', true) = 'tenant-write' and "sso_providers"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid)
+    or (true and current_setting('answerable.scope', true) = 'protocol')));
+--> statement-breakpoint
+CREATE POLICY "audit_insert" ON "audit_event_subjects" AS PERMISSIVE FOR INSERT TO public WITH CHECK (true);
+--> statement-breakpoint
+CREATE POLICY "audit_read" ON "audit_event_subjects" AS PERMISSIVE FOR SELECT TO public USING (current_setting('answerable.scope', true) in ('platform-read', 'platform-write', 'platform-users')
+      or (current_setting('answerable.scope', true) in ('tenant-read', 'tenant-write') and "audit_event_subjects"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid));
+--> statement-breakpoint
+CREATE POLICY "audit_insert" ON "audit_events" AS PERMISSIVE FOR INSERT TO public WITH CHECK (true);
+--> statement-breakpoint
+CREATE POLICY "audit_read" ON "audit_events" AS PERMISSIVE FOR SELECT TO public USING (current_setting('answerable.scope', true) in ('platform-read', 'platform-write', 'platform-users')
+      or (current_setting('answerable.scope', true) in ('tenant-read', 'tenant-write') and "audit_events"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid));
+--> statement-breakpoint
+
 -- Custom database invariants. Drizzle models the tables and policies above;
 -- functions, triggers, deferred checking and execution restrictions are reviewed here.
 ALTER TABLE "audit_events" ALTER CONSTRAINT "audit_events_operation_id_admin_operations_id_fk" DEFERRABLE INITIALLY DEFERRED;
@@ -679,6 +742,15 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
+CREATE FUNCTION try_uuid(value text) RETURNS uuid
+LANGUAGE plpgsql IMMUTABLE STRICT SET search_path = pg_catalog, public AS $$
+BEGIN
+  RETURN value::uuid;
+EXCEPTION WHEN invalid_text_representation THEN
+  RETURN NULL;
+END;
+$$;
+--> statement-breakpoint
 CREATE FUNCTION capture_audit_subjects(event public.audit_events, origin text) RETURNS void
 LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
 DECLARE related_user text; user_effects jsonb; entitlement_state jsonb;
@@ -695,7 +767,7 @@ BEGIN
   END IF;
   IF event.target_type IN ('member', 'group_member') THEN
     SELECT user_id::text INTO related_user FROM public.members
-    WHERE id::text = event.target_id AND (event.organization_id IS NULL OR organization_id = event.organization_id);
+    WHERE id = public.try_uuid(event.target_id) AND (event.organization_id IS NULL OR organization_id = event.organization_id);
     related_user := coalesce(related_user, event.data->>'userId');
   ELSIF (event.schema_version = 1 OR (event.schema_version = 3 AND event.action = 'entitlement.removed' AND event.data->>'deletionMode' = 'soft')) AND event.outcome = 'success'
     AND event.organization_id IS NOT NULL AND event.target_type = 'entitlement'
@@ -705,12 +777,12 @@ BEGIN
       'entitlement.disable_unchanged', 'entitlement.removed'
     ) THEN
     SELECT user_id::text INTO related_user FROM public.members
-    WHERE id::text = entitlement_state->>'memberId'
+    WHERE id = public.try_uuid(entitlement_state->>'memberId')
       AND organization_id = event.organization_id
       AND entitlement_state->>'organizationId' = event.organization_id::text
       AND entitlement_state->>'id' = event.target_id;
   ELSIF event.target_type = 'session' THEN
-    SELECT user_id::text INTO related_user FROM public.sessions WHERE id::text = event.target_id;
+    SELECT user_id::text INTO related_user FROM public.sessions WHERE id = public.try_uuid(event.target_id);
     related_user := coalesce(related_user, event.data->>'userId');
   END IF;
   IF related_user IS NOT NULL THEN
@@ -1046,8 +1118,9 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
+-- The fixed provenance guard must lock members without granting admission callers UPDATE.
 CREATE FUNCTION protect_grant_context() RETURNS trigger
-LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
 BEGIN
   IF TG_OP = 'UPDATE' THEN
     IF (to_jsonb(NEW) - 'revoked_at' - 'authorization_code_id') IS DISTINCT FROM (to_jsonb(OLD) - 'revoked_at' - 'authorization_code_id')
@@ -1059,11 +1132,11 @@ BEGIN
     END IF;
     RETURN NEW;
   END IF;
-  PERFORM 1 FROM members m
-    JOIN organizations o ON o.id = m.organization_id
-    JOIN users u ON u.id = m.user_id
-    JOIN sessions s ON s.user_id = u.id
-    JOIN oauth_clients c ON c.id = NEW.client_instance_id
+  PERFORM 1 FROM public.members m
+    JOIN public.organizations o ON o.id = m.organization_id
+    JOIN public.users u ON u.id = m.user_id
+    JOIN public.sessions s ON s.user_id = u.id
+    JOIN public.oauth_clients c ON c.id = NEW.client_instance_id
     WHERE m.id = NEW.member_id AND m.organization_id = NEW.organization_id
       AND m.user_id = NEW.user_id AND m.status = 'active'
       AND o.status = 'active' AND u.status = 'active' AND m.deleted_at IS NULL AND o.deleted_at IS NULL AND u.deleted_at IS NULL AND c.deleted_at IS NULL
@@ -1076,7 +1149,7 @@ BEGIN
       USING ERRCODE = '23514', CONSTRAINT = 'grant_context_provenance';
   END IF;
   IF NEW.resource_instance_id IS NOT NULL THEN
-    PERFORM 1 FROM oauth_resources r WHERE r.id = NEW.resource_instance_id
+    PERFORM 1 FROM public.oauth_resources r WHERE r.id = NEW.resource_instance_id
       AND r.disabled = false AND r.deleted_at IS NULL
       AND (r.classification = 'platform_shared' OR r.organization_id = NEW.organization_id)
       FOR SHARE;
@@ -1220,8 +1293,9 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
+-- Validate fixed provenance independently of caller visibility; RLS still controls admission.
 CREATE FUNCTION validate_grant_authentication() RETURNS trigger
-LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
 DECLARE evidence jsonb;
 BEGIN
   IF NEW.authentication IS NULL THEN RETURN NEW; END IF;
@@ -1254,7 +1328,7 @@ BEGIN
   IF NEW.schema_version <> 4 OR NEW.action NOT IN (
     'oauth.user.authorized', 'oauth.user.denied', 'oauth.user.issued', 'oauth.user.replayed', 'oauth.user.revoked'
   ) THEN RETURN NEW; END IF;
-  SELECT * INTO g FROM public.grant_contexts WHERE id::text = NEW.target_id;
+  SELECT * INTO g FROM public.grant_contexts WHERE id = public.try_uuid(NEW.target_id);
   SELECT client_id INTO public_client FROM public.oauth_clients WHERE id = g.client_instance_id;
   IF g.id IS NULL OR NEW.target_type <> 'grant_context' OR NEW.organization_id IS DISTINCT FROM g.organization_id
     OR NOT ((NEW.actor_type = 'user' AND NEW.actor_id = g.user_id::text) OR (NEW.actor_type = 'client' AND NEW.actor_id = public_client))
@@ -1435,4 +1509,4 @@ FOR EACH ROW EXECUTE FUNCTION validate_grant_authentication();
 CREATE TRIGGER audit_events_user_oauth_subjects AFTER INSERT ON audit_events
 FOR EACH ROW EXECUTE FUNCTION record_user_oauth_subjects();
 --> statement-breakpoint
-REVOKE EXECUTE ON FUNCTION capture_audit_subjects(audit_events, text), record_audit_subjects(), reserve_security_identifier(), public.purge_operation_results(uuid, integer), record_user_oauth_subjects(), validate_grant_authentication() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION protect_grant_context(), capture_audit_subjects(audit_events, text), record_audit_subjects(), reserve_security_identifier(), public.purge_operation_results(uuid, integer), record_user_oauth_subjects(), validate_grant_authentication() FROM PUBLIC;

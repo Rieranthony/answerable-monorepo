@@ -407,3 +407,71 @@ test("client erasure subjects accept only the explicit global v2 cascade contrac
     },
   ]);
 });
+
+test("UUID audit lookups retain session subjects and ignore non-UUID member targets", async () => {
+  const { users, sessions } = await import("../schema/index.ts");
+  const userId = createId(),
+    sessionId = createId();
+  await connection.db.insert(users).values({
+    id: userId,
+    name: "Audit subject",
+    email: `${userId}@example.com`,
+    status: "active",
+  });
+  await connection.db.insert(sessions).values({
+    id: sessionId,
+    userId,
+    token: createId(),
+    expiresAt: new Date(Date.now() + 60000),
+  });
+  const session = await recordAuditEvent(connection.db, {
+    ...event,
+    targetType: "session",
+    targetId: sessionId,
+  });
+  expect(
+    await connection.db
+      .select()
+      .from(auditEventSubjects)
+      .where(eq(auditEventSubjects.eventId, session.id)),
+  ).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        entityType: "user",
+        entityId: userId,
+        relationship: "affected",
+      }),
+    ]),
+  );
+  const member = await recordAuditEvent(connection.db, {
+    ...event,
+    targetType: "member",
+    targetId: "not-a-uuid",
+  });
+  expect(
+    await connection.db
+      .select()
+      .from(auditEventSubjects)
+      .where(eq(auditEventSubjects.eventId, member.id)),
+  ).not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ relationship: "affected" }),
+    ]),
+  );
+  await connection.db.transaction(async (tx) => {
+    await tx.execute(sql`set local enable_seqscan = off`);
+    for (const table of ["members", "sessions", "grant_contexts"]) {
+      const plan = await tx.execute(
+        sql`explain (format json) select * from ${sql.identifier(table)} where id = public.try_uuid(${sessionId})`,
+      );
+      expect(JSON.stringify(plan.rows)).toContain(`${table}_pkey`);
+    }
+    expect(
+      (
+        await tx.execute(
+          sql`select public.try_uuid('invalid') as invalid, public.try_uuid(null) as missing`,
+        )
+      ).rows,
+    ).toEqual([{ invalid: null, missing: null }]);
+  });
+});

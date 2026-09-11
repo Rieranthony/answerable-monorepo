@@ -29,10 +29,10 @@ Do not run it alongside migrations, coverage, another workload or restore rehear
 | Public authentication handlers | `max(1, pool maximum − 1)` per pool                                                   | A shared lane; B OAuth can be refused when A fills it                      |
 | Tenant administrative commands | Two per organisation per pool after authentication                                    | Global commands and authentication are outside this bound                  |
 | Machine issuance               | Two per owner organisation across the database, after authentication and policy locks | Does not bound checkout, lock waits or rejected-token audits               |
-| Database pool                  | Five connections; checkout 5 seconds; idle 10 seconds                                 | Multiply pools by processes and include other database users               |
-| Database statements            | 10 seconds per statement                                                              | Not a whole-request deadline; transactions may execute multiple statements |
+| Database pool                  | 20 connections (1 in tests); checkout 5 seconds; idle 10 seconds                      | Multiply pools by processes and include other database users               |
+| Database statements            | 10 seconds per statement; lock wait 2 seconds; idle transaction 15 seconds            | Not a whole-request deadline; transactions may execute multiple statements |
 | Request body                   | 256 KiB; acquisition deadline 5 seconds                                               | Does not bound response streaming or socket count                          |
-| Forwarded IP                   | Rightmost untrusted address after listed ingress proxies                                                 | Requires proxy-only network access and TRUSTED_PROXY_CIDRS                                   |
+| Forwarded IP                   | Rightmost untrusted address after listed ingress proxies                              | Requires proxy-only network access and TRUSTED_PROXY_CIDRS                 |
 
 **Runtime summaries.** `OPERATIONAL_LOG_INTERVAL_MS` defaults to 30000; zero disables
 reporting, otherwise the minimum is 1000. Each process writes `[id] operations`

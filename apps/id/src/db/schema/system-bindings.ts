@@ -20,6 +20,7 @@ export const systemBindings = pgTable(
   (table) => [
     vocabularyCheck("system_bindings_name_check", table.name, ["platform"]),
     foreignKey({
+      name: "system_bindings_organization_group_fk",
       columns: [table.organizationId, table.groupId],
       foreignColumns: [groups.organizationId, groups.id],
     }).onDelete("restrict"),

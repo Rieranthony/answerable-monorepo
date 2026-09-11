@@ -5,7 +5,7 @@
       "security_definer": false,
       "settings": ["search_path=pg_catalog, public"],
       "public_execute": false,
-      "definitionHash": "8614518725b3fc1f800d0d9b1ac0b863e518a348bf7cf1ecc9057900f8887e06"
+      "definitionHash": "d501659c207ba7640b309e9c2d8f4eaa577ec60e83238973b21a523cbe8be9d5"
     },
     {
       "name": "protect_admin_operation()",
@@ -30,10 +30,10 @@
     },
     {
       "name": "protect_grant_context()",
-      "security_definer": false,
+      "security_definer": true,
       "settings": ["search_path=pg_catalog, public"],
-      "public_execute": true,
-      "definitionHash": "13533ef56ff5f4adeb589157620e1225760294386241676ebf8d2f04276aea6a"
+      "public_execute": false,
+      "definitionHash": "05bd374c69d2c750312cf24836ea1e962c2bef20dba3a4c83add5f3ab16b6b1f"
     },
     {
       "name": "protect_group_assignment_identity()",
@@ -152,7 +152,7 @@
       "security_definer": true,
       "settings": ["search_path=pg_catalog, public"],
       "public_execute": false,
-      "definitionHash": "33f27103a46097f53aa12dd5241a02ff57347bdbe028afa5a8eb8ab714730cc9"
+      "definitionHash": "8f7b0bb944e6f98df762f611cc9fb52a91ccd265683f7a5da3f5c28ea293b030"
     },
     {
       "name": "require_present_parent(regclass,name,text)",
@@ -176,11 +176,18 @@
       "definitionHash": "5542db830df1d29b198e604fa16eeb71b23577bff5b0b4c74e40a62c0373ac58"
     },
     {
-      "name": "validate_grant_authentication()",
+      "name": "try_uuid(text)",
       "security_definer": false,
       "settings": ["search_path=pg_catalog, public"],
+      "public_execute": true,
+      "definitionHash": "fc5bab97952487f82dca6fc586ddeec740480cbe5a7b730b4e2cfe4109f2404e"
+    },
+    {
+      "name": "validate_grant_authentication()",
+      "security_definer": true,
+      "settings": ["search_path=pg_catalog, public"],
       "public_execute": false,
-      "definitionHash": "a0b42bdea85078f2d4c2ef4924f35e2f7a9965767b33bb682754a1bf58daa480"
+      "definitionHash": "ff5570c7a3ecd1a9cb3105527c1934c3cec3669dc42ddad7f5ee28a27f0f8241"
     }
   ],
   "triggers": [
@@ -553,12 +560,48 @@
   ],
   "policies": [
     {
+      "tablename": "audit_event_subjects",
+      "policyname": "audit_insert",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "true"
+    },
+    {
+      "tablename": "audit_event_subjects",
+      "policyname": "audit_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "((current_setting('answerable.scope'::text, true) = ANY (ARRAY['platform-read'::text, 'platform-write'::text, 'platform-users'::text])) OR ((current_setting('answerable.scope'::text, true) = ANY (ARRAY['tenant-read'::text, 'tenant-write'::text])) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)))",
+      "with_check": null
+    },
+    {
+      "tablename": "audit_events",
+      "policyname": "audit_insert",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "true"
+    },
+    {
+      "tablename": "audit_events",
+      "policyname": "audit_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "((current_setting('answerable.scope'::text, true) = ANY (ARRAY['platform-read'::text, 'platform-write'::text, 'platform-users'::text])) OR ((current_setting('answerable.scope'::text, true) = ANY (ARRAY['tenant-read'::text, 'tenant-write'::text])) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)))",
+      "with_check": null
+    },
+    {
       "tablename": "entitlements",
       "policyname": "tenant_read",
       "permissive": "PERMISSIVE",
       "roles": "{public}",
       "cmd": "SELECT",
-      "qual": "((current_setting('answerable.scope'::text, true) = 'platform-write'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR (current_setting('answerable.scope'::text, true) = 'platform-read'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-read'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR ((current_setting('answerable.scope'::text, true) = 'policy-user'::text) AND (organization_id IN ( SELECT members.organization_id\n   FROM members\n  WHERE (members.user_id = (NULLIF(current_setting('answerable.subject'::text, true), ''::text))::uuid)))) OR ((current_setting('answerable.scope'::text, true) = 'policy-root'::text) AND (organization_id IN ( SELECT system_bindings.organization_id\n   FROM system_bindings))))",
+      "qual": "((current_setting('answerable.scope'::text, true) = 'platform-write'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR (current_setting('answerable.scope'::text, true) = 'platform-read'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-read'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR ((current_setting('answerable.scope'::text, true) = 'policy-user'::text) AND (organization_id IN ( SELECT members.organization_id\n   FROM members\n  WHERE ((members.user_id = (NULLIF(current_setting('answerable.subject'::text, true), ''::text))::uuid) AND (members.deleted_at IS NULL) AND (members.status = 'active'::text) AND ((members.valid_from IS NULL) OR (members.valid_from <= statement_timestamp())) AND ((members.valid_until IS NULL) OR (members.valid_until > statement_timestamp())))))) OR ((current_setting('answerable.scope'::text, true) = 'policy-root'::text) AND (organization_id IN ( SELECT system_bindings.organization_id\n   FROM system_bindings))))",
       "with_check": null
     },
     {
@@ -612,7 +655,7 @@
       "permissive": "PERMISSIVE",
       "roles": "{public}",
       "cmd": "SELECT",
-      "qual": "((current_setting('answerable.scope'::text, true) = 'platform-write'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR (current_setting('answerable.scope'::text, true) = 'platform-read'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-read'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR ((current_setting('answerable.scope'::text, true) = 'policy-user'::text) AND (organization_id IN ( SELECT members.organization_id\n   FROM members\n  WHERE (members.user_id = (NULLIF(current_setting('answerable.subject'::text, true), ''::text))::uuid)))) OR ((current_setting('answerable.scope'::text, true) = 'policy-root'::text) AND (organization_id IN ( SELECT system_bindings.organization_id\n   FROM system_bindings))))",
+      "qual": "((current_setting('answerable.scope'::text, true) = 'platform-write'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR (current_setting('answerable.scope'::text, true) = 'platform-read'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-read'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR ((current_setting('answerable.scope'::text, true) = 'policy-user'::text) AND (organization_id IN ( SELECT members.organization_id\n   FROM members\n  WHERE ((members.user_id = (NULLIF(current_setting('answerable.subject'::text, true), ''::text))::uuid) AND (members.deleted_at IS NULL) AND (members.status = 'active'::text) AND ((members.valid_from IS NULL) OR (members.valid_from <= statement_timestamp())) AND ((members.valid_until IS NULL) OR (members.valid_until > statement_timestamp())))))) OR ((current_setting('answerable.scope'::text, true) = 'policy-root'::text) AND (organization_id IN ( SELECT system_bindings.organization_id\n   FROM system_bindings))))",
       "with_check": null
     },
     {
@@ -630,7 +673,7 @@
       "permissive": "PERMISSIVE",
       "roles": "{public}",
       "cmd": "SELECT",
-      "qual": "((current_setting('answerable.scope'::text, true) = 'platform-write'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR (current_setting('answerable.scope'::text, true) = 'platform-read'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-read'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR ((current_setting('answerable.scope'::text, true) = 'policy-user'::text) AND (organization_id IN ( SELECT members.organization_id\n   FROM members\n  WHERE (members.user_id = (NULLIF(current_setting('answerable.subject'::text, true), ''::text))::uuid)))) OR ((current_setting('answerable.scope'::text, true) = 'policy-root'::text) AND (organization_id IN ( SELECT system_bindings.organization_id\n   FROM system_bindings))))",
+      "qual": "((current_setting('answerable.scope'::text, true) = 'platform-write'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR (current_setting('answerable.scope'::text, true) = 'platform-read'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-read'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR ((current_setting('answerable.scope'::text, true) = 'policy-user'::text) AND (organization_id IN ( SELECT members.organization_id\n   FROM members\n  WHERE ((members.user_id = (NULLIF(current_setting('answerable.subject'::text, true), ''::text))::uuid) AND (members.deleted_at IS NULL) AND (members.status = 'active'::text) AND ((members.valid_from IS NULL) OR (members.valid_from <= statement_timestamp())) AND ((members.valid_until IS NULL) OR (members.valid_until > statement_timestamp())))))) OR ((current_setting('answerable.scope'::text, true) = 'policy-root'::text) AND (organization_id IN ( SELECT system_bindings.organization_id\n   FROM system_bindings))))",
       "with_check": null
     },
     {
@@ -643,12 +686,48 @@
       "with_check": "((current_setting('answerable.scope'::text, true) = 'platform-write'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)))"
     },
     {
+      "tablename": "invitations",
+      "policyname": "tenant_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "((current_setting('answerable.scope'::text, true) = ANY (ARRAY['platform-write'::text, 'protocol'::text])) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR (current_setting('answerable.scope'::text, true) = ANY (ARRAY['platform-read'::text, 'platform-users'::text])) OR ((current_setting('answerable.scope'::text, true) = 'tenant-read'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR false OR ((current_setting('answerable.scope'::text, true) = 'policy-root'::text) AND (organization_id IN ( SELECT system_bindings.organization_id\n   FROM system_bindings))))",
+      "with_check": null
+    },
+    {
+      "tablename": "invitations",
+      "policyname": "tenant_write",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "((current_setting('answerable.scope'::text, true) = ANY (ARRAY['platform-write'::text, 'protocol'::text])) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)))",
+      "with_check": "((current_setting('answerable.scope'::text, true) = ANY (ARRAY['platform-write'::text, 'protocol'::text])) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)))"
+    },
+    {
+      "tablename": "members",
+      "policyname": "tenant_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "((current_setting('answerable.scope'::text, true) = ANY (ARRAY['platform-write'::text, 'protocol'::text])) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR (current_setting('answerable.scope'::text, true) = ANY (ARRAY['platform-read'::text, 'platform-users'::text])) OR ((current_setting('answerable.scope'::text, true) = 'tenant-read'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR ((current_setting('answerable.scope'::text, true) = ANY (ARRAY['policy-user'::text, 'grant-admission'::text])) AND (user_id = (NULLIF(current_setting('answerable.subject'::text, true), ''::text))::uuid)) OR ((current_setting('answerable.scope'::text, true) = 'policy-root'::text) AND (organization_id IN ( SELECT system_bindings.organization_id\n   FROM system_bindings))))",
+      "with_check": null
+    },
+    {
+      "tablename": "members",
+      "policyname": "tenant_write",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "((current_setting('answerable.scope'::text, true) = ANY (ARRAY['platform-write'::text, 'protocol'::text])) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)))",
+      "with_check": "((current_setting('answerable.scope'::text, true) = ANY (ARRAY['platform-write'::text, 'protocol'::text])) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)))"
+    },
+    {
       "tablename": "organization_capabilities",
       "policyname": "capability_read",
       "permissive": "PERMISSIVE",
       "roles": "{public}",
       "cmd": "SELECT",
-      "qual": "((current_setting('answerable.scope'::text, true) = ANY (ARRAY['platform-read'::text, 'platform-write'::text])) OR ((current_setting('answerable.scope'::text, true) = ANY (ARRAY['tenant-read'::text, 'tenant-write'::text])) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR ((current_setting('answerable.scope'::text, true) = 'policy-user'::text) AND (organization_id IN ( SELECT members.organization_id\n   FROM members\n  WHERE (members.user_id = (NULLIF(current_setting('answerable.subject'::text, true), ''::text))::uuid)))) OR ((current_setting('answerable.scope'::text, true) = 'policy-root'::text) AND (organization_id IN ( SELECT system_bindings.organization_id\n   FROM system_bindings))))",
+      "qual": "((current_setting('answerable.scope'::text, true) = ANY (ARRAY['platform-read'::text, 'platform-write'::text])) OR ((current_setting('answerable.scope'::text, true) = ANY (ARRAY['tenant-read'::text, 'tenant-write'::text])) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR ((current_setting('answerable.scope'::text, true) = 'policy-user'::text) AND (organization_id IN ( SELECT members.organization_id\n   FROM members\n  WHERE ((members.user_id = (NULLIF(current_setting('answerable.subject'::text, true), ''::text))::uuid) AND (members.deleted_at IS NULL) AND (members.status = 'active'::text) AND ((members.valid_from IS NULL) OR (members.valid_from <= statement_timestamp())) AND ((members.valid_until IS NULL) OR (members.valid_until > statement_timestamp())))))) OR ((current_setting('answerable.scope'::text, true) = 'policy-root'::text) AND (organization_id IN ( SELECT system_bindings.organization_id\n   FROM system_bindings))))",
       "with_check": null
     },
     {
@@ -659,6 +738,42 @@
       "cmd": "ALL",
       "qual": "(current_setting('answerable.scope'::text, true) = 'platform-write'::text)",
       "with_check": "(current_setting('answerable.scope'::text, true) = 'platform-write'::text)"
+    },
+    {
+      "tablename": "organization_domains",
+      "policyname": "routing_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "true",
+      "with_check": null
+    },
+    {
+      "tablename": "organization_domains",
+      "policyname": "routing_write",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "((current_setting('answerable.scope'::text, true) = 'platform-write'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR (false AND (current_setting('answerable.scope'::text, true) = 'protocol'::text)))",
+      "with_check": "((current_setting('answerable.scope'::text, true) = 'platform-write'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR (false AND (current_setting('answerable.scope'::text, true) = 'protocol'::text)))"
+    },
+    {
+      "tablename": "sso_providers",
+      "policyname": "routing_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "true",
+      "with_check": null
+    },
+    {
+      "tablename": "sso_providers",
+      "policyname": "routing_write",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "ALL",
+      "qual": "((current_setting('answerable.scope'::text, true) = 'platform-write'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR (true AND (current_setting('answerable.scope'::text, true) = 'protocol'::text)))",
+      "with_check": "((current_setting('answerable.scope'::text, true) = 'platform-write'::text) OR ((current_setting('answerable.scope'::text, true) = 'tenant-write'::text) AND (organization_id = (NULLIF(current_setting('answerable.tenant'::text, true), ''::text))::uuid)) OR (true AND (current_setting('answerable.scope'::text, true) = 'protocol'::text)))"
     }
   ],
   "rls": [
@@ -679,12 +794,12 @@
     },
     {
       "table_name": "audit_event_subjects",
-      "enabled": false,
+      "enabled": true,
       "forced": false
     },
     {
       "table_name": "audit_events",
-      "enabled": false,
+      "enabled": true,
       "forced": false
     },
     {
@@ -709,7 +824,7 @@
     },
     {
       "table_name": "invitations",
-      "enabled": false,
+      "enabled": true,
       "forced": false
     },
     {
@@ -719,7 +834,7 @@
     },
     {
       "table_name": "members",
-      "enabled": false,
+      "enabled": true,
       "forced": false
     },
     {
@@ -764,7 +879,7 @@
     },
     {
       "table_name": "organization_domains",
-      "enabled": false,
+      "enabled": true,
       "forced": false
     },
     {
@@ -784,7 +899,7 @@
     },
     {
       "table_name": "sso_providers",
-      "enabled": false,
+      "enabled": true,
       "forced": false
     },
     {
@@ -1028,7 +1143,7 @@
     },
     {
       "table_name": "organization_capabilities",
-      "name": "organization_capabilities_resource_oauth_resources_identifier_f",
+      "name": "organization_capabilities_resource_fk",
       "deferrable": false,
       "initially_deferred": false
     },
@@ -1064,7 +1179,7 @@
     },
     {
       "table_name": "system_bindings",
-      "name": "system_bindings_organization_id_group_id_groups_organization_id",
+      "name": "system_bindings_organization_group_fk",
       "deferrable": false,
       "initially_deferred": false
     },

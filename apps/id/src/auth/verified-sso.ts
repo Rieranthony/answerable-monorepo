@@ -1,3 +1,4 @@
+import { setDatabaseScope } from "../db/isolation.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type {
   SSOUserResolutionInput,
@@ -153,7 +154,6 @@ export function createVerifiedSso(db: Database) {
   async function beforeTransaction(tx: Executor) {
     const flow = requests.getStore()?.flow;
     if (!flow) return;
-    await tx.execute(sql`set local lock_timeout = '2s'`);
     // Acquire our source/target locks before native SSO's provider update lock.
     await tx
       .select({ id: users.id })
@@ -322,6 +322,7 @@ export function createVerifiedSso(db: Database) {
         async (ctx) => {
           const session = ctx.context.session;
           const flow = await db.transaction(async (tx) => {
+            await setDatabaseScope(tx, { kind: "protocol" });
             await tx
               .select({ id: users.id })
               .from(users)

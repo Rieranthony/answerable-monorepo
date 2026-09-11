@@ -320,14 +320,34 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {},
+      "policies": {
+        "tenant_write": {
+          "name": "tenant_write",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "(current_setting('answerable.scope', true) in ('platform-write', 'protocol') or (current_setting('answerable.scope', true) = 'tenant-write' and \"invitations\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid))",
+          "withCheck": "(current_setting('answerable.scope', true) in ('platform-write', 'protocol') or (current_setting('answerable.scope', true) = 'tenant-write' and \"invitations\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid))"
+        },
+        "tenant_read": {
+          "name": "tenant_read",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "public"
+          ],
+          "using": "(current_setting('answerable.scope', true) in ('platform-write', 'protocol') or (current_setting('answerable.scope', true) = 'tenant-write' and \"invitations\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid))\n      or current_setting('answerable.scope', true) in ('platform-read', 'platform-users')\n      or (current_setting('answerable.scope', true) = 'tenant-read' and \"invitations\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid)\n      or false\n      or (current_setting('answerable.scope', true) = 'policy-root' and \"invitations\".\"organization_id\" in (select organization_id from system_bindings))"
+        }
+      },
       "checkConstraints": {
         "invitations_status_check": {
           "name": "invitations_status_check",
           "value": "\"invitations\".\"status\" in ('pending', 'accepted', 'rejected', 'canceled')"
         }
       },
-      "isRLSEnabled": false
+      "isRLSEnabled": true
     },
     "public.members": {
       "name": "members",
@@ -468,7 +488,27 @@
           ]
         }
       },
-      "policies": {},
+      "policies": {
+        "tenant_write": {
+          "name": "tenant_write",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "(current_setting('answerable.scope', true) in ('platform-write', 'protocol') or (current_setting('answerable.scope', true) = 'tenant-write' and \"members\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid))",
+          "withCheck": "(current_setting('answerable.scope', true) in ('platform-write', 'protocol') or (current_setting('answerable.scope', true) = 'tenant-write' and \"members\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid))"
+        },
+        "tenant_read": {
+          "name": "tenant_read",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "public"
+          ],
+          "using": "(current_setting('answerable.scope', true) in ('platform-write', 'protocol') or (current_setting('answerable.scope', true) = 'tenant-write' and \"members\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid))\n      or current_setting('answerable.scope', true) in ('platform-read', 'platform-users')\n      or (current_setting('answerable.scope', true) = 'tenant-read' and \"members\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid)\n      or (current_setting('answerable.scope', true) in ('policy-user', 'grant-admission') and \"members\".\"user_id\" = nullif(current_setting('answerable.subject', true), '')::uuid)\n      or (current_setting('answerable.scope', true) = 'policy-root' and \"members\".\"organization_id\" in (select organization_id from system_bindings))"
+        }
+      },
       "checkConstraints": {
         "members_revision_check": {
           "name": "members_revision_check",
@@ -487,7 +527,7 @@
           "value": "\"members\".\"valid_from\" < \"members\".\"valid_until\""
         }
       },
-      "isRLSEnabled": false
+      "isRLSEnabled": true
     },
     "public.organizations": {
       "name": "organizations",
@@ -1205,6 +1245,21 @@
           "columns": [
             {
               "expression": "refresh_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "oauth_access_tokens_expires_at_idx": {
+          "name": "oauth_access_tokens_expires_at_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -2081,6 +2136,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "oauth_refresh_tokens_expires_at_idx": {
+          "name": "oauth_refresh_tokens_expires_at_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -2579,7 +2649,7 @@
           "to": [
             "public"
           ],
-          "using": "((current_setting('answerable.scope', true) = 'platform-write' or (current_setting('answerable.scope', true) = 'tenant-write' and \"entitlements\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid))\n    or current_setting('answerable.scope', true) = 'platform-read'\n    or (current_setting('answerable.scope', true) = 'tenant-read' and \"entitlements\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid)\n    or (current_setting('answerable.scope', true) = 'policy-user' and \"entitlements\".\"organization_id\" in (\n      select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid\n    ))\n    or (current_setting('answerable.scope', true) = 'policy-root' and \"entitlements\".\"organization_id\" in (select organization_id from system_bindings)))"
+          "using": "((current_setting('answerable.scope', true) = 'platform-write' or (current_setting('answerable.scope', true) = 'tenant-write' and \"entitlements\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid))\n    or current_setting('answerable.scope', true) = 'platform-read'\n    or (current_setting('answerable.scope', true) = 'tenant-read' and \"entitlements\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid)\n    or (current_setting('answerable.scope', true) = 'policy-user' and \"entitlements\".\"organization_id\" in (\n      select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid and deleted_at is null and status = 'active' and (valid_from is null or valid_from <= statement_timestamp()) and (valid_until is null or valid_until > statement_timestamp())\n    ))\n    or (current_setting('answerable.scope', true) = 'policy-root' and \"entitlements\".\"organization_id\" in (select organization_id from system_bindings)))"
         }
       },
       "checkConstraints": {
@@ -2769,7 +2839,7 @@
           "to": [
             "public"
           ],
-          "using": "((current_setting('answerable.scope', true) = 'platform-write' or (current_setting('answerable.scope', true) = 'tenant-write' and \"group_members\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid))\n    or current_setting('answerable.scope', true) = 'platform-read'\n    or (current_setting('answerable.scope', true) = 'tenant-read' and \"group_members\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid)\n    or (current_setting('answerable.scope', true) = 'policy-user' and \"group_members\".\"organization_id\" in (\n      select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid\n    ))\n    or (current_setting('answerable.scope', true) = 'policy-root' and \"group_members\".\"organization_id\" in (select organization_id from system_bindings)))"
+          "using": "((current_setting('answerable.scope', true) = 'platform-write' or (current_setting('answerable.scope', true) = 'tenant-write' and \"group_members\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid))\n    or current_setting('answerable.scope', true) = 'platform-read'\n    or (current_setting('answerable.scope', true) = 'tenant-read' and \"group_members\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid)\n    or (current_setting('answerable.scope', true) = 'policy-user' and \"group_members\".\"organization_id\" in (\n      select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid and deleted_at is null and status = 'active' and (valid_from is null or valid_from <= statement_timestamp()) and (valid_until is null or valid_until > statement_timestamp())\n    ))\n    or (current_setting('answerable.scope', true) = 'policy-root' and \"group_members\".\"organization_id\" in (select organization_id from system_bindings)))"
         }
       },
       "checkConstraints": {
@@ -2929,7 +2999,7 @@
           "to": [
             "public"
           ],
-          "using": "((current_setting('answerable.scope', true) = 'platform-write' or (current_setting('answerable.scope', true) = 'tenant-write' and \"groups\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid))\n    or current_setting('answerable.scope', true) = 'platform-read'\n    or (current_setting('answerable.scope', true) = 'tenant-read' and \"groups\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid)\n    or (current_setting('answerable.scope', true) = 'policy-user' and \"groups\".\"organization_id\" in (\n      select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid\n    ))\n    or (current_setting('answerable.scope', true) = 'policy-root' and \"groups\".\"organization_id\" in (select organization_id from system_bindings)))"
+          "using": "((current_setting('answerable.scope', true) = 'platform-write' or (current_setting('answerable.scope', true) = 'tenant-write' and \"groups\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid))\n    or current_setting('answerable.scope', true) = 'platform-read'\n    or (current_setting('answerable.scope', true) = 'tenant-read' and \"groups\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid)\n    or (current_setting('answerable.scope', true) = 'policy-user' and \"groups\".\"organization_id\" in (\n      select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid and deleted_at is null and status = 'active' and (valid_from is null or valid_from <= statement_timestamp()) and (valid_until is null or valid_until > statement_timestamp())\n    ))\n    or (current_setting('answerable.scope', true) = 'policy-root' and \"groups\".\"organization_id\" in (select organization_id from system_bindings)))"
         }
       },
       "checkConstraints": {
@@ -3055,7 +3125,27 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {},
+      "policies": {
+        "routing_read": {
+          "name": "routing_read",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "public"
+          ],
+          "using": "true"
+        },
+        "routing_write": {
+          "name": "routing_write",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "(current_setting('answerable.scope', true) = 'platform-write'\n    or (current_setting('answerable.scope', true) = 'tenant-write' and \"organization_domains\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid)\n    or (false and current_setting('answerable.scope', true) = 'protocol'))",
+          "withCheck": "(current_setting('answerable.scope', true) = 'platform-write'\n    or (current_setting('answerable.scope', true) = 'tenant-write' and \"organization_domains\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid)\n    or (false and current_setting('answerable.scope', true) = 'protocol'))"
+        }
+      },
       "checkConstraints": {
         "organization_domains_status_check": {
           "name": "organization_domains_status_check",
@@ -3066,7 +3156,7 @@
           "value": "\"organization_domains\".\"domain\" ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'"
         }
       },
-      "isRLSEnabled": false
+      "isRLSEnabled": true
     },
     "public.sso_providers": {
       "name": "sso_providers",
@@ -3204,7 +3294,27 @@
           ]
         }
       },
-      "policies": {},
+      "policies": {
+        "routing_read": {
+          "name": "routing_read",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "public"
+          ],
+          "using": "true"
+        },
+        "routing_write": {
+          "name": "routing_write",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "(current_setting('answerable.scope', true) = 'platform-write'\n    or (current_setting('answerable.scope', true) = 'tenant-write' and \"sso_providers\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid)\n    or (true and current_setting('answerable.scope', true) = 'protocol'))",
+          "withCheck": "(current_setting('answerable.scope', true) = 'platform-write'\n    or (current_setting('answerable.scope', true) = 'tenant-write' and \"sso_providers\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid)\n    or (true and current_setting('answerable.scope', true) = 'protocol'))"
+        }
+      },
       "checkConstraints": {
         "sso_providers_revision_check": {
           "name": "sso_providers_revision_check",
@@ -3215,7 +3325,7 @@
           "value": "\"sso_providers\".\"domain\" ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'"
         }
       },
-      "isRLSEnabled": false
+      "isRLSEnabled": true
     },
     "public.audit_event_subjects": {
       "name": "audit_event_subjects",
@@ -3337,8 +3447,8 @@
         }
       },
       "compositePrimaryKeys": {
-        "audit_event_subjects_event_id_entity_type_entity_id_relationship_pk": {
-          "name": "audit_event_subjects_event_id_entity_type_entity_id_relationship_pk",
+        "audit_event_subjects_pkey": {
+          "name": "audit_event_subjects_pkey",
           "columns": [
             "event_id",
             "entity_type",
@@ -3348,14 +3458,33 @@
         }
       },
       "uniqueConstraints": {},
-      "policies": {},
+      "policies": {
+        "audit_insert": {
+          "name": "audit_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "public"
+          ],
+          "withCheck": "true"
+        },
+        "audit_read": {
+          "name": "audit_read",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "public"
+          ],
+          "using": "current_setting('answerable.scope', true) in ('platform-read', 'platform-write', 'platform-users')\n      or (current_setting('answerable.scope', true) in ('tenant-read', 'tenant-write') and \"audit_event_subjects\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid)"
+        }
+      },
       "checkConstraints": {
         "audit_event_subjects_provenance_check": {
           "name": "audit_event_subjects_provenance_check",
           "value": "\"audit_event_subjects\".\"provenance\" in ('recorded', 'legacy_derived')"
         }
       },
-      "isRLSEnabled": false
+      "isRLSEnabled": true
     },
     "public.audit_events": {
       "name": "audit_events",
@@ -3532,6 +3661,27 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "audit_events_action_occurred_at_idx": {
+          "name": "audit_events_action_occurred_at_idx",
+          "columns": [
+            {
+              "expression": "action",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -3551,7 +3701,26 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {},
+      "policies": {
+        "audit_insert": {
+          "name": "audit_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "public"
+          ],
+          "withCheck": "true"
+        },
+        "audit_read": {
+          "name": "audit_read",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "public"
+          ],
+          "using": "current_setting('answerable.scope', true) in ('platform-read', 'platform-write', 'platform-users')\n      or (current_setting('answerable.scope', true) in ('tenant-read', 'tenant-write') and \"audit_events\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid)"
+        }
+      },
       "checkConstraints": {
         "audit_events_actor_type_check": {
           "name": "audit_events_actor_type_check",
@@ -3562,7 +3731,7 @@
           "value": "\"audit_events\".\"outcome\" in ('success', 'failure', 'denied')"
         }
       },
-      "isRLSEnabled": false
+      "isRLSEnabled": true
     },
     "public.security_identifiers": {
       "name": "security_identifiers",
@@ -3674,8 +3843,8 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "system_bindings_organization_id_group_id_groups_organization_id_id_fk": {
-          "name": "system_bindings_organization_id_group_id_groups_organization_id_id_fk",
+        "system_bindings_organization_group_fk": {
+          "name": "system_bindings_organization_group_fk",
           "tableFrom": "system_bindings",
           "tableTo": "groups",
           "columnsFrom": [
@@ -3986,8 +4155,8 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "organization_capabilities_resource_oauth_resources_identifier_fk": {
-          "name": "organization_capabilities_resource_oauth_resources_identifier_fk",
+        "organization_capabilities_resource_fk": {
+          "name": "organization_capabilities_resource_fk",
           "tableFrom": "organization_capabilities",
           "tableTo": "oauth_resources",
           "columnsFrom": [
@@ -4020,7 +4189,7 @@
           "to": [
             "public"
           ],
-          "using": "current_setting('answerable.scope', true) in ('platform-read', 'platform-write')\n      or (current_setting('answerable.scope', true) in ('tenant-read', 'tenant-write') and \"organization_capabilities\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid)\n      or (current_setting('answerable.scope', true) = 'policy-user' and \"organization_capabilities\".\"organization_id\" in (select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid))\n      or (current_setting('answerable.scope', true) = 'policy-root' and \"organization_capabilities\".\"organization_id\" in (select organization_id from system_bindings))"
+          "using": "current_setting('answerable.scope', true) in ('platform-read', 'platform-write')\n      or (current_setting('answerable.scope', true) in ('tenant-read', 'tenant-write') and \"organization_capabilities\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid)\n      or (current_setting('answerable.scope', true) = 'policy-user' and \"organization_capabilities\".\"organization_id\" in (select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid and deleted_at is null and status = 'active' and (valid_from is null or valid_from <= statement_timestamp()) and (valid_until is null or valid_until > statement_timestamp())))\n      or (current_setting('answerable.scope', true) = 'policy-root' and \"organization_capabilities\".\"organization_id\" in (select organization_id from system_bindings))"
         }
       },
       "checkConstraints": {
@@ -4192,6 +4361,21 @@
           "columns": [
             {
               "expression": "resource_instance_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "grant_contexts_organization_id_idx": {
+          "name": "grant_contexts_organization_id_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

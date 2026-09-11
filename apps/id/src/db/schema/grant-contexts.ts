@@ -69,6 +69,7 @@ export const grantContexts = pgTable(
         for: "delete",
         using: sql`${mode} = 'platform-write'`,
       }),
+      index("grant_contexts_organization_id_idx").on(table.organizationId),
       index("grant_contexts_member_id_idx").on(table.memberId),
       index("grant_contexts_user_id_idx").on(table.userId),
       index("grant_contexts_client_instance_id_idx").on(table.clientInstanceId),

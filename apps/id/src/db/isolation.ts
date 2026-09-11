@@ -3,6 +3,7 @@ import type { Executor } from "./client.ts";
 
 type DatabaseScope =
   | { kind: "none" }
+  | { kind: "protocol" }
   | { kind: "platform"; access: "read" | "write" }
   | { kind: "tenant"; access: "read" | "write"; organizationId: string }
   | { kind: "policy-user"; userId: string }

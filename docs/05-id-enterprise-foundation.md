@@ -28,7 +28,7 @@ Removal revokes the membership/grants and removes direct assignments in that ten
 
 ### Database isolation
 
-Service contexts and database predicates restrict administrative queries. Transaction-local RLS protects five tables; trusted broker exceptions are explicit. Scopes restore through savepoints, rollback and pool reuse. See the [current isolation inventory](../reports/answerable-id-isolation-inventory.md).
+Service contexts and database predicates restrict administrative queries. Transaction-local RLS protects eleven tables, including memberships, invitations, routing configuration and audit history. Native broker transactions use protocol scope. Routing reads and audit inserts remain available without scope; audit-subject inserts remain trigger-owned. Scopes restore through savepoints, rollback and pool reuse. See the [current isolation inventory](../reports/answerable-id-isolation-inventory.md).
 
 ## 3. Immutable credentials and token policy
 
@@ -95,7 +95,7 @@ Upstream-disable detection, downstream logout and actual consumer cache/session 
 | F1  | Immutable identity, reservations, system binding and token versions                       | Schema/HTTP identity tests; actual consumer interpretation outstanding.               |
 | F2  | Durable UUID subjects, audit/effect/receipt atomicity, product tombstones                 | T3 restricted lifecycle/fault tests; external key custody/recovery remains.           |
 | F3  | All 49 mutations, current-authority replay, revisions and crash proof                     | Route inventory and command/process tests; intended-environment recovery remains.     |
-| F4  | Own-tenant SSO, deliberate linking, tenant-local lifecycle and five-table RLS             | T1/T2/T3 restricted A/B tests; real multi-provider acceptance remains.                |
+| F4  | Own-tenant SSO, deliberate linking, tenant-local lifecycle and eleven-table RLS           | T1/T2/T3 restricted A/B tests; real multi-provider acceptance remains.                |
 | F5  | Shared exact-pair evaluator, scope narrowing and actual claim/audit binding               | Production code/refresh/machine and access tests; consumer denial matrix remains.     |
 | F6  | Fresh sensitive authority, local revocation, bounded admission, custody/retention tooling | T1–T4 tests and measured limits; remote offboarding, capacity/ingress/custody remain. |
 | F7  | Exactly one migration, installation/restore proof, reconciled docs and local gates        | Final report; production remains no-go until the external checklist closes.           |

@@ -1,3 +1,4 @@
+import { withDatabaseScope } from "../../db/isolation.ts";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq, inArray, sql } from "drizzle-orm";
 import {
@@ -377,10 +378,15 @@ test("group erasure user indexing accepts only its versioned tenant-bound effect
     },
   ])
     await recordAuditEvent(runtime.db, { ...base, ...patch });
-  const rows = await runtime.db
-    .select()
-    .from(auditEventSubjects)
-    .where(eq(auditEventSubjects.entityId, userId));
+  const rows = await withDatabaseScope(
+    runtime.db,
+    { kind: "platform", access: "read" },
+    (tx) =>
+      tx
+        .select()
+        .from(auditEventSubjects)
+        .where(eq(auditEventSubjects.entityId, userId)),
+  );
   expect(rows).toEqual([
     expect.objectContaining({
       eventId: valid.id,
@@ -493,10 +499,15 @@ for (const order of ["assignment-first", "user-first"] as const) {
           after: { deletedAt: expect.any(String) },
         },
       });
-      const references = await runtime.db
-        .select()
-        .from(auditEventSubjects)
-        .where(eq(auditEventSubjects.eventId, items[0].id));
+      const references = await withDatabaseScope(
+        runtime.db,
+        { kind: "platform", access: "read" },
+        (tx) =>
+          tx
+            .select()
+            .from(auditEventSubjects)
+            .where(eq(auditEventSubjects.eventId, items[0].id)),
+      );
       expect(references).toContainEqual(
         expect.objectContaining({
           entityType: "user",
@@ -513,10 +524,15 @@ for (const order of ["assignment-first", "user-first"] as const) {
       expect((await history.json()).items).toEqual([]);
       expect((await removeAssignment()).status).toBe(404);
       expect(
-        await runtime.db
-          .select()
-          .from(auditEvents)
-          .where(eq(auditEvents.action, "group_member.removed")),
+        await withDatabaseScope(
+          runtime.db,
+          { kind: "platform", access: "read" },
+          (tx) =>
+            tx
+              .select()
+              .from(auditEvents)
+              .where(eq(auditEvents.action, "group_member.removed")),
+        ),
       ).toEqual([]);
     }
   });
@@ -764,10 +780,15 @@ for (const order of ["status-first", "user-first"] as const) {
           },
         },
       });
-      const references = await runtime.db
-        .select()
-        .from(auditEventSubjects)
-        .where(eq(auditEventSubjects.eventId, items[0].id));
+      const references = await withDatabaseScope(
+        runtime.db,
+        { kind: "platform", access: "read" },
+        (tx) =>
+          tx
+            .select()
+            .from(auditEventSubjects)
+            .where(eq(auditEventSubjects.eventId, items[0].id)),
+      );
       expect(references).toContainEqual(
         expect.objectContaining({
           entityType: "user",
@@ -782,10 +803,15 @@ for (const order of ["status-first", "user-first"] as const) {
     } else {
       expect(history.status).toBe(200);
       expect((await history.json()).items).toEqual([]);
-      const [event] = await runtime.db
-        .select()
-        .from(auditEvents)
-        .where(eq(auditEvents.action, "group.disabled"));
+      const [event] = await withDatabaseScope(
+        runtime.db,
+        { kind: "platform", access: "read" },
+        (tx) =>
+          tx
+            .select()
+            .from(auditEvents)
+            .where(eq(auditEvents.action, "group.disabled")),
+      );
       expect(event!.data!.policySources).toMatchObject({ assignments: [] });
       const replay = await disableGroup();
       expect(replay.status).toBe(200);
@@ -863,10 +889,15 @@ test("group status subjects accept only matching versioned tenant/group source r
     { data: { policySources: { assignments: assignment } } },
   ])
     await recordAuditEvent(runtime.db, { ...base, ...patch });
-  const references = await runtime.db
-    .select()
-    .from(auditEventSubjects)
-    .where(eq(auditEventSubjects.entityId, userId));
+  const references = await withDatabaseScope(
+    runtime.db,
+    { kind: "platform", access: "read" },
+    (tx) =>
+      tx
+        .select()
+        .from(auditEventSubjects)
+        .where(eq(auditEventSubjects.entityId, userId)),
+  );
   expect(references).toEqual([
     expect.objectContaining({
       eventId: valid.id,

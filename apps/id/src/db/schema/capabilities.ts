@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   integer,
   pgPolicy,
   pgTable,
@@ -39,9 +40,7 @@ export const organizationCapabilities = pgTable(
     clientId: text("client_id").references(() => oauthClients.clientId, {
       onDelete: "restrict",
     }),
-    resource: text("resource").references(() => oauthResources.identifier, {
-      onDelete: "restrict",
-    }),
+    resource: text("resource"),
     grantKind: text("grant_kind", { enum: capabilityGrantKinds }).notNull(),
     scopes: text("scopes").array().notNull(),
     status: text("status", { enum: lifecycleStatuses })
@@ -52,6 +51,11 @@ export const organizationCapabilities = pgTable(
     revision: integer("revision").default(1).notNull(),
   },
   (table) => [
+    foreignKey({
+      name: "organization_capabilities_resource_fk",
+      columns: [table.resource],
+      foreignColumns: [oauthResources.identifier],
+    }).onDelete("restrict"),
     // The SQL migration adds NULLS NOT DISTINCT; Drizzle cannot express it on partial indexes.
     uniqueIndex("organization_capabilities_target_kind_unique")
       .on(table.organizationId, table.clientId, table.resource, table.grantKind)
@@ -95,7 +99,7 @@ export const organizationCapabilities = pgTable(
       for: "select",
       using: sql`current_setting('answerable.scope', true) in ('platform-read', 'platform-write')
       or (current_setting('answerable.scope', true) in ('tenant-read', 'tenant-write') and ${table.organizationId} = nullif(current_setting('answerable.tenant', true), '')::uuid)
-      or (current_setting('answerable.scope', true) = 'policy-user' and ${table.organizationId} in (select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid))
+      or (current_setting('answerable.scope', true) = 'policy-user' and ${table.organizationId} in (select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid and deleted_at is null and status = 'active' and (valid_from is null or valid_from <= statement_timestamp()) and (valid_until is null or valid_until > statement_timestamp())))
       or (current_setting('answerable.scope', true) = 'policy-root' and ${table.organizationId} in (select organization_id from system_bindings))`,
     }),
   ],

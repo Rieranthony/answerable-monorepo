@@ -1,3 +1,4 @@
+import { routingPolicies } from "./tenant-policies.ts";
 import { sql } from "drizzle-orm";
 import {
   check,
@@ -33,6 +34,7 @@ export const ssoProviders = pgTable(
     revision: integer("revision").default(1).notNull(),
   },
   (table) => [
+    ...routingPolicies(table.organizationId, true),
     check("sso_providers_revision_check", sql`${table.revision} > 0`),
     uniqueIndex("sso_providers_organization_id_unique")
       .on(table.organizationId)
@@ -42,4 +44,4 @@ export const ssoProviders = pgTable(
       sql`${table.domain} ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'`,
     ),
   ],
-);
+).enableRLS();

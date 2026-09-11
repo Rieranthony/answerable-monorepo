@@ -202,6 +202,7 @@ export const oauthRefreshTokens = pgTable(
     confirmation: jsonb("confirmation"),
   },
   (table) => [
+    index("oauth_refresh_tokens_expires_at_idx").on(table.expiresAt),
     index("oauth_refresh_tokens_client_id_idx").on(table.clientId),
     index("oauth_refresh_tokens_session_id_idx").on(table.sessionId),
     index("oauth_refresh_tokens_user_id_idx").on(table.userId),
@@ -242,6 +243,7 @@ export const oauthAccessTokens = pgTable(
     confirmation: jsonb("confirmation"),
   },
   (table) => [
+    index("oauth_access_tokens_expires_at_idx").on(table.expiresAt),
     index("oauth_access_tokens_client_id_idx").on(table.clientId),
     index("oauth_access_tokens_session_id_idx").on(table.sessionId),
     index("oauth_access_tokens_user_id_idx").on(table.userId),

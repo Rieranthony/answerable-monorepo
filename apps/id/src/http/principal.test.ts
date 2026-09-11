@@ -77,10 +77,11 @@ function setup(overrides: Partial<PrincipalDeps> = {}) {
   };
   const rows: AuditEventInput[] = [];
   const db = Object.assign(stubDatabase(), {
+    execute: async () => ({ rows: [{ occurredAt: "2026-09-11T00:00:00Z" }] }),
     insert: () => ({
       values: (row: AuditEventInput) => {
         rows.push(row);
-        return { returning: async () => [row] };
+        return Promise.resolve();
       },
     }),
   });

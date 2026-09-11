@@ -1,3 +1,4 @@
+import { withDatabaseScope } from "./isolation.ts";
 import {
   approveAdminCapability,
   approveMachineCapability,
@@ -114,10 +115,15 @@ test("real runtime login can bootstrap, audit and issue a machine token", async 
     ).status,
   ).toBe(200);
   expect(
-    await runtime.db
-      .select()
-      .from(auditEvents)
-      .where(eq(auditEvents.action, "oauth.token.issued")),
+    await withDatabaseScope(
+      runtime.db,
+      { kind: "platform", access: "read" },
+      (tx) =>
+        tx
+          .select()
+          .from(auditEvents)
+          .where(eq(auditEvents.action, "oauth.token.issued")),
+    ),
   ).toMatchObject([
     {
       actorType: "client",
@@ -160,10 +166,15 @@ test("real runtime login can bootstrap, audit and issue a machine token", async 
   expect(denied.status).toBe(400);
   expect(await denied.json()).toMatchObject({ error: "invalid_scope" });
   expect(
-    await runtime.db
-      .select()
-      .from(auditEvents)
-      .where(eq(auditEvents.action, "oauth.token.rejected")),
+    await withDatabaseScope(
+      runtime.db,
+      { kind: "platform", access: "read" },
+      (tx) =>
+        tx
+          .select()
+          .from(auditEvents)
+          .where(eq(auditEvents.action, "oauth.token.rejected")),
+    ),
   ).toMatchObject([
     {
       actorType: "client",
@@ -1136,15 +1147,13 @@ test("restricted runtime evaluates exact user pairs through scoped policy reads"
     oidc: { clientId: "policy", clientSecret: "secret" },
   });
   const accountId = crypto.randomUUID();
-  await owner.db
-    .insert(accounts)
-    .values({
-      id: accountId,
-      userId,
-      issuer: provider.issuer,
-      providerId: provider.providerId,
-      accountId: userId,
-    });
+  await owner.db.insert(accounts).values({
+    id: accountId,
+    userId,
+    issuer: provider.issuer,
+    providerId: provider.providerId,
+    accountId: userId,
+  });
   await owner.db.insert(sessions).values({
     id: sessionId,
     userId,
@@ -2222,4 +2231,243 @@ test("runtime startup refuses disabled grant-context RLS", async () => {
     );
   }
   await assertRuntimeRole(runtime.db);
+});
+
+test("administrative RLS isolates rows while retaining routing and append-only broker access", async () => {
+  const { createId } = await import("../lib/id.ts");
+  const {
+    members,
+    invitations,
+    organizationDomains,
+    ssoProviders,
+    organizations,
+    users,
+    auditEventSubjects,
+  } = await import("./schema/index.ts");
+  const { recordAuditEvent } = await import("./queries/audit.ts");
+  const userId = createId();
+  await owner.db.insert(users).values({
+    id: userId,
+    name: "RLS subject",
+    email: `${userId}@example.com`,
+    status: "active",
+  });
+  const tenants = [createId(), createId()];
+  for (const organizationId of tenants) {
+    await owner.db.insert(organizations).values({
+      id: organizationId,
+      slug: `rls-${organizationId}`,
+      name: "RLS tenant",
+    });
+    await owner.db
+      .insert(members)
+      .values({ id: createId(), organizationId, userId });
+    await owner.db.insert(invitations).values({
+      id: createId(),
+      organizationId,
+      email: "invite@example.com",
+      inviterId: userId,
+      expiresAt: new Date(Date.now() + 60000),
+    });
+    await owner.db.insert(organizationDomains).values({
+      id: createId(),
+      organizationId,
+      domain: `${organizationId}.example.com`,
+    });
+    await owner.db.insert(ssoProviders).values({
+      id: createId(),
+      organizationId,
+      providerId: organizationId,
+      issuer: "https://issuer.example.com",
+      domain: `${organizationId}.example.com`,
+    });
+    await recordAuditEvent(runtime.db, {
+      organizationId,
+      actorType: "system",
+      actorId: "rls-proof",
+      action: "rls.proof",
+      targetType: "user",
+      targetId: userId,
+      outcome: "success",
+    });
+  }
+  for (const organizationId of tenants) {
+    await withDatabaseScope(
+      runtime.db,
+      { kind: "tenant", access: "read", organizationId },
+      async (tx) => {
+        // Deliberately omit application tenant predicates.
+        for (const table of [
+          members,
+          invitations,
+          auditEvents,
+          auditEventSubjects,
+        ]) {
+          const rows = await tx
+            .select({ organizationId: table.organizationId })
+            .from(table);
+          expect(rows.length).toBeGreaterThan(0);
+          expect(
+            rows.every((row) => row.organizationId === organizationId),
+          ).toBe(true);
+        }
+        // Routing is intentionally public to all database scopes.
+        for (const table of [organizationDomains, ssoProviders]) {
+          const rows = await tx
+            .select({ organizationId: table.organizationId })
+            .from(table);
+          expect(rows.map((row) => row.organizationId)).toEqual(
+            expect.arrayContaining(tenants),
+          );
+        }
+      },
+    );
+  }
+  const foreign = tenants[1]!;
+  const inserts = [
+    (tx: import("./client.ts").Executor) =>
+      tx
+        .insert(members)
+        .values({ id: createId(), organizationId: foreign, userId }),
+    (tx: import("./client.ts").Executor) =>
+      tx.insert(invitations).values({
+        id: createId(),
+        organizationId: foreign,
+        email: "foreign@example.com",
+        inviterId: userId,
+        expiresAt: new Date(Date.now() + 60000),
+      }),
+    (tx: import("./client.ts").Executor) =>
+      tx.insert(organizationDomains).values({
+        id: createId(),
+        organizationId: foreign,
+        domain: `${createId()}.example.com`,
+      }),
+    (tx: import("./client.ts").Executor) =>
+      tx.insert(ssoProviders).values({
+        id: createId(),
+        organizationId: foreign,
+        providerId: createId(),
+        issuer: "https://issuer.example.com",
+        domain: "foreign.example.com",
+      }),
+  ];
+  for (const insert of inserts)
+    await expect(
+      withDatabaseScope(
+        runtime.db,
+        { kind: "tenant", access: "write", organizationId: tenants[0]! },
+        async (tx) => {
+          await insert(tx);
+        },
+      ),
+    ).rejects.toMatchObject({ cause: { code: "42501" } });
+  expect(await runtime.db.select().from(members)).toEqual([]);
+  expect(await runtime.db.select().from(invitations)).toEqual([]);
+  expect(await runtime.db.select().from(auditEvents)).toEqual([]);
+  expect(await runtime.db.select().from(auditEventSubjects)).toEqual([]);
+  for (const table of [organizationDomains, ssoProviders])
+    expect(
+      (
+        await runtime.db
+          .select({ organizationId: table.organizationId })
+          .from(table)
+      ).map((row) => row.organizationId),
+    ).toEqual(expect.arrayContaining(tenants));
+  const event = await withDatabaseScope(
+    runtime.db,
+    { kind: "tenant", access: "write", organizationId: tenants[0]! },
+    (tx) =>
+      recordAuditEvent(tx, {
+        organizationId: foreign,
+        actorType: "system",
+        actorId: "rls-proof",
+        action: "rls.append",
+        targetType: "user",
+        targetId: userId,
+        outcome: "success",
+      }),
+  );
+  expect(
+    await owner.db
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.id, event.id)),
+  ).toEqual([event]);
+  await expect(
+    Promise.resolve(
+      runtime.db.insert(auditEventSubjects).values({
+        eventId: event.id,
+        entityType: "user",
+        entityId: userId,
+        relationship: "forged",
+        organizationId: foreign,
+      }),
+    ),
+  ).rejects.toMatchObject({ cause: { code: "42501" } });
+  for (const table of [
+    "members",
+    "invitations",
+    "organization_domains",
+    "sso_providers",
+    "audit_events",
+    "audit_event_subjects",
+  ]) {
+    await owner.db.execute(
+      sql`alter table ${sql.identifier(table)} disable row level security`,
+    );
+    try {
+      await expect(assertRuntimeRole(runtime.db)).rejects.toThrow(
+        "Unsafe database runtime role",
+      );
+    } finally {
+      await owner.db.execute(
+        sql`alter table ${sql.identifier(table)} enable row level security`,
+      );
+    }
+  }
+  await assertRuntimeRole(runtime.db);
+});
+
+test("policy-user access tables require an effective membership", async () => {
+  const { createId } = await import("../lib/id.ts");
+  const { organizations, users, members, groups } =
+    await import("./schema/index.ts");
+  const organizationId = createId(),
+    userId = createId(),
+    memberId = createId();
+  await owner.db.insert(organizations).values({
+    id: organizationId,
+    slug: `effective-${organizationId}`,
+    name: "Effective membership",
+  });
+  await owner.db.insert(users).values({
+    id: userId,
+    name: "Member",
+    email: `${userId}@example.com`,
+    status: "active",
+  });
+  await owner.db
+    .insert(members)
+    .values({ id: memberId, organizationId, userId });
+  await owner.db.insert(groups).values({
+    id: createId(),
+    organizationId,
+    slug: "effective",
+    name: "Effective",
+  });
+  const rows = () =>
+    withDatabaseScope(runtime.db, { kind: "policy-user", userId }, (tx) =>
+      tx.select().from(groups),
+    );
+  expect(await rows()).toHaveLength(1);
+  for (const patch of [
+    { validFrom: new Date(Date.now() + 60000), validUntil: null },
+    { validFrom: null, validUntil: new Date(Date.now() - 60000) },
+    { validUntil: null, status: "revoked" as const, revokedAt: new Date() },
+    { deletedAt: new Date() },
+  ]) {
+    await owner.db.update(members).set(patch).where(eq(members.id, memberId));
+    expect(await rows()).toEqual([]);
+  }
 });

@@ -12,7 +12,6 @@ import {
   type OAuthOptions,
 } from "@better-auth/oauth-provider";
 import { APIError, createAuthEndpoint } from "better-auth/api";
-import { sql } from "drizzle-orm";
 import type { Database } from "../db/client.ts";
 import { authTransaction } from "./database-adapter.ts";
 import {
@@ -94,9 +93,6 @@ export function machineOAuthProvider(
             return await runWithTransaction(ctx.context.adapter, async () => {
               stage = "authorization";
               const adapter = await getCurrentAdapter(ctx.context.adapter);
-              await authTransaction(adapter).execute(
-                sql`set local lock_timeout = '2s'`,
-              );
               const client = await prepareMachineGrant(
                 adapter,
                 authenticated.client,
@@ -155,7 +151,6 @@ export function machineOAuthProvider(
             // The issuance transaction has exited. Record the request failure independently.
             try {
               await db.transaction(async (tx) => {
-                await tx.execute(sql`set local lock_timeout = '2s'`);
                 await recordMachineRejection(tx, {
                   client: authenticatedClient,
                   stage,

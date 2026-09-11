@@ -24,6 +24,8 @@ beforeAll(async () => {
     ...fixture.environment,
     databaseUrl: url.toString(),
     databaseStatementTimeoutMs: 500,
+    databaseLockTimeoutMs: 100,
+    databaseIdleInTransactionTimeoutMs: 1500,
   };
   runtime = createDatabase(environment);
   app = createApp({
@@ -47,6 +49,13 @@ afterAll(async () => {
   }
 });
 test("runtime connection applies a server-side statement deadline and remains usable after cancellation", async () => {
+  expect(
+    (await runtime.pool.query("show lock_timeout")).rows[0].lock_timeout,
+  ).toBe("100ms");
+  expect(
+    (await runtime.pool.query("show idle_in_transaction_session_timeout"))
+      .rows[0].idle_in_transaction_session_timeout,
+  ).toBe("1500ms");
   expect(
     (await runtime.pool.query("show statement_timeout")).rows[0]
       .statement_timeout,
@@ -126,7 +135,7 @@ test("timed-out command rolls back domain, audit and receipt and retries the sam
     operationsBefore.length + 1,
   );
 });
-test("statement cancellation during machine policy remains retryable and does not issue a token", async () => {
+test("pool lock timeout returns 55P03 and a retryable machine response without issuing a token", async () => {
   const blocker = createDatabase(fixture.environment);
   const lock = await blocker.pool.connect();
   const mint = () =>
@@ -153,6 +162,12 @@ test("statement cancellation during machine policy remains retryable and does no
     await lock.query("select id from organizations where id = $1 for update", [
       fixture.platform.organizationId,
     ]);
+    await expect(
+      runtime.pool.query(
+        "select id from organizations where id = $1 for share",
+        [fixture.platform.organizationId],
+      ),
+    ).rejects.toMatchObject({ code: "55P03" });
     const denied = await mint();
     expect(denied.status).toBe(503);
     expect(denied.headers.get("Retry-After")).toBe("1");

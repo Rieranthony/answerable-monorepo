@@ -4,7 +4,7 @@ This is the current storage contract. [Design](03-answerable-id.md) describes be
 
 ## Service contract
 
-Bun, Hono and Better Auth 1.7.2 use Postgres for identity, sessions, protocol state, policy, audit and command recovery. The baseline has 28 tables, 26 custom functions, 61 triggers, 12 policies and five RLS-enabled tables. The [catalogue](../apps/id/src/__tests__/migration-catalog.json) preserves custom SQL that schema generation alone does not fully describe.
+Bun, Hono and Better Auth 1.7.2 use Postgres for identity, sessions, protocol state, policy, audit and command recovery. The baseline has 28 tables, 27 custom functions, 61 triggers, 24 policies and eleven RLS-enabled tables. The [catalogue](../apps/id/src/__tests__/migration-catalog.json) preserves custom SQL that schema generation alone does not fully describe.
 
 ## Entity relationship diagram
 
@@ -69,7 +69,7 @@ Current deletion manifests describe product tombstones and actual credential cle
 
 Schema owner, runtime and replay-retention roles are separate. Runtime cannot DELETE/TRUNCATE product rows, rewrite audit, directly alter subjects/reservations or change system binding. Protocol records retain their consumption contract. Startup checks protected privileges, ownership and required RLS before listening.
 
-RLS protects `groups`, `group_members`, `entitlements`, `organization_capabilities` and `grant_contexts`. This is targeted protection, not universal RLS. The [isolation inventory](../reports/answerable-id-isolation-inventory.md) records scopes and trusted exceptions.
+RLS protects `groups`, `group_members`, `entitlements`, `organization_capabilities`, `grant_contexts`, `members`, `invitations`, `organization_domains`, `sso_providers`, `audit_events` and `audit_event_subjects`. Routing SELECT and audit INSERT remain available without scope. Native broker transactions use protocol scope; the fixed grant-provenance triggers run as their owner to validate parents and retain locks without granting membership writes to grant admission. This is targeted protection, not universal RLS. The [isolation inventory](../reports/answerable-id-isolation-inventory.md) records scopes and trusted exceptions.
 
 ## Completed administrative operations
 

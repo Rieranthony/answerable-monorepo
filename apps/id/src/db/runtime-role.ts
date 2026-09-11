@@ -93,7 +93,7 @@ export async function assertRuntimeRole(db: Database) {
     select
       (${elevatedRole}) or (${ownsObjects})
       or (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
-        where n.nspname = 'public' and c.relname in ('groups', 'group_members', 'entitlements', 'organization_capabilities', 'grant_contexts') and c.relrowsecurity) <> 5
+        where n.nspname = 'public' and c.relname in ('groups', 'group_members', 'entitlements', 'organization_capabilities', 'grant_contexts', 'members', 'invitations', 'organization_domains', 'sso_providers', 'audit_events', 'audit_event_subjects') and c.relrowsecurity) <> 11
       or exists(select 1 from unnest(array['users','organizations','accounts','members','invitations','organization_domains','groups','group_members','entitlements','oauth_clients','oauth_resources','oauth_client_resources','oauth_consents','sso_providers','organization_capabilities']) as product(table_name) where has_table_privilege(current_user, product.table_name, 'DELETE,TRUNCATE,TRIGGER'))
       or has_schema_privilege(current_user, 'public', 'CREATE')
       or has_table_privilege(current_user, 'audit_events', 'UPDATE,DELETE,TRUNCATE,TRIGGER')

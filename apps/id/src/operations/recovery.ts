@@ -11,6 +11,8 @@ import {
   securityIdentifiers,
 } from "../db/schema/index.ts";
 
+import { setDatabaseScope } from "../db/isolation.ts";
+
 const ids = z.array(z.uuid()).max(1000);
 export const recoveryEvidenceSchema = z
   .object({
@@ -115,6 +117,7 @@ export async function captureRecoveryEvidence(
     await tx.execute(
       sql`set transaction isolation level repeatable read, read only`,
     );
+    await setDatabaseScope(tx, { kind: "platform", access: "read" });
     await checkBarriers(tx, parsed);
     const operations = [];
     for (const id of parsed.operationIds)
@@ -136,6 +139,7 @@ export async function verifyRecoveryEvidence(db: Database, input: unknown) {
       await tx.execute(
         sql`set transaction isolation level repeatable read, read only`,
       );
+      await setDatabaseScope(tx, { kind: "platform", access: "read" });
       await checkBarriers(tx, evidence);
       for (const operation of evidence.operations)
         if ((await receiptDigest(tx, operation.id)) !== operation.sha256)

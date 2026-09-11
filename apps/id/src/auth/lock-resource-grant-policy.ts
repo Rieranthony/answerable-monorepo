@@ -23,7 +23,6 @@ export async function lockResourceGrantTargets(
     resource: string | null;
   },
 ) {
-  await tx.execute(sql`set local lock_timeout = '2s'`);
   const userIds =
     target.ownerUserId === null
       ? [target.userId]

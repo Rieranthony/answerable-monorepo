@@ -156,7 +156,6 @@ export function createUserOAuthFlow(
     return runWithTransaction(ctx.context.adapter, async () => {
       const adapter = await getCurrentAdapter(ctx.context.adapter);
       const tx = authTransaction(adapter);
-      await tx.execute(sql`set local lock_timeout = '2s'`);
       const [stored] = await tx
         .select()
         .from(verifications)

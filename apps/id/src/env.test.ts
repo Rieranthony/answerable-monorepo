@@ -76,10 +76,12 @@ describe("unit: environment", () => {
       oauthRefreshReuseIntervalSeconds: 0,
       maxConcurrentRequests: 64,
       operationalLogIntervalMs: 30_000,
-      databasePoolMax: 5,
+      databasePoolMax: 20,
       databasePoolIdleTimeoutMs: 10_000,
       databaseConnectionTimeoutMs: 5_000,
       databaseStatementTimeoutMs: 10_000,
+      databaseLockTimeoutMs: 2_000,
+      databaseIdleInTransactionTimeoutMs: 15_000,
       operationReplay: undefined,
       rootAdminSecret: undefined,
       rootAdminBreakGlass: false,
@@ -131,6 +133,8 @@ describe("unit: environment", () => {
       PORT: "8080",
       MAX_CONCURRENT_REQUESTS: "12",
       DATABASE_POOL_MAX: "7",
+      DATABASE_LOCK_TIMEOUT_MS: "900",
+      DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS: "12000",
       DATABASE_POOL_IDLE_TIMEOUT_MS: "2000",
       DATABASE_CONNECTION_TIMEOUT_MS: "3000",
       DATABASE_STATEMENT_TIMEOUT_MS: "8000",
@@ -151,6 +155,8 @@ describe("unit: environment", () => {
       databasePoolIdleTimeoutMs: 2_000,
       databaseConnectionTimeoutMs: 3_000,
       databaseStatementTimeoutMs: 8_000,
+      databaseLockTimeoutMs: 900,
+      databaseIdleInTransactionTimeoutMs: 12_000,
       openApiEnabled: false,
       platformOrganizationSlug: "platform-org",
       platformOrganizationName: "Custom platform",
@@ -378,3 +384,15 @@ test("parses IPv4 and IPv6 proxy networks", () => {
     "2001:db8::/32",
   ]);
 });
+
+for (const key of [
+  "DATABASE_LOCK_TIMEOUT_MS",
+  "DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS",
+]) {
+  test(`${key} rejects disabled, fractional and out-of-range deadlines`, () => {
+    for (const value of ["0", "-1", "1.5", "2147483648", "invalid"])
+      expect(() =>
+        parseEnvironment({ ...requiredEnvironment, [key]: value }),
+      ).toThrow(key);
+  });
+}

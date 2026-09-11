@@ -567,10 +567,11 @@ test("auth catch-all propagates request ids and audits rejection redirects", asy
     };
     const db = {
       ...stubDatabase(),
+      execute: async () => ({ rows: [{ occurredAt: "2026-09-11T00:00:00Z" }] }),
       insert: () => ({
         values: (row: unknown) => {
           rows.push(row);
-          return { returning: async () => [row] };
+          return Promise.resolve();
         },
       }),
     } as unknown as Database;
@@ -583,7 +584,7 @@ test("auth catch-all propagates request ids and audits rejection redirects", asy
       response.headers.get("x-request-id"),
     );
     expect(received).toBeTruthy();
-    expect(rows[0]).not.toHaveProperty("data");
+    expect(rows[0]).toHaveProperty("data", null);
     expect(rows).toEqual([
       expect.objectContaining({
         action: "auth.signin.rejected",

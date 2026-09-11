@@ -1,3 +1,4 @@
+import { membershipPolicies } from "./tenant-policies.ts";
 import { sql } from "drizzle-orm";
 import {
   boolean,
@@ -215,6 +216,7 @@ export const members = pgTable(
     createdAt: timestampColumn("created_at").defaultNow().notNull(),
   },
   (table) => [
+    ...membershipPolicies(table.organizationId, table.userId),
     check("members_revision_check", sql`${table.revision} > 0`),
     vocabularyCheck("members_status_check", table.status, membershipStatuses),
     check(
@@ -234,8 +236,7 @@ export const members = pgTable(
     index("members_user_id_idx").on(table.userId),
     windowCheck("members_window_check", table.validFrom, table.validUntil),
   ],
-);
-
+).enableRLS();
 export const invitations = pgTable(
   "invitations",
   {
@@ -256,6 +257,7 @@ export const invitations = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
   },
   (table) => [
+    ...membershipPolicies(table.organizationId),
     index("invitations_organization_id_idx").on(table.organizationId),
     index("invitations_inviter_id_idx").on(table.inviterId),
     index("invitations_email_idx").on(table.email),
@@ -265,4 +267,4 @@ export const invitations = pgTable(
       invitationStatuses,
     ),
   ],
-);
+).enableRLS();

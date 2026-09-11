@@ -150,38 +150,6 @@ export async function hasPlatformWriter(
           : { of: organizations },
       );
     const organizationIds = platform.map((row) => row.id);
-    await tx
-      .select({ id: users.id })
-      .from(users)
-      .where(
-        and(
-          sql`${users.deletedAt} is null`,
-          inArray(
-            users.id,
-            tx
-              .select({ id: members.userId })
-              .from(members)
-              .where(
-                and(
-                  sql`${members.deletedAt} is null`,
-                  inArray(members.organizationId, organizationIds),
-                ),
-              ),
-          ),
-        ),
-      )
-      .orderBy(users.id)
-      .for("share");
-    await tx
-      .select({ id: oauthResources.id })
-      .from(oauthResources)
-      .where(
-        and(
-          sql`${oauthResources.deletedAt} is null`,
-          eq(oauthResources.identifier, input.resource),
-        ),
-      )
-      .for("share");
     const rows = await tx
       .select(memberPermissionFields(tx, false))
       .from(members)

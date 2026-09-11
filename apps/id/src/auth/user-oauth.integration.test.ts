@@ -1079,6 +1079,23 @@ test("production provider binds native tenant selection, consent and code to one
     "oauth.user.issued",
     "oauth.user.issued",
   ]);
+  for (const event of events) {
+    expect(event.targetType).toBe("grant_context");
+    expect(
+      await fixture.db
+        .select()
+        .from(auditEventSubjects)
+        .where(eq(auditEventSubjects.eventId, event.id)),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityType: "user",
+          entityId: fixture.principals.tenantAdmin.userId,
+          relationship: "affected",
+        }),
+      ]),
+    );
+  }
   const subjects = await fixture.db
     .select()
     .from(auditEventSubjects)

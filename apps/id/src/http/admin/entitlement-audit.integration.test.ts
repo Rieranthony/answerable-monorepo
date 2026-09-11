@@ -1,3 +1,4 @@
+import { withDatabaseScope } from "../../db/isolation.ts";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import {
@@ -200,18 +201,28 @@ test("entitlement subject capture validates the existing tenant-bound event cont
     { data: { before: { ...state, memberId: null } } },
   ]) {
     const event = await recordAuditEvent(runtime.db, { ...base, ...patch });
-    const subjects = await runtime.db
-      .select()
-      .from(auditEventSubjects)
-      .where(eq(auditEventSubjects.eventId, event.id));
+    const subjects = await withDatabaseScope(
+      runtime.db,
+      { kind: "platform", access: "read" },
+      (tx) =>
+        tx
+          .select()
+          .from(auditEventSubjects)
+          .where(eq(auditEventSubjects.eventId, event.id)),
+    );
     expect(
       subjects.filter((subject) => subject.relationship === "affected"),
     ).toEqual([]);
   }
-  const subjects = await runtime.db
-    .select()
-    .from(auditEventSubjects)
-    .where(eq(auditEventSubjects.eventId, valid.id));
+  const subjects = await withDatabaseScope(
+    runtime.db,
+    { kind: "platform", access: "read" },
+    (tx) =>
+      tx
+        .select()
+        .from(auditEventSubjects)
+        .where(eq(auditEventSubjects.eventId, valid.id)),
+  );
   expect(subjects).toContainEqual(
     expect.objectContaining({
       entityType: "user",
@@ -412,10 +423,15 @@ for (const principal of ["member", "group", "organisation"] as const) {
             },
           },
         });
-        const references = await runtime.db
-          .select()
-          .from(auditEventSubjects)
-          .where(eq(auditEventSubjects.eventId, items[0].id));
+        const references = await withDatabaseScope(
+          runtime.db,
+          { kind: "platform", access: "read" },
+          (tx) =>
+            tx
+              .select()
+              .from(auditEventSubjects)
+              .where(eq(auditEventSubjects.eventId, items[0].id)),
+        );
         expect(references).toContainEqual(
           expect.objectContaining({
             entityType: "user",
@@ -432,10 +448,15 @@ for (const principal of ["member", "group", "organisation"] as const) {
         expect((await history.json()).items).toEqual([]);
         const replay = await removeEntitlement();
         expect(replay.status).toBe(principal === "member" ? 404 : 204);
-        const events = await runtime.db
-          .select()
-          .from(auditEvents)
-          .where(eq(auditEvents.action, "entitlement.removed"));
+        const events = await withDatabaseScope(
+          runtime.db,
+          { kind: "platform", access: "read" },
+          (tx) =>
+            tx
+              .select()
+              .from(auditEvents)
+              .where(eq(auditEvents.action, "entitlement.removed")),
+        );
         if (principal === "member") expect(events).toEqual([]);
         else {
           expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
@@ -732,16 +753,26 @@ test("entitlement audience subjects validate version, target, tenant and group w
       { data: { ...base.data, audience: [{ ...person, memberId: "" }] } },
     ]) {
       const event = await recordAuditEvent(runtime.db, { ...base, ...patch });
-      const refs = await runtime.db
-        .select()
-        .from(auditEventSubjects)
-        .where(eq(auditEventSubjects.eventId, event.id));
+      const refs = await withDatabaseScope(
+        runtime.db,
+        { kind: "platform", access: "read" },
+        (tx) =>
+          tx
+            .select()
+            .from(auditEventSubjects)
+            .where(eq(auditEventSubjects.eventId, event.id)),
+      );
       expect(refs.filter((ref) => ref.relationship === "affected")).toEqual([]);
     }
-    const refs = await runtime.db
-      .select()
-      .from(auditEventSubjects)
-      .where(eq(auditEventSubjects.eventId, valid.id));
+    const refs = await withDatabaseScope(
+      runtime.db,
+      { kind: "platform", access: "read" },
+      (tx) =>
+        tx
+          .select()
+          .from(auditEventSubjects)
+          .where(eq(auditEventSubjects.eventId, valid.id)),
+    );
     expect(refs.filter((ref) => ref.relationship === "affected")).toEqual([
       expect.objectContaining({
         entityType: "user",

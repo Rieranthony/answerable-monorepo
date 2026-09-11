@@ -1,3 +1,4 @@
+import { withDatabaseScope } from "../../db/isolation.ts";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import {
@@ -174,13 +175,11 @@ test("user deletion retains identity, hides ordinary reads and cannot be enabled
 test("membership removal remains reversible but deleting its organisation is terminal and preserves the other tenant", async () => {
   const person = fixture.principals.tenantReader;
   const otherId = createId();
-  await fixture.db
-    .insert(members)
-    .values({
-      id: otherId,
-      userId: person.userId,
-      organizationId: fixture.outsider.organizationId,
-    });
+  await fixture.db.insert(members).values({
+    id: otherId,
+    userId: person.userId,
+    organizationId: fixture.outsider.organizationId,
+  });
   const path = `/organizations/${fixture.tenant.organizationId}/members/${person.memberId}`;
   expect((await request(path, "DELETE")).status).toBe(204);
   expect((await request(`${path}/reinstate`, "POST")).status).toBe(200);
@@ -215,31 +214,25 @@ test("group deletion retains only newly retired assignment effects, denies reuse
   const id = createId();
   const assignmentId = createId();
   const entitlementId = createId();
-  await fixture.db
-    .insert(groups)
-    .values({
-      id,
-      organizationId,
-      slug: "retained-team",
-      name: "Retained team",
-    });
-  await fixture.db
-    .insert(groupMembers)
-    .values({
-      id: assignmentId,
-      organizationId,
-      groupId: id,
-      memberId: person.memberId,
-    });
-  await fixture.db
-    .insert(entitlements)
-    .values({
-      id: entitlementId,
-      organizationId,
-      groupId: id,
-      resource: fixture.environment.adminResourceIdentifier,
-      scopes: ["org:read"],
-    });
+  await fixture.db.insert(groups).values({
+    id,
+    organizationId,
+    slug: "retained-team",
+    name: "Retained team",
+  });
+  await fixture.db.insert(groupMembers).values({
+    id: assignmentId,
+    organizationId,
+    groupId: id,
+    memberId: person.memberId,
+  });
+  await fixture.db.insert(entitlements).values({
+    id: entitlementId,
+    organizationId,
+    groupId: id,
+    resource: fixture.environment.adminResourceIdentifier,
+    scopes: ["org:read"],
+  });
   const path = `/organizations/${organizationId}/groups/${id}`;
   const response = await request(`${path}?confirm=${id}`, "DELETE");
   expect(response.status).toBe(204);
@@ -312,34 +305,28 @@ test("unlink and explicit relink allocate a new relationship; client deletion re
   const resourceId = `https://retained.example/${createId()}`;
   const linkId = createId();
   const consentId = createId();
-  await fixture.db
-    .insert(oauthClients)
-    .values({
-      id: createId(),
-      clientId,
-      organizationId: fixture.tenant.organizationId,
-      clientSecret: "retired-test-digest",
-      redirectUris: [],
-    });
-  await fixture.db
-    .insert(oauthResources)
-    .values({
-      id: createId(),
-      identifier: resourceId,
-      name: "Retained resource",
-      allowedScopes: ["read"],
-    });
+  await fixture.db.insert(oauthClients).values({
+    id: createId(),
+    clientId,
+    organizationId: fixture.tenant.organizationId,
+    clientSecret: "retired-test-digest",
+    redirectUris: [],
+  });
+  await fixture.db.insert(oauthResources).values({
+    id: createId(),
+    identifier: resourceId,
+    name: "Retained resource",
+    allowedScopes: ["read"],
+  });
   await fixture.db
     .insert(oauthClientResources)
     .values({ id: linkId, clientId, resourceId });
-  await fixture.db
-    .insert(oauthConsents)
-    .values({
-      id: consentId,
-      clientId,
-      userId: fixture.principals.tenantReader.userId,
-      scopes: ["read"],
-    });
+  await fixture.db.insert(oauthConsents).values({
+    id: consentId,
+    clientId,
+    userId: fixture.principals.tenantReader.userId,
+    scopes: ["read"],
+  });
   const linkPath = `/clients/${clientId}/resources/${encodeURIComponent(resourceId)}`;
   const unlink = await request(linkPath, "DELETE");
   expect(unlink.status).toBe(204);
@@ -547,14 +534,12 @@ test("live uniqueness permits repeated replacements at one database timestamp an
 test("parent deletion committed first denies a waiting SQL relationship creation", async () => {
   const organizationId = fixture.tenant.organizationId;
   const groupId = createId();
-  await fixture.db
-    .insert(groups)
-    .values({
-      id: groupId,
-      organizationId,
-      slug: groupId,
-      name: "Retiring parent",
-    });
+  await fixture.db.insert(groups).values({
+    id: groupId,
+    organizationId,
+    slug: groupId,
+    name: "Retiring parent",
+  });
   const held = Promise.withResolvers<void>();
   const resume = Promise.withResolvers<void>();
   let parentPid = 0;
@@ -573,14 +558,12 @@ test("parent deletion committed first denies a waiting SQL relationship creation
   const insertedId = createId();
   const creation = inPlatformWrite(runtime.db, (context) =>
     Promise.resolve(
-      context.tx
-        .insert(groupMembers)
-        .values({
-          id: insertedId,
-          organizationId,
-          groupId,
-          memberId: fixture.principals.tenantReader.memberId,
-        }),
+      context.tx.insert(groupMembers).values({
+        id: insertedId,
+        organizationId,
+        groupId,
+        memberId: fixture.principals.tenantReader.memberId,
+      }),
     ),
   );
   const settled = creation.then(
@@ -678,11 +661,17 @@ for (const targetType of ["user", "organization", "group"] as const) {
       { data: { ...data, effects: { [field]: effect } } },
     ])
       await recordAuditEvent(runtime.db, { ...base, ...patch });
+    expect(await runtime.db.select().from(auditEventSubjects)).toEqual([]);
     expect(
-      await runtime.db
-        .select()
-        .from(auditEventSubjects)
-        .where(eq(auditEventSubjects.entityId, userId)),
+      await withDatabaseScope(
+        runtime.db,
+        { kind: "platform", access: "read" },
+        (tx) =>
+          tx
+            .select()
+            .from(auditEventSubjects)
+            .where(eq(auditEventSubjects.entityId, userId)),
+      ),
     ).toEqual([
       expect.objectContaining({
         eventId: valid.id,

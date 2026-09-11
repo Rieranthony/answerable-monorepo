@@ -139,6 +139,18 @@ const environmentSchema = z
       .min(1)
       .max(2_147_483_647)
       .default(10_000),
+    DATABASE_LOCK_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(2_147_483_647)
+      .default(2_000),
+    DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(2_147_483_647)
+      .default(15_000),
     DATABASE_CONNECTION_TIMEOUT_MS: z.coerce
       .number()
       .int()
@@ -213,10 +225,13 @@ const environmentSchema = z
     operationalLogIntervalMs: environment.OPERATIONAL_LOG_INTERVAL_MS,
     databasePoolMax:
       environment.DATABASE_POOL_MAX ??
-      (environment.NODE_ENV === "test" ? 1 : 5),
+      (environment.NODE_ENV === "test" ? 1 : 20),
     databasePoolIdleTimeoutMs: environment.DATABASE_POOL_IDLE_TIMEOUT_MS,
     databaseConnectionTimeoutMs: environment.DATABASE_CONNECTION_TIMEOUT_MS,
     databaseStatementTimeoutMs: environment.DATABASE_STATEMENT_TIMEOUT_MS,
+    databaseLockTimeoutMs: environment.DATABASE_LOCK_TIMEOUT_MS,
+    databaseIdleInTransactionTimeoutMs:
+      environment.DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS,
     openApiEnabled:
       environment.OPENAPI_ENABLED === undefined
         ? environment.NODE_ENV !== "production"

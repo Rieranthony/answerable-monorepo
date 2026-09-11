@@ -68,7 +68,6 @@ export function executeOperation<Authority>(
     ? replay.cipher.fingerprint(boundInput)
     : digest(canonicalInput);
   return db.transaction(async (tx) => {
-    await tx.execute(sql`set local lock_timeout = '2s'`);
     // A hash collision can only serialise unrelated commands, never replay one.
     const lock = await tx.execute(
       sql`select pg_try_advisory_xact_lock(hashtextextended(${canonical(identity)}, 0)) as acquired`,

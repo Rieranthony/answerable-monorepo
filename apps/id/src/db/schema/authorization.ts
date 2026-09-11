@@ -1,4 +1,4 @@
-import { tenantPolicies } from "./tenant-policies.ts";
+import { tenantPolicies, routingPolicies } from "./tenant-policies.ts";
 import { sql } from "drizzle-orm";
 import {
   check,
@@ -44,6 +44,7 @@ export const organizationDomains = pgTable(
     ...timestamps(),
   },
   (table) => [
+    ...routingPolicies(table.organizationId),
     uniqueIndex("organization_domains_organization_id_domain_unique")
       .on(table.organizationId, table.domain)
       .where(sql`${table.deletedAt} is null`),
@@ -63,8 +64,7 @@ export const organizationDomains = pgTable(
       sql`${table.domain} ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'`,
     ),
   ],
-);
-
+).enableRLS();
 /**
  * A set of members within one organization. Enterprise customers assign
  * access by group; a group either mirrors an upstream directory group

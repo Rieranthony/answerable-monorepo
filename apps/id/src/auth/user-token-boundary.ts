@@ -10,7 +10,7 @@ import {
   type oauthProvider,
 } from "@better-auth/oauth-provider";
 import { APIError } from "better-auth/api";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { setDatabaseScope } from "../db/isolation.ts";
 import { grantContexts, oauthResources } from "../db/schema/index.ts";
@@ -197,7 +197,6 @@ export function createUserTokenBoundary() {
           async () => {
             const adapter = await getCurrentAdapter(ctx.context.adapter);
             const tx = authTransaction(adapter);
-            await tx.execute(sql`set local lock_timeout = '2s'`);
             await setDatabaseScope(tx, {
               kind: "grant-client",
               clientId: authenticated.clientId,
