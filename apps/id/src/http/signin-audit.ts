@@ -40,8 +40,7 @@ export async function recordRejectedSignIn(
       outcome: "failure",
       reason: failureCodes.has(error) ? error : "sso_callback_failed",
       requestId,
-      // No trusted ingress-to-client IP rule is configured.
-      ip: null,
+      ip: context.get("clientIp"),
       userAgent: boundedUserAgent(context.req.header("user-agent")),
     });
   } catch {

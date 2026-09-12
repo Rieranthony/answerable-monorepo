@@ -12,15 +12,17 @@ export function isEffective(table: {
   validFrom: PgColumn;
   validUntil: PgColumn;
   status?: PgColumn;
+  deletedAt?: PgColumn;
 }): SQL {
   // Evaluate at this statement, not the start of a transaction that may have waited.
   const window = sql`(${table.validFrom} is null or ${table.validFrom} <= statement_timestamp()) and (${table.validUntil} is null or ${table.validUntil} > statement_timestamp())`;
 
   // Parenthesised so callers can negate or combine it without precedence
   // surprises (`not (a and b)`, `x or (a and b)`).
+  const present = table.deletedAt ? sql`${table.deletedAt} is null` : sql`true`;
   return table.status
-    ? sql`(${table.status} = 'active' and ${window})`
-    : sql`(${window})`;
+    ? sql`(${present} and ${table.status} = 'active' and ${window})`
+    : sql`(${present} and ${window})`;
 }
 
 export function matchingEntitlements(executor: Executor) {
@@ -40,6 +42,7 @@ export function matchingEntitlements(executor: Executor) {
             and(
               eq(groupMembers.memberId, members.id),
               eq(groups.status, "active"),
+              sql`${groups.deletedAt} is null`,
               isEffective(groupMembers),
             ),
           ),

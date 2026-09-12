@@ -15,6 +15,7 @@ import {
   inArray,
   notInArray,
   or,
+  sql,
   type SQL,
 } from "drizzle-orm";
 
@@ -26,7 +27,7 @@ import type { AuditActorType, AuditOutcome } from "../schema/vocabulary.ts";
 export type AuditEvent = typeof auditEvents.$inferSelect;
 
 export type AuditEventInput = {
-  schemaVersion?: 1 | 2 | 3;
+  schemaVersion?: 1 | 2 | 3 | 4;
   operationId?: string;
   actorType: AuditActorType;
   actorId: string;
@@ -46,11 +47,30 @@ export async function recordAuditEvent(
   executor: Executor,
   event: AuditEventInput,
 ) {
-  const [row] = await executor
-    .insert(auditEvents)
-    .values({ ...event, id: createId() })
-    .returning();
-  return row!;
+  // RETURNING requires SELECT permission, which protocol and unscoped writers lack.
+  const time = await executor.execute<{ occurredAt: string }>(
+    sql`select current_timestamp as "occurredAt"`,
+  );
+  const row: AuditEvent = {
+    id: createId(),
+    occurredAt: new Date(time.rows[0]!.occurredAt),
+    actorType: event.actorType,
+    actorId: event.actorId,
+    action: event.action,
+    targetType: event.targetType,
+    outcome: event.outcome,
+    schemaVersion: event.schemaVersion ?? 1,
+    organizationId: event.organizationId ?? null,
+    targetId: event.targetId ?? null,
+    reason: event.reason ?? null,
+    requestId: event.requestId ?? null,
+    ip: event.ip ?? null,
+    userAgent: event.userAgent ?? null,
+    data: event.data ?? null,
+    operationId: event.operationId ?? null,
+  };
+  await executor.insert(auditEvents).values(row);
+  return row;
 }
 
 export type AuditEventFilters = {
@@ -87,7 +107,7 @@ export function listOrganizationAuditEvents(
     // Legacy link payloads did not establish the target's visibility. Retain
     // them for platform auditors without consulting mutable/live target rows.
     or(
-      eq(auditEvents.schemaVersion, 2),
+      inArray(auditEvents.schemaVersion, [2, 3]),
       notInArray(auditEvents.action, [
         "client.resource_linked",
         "client.resource_unlinked",

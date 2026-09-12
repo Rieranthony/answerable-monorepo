@@ -3,7 +3,12 @@ import { platformWriteService } from "../__tests__/platform-context.ts";
 import { inPlatformWrite } from "../__tests__/platform-context.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
-import { decodeJwt } from "jose";
+import {
+  decodeJwt,
+  decodeProtectedHeader,
+  generateKeyPair,
+  SignJWT,
+} from "jose";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createApp } from "../app.ts";
 import { createAuth } from "../auth.ts";
@@ -48,7 +53,7 @@ afterAll(async () => connection.close());
 beforeEach(async () => {
   const db = connection.db;
   await db.execute(
-    sql`truncate security_identifiers, users, organizations, oauth_clients, oauth_resources, audit_events cascade`,
+    sql`truncate users, organizations, oauth_clients, oauth_resources, audit_events cascade`,
   );
   orgId = (await createOrganization(db, { slug: "tenant-a", name: "A" })).id;
   otherOrgId = (await createOrganization(db, { slug: "tenant-b", name: "B" }))
@@ -170,7 +175,8 @@ test("a deleted client identifier cannot be recreated and its old token is rejec
     .delete(organizationCapabilities)
     .where(eq(organizationCapabilities.clientId, client.clientId));
   await connection.db
-    .delete(oauthClients)
+    .update(oauthClients)
+    .set({ deletedAt: new Date(), disabled: true, clientSecret: null })
     .where(eq(oauthClients.clientId, client.clientId));
   await expect(
     connection.db
@@ -256,3 +262,27 @@ test("online admin consumption drops scopes when the machine capability is disab
   const removed = await me(token);
   expect((await removed.json()).grants[0].scopes).toEqual([]);
 });
+
+for (const attack of ["none", "HS256", "foreign-key"] as const)
+  test(`admin rejects ${attack} bearer signatures`, async () => {
+    const valid = await mint();
+    const payload = decodeJwt(valid);
+    const { kid } = decodeProtectedHeader(valid);
+    const token =
+      attack === "none"
+        ? `${Buffer.from(JSON.stringify({ alg: "none", typ: "at+jwt", kid })).toString("base64url")}.${Buffer.from(JSON.stringify(payload)).toString("base64url")}.`
+        : await new SignJWT(payload)
+            .setProtectedHeader({
+              alg: attack === "HS256" ? "HS256" : "EdDSA",
+              typ: "at+jwt",
+              kid,
+            })
+            .sign(
+              attack === "HS256"
+                ? new TextEncoder().encode(environment.betterAuthSecret)
+                : (await generateKeyPair("EdDSA")).privateKey,
+            );
+    const response = await me(token);
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({ code: "invalid_token" });
+  });

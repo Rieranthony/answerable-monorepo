@@ -8,6 +8,7 @@ import { lockResourceGrantPolicy } from "./lock-resource-grant-policy.ts";
 import { createDatabase, type Database, type Executor } from "../db/client.ts";
 import { updateCapability } from "../services/capabilities.ts";
 import { createResourceGrant } from "./create-resource-grant.ts";
+import { signInThroughIdp } from "../__tests__/federation.ts";
 import { createCapability } from "../services/capabilities.ts";
 import { userResourcePolicy } from "./user-resource-policy.ts";
 import { bindGrantCode, withNativeCodeReplay } from "./native-code-replay.ts";
@@ -67,6 +68,8 @@ import {
   organizations,
   groupMembers,
   groups,
+  accounts,
+  ssoProviders,
   entitlements,
   organizationCapabilities,
   sessions,
@@ -93,6 +96,7 @@ let testAdapter: Parameters<
 let runtime: ReturnType<typeof createDatabase>;
 const runtimeRole = `id_test_user_broker_${crypto.randomUUID().replaceAll("-", "")}`;
 let sessionId: string;
+let boundB: { cookie: string; sessionId: string } | undefined;
 let selectedMemberId: string | undefined;
 const clientId = "user-boundary-proof";
 const secret = "user-boundary-proof-secret";
@@ -117,6 +121,7 @@ let afterAuthentication: (() => Promise<void>) | undefined;
 
 beforeEach(async () => {
   selectedMemberId = undefined;
+  boundB = undefined;
   denyIssuance = false;
   issuanceFailure = undefined;
   cleanupFault = undefined;
@@ -531,7 +536,79 @@ afterEach(async () => {
   await fixture?.close();
 });
 
+// Deliberate binding is a fixture, not a production linking journey. Each B grant
+// still requires its own native, independently verified B sign-in and session.
+async function authenticateB() {
+  if (boundB) return boundB;
+  const userId = fixture.principals.tenantAdmin.userId;
+  await fixture.db.insert(accounts).values({
+    id: createId(),
+    userId,
+    issuer: fixture.issuer.origin,
+    providerId: "outsider",
+    accountId: "bound-b-subject",
+  });
+  fixture.issuer.enqueue({
+    sub: "bound-b-subject",
+    email: "bound@outsider.example.com",
+    email_verified: true,
+  });
+  const signedIn = await signInThroughIdp(fixture.app, {
+    providerId: "outsider",
+    callbackURL: `${fixture.trustedOrigin}/callback`,
+  });
+  expect(signedIn.location).toBe(`${fixture.trustedOrigin}/callback`);
+  const [session] = await fixture.db
+    .select()
+    .from(sessions)
+    .where(
+      and(
+        eq(sessions.userId, userId),
+        eq(
+          sessions.authenticationOrganizationId,
+          fixture.outsider.organizationId,
+        ),
+      ),
+    );
+  boundB = {
+    sessionId: session!.id,
+    cookie: signedIn.cookies
+      .map((cookie) => cookie.split(";", 1)[0])
+      .join("; "),
+  };
+  return boundB;
+}
+
+async function currentSsoPolicyInput(executor: Executor = fixture.db) {
+  const [provider] = await executor
+    .select()
+    .from(ssoProviders)
+    .where(
+      and(
+        eq(ssoProviders.organizationId, fixture.tenant.organizationId),
+        sql`${ssoProviders.deletedAt} is null`,
+      ),
+    );
+  return {
+    issuer: provider!.issuer,
+    domain: provider!.domain,
+    oidc: JSON.parse(provider!.oidcConfig!),
+  };
+}
+
 async function authorize(scope = "openid offline_access proof:read") {
+  let cookie = fixture.principals.tenantAdmin.cookie;
+  if (selectedMemberId) {
+    const [member] = await fixture.db
+      .select()
+      .from(members)
+      .where(eq(members.id, selectedMemberId));
+    if (
+      member?.userId === fixture.principals.tenantAdmin.userId &&
+      member.organizationId === fixture.outsider.organizationId
+    )
+      cookie = (await authenticateB()).cookie;
+  }
   const query = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirect,
@@ -545,7 +622,7 @@ async function authorize(scope = "openid offline_access proof:read") {
   const response = await auth.handler(
     new Request(
       `${fixture.environment.betterAuthUrl}/auth/oauth2/authorize?${query}`,
-      { headers: { Cookie: fixture.principals.tenantAdmin.cookie } },
+      { headers: { Cookie: cookie } },
     ),
   );
   expect(response.status).toBe(302);
@@ -1186,7 +1263,7 @@ test("grant provenance cannot be forged or rewritten and expiry denies context l
         .values({ ...grant!, ...patch, id: createId() })
         .execute(),
     ).rejects.toMatchObject({
-      cause: { constraint: "grant_context_provenance" },
+      cause: { constraint: "grant_authentication_provenance" },
     });
   }
   const expiredId = createId();
@@ -1643,7 +1720,7 @@ for (const mode of ["single", "all"] as const) {
     for (const refresh_token of [
       a.refresh_token,
       rotated.refresh_token,
-      b!.refresh_token,
+      ...(mode === "all" ? [b!.refresh_token] : []),
     ]) {
       const response = await redeem({
         grant_type: "refresh_token",
@@ -1654,6 +1731,16 @@ for (const mode of ["single", "all"] as const) {
       expect(await response.json()).toMatchObject({ error: "invalid_grant" });
     }
     expect(claimsCalls).toBe(before);
+    if (mode === "single")
+      expect(
+        (
+          await redeem({
+            grant_type: "refresh_token",
+            refresh_token: b!.refresh_token,
+            resource,
+          })
+        ).status,
+      ).toBe(200);
     expect(
       await fixture.db
         .select()
@@ -2832,13 +2919,15 @@ for (const change of creationChanges)
     const grant = await created;
     const stored = await fixture.db.select().from(grantContexts);
     if (change === "erase-owner") {
-      expect(stored).toHaveLength(0);
+      expect(stored).toMatchObject([{ revokedAt: expect.any(Date) }]);
       expect(
         await fixture.db
           .select()
           .from(oauthClients)
           .where(eq(oauthClients.clientId, targetClient)),
-      ).toHaveLength(0);
+      ).toMatchObject([
+        { deletedAt: expect.any(Date), disabled: true, clientSecret: null },
+      ]);
     } else {
       expect(stored).toHaveLength(1);
       expect(stored[0]!.revokedAt !== null).toBe(change !== "unlink");
@@ -3042,11 +3131,11 @@ for (const kind of ["authorization_code", "refresh_token"] as const)
   ] as const)
     test(`native ${kind} issuance holds policy until commit before ${change}`, async () => {
       if (change === "sso-update" || change === "sso-delete")
-        await inPlatformWrite(fixture.db, (context) =>
+        await inPlatformWrite(fixture.db, async (context) =>
           putSsoProvider(
             context,
             fixture.tenant.organizationId,
-            ssoPolicyInput,
+            await currentSsoPolicyInput(context.tx),
           ),
         );
       const writer = createDatabase({
@@ -3251,8 +3340,12 @@ for (const change of [
 ] as const)
   test(`${change} committing first prevents waiting native issuance`, async () => {
     if (change === "sso-update" || change === "sso-delete")
-      await inPlatformWrite(fixture.db, (context) =>
-        putSsoProvider(context, fixture.tenant.organizationId, ssoPolicyInput),
+      await inPlatformWrite(fixture.db, async (context) =>
+        putSsoProvider(
+          context,
+          fixture.tenant.organizationId,
+          await currentSsoPolicyInput(context.tx),
+        ),
       );
     const code = await authorize();
     const writer = createDatabase({
@@ -3520,13 +3613,15 @@ test("erasing a client owner waits for another user's locked grant before cascad
       .select()
       .from(grantContexts)
       .where(eq(grantContexts.id, grant.id)),
-  ).toHaveLength(0);
+  ).toMatchObject([{ id: grant.id, revokedAt: expect.any(Date) }]);
   expect(
     await fixture.db
       .select()
       .from(oauthClients)
       .where(eq(oauthClients.clientId, ownedClient)),
-  ).toHaveLength(0);
+  ).toMatchObject([
+    { deletedAt: expect.any(Date), disabled: true, clientSecret: null },
+  ]);
 });
 
 for (const change of ["disable", "session", "all-sessions"] as const)
@@ -3650,7 +3745,7 @@ const ssoPolicyInput = {
 
 for (const mode of ["create", "update", "delete"] as const) {
   test(`SSO ${mode} denies tenant A cached and rotated refresh while preserving tenant B`, async () => {
-    const provider = ssoPolicyInput;
+    const provider = await currentSsoPolicyInput();
     if (mode !== "create")
       await inPlatformWrite(fixture.db, (context) =>
         putSsoProvider(context, fixture.tenant.organizationId, provider),
@@ -3754,7 +3849,7 @@ test("grant RLS scopes isolate tenants, clients and admission sessions and resto
     runtime.db,
     {
       userId: a!.userId,
-      sessionId,
+      sessionId: (await authenticateB()).sessionId,
       memberId: membership!.id,
       clientId,
       resource,

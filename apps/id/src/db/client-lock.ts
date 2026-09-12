@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, isNull, eq } from "drizzle-orm";
 import type { Executor } from "./client.ts";
 import { oauthClients } from "./schema/index.ts";
 
@@ -13,7 +13,9 @@ export async function lockClient(
   const [row] = await executor
     .select()
     .from(oauthClients)
-    .where(eq(oauthClients.clientId, clientId))
+    .where(
+      and(isNull(oauthClients.deletedAt), eq(oauthClients.clientId, clientId)),
+    )
     .for(mode);
   return row ?? null;
 }

@@ -1,0 +1,22 @@
+---
+title: API reference
+description: "Public authentication, discovery and OAuth endpoints for Answerable ID."
+---
+
+```bash
+curl https://id.answerable.org/openapi.json
+```
+
+Start with [Connect an application](/docs/id/oauth) for discovery, PKCE, organisation selection, consent, code exchange and renewal.
+
+| Endpoint                                             | Reference                                                 |
+| ---------------------------------------------------- | --------------------------------------------------------- |
+| Start authorisation                                  | [authorizeOAuth](/docs/id/api/token/authorizeOAuth)       |
+| Read the signed browser request                      | [readOAuthFlow](/docs/id/api/token/readOAuthFlow)         |
+| Choose an organisation                               | [continueOAuthFlow](/docs/id/api/token/continueOAuthFlow) |
+| Accept or deny access                                | [consentOAuth](/docs/id/api/token/consentOAuth)           |
+| Exchange a code, refresh token or client credentials | [issueToken](/docs/id/api/token/issueToken)               |
+| Read identity claims                                 | [getUserInfo](/docs/id/api/token/getUserInfo)             |
+| Revoke an opaque token or refresh family             | [revokeOAuthToken](/docs/id/api/token/revokeOAuthToken)   |
+
+For company sign-in and browser sessions, see [Sign in](/docs/id/sign-in). Organisation administration has a [separate reference](/docs/id/admin-api).

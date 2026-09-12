@@ -1,4 +1,3 @@
-import { platformWriterCheck } from "./platform-writer.ts";
 import {
   requirePlatformWriteContext,
   type PlatformWriteContext,
@@ -23,6 +22,7 @@ function configuration(
 ) {
   return {
     id: row.id,
+    deletedAt: row.deletedAt,
     revision: row.revision,
     organizationId: row.organizationId,
     memberId: row.memberId,
@@ -41,8 +41,12 @@ async function audit(
   context: PlatformWriteContext,
   action: string,
   data:
-    | { before: Configuration; after: Configuration | null }
-    | { before: null; after: Configuration },
+    | {
+        before: Configuration;
+        after: Configuration | null;
+        deletionMode?: "soft";
+      }
+    | { before: null; after: Configuration; deletionMode?: "soft" },
 ) {
   const { tx, actor } = requirePlatformWriteContext(context);
   const target = data.before ?? data.after;
@@ -61,7 +65,7 @@ async function audit(
     targetId: target.id,
     targetType: "entitlement",
     action,
-    schemaVersion: captureAudience ? 2 : 1,
+    schemaVersion: data.deletionMode === "soft" ? 3 : captureAudience ? 2 : 1,
     data: { ...data, ...(captureAudience ? { audience } : {}) },
     outcome: "success",
   });
@@ -142,7 +146,7 @@ export async function updateEntitlement(
   patch: queries.EntitlementPatch,
   expected?: { id: string; revision: number },
 ) {
-  const { tx } = requirePlatformWriteContext(context);
+  requirePlatformWriteContext(context);
   const existing = await lockedEntitlement(
     context,
     organizationId,
@@ -171,7 +175,6 @@ export async function updateEntitlement(
       patch.validFrom?.getTime() !== existing.validFrom?.getTime()) ||
     (patch.validUntil !== undefined &&
       patch.validUntil?.getTime() !== existing.validUntil?.getTime());
-  const checkWriter = await platformWriterCheck(tx, organizationId);
   const row = changed
     ? (await queries.updateEntitlement(
         context,
@@ -180,7 +183,6 @@ export async function updateEntitlement(
         normalized,
       ))!
     : existing;
-  await checkWriter();
   await audit(
     context,
     changed ? "entitlement.updated" : "entitlement.update_unchanged",
@@ -194,14 +196,13 @@ async function setStatus(
   entitlementId: string,
   status: "active" | "disabled",
 ) {
-  const { tx } = requirePlatformWriteContext(context);
+  requirePlatformWriteContext(context);
   const existing = await lockedEntitlement(
     context,
     organizationId,
     entitlementId,
   );
   const changed = existing.status !== status;
-  const checkWriter = await platformWriterCheck(tx, organizationId);
   const row = changed
     ? (await queries.setEntitlementStatus(
         context,
@@ -210,7 +211,6 @@ async function setStatus(
         status,
       ))!
     : existing;
-  await checkWriter();
   await audit(
     context,
     changed
@@ -243,18 +243,21 @@ export async function removeEntitlement(
   organizationId: string,
   entitlementId: string,
 ) {
-  const { tx } = requirePlatformWriteContext(context);
+  requirePlatformWriteContext(context);
   const before = await lockedEntitlement(
     context,
     organizationId,
     entitlementId,
   );
-  const checkWriter = await platformWriterCheck(tx, organizationId);
-  await queries.deleteEntitlement(context, organizationId, entitlementId);
-  await checkWriter();
+  const row = await queries.deleteEntitlement(
+    context,
+    organizationId,
+    entitlementId,
+  );
   await audit(context, "entitlement.removed", {
     before: configuration(before),
-    after: null,
+    after: configuration(row!),
+    deletionMode: "soft",
   });
 }
 

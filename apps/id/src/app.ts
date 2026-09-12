@@ -1,8 +1,4 @@
-import {
-  limitConcurrentRequests,
-  limitAuthenticationRequests,
-  withAdmissionResponse,
-} from "./http/admission.ts";
+import { getIP } from "@better-auth/core/utils/ip";
 import { Scalar } from "@scalar/hono-api-reference";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -14,10 +10,7 @@ import type { Database } from "./db/client.ts";
 import type { Environment } from "./env.ts";
 import { createAdminApp } from "./http/admin/index.ts";
 import { adminSecuritySchemes, adminTags } from "./http/admin/openapi.ts";
-import {
-  inspectTokenRequest,
-  isAllowedAuthRoute,
-} from "./http/auth-allowlist.ts";
+import { isAllowedAuthRoute } from "./http/auth-allowlist.ts";
 import type { AppEnvironment } from "./http/context.ts";
 import { buildPublicOpenApiDocument } from "./http/openapi.ts";
 import { problemHandler } from "./http/problem.ts";
@@ -25,6 +18,8 @@ import { recordRejectedSignIn } from "./http/signin-audit.ts";
 import { createId } from "./lib/id.ts";
 import { limitRequestBody } from "./http/request-limits.ts";
 import { checkReadiness } from "./services/readiness.ts";
+import { publicOAuthMetadata } from "./http/oauth-metadata.ts";
+import type { OperationalMetrics } from "./operations/metrics.ts";
 
 const requestIdPattern = /^[A-Za-z0-9._:-]{1,128}$/;
 
@@ -37,6 +32,7 @@ export type AppServices = {
   environment: Environment;
   readinessCheck?: typeof checkReadiness;
   ssoTest?: { allowPrivateHosts: boolean };
+  metrics?: OperationalMetrics;
 };
 
 export function createApp(services: AppServices) {
@@ -57,14 +53,25 @@ export function createApp(services: AppServices) {
     context.set("requestId", requestId);
     context.header("x-request-id", requestId);
 
-    await next();
+    const clientIp = getIP(context.req.raw, services.auth.options);
+    context.set("clientIp", clientIp);
+    if (
+      services.environment.nodeEnv === "production" &&
+      clientIp === null &&
+      (context.req.path.startsWith("/auth/") ||
+        context.req.path.startsWith("/api/admin/"))
+    ) {
+      context.header("Cache-Control", "no-store");
+      return context.json({ error: "untrusted_ingress" }, 403);
+    }
+    const finish = services.metrics?.begin(context.req.path);
+    try {
+      await next();
+    } finally {
+      finish?.(context.res.status);
+    }
   });
 
-  app.use(
-    "*",
-    limitConcurrentRequests(services.environment.maxConcurrentRequests),
-  );
-  app.use("/auth/*", limitAuthenticationRequests(services.db));
   app.use("*", limitRequestBody);
 
   app.use(
@@ -87,6 +94,31 @@ export function createApp(services: AppServices) {
     }),
   );
   app.route("/api/admin/v1", createAdminApp(services));
+
+  for (const [path, operationId] of [
+    ["/.well-known/openid-configuration", "getOpenIdConfiguration"],
+    ["/.well-known/oauth-authorization-server", "getOAuthAuthorizationServer"],
+  ] as const)
+    app.get(
+      path,
+      describeRoute({
+        operationId,
+        summary: "Read the public OAuth provider metadata",
+        tags: ["Token"],
+        responses: {
+          200: {
+            description:
+              "Native issuer, signing keys and supported public endpoints",
+            content: {
+              "application/json": {
+                schema: resolver(z.record(z.string(), z.unknown())),
+              },
+            },
+          },
+        },
+      }),
+      (context) => publicOAuthMetadata(services.auth, context.req.raw),
+    );
 
   app.get(
     "/healthz",
@@ -117,12 +149,12 @@ export function createApp(services: AppServices) {
           description: "The service is ready",
           content: { "application/json": { schema: resolver(statusSchema) } },
         },
-        503: withAdmissionResponse({
+        503: {
           description: "PostgreSQL is unavailable",
           content: {
             "application/json": { schema: resolver(unavailableSchema) },
           },
-        }),
+        },
       },
     }),
     async (context) => {
@@ -178,16 +210,25 @@ export function createApp(services: AppServices) {
       return context.notFound();
     }
 
-    if (context.req.path === "/auth/oauth2/token") {
-      const rejection = await inspectTokenRequest(context.req.raw);
-      if (rejection) return rejection;
-    }
     const headers = new Headers(context.req.raw.headers);
     headers.set("x-request-id", context.get("requestId"));
     const response = await context
       .get("auth")
       .handler(new Request(context.req.raw, { headers }));
     await recordRejectedSignIn(context, response);
+    if (
+      context.req.path === "/auth/oauth2/token" &&
+      !response.headers.has("cache-control")
+    ) {
+      // Transport-level refusals the provider does not decorate must not be cached.
+      const uncached = new Headers(response.headers);
+      uncached.set("Cache-Control", "no-store");
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: uncached,
+      });
+    }
     return response;
   });
 

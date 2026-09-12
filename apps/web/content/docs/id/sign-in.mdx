@@ -54,28 +54,36 @@ Sign out ends the current session and updates the cookie jar.
 | Email domain          | Enabled for the organisation                              |
 | Answerable ID account | Active                                                    |
 
+The SSO configuration must stay unchanged from the start of sign-in until the callback completes. Changing the provider's credentials or changing and then restoring its configuration requires a new sign-in attempt. Saving unchanged configuration does not interrupt sign-in.
+
 ## When sign-in is refused
 
-If the service cannot securely store upstream credentials, the callback can return HTTP `500` with `authentication_unavailable`. An unreadable existing credential encountered during identity resolution instead redirects with `SSO_USER_RESOLUTION_FAILED`. Neither attempt creates a session. Contact the service operator. Operators should check the dedicated upstream key configuration and migration state described in [onboarding](/docs/id/onboard#first-run). Retrying does not convert legacy token rows.
+If the service cannot securely store upstream credentials, the callback can return HTTP `500` with `authentication_unavailable`. An unreadable existing credential encountered during identity resolution instead redirects with `SSO_USER_RESOLUTION_FAILED`. Neither attempt creates a session. Contact the service operator. Operators should check the dedicated upstream key configuration and credential integrity described in [onboarding](/docs/id/onboard#first-run). Retrying does not convert legacy token rows.
 
 The code arrives on the error page as `?error=<code>`.
 
-| Code                            | Meaning                                                                                                                 | What to do                                                                                               |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `provider_not_found`            | No company sign-in was found for the email address.                                                                     | Check the address. Ask your IT team whether your organisation uses Answerable ID.                        |
-| `SSO_USER_RESOLUTION_FAILED`    | The service could not safely resolve the verified identity, including when a stored upstream token cannot be decrypted. | Contact Answerable staff. Operators should check identity records, token key versions and cutover state. |
-| `SSO_PROVIDER_CHANGED`          | SSO configuration changed during sign-in, or the server could not verify its original configuration.                    | Start sign-in again; no session was created for this attempt.                                            |
-| `authentication_origin_missing` | Sign-in could not retain its verified company authentication.                                                           | Start sign-in again. If it repeats, contact your administrator; no session was created.                  |
-| `organization_disabled`         | Sign-in has been paused for your organisation.                                                                          | Ask your IT team for help.                                                                               |
-| `directory_mismatch`            | The account belongs to a different company directory.                                                                   | Use the work account provided by your organisation.                                                      |
-| `guest_account`                 | The account is a guest in your organisation's directory.                                                                | Use a member account or ask your IT team for help.                                                       |
-| `personal_account`              | Personal accounts cannot sign in.                                                                                       | Use the account provided by your organisation.                                                           |
-| `email_unverified`              | The provider has not confirmed the email address.                                                                       | Verify the address with the provider, then try again.                                                    |
-| `domain_not_allowed`            | The email domain is not enabled for Answerable ID.                                                                      | Ask your IT team or use another work email.                                                              |
-| `hosted_domain_mismatch`        | The account is managed by a different organisation.                                                                     | Use your company account.                                                                                |
-| `user_disabled`                 | The Answerable ID account is disabled.                                                                                  | Ask your IT team for help.                                                                               |
-| `identity_conflict`             | The company account is connected to another Answerable ID account.                                                      | Ask your IT team for help.                                                                               |
-| `email_conflict`                | The email address belongs to another Answerable ID account.                                                             | Ask your IT team for help.                                                                               |
+| Code                               | Meaning                                                                                                                 | What to do                                                                                                       |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `provider_not_found`               | No company sign-in was found for the email address.                                                                     | Check the address. Ask your IT team whether your organisation uses Answerable ID.                                |
+| `SSO_USER_RESOLUTION_FAILED`       | The service could not safely resolve the verified identity, including when a stored upstream token cannot be decrypted. | Contact Answerable staff. Operators should check identity records, token key versions and credential integrity.  |
+| `SSO_PROVIDER_CHANGED`             | SSO configuration changed during sign-in, or the server could not verify its original configuration.                    | Start sign-in again; no session was created for this attempt.                                                    |
+| `authentication_origin_missing`    | Sign-in could not retain its verified company authentication.                                                           | Start sign-in again. If it repeats, contact your administrator; no session was created.                          |
+| `authentication_origin_mismatch`   | The verified company account did not match the user selected for the session.                                           | Start sign-in again. If it repeats, contact your administrator; no session was created.                          |
+| `invalid_auth_time`                | The signed upstream token supplied an invalid or future authentication time.                                            | Ask your identity-provider administrator to check its `auth_time` claim and clock.                               |
+| `reauthentication_required`        | Fresh upstream evidence is missing, too old or predates the requested verification.                                     | Use [verification](#verify-your-sign-in), then retry the original action. No session-time fallback is available. |
+| `identity_flow_invalid`            | The verification expired, was already consumed, used another browser session or no longer matches current authority.    | Start again from Account security in the same browser.                                                           |
+| `authentication_identity_mismatch` | Reauthentication returned a different upstream identity.                                                                | Start again and choose the same work account.                                                                    |
+| `membership_revoked`               | The target membership is revoked, deleted or outside its validity window.                                               | Ask the organisation administrator; linking cannot restore membership.                                           |
+| `organization_disabled`            | Sign-in has been paused for your organisation.                                                                          | Ask your IT team for help.                                                                                       |
+| `directory_mismatch`               | The account belongs to a different company directory.                                                                   | Use the work account provided by your organisation.                                                              |
+| `guest_account`                    | The account is a guest in your organisation's directory.                                                                | Use a member account or ask your IT team for help.                                                               |
+| `personal_account`                 | Personal accounts cannot sign in.                                                                                       | Use the account provided by your organisation.                                                                   |
+| `email_unverified`                 | The provider has not confirmed the email address.                                                                       | Verify the address with the provider, then try again.                                                            |
+| `domain_not_allowed`               | The email domain is not enabled for Answerable ID.                                                                      | Ask your IT team or use another work email.                                                                      |
+| `hosted_domain_mismatch`           | The account is managed by a different organisation.                                                                     | Use your company account.                                                                                        |
+| `user_disabled`                    | The Answerable ID account is disabled.                                                                                  | Ask your IT team for help.                                                                                       |
+| `identity_conflict`                | The company identity is already connected or reserved, including an imported identity.                                  | Use its existing sign-in or ask your IT team. Linking never transfers an account.                                |
+| `email_conflict`                   | The email address belongs to another Answerable ID account.                                                             | Ask your IT team for help.                                                                                       |
 
 **Unexpected sign-in failure.** HTTP 500 with `code: "authentication_unavailable"` means the authentication handler encountered an unexpected failure. It returns no underlying exception details. Start sign-in again; if it continues to fail, contact Answerable staff. This is an HTTP JSON response, not a redirect error code.
 
@@ -83,9 +91,49 @@ The code arrives on the error page as `?error=<code>`.
 
 Sessions use cookies. Browser calls from another origin need `credentials: "include"`, and that origin must be trusted by Answerable ID.
 
+**Organisation authority.** Administration requires authentication through that organisation's current SSO configuration, an active account and membership, and the required permissions. Selecting another organisation or holding its membership does not authenticate you there. Answerable staff use platform SSO and explicit platform permissions to manage other organisations. See [browser administration](/docs/id/manage#get-a-token).
+
+**Provider changes.** A session can remain open after SSO configuration changes, but its earlier authentication cannot authorise new tenant grants or administration. Sign in again through the current provider. An unchanged configuration save preserves authority. Deleted accounts, users, organisations and memberships cannot regain authority through sign-in.
+
+**Authentication time.** When the provider supplies a valid signed `auth_time`, Answerable ID stores it separately from session creation. An absent claim stays unknown. [Sensitive human commands](/docs/id/manage#fresh-authentication) and identity linking require verified upstream authentication within five minutes. Ordinary browsing keeps the normal session lifetime.
+
 Signing out ends the session.
 
-Sign-in for apps through OIDC is [not yet available](/docs/id#today-and-next).
+Applications use [OpenID Connect and OAuth](/docs/id/oauth) with an independently authenticated organisation and per-flow consent.
+
+## Verify your sign-in
+
+```bash
+curl -b cookies.txt -c cookies.txt \
+  https://id.answerable.org/auth/sso/reauthenticate \
+  -H 'Origin: https://answerable.org' \
+  -H 'Content-Type: application/json' \
+  --data '{"callbackURL":"https://answerable.org/security","errorCallbackURL":"https://answerable.org/security"}'
+```
+
+**Browser journey.** Open [Account security](/security) and choose **Verify sign-in**. The API example describes the same request; follow its returned `url` using the browser that holds the initiating session and state cookies. Do not copy only the URL into another browser.
+
+**Upstream proof.** The request uses OIDC `prompt=login` and `max_age=0`. The returned signed `auth_time` must be valid, fresh and at or after the request began. The verified account, user and current provider must match the initiating identity. Missing evidence fails; a newly created broker session does not substitute for upstream authentication.
+
+**Retry.** After verification, return to your action and retry the same input and `Idempotency-Key`. A current account can reauthenticate after its provider configuration revision changes. A deleted or replaced provider binding cannot be adopted by this flow.
+
+## Connect another work account
+
+```bash
+curl -b cookies.txt -c cookies.txt \
+  https://id.answerable.org/auth/sso/link \
+  -H 'Origin: https://answerable.org' \
+  -H 'Content-Type: application/json' \
+  --data '{"providerId":"other-company","callbackURL":"https://answerable.org/security","errorCallbackURL":"https://answerable.org/security"}'
+```
+
+**Two proofs.** Verify your current sign-in first. Then use **Connect another work account** on [Account security](/security), entering the provider ID supplied by the target organisation’s administrator. Sign in independently through that provider. Both identities must still be eligible when the callback commits; the initiating evidence must remain within five minutes.
+
+**One Answerable identity.** A previously unowned upstream identity is bound to your existing global user UUID. Your profile stays unchanged. An absent target membership is created; a revoked, deleted or ineffective membership is rejected. Existing permissions are still required to administer the target organisation.
+
+**No transfer or merge.** An owned or imported identity cannot be moved from another user. Matching email addresses establish no ownership. Replays and concurrent competing links cannot create a second binding. Binding, any new membership and the required `identity.linked` audit fact commit in the native session transaction.
+
+**Expiry and errors.** Each purpose expires after five minutes and can be consumed once, in the initiating browser session. A failed callback requires a new start. Rejected initiation and invalid purpose claims return HTTP JSON errors; other callback failures use `?error=` on the supplied error page. See the [error table](#when-sign-in-is-refused). No unlinking, account transfer or generic recovery journey is available.
 
 ## Machine access
 
@@ -99,30 +147,26 @@ curl https://id.answerable.org/auth/oauth2/token \
 
 **Machine token.** HTTP Basic authenticates the client. The returned JWT is bound to one resource; it represents the client, not a signed-in user. Ask Answerable staff for credentials and the required grants, then follow [Manage your organisation](/docs/id/manage).
 
-| Code                      | Meaning                                                                                                                       | What to do                                                                                             |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `unsupported_grant_type`  | Only `client_credentials` is supported today.                                                                                 | Use that grant; user-facing OIDC grants: [Not yet.](/docs/id#today-and-next)                           |
-| `unauthorized_client`     | The client is no longer allowed to use this grant.                                                                            | Ask staff to review its allowed grant types; do not retry the same request unchanged.                  |
-| `invalid_client`          | Client authentication or client eligibility failed.                                                                           | Check credentials, client status, organisation ownership and the resource link with staff.             |
-| `temporarily_unavailable` | Tenant issuance capacity is full, a database statement/lock timed out, or issuance could not write its audit fact (HTTP 503). | Wait at least the `Retry-After` delay, then make a new token request with fresh client authentication. |
-| `invalid_scope`           | Requested scopes exceed the client's allowed scopes.                                                                          | Request only granted scopes or ask staff to review them.                                               |
+| Code                      | Meaning                                                                                     | What to do                                                                                             |
+| ------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `unsupported_grant_type`  | The requested grant type is unsupported.                                                    | Use client credentials, authorisation code or refresh; see [user OAuth](/docs/id/oauth).               |
+| `unauthorized_client`     | The client is no longer allowed to use this grant.                                          | Ask staff to review its allowed grant types; do not retry the same request unchanged.                  |
+| `invalid_client`          | Client authentication or client eligibility failed.                                         | Check credentials, client status, organisation ownership and the resource link with staff.             |
+| `temporarily_unavailable` | A database statement/lock timed out, or issuance could not write its audit fact (HTTP 503). | Wait at least the `Retry-After` delay, then make a new token request with fresh client authentication. |
+| `invalid_scope`           | Requested scopes exceed the client's allowed scopes.                                        | Request only granted scopes or ask staff to review them.                                               |
 
 **Revoked membership.** A valid corporate login still returns `membership_revoked` when that organisation has revoked the membership. An authorised administrator must [reinstate membership](/docs/id/manage#revoke-and-reinstate-membership); signing in again does not restore it or its deleted assignments.
 
 **Transport limits.** Bodies are limited to 256 KiB and must finish within five seconds of application body acquisition. Oversized bodies return 413; stalled bodies return 408. These responses can precede OAuth handling and need not use the OAuth JSON error format. See [request boundaries](/docs/id/manage#request-boundaries).
 
-**Tenant token capacity.** Clients belonging to the same organisation share two concurrent machine issuance slots across service instances using the same database. Once both slots are occupied, another authenticated issuance receives `503 temporarily_unavailable` with `Retry-After: 1`. Wait, then retry with fresh client authentication. A different organisation has its own slots. This limits issuance transactions after identity checks; it is not a rate limit or a guarantee of available database connections.
-
 **Busy authorization state.** The two-second limit applies to each database lock wait during issuance. Database statements also have a configurable server-side deadline, ten seconds by default. Neither is a total transaction or HTTP deadline. A timed-out issuance rolls back before returning `503 temporarily_unavailable` with `Retry-After: 1`. Wait at least one second and use bounded retries with increasing delay. Clients using `private_key_jwt` must generate a new assertion: an authenticated assertion remains consumed even when issuance fails. This is a fresh OAuth request, not administrative operation-key replay.
 
 **Issuance audit.** Every successful machine token request commits an `oauth.token.issued` event before returning the JWT. If that audit write fails, issuance rolls back and returns `503 temporarily_unavailable` with retry guidance. The event records the token's `jti`, identities, granted/requested scopes, configuration revisions and Unix issuance/expiry seconds. It excludes the bearer token, client secret and request metadata. An event proves committed issuance, not delivery to the client or use at a remote resource.
 
-**Rejected requests.** After credentials have been verified, failed validation, authorisation or issuance records an `oauth.token.rejected` event after the issuance transaction exits with an error. Audit storage failure keeps the original rejection and emits an operational error signal. Pre-authentication failures are not yet covered. See [rejection evidence](/docs/id/manage#read-rejected-machine-requests).
+**Rejected requests.** After credentials have been verified, failed validation, authorisation or issuance records an `oauth.token.rejected` event after the issuance transaction exits with an error. Audit storage failure keeps the original rejection and emits an operational error signal. Failed native client authentication records an unattributed version-three fact; transport/body refusals occur before that audit boundary. See [rejection evidence](/docs/id/manage#read-rejected-machine-requests).
 
-**Retries are new issuances.** Reusing `x-request-id` only correlates attempts. Two successful token requests create distinct token identifiers and audit facts; OAuth token issuance does not use administrative operation-key replay. Rejected-grant audit coverage and user-grant auditing are Not yet.
+**Retries are new issuances.** Reusing `x-request-id` only correlates attempts. Two successful token requests create distinct token identifiers and audit facts; OAuth token issuance does not use administrative operation-key replay. User OAuth records authorisation, issuance, cached response replay and revocation separately; see [user OAuth](/docs/id/oauth).
 
-**Instance overload.** A full instance refuses new requests before authentication with plain-text `503 Service Busy`, `Retry-After: 1` and a request ID. It does not queue the request. This transport refusal can precede CORS headers. Use bounded backoff; if a login callback's protocol state expires while retrying, start sign-in again. The default is 64 active handlers per instance, configurable by the operator. This bound does not provide per-tenant or cross-replica rate limits.
-
-**Network attribution.** Forwarding headers do not establish client identity. New sessions store no IP address, and sign-in/sign-out audit events leave it null, including sign-out of legacy sessions. Historical addresses are unverified metadata. Until trusted ingress is configured, the provider's enabled production limiter uses a shared per-path bucket; changing a forwarding header does not select another bucket. This fallback is process-local and can throttle unrelated callers; it is not tenant fairness or a deployment-wide IP limit.
+**Network attribution.** The service must be reachable only through the ingress proxies listed in `TRUSTED_PROXY_CIDRS` (comma-separated IPv4/IPv6 networks). Network rules must refuse traffic that does not arrive through those proxies. The ingress supplies `x-forwarded-for`; Better Auth walks it from the right, skips listed proxies and selects the first untrusted address. The same resolver supplies rate-limit keys, session IPs and administrative/sign-in audit IPs. In production, unresolved addresses on `/auth/*` and `/api/admin/*` receive `403 {"error":"untrusted_ingress"}`, `Cache-Control: no-store` and a request ID before authentication, with no audit event. Health and readiness remain reachable. The header resolver cannot verify the socket peer; the network restriction is required. Sign-in success and the session commit together; an audit failure rolls back sign-in. Sign-out retains null IP attribution because historical session addresses have no recorded trust provenance. New and replaced upstream SSO configurations enable PKCE; supplying `pkce` in provider administration requests is a validation error. Re-save any existing configuration that disabled PKCE.
 
 **Failure evidence.** New callback rejection audit events use schema version 2: known failure codes remain useful for diagnosis; unknown error strings become `sso_callback_failed`, and free-form error descriptions are not stored. This does not change the browser redirect. New session and sign-in/sign-out user-agent metadata accepts 1–512 printable ASCII characters; other values are omitted. Existing session values are checked again before they enter new audit events.

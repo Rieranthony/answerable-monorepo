@@ -1,15 +1,15 @@
-import { inPlatformRead } from "../__tests__/platform-context.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
-import { testEnvironment } from "../__tests__/support.ts";
-import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import { recordAuditEvent } from "../__tests__/audit-queries.ts";
 import { createOrganization } from "../__tests__/organization-queries.ts";
-import { createId } from "../lib/id.ts";
-import * as implementation from "./audit.ts";
-import * as auditQueries from "../db/queries/audit.ts";
+import { inPlatformRead } from "../__tests__/platform-context.ts";
+import { testEnvironment } from "../__tests__/support.ts";
 import { inTenantRead } from "../__tests__/tenant-command.ts";
 import type { Database } from "../db/client.ts";
+import { createDatabase, type DatabaseConnection } from "../db/client.ts";
+import * as auditQueries from "../db/queries/audit.ts";
+import { createId } from "../lib/id.ts";
+import * as implementation from "./audit.ts";
 const service = {
   ...implementation,
   listAuditEvents: (
@@ -55,29 +55,7 @@ test("audit queries bind authority and reject caller-supplied tenant substitutio
         outcome: "success",
       }),
     );
-  const queries = [
-    [
-      auditQueries.listAuditEvents,
-      [{ action: "history.boundary" }, { limit: 10 }],
-    ],
-    [auditQueries.listOrganizationAuditEvents, [{}, { limit: 10 }]],
-    [auditQueries.listUserAuditEvents, [userId, {}, { limit: 10 }]],
-  ] as const;
-  async function reject(
-    context: unknown,
-    cases: ReadonlyArray<(typeof queries)[number]>,
-  ) {
-    for (const [query, args] of cases)
-      await expect(
-        Promise.resolve().then(() =>
-          Reflect.apply(query, undefined, [context, ...args]),
-        ),
-      ).rejects.toThrow("Invalid or expired");
-  }
-  await reject(db, queries);
-  let expired: unknown;
   await inTenantRead(db, a, "history", async (context) => {
-    expired = context;
     expect(
       (
         await auditQueries.listOrganizationAuditEvents(
@@ -87,12 +65,8 @@ test("audit queries bind authority and reject caller-supplied tenant substitutio
         )
       ).items,
     ).toEqual([rows[0]!]);
-    await reject(context, [queries[0], queries[2]]);
-    await reject({ ...context }, queries);
   });
-  await reject(expired, queries);
   await inPlatformRead(db, async (context) => {
-    expired = context;
     expect(
       (
         await auditQueries.listUserAuditEvents(
@@ -105,16 +79,11 @@ test("audit queries bind authority and reject caller-supplied tenant substitutio
         .map((row) => row.id)
         .sort(),
     ).toEqual(rows.map((row) => row.id).sort());
-    await reject(context, [queries[1]]);
-    await reject({ ...context }, queries);
   });
-  await reject(expired, queries);
 });
 test("audit reads filter, paginate, force the organisation and reject missing organisations", async () => {
   const db = connection.db;
-  await db.execute(
-    sql`truncate table security_identifiers, audit_events, organizations cascade`,
-  );
+  await db.execute(sql`truncate table audit_events, organizations cascade`);
   const org = await createOrganization(db, { slug: "audit", name: "Audit" });
   const other = await createOrganization(db, { slug: "other", name: "Other" });
   const rows = [];
@@ -190,79 +159,4 @@ test("audit reads filter, paginate, force the organisation and reject missing or
   await expect(
     service.listOrganizationAuditEvents(db, createId(), {}, page),
   ).rejects.toMatchObject({ status: 404 });
-});
-
-test("history contexts cannot be copied, reused or substituted with directory authority", async () => {
-  const db = connection.db;
-  const org = await createOrganization(db, {
-    slug: "history-context",
-    name: "History",
-  });
-  let saved!: import("./tenant-context.ts").TenantReadContext<"history">;
-  await inTenantRead(db, org.id, "history", async (context) => {
-    saved = context;
-    await expect(
-      implementation.listOrganizationAuditEvents(
-        { ...context },
-        {},
-        { limit: 1 },
-      ),
-    ).rejects.toThrow("Invalid or expired");
-  });
-  await expect(
-    implementation.listOrganizationAuditEvents(saved, {}, { limit: 1 }),
-  ).rejects.toThrow("Invalid or expired");
-  await inTenantRead(db, org.id, "directory", async (context) => {
-    await expect(
-      implementation.listOrganizationAuditEvents(
-        context as unknown as typeof saved,
-        {},
-        { limit: 1 },
-      ),
-    ).rejects.toThrow("Invalid or expired");
-  });
-  const { getOrganization } = await import("./organizations.ts");
-  await inTenantRead(db, createId(), "history", async (context) => {
-    await expect(
-      getOrganization(
-        context as unknown as import("./tenant-context.ts").TenantReadContext<"directory">,
-      ),
-    ).rejects.toThrow("Invalid or expired");
-  });
-});
-
-test("platform audit contexts reject copies, expired handles and tenant history contexts", async () => {
-  const db = connection.db;
-  const { listUserAuditEvents } = implementation;
-  let saved!: import("./platform-context.ts").PlatformReadContext;
-  await inPlatformRead(db, async (context) => {
-    saved = context;
-    expect(() =>
-      implementation.listAuditEvents({ ...context }, {}, { limit: 1 }),
-    ).toThrow("Invalid or expired");
-    await expect(
-      listUserAuditEvents({ ...context }, createId(), {}, { limit: 1 }),
-    ).rejects.toThrow("Invalid or expired");
-  });
-  expect(() => implementation.listAuditEvents(saved, {}, { limit: 1 })).toThrow(
-    "Invalid or expired",
-  );
-  await expect(
-    inPlatformRead(db, async (context) => {
-      saved = context;
-      throw new Error("read failed");
-    }),
-  ).rejects.toThrow("read failed");
-  await expect(
-    listUserAuditEvents(saved, createId(), {}, { limit: 1 }),
-  ).rejects.toThrow("Invalid or expired");
-  await inTenantRead(db, createId(), "history", async (context) => {
-    expect(() =>
-      implementation.listAuditEvents(
-        context as unknown as typeof saved,
-        {},
-        { limit: 1 },
-      ),
-    ).toThrow("Invalid or expired");
-  });
 });

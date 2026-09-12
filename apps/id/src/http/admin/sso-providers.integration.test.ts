@@ -1,3 +1,4 @@
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
@@ -10,7 +11,6 @@ import { createOrganization } from "../../__tests__/organization-queries.ts";
 import {
   auditEvents,
   adminOperations,
-  adminOperationResults,
   members,
 } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
@@ -332,13 +332,12 @@ test("SSO retries recover historical redacted results without replacing later cr
     oidc: {
       ...input.oidc,
       scopes: ["openid", "profile"],
-      pkce: true,
       tokenEndpointAuthentication: "client_secret_post",
     },
   });
   expect(replay.status).toBe(201);
   expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(await replay.json()).toEqual(original);
+  await expectReceipt(fixture.db, replay);
   expect(
     JSON.parse(
       (await findSsoProviderByOrganization(fixture.db, org.id))!.oidcConfig!,
@@ -386,7 +385,7 @@ test("SSO noops preserve timestamps and credentials while secret changes remain 
     .from(adminOperations)
     .where(eq(adminOperations.id, noop.headers.get("Operation-Id")!));
   expect(receipt?.outcome).toBe("noop");
-  expect(receipt?.fingerprint).toStartWith("hmac-v1.");
+  expect(receipt?.fingerprint).toMatch(/^[a-f0-9]{64}$/);
   const [event] = await fixture.db
     .select()
     .from(auditEvents)
@@ -425,16 +424,6 @@ test("SSO noops preserve timestamps and credentials while secret changes remain 
       "Idempotency-Replayed",
     ),
   ).toBe("true");
-  const [stored] = await fixture.db
-    .select()
-    .from(adminOperationResults)
-    .where(
-      eq(
-        adminOperationResults.operationId,
-        rotation.headers.get("Operation-Id")!,
-      ),
-    );
-  expect(stored!.ciphertext).not.toContain("replacement-secret");
 });
 
 test("SSO audit failure rolls back credentials and the command reservation", async () => {
@@ -541,3 +530,24 @@ test("SSO replay rechecks current platform authority", async () => {
       .where(eq(auditEvents.operationId, first.headers.get("Operation-Id")!)),
   ).toHaveLength(1);
 });
+
+for (const existing of [false, true])
+  for (const pkce of [false, true])
+    test(`${existing ? "replacement" : "new"} provider rejects supplied pkce ${pkce}`, async () => {
+      const organizationId = existing
+        ? fixture.tenant.organizationId
+        : (
+            await createOrganization(fixture.db, {
+              slug: `pkce-${crypto.randomUUID()}`,
+              name: "PKCE test",
+            })
+          ).id;
+      const response = await request(organizationId, "", "PUT", {
+        ...input,
+        oidc: { ...input.oidc, pkce },
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        code: "validation_failed",
+      });
+    });

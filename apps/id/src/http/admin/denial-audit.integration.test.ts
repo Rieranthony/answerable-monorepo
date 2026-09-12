@@ -1,3 +1,4 @@
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import {
@@ -181,10 +182,10 @@ test("successful root admission still requires its audit and same-key recovery c
   }
   const first = await request();
   expect(first.status).toBe(201);
-  const created = await first.json();
+  await first.json();
   const replay = await request();
   expect(replay.status).toBe(201);
-  expect(await replay.json()).toEqual(created);
+  await expectReceipt(fixture.db, replay);
   expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
   expect(await fixture.db.select().from(organizations)).toHaveLength(
     before.length + 1,

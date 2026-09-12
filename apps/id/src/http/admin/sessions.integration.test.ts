@@ -248,12 +248,4 @@ test("tenant session aliases cannot expose or revoke a shared person's global lo
         )
       ).status,
     ).toBe(403);
-  const summary = await request(
-    `/organizations/${fixture.tenant.organizationId}/summary`,
-    "GET",
-    undefined,
-    "tenantAdmin",
-  );
-  expect(summary.status).toBe(200);
-  expect(await summary.json()).not.toHaveProperty("sessions");
 });

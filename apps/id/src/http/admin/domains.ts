@@ -1,3 +1,4 @@
+import { commandJson } from "./schemas.ts";
 import { tenantRead } from "./tenant-read.ts";
 import { json, body, pathParameter, uuidParam } from "./schemas.ts";
 import type { Hono } from "hono";
@@ -50,16 +51,17 @@ export const routes = {
     operationId: "deleteOrganizationDomain",
     summary: "Delete organisation domain",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating its audit or mutation. Changed input returns idempotency_key_reused; expired recovery returns operation_result_expired and never repeats effects. Delete a domain assignment and return no content, removing its sign-in discovery routing and recording domain.deleted. Prefer disableOrganizationDomain for a reversible suspension; validation_failed rejects malformed ids and not_found means the organisation or domain is missing. No confirmation is required.",
+      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating its audit or mutation. Changed input returns idempotency_key_reused. Delete a domain assignment and return no content, removing its sign-in discovery routing and recording domain.deleted. Prefer disableOrganizationDomain for a reversible suspension; validation_failed rejects malformed ids and not_found means the organisation or domain is missing. No confirmation is required. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
     tag: "Domains",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [...domainParameters, idempotencyParameter],
     responses: standardResponses(
       {},
       {
         204: { description: "Domain deleted", headers: commandResponseHeaders },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -73,6 +75,7 @@ export const routes = {
     tag: "Domains",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     parameters,
     orgScope: "org:read",
     responses: standardResponses(
@@ -97,10 +100,11 @@ export const routes = {
     operationId: "createOrganizationDomain",
     summary: "Create an organisation domain",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating its audit or mutation. Changed input returns idempotency_key_reused; expired recovery returns operation_result_expired and never repeats effects. Add an email domain to an organisation and return the created domain, enabling domain-based sign-in discovery. Prefer listOrganizationDomains to inspect existing assignments; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict means the domain is already assigned.",
+      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating its audit or mutation. Changed input returns idempotency_key_reused. Add an email domain to an organisation and return the created domain, enabling domain-based sign-in discovery. Prefer listOrganizationDomains to inspect existing assignments; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict means the domain is already assigned.",
     tag: "Domains",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [...parameters, idempotencyParameter],
     requestBody: body(createSchema),
     example: { body: { domain: "acme.example.com" } },
@@ -109,10 +113,10 @@ export const routes = {
       {
         201: {
           description: "Domain",
-          content: json(domainSchema),
+          content: commandJson(domainSchema),
           headers: commandResponseHeaders,
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -122,20 +126,21 @@ export const routes = {
     operationId: "disableOrganizationDomain",
     summary: "Disable an organisation domain",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating its audit or mutation. Changed input returns idempotency_key_reused; expired recovery returns operation_result_expired and never repeats effects. Disable an organisation domain and return the updated record. Prefer enableOrganizationDomain for the opposite transition; not_found means the target is missing and an already disabled assignment returns unchanged state and records a noop.",
+      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating its audit or mutation. Changed input returns idempotency_key_reused. Disable an organisation domain and return the updated record. Prefer enableOrganizationDomain for the opposite transition; not_found means the target is missing and an already disabled assignment returns unchanged state and records a noop.",
     tag: "Domains",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [...domainParameters, idempotencyParameter],
     responses: standardResponses(
       {},
       {
         200: {
           description: "Domain",
-          content: json(domainSchema),
+          content: commandJson(domainSchema),
           headers: commandResponseHeaders,
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -145,20 +150,21 @@ export const routes = {
     operationId: "enableOrganizationDomain",
     summary: "Enable an organisation domain",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating its audit or mutation. Changed input returns idempotency_key_reused; expired recovery returns operation_result_expired and never repeats effects. Enable an organisation domain and return the updated record. Prefer disableOrganizationDomain for the opposite transition; not_found means the target is missing and an already active assignment returns unchanged state and records a noop.",
+      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating its audit or mutation. Changed input returns idempotency_key_reused. Enable an organisation domain and return the updated record. Prefer disableOrganizationDomain for the opposite transition; not_found means the target is missing and an already active assignment returns unchanged state and records a noop.",
     tag: "Domains",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [...domainParameters, idempotencyParameter],
     responses: standardResponses(
       {},
       {
         200: {
           description: "Domain",
-          content: json(domainSchema),
+          content: commandJson(domainSchema),
           headers: commandResponseHeaders,
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -188,7 +194,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "domain", id: domainId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -225,7 +230,6 @@ export function register(app: Hono<AppEnvironment>) {
           );
           return { body, resultReference: { type: "domain", id: body.id } };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -253,7 +257,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "domain", id: domainId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -281,7 +284,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "domain", id: domainId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );

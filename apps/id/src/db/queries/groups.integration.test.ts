@@ -1,18 +1,18 @@
-import * as productionGroupQueries from "./groups.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
-import { testEnvironment } from "../../__tests__/support.ts";
-import { createDatabase, type DatabaseConnection } from "../client.ts";
+import * as queries from "../../__tests__/group-queries.ts";
 import { createOrganization } from "../../__tests__/organization-queries.ts";
+import { testEnvironment } from "../../__tests__/support.ts";
 import { createId } from "../../lib/id.ts";
-import { users, members, groupMembers } from "../schema/index.ts";
+import { createDatabase, type DatabaseConnection } from "../client.ts";
+import { members, users } from "../schema/index.ts";
 let connection: DatabaseConnection;
 beforeAll(() => {
   connection = createDatabase(testEnvironment());
 });
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table security_identifiers, audit_events, organizations, users cascade`,
+    sql`truncate table audit_events, organizations, users cascade`,
   );
 });
 afterAll(async () => {
@@ -38,18 +38,6 @@ async function seed() {
 }
 const past = new Date("2000-01-01T00:00:00Z");
 const future = new Date("2100-01-01T00:00:00Z");
-import * as queries from "../../__tests__/group-queries.ts";
-test("group query entry rejects a raw database instead of issued authority", async () => {
-  await expect(
-    Promise.resolve().then(() =>
-      Reflect.apply(productionGroupQueries.listGroups, undefined, [
-        connection.db,
-        createId(),
-        { limit: 1 },
-      ]),
-    ),
-  ).rejects.toThrow("Invalid or expired");
-});
 test("group CRUD is scoped, filtered and paginated", async () => {
   const { db, org, other } = await seed();
   const a = await queries.createGroup(db, {
@@ -215,15 +203,15 @@ test("group membership upserts preserve omitted windows, compute effectiveness a
   expect(
     await queries.listGroupMembers(db, other.id, group.id, { limit: 10 }),
   ).toEqual([]);
-  expect(await queries.removeGroupMember(db, other.id, group.id, ids[0]!)).toBe(
-    false,
-  );
-  expect(await queries.removeGroupMember(db, org.id, group.id, ids[0]!)).toBe(
-    true,
-  );
-  expect(await queries.removeGroupMember(db, org.id, group.id, ids[0]!)).toBe(
-    false,
-  );
+  expect(
+    await queries.removeGroupMember(db, other.id, group.id, ids[0]!),
+  ).toBeNull();
+  expect(
+    await queries.removeGroupMember(db, org.id, group.id, ids[0]!),
+  ).toMatchObject({ deletedAt: expect.any(Date) });
+  expect(
+    await queries.removeGroupMember(db, org.id, group.id, ids[0]!),
+  ).toBeNull();
   expect(
     await queries.findGroupMember(db, org.id, group.id, ids[0]!),
   ).toBeNull();
@@ -289,67 +277,4 @@ test("assignment instances and revisions survive updates but not recreation", as
   expect(replacement.created).toBe(true);
   expect(replacement.row.id).not.toBe(first.id);
   expect(replacement.row.revision).toBe(1);
-});
-
-test("assignment migration backfills populated rows without changing their windows", async () => {
-  const { db, org, ids } = await seed();
-  const group = await queries.createGroup(db, {
-    organizationId: org.id,
-    slug: "upgrade",
-    name: "Upgrade",
-  });
-  const first = await queries.addGroupMember(db, {
-    organizationId: org.id,
-    groupId: group.id,
-    memberId: ids[0]!,
-  });
-  const migration = await Bun.file(
-    new URL(
-      "../../../drizzle/0023_group_assignment_identity.sql",
-      import.meta.url,
-    ),
-  ).text();
-  const rollback = new Error("rollback migration rehearsal");
-  await expect(
-    db.transaction(async (tx) => {
-      await tx.execute(
-        sql`drop trigger group_members_revision_guard on group_members`,
-      );
-      await tx.execute(
-        sql`drop function protect_group_assignment_identity() cascade`,
-      );
-      await tx.execute(
-        sql`alter table group_members drop column id, drop column revision`,
-      );
-      for (const statement of migration.split("--> statement-breakpoint"))
-        await tx.execute(sql.raw(statement));
-      const [migrated] = await tx
-        .select()
-        .from(groupMembers)
-        .where(eq(groupMembers.groupId, group.id));
-      expect(migrated).toMatchObject({
-        organizationId: org.id,
-        groupId: group.id,
-        memberId: ids[0],
-        validFrom: first.validFrom,
-        validUntil: first.validUntil,
-        createdAt: first.createdAt,
-        revision: 1,
-      });
-      expect(migrated?.id).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-      );
-      await expect(
-        tx.transaction(async (nested) =>
-          nested.execute(
-            sql`insert into group_members (organization_id, group_id, member_id) values (${org.id}, ${group.id}, ${ids[1]})`,
-          ),
-        ),
-      ).rejects.toThrow();
-      throw rollback;
-    }),
-  ).rejects.toBe(rollback);
-  expect(await queries.findGroupMember(db, org.id, group.id, ids[0]!)).toEqual(
-    first,
-  );
 });

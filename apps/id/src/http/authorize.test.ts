@@ -36,14 +36,18 @@ function setup(
   const insert = mock(() => ({
     values: (row: AuditEventInput) => {
       rows.push(row);
-      return { returning: async () => [row] };
+      return Promise.resolve();
     },
   }));
   const app = new Hono<AppEnvironment>();
   app.use("*", async (c, next) => {
-    c.set("db", { insert } as unknown as Database);
+    c.set("db", {
+      insert,
+      execute: async () => ({ rows: [{ occurredAt: "2026-09-11T00:00:00Z" }] }),
+    } as unknown as Database);
     c.set("environment", testEnvironment());
     c.set("requestId", "request");
+    c.set("clientIp", "192.0.2.1");
     c.set("operationId", "testOperation");
     c.set(
       "principal",
@@ -133,12 +137,12 @@ test.each([
     const known = grants.some(
       (grant) => grant.organizationId === path.slice(1),
     );
-    expect(rows[0]).not.toHaveProperty("ip");
+    expect(rows[0]!.ip).toBe("192.0.2.1");
     expect(rows[0]).toMatchObject({
       actorType: client ? "client" : "user",
       actorId: client ? "client" : "user",
-      organizationId: known ? path.slice(1) : undefined,
-      data: known ? undefined : { organizationId: path.slice(1) },
+      organizationId: known ? path.slice(1) : null,
+      data: known ? null : { organizationId: path.slice(1) },
       action: "admin.denied",
       outcome: "denied",
       targetType: "route",
@@ -152,10 +156,10 @@ test.each([
 test("an org scope without an organisation parameter cannot authorise", async () => {
   const { app, rows } = setup([own], { org: true, path: "/" });
   expect((await app.request("/")).status).toBe(403);
-  expect(rows[0]).not.toHaveProperty("ip");
+  expect(rows[0]!.ip).toBe("192.0.2.1");
   expect(rows[0]).toMatchObject({
-    organizationId: undefined,
-    userAgent: undefined,
+    organizationId: null,
+    userAgent: null,
   });
 });
 
@@ -180,16 +184,16 @@ test.each([
     ).json(),
   ).toEqual({ tier: "platform" });
   expect(rows).toHaveLength(1);
-  expect(rows[0]).not.toHaveProperty("ip");
+  expect(rows[0]!.ip).toBe("192.0.2.1");
   expect(rows[0]).toMatchObject({
     actorType: "system",
     actorId: "root",
-    organizationId: undefined,
+    organizationId: null,
     action: "admin.root_request",
     outcome: "success",
     targetType: "route",
     targetId: "testOperation",
-    data: options.data,
+    data: options.data ?? null,
     requestId: "request",
     userAgent: "test-agent",
   });

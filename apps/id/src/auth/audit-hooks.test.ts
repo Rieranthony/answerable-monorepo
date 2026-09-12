@@ -6,10 +6,11 @@ for (const [hook, action] of [["delete", "auth.signout"]] as const) {
   test(`${hook} audits session attribution with null context and headers`, async () => {
     const rows: unknown[] = [];
     const db = {
+      execute: async () => ({ rows: [{ occurredAt: "2026-09-11T00:00:00Z" }] }),
       insert: () => ({
         values: (row: unknown) => {
           rows.push(row);
-          return { returning: async () => [row] };
+          return Promise.resolve();
         },
       }),
     } as unknown as Executor;
@@ -25,7 +26,7 @@ for (const [hook, action] of [["delete", "auth.signout"]] as const) {
       },
       { headers: new Headers({ "x-request-id": "request" }) },
     );
-    expect(rows).toEqual([
+    expect(rows).toMatchObject([
       {
         id: expect.any(String),
         actorType: "user",

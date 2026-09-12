@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   requirePlatformWriteContext,
   type PlatformWriteContext,
@@ -48,6 +49,8 @@ export async function organizationAcceptsDomain(
     )
     .where(
       and(
+        sql`${organizations.deletedAt} is null`,
+        sql`${organizationDomains.deletedAt} is null`,
         eq(organizationDomains.domain, normalizeDomain(domain)),
         eq(organizationDomains.organizationId, organizationId),
         eq(organizationDomains.status, "active"),
@@ -72,6 +75,7 @@ export function listOrganizationDomains(
     .from(organizationDomains)
     .where(
       and(
+        sql`${organizationDomains.deletedAt} is null`,
         eq(organizationDomains.organizationId, organizationId),
         query.status === undefined
           ? undefined
@@ -94,11 +98,13 @@ export async function findOrganizationDomainForCommand(
     .from(organizationDomains)
     .where(
       and(
+        sql`${organizationDomains.deletedAt} is null`,
         eq(organizationDomains.organizationId, organizationId),
         eq(organizationDomains.id, domainId),
       ),
     );
   const [row] = await query.for("update");
+  await context.revalidate();
   return row ?? null;
 }
 
@@ -114,6 +120,7 @@ export async function setOrganizationDomainStatus(
     .set({ status })
     .where(
       and(
+        sql`${organizationDomains.deletedAt} is null`,
         eq(organizationDomains.organizationId, organizationId),
         eq(organizationDomains.id, domainId),
       ),
@@ -128,12 +135,16 @@ export async function deleteOrganizationDomain(
   domainId: string,
 ) {
   const { tx: executor } = requirePlatformWriteContext(context);
-  await executor
-    .delete(organizationDomains)
+  const [row] = await executor
+    .update(organizationDomains)
+    .set({ deletedAt: sql`now()`, status: "disabled" })
     .where(
       and(
+        sql`${organizationDomains.deletedAt} is null`,
         eq(organizationDomains.organizationId, organizationId),
         eq(organizationDomains.id, domainId),
       ),
-    );
+    )
+    .returning();
+  return row ?? null;
 }

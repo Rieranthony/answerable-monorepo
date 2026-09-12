@@ -26,13 +26,16 @@ export function testEnvironment(
       { version: 1, value: Buffer.alloc(32, 73).toString("base64url") },
     ],
     trustedOrigins: [],
+    trustedProxyCidrs: [],
     authPagesUrl: "http://localhost:47100",
-    maxConcurrentRequests: 64,
+    oauthRefreshReuseIntervalSeconds: 0,
+    operationalLogIntervalMs: 0,
     databasePoolMax: 1,
     databasePoolIdleTimeoutMs: 1_000,
     databaseConnectionTimeoutMs: 1_000,
     databaseStatementTimeoutMs: 10_000,
-    operationReplay: undefined,
+    databaseLockTimeoutMs: 2_000,
+    databaseIdleInTransactionTimeoutMs: 15_000,
     rootAdminSecret: undefined,
     rootAdminBreakGlass: false,
     openApiEnabled: true,
@@ -84,6 +87,32 @@ export function stubAuth(): Auth {
           },
         },
         paths: {
+          "/jwks": { get: { responses: { "200": { description: "OK" } } } },
+          "/oauth2/authorize": {
+            get: { responses: { "302": { description: "Redirect" } } },
+          },
+          "/oauth2/flow": {
+            post: { responses: { "200": { description: "OK" } } },
+          },
+          "/oauth2/continue": {
+            post: { responses: { "200": { description: "OK" } } },
+          },
+          "/oauth2/consent": {
+            post: { responses: { "200": { description: "OK" } } },
+          },
+          "/oauth2/userinfo": {
+            get: { responses: { "200": { description: "OK" } } },
+            post: { responses: { "200": { description: "OK" } } },
+          },
+          "/oauth2/revoke": {
+            post: { responses: { "200": { description: "OK" } } },
+          },
+          "/sso/reauthenticate": {
+            post: { responses: { "200": { description: "OK" } } },
+          },
+          "/sso/link": {
+            post: { responses: { "200": { description: "OK" } } },
+          },
           "/ok": {
             get: {
               operationId: "betterAuthOk",

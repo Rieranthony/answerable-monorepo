@@ -1,5 +1,5 @@
+import { findInvalidTrustedProxies } from "@better-auth/core/utils/ip";
 import { z } from "zod";
-import { createOperationCipher } from "./services/operation-cipher.ts";
 import { upstreamTokenSecretsSchema } from "./auth/upstream-token-storage.ts";
 
 const applicationSecrets = z.string().transform((value, context) => {
@@ -45,26 +45,6 @@ const upstreamTokenSecrets = z.string().transform((value, context) => {
   }
 });
 
-const replayConfig = z.string().transform((value, context) => {
-  try {
-    const config = z
-      .object({
-        activeKeyId: z.string(),
-        keys: z.record(z.string(), z.string()),
-      })
-      .parse(JSON.parse(value));
-    createOperationCipher(config);
-    return config;
-  } catch {
-    context.addIssue({
-      code: "custom",
-      message:
-        "Expected a valid activeKeyId and canonical 256-bit base64url keys",
-    });
-    return z.NEVER;
-  }
-});
-
 /** Browser origins Better Auth trusts; the pages origin when none is set. */
 const parseTrustedOrigins = (value: string, fallback: string) => {
   const origins = value
@@ -85,7 +65,6 @@ const environmentSchema = z
     BETTER_AUTH_SECRET: z.string().min(32),
     BETTER_AUTH_SECRETS: applicationSecrets.optional(),
     UPSTREAM_TOKEN_SECRETS: upstreamTokenSecrets.optional(),
-    OPERATION_REPLAY_CONFIG: replayConfig.optional(),
     BETTER_AUTH_TRUSTED_ORIGINS: z.string().default(""),
     /** Initial platform slug; persisted system bindings determine authority afterwards. */
     PLATFORM_ORGANIZATION_SLUG: z
@@ -100,8 +79,31 @@ const environmentSchema = z
     ROOT_ADMIN_SECRET: z.string().min(32).optional(),
     /** Override the human platform administrator lockout for break-glass use. */
     ROOT_ADMIN_BREAK_GLASS: z.enum(["true", "false"]).default("false"),
-    AUTH_PAGES_URL: z.url().default("http://localhost:47100"),
-    MAX_CONCURRENT_REQUESTS: z.coerce.number().int().min(1).default(64),
+    AUTH_PAGES_URL: z.url().optional(),
+    TRUSTED_PROXY_CIDRS: z
+      .string()
+      .transform((value) => value.split(",").map((entry) => entry.trim()))
+      .refine(
+        (entries) => findInvalidTrustedProxies(entries).length === 0,
+        "Expected valid proxy IP addresses or CIDRs",
+      )
+      .optional(),
+    OAUTH_REFRESH_REUSE_INTERVAL_SECONDS: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(Number.MAX_SAFE_INTEGER)
+      .default(0),
+    OPERATIONAL_LOG_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(2_147_483_647)
+      .refine(
+        (value) => value === 0 || value >= 1000,
+        "Use zero to disable or at least 1000 milliseconds",
+      )
+      .default(30_000),
     DATABASE_POOL_MAX: z.coerce.number().int().min(1).optional(),
     DATABASE_POOL_IDLE_TIMEOUT_MS: z.coerce
       .number()
@@ -114,12 +116,24 @@ const environmentSchema = z
       .min(1)
       .max(2_147_483_647)
       .default(10_000),
+    DATABASE_LOCK_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(2_147_483_647)
+      .default(2_000),
+    DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(2_147_483_647)
+      .default(15_000),
     DATABASE_CONNECTION_TIMEOUT_MS: z.coerce
       .number()
       .int()
       .min(1)
       .default(5_000),
-    OPENAPI_ENABLED: z.enum(["true", "false"]).default("true"),
+    OPENAPI_ENABLED: z.enum(["true", "false"]).optional(),
   })
   .refine(
     (environment) =>
@@ -127,6 +141,38 @@ const environmentSchema = z
       environment.ROOT_ADMIN_SECRET !== undefined,
     { message: "ROOT_ADMIN_BREAK_GLASS requires ROOT_ADMIN_SECRET" },
   )
+  .superRefine((environment, context) => {
+    if (environment.NODE_ENV !== "production") return;
+    if (!environment.AUTH_PAGES_URL)
+      context.addIssue({
+        code: "custom",
+        path: ["AUTH_PAGES_URL"],
+        message: "Required in production",
+      });
+    if (!environment.TRUSTED_PROXY_CIDRS?.length)
+      context.addIssue({
+        code: "custom",
+        path: ["TRUSTED_PROXY_CIDRS"],
+        message: "Required in production",
+      });
+    const origins = environment.BETTER_AUTH_TRUSTED_ORIGINS.split(",").map(
+      (origin) => origin.trim(),
+    );
+    if (
+      origins.some((origin) => {
+        try {
+          return new URL(origin).origin !== origin || !/^https?:/.test(origin);
+        } catch {
+          return true;
+        }
+      })
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["BETTER_AUTH_TRUSTED_ORIGINS"],
+        message: "Required origin-only HTTP(S) URLs in production",
+      });
+  })
   .transform((environment) => ({
     nodeEnv: environment.NODE_ENV,
     port: environment.PORT,
@@ -135,10 +181,9 @@ const environmentSchema = z
     betterAuthSecret: environment.BETTER_AUTH_SECRET,
     betterAuthSecrets: environment.BETTER_AUTH_SECRETS,
     upstreamTokenSecrets: environment.UPSTREAM_TOKEN_SECRETS,
-    operationReplay: environment.OPERATION_REPLAY_CONFIG,
     trustedOrigins: parseTrustedOrigins(
       environment.BETTER_AUTH_TRUSTED_ORIGINS,
-      environment.AUTH_PAGES_URL,
+      environment.AUTH_PAGES_URL ?? "http://localhost:47100",
     ),
     platformOrganizationSlug: environment.PLATFORM_ORGANIZATION_SLUG,
     platformOrganizationName: environment.PLATFORM_ORGANIZATION_NAME,
@@ -148,15 +193,24 @@ const environmentSchema = z
     ).replace(/\/+$/, ""),
     rootAdminSecret: environment.ROOT_ADMIN_SECRET,
     rootAdminBreakGlass: environment.ROOT_ADMIN_BREAK_GLASS === "true",
-    authPagesUrl: environment.AUTH_PAGES_URL,
-    maxConcurrentRequests: environment.MAX_CONCURRENT_REQUESTS,
+    authPagesUrl: environment.AUTH_PAGES_URL ?? "http://localhost:47100",
+    trustedProxyCidrs: environment.TRUSTED_PROXY_CIDRS ?? [],
+    oauthRefreshReuseIntervalSeconds:
+      environment.OAUTH_REFRESH_REUSE_INTERVAL_SECONDS,
+    operationalLogIntervalMs: environment.OPERATIONAL_LOG_INTERVAL_MS,
     databasePoolMax:
       environment.DATABASE_POOL_MAX ??
-      (environment.NODE_ENV === "test" ? 1 : 5),
+      (environment.NODE_ENV === "test" ? 1 : 20),
     databasePoolIdleTimeoutMs: environment.DATABASE_POOL_IDLE_TIMEOUT_MS,
     databaseConnectionTimeoutMs: environment.DATABASE_CONNECTION_TIMEOUT_MS,
     databaseStatementTimeoutMs: environment.DATABASE_STATEMENT_TIMEOUT_MS,
-    openApiEnabled: environment.OPENAPI_ENABLED === "true",
+    databaseLockTimeoutMs: environment.DATABASE_LOCK_TIMEOUT_MS,
+    databaseIdleInTransactionTimeoutMs:
+      environment.DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS,
+    openApiEnabled:
+      environment.OPENAPI_ENABLED === undefined
+        ? environment.NODE_ENV !== "production"
+        : environment.OPENAPI_ENABLED === "true",
   }));
 
 export type Environment = z.output<typeof environmentSchema>;

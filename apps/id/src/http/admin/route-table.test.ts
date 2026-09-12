@@ -22,10 +22,11 @@ test("registerRoute describes, authorises and handles a route", async () => {
     c.set("environment", testEnvironment());
     c.set("requestId", "request");
     c.set("db", {
+      execute: async () => ({ rows: [{ occurredAt: "2026-09-11T00:00:00Z" }] }),
       insert: () => ({
         values: (row: unknown) => {
           rows.push(row);
-          return { returning: async () => [row] };
+          return Promise.resolve();
         },
       }),
     } as unknown as Database);
@@ -56,6 +57,7 @@ test("registerRoute describes, authorises and handles a route", async () => {
     platformScope: "platform:read",
     orgScope: "org:read",
     kind: "read",
+    freshAuthentication: false,
     responses: { 200: { description: "OK" } },
     parameters: [
       {
@@ -135,8 +137,9 @@ test("me serialises root scopes without phantom grants", async () => {
     c.set("principal", { type: "root", grants: [] });
     c.set("requestId", "request");
     c.set("db", {
+      execute: async () => ({ rows: [{ occurredAt: "2026-09-11T00:00:00Z" }] }),
       insert: () => ({
-        values: (row: unknown) => ({ returning: async () => [row] }),
+        values: async () => {},
       }),
     } as unknown as Database);
     await next();
@@ -156,10 +159,11 @@ test("open routes still audit a root request", async () => {
   app.use("*", async (c, next) => {
     c.set("requestId", "request");
     c.set("db", {
+      execute: async () => ({ rows: [{ occurredAt: "2026-09-11T00:00:00Z" }] }),
       insert: () => ({
         values: (row: unknown) => {
           rows.push(row);
-          return { returning: async () => [row] };
+          return Promise.resolve();
         },
       }),
     } as unknown as Database);

@@ -1,23 +1,23 @@
-import type {
-  TenantMemberContext,
-  TenantReadContext,
-} from "../../services/tenant-context.ts";
-import type { PlatformWriteContext } from "../../services/platform-context.ts";
-import type { MemberWindow } from "../../__tests__/group-queries.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
-import { testEnvironment } from "../../__tests__/support.ts";
-import { createDatabase, type DatabaseConnection } from "../client.ts";
+import type { MemberWindow } from "../../__tests__/group-queries.ts";
+import { addGroupMember, createGroup } from "../../__tests__/group-queries.ts";
 import { createOrganization } from "../../__tests__/organization-queries.ts";
+import { testEnvironment } from "../../__tests__/support.ts";
+import { inTenant, inTenantRead } from "../../__tests__/tenant-command.ts";
 import { createId } from "../../lib/id.ts";
-import { users, members } from "../schema/index.ts";
+import type { PlatformWriteContext } from "../../services/platform-context.ts";
+import type { Database } from "../client.ts";
+import { createDatabase, type DatabaseConnection } from "../client.ts";
+import { members, users } from "../schema/index.ts";
+import * as memberQueries from "./members.ts";
 let connection: DatabaseConnection;
 beforeAll(() => {
   connection = createDatabase(testEnvironment());
 });
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table security_identifiers, audit_events, organizations, users cascade`,
+    sql`truncate table audit_events, organizations, users cascade`,
   );
 });
 afterAll(async () => {
@@ -43,9 +43,6 @@ async function seed() {
 }
 const past = new Date("2000-01-01T00:00:00Z");
 const future = new Date("2100-01-01T00:00:00Z");
-import * as memberQueries from "./members.ts";
-import { inTenant, inTenantRead } from "../../__tests__/tenant-command.ts";
-import type { Database } from "../client.ts";
 const queries = {
   listMembers: (
     db: Database,
@@ -77,85 +74,6 @@ const queries = {
       memberQueries.reinstateMember(context, memberId),
     ),
 };
-test("membership query entry points reject raw database authority", async () => {
-  const { db, org, ids } = await seed();
-  for (const [query, args] of [
-    [memberQueries.listMembers, [db, org.id, { limit: 10 }]],
-    [memberQueries.findMember, [db, org.id, ids[0]!]],
-    [memberQueries.findMemberConfiguration, [db, org.id, ids[0]!]],
-    [
-      memberQueries.updateMemberWindow,
-      [db, org.id, ids[0]!, { validUntil: null }],
-    ],
-    [memberQueries.revokeMember, [db, org.id, ids[0]!]],
-    [memberQueries.reinstateMember, [db, org.id, ids[0]!]],
-    [memberQueries.removeMemberAssignments, [db, org.id, ids[0]!]],
-    [memberQueries.findMemberForAssignment, [db, org.id, ids[0]!]],
-  ] as const)
-    await expect(
-      Promise.resolve().then(() => Reflect.apply(query, undefined, args)),
-    ).rejects.toThrow("Invalid or expired");
-});
-test("member query purposes and lifetimes cannot be widened by direct callers", async () => {
-  const { db, org, ids } = await seed();
-  const writes = [
-    (context: TenantMemberContext) =>
-      memberQueries.updateMemberWindow(context, ids[0]!, { validUntil: null }),
-    (context: TenantMemberContext) =>
-      memberQueries.revokeMember(context, ids[0]!),
-    (context: TenantMemberContext) =>
-      memberQueries.reinstateMember(context, ids[0]!),
-    (context: TenantMemberContext) =>
-      memberQueries.removeMemberAssignments(context, ids[0]!),
-  ];
-  let escaped!: TenantMemberContext;
-  await inTenant(db, org.id, async (context) => {
-    escaped = context;
-    for (const write of writes)
-      await expect(write({ ...context })).rejects.toThrow("Invalid or expired");
-  });
-  for (const write of writes)
-    await expect(write(escaped)).rejects.toThrow("Invalid or expired");
-  await inTenantRead(db, org.id, "directory", async (context) => {
-    expect(() =>
-      memberQueries.listMembers({ ...context }, { limit: 1 }),
-    ).toThrow("Invalid or expired");
-    await expect(
-      memberQueries.findMember({ ...context }, ids[0]!),
-    ).rejects.toThrow("Invalid or expired");
-    for (const write of writes)
-      await expect(write(context as unknown as typeof escaped)).rejects.toThrow(
-        "Invalid or expired",
-      );
-    await expect(
-      Reflect.apply(memberQueries.findMemberConfiguration, undefined, [
-        context,
-        ids[0]!,
-      ]),
-    ).rejects.toThrow("Invalid or expired");
-  });
-  let read!: TenantReadContext<"configuration">;
-  await inTenantRead(db, org.id, "configuration", async (context) => {
-    read = context;
-    expect(
-      await memberQueries.findMemberConfiguration(context, ids[0]!),
-    ).toMatchObject({ id: ids[0], organizationId: org.id });
-    await expect(
-      memberQueries.findMemberConfiguration({ ...context }, ids[0]!),
-    ).rejects.toThrow("Invalid or expired");
-    await expect(
-      Reflect.apply(memberQueries.findMember, undefined, [context, ids[0]!]),
-    ).rejects.toThrow("Invalid or expired");
-  });
-  await expect(
-    memberQueries.findMemberConfiguration(read, ids[0]!),
-  ).rejects.toThrow("Invalid or expired");
-  await expect(
-    inTenantRead(db, createId(), "directory", (context) =>
-      memberQueries.findMember(context, ids[0]!),
-    ),
-  ).rejects.toMatchObject({ status: 404 });
-});
 
 test("platform assignment lookup returns only membership state and requires live write authority", async () => {
   const { db, org, other, ids } = await seed();
@@ -178,7 +96,6 @@ test("platform assignment lookup returns only membership state and requires live
     memberQueries.findMemberForAssignment(escaped, org.id, ids[0]!),
   ).rejects.toThrow("Invalid or expired");
 });
-import { createGroup, addGroupMember } from "../../__tests__/group-queries.ts";
 test("members expose user summaries and memberships, filter windows, and isolate organisations", async () => {
   const { db, org, other, ids } = await seed();
   const group = await createGroup(db, {

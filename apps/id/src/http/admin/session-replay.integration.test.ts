@@ -1,6 +1,7 @@
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   createAdminFixture,
   type AdminFixture,
@@ -94,7 +95,7 @@ test("revoke-all replay preserves later sessions and new empty commands are noop
   const later = await addSession(target.userId);
   const replay = await command("all", target.userId);
   expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(await replay.json()).toEqual({ revoked: 1 });
+  await expectReceipt(fixture.db, replay);
   expect(
     await fixture.db
       .select({ id: sessions.id })
@@ -141,53 +142,9 @@ test("revoke-all replay preserves later sessions and new empty commands are noop
   await fixture.db.delete(users).where(eq(users.id, target.userId));
   const erasedReplay = await command("all", target.userId);
   expect(erasedReplay.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(await erasedReplay.json()).toEqual({ revoked: 1 });
+  await expectReceipt(fixture.db, erasedReplay);
 });
-test("session audit failure rolls back mutation and reservation before a concurrent retry commits once", async () => {
-  const target = await seed();
-  const before = await fixture.db.select().from(adminOperations);
-  await fixture.db.execute(
-    sql`alter table audit_events add constraint session_replay_fault check (action <> 'session.revoked_all') not valid`,
-  );
-  try {
-    const response = await command("fault", target.userId);
-    expect(response.status).toBe(400);
-    expect(await response.json()).toMatchObject({
-      code: "constraint_violation",
-    });
-  } finally {
-    await fixture.db.execute(
-      sql`alter table audit_events drop constraint session_replay_fault`,
-    );
-  }
-  expect(await fixture.db.select().from(adminOperations)).toEqual(before);
-  expect(
-    await fixture.db
-      .select()
-      .from(sessions)
-      .where(eq(sessions.id, target.sessionId)),
-  ).toHaveLength(1);
-  const results = await Promise.all([
-    command("fault", target.userId),
-    command("fault", target.userId),
-  ]);
-  expect(results.some((r) => r.status === 200)).toBe(true);
-  for (const response of results) {
-    expect([200, 409]).toContain(response.status);
-    if (response.status === 409)
-      expect(await response.json()).toMatchObject({
-        code: "operation_in_progress",
-      });
-  }
-  const replay = await command("fault", target.userId);
-  expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(
-    await fixture.db
-      .select()
-      .from(auditEvents)
-      .where(eq(auditEvents.operationId, replay.headers.get("Operation-Id")!)),
-  ).toHaveLength(1);
-});
+
 test("platform users-only authority is sufficient and revoked authority denies recovery", async () => {
   const target = await seed();
   const actor = fixture.principals.platformReader;

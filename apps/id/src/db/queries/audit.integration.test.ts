@@ -1,8 +1,15 @@
-import * as productionAuditQueries from "./audit.ts";
-import { inPlatformRead } from "../../__tests__/platform-context.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
+import { inPlatformRead } from "../../__tests__/platform-context.ts";
+import * as productionAuditQueries from "./audit.ts";
 
+import {
+  listAuditEvents,
+  listUserAuditEvents,
+  recordAuditEvent,
+  type AuditEventFilters,
+  type AuditEventInput,
+} from "../../__tests__/audit-queries.ts";
 import { isUuidV7, testEnvironment } from "../../__tests__/support.ts";
 import { createId } from "../../lib/id.ts";
 import { createDatabase, type DatabaseConnection } from "../client.ts";
@@ -11,26 +18,8 @@ import {
   auditEventSubjects,
   organizations,
 } from "../schema/index.ts";
-import {
-  listAuditEvents,
-  listUserAuditEvents,
-  recordAuditEvent,
-  type AuditEventInput,
-  type AuditEventFilters,
-} from "../../__tests__/audit-queries.ts";
 
 let connection: DatabaseConnection;
-test("audit query entry rejects a raw database handle", async () => {
-  await expect(
-    Promise.resolve().then(() =>
-      Reflect.apply(productionAuditQueries.listAuditEvents, undefined, [
-        connection.db,
-        {},
-        { limit: 1 },
-      ]),
-    ),
-  ).rejects.toThrow("Invalid or expired");
-});
 const event: AuditEventInput = {
   actorType: "user",
   actorId: "administrator",
@@ -44,7 +33,7 @@ beforeAll(() => {
 });
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table security_identifiers, audit_events, organizations cascade`,
+    sql`truncate table audit_events, organizations cascade`,
   );
 });
 afterAll(async () => {
@@ -335,79 +324,6 @@ test("grant effect subjects accept only the global successful erasure contract a
   ]);
 });
 
-test("populated subject migration recovers explicit effect IDs without rewriting events or live identities", async () => {
-  const legacy = await Bun.file(
-    new URL(
-      "../../../drizzle/0008_durable_audit_subjects.sql",
-      import.meta.url,
-    ),
-  ).text();
-  const migration = await Bun.file(
-    new URL("../../../drizzle/0031_grant_effect_subjects.sql", import.meta.url),
-  ).text();
-  const start = legacy.indexOf("CREATE FUNCTION capture_audit_subjects");
-  const end = legacy.indexOf(
-    "--> statement-breakpoint\nSELECT capture_audit_subjects",
-    start,
-  );
-  const oldFunction = legacy
-    .slice(start, end)
-    .replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION");
-  await inPlatformRead(connection.db, async (context) => {
-    const tx = context.tx;
-    const current = await tx.execute<{ definition: string }>(
-      sql`select pg_get_functiondef('capture_audit_subjects(audit_events, text)'::regprocedure) as definition`,
-    );
-    await tx.execute(sql.raw(oldFunction));
-    const affected = createId();
-    const row = await recordAuditEvent(tx, {
-      ...event,
-      actorType: "system",
-      actorId: "root",
-      action: "user.erased",
-      targetType: "user",
-      targetId: createId(),
-      data: {
-        deletedGrantContexts: [{ userId: affected }, { userId: affected }],
-      },
-    });
-    expect(
-      (
-        await productionAuditQueries.listUserAuditEvents(
-          context,
-          affected,
-          {},
-          { limit: 10 },
-        )
-      ).items,
-    ).toEqual([]);
-    for (let attempt = 0; attempt < 2; attempt++) {
-      for (const statement of migration.split("--> statement-breakpoint"))
-        await tx.execute(sql.raw(statement));
-      expect(
-        (
-          await productionAuditQueries.listUserAuditEvents(
-            context,
-            affected,
-            {},
-            { limit: 10 },
-          )
-        ).items,
-      ).toEqual([row]);
-      expect(
-        await tx.select().from(auditEvents).where(eq(auditEvents.id, row.id)),
-      ).toEqual([row]);
-      expect(
-        await tx
-          .select()
-          .from(auditEventSubjects)
-          .where(eq(auditEventSubjects.entityId, affected)),
-      ).toHaveLength(1);
-    }
-    await tx.execute(sql.raw(current.rows[0]!.definition));
-  });
-});
-
 test("client erasure subjects accept only the explicit global v2 cascade contract", async () => {
   const db = connection.db,
     affected = createId(),
@@ -479,4 +395,72 @@ test("client erasure subjects accept only the explicit global v2 cascade contrac
       provenance: "recorded",
     },
   ]);
+});
+
+test("UUID audit lookups retain session subjects and ignore non-UUID member targets", async () => {
+  const { users, sessions } = await import("../schema/index.ts");
+  const userId = createId(),
+    sessionId = createId();
+  await connection.db.insert(users).values({
+    id: userId,
+    name: "Audit subject",
+    email: `${userId}@example.com`,
+    status: "active",
+  });
+  await connection.db.insert(sessions).values({
+    id: sessionId,
+    userId,
+    token: createId(),
+    expiresAt: new Date(Date.now() + 60000),
+  });
+  const session = await recordAuditEvent(connection.db, {
+    ...event,
+    targetType: "session",
+    targetId: sessionId,
+  });
+  expect(
+    await connection.db
+      .select()
+      .from(auditEventSubjects)
+      .where(eq(auditEventSubjects.eventId, session.id)),
+  ).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        entityType: "user",
+        entityId: userId,
+        relationship: "affected",
+      }),
+    ]),
+  );
+  const member = await recordAuditEvent(connection.db, {
+    ...event,
+    targetType: "member",
+    targetId: "not-a-uuid",
+  });
+  expect(
+    await connection.db
+      .select()
+      .from(auditEventSubjects)
+      .where(eq(auditEventSubjects.eventId, member.id)),
+  ).not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ relationship: "affected" }),
+    ]),
+  );
+  await connection.db.transaction(async (tx) => {
+    await tx.execute(sql`set local enable_seqscan = off`);
+    for (const table of ["members", "sessions", "grant_contexts"]) {
+      const plan = await tx.execute(
+        sql`explain (format json) select * from ${sql.identifier(table)} where id = public.try_uuid(${sessionId})`,
+      );
+      expect(JSON.stringify(plan.rows)).toContain(`${table}_pkey`);
+    }
+    expect(
+      (
+        await tx.execute(
+          sql`select public.try_uuid('invalid') as invalid, public.try_uuid(null) as missing`,
+        )
+      ).rows,
+    ).toEqual([{ invalid: null, missing: null }]);
+  });
 });

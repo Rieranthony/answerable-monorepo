@@ -66,6 +66,7 @@ export const routes = {
     platformScope: "platform:read",
     orgScope: "org:users",
     kind: "read",
+    freshAuthentication: false,
     parameters: [
       pathParameter("organizationId", "uuid"),
       {

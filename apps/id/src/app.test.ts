@@ -3,16 +3,16 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import type { Database } from "./db/client.ts";
 
-import { ProblemError } from "./http/problem.ts";
-import { createApp } from "./app.ts";
-import { isAllowedAuthRoute, publicAuthRoutes } from "./http/auth-allowlist.ts";
-import { buildPublicOpenApiDocument } from "./http/openapi.ts";
 import {
   isUuidV7,
   stubAuth,
   stubDatabase,
   testEnvironment,
 } from "./__tests__/support.ts";
+import { createApp } from "./app.ts";
+import { isAllowedAuthRoute, publicAuthRoutes } from "./http/auth-allowlist.ts";
+import { buildPublicOpenApiDocument } from "./http/openapi.ts";
+import { ProblemError } from "./http/problem.ts";
 
 describe("unit: Hono application", () => {
   test("health is independent from PostgreSQL and creates a UUIDv7 request id", async () => {
@@ -144,11 +144,9 @@ describe("unit: Hono application", () => {
     expect(Object.keys(schema.paths)).toEqual([
       "/api/admin/v1/organizations/{organizationId}/capabilities",
       "/api/admin/v1/organizations/{organizationId}/capabilities/{capabilityId}",
-      "/api/admin/v1/me/operations/{operationId}",
       "/api/admin/v1/operations/{operationId}",
-      "/api/admin/v1/organizations/{organizationId}/operations/{operationId}",
       "/api/admin/v1/organizations/{organizationId}/sign-in-diagnosis",
-      "/api/admin/v1/platform/summary",
+
       "/api/admin/v1/me",
       "/api/admin/v1/users",
       "/api/admin/v1/users/{userId}",
@@ -191,7 +189,7 @@ describe("unit: Hono application", () => {
       "/api/admin/v1/organizations/{organizationId}/domains/{domainId}/enable",
       "/api/admin/v1/organizations/{organizationId}/sso-provider/test",
       "/api/admin/v1/organizations/{organizationId}/sso-provider",
-      "/api/admin/v1/organizations/{organizationId}/summary",
+
       "/api/admin/v1/organizations",
       "/api/admin/v1/organizations/{organizationId}",
       "/api/admin/v1/organizations/{organizationId}/disable",
@@ -246,12 +244,23 @@ describe("unit: Hono application", () => {
     expect(schema.info.title).toBe("Answerable ID API");
     expect(schema.servers).toEqual([{ url: environment.betterAuthUrl }]);
     expect(Object.keys(schema.paths)).toEqual([
+      "/.well-known/oauth-authorization-server",
+      "/.well-known/openid-configuration",
       "/auth/get-session",
+      "/auth/jwks",
+      "/auth/oauth2/authorize",
+      "/auth/oauth2/consent",
+      "/auth/oauth2/continue",
+      "/auth/oauth2/flow",
+      "/auth/oauth2/revoke",
       "/auth/oauth2/token",
+      "/auth/oauth2/userinfo",
       "/auth/ok",
       "/auth/sign-in/sso",
       "/auth/sign-out",
       "/auth/sso/callback",
+      "/auth/sso/link",
+      "/auth/sso/reauthenticate",
       "/healthz",
       "/readyz",
     ]);
@@ -269,6 +278,10 @@ describe("unit: Hono application", () => {
       summary: "Start sign-in through the organisation's identity provider",
       tags: ["Sign-in"],
     });
+    for (const path of ["/auth/sso/link", "/auth/sso/reauthenticate"])
+      expect(schema.paths[path]?.post).toMatchObject({
+        security: [{ apiKeyCookie: [] }],
+      });
     expect(schema.paths["/healthz"]?.get).toMatchObject({
       operationId: "getHealth",
       summary: "Liveness check",
@@ -310,7 +323,7 @@ describe("unit: Hono application", () => {
 
     expect(document.tags).toContainEqual({
       name: "Token",
-      description: "Machine access with client credentials",
+      description: "User authorisation and machine access",
     });
     expect(document.servers).toEqual([{ url: "https://id.example.com" }]);
     expect(Object.keys(document.paths["/healthz"]!)).toEqual(["get", "post"]);
@@ -408,8 +421,11 @@ describe("unit: Hono application", () => {
       ["POST", "/auth/sso/saml2/sp/slo/x"],
       ["POST", "/auth/sso/saml2/logout/x"],
       ["GET", "/auth/sso/callback/x"],
-      ["GET", "/auth/oauth2/authorize"],
-      ["POST", "/auth/oauth2/consent"],
+      ["POST", "/auth/oauth2/authorize"],
+      ["GET", "/auth/oauth2/consent"],
+      ["POST", "/auth/oauth2/introspect"],
+      ["POST", "/auth/oauth2/register"],
+      ["GET", "/auth/oauth2/end-session"],
       ["GET", "/auth/oauth2/continue"],
     ] as const;
 
@@ -494,7 +510,7 @@ test("mounted me runs principal resolution and the root problem handler", async 
   expect(calls).toHaveLength(1);
 });
 
-test("token requests guard grants and preserve bodies for Better Auth", async () => {
+test("token requests preserve grants and bodies for Better Auth", async () => {
   const auth = stubAuth();
   const received: string[] = [];
   auth.handler = async (request: Request) => {
@@ -508,6 +524,7 @@ test("token requests guard grants and preserve bodies for Better Auth", async ()
   });
   for (const [contentType, body] of [
     ["application/x-www-form-urlencoded", "grant_type=client_credentials"],
+    ["application/x-www-form-urlencoded", "grant_type=unsupported"],
     ["application/json", '{"grant_type":"authorization_code"}'],
     ["application/x-www-form-urlencoded", "resource=https%3A%2F%2Fexample.com"],
   ] as const) {
@@ -520,19 +537,8 @@ test("token requests guard grants and preserve bodies for Better Auth", async ()
     expect(await response.json()).toEqual({ handled: true });
     expect(received.at(-1)).toBe(body);
   }
-  const rejected = await app.request("/auth/oauth2/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "grant_type=authorization_code",
-  });
-  expect(rejected.status).toBe(400);
-  expect(rejected.headers.get("cache-control")).toBe("no-store");
-  expect(await rejected.json()).toEqual({
-    error: "unsupported_grant_type",
-    error_description: "Only client_credentials is available.",
-  });
   expect((await app.request("/auth/oauth2/token")).status).toBe(404);
-  expect(received).toHaveLength(3);
+  expect(received).toHaveLength(4);
 });
 
 test("auth catch-all propagates request ids and audits rejection redirects", async () => {
@@ -549,10 +555,11 @@ test("auth catch-all propagates request ids and audits rejection redirects", asy
     };
     const db = {
       ...stubDatabase(),
+      execute: async () => ({ rows: [{ occurredAt: "2026-09-11T00:00:00Z" }] }),
       insert: () => ({
         values: (row: unknown) => {
           rows.push(row);
-          return { returning: async () => [row] };
+          return Promise.resolve();
         },
       }),
     } as unknown as Database;
@@ -565,7 +572,7 @@ test("auth catch-all propagates request ids and audits rejection redirects", asy
       response.headers.get("x-request-id"),
     );
     expect(received).toBeTruthy();
-    expect(rows[0]).not.toHaveProperty("data");
+    expect(rows[0]).toHaveProperty("data", null);
     expect(rows).toEqual([
       expect.objectContaining({
         action: "auth.signin.rejected",
@@ -740,3 +747,55 @@ test("preflight cannot bypass the incoming body limit", async () => {
   });
   expect(response.status).toBe(413);
 });
+
+for (const path of [
+  "/auth/sso%2Fregister",
+  "/auth/../auth/sso/register",
+  "//auth/sso/register",
+  "/auth/oauth2/token/",
+  "/AUTH/OK",
+  "/auth/ok/../update-user",
+]) {
+  test(`auth allowlist rejects path bypass ${path}`, async () => {
+    const auth = stubAuth();
+    const reached: string[] = [];
+    const app = createApp({
+      auth: {
+        ...auth,
+        handler: async (request) => {
+          reached.push(new URL(request.url).pathname);
+          return Response.json({ ok: true });
+        },
+      },
+      db: stubDatabase(),
+      environment: testEnvironment(),
+    });
+    const response = await app.fetch(
+      new Request(`http://localhost:47300${path}`, { method: "POST" }),
+    );
+    expect(response.status).toBe(404);
+    expect(reached).toEqual([]);
+  });
+}
+for (const header of ["X-HTTP-Method-Override", "X-Method-Override"]) {
+  test(`auth allowlist ignores ${header} on an allowed route`, async () => {
+    const auth = stubAuth();
+    const reached: string[] = [];
+    const app = createApp({
+      auth: {
+        ...auth,
+        handler: async (request) => {
+          reached.push(`${request.method} ${new URL(request.url).pathname}`);
+          return Response.json({ ok: true });
+        },
+      },
+      db: stubDatabase(),
+      environment: testEnvironment(),
+    });
+    const response = await app.request("/auth/ok", {
+      headers: { [header]: "DELETE" },
+    });
+    expect(response.status).toBe(200);
+    expect(reached).toEqual(["GET /auth/ok"]);
+  });
+}

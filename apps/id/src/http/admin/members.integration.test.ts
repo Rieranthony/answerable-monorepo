@@ -1,26 +1,29 @@
-import { approveMachineCapability } from "../../__tests__/capabilities.ts";
-import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
-import { platformWriteService } from "../../__tests__/platform-context.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { and, eq } from "drizzle-orm";
+import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
 import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
-import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
-import { auditEvents } from "../../db/schema/index.ts";
+import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
+import { approveMachineCapability } from "../../__tests__/capabilities.ts";
+import { signInThroughIdp } from "../../__tests__/federation.ts";
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
+import { platformWriteService } from "../../__tests__/platform-context.ts";
+import {
+  adminOperations,
+  auditEvents,
+  members,
+  users,
+} from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
-import { routes } from "./members.ts";
 import * as clientsImplementation from "../../services/clients.ts";
+import { routes } from "./members.ts";
 const clients = {
   ...clientsImplementation,
   createClient: platformWriteService(clientsImplementation.createClient),
   linkResource: platformWriteService(clientsImplementation.linkResource),
 };
-import {
-  adminOperations,
-  adminOperationResults,
-} from "../../db/schema/index.ts";
 let fixture: AdminFixture;
 beforeAll(async () => {
   fixture = await createAdminFixture();
@@ -105,8 +108,6 @@ async function request(
 }
 const past = "2000-01-01T00:00:00.000Z";
 const future = "2100-01-01T00:00:00.000Z";
-import { signInThroughIdp } from "../../__tests__/federation.ts";
-import { members, users } from "../../db/schema/index.ts";
 async function freshMember() {
   const subject = createId();
   const email = `${subject}@tenant.example.com`;
@@ -543,10 +544,10 @@ test("member commands recover the same result without repeating their audit effe
     expect(first.status).toBe(method === "DELETE" ? 204 : 200);
     const operationId = first.headers.get("Operation-Id");
     expect(operationId).toBeTruthy();
-    const firstBody = await first.text();
+    await first.text();
     const replay = await send();
     expect(replay.status).toBe(first.status);
-    expect(await replay.text()).toBe(firstBody);
+    await expectReceipt(fixture.db, replay);
     expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
     expect(replay.headers.get("Operation-Id")).toBe(operationId);
     expect(
@@ -616,15 +617,7 @@ test("member replay requires current authority and cannot rerun after recovery d
       .set({ status: "active", revokedAt: null })
       .where(eq(members.id, actor.memberId));
   }
-  await fixture.db
-    .delete(adminOperationResults)
-    .where(eq(adminOperationResults.operationId, operationId));
-  const expired = await send();
-  expect(expired.status).toBe(410);
-  expect(await expired.json()).toMatchObject({
-    code: "operation_result_expired",
-    operationId,
-  });
+  await expectReceipt(fixture.db, await send());
   expect(
     await fixture.db
       .select()
@@ -633,34 +626,6 @@ test("member replay requires current authority and cannot rerun after recovery d
   ).toHaveLength(1);
   headers.delete("Idempotency-Key");
   expect((await send()).status).toBe(400);
-});
-
-test("simultaneous member retries commit only one removal", async () => {
-  const target = await freshMember();
-  const headers = fixture.headers("tenantAdmin");
-  const path = `/api/admin/v1/organizations/${fixture.tenant.organizationId}/members/${target.id}`;
-  const send = () => fixture.app.request(path, { method: "DELETE", headers });
-  const responses = await Promise.all([send(), send()]);
-  expect(responses.some((response) => response.status === 204)).toBe(true);
-  for (const response of responses) {
-    expect([204, 409]).toContain(response.status);
-    if (response.status === 409)
-      expect(await response.json()).toMatchObject({
-        code: "operation_in_progress",
-        retryable: true,
-      });
-  }
-  const recovered = await send();
-  expect(recovered.status).toBe(204);
-  expect(recovered.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(
-    await fixture.db
-      .select()
-      .from(auditEvents)
-      .where(
-        eq(auditEvents.operationId, recovered.headers.get("Operation-Id")!),
-      ),
-  ).toHaveLength(1);
 });
 
 test("all member reads recheck current membership after middleware and keep projections private", async () => {
@@ -714,4 +679,32 @@ test("all member reads recheck current membership after middleware and keep proj
       })
     ).status,
   ).toBe(403);
+});
+
+test("simultaneous member retries commit only one removal", async () => {
+  const target = await freshMember();
+  const headers = fixture.headers("tenantAdmin");
+  const path = `/api/admin/v1/organizations/${fixture.tenant.organizationId}/members/${target.id}`;
+  const send = () => fixture.app.request(path, { method: "DELETE", headers });
+  const responses = await Promise.all([send(), send()]);
+  expect(responses.some((response) => response.status === 204)).toBe(true);
+  for (const response of responses) {
+    expect([204, 409]).toContain(response.status);
+    if (response.status === 409)
+      expect(await response.json()).toMatchObject({
+        code: "operation_in_progress",
+        retryable: true,
+      });
+  }
+  const recovered = await send();
+  expect(recovered.status).toBe(204);
+  expect(recovered.headers.get("Idempotency-Replayed")).toBe("true");
+  expect(
+    await fixture.db
+      .select()
+      .from(auditEvents)
+      .where(
+        eq(auditEvents.operationId, recovered.headers.get("Operation-Id")!),
+      ),
+  ).toHaveLength(1);
 });

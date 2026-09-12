@@ -204,13 +204,13 @@ for (const parent of ["client", "refresh", "session", "member"] as const) {
       >;
       const field =
         parent === "member"
-          ? "removedAssignments"
+          ? "softDeletedAssignments"
           : parent === "session"
             ? "clearedAccessTokenSessions"
             : "deletedAccessTokens";
       expect(effect[field]!.map((row) => row.id)).toContain(lateId);
       if (parent === "client")
-        expect(events[0]!.data!.deletedGrantContexts).toEqual([
+        expect(events[0]!.data!.revokedGrantContexts).toEqual([
           expect.objectContaining({ id: grantId, userId: other.userId }),
         ]);
       if (parent === "session") {
@@ -234,7 +234,7 @@ for (const parent of ["client", "refresh", "session", "member"] as const) {
             .select()
             .from(groupMembers)
             .where(eq(groupMembers.id, lateId)),
-        ).toEqual([]);
+        ).toMatchObject([{ id: lateId, deletedAt: expect.any(Date) }]);
       else
         expect(
           await db

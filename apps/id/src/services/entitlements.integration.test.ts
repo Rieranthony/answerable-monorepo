@@ -21,7 +21,7 @@ beforeAll(() => {
 });
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table security_identifiers, audit_events, organizations, users, oauth_clients, oauth_resources cascade`,
+    sql`truncate table audit_events, organizations, users, oauth_clients, oauth_resources cascade`,
   );
 });
 afterAll(async () => {
@@ -238,7 +238,15 @@ test("entitlement writes each audit once, keep immutable fields and preserve omi
   });
   expect(events[11]).toMatchObject({
     targetId: grouped.id,
-    data: { before: { id: grouped.id }, after: null },
+    data: {
+      before: { id: grouped.id },
+      after: {
+        id: grouped.id,
+        deletedAt: expect.any(String),
+        status: "disabled",
+      },
+      deletionMode: "soft",
+    },
   });
 });
 test("service validates principal, target, references and resource scopes before creating", async () => {

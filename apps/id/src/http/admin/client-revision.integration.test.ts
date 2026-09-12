@@ -1,3 +1,4 @@
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { eq } from "drizzle-orm";
 import { auditEvents } from "../../db/schema/index.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
@@ -53,7 +54,7 @@ test("configuration patches reject stale revisions but replay an already committ
   expect(after.revision).toBe(before.revision + 1);
   const replay = await patch("change-once", tag!, "After");
   expect(replay.status).toBe(200);
-  expect(await replay.json()).toEqual(after);
+  await expectReceipt(fixture.db, replay);
   expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
   const stale = await patch("stale-change", tag!, "Overwrite");
   expect(stale.status).toBe(412);
@@ -71,10 +72,6 @@ test("configuration patches reject stale revisions but replay an already committ
   );
   const operation = await status.json();
   expect(operation).toMatchObject({ outcome: "noop" });
-  expect(
-    new Date(operation.replayExpiresAt).getTime() -
-      new Date(operation.committedAt).getTime(),
-  ).toBeCloseTo(7 * 24 * 60 * 60 * 1000, -3);
   const events = await fixture.db
     .select()
     .from(auditEvents)
@@ -90,12 +87,11 @@ test("configuration patches reject stale revisions but replay an already committ
   });
 });
 
-test("missing, weak, wildcard, malformed and unrelated tags do not update a client", async () => {
+test("weak, wildcard, malformed and unrelated tags do not update a client", async () => {
   const initial = await read();
   const tag = initial.headers.get("ETag")!;
   const before = await initial.json();
   for (const [value, status, code] of [
-    [undefined, 428, "precondition_required"],
     [`W/${tag}`, 400, "invalid_revision"],
     ["*", 400, "invalid_revision"],
     [`${tag}, ${tag}`, 400, "invalid_revision"],
@@ -175,4 +171,15 @@ test("linked resource changes invalidate the client ETag, but duplicate links do
   const unlinked = await read();
   expect(unlinked.headers.get("ETag")).not.toBe(linkedTag);
   expect((await unlinked.json()).resources).not.toContain(resource);
+});
+
+test("a client patch accepts a missing If-Match", async () => {
+  const headers = fixture.headers("platformAdmin");
+  headers.set("Content-Type", "application/json");
+  const response = await fixture.app.request(
+    "/api/admin/v1/clients/revision-client",
+    { method: "PATCH", headers, body: JSON.stringify({ name: "Headerless" }) },
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("ETag")).toBeString();
 });

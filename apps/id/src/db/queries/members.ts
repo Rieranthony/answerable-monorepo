@@ -57,6 +57,8 @@ export function listMembers(
     .innerJoin(users, eq(users.id, members.userId))
     .where(
       and(
+        sql`${users.deletedAt} is null`,
+        sql`${members.deletedAt} is null`,
         eq(members.organizationId, organizationId),
         query.email === undefined
           ? undefined
@@ -90,7 +92,13 @@ export async function findMember(
     .select(selection)
     .from(members)
     .innerJoin(users, eq(users.id, members.userId))
-    .where(memberWhere(organizationId, memberId));
+    .where(
+      and(
+        sql`${users.deletedAt} is null`,
+        sql`${members.deletedAt} is null`,
+        memberWhere(organizationId, memberId),
+      ),
+    );
   if (!row) return null;
   const memberships = await executor
     .select({
@@ -104,6 +112,8 @@ export async function findMember(
     .innerJoin(groups, eq(groups.id, groupMembers.groupId))
     .where(
       and(
+        sql`${groups.deletedAt} is null`,
+        sql`${groupMembers.deletedAt} is null`,
         eq(groupMembers.organizationId, organizationId),
         eq(groupMembers.memberId, memberId),
       ),
@@ -120,7 +130,12 @@ export async function updateMemberWindow(
   const [row] = await executor
     .update(members)
     .set(patch)
-    .where(memberWhere(organizationId, memberId))
+    .where(
+      and(
+        sql`${members.deletedAt} is null`,
+        memberWhere(organizationId, memberId),
+      ),
+    )
     .returning({ id: members.id });
   return row ? findMember(context, memberId) : null;
 }
@@ -135,7 +150,12 @@ export async function revokeMember(
       status: "revoked",
       revokedAt: sql`coalesce(${members.revokedAt}, now())`,
     })
-    .where(memberWhere(organizationId, memberId))
+    .where(
+      and(
+        sql`${members.deletedAt} is null`,
+        memberWhere(organizationId, memberId),
+      ),
+    )
     .returning();
   return row ?? null;
 }
@@ -148,7 +168,12 @@ export async function reinstateMember(
   const [row] = await executor
     .update(members)
     .set({ status: "active", revokedAt: null })
-    .where(memberWhere(organizationId, memberId))
+    .where(
+      and(
+        sql`${members.deletedAt} is null`,
+        memberWhere(organizationId, memberId),
+      ),
+    )
     .returning();
   return row ?? null;
 }
@@ -160,24 +185,28 @@ export async function removeMemberAssignments(
 ) {
   const { tx: executor, organizationId } = requireTenantMemberContext(context);
   const removedGrants = await executor
-    .delete(entitlements)
+    .update(entitlements)
+    .set({ deletedAt: sql`now()`, status: "disabled" })
     .where(
       and(
+        sql`${entitlements.deletedAt} is null`,
         eq(entitlements.organizationId, organizationId),
         eq(entitlements.memberId, memberId),
       ),
     )
     .returning();
-  const removedGroups = await executor
-    .delete(groupMembers)
+  const softDeletedGroups = await executor
+    .update(groupMembers)
+    .set({ deletedAt: sql`now()` })
     .where(
       and(
+        sql`${groupMembers.deletedAt} is null`,
         eq(groupMembers.organizationId, organizationId),
         eq(groupMembers.memberId, memberId),
       ),
     )
     .returning();
-  return { removedGrants, removedGroups };
+  return { removedGrants, softDeletedGroups };
 }
 
 /** Stable membership configuration; excludes user/group projections and clock-derived access. */
@@ -204,10 +233,16 @@ export async function findMemberConfiguration(
       validUntil: members.validUntil,
     })
     .from(members)
-    .where(memberWhere(organizationId, memberId));
+    .where(
+      and(
+        sql`${members.deletedAt} is null`,
+        memberWhere(organizationId, memberId),
+      ),
+    );
   const [row] = await (context.access === "command"
     ? query.for("update")
     : query);
+  if (context.access === "command") await context.revalidate();
   return row ?? null;
 }
 
@@ -221,6 +256,11 @@ export async function findMemberForAssignment(
   const [row] = await tx
     .select({ membershipStatus: members.status })
     .from(members)
-    .where(memberWhere(organizationId, memberId));
+    .where(
+      and(
+        sql`${members.deletedAt} is null`,
+        memberWhere(organizationId, memberId),
+      ),
+    );
   return row ?? null;
 }

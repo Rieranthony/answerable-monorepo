@@ -11,6 +11,7 @@ import {
 } from "../db/schema/index.ts";
 import {
   evaluateUserResourcePermission,
+  evaluateClientLoginPermission,
   memberPermissionFields,
 } from "./member-permission.ts";
 /** Caller supplies the authenticated client and native stored reference, never a requested tenant. */
@@ -19,7 +20,7 @@ export async function userResourcePolicy(
   input: {
     id: string;
     clientId: string;
-    resource: string;
+    resource: string | null;
     grantType: "authorization_code" | "refresh_token";
     requestedScopes: string[];
   },
@@ -57,7 +58,7 @@ export async function userResourcePolicy(
           oauthClients,
           eq(oauthClients.id, grantContexts.clientInstanceId),
         )
-        .innerJoin(
+        .leftJoin(
           oauthResources,
           eq(oauthResources.id, grantContexts.resourceInstanceId),
         )
@@ -65,16 +66,25 @@ export async function userResourcePolicy(
           and(
             eq(grantContexts.id, input.id),
             eq(oauthClients.clientId, input.clientId),
-            eq(oauthResources.identifier, input.resource),
+            input.resource === null
+              ? isNull(grantContexts.resourceInstanceId)
+              : eq(oauthResources.identifier, input.resource),
             isNull(grantContexts.revokedAt),
             sql`${grantContexts.expiresAt} > statement_timestamp()`,
           ),
         );
       if (!row) return { allowed: false as const, reason: "context" as const };
-      const decision = evaluateUserResourcePermission(row, {
-        ...input,
-        originalScopes: row.grant.requestedScopes,
-      });
+      const decision =
+        input.resource === null
+          ? evaluateClientLoginPermission(row, {
+              ...input,
+              originalScopes: row.grant.requestedScopes,
+            })
+          : evaluateUserResourcePermission(row, {
+              ...input,
+              resource: input.resource,
+              originalScopes: row.grant.requestedScopes,
+            });
       return decision.allowed ? { ...decision, grant: row.grant } : decision;
     },
   );

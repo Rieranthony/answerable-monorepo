@@ -1,2 +1,0 @@
-ALTER TABLE "entitlements" DROP CONSTRAINT "entitlements_target_check";--> statement-breakpoint
-ALTER TABLE "entitlements" ADD CONSTRAINT "entitlements_target_check" CHECK (num_nonnulls("entitlements"."client_id", "entitlements"."resource") >= 1);

@@ -188,16 +188,16 @@ test("restricted client erasure records exact cascades with private cross-client
   expect(events).toHaveLength(2);
   const effect = events.find((row) => row.action === "client.grants_erased")!;
   expect(effect).toMatchObject({
-    schemaVersion: 2,
+    schemaVersion: 3,
     organizationId: null,
     data: { clientInstanceId, grantContexts: [] },
   });
   const effects = effect.data!.effects as Record<string, { id: string }[]>;
   expect(Object.keys(effects).sort()).toEqual([
     "deletedAccessTokens",
-    "deletedClientResources",
-    "deletedConsents",
     "deletedRefreshTokens",
+    "softDeletedClientResources",
+    "softDeletedConsents",
   ]);
   expect(effects.deletedAccessTokens!.map((row) => row.id).sort()).toEqual(
     [accessId, indirectId].sort(),
@@ -205,8 +205,10 @@ test("restricted client erasure records exact cascades with private cross-client
   expect(effects.deletedRefreshTokens!.map((row) => row.id)).toEqual([
     refreshId,
   ]);
-  expect(effects.deletedConsents!.map((row) => row.id)).toEqual([consentId]);
-  expect(effects.deletedClientResources!.map((row) => row.id)).toEqual([
+  expect(effects.softDeletedConsents!.map((row) => row.id)).toEqual([
+    consentId,
+  ]);
+  expect(effects.softDeletedClientResources!.map((row) => row.id)).toEqual([
     linkId,
   ]);
   expect(effects.deletedAccessTokens).toEqual(
@@ -227,12 +229,28 @@ test("restricted client erasure records exact cascades with private cross-client
     before.refresh.filter((row) => row.id !== refreshId),
   );
   expect(after.consents).toEqual(
-    before.consents.filter((row) => row.id !== consentId),
+    before.consents.map((row) =>
+      row.id === consentId
+        ? { ...row, deletedAt: expect.any(Date), updatedAt: expect.any(Date) }
+        : row,
+    ),
   );
-  expect(after.links).toEqual(before.links.filter((row) => row.id !== linkId));
-  expect(after.clients).toEqual(
+  expect(after.links).toEqual(
+    before.links.map((row) =>
+      row.id === linkId ? { ...row, deletedAt: expect.any(Date) } : row,
+    ),
+  );
+  expect(after.clients).toHaveLength(before.clients.length);
+  expect(after.clients.filter((row) => row.id !== clientInstanceId)).toEqual(
     before.clients.filter((row) => row.id !== clientInstanceId),
   );
+  expect(
+    after.clients.find((row) => row.id === clientInstanceId),
+  ).toMatchObject({
+    disabled: true,
+    deletedAt: expect.any(Date),
+    clientSecret: null,
+  });
   expect(after.users).toEqual(before.users);
   expect(after.sessions).toEqual(before.sessions);
   const owner = await request(

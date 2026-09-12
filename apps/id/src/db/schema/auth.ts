@@ -1,3 +1,4 @@
+import { membershipPolicies } from "./tenant-policies.ts";
 import { sql } from "drizzle-orm";
 import {
   boolean,
@@ -35,6 +36,7 @@ import {
 export const users = pgTable(
   "users",
   {
+    deletedAt: timestampColumn("deleted_at"),
     id: id(),
     name: text("name").notNull(),
     email: text("email").notNull().unique(),
@@ -62,6 +64,7 @@ export const users = pgTable(
 export const organizations = pgTable(
   "organizations",
   {
+    deletedAt: timestampColumn("deleted_at"),
     id: id(),
     name: text("name").notNull(),
     slug: text("slug").notNull().unique(),
@@ -105,6 +108,9 @@ export const sessions = pgTable(
     authenticationOrganizationId: uuid("authentication_organization_id"),
     authenticationProviderId: uuid("authentication_provider_id"),
     authenticationProviderRevision: integer("authentication_provider_revision"),
+    authenticationAccountId: uuid("authentication_account_id"),
+    // Only the validated upstream ID token can supply this; absence stays unknown.
+    upstreamAuthTime: timestampColumn("upstream_auth_time"),
     ...timestamps(),
     ipAddress: text("ip_address"),
     userAgent: text("user_agent"),
@@ -123,6 +129,10 @@ export const sessions = pgTable(
     index("sessions_active_organization_id_idx").on(table.activeOrganizationId),
     index("sessions_expires_at_idx").on(table.expiresAt),
     check(
+      "sessions_upstream_auth_time_check",
+      sql`${table.upstreamAuthTime} is null or (${table.authenticationAccountId} is not null and ${table.upstreamAuthTime} >= timestamp with time zone '1970-01-01 00:00:00+00' and ${table.upstreamAuthTime} <= ${table.createdAt})`,
+    ),
+    check(
       "sessions_authentication_origin_check",
       sql`
       (${table.authenticationOrganizationId} is null and ${table.authenticationProviderId} is null and ${table.authenticationProviderRevision} is null)
@@ -135,6 +145,7 @@ export const sessions = pgTable(
 export const accounts = pgTable(
   "accounts",
   {
+    deletedAt: timestampColumn("deleted_at"),
     id: id(),
     issuer: text("issuer").notNull(),
     accountId: text("account_id").notNull(),
@@ -185,6 +196,7 @@ export const verifications = pgTable(
 export const members = pgTable(
   "members",
   {
+    deletedAt: timestampColumn("deleted_at"),
     id: id(),
     revision: integer("revision").default(1).notNull(),
     organizationId: uuid("organization_id")
@@ -204,6 +216,7 @@ export const members = pgTable(
     createdAt: timestampColumn("created_at").defaultNow().notNull(),
   },
   (table) => [
+    ...membershipPolicies(table.organizationId, table.userId),
     check("members_revision_check", sql`${table.revision} > 0`),
     vocabularyCheck("members_status_check", table.status, membershipStatuses),
     check(
@@ -223,11 +236,11 @@ export const members = pgTable(
     index("members_user_id_idx").on(table.userId),
     windowCheck("members_window_check", table.validFrom, table.validUntil),
   ],
-);
-
+).enableRLS();
 export const invitations = pgTable(
   "invitations",
   {
+    deletedAt: timestampColumn("deleted_at"),
     id: id(),
     organizationId: uuid("organization_id")
       .notNull()
@@ -244,6 +257,7 @@ export const invitations = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
   },
   (table) => [
+    ...membershipPolicies(table.organizationId),
     index("invitations_organization_id_idx").on(table.organizationId),
     index("invitations_inviter_id_idx").on(table.inviterId),
     index("invitations_email_idx").on(table.email),
@@ -253,4 +267,4 @@ export const invitations = pgTable(
       invitationStatuses,
     ),
   ],
-);
+).enableRLS();

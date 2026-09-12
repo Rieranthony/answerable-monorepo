@@ -50,12 +50,17 @@ export async function findMachineCapability(
     )
     .where(
       and(
+        sql`${organizations.deletedAt} is null`,
+        sql`${oauthClients.deletedAt} is null`,
+        sql`${oauthResources.deletedAt} is null`,
+        sql`${organizationCapabilities.deletedAt} is null`,
         eq(organizationCapabilities.organizationId, input.organizationId),
         eq(organizationCapabilities.clientId, input.clientId),
         eq(organizationCapabilities.resource, input.resource),
         eq(organizationCapabilities.grantKind, "client_credentials"),
         isEffective(organizationCapabilities),
         eq(oauthResources.disabled, false),
+        sql`${oauthResources.deletedAt} is null`,
       ),
     );
   return row ?? null;

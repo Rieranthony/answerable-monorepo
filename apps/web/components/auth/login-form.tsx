@@ -1,6 +1,7 @@
 "use client"
 
 import { type FormEvent, useEffect, useRef, useState } from "react"
+import Link from "next/link"
 
 import { Button } from "@answerable/ui/components/button"
 import { Input } from "@answerable/ui/components/input"
@@ -23,6 +24,15 @@ export function LoginForm({ route, oauthQuery }: LoginFormProps) {
   const [pending, setPending] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const autoStarted = useRef(false)
+  const oauthParameters = new URLSearchParams(oauthQuery ?? "")
+  const mustAuthenticate =
+    oauthParameters.get("prompt")?.split(" ").includes("login") ||
+    oauthParameters.has("max_age")
+
+  useEffect(() => {
+    if (!checkingSession && sessionEmail && oauthQuery && !mustAuthenticate)
+      window.location.replace(`/authorize?${oauthQuery}`)
+  }, [checkingSession, sessionEmail, oauthQuery, mustAuthenticate])
 
   useEffect(() => {
     let active = true
@@ -48,7 +58,7 @@ export function LoginForm({ route, oauthQuery }: LoginFormProps) {
   useEffect(() => {
     if (
       checkingSession ||
-      sessionEmail ||
+      (sessionEmail && !mustAuthenticate) ||
       showForm ||
       route.mode !== "auto" ||
       autoStarted.current
@@ -58,7 +68,7 @@ export function LoginForm({ route, oauthQuery }: LoginFormProps) {
 
     autoStarted.current = true
     void startSSO({ organizationSlug: route.organizationSlug })
-  }, [checkingSession, route, sessionEmail, showForm])
+  }, [checkingSession, route, sessionEmail, showForm, mustAuthenticate])
 
   async function startSSO(
     identity: { email: string } | { organizationSlug: string },
@@ -110,13 +120,18 @@ export function LoginForm({ route, oauthQuery }: LoginFormProps) {
     )
   }
 
-  if (sessionEmail) {
+  if (sessionEmail && !mustAuthenticate) {
     return (
       <section aria-labelledby="signed-in-heading">
         <h1 id="signed-in-heading" className="text-xl/6 font-bold">
           Signed in
         </h1>
         <p className="mt-2 text-sm/6">Signed in as {sessionEmail}</p>
+        <p className="mt-4 text-sm/6">
+          <Link href="/security" className="underline underline-offset-4">
+            Verify sign-in or connect a work account
+          </Link>
+        </p>
         {oauthQuery && (
           <p className="text-muted-foreground mt-2 text-sm/6">
             Returning you to the app…

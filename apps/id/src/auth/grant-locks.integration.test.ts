@@ -56,7 +56,7 @@ beforeAll(() => {
 afterAll(async () => connection.close());
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate security_identifiers, audit_events, organizations, oauth_clients, oauth_resources, verifications cascade`,
+    sql`truncate audit_events, organizations, oauth_clients, oauth_resources, verifications cascade`,
   );
   tenantId = (
     await createOrganization(connection.db, { slug: "locks", name: "Locks" })

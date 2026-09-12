@@ -1,5 +1,4 @@
 import { rethrowGrantError } from "./grant-error.ts";
-import { admitMachineIssuance } from "./machine-admission.ts";
 import { identityScopes } from "./grant-scopes.ts";
 import { machineCapability } from "./machine-capability.ts";
 import {
@@ -12,7 +11,6 @@ import {
   type OAuthOptions,
 } from "@better-auth/oauth-provider";
 import { APIError, createAuthEndpoint } from "better-auth/api";
-import { sql } from "drizzle-orm";
 import type { Database } from "../db/client.ts";
 import { authTransaction } from "./database-adapter.ts";
 import {
@@ -25,8 +23,8 @@ import { prepareMachineGrant } from "./machine-identity.ts";
 export function machineOAuthProvider(
   db: Database,
   options: OAuthOptions<string[]>,
+  provider = oauthProvider(options),
 ) {
-  const provider = oauthProvider(options);
   const token = provider.endpoints.oauth2Token;
   return {
     ...provider,
@@ -94,17 +92,10 @@ export function machineOAuthProvider(
             return await runWithTransaction(ctx.context.adapter, async () => {
               stage = "authorization";
               const adapter = await getCurrentAdapter(ctx.context.adapter);
-              await authTransaction(adapter).execute(
-                sql`set local lock_timeout = '2s'`,
-              );
               const client = await prepareMachineGrant(
                 adapter,
                 authenticated.client,
                 resource,
-              );
-              await admitMachineIssuance(
-                authTransaction(adapter),
-                client.organizationId,
               );
               if (!client.grantTypes?.includes("client_credentials"))
                 throw new APIError("BAD_REQUEST", {
@@ -155,7 +146,6 @@ export function machineOAuthProvider(
             // The issuance transaction has exited. Record the request failure independently.
             try {
               await db.transaction(async (tx) => {
-                await tx.execute(sql`set local lock_timeout = '2s'`);
                 await recordMachineRejection(tx, {
                   client: authenticatedClient,
                   stage,

@@ -9,12 +9,14 @@ function setup(response: Response, fail = false) {
   const app = new Hono<AppEnvironment>();
   app.all("*", async (context) => {
     context.set("requestId", "request");
+    context.set("clientIp", null);
     context.set("db", {
+      execute: async () => ({ rows: [{ occurredAt: "2026-09-11T00:00:00Z" }] }),
       insert: () => ({
         values: (row: unknown) => {
           if (fail) throw new Error("offline");
           rows.push(row);
-          return { returning: async () => [row] };
+          return Promise.resolve();
         },
       }),
     } as unknown as Database);
@@ -39,7 +41,7 @@ test("redirect failure records correlation without trusting claimed provider or 
         "user-agent": "agent",
       },
     });
-    expect(rows[0]).not.toHaveProperty("data");
+    expect(rows[0]).toHaveProperty("data", null);
     expect(rows).toEqual([
       expect.objectContaining({
         actorType: "system",
@@ -113,7 +115,7 @@ for (const reported of ["private-token-value", "x".repeat(8192), ""]) {
       reason: "sso_callback_failed",
       userAgent: null,
     });
-    expect(rows[0]).not.toHaveProperty("data");
+    expect(rows[0]).toHaveProperty("data", null);
     expect(JSON.stringify(rows)).not.toContain("private-upstream-token");
     if (reported) expect(JSON.stringify(rows)).not.toContain(reported);
   });

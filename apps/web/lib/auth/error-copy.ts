@@ -9,6 +9,30 @@ const FALLBACK: ErrorDescription = {
 }
 
 const ERRORS: Record<string, ErrorDescription> = {
+  reauthentication_required: {
+    title: "Verify your sign-in",
+    body: "Verify your current company sign-in, then try your action again. Your provider must confirm when you authenticated; if verification keeps failing, ask your IT team for help.",
+  },
+  identity_flow_invalid: {
+    title: "Start verification again",
+    body: "This verification expired or your account access changed. Keep the same browser session and start again from Account security.",
+  },
+  authentication_identity_mismatch: {
+    title: "Use the same work account",
+    body: "Verification used a different work account. Start again and choose the account you are currently signed in with.",
+  },
+  invalid_auth_time: {
+    title: "Your sign-in time could not be verified",
+    body: "Your company provider returned an invalid authentication time. Ask your IT team to check its sign-in configuration.",
+  },
+  membership_revoked: {
+    title: "Organisation access is unavailable",
+    body: "Your membership is no longer available. Connecting an account cannot restore it; ask that organisation’s administrator for help.",
+  },
+  SSO_PROVIDER_CHANGED: {
+    title: "Start sign-in again",
+    body: "Your organisation changed its sign-in configuration. Start again to use the current configuration.",
+  },
   provider_not_found: {
     title: "We couldn't find your organisation",
     body: "We couldn't find a company sign-in for that email address. Check the address, or ask your IT team whether your organisation uses Answerable ID.",
@@ -47,7 +71,7 @@ const ERRORS: Record<string, ErrorDescription> = {
   },
   identity_conflict: {
     title: "This account is already connected",
-    body: "That company account is connected to another Answerable ID account. Ask your IT team for help.",
+    body: "That company account is already connected or reserved. Use its existing sign-in, or ask your IT team for help.",
   },
   email_conflict: {
     title: "This email is already in use",

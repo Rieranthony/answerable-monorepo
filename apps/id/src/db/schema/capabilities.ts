@@ -1,11 +1,12 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   integer,
   pgPolicy,
   pgTable,
   text,
-  unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { organizations } from "./auth.ts";
@@ -13,6 +14,7 @@ import { oauthClients, oauthResources } from "./oauth.ts";
 import {
   effectiveWindow,
   id,
+  timestampColumn,
   timestamps,
   vocabularyCheck,
   windowCheck,
@@ -30,6 +32,7 @@ export const capabilityGrantKinds = [
 export const organizationCapabilities = pgTable(
   "organization_capabilities",
   {
+    deletedAt: timestampColumn("deleted_at"),
     id: id(),
     organizationId: uuid("organization_id")
       .notNull()
@@ -37,9 +40,7 @@ export const organizationCapabilities = pgTable(
     clientId: text("client_id").references(() => oauthClients.clientId, {
       onDelete: "restrict",
     }),
-    resource: text("resource").references(() => oauthResources.identifier, {
-      onDelete: "restrict",
-    }),
+    resource: text("resource"),
     grantKind: text("grant_kind", { enum: capabilityGrantKinds }).notNull(),
     scopes: text("scopes").array().notNull(),
     status: text("status", { enum: lifecycleStatuses })
@@ -50,9 +51,15 @@ export const organizationCapabilities = pgTable(
     revision: integer("revision").default(1).notNull(),
   },
   (table) => [
-    unique("organization_capabilities_target_kind_unique")
+    foreignKey({
+      name: "organization_capabilities_resource_fk",
+      columns: [table.resource],
+      foreignColumns: [oauthResources.identifier],
+    }).onDelete("restrict"),
+    // The SQL migration adds NULLS NOT DISTINCT; Drizzle cannot express it on partial indexes.
+    uniqueIndex("organization_capabilities_target_kind_unique")
       .on(table.organizationId, table.clientId, table.resource, table.grantKind)
-      .nullsNotDistinct(),
+      .where(sql`${table.deletedAt} is null`),
     check(
       "organization_capabilities_revision_check",
       sql`${table.revision} > 0`,
@@ -71,8 +78,8 @@ export const organizationCapabilities = pgTable(
       "organization_capabilities_target_check",
       sql`
     (${table.grantKind} = 'admin_session' and ${table.clientId} is null and ${table.resource} is not null)
-    or (${table.grantKind} = 'authorization_code' and ${table.clientId} is not null)
-    or (${table.grantKind} in ('refresh_token', 'client_credentials') and ${table.clientId} is not null and ${table.resource} is not null)`,
+    or (${table.grantKind} in ('authorization_code', 'refresh_token') and ${table.clientId} is not null)
+    or (${table.grantKind} = 'client_credentials' and ${table.clientId} is not null and ${table.resource} is not null)`,
     ),
     check(
       "organization_capabilities_scopes_check",
@@ -92,7 +99,7 @@ export const organizationCapabilities = pgTable(
       for: "select",
       using: sql`current_setting('answerable.scope', true) in ('platform-read', 'platform-write')
       or (current_setting('answerable.scope', true) in ('tenant-read', 'tenant-write') and ${table.organizationId} = nullif(current_setting('answerable.tenant', true), '')::uuid)
-      or (current_setting('answerable.scope', true) = 'policy-user' and ${table.organizationId} in (select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid))
+      or (current_setting('answerable.scope', true) = 'policy-user' and ${table.organizationId} in (select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid and deleted_at is null and status = 'active' and (valid_from is null or valid_from <= statement_timestamp()) and (valid_until is null or valid_until > statement_timestamp())))
       or (current_setting('answerable.scope', true) = 'policy-root' and ${table.organizationId} in (select organization_id from system_bindings))`,
     }),
   ],

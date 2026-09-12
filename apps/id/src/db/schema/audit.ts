@@ -1,3 +1,4 @@
+import { auditPolicies } from "./tenant-policies.ts";
 import {
   index,
   integer,
@@ -40,11 +41,16 @@ export const auditEvents = pgTable(
     schemaVersion: integer("schema_version").notNull().default(1),
   },
   (table) => [
+    ...auditPolicies(table.organizationId),
     index("audit_events_organization_id_id_idx").on(
       table.organizationId,
       table.id,
     ),
     index("audit_events_operation_id_idx").on(table.operationId),
+    index("audit_events_action_occurred_at_idx").on(
+      table.action,
+      table.occurredAt,
+    ),
     index("audit_events_actor_id_idx").on(table.actorId),
     index("audit_events_target_type_target_id_idx").on(
       table.targetType,
@@ -57,8 +63,7 @@ export const auditEvents = pgTable(
     ),
     vocabularyCheck("audit_events_outcome_check", table.outcome, auditOutcomes),
   ],
-);
-
+).enableRLS();
 /** Subject references outlive operational identities; provenance marks legacy derivation. */
 export const auditEventSubjects = pgTable(
   "audit_event_subjects",
@@ -73,7 +78,9 @@ export const auditEventSubjects = pgTable(
     provenance: text("provenance").notNull().default("recorded"),
   },
   (table) => [
+    ...auditPolicies(table.organizationId),
     primaryKey({
+      name: "audit_event_subjects_pkey",
       columns: [
         table.eventId,
         table.entityType,
@@ -97,4 +104,4 @@ export const auditEventSubjects = pgTable(
       "legacy_derived",
     ]),
   ],
-);
+).enableRLS();

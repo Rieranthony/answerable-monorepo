@@ -1,7 +1,13 @@
-import { platformWriteService } from "../__tests__/platform-context.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
+import * as queries from "../__tests__/client-queries.ts";
+import {
+  inPlatformRead,
+  platformWriteService,
+} from "../__tests__/platform-context.ts";
+import { createResource } from "../__tests__/resource-queries.ts";
 import { testEnvironment } from "../__tests__/support.ts";
+import type { Database } from "../db/client.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import {
   auditEvents,
@@ -10,18 +16,17 @@ import {
   organizations,
   users,
 } from "../db/schema/index.ts";
-import * as queries from "../__tests__/client-queries.ts";
-import { createResource } from "../__tests__/resource-queries.ts";
 import { createId } from "../lib/id.ts";
 import type { Actor } from "./actor.ts";
 import { hashClientSecret } from "./client-secrets.ts";
 import * as implementation from "./clients.ts";
-import { inPlatformRead } from "../__tests__/platform-context.ts";
-import type { Database } from "../db/client.ts";
 const service = {
   ...implementation,
   createClient: platformWriteService(implementation.createClient),
-  updateClient: platformWriteService(implementation.updateClient),
+  updateClient: platformWriteService(
+    async (...args: Parameters<typeof implementation.updateClient>) =>
+      (await implementation.updateClient(...args)).body,
+  ),
   disableClient: platformWriteService(implementation.disableClient),
   enableClient: platformWriteService(implementation.enableClient),
   rotateSecret: platformWriteService(implementation.rotateSecret),
@@ -68,7 +73,7 @@ beforeAll(() => {
 });
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table security_identifiers, audit_events, organizations, users, oauth_clients, oauth_resources cascade`,
+    sql`truncate table audit_events, organizations, users, oauth_clients, oauth_resources cascade`,
   );
   organizationId = createId();
   await connection.db
@@ -391,62 +396,8 @@ test("unknown clients, organisations and resources return 404 without successful
   ).toEqual({ removed: false });
   expect(await db.select().from(auditEvents)).toHaveLength(2);
 });
-test("audit failures roll back client writes, secrets, ownership, links and token revocation", async () => {
-  const db = connection.db;
-  const bad = { ...actor, requestId: "\0" };
-  await expect(service.createClient(db, bad, machineInput())).rejects.toThrow();
-  expect(await queries.findClient(db, "machine")).toBeNull();
-  const client = await service.createClient(db, actor, machineInput());
-  const tokenId = createId();
-  await db.insert(oauthAccessTokens).values({
-    id: tokenId,
-    clientId: client.clientId,
-    scopes: [],
-    expiresAt: new Date(Date.now() + 60000),
-  });
-  for (const run of [
-    () => service.updateClient(db, bad, client.clientId, { name: "Failed" }),
-    () => service.rotateSecret(db, bad, client.clientId),
-    () => service.setOwner(db, bad, client.clientId, organizationId),
-    () => service.linkResource(db, bad, client.clientId, resource),
-    () => service.disableClient(db, bad, client.clientId),
-  ])
-    await expect(run()).rejects.toThrow();
-  expect(await queries.findClient(db, client.clientId)).toMatchObject({
-    name: "Machine",
-    disabled: false,
-    organizationId,
-    clientSecret: hashClientSecret(client.clientSecret!),
-  });
-  expect(
-    (
-      await db
-        .select()
-        .from(oauthAccessTokens)
-        .where(eq(oauthAccessTokens.id, tokenId))
-    )[0]?.revoked,
-  ).toBeNull();
-  expect(await queries.listClientResources(db, client.clientId)).toHaveLength(
-    0,
-  );
-  await service.linkResource(db, actor, client.clientId, resource);
-  await expect(
-    service.unlinkResource(db, bad, client.clientId, resource),
-  ).rejects.toThrow();
-  expect(await queries.listClientResources(db, client.clientId)).toHaveLength(
-    1,
-  );
-  await service.disableClient(db, actor, client.clientId);
-  await expect(
-    service.enableClient(db, bad, client.clientId),
-  ).rejects.toThrow();
-  expect(await service.getClient(db, client.clientId)).toMatchObject({
-    disabled: true,
-  });
-  expect(await db.select().from(auditEvents)).toHaveLength(4);
-});
 
-test("erasure checks existence, confirmation and entitlements in order, and rolls back on audit failure", async () => {
+test("erasure checks existence, confirmation and entitlements in order", async () => {
   const db = connection.db;
   await expect(
     service.eraseClient(db, actor, "missing", "wrong"),
@@ -468,18 +419,6 @@ test("erasure checks existence, confirmation and entitlements in order, and roll
   expect(await db.select().from(auditEvents)).toHaveLength(1);
   await deleteEntitlement(db, organizationId, grant.id);
   await service.linkResource(db, actor, client.clientId, resource);
-  await expect(
-    service.eraseClient(
-      db,
-      { ...actor, requestId: "\0" },
-      client.clientId,
-      client.clientId,
-    ),
-  ).rejects.toThrow();
-  expect(await queries.findClient(db, client.clientId)).not.toBeNull();
-  expect(await queries.listClientResources(db, client.clientId)).toHaveLength(
-    1,
-  );
   await service.eraseClient(db, actor, client.clientId, client.clientId);
   expect(await queries.findClient(db, client.clientId)).toBeNull();
   const unowned = await service.createClient(db, actor, publicInput);

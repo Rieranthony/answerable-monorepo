@@ -8,7 +8,7 @@ import {
   jsonb,
   pgTable,
   text,
-  unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -35,6 +35,7 @@ export const jwks = pgTable("jwks", {
 export const oauthClients = pgTable(
   "oauth_clients",
   {
+    deletedAt: timestampColumn("deleted_at"),
     id: id(),
     clientId: text("client_id").notNull().unique(),
     clientSecret: text("client_secret"),
@@ -98,6 +99,7 @@ export const oauthClients = pgTable(
 export const oauthResources = pgTable(
   "oauth_resources",
   {
+    deletedAt: timestampColumn("deleted_at"),
     id: id(),
     classification: text("classification", {
       enum: ["platform_shared", "tenant_owned"],
@@ -135,7 +137,7 @@ export const oauthResources = pgTable(
     // The provider merges resource custom claims after extension claims.
     check(
       "oauth_resources_identity_claims_check",
-      sql`NOT (${table.customClaims} ?| ARRAY['client_instance', 'organization_id', 'authorization_version', 'organization_authorization_version', 'subject_type'])`,
+      sql`NOT (${table.customClaims} ?| ARRAY['client_instance', 'organization_id', 'authorization_version', 'organization_authorization_version', 'subject_type', 'membership_id', 'grant_id', 'resource_instance', 'upstream_auth_time'])`,
     ),
   ],
 );
@@ -144,6 +146,7 @@ export const oauthResources = pgTable(
 export const oauthClientResources = pgTable(
   "oauth_client_resources",
   {
+    deletedAt: timestampColumn("deleted_at"),
     id: id(),
     clientId: text("client_id")
       .notNull()
@@ -161,10 +164,9 @@ export const oauthClientResources = pgTable(
       columns: [table.resourceId],
       foreignColumns: [oauthResources.identifier],
     }).onDelete("restrict"),
-    unique("oauth_client_resources_client_id_resource_id_unique").on(
-      table.clientId,
-      table.resourceId,
-    ),
+    uniqueIndex("oauth_client_resources_client_id_resource_id_unique")
+      .on(table.clientId, table.resourceId)
+      .where(sql`${table.deletedAt} is null`),
     index("oauth_client_resources_resource_id_idx").on(table.resourceId),
   ],
 );
@@ -200,6 +202,7 @@ export const oauthRefreshTokens = pgTable(
     confirmation: jsonb("confirmation"),
   },
   (table) => [
+    index("oauth_refresh_tokens_expires_at_idx").on(table.expiresAt),
     index("oauth_refresh_tokens_client_id_idx").on(table.clientId),
     index("oauth_refresh_tokens_session_id_idx").on(table.sessionId),
     index("oauth_refresh_tokens_user_id_idx").on(table.userId),
@@ -240,6 +243,7 @@ export const oauthAccessTokens = pgTable(
     confirmation: jsonb("confirmation"),
   },
   (table) => [
+    index("oauth_access_tokens_expires_at_idx").on(table.expiresAt),
     index("oauth_access_tokens_client_id_idx").on(table.clientId),
     index("oauth_access_tokens_session_id_idx").on(table.sessionId),
     index("oauth_access_tokens_user_id_idx").on(table.userId),
@@ -253,6 +257,7 @@ export const oauthAccessTokens = pgTable(
 export const oauthConsents = pgTable(
   "oauth_consents",
   {
+    deletedAt: timestampColumn("deleted_at"),
     id: id(),
     clientId: text("client_id")
       .notNull()

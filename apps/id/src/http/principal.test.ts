@@ -3,20 +3,20 @@ import { describe, expect, mock, spyOn, test } from "bun:test";
 import { Hono } from "hono";
 import {
   createLocalJWKSet,
-  jwtVerify,
   exportJWK,
   generateKeyPair,
+  jwtVerify,
   SignJWT,
   type JWTPayload,
 } from "jose";
 import type { AuditEventInput } from "../__tests__/audit-queries.ts";
-import type { Auth } from "../auth.ts";
+import type { ClientPrincipalRow } from "../__tests__/client-queries.ts";
 import {
   stubAuth,
   stubDatabase,
   testEnvironment,
 } from "../__tests__/support.ts";
-import type { ClientPrincipalRow } from "../__tests__/client-queries.ts";
+import type { Auth } from "../auth.ts";
 import type { AppEnvironment } from "./context.ts";
 import {
   createBearerVerifier,
@@ -77,10 +77,11 @@ function setup(overrides: Partial<PrincipalDeps> = {}) {
   };
   const rows: AuditEventInput[] = [];
   const db = Object.assign(stubDatabase(), {
+    execute: async () => ({ rows: [{ occurredAt: "2026-09-11T00:00:00Z" }] }),
     insert: () => ({
       values: (row: AuditEventInput) => {
         rows.push(row);
-        return { returning: async () => [row] };
+        return Promise.resolve();
       },
     }),
   });
@@ -92,6 +93,7 @@ function setup(overrides: Partial<PrincipalDeps> = {}) {
     c.set("db", db);
     c.set("environment", environment);
     c.set("requestId", "request");
+    c.set("clientIp", "192.0.2.1");
     await next();
   });
   app.use("*", createPrincipalMiddleware(deps));
@@ -263,7 +265,7 @@ describe("unit: principal", () => {
       });
       expect(deps.loadGrants).toHaveBeenCalledWith(
         db,
-        { userId: "user" },
+        { userId: "user", sessionId: "session" },
         environment.adminResourceIdentifier,
       );
     },
@@ -294,7 +296,7 @@ describe("unit: principal", () => {
 
 describe("unit: bearer verification and JWKS", () => {
   test("validates the machine identity contract, issuer, audience, type and expiry", async () => {
-    const { privateKey, publicKey } = await generateKeyPair("RS256");
+    const { privateKey, publicKey } = await generateKeyPair("EdDSA");
     const getKey = createLocalJWKSet({ keys: [await exportJWK(publicKey)] });
     const verify = createBearerVerifier({
       getKey,
@@ -318,7 +320,7 @@ describe("unit: bearer verification and JWKS", () => {
         exp: Math.floor(Date.now() / 1000) + 60,
         ...payload,
       })
-        .setProtectedHeader({ alg: "RS256", typ })
+        .setProtectedHeader({ alg: "EdDSA", typ })
         .sign(privateKey);
     }
     expect(
@@ -369,8 +371,8 @@ describe("unit: bearer verification and JWKS", () => {
     await expect(verify(await token({}, "JWT"))).rejects.toThrow();
   });
   test("caches for five minutes, retries rotated keys once, and propagates other failures", async () => {
-    const first = await generateKeyPair("RS256");
-    const second = await generateKeyPair("RS256");
+    const first = await generateKeyPair("EdDSA");
+    const second = await generateKeyPair("EdDSA");
     const firstJwk = { ...(await exportJWK(first.publicKey)), kid: "first" };
     const secondJwk = { ...(await exportJWK(second.publicKey)), kid: "second" };
     let keys = [firstJwk];
@@ -378,32 +380,34 @@ describe("unit: bearer verification and JWKS", () => {
     const auth = { api: { getJwks } } as unknown as Auth;
     const getKey = createJwksResolver(auth);
     const flattened = { payload: "", signature: "" };
-    await getKey({ alg: "RS256", kid: "first" }, flattened);
-    await getKey({ alg: "RS256", kid: "first" }, flattened);
+    await getKey({ alg: "EdDSA", kid: "first" }, flattened);
+    await getKey({ alg: "EdDSA", kid: "first" }, flattened);
     expect(getJwks).toHaveBeenCalledTimes(1);
     const now = Date.now();
     const clock = spyOn(Date, "now").mockReturnValue(now + 300_001);
     try {
-      await getKey({ alg: "RS256", kid: "first" }, flattened);
+      await getKey({ alg: "EdDSA", kid: "first" }, flattened);
     } finally {
       clock.mockRestore();
     }
     expect(getJwks).toHaveBeenCalledTimes(2);
     keys = [secondJwk];
-    await getKey({ alg: "RS256", kid: "second" }, flattened);
+    await getKey({ alg: "EdDSA", kid: "second" }, flattened);
     expect(getJwks).toHaveBeenCalledTimes(3);
     await expect(
-      getKey({ alg: "RS256", kid: "missing" }, flattened),
+      getKey({ alg: "EdDSA", kid: "missing" }, flattened),
     ).rejects.toThrow();
-    expect(getJwks).toHaveBeenCalledTimes(4);
+    expect(getJwks).toHaveBeenCalledTimes(3);
     await expect(getKey({ alg: "HS256" }, flattened)).rejects.toThrow();
-    expect(getJwks).toHaveBeenCalledTimes(4);
+    expect(getJwks).toHaveBeenCalledTimes(3);
   });
   test("concurrent cold and missing-key verification shares one load and never reloads a fresh miss", async () => {
-    const pair = await generateKeyPair("RS256");
+    const pair = await generateKeyPair("EdDSA");
     const key = { ...(await exportJWK(pair.publicKey)), kid: "known" };
     let release = Promise.withResolvers<void>();
+    let reached = Promise.withResolvers<void>();
     const getJwks = mock(async () => {
+      reached.resolve();
       await release.promise;
       return { keys: [key] };
     });
@@ -412,11 +416,11 @@ describe("unit: bearer verification and JWKS", () => {
     for (const phase of ["cold", "cached"] as const) {
       const before = getJwks.mock.calls.length;
       const pending = Array.from({ length: 8 }, (_, index) =>
-        getKey({ alg: "RS256", kid: `missing-${phase}-${index}` }, token),
+        getKey({ alg: "EdDSA", kid: `missing-${phase}-${index}` }, token),
       );
       const settled = Promise.allSettled(pending);
       try {
-        await Bun.sleep(0);
+        await reached.promise;
         expect(getJwks.mock.calls.length - before).toBe(1);
       } finally {
         release.resolve();
@@ -427,34 +431,39 @@ describe("unit: bearer verification and JWKS", () => {
       ).toBe(true);
       expect(getJwks.mock.calls.length - before).toBe(1);
       release = Promise.withResolvers<void>();
+      reached = Promise.withResolvers<void>();
     }
-    await getKey({ alg: "RS256", kid: "known" }, token);
+    await getKey({ alg: "EdDSA", kid: "known" }, token);
     expect(getJwks).toHaveBeenCalledTimes(2);
   });
   test("concurrent rotated-key verification shares refresh while cached valid tokens still verify", async () => {
-    const first = await generateKeyPair("RS256");
-    const second = await generateKeyPair("RS256");
+    const first = await generateKeyPair("EdDSA");
+    const second = await generateKeyPair("EdDSA");
     const firstJwk = { ...(await exportJWK(first.publicKey)), kid: "first" };
     const secondJwk = { ...(await exportJWK(second.publicKey)), kid: "second" };
     const release = Promise.withResolvers<void>();
+    const reached = Promise.withResolvers<void>();
     let rotating = false;
     const getJwks = mock(async () => {
-      if (rotating) await release.promise;
+      if (rotating) {
+        reached.resolve();
+        await release.promise;
+      }
       return { keys: rotating ? [firstJwk, secondJwk] : [firstJwk] };
     });
     const getKey = createJwksResolver({ api: { getJwks } } as unknown as Auth);
     const old = await new SignJWT({ proof: "old" })
-      .setProtectedHeader({ alg: "RS256", kid: "first" })
+      .setProtectedHeader({ alg: "EdDSA", kid: "first" })
       .sign(first.privateKey);
     const current = await new SignJWT({ proof: "current" })
-      .setProtectedHeader({ alg: "RS256", kid: "second" })
+      .setProtectedHeader({ alg: "EdDSA", kid: "second" })
       .sign(second.privateKey);
     expect((await jwtVerify(old, getKey)).payload.proof).toBe("old");
     rotating = true;
     const pending = Array.from({ length: 8 }, () => jwtVerify(current, getKey));
     const settled = Promise.allSettled(pending);
     try {
-      await Bun.sleep(0);
+      await reached.promise;
       expect(getJwks).toHaveBeenCalledTimes(2);
       expect((await jwtVerify(old, getKey)).payload.proof).toBe("old");
     } finally {
@@ -466,11 +475,13 @@ describe("unit: bearer verification and JWKS", () => {
     expect(getJwks).toHaveBeenCalledTimes(2);
   });
   test("failed shared key loads reject callers and allow the next request to recover", async () => {
-    const pair = await generateKeyPair("RS256");
+    const pair = await generateKeyPair("EdDSA");
     const key = { ...(await exportJWK(pair.publicKey)), kid: "recovered" };
     const release = Promise.withResolvers<void>();
+    const reached = Promise.withResolvers<void>();
     let fail = true;
     const getJwks = mock(async () => {
+      reached.resolve();
       await release.promise;
       if (fail) throw new Error("synthetic unavailable key store");
       return { keys: [key] };
@@ -479,11 +490,11 @@ describe("unit: bearer verification and JWKS", () => {
     const token = { payload: "", signature: "" };
     const pending = Promise.allSettled(
       Array.from({ length: 8 }, () =>
-        getKey({ alg: "RS256", kid: "recovered" }, token),
+        getKey({ alg: "EdDSA", kid: "recovered" }, token),
       ),
     );
     try {
-      await Bun.sleep(0);
+      await reached.promise;
       expect(getJwks).toHaveBeenCalledTimes(1);
     } finally {
       release.resolve();
@@ -493,7 +504,7 @@ describe("unit: bearer verification and JWKS", () => {
       (await pending).every((result) => result.status === "rejected"),
     ).toBe(true);
     fail = false;
-    await getKey({ alg: "RS256", kid: "recovered" }, token);
+    await getKey({ alg: "EdDSA", kid: "recovered" }, token);
     expect(getJwks).toHaveBeenCalledTimes(2);
   });
   test("default deps use Better Auth's non-refreshing session API", async () => {
@@ -575,7 +586,7 @@ test("root lockout is audited once without credentials", async () => {
       "A platform administrator exists. Set ROOT_ADMIN_BREAK_GLASS=true to use the root secret.",
   });
   expect(rows).toHaveLength(1);
-  expect(rows[0]).not.toHaveProperty("ip");
+  expect(rows[0]!.ip).toBe("192.0.2.1");
   expect(rows[0]).toMatchObject({
     actorType: "system",
     actorId: "root",
@@ -650,5 +661,130 @@ test("HTTP admission rejects a verified token that expires during principal look
     expect(await response.json()).toMatchObject({ code: "invalid_token" });
   } finally {
     clock.mockRestore();
+  }
+});
+
+for (const reason of [
+  "invalid_token",
+  "unauthenticated",
+  "user_disabled",
+  "untrusted_origin",
+  "origin_required",
+  "client_unowned",
+  "organization_disabled",
+] as const)
+  test(`administrative ${reason} denial records bounded attribution without credentials`, async () => {
+    const { app, rows } = setup({
+      ...(reason === "invalid_token"
+        ? {
+            verifyBearer: async () => {
+              throw new Error("bad token");
+            },
+          }
+        : {}),
+      ...(reason === "unauthenticated" ? { getSession: async () => null } : {}),
+      ...(reason === "user_disabled"
+        ? {
+            getSession: async () => ({
+              ...session,
+              user: { ...session.user, status: "disabled" },
+            }),
+          }
+        : {}),
+      ...(reason === "client_unowned"
+        ? { findClient: async () => ({ ...client, organizationId: null }) }
+        : {}),
+      ...(reason === "organization_disabled"
+        ? { findClient: async () => ({ ...client, organization: null }) }
+        : {}),
+    });
+    const clientFailure = ["client_unowned", "organization_disabled"].includes(
+      reason,
+    );
+    const response = await app.request("/", {
+      method: reason === "origin_required" ? "POST" : "GET",
+      headers: {
+        ...(clientFailure || reason === "invalid_token"
+          ? bearer
+          : { Cookie: "private-cookie" }),
+        ...(reason === "untrusted_origin"
+          ? { Origin: "https://evil.example" }
+          : {}),
+        "user-agent": "x".repeat(513),
+      },
+    });
+    expect((await response.json()).code).toBe(reason);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      actorType: clientFailure ? "client" : "system",
+      actorId: clientFailure ? "client" : "anonymous",
+      action: "admin.auth_failed",
+      reason,
+      targetType: "route",
+      targetId: "/",
+      requestId: "request",
+      ip: "192.0.2.1",
+      userAgent: null,
+      outcome: "denied",
+    });
+    expect(JSON.stringify(rows)).not.toContain("private-cookie");
+    expect(JSON.stringify(rows)).not.toContain("Bearer token");
+  });
+
+test("unknown keys reload at most once per thirty seconds", async () => {
+  const pair = await generateKeyPair("EdDSA");
+  const getJwks = mock(async () => ({
+    keys: [{ ...(await exportJWK(pair.publicKey)), kid: "known" }],
+  }));
+  const resolver = createJwksResolver({ api: { getJwks } } as unknown as Auth);
+  const known = await new SignJWT({})
+    .setProtectedHeader({ alg: "EdDSA", kid: "known" })
+    .sign(pair.privateKey);
+  await jwtVerify(known, resolver);
+  const now = Date.now();
+  const clock = spyOn(Date, "now").mockReturnValue(now);
+  try {
+    for (const elapsed of [0, 1, 29_999, 30_000]) {
+      clock.mockReturnValue(now + elapsed);
+      const unknown = await new SignJWT({})
+        .setProtectedHeader({ alg: "EdDSA", kid: `unknown-${elapsed}` })
+        .sign(pair.privateKey);
+      await expect(jwtVerify(unknown, resolver)).rejects.toThrow();
+      expect(getJwks).toHaveBeenCalledTimes(elapsed === 30_000 ? 3 : 2);
+    }
+  } finally {
+    clock.mockRestore();
+  }
+});
+
+test("invalid bearer denial keeps the claimed client identity as unverified metadata", async () => {
+  const { app, rows } = setup({
+    verifyBearer: async () => {
+      throw new Error("invalid signature");
+    },
+  });
+  const token = `${Buffer.from('{"alg":"none"}').toString("base64url")}.${Buffer.from('{"client_id":"claimed-client","private":"secret"}').toString("base64url")}.`;
+  expect(
+    (await app.request("/", { headers: { Authorization: `Bearer ${token}` } }))
+      .status,
+  ).toBe(401);
+  expect(rows[0]).toMatchObject({
+    actorType: "system",
+    actorId: "anonymous",
+    reason: "invalid_token",
+    data: { claimedClientId: "claimed-client" },
+  });
+  expect(JSON.stringify(rows)).not.toContain("secret");
+});
+
+test("failed administrative authentication stays refused when its audit cannot be stored", async () => {
+  const { app, db } = setup({ getSession: async () => null });
+  const failure = spyOn(db, "insert").mockImplementation(() => {
+    throw new Error("audit offline");
+  });
+  try {
+    await assertProblem(await app.request("/"), 401, "unauthenticated");
+  } finally {
+    failure.mockRestore();
   }
 });

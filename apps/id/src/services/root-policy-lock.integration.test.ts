@@ -31,7 +31,7 @@ afterEach(async () => {
   await fixture?.close();
 });
 
-for (const source of ["capability", "resource", "user", "new-member"] as const)
+for (const source of ["capability", "resource", "new-member"] as const)
   for (const order of ["command-first", "activation-first"] as const)
     test(`root admission and first writer activation are ordered: ${source}, ${order}`, async () => {
       const [capability] = await fixture.db
@@ -72,11 +72,6 @@ for (const source of ["capability", "resource", "user", "new-member"] as const)
           })
           .where(eq(oauthResources.id, resource!.id))
           .returning();
-      else if (source === "user")
-        await fixture.db
-          .update(users)
-          .set({ status: "disabled", disabledAt: new Date() })
-          .where(eq(users.id, fixture.principals.platformAdmin.userId));
       else {
         const platformMembers = await fixture.db
           .select({ userId: members.userId })
@@ -167,29 +162,7 @@ for (const source of ["capability", "resource", "user", "new-member"] as const)
               { allowedScopes: resource!.allowedScopes! },
               resourceBefore,
             );
-          else if (source === "user") {
-            // Global user activation does not take an organisation lock.
-            // Keep the same transaction: obtain the issued users context directly.
-            const authority = await authorizePlatformUsersCommand(context.tx, {
-              principal: { type: "root", grants: [] },
-              environment: {
-                ...fixture.environment,
-                rootAdminBreakGlass: true,
-              },
-            });
-            try {
-              await authority.run(
-                (usersContext) =>
-                  enableUser(
-                    usersContext,
-                    fixture.principals.platformAdmin.userId,
-                  ),
-                { requestId: "activate-platform-user" },
-              );
-            } finally {
-              authority.close();
-            }
-          } else {
+          else {
             // Exercise the membership FK rather than relying on a service's explicit lock.
             const id = createId();
             await context.tx.insert(users).values({

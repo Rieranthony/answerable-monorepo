@@ -35,6 +35,7 @@ export function actorFromContext(context: Context<AppEnvironment>): Actor {
   return {
     ...actorIdentity(context.get("principal")!),
     requestId: context.get("requestId"),
+    ip: context.get("clientIp") ?? undefined,
     userAgent: boundedUserAgent(context.req.header("user-agent")) ?? undefined,
   };
 }

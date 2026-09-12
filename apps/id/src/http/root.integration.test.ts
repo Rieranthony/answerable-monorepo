@@ -21,7 +21,7 @@ beforeAll(async () => {
   issuer = await startOidcIssuer();
   connection = createDatabase(testEnvironment());
   await connection.db.execute(
-    sql`truncate table security_identifiers, audit_events, entitlements, group_members, groups,
+    sql`truncate table audit_events, entitlements, group_members, groups,
       organization_domains, sso_providers, oauth_client_assertions,
       oauth_access_tokens, oauth_refresh_tokens, oauth_consents,
       oauth_client_resources, oauth_resources, oauth_clients, jwks,
@@ -37,10 +37,6 @@ test("integration: root locks after a human administrator and supports break-gla
   const { db } = connection;
   const secret = "integration-root-secret-at-least-32-characters";
   const environment = testEnvironment({
-    operationReplay: {
-      activeKeyId: "test",
-      keys: { test: Buffer.alloc(32, 3).toString("base64url") },
-    },
     rootAdminSecret: secret,
     rootAdminBreakGlass: false,
     trustedOrigins: [issuer.origin, "https://console.example.com"],
@@ -87,7 +83,7 @@ test("integration: root locks after a human administrator and supports break-gla
     actorId: "root",
     outcome: "success",
     targetId: "getAdminMe",
-    ip: null,
+    ip: "127.0.0.1",
     userAgent: "root-test",
     requestId: response.headers.get("x-request-id"),
   });

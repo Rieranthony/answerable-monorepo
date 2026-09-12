@@ -1,4 +1,3 @@
-import { withAdmissionResponse } from "./admission.ts";
 import { generateSpecs } from "hono-openapi";
 
 import type { App } from "../app.ts";
@@ -122,14 +121,11 @@ export async function buildPublicOpenApiDocument(input: {
           responses: {
             ...operation.responses,
             ...requestBoundaryResponses,
-            503: withAdmissionResponse(
-              operation.responses?.[503],
-              "authentication",
-            ),
           },
           operationId: route.operationId,
           summary: route.summary,
           tags: [route.tag],
+          ...(route.security ? { security: route.security } : {}),
           ...(route.description !== undefined
             ? { description: route.description }
             : {}),
@@ -173,7 +169,7 @@ export async function buildPublicOpenApiDocument(input: {
     },
     servers: input.servers ?? [{ url: input.environment.betterAuthUrl }],
     tags: [
-      { name: "Token", description: "Machine access with client credentials" },
+      { name: "Token", description: "User authorisation and machine access" },
       {
         name: "Health",
         description: "Service liveness and readiness checks.",

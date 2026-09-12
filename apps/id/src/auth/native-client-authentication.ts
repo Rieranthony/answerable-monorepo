@@ -16,7 +16,7 @@ type Authenticated = Awaited<
 export async function withNativeClientAuthentication<T>(
   ctx: Context,
   options: OAuthOptions<string[]>,
-  grantType: "authorization_code" | "refresh_token",
+  grantType: "authorization_code" | "refresh_token" | undefined,
   run: (
     authenticated: Authenticated,
     nativeCreate: (adapter: Pick<Adapter, "create">) => Create,

@@ -4,21 +4,22 @@ import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { createApp } from "../../app.ts";
 import { createAuth } from "../../auth.ts";
 import { createDatabase, type DatabaseConnection } from "../../db/client.ts";
+import { withDatabaseScope } from "../../db/isolation.ts";
 import { configureRuntimeRole } from "../../db/runtime-role.ts";
 import {
   adminOperations,
   auditEvents,
+  auditEventSubjects,
   entitlements,
   groupMembers,
   groups,
   members,
-  auditEventSubjects,
 } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
-import { recordAuditEvent } from "../../db/queries/audit.ts";
 let fixture: AdminFixture;
 let runtime: DatabaseConnection;
 let app: ReturnType<typeof createApp>;
@@ -183,18 +184,21 @@ test("group erasure records actual removed policy rows, preserves another tenant
     .select()
     .from(auditEvents)
     .where(eq(auditEvents.operationId, response.headers.get("Operation-Id")!));
-  expect(event).toMatchObject({
+  expect(structuredClone(event)).toMatchObject({
     action: "group.erased",
-    schemaVersion: 2,
+    schemaVersion: 3,
     organizationId: a.group.organizationId,
     targetId: a.group.id,
-    data: { before: { id: a.group.id }, after: null },
+    data: {
+      before: { id: a.group.id },
+      after: { deletedAt: expect.any(String) },
+    },
   });
   const effects = event!.data!.effects as {
-    removedAssignments: Record<string, unknown>[];
-    removedEntitlements: Record<string, unknown>[];
+    softDeletedAssignments: Record<string, unknown>[];
+    softDeletedEntitlements: Record<string, unknown>[];
   };
-  expect(effects.removedAssignments).toEqual(
+  expect(effects.softDeletedAssignments).toEqual(
     [
       { ...a.assignment, userId: person.userId },
       { ...live!, userId: fixture.principals.tenantAdmin.userId },
@@ -202,7 +206,8 @@ test("group erasure records actual removed policy rows, preserves another tenant
       .sort((x, y) => x.id.localeCompare(y.id))
       .map((row) => ({
         id: row.id,
-        revision: row.revision,
+        revision: row.revision + 1,
+        deletedAt: expect.any(String),
         organizationId: row.organizationId,
         groupId: row.groupId,
         memberId: row.memberId,
@@ -211,30 +216,47 @@ test("group erasure records actual removed policy rows, preserves another tenant
         validUntil: row.validUntil?.toISOString() ?? null,
       })),
   );
-  expect(effects.removedEntitlements).toEqual(
+  expect(effects.softDeletedEntitlements).toEqual(
     a.grants
       .sort((x, y) => x.id.localeCompare(y.id))
       .map((row) => ({
         id: row.id,
-        revision: row.revision,
+        revision: row.revision + 1,
+        deletedAt: expect.any(String),
         organizationId: row.organizationId,
         groupId: row.groupId,
         memberId: row.memberId,
         clientId: row.clientId,
         resource: row.resource,
         scopes: row.scopes,
-        status: row.status,
+        status: "disabled",
         validFrom: row.validFrom?.toISOString() ?? null,
         validUntil: row.validUntil?.toISOString() ?? null,
       })),
   );
   const state = await snapshot();
   expect(state.assignments.filter((row) => row.groupId === a.group.id)).toEqual(
-    [],
+    [a.assignment, live!]
+      .sort((x, y) => x.id.localeCompare(y.id))
+      .map((row) => ({
+        ...row,
+        revision: row.revision + 1,
+        deletedAt: expect.any(Date),
+      })),
   );
   expect(
     state.entitlements.filter((row) => row.groupId === a.group.id),
-  ).toEqual([]);
+  ).toEqual(
+    a.grants
+      .sort((x, y) => x.id.localeCompare(y.id))
+      .map((row) => ({
+        ...row,
+        status: "disabled",
+        revision: row.revision + 1,
+        deletedAt: expect.any(Date),
+        updatedAt: expect.any(Date),
+      })),
+  );
   expect(state.assignments.filter((row) => row.groupId === b.group.id)).toEqual(
     [b.assignment],
   );
@@ -308,67 +330,6 @@ test("group erasure audit failure restores assignments, entitlements and receipt
   expect(
     after.events.filter((row) => row.action === "group.erased"),
   ).toHaveLength(1);
-});
-
-test("group erasure user indexing accepts only its versioned tenant-bound effect contract", async () => {
-  const userId = createId(),
-    organizationId = createId(),
-    groupId = createId();
-  const assignment = { userId, organizationId, groupId };
-  const base = {
-    schemaVersion: 2 as const,
-    actorType: "system" as const,
-    actorId: "test",
-    action: "group.erased",
-    targetType: "group",
-    targetId: groupId,
-    organizationId,
-    outcome: "success" as const,
-    data: {
-      effects: {
-        removedAssignments: [
-          assignment,
-          assignment,
-          null,
-          "bad",
-          { userId: "" },
-          { ...assignment, organizationId: createId() },
-          { ...assignment, groupId: createId() },
-        ],
-      },
-    },
-  };
-  const valid = await recordAuditEvent(runtime.db, base);
-  for (const patch of [
-    { schemaVersion: 1 as const },
-    { action: "group.disabled" },
-    { targetType: "organization" },
-    { outcome: "failure" as const },
-    { organizationId: null },
-    { targetId: null },
-    { data: { effects: { removedAssignments: { userId } } } },
-    {
-      data: {
-        effects: {
-          removedAssignments: [{ userId: 42, organizationId, groupId }],
-        },
-      },
-    },
-  ])
-    await recordAuditEvent(runtime.db, { ...base, ...patch });
-  const rows = await runtime.db
-    .select()
-    .from(auditEventSubjects)
-    .where(eq(auditEventSubjects.entityId, userId));
-  expect(rows).toEqual([
-    expect.objectContaining({
-      eventId: valid.id,
-      entityType: "user",
-      relationship: "affected",
-      organizationId,
-      provenance: "recorded",
-    }),
-  ]);
 });
 
 for (const order of ["assignment-first", "user-first"] as const) {
@@ -463,19 +424,24 @@ for (const order of ["assignment-first", "user-first"] as const) {
       expect(items).toHaveLength(1);
       expect(items[0]).toMatchObject({
         action: "group_member.removed",
-        schemaVersion: 1,
+        schemaVersion: 3,
         organizationId: a.group.organizationId,
         targetId: person.memberId,
         data: {
           groupId: a.group.id,
           before: { id: a.assignment.id },
-          after: null,
+          after: { deletedAt: expect.any(String) },
         },
       });
-      const references = await runtime.db
-        .select()
-        .from(auditEventSubjects)
-        .where(eq(auditEventSubjects.eventId, items[0].id));
+      const references = await withDatabaseScope(
+        runtime.db,
+        { kind: "platform", access: "read" },
+        (tx) =>
+          tx
+            .select()
+            .from(auditEventSubjects)
+            .where(eq(auditEventSubjects.eventId, items[0].id)),
+      );
       expect(references).toContainEqual(
         expect.objectContaining({
           entityType: "user",
@@ -492,10 +458,15 @@ for (const order of ["assignment-first", "user-first"] as const) {
       expect((await history.json()).items).toEqual([]);
       expect((await removeAssignment()).status).toBe(404);
       expect(
-        await runtime.db
-          .select()
-          .from(auditEvents)
-          .where(eq(auditEvents.action, "group_member.removed")),
+        await withDatabaseScope(
+          runtime.db,
+          { kind: "platform", access: "read" },
+          (tx) =>
+            tx
+              .select()
+              .from(auditEvents)
+              .where(eq(auditEvents.action, "group_member.removed")),
+        ),
       ).toEqual([]);
     }
   });
@@ -595,7 +566,7 @@ test("group status changes retain their policy sources and affected users after 
     );
     const replay = await statusGroup(a.group, status, key);
     expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-    expect(await replay.json()).toEqual(await response.json());
+    await expectReceipt(fixture.db, replay);
     expect(
       await fixture.db
         .select()
@@ -743,10 +714,15 @@ for (const order of ["status-first", "user-first"] as const) {
           },
         },
       });
-      const references = await runtime.db
-        .select()
-        .from(auditEventSubjects)
-        .where(eq(auditEventSubjects.eventId, items[0].id));
+      const references = await withDatabaseScope(
+        runtime.db,
+        { kind: "platform", access: "read" },
+        (tx) =>
+          tx
+            .select()
+            .from(auditEventSubjects)
+            .where(eq(auditEventSubjects.eventId, items[0].id)),
+      );
       expect(references).toContainEqual(
         expect.objectContaining({
           entityType: "user",
@@ -761,10 +737,15 @@ for (const order of ["status-first", "user-first"] as const) {
     } else {
       expect(history.status).toBe(200);
       expect((await history.json()).items).toEqual([]);
-      const [event] = await runtime.db
-        .select()
-        .from(auditEvents)
-        .where(eq(auditEvents.action, "group.disabled"));
+      const [event] = await withDatabaseScope(
+        runtime.db,
+        { kind: "platform", access: "read" },
+        (tx) =>
+          tx
+            .select()
+            .from(auditEvents)
+            .where(eq(auditEvents.action, "group.disabled")),
+      );
       expect(event!.data!.policySources).toMatchObject({ assignments: [] });
       const replay = await disableGroup();
       expect(replay.status).toBe(200);
@@ -802,57 +783,4 @@ test("group status subject failure rolls back status and receipt before same-key
       .where(eq(auditEvents.action, "group.disabled")),
   ).toEqual([]);
   expect((await statusGroup(a.group, "disable", key)).status).toBe(200);
-});
-
-test("group status subjects accept only matching versioned tenant/group source records", async () => {
-  const userId = createId(),
-    organizationId = createId(),
-    groupId = createId();
-  const assignment = { userId, organizationId, groupId };
-  const base = {
-    schemaVersion: 2 as const,
-    actorType: "system" as const,
-    actorId: "test",
-    organizationId,
-    targetId: groupId,
-    targetType: "group",
-    action: "group.disabled",
-    outcome: "success" as const,
-    data: {
-      policySources: {
-        assignments: [
-          assignment,
-          assignment,
-          { ...assignment, groupId: createId() },
-          { ...assignment, organizationId: createId() },
-          null,
-          { userId: 42 },
-        ],
-      },
-    },
-  };
-  const valid = await recordAuditEvent(runtime.db, base);
-  for (const patch of [
-    { schemaVersion: 1 as const },
-    { outcome: "failure" as const },
-    { action: "group.disable_unchanged" },
-    { targetType: "other" },
-    { targetId: null },
-    { organizationId: null },
-    { data: { policySources: { assignments: assignment } } },
-  ])
-    await recordAuditEvent(runtime.db, { ...base, ...patch });
-  const references = await runtime.db
-    .select()
-    .from(auditEventSubjects)
-    .where(eq(auditEventSubjects.entityId, userId));
-  expect(references).toEqual([
-    expect.objectContaining({
-      eventId: valid.id,
-      entityType: "user",
-      relationship: "affected",
-      organizationId,
-      provenance: "recorded",
-    }),
-  ]);
 });

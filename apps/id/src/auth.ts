@@ -1,6 +1,5 @@
 import { authDatabaseAdapter } from "./auth/database-adapter.ts";
-import { machineOAuthProvider } from "./auth/machine-provider.ts";
-import { machineIdentity } from "./auth/machine-identity.ts";
+import { userOAuthProvider } from "./auth/user-provider.ts";
 import { sso } from "@better-auth/sso";
 import { betterAuth } from "better-auth";
 import { APIError, isAPIError } from "better-auth/api";
@@ -9,7 +8,6 @@ import { jwt } from "better-auth/plugins/jwt";
 import { organization } from "better-auth/plugins/organization";
 
 import { sessionAuditHooks } from "./auth/audit-hooks.ts";
-import { signInAudit } from "./auth/signin-audit-plugin.ts";
 import type { Database } from "./db/client.ts";
 import { answerableSchema } from "./auth/answerable-schema.ts";
 import {
@@ -21,14 +19,35 @@ import type { Environment } from "./env.ts";
 import { createId } from "./lib/id.ts";
 import { createSsoOriginBoundary } from "./auth/sso-origin.ts";
 import { upstreamTokenStorage } from "./auth/upstream-token-storage.ts";
+import { createVerifiedSso } from "./auth/verified-sso.ts";
 
 export function createAuth(db: Database, environment: Environment) {
-  const ssoOrigin = createSsoOriginBoundary();
+  const verifiedSso = createVerifiedSso(db);
+  const ssoOrigin = createSsoOriginBoundary(verifiedSso);
+  const nativeSso = sso({
+    schema: {
+      ssoProvider: {
+        additionalFields: {
+          revision: {
+            type: "number",
+            required: false,
+            input: false,
+            returned: false,
+          },
+        },
+      },
+    },
+    redirectURI: "/sso/callback",
+    providersLimit: 0,
+    organizationProvisioning: { defaultRole: "member" },
+    resolveUser: ssoOrigin.resolveUser,
+  });
   const auth = betterAuth({
     appName: "Answerable ID",
     onAPIError: {
       onError(error) {
         if (isAPIError(error)) return;
+
         console.error(
           "[id] auth",
           JSON.stringify({ level: "error", event: "provider_diagnostic" }),
@@ -54,7 +73,11 @@ export function createAuth(db: Database, environment: Environment) {
     basePath: "/auth",
     secret: environment.betterAuthSecret,
     secrets: environment.betterAuthSecrets,
-    database: authDatabaseAdapter(db, ssoOrigin.observeProvider),
+    database: authDatabaseAdapter(
+      db,
+      ssoOrigin.observeProviders,
+      verifiedSso.beforeTransaction,
+    ),
     databaseHooks: {
       session: {
         ...sessionAuditHooks(db),
@@ -63,6 +86,18 @@ export function createAuth(db: Database, environment: Environment) {
     },
     session: {
       additionalFields: {
+        authenticationAccountId: {
+          type: "string",
+          required: false,
+          input: false,
+          returned: false,
+        },
+        upstreamAuthTime: {
+          type: "date",
+          required: false,
+          input: false,
+          returned: false,
+        },
         authenticationOrganizationId: {
           type: "string",
           required: false,
@@ -91,6 +126,12 @@ export function createAuth(db: Database, environment: Environment) {
         enabled: false,
       },
       additionalFields: {
+        deletedAt: {
+          type: "date",
+          required: false,
+          input: false,
+          returned: false,
+        },
         directoryId: {
           type: "string",
           required: false,
@@ -105,6 +146,12 @@ export function createAuth(db: Database, environment: Environment) {
     },
     user: {
       additionalFields: {
+        deletedAt: {
+          type: "date",
+          required: false,
+          input: false,
+          returned: false,
+        },
         // Every user Better Auth creates starts inert, including one created
         // by a successful upstream login; activation is an explicit step.
         status: {
@@ -126,9 +173,10 @@ export function createAuth(db: Database, environment: Environment) {
       },
     },
     advanced: {
-      // No verified ingress/peer contract yet. Keep the native shared rate limit;
-      // disableIpTracking would bypass it when no address is available.
-      ipAddress: { ipAddressHeaders: [] },
+      ipAddress: {
+        ipAddressHeaders: ["x-forwarded-for"],
+        trustedProxies: environment.trustedProxyCidrs,
+      },
       database: {
         generateId: createId,
         joins: true,
@@ -140,8 +188,24 @@ export function createAuth(db: Database, environment: Environment) {
       organization({
         allowUserToCreateOrganization: false,
         schema: {
+          invitation: {
+            additionalFields: {
+              deletedAt: {
+                type: "date",
+                required: false,
+                input: false,
+                returned: false,
+              },
+            },
+          },
           organization: {
             additionalFields: {
+              deletedAt: {
+                type: "date",
+                required: false,
+                input: false,
+                returned: false,
+              },
               authorizationVersion: {
                 type: "number",
                 required: true,
@@ -168,6 +232,12 @@ export function createAuth(db: Database, environment: Environment) {
           },
           member: {
             additionalFields: {
+              deletedAt: {
+                type: "date",
+                required: false,
+                input: false,
+                returned: false,
+              },
               status: {
                 type: [...membershipStatuses],
                 required: true,
@@ -194,46 +264,32 @@ export function createAuth(db: Database, environment: Environment) {
       // The issuer is the bare origin (id.answerable.org), not the /auth
       // mount; discovery is served at the root in the provider milestone.
       jwt({
+        disableSettingJwtHeader: true,
         jwt: { issuer: environment.betterAuthUrl },
         schema: { jwks: { modelName: "jwk" } },
       }),
-      sso({
-        schema: {
-          ssoProvider: {
-            additionalFields: {
-              revision: {
-                type: "number",
-                required: false,
-                input: false,
-                returned: false,
-              },
-            },
-          },
+      nativeSso,
+      verifiedSso.plugin(nativeSso),
+      // Native OIDC and OAuth protocol with current tenant policy at each grant boundary.
+      userOAuthProvider(
+        db,
+        {
+          refreshTokenReuseInterval:
+            environment.oauthRefreshReuseIntervalSeconds,
+          // hashClientSecret mirrors this digest for bootstrap clients.
+          storeClientSecret: "hashed",
+          loginPage: `${environment.authPagesUrl}/login`,
+          consentPage: `${environment.authPagesUrl}/consent`,
         },
-        redirectURI: "/sso/callback",
-        providersLimit: 0,
-        organizationProvisioning: { defaultRole: "member" },
-        resolveUser: ssoOrigin.resolveUser,
-      }),
-      // OIDC provider for our apps and OAuth 2.1 authorization server for MCP
-      // servers. The login and consent pages arrive with the federation and
-      // provider milestones; until then no OAuth route is allowlisted.
-      machineOAuthProvider(db, {
-        extensions: [machineIdentity()],
-        // hashClientSecret mirrors this digest for bootstrap clients.
-        storeClientSecret: "hashed",
-        loginPage: `${environment.authPagesUrl}/login`,
-        consentPage: `${environment.authPagesUrl}/consent`,
-      }),
+        `${environment.authPagesUrl}/authorize`,
+      ),
       openAPI({ disableDefaultReference: true }),
-      // Listed last so its after-hook runs once the SSO plugin has provisioned
-      // the membership.
-      signInAudit(db),
     ],
   });
   return {
     ...auth,
-    handler: (request: Request) => ssoOrigin.run(() => auth.handler(request)),
+    handler: (request: Request) =>
+      verifiedSso.run(() => ssoOrigin.run(() => auth.handler(request))),
   };
 }
 

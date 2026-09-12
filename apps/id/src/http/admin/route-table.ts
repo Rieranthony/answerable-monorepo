@@ -15,6 +15,8 @@ export type AdminRoute = {
   platformScope: AdminScope;
   orgScope?: AdminScope;
   kind: "read" | "write" | "erase";
+  /** Server-owned policy; field exceptions are display-only JSON patches. */
+  freshAuthentication: boolean | { unlessOnly: readonly string[] };
   responses: DescribeRouteOptions["responses"];
   parameters?: DescribeRouteOptions["parameters"];
   requestBody?: DescribeRouteOptions["requestBody"];
@@ -43,6 +45,7 @@ export function registerRoute(
     route.path,
     async (context, next) => {
       context.set("operationId", route.operationId);
+      context.set("freshAuthentication", route.freshAuthentication);
       await next();
     },
     admitRoot(),

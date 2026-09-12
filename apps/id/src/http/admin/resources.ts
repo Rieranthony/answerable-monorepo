@@ -1,3 +1,4 @@
+import { commandJson } from "./schemas.ts";
 import { platformRead } from "./platform-read.ts";
 import { json, body, pathParameter, confirmQuery } from "./schemas.ts";
 import type { Hono } from "hono";
@@ -40,11 +41,6 @@ export const resourceSchema = z.object({
   metadata: z.unknown().nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
-});
-// Historical mutation receipts keep their original response shape.
-const replayedResourceSchema = resourceSchema.partial({
-  classification: true,
-  organizationId: true,
 });
 const fields = {
   name: z.string().min(1).max(200),
@@ -101,6 +97,7 @@ export const routes = {
     tag: "Resources",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     responses: standardResponses(
       {},
       {
@@ -123,10 +120,11 @@ export const routes = {
     operationId: "createResource",
     summary: "Create resource",
     description:
-      "Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Create an OAuth resource and return its generated id, URL identifier and configuration, recording the creation in the audit log. Prefer updateResource for an existing URL identifier; validation_failed rejects malformed input conflict means the identifier already exists, and identifier_reserved means a retired identity cannot be reused.",
+      "Requires Idempotency-Key; identical authorised retries return the receipt. Create an OAuth resource and return its generated id, URL identifier and configuration, recording the creation in the audit log. Prefer updateResource for an existing URL identifier; validation_failed rejects malformed input conflict means the identifier already exists including retired identifiers.",
     tag: "Resources",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [idempotencyParameter],
     requestBody: body(createSchema),
     example: {
@@ -142,9 +140,9 @@ export const routes = {
         201: {
           headers: commandResponseHeaders,
           description: "Resource created",
-          content: json(replayedResourceSchema),
+          content: commandJson(resourceSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -158,6 +156,7 @@ export const routes = {
     tag: "Resources",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     parameters,
     responses: standardResponses(
       {},
@@ -179,10 +178,11 @@ export const routes = {
     operationId: "updateResource",
     summary: "Update resource (URL-encode {resource})",
     description:
-      "Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Requires the If-Match ETag from getResource. Missing preconditions return 428, stale new commands return 412; committed replay precedes the old revision check. An unchanged patch records noop without advancing the revision. Change the resource configuration and return the updated record, recording the change in the audit log. The {resource} URL must be percent-encoded in the path; prefer getResource to inspect settings, and validation_failed or not_found identifies malformed input or a missing resource. Scope changes to the bound admin resource cannot remove existing effective platform-write authority; last_platform_administrator rolls back the command. Retain that authority in any new scope configuration.",
+      "Requires Idempotency-Key; identical authorised retries return the receipt. Accepts the If-Match ETag from getResource. Stale supplied revisions return 412; committed replay precedes the old revision check. An unchanged patch records noop without advancing the revision. Change the resource configuration and return the updated record, recording the change in the audit log. The {resource} URL must be percent-encoded in the path; prefer getResource to inspect settings, and validation_failed or not_found identifies malformed input or a missing resource.",
     tag: "Resources",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: { unlessOnly: ["name"] },
     parameters: [...parameters, idempotencyParameter, revisionParameter],
     requestBody: body(patchSchema),
     example: { body: { name: "Renamed" } },
@@ -192,9 +192,9 @@ export const routes = {
         200: {
           headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
           description: "Resource updated",
-          content: json(replayedResourceSchema),
+          content: commandJson(resourceSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 412, 428, 503),
+        ...problemResponses(400, 404, 409, 412, 503),
       },
     ),
   },
@@ -204,10 +204,11 @@ export const routes = {
     operationId: "disableResource",
     summary: "Disable resource (URL-encode {resource})",
     description:
-      "Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Disable the resource for future token grants, revoke its stored grant contexts across tenants and return its updated configuration. The {resource} URL must be percent-encoded in the path; prefer enableResource to restore use, and validation_failed, not_found or resource_protected identifies malformed input, a missing resource or the protected admin resource. An already disabled resource reconciles remaining unrevoked contexts; it returns 200 with a noop outcome only when neither state nor contexts change. Protection follows the persisted system resource UUID, not a configured name.",
+      "Requires Idempotency-Key; identical authorised retries return the receipt. Disable the resource for future token grants, revoke its stored grant contexts across tenants and return its updated configuration. The {resource} URL must be percent-encoded in the path; prefer enableResource to restore use, and validation_failed, not_found or resource_protected identifies malformed input, a missing resource or the protected admin resource. An already disabled resource reconciles remaining unrevoked contexts; it returns 200 with a noop outcome only when neither state nor contexts change. Protection follows the persisted system resource UUID, not a configured name.",
     tag: "Resources",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [...parameters, idempotencyParameter],
     responses: standardResponses(
       {},
@@ -215,9 +216,9 @@ export const routes = {
         200: {
           headers: commandResponseHeaders,
           description: "Resource disabled",
-          content: json(replayedResourceSchema),
+          content: commandJson(resourceSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -227,10 +228,11 @@ export const routes = {
     operationId: "enableResource",
     summary: "Enable resource (URL-encode {resource})",
     description:
-      "Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Enable resource and return the updated record without restoring previously revoked grant contexts. Prefer disableResource for the opposite transition; not_found means the target is missing and an already active resource returns 200 with a noop outcome; the {resource} URL must be percent-encoded in the path.",
+      "Requires Idempotency-Key; identical authorised retries return the receipt. Enable resource and return the updated record without restoring previously revoked grant contexts. Prefer disableResource for the opposite transition; not_found means the target is missing and an already active resource returns 200 with a noop outcome; the {resource} URL must be percent-encoded in the path.",
     tag: "Resources",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [...parameters, idempotencyParameter],
     responses: standardResponses(
       {},
@@ -238,9 +240,9 @@ export const routes = {
         200: {
           headers: commandResponseHeaders,
           description: "Resource enabled",
-          content: json(replayedResourceSchema),
+          content: commandJson(resourceSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -250,10 +252,11 @@ export const routes = {
     operationId: "eraseResource",
     summary: "Erase resource (URL-encode {resource})",
     description:
-      "capability_references_exist requires removing all referencing capabilities before erasure. Requires Idempotency-Key; identical authorised retries recover the original result for seven days. Permanently erase the resource and return no content; resource_has_entitlements requires removing entitlements first; resource_has_clients requires explicitly unlinking all clients before erasure; resource_protected prevents erasing the admin resource. The confirm query parameter must equal the target id; the {resource} URL must be percent-encoded in the path, and confirm is the decoded resource identifier. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableResource to retain the resource registration. Protection follows the persisted system resource UUID, not a configured name.",
+      "capability_references_exist requires removing all referencing capabilities before erasure. Requires Idempotency-Key; identical authorised retries return the receipt. Soft-delete the resource and return no content; resource_has_entitlements requires removing entitlements first; resource_has_clients requires explicitly unlinking all clients before erasure; resource_protected prevents erasing the admin resource. The confirm query parameter must equal the target id; the {resource} URL must be percent-encoded in the path, and confirm is the decoded resource identifier. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableResource for reversible suspension. Protection follows the persisted system resource UUID, not a configured name. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
     tag: "Resources",
     platformScope: "platform:write",
     kind: "erase",
+    freshAuthentication: true,
     parameters: [
       ...parameters,
       idempotencyParameter,
@@ -267,7 +270,7 @@ export const routes = {
           headers: commandResponseHeaders,
           description: "Resource erased",
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -302,22 +305,15 @@ export function register(app: Hono<AppEnvironment>) {
         ...parsed,
         allowedScopes: [...new Set(parsed.allowedScopes)].sort(),
       };
-      const { classification, organizationId, ...configuration } = input;
-      // Keep pre-ownership shared-resource receipts replayable.
-      const canonicalInput =
-        classification === "platform_shared"
-          ? configuration
-          : { ...configuration, classification, organizationId };
       return platformCommand(
         context,
         "createResource",
-        operationJson(canonicalInput),
+        operationJson(input),
         201,
         async (platform) => ({
           body: await service.createResource(platform, input),
           resultReference: { type: "resource", id: input.identifier },
         }),
-        { retention: "ordinary" },
       );
     },
   );
@@ -350,7 +346,7 @@ export function register(app: Hono<AppEnvironment>) {
         operationJson({ identifier, expected, patch: input }),
         200,
         async (platform) => {
-          const body = await service.updateResource(
+          const { body, changed } = await service.updateResource(
             platform,
             identifier,
             input,
@@ -358,12 +354,11 @@ export function register(app: Hono<AppEnvironment>) {
           );
           return {
             body,
-            outcome: body.revision === expected.revision ? "noop" : "applied",
+            outcome: changed ? "applied" : "noop",
             resultReference: { type: "resource", id: identifier },
           };
         },
         {
-          retention: "ordinary",
           etag: (body) =>
             revisionTag(
               resourceSchema.pick({ id: true, revision: true }).parse(body),
@@ -391,7 +386,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "resource", id: identifier },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -414,7 +408,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "resource", id: identifier },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -438,7 +431,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "resource", id: identifier },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );

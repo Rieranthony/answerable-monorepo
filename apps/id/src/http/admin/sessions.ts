@@ -1,5 +1,6 @@
+import { commandJson } from "./schemas.ts";
 import { platformRead } from "./platform-read.ts";
-import { json, pathParameter, uuidParam } from "./schemas.ts";
+import { pathParameter, uuidParam } from "./schemas.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
 import {
@@ -50,11 +51,15 @@ export const routes = {
     tag: "Sessions",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     parameters: ["userId"].map((name) => pathParameter(name, "uuid")),
     responses: standardResponses(
       {},
       {
-        200: { description: "Success", content: json(page(sessionSchema)) },
+        200: {
+          description: "Success",
+          content: commandJson(page(sessionSchema)),
+        },
         ...problemResponses(400, 404),
       },
     ),
@@ -65,10 +70,11 @@ export const routes = {
     operationId: "revokeUserSessions",
     summary: "Revoke user sessions",
     description:
-      "Requires Idempotency-Key. Authorised retries recover the original result for seven days without revoking later sessions. Live changed-input reuse conflicts; expired recovery never repeats the command. Revoke all of the user’s sessions and tokens and return an object containing the revoked session count. Prefer revokeUserSession to end only one session; validation_failed rejects malformed ids and not_found means the user is missing.",
+      "Requires Idempotency-Key. Authorised retries return the receipt without revoking later sessions. Changed-input reuse conflicts. Revoke all of the user’s sessions and tokens and return an object containing the revoked session count. Prefer revokeUserSession to end only one session; validation_failed rejects malformed ids and not_found means the user is missing.",
     tag: "Sessions",
     platformScope: "platform:users",
     kind: "write",
+    freshAuthentication: true,
     parameters: [pathParameter("userId", "uuid"), idempotencyParameter],
     responses: standardResponses(
       {},
@@ -76,9 +82,9 @@ export const routes = {
         200: {
           description: "Success",
           headers: commandResponseHeaders,
-          content: json(revokedSchema),
+          content: commandJson(revokedSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -88,10 +94,11 @@ export const routes = {
     operationId: "revokeUserSession",
     summary: "Revoke user session",
     description:
-      "Requires Idempotency-Key. Authorised retries recover the original result for seven days without revoking later sessions. Live changed-input reuse conflicts; expired recovery never repeats the command. Revoke one user session and its associated tokens and return no content. Prefer revokeUserSessions to revoke every session and token for that user; validation_failed rejects malformed ids and not_found means the user or session is missing.",
+      "Requires Idempotency-Key. Authorised retries return the receipt without revoking later sessions. Changed-input reuse conflicts. Revoke one user session and its associated tokens and return no content. Prefer revokeUserSessions to revoke every session and token for that user; validation_failed rejects malformed ids and not_found means the user or session is missing.",
     tag: "Sessions",
     platformScope: "platform:users",
     kind: "write",
+    freshAuthentication: true,
     parameters: [
       ...["userId", "sessionId"].map((name) => pathParameter(name, "uuid")),
       idempotencyParameter,
@@ -100,7 +107,7 @@ export const routes = {
       {},
       {
         204: { description: "Success", headers: commandResponseHeaders },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -143,7 +150,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "user", id: userId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -166,7 +172,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "session", id: sessionId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );

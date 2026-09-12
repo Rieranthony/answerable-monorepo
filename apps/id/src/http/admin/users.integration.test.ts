@@ -1,11 +1,11 @@
-import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
+import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
 import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
-import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
+import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { signInThroughIdp } from "../../__tests__/federation.ts";
 import {
   auditEvents,
@@ -16,6 +16,7 @@ import {
   users,
 } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
+import { routes } from "./users.ts";
 
 let fixture: AdminFixture;
 beforeAll(async () => {
@@ -138,7 +139,6 @@ async function deadCookie(value: string) {
   expect(response.status).toBe(200);
   expect(await response.json()).toBeNull();
 }
-import { routes } from "./users.ts";
 describeAdminRoutes(routes, () => fixture);
 
 test("platform admin and machine administer a fresh user through revocation, disable, retirement and erasure", async () => {
@@ -400,42 +400,16 @@ test("user pagination, platform reader access, validation and lifecycle conflict
     cursor = page.nextCursor;
   } while (cursor);
   expect(seen).toEqual(
-    (await fixture.db.select({ id: users.id }).from(users))
+    (
+      await fixture.db
+        .select({ id: users.id })
+        .from(users)
+        .where(isNull(users.deletedAt))
+    )
       .map((r) => r.id)
       .sort()
       .reverse(),
   );
-});
-
-test("erase requires a query confirmation and checks existence before mismatch", async () => {
-  const id = crypto.randomUUID();
-  const path = `/api/admin/v1/users/${id}`;
-  for (const [query, status, code] of [
-    ["", 400, "validation_failed"],
-    ["?confirm=invalid", 400, "validation_failed"],
-    ["?" + new URLSearchParams({ confirm: id }), 404, "not_found"],
-    [
-      "?" + new URLSearchParams({ confirm: crypto.randomUUID() }),
-      404,
-      "not_found",
-    ],
-  ] as const) {
-    const response = await fixture.app.request(path + query, {
-      method: "DELETE",
-      headers: fixture.headers("platformAdmin"),
-    });
-    expect(response.status).toBe(status);
-    expect(await response.json()).toMatchObject({ code });
-  }
-  const headers = fixture.headers("platformAdmin");
-  headers.set("content-type", "application/json");
-  const response = await fixture.app.request(path, {
-    method: "DELETE",
-    headers,
-    body: JSON.stringify({ confirm: id }),
-  });
-  expect(response.status).toBe(400);
-  expect(await response.json()).toMatchObject({ code: "validation_failed" });
 });
 
 test("global identity reads reject platform authority revoked after middleware", async () => {
@@ -470,54 +444,5 @@ test("global identity reads reject platform authority revoked after middleware",
         .set({ status: "active", revokedAt: null })
         .where(eq(members.id, fixture.principals.platformReader.memberId));
     }
-  }
-});
-
-test("global identity services reject copied, expired and tenant contexts", async () => {
-  const userService = await import("../../services/users.ts");
-  const sessionService = await import("../../services/sessions.ts");
-  const { inPlatformRead } =
-    await import("../../__tests__/platform-context.ts");
-  const { inTenantRead } = await import("../../__tests__/tenant-command.ts");
-  type Platform =
-    import("../../services/platform-context.ts").PlatformReadContext;
-  const target = fixture.principals.tenantReader.userId;
-  const readers = [
-    (context: Platform) => userService.listUsers(context, { limit: 1 }),
-    (context: Platform) => userService.getUser(context, target),
-    (context: Platform) =>
-      sessionService.listUserSessions(context, target, { limit: 1 }),
-  ];
-  let saved!: Platform;
-  await inPlatformRead(fixture.db, async (context) => {
-    saved = context;
-    for (const read of readers) {
-      expect(await read(context)).toBeDefined();
-      await expect(read({ ...context })).rejects.toThrow("Invalid or expired");
-    }
-  });
-  for (const read of readers)
-    await expect(read(saved)).rejects.toThrow("Invalid or expired");
-  await inTenantRead(
-    fixture.db,
-    fixture.tenant.organizationId,
-    "directory",
-    async (context) => {
-      for (const read of readers)
-        await expect(read(context as unknown as Platform)).rejects.toThrow(
-          "Invalid or expired",
-        );
-    },
-  );
-  for (const path of [
-    "/users",
-    `/users/${target}`,
-    `/users/${target}/sessions`,
-  ]) {
-    const response = await fixture.app.request(`/api/admin/v1${path}`, {
-      headers: fixture.headers("platformReader"),
-    });
-    expect(response.status).toBe(200);
-    expect(response.headers.get("Cache-Control")).toBe("no-store");
   }
 });

@@ -36,7 +36,7 @@ beforeAll(() => {
 afterAll(() => connection.close());
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table security_identifiers, audit_events, organizations, users, oauth_clients, oauth_resources cascade`,
+    sql`truncate table audit_events, organizations, users, oauth_clients, oauth_resources cascade`,
   );
 });
 async function seed() {
@@ -128,12 +128,9 @@ for (const mode of ["disable", "erase"] as const) {
     );
     expect(
       after.filter((row) => row.clientInstanceId === target.id),
-    ).toHaveLength(mode === "disable" ? 2 : 0);
-    if (mode === "disable")
-      for (const row of after.filter(
-        (row) => row.clientInstanceId === target.id,
-      ))
-        expect(row.revokedAt).not.toBeNull();
+    ).toHaveLength(2);
+    for (const row of after.filter((row) => row.clientInstanceId === target.id))
+      expect(row.revokedAt).not.toBeNull();
     const all = await inPlatformRead(db, (context) =>
       listAuditEvents(context, { targetId: target.clientId }, { limit: 20 }),
     );
@@ -149,11 +146,12 @@ for (const mode of ["disable", "erase"] as const) {
       ...(mode === "disable"
         ? { revokedTokens: { access: [], refresh: [] } }
         : {
+            deletionMode: "soft",
             effects: {
               deletedAccessTokens: [],
               deletedRefreshTokens: [],
-              deletedConsents: [],
-              deletedClientResources: [],
+              softDeletedConsents: [],
+              softDeletedClientResources: [],
             },
           }),
       grantContexts: expect.arrayContaining(

@@ -32,10 +32,13 @@ Here's how we write documentation. These are Lee Robinson's ten principles (http
    - Cross-link related guides and API pages in both directions.
 7. Localized
    - English only for now. No `/en` in URLs; no locale hardcoded in paths.
-8. Responsive, accessible
-   - Alt text on every image. Respect `prefers-reduced-motion`. Keep the mobile menu working.
-9. Universal
-   - Ship rules files (this one). Keep the OpenAPI contract honest: only routes a client can reach.
+8. Responsive
+   - Keep the mobile menu working.
+9. Accessible
+   - Alt text on every image. Respect `prefers-reduced-motion`.
+10. Universal
+
+- Ship rules files (this one). Keep the OpenAPI contract honest: only routes a client can reach.
 
 ## Repo card
 

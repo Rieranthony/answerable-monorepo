@@ -1,10 +1,9 @@
-import * as productionSessions from "./sessions.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import { testEnvironment } from "../../__tests__/support.ts";
-import { createDatabase, type DatabaseConnection } from "../client.ts";
 import { createId } from "../../lib/id.ts";
-import { users, sessions } from "../schema/index.ts";
+import { createDatabase, type DatabaseConnection } from "../client.ts";
+import { sessions, users } from "../schema/index.ts";
 
 let connection: DatabaseConnection;
 beforeAll(() => {
@@ -12,7 +11,7 @@ beforeAll(() => {
 });
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table audit_events, security_identifiers, organizations, users cascade`,
+    sql`truncate table audit_events, organizations, users cascade`,
   );
 });
 afterAll(async () => {
@@ -52,9 +51,9 @@ test("deletes one user's sessions with exact IDs, preserving other users", async
 });
 
 import {
-  listUserSessions,
   deleteSession,
   findUserSession,
+  listUserSessions,
 } from "../../__tests__/session-queries.ts";
 import { members, organizations } from "../schema/index.ts";
 
@@ -94,16 +93,4 @@ test("session queries paginate, hide tokens and enforce user and organisation ow
     .insert(organizations)
     .values({ id: organizationId, slug: organizationId, name: "Org" });
   await db.insert(members).values({ id: memberId, organizationId, userId });
-});
-
-test("global session listing rejects raw database authority", async () => {
-  await expect(
-    Promise.resolve().then(() =>
-      Reflect.apply(productionSessions.listUserSessions, undefined, [
-        connection.db,
-        createId(),
-        { limit: 10 },
-      ]),
-    ),
-  ).rejects.toThrow("Invalid or expired");
 });

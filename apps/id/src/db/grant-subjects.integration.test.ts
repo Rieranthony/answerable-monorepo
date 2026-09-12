@@ -1,16 +1,21 @@
-import * as productionAuditQueries from "./queries/audit.ts";
-import { inPlatformRead } from "../__tests__/platform-context.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
-import { createDatabase, type DatabaseConnection } from "./client.ts";
-import { testEnvironment } from "../__tests__/support.ts";
-import { createId } from "../lib/id.ts";
-import { auditEvents, auditEventSubjects } from "./schema/index.ts";
 import {
-  recordAuditEvent,
   listUserAuditEvents,
+  recordAuditEvent,
   type AuditEventInput,
 } from "../__tests__/audit-queries.ts";
+import { testEnvironment } from "../__tests__/support.ts";
+import { createId } from "../lib/id.ts";
+import { createDatabase, type DatabaseConnection } from "./client.ts";
+import { withDatabaseScope } from "./isolation.ts";
+import {
+  auditEvents,
+  auditEventSubjects,
+  members,
+  organizations,
+  users,
+} from "./schema/index.ts";
 let connection: DatabaseConnection;
 beforeAll(() => {
   connection = createDatabase(testEnvironment());
@@ -102,71 +107,440 @@ for (const contract of contracts) {
   });
 }
 
-test("populated lifecycle backfill is repeatable, excludes malformed contracts and preserves original facts", async () => {
-  const legacy = await Bun.file(
-    new URL("../../drizzle/0031_grant_effect_subjects.sql", import.meta.url),
-  ).text();
-  const migration = await Bun.file(
-    new URL("../../drizzle/0032_lifecycle_grant_subjects.sql", import.meta.url),
-  ).text();
-  await inPlatformRead(connection.db, async (context) => {
-    const tx = context.tx;
-    const current = await tx.execute<{ definition: string }>(
-      sql`select pg_get_functiondef('capture_audit_subjects(audit_events, text)'::regprocedure) as definition`,
-    );
-    await tx.execute(sql.raw(legacy.split("--> statement-breakpoint")[0]!));
-    const userId = createId();
-    const valid = [];
-    for (const contract of contracts) {
-      const base = input(contract, userId);
-      valid.push(await recordAuditEvent(tx, base));
-      await recordAuditEvent(tx, { ...base, outcome: "failure" });
-      await recordAuditEvent(tx, {
-        ...base,
-        data: {
-          grantContexts: "bad",
-          deletedGrantContexts: false,
-          effects: [],
+// These versioned contracts differ from the legacy grant arrays above. Keep their
+// validation at the database boundary, beside the other subject contracts.
+async function subjectFixture() {
+  const principal = async () => {
+    const organizationId = createId(),
+      userId = createId(),
+      memberId = createId();
+    await connection.db
+      .insert(organizations)
+      .values({ id: organizationId, slug: organizationId, name: "Subject" });
+    await connection.db.insert(users).values({
+      id: userId,
+      email: userId + "@subject.example",
+      name: "Subject",
+    });
+    await connection.db
+      .insert(members)
+      .values({ id: memberId, organizationId, userId });
+    return { organizationId, userId, memberId };
+  };
+  const tenantReader = await principal(),
+    outsider = await principal();
+  return {
+    tenant: tenantReader,
+    outsider,
+    principals: { tenantReader, outsider },
+  };
+}
+
+test("global erasure subject capture rejects unrelated versions, outcomes and malformed effect contracts", async () => {
+  const fixture = await subjectFixture();
+  const person = fixture.principals.tenantReader,
+    other = fixture.principals.outsider;
+  const effect = { id: createId(), userId: other.userId };
+  const base = {
+    actorType: "system" as const,
+    actorId: "contract-test",
+    targetType: "user",
+    targetId: person.userId,
+    organizationId: null,
+    action: "user.erased",
+    outcome: "success" as const,
+    schemaVersion: 2 as const,
+  };
+  const data = {
+    before: { id: person.userId },
+    effects: { deletedAccessTokens: [effect] },
+  };
+  for (const input of [
+    { ...base, schemaVersion: 1 as const, data },
+    { ...base, outcome: "failure" as const, data },
+    { ...base, organizationId: person.organizationId, data },
+    { ...base, action: "user.disabled", data },
+    { ...base, data: { ...data, before: { id: other.userId } } },
+    { ...base, data: { ...data, effects: { deletedAccessTokens: effect } } },
+    {
+      ...base,
+      data: {
+        ...data,
+        effects: {
+          deletedAccessTokens: [
+            { ...effect, id: "" },
+            { id: effect.id, userId: null },
+          ],
         },
-      });
-      await tx
-        .insert(auditEvents)
-        .values({ ...base, id: createId(), schemaVersion: 0 });
-    }
-    const before = await tx.select().from(auditEvents).orderBy(auditEvents.id);
-    expect(
-      (
-        await productionAuditQueries.listUserAuditEvents(
-          context,
-          userId,
-          {},
-          { limit: 30 },
-        )
-      ).items,
-    ).toEqual([]);
-    for (let run = 0; run < 2; run++) {
-      for (const statement of migration.split("--> statement-breakpoint"))
-        await tx.execute(sql.raw(statement));
-      expect(
-        (
-          await productionAuditQueries.listUserAuditEvents(
-            context,
-            userId,
-            {},
-            { limit: 30 },
-          )
-        ).items,
-      ).toEqual([...valid].sort((a, b) => b.id.localeCompare(a.id)));
-      expect(
-        await tx.select().from(auditEvents).orderBy(auditEvents.id),
-      ).toEqual(before);
-      expect(
-        await tx
+      },
+    },
+  ]) {
+    const event = await recordAuditEvent(connection.db, input);
+    const subjects = await connection.db
+      .select()
+      .from(auditEventSubjects)
+      .where(eq(auditEventSubjects.eventId, event.id));
+    expect(subjects.filter((row) => row.relationship === "affected")).toEqual(
+      [],
+    );
+  }
+});
+
+test("organisation erasure subjects accept only the explicit versioned tenant effect arrays", async () => {
+  const fixture = await subjectFixture();
+  const organizationId = fixture.tenant.organizationId;
+  const person = fixture.principals.tenantReader;
+  const effect = { id: person.memberId, userId: person.userId, organizationId };
+  const base = {
+    actorType: "system" as const,
+    actorId: "contract-test",
+    organizationId,
+    targetId: organizationId,
+    targetType: "organization",
+    action: "organization.erased",
+    outcome: "success" as const,
+    schemaVersion: 2 as const,
+  };
+  for (const input of [
+    {
+      ...base,
+      schemaVersion: 1 as const,
+      data: { effects: { removedMembers: [effect] } },
+    },
+    {
+      ...base,
+      outcome: "failure" as const,
+      data: { effects: { removedMembers: [effect] } },
+    },
+    {
+      ...base,
+      targetId: fixture.outsider.organizationId,
+      data: { effects: { removedMembers: [effect] } },
+    },
+    { ...base, data: { effects: { removedMembers: effect } } },
+    {
+      ...base,
+      data: {
+        effects: {
+          removedMembers: [
+            { ...effect, organizationId: fixture.outsider.organizationId },
+            { ...effect, id: "" },
+          ],
+        },
+      },
+    },
+  ]) {
+    const event = await recordAuditEvent(connection.db, input);
+    const subjects = await connection.db
+      .select()
+      .from(auditEventSubjects)
+      .where(eq(auditEventSubjects.eventId, event.id));
+    expect(subjects.filter((row) => row.relationship === "affected")).toEqual(
+      [],
+    );
+  }
+  const event = await recordAuditEvent(connection.db, {
+    ...base,
+    data: {
+      effects: { removedMembers: [effect], clearedSessionSelections: [effect] },
+      deletedGrantContexts: [effect],
+    },
+  });
+  const subjects = await connection.db
+    .select()
+    .from(auditEventSubjects)
+    .where(eq(auditEventSubjects.eventId, event.id));
+  expect(
+    subjects.filter((row) => row.relationship === "affected"),
+  ).toHaveLength(1);
+});
+
+test("group erasure user indexing accepts only its versioned tenant-bound effect contract", async () => {
+  const userId = createId(),
+    organizationId = createId(),
+    groupId = createId();
+  const assignment = { userId, organizationId, groupId };
+  const base = {
+    schemaVersion: 2 as const,
+    actorType: "system" as const,
+    actorId: "test",
+    action: "group.erased",
+    targetType: "group",
+    targetId: groupId,
+    organizationId,
+    outcome: "success" as const,
+    data: {
+      effects: {
+        removedAssignments: [
+          assignment,
+          assignment,
+          null,
+          "bad",
+          { userId: "" },
+          { ...assignment, organizationId: createId() },
+          { ...assignment, groupId: createId() },
+        ],
+      },
+    },
+  };
+  const valid = await recordAuditEvent(connection.db, base);
+  for (const patch of [
+    { schemaVersion: 1 as const },
+    { action: "group.disabled" },
+    { targetType: "organization" },
+    { outcome: "failure" as const },
+    { organizationId: null },
+    { targetId: null },
+    { data: { effects: { removedAssignments: { userId } } } },
+    {
+      data: {
+        effects: {
+          removedAssignments: [{ userId: 42, organizationId, groupId }],
+        },
+      },
+    },
+  ])
+    await recordAuditEvent(connection.db, { ...base, ...patch });
+  const rows = await withDatabaseScope(
+    connection.db,
+    { kind: "platform", access: "read" },
+    (tx) =>
+      tx
+        .select()
+        .from(auditEventSubjects)
+        .where(eq(auditEventSubjects.entityId, userId)),
+  );
+  expect(rows).toEqual([
+    expect.objectContaining({
+      eventId: valid.id,
+      entityType: "user",
+      relationship: "affected",
+      organizationId,
+      provenance: "recorded",
+    }),
+  ]);
+});
+
+test("group status subjects accept only matching versioned tenant/group source records", async () => {
+  const userId = createId(),
+    organizationId = createId(),
+    groupId = createId();
+  const assignment = { userId, organizationId, groupId };
+  const base = {
+    schemaVersion: 2 as const,
+    actorType: "system" as const,
+    actorId: "test",
+    organizationId,
+    targetId: groupId,
+    targetType: "group",
+    action: "group.disabled",
+    outcome: "success" as const,
+    data: {
+      policySources: {
+        assignments: [
+          assignment,
+          assignment,
+          { ...assignment, groupId: createId() },
+          { ...assignment, organizationId: createId() },
+          null,
+          { userId: 42 },
+        ],
+      },
+    },
+  };
+  const valid = await recordAuditEvent(connection.db, base);
+  for (const patch of [
+    { schemaVersion: 1 as const },
+    { outcome: "failure" as const },
+    { action: "group.disable_unchanged" },
+    { targetType: "other" },
+    { targetId: null },
+    { organizationId: null },
+    { data: { policySources: { assignments: assignment } } },
+  ])
+    await recordAuditEvent(connection.db, { ...base, ...patch });
+  const references = await withDatabaseScope(
+    connection.db,
+    { kind: "platform", access: "read" },
+    (tx) =>
+      tx
+        .select()
+        .from(auditEventSubjects)
+        .where(eq(auditEventSubjects.entityId, userId)),
+  );
+  expect(references).toEqual([
+    expect.objectContaining({
+      eventId: valid.id,
+      entityType: "user",
+      relationship: "affected",
+      organizationId,
+      provenance: "recorded",
+    }),
+  ]);
+});
+
+test("entitlement subject capture validates the existing tenant-bound event contract", async () => {
+  const fixture = await subjectFixture();
+  const person = fixture.principals.tenantReader;
+  const organizationId = fixture.tenant.organizationId;
+  const targetId = createId();
+  const state = { id: targetId, organizationId, memberId: person.memberId };
+  const base = {
+    schemaVersion: 1 as const,
+    actorType: "system" as const,
+    actorId: "test",
+    organizationId,
+    targetId,
+    targetType: "entitlement",
+    action: "entitlement.removed",
+    outcome: "success" as const,
+    data: { before: state, after: null },
+  };
+  const valid = await recordAuditEvent(connection.db, base);
+  for (const patch of [
+    { schemaVersion: 2 as const },
+    { outcome: "failure" as const },
+    { action: "entitlement.unknown" },
+    { targetType: "other" },
+    { targetId: null },
+    { organizationId: null },
+    { organizationId: fixture.outsider.organizationId },
+    {
+      data: {
+        before: { ...state, organizationId: fixture.outsider.organizationId },
+      },
+    },
+    { data: { before: { ...state, id: createId() } } },
+    {
+      data: {
+        before: { ...state, memberId: fixture.principals.outsider.memberId },
+      },
+    },
+    { data: { before: null } },
+    { data: { before: "bad" } },
+    { data: { before: { ...state, memberId: null } } },
+  ]) {
+    const event = await recordAuditEvent(connection.db, { ...base, ...patch });
+    const subjects = await withDatabaseScope(
+      connection.db,
+      { kind: "platform", access: "read" },
+      (tx) =>
+        tx
           .select()
           .from(auditEventSubjects)
-          .where(eq(auditEventSubjects.entityId, userId)),
-      ).toHaveLength(6);
+          .where(eq(auditEventSubjects.eventId, event.id)),
+    );
+    expect(
+      subjects.filter((subject) => subject.relationship === "affected"),
+    ).toEqual([]);
+  }
+  const subjects = await withDatabaseScope(
+    connection.db,
+    { kind: "platform", access: "read" },
+    (tx) =>
+      tx
+        .select()
+        .from(auditEventSubjects)
+        .where(eq(auditEventSubjects.eventId, valid.id)),
+  );
+  expect(subjects).toContainEqual(
+    expect.objectContaining({
+      entityType: "user",
+      entityId: person.userId,
+      relationship: "affected",
+      organizationId,
+    }),
+  );
+});
+
+test("entitlement audience subjects validate version, target, tenant and group without live rows", async () => {
+  const userId = createId(),
+    organizationId = createId(),
+    targetId = createId(),
+    groupId = createId();
+  for (const targetGroup of [null, groupId]) {
+    const state = {
+      id: targetId,
+      organizationId,
+      groupId: targetGroup,
+      memberId: null,
+    };
+    const person = {
+      userId,
+      organizationId,
+      memberId: createId(),
+      groupAssignment: targetGroup === null ? null : { groupId: targetGroup },
+    };
+    const base = {
+      schemaVersion: 2 as const,
+      actorType: "system" as const,
+      actorId: "test",
+      organizationId,
+      targetId,
+      targetType: "entitlement",
+      action: "entitlement.created",
+      outcome: "success" as const,
+      data: {
+        before: null,
+        after: state,
+        audience: [
+          person,
+          person,
+          { ...person, organizationId: createId() },
+          { ...person, groupAssignment: { groupId: createId() } },
+          { userId: 42 },
+          null,
+        ],
+      },
+    };
+    const valid = await recordAuditEvent(connection.db, base);
+    for (const patch of [
+      { schemaVersion: 1 as const },
+      { outcome: "failure" as const },
+      { action: "entitlement.update_unchanged" },
+      { targetType: "other" },
+      { organizationId: null },
+      { targetId: null },
+      { data: { ...base.data, after: { ...state, id: createId() } } },
+      {
+        data: { ...base.data, after: { ...state, organizationId: createId() } },
+      },
+      { data: { ...base.data, after: { ...state, memberId: createId() } } },
+      { data: { ...base.data, after: { ...state, groupId: 42 } } },
+      { data: { ...base.data, audience: person } },
+      { data: { ...base.data, audience: [{ ...person, memberId: "" }] } },
+    ]) {
+      const event = await recordAuditEvent(connection.db, {
+        ...base,
+        ...patch,
+      });
+      const refs = await withDatabaseScope(
+        connection.db,
+        { kind: "platform", access: "read" },
+        (tx) =>
+          tx
+            .select()
+            .from(auditEventSubjects)
+            .where(eq(auditEventSubjects.eventId, event.id)),
+      );
+      expect(refs.filter((ref) => ref.relationship === "affected")).toEqual([]);
     }
-    await tx.execute(sql.raw(current.rows[0]!.definition));
-  });
+    const refs = await withDatabaseScope(
+      connection.db,
+      { kind: "platform", access: "read" },
+      (tx) =>
+        tx
+          .select()
+          .from(auditEventSubjects)
+          .where(eq(auditEventSubjects.eventId, valid.id)),
+    );
+    expect(refs.filter((ref) => ref.relationship === "affected")).toEqual([
+      expect.objectContaining({
+        entityType: "user",
+        entityId: userId,
+        organizationId,
+        provenance: "recorded",
+      }),
+    ]);
+  }
 });

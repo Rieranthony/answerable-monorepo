@@ -1,3 +1,4 @@
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import {
@@ -51,7 +52,7 @@ test("client lifecycle commands recover original results and record new desired-
     "POST",
     "disable-once",
   );
-  expect(await replay.json()).toEqual(body);
+  await expectReceipt(fixture.db, replay);
   expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
   const noop = await request(
     "/clients/lifecycle/disable",
@@ -80,7 +81,7 @@ test("client lifecycle commands recover original results and record new desired-
     "POST",
     "disable-once",
   );
-  expect(await oldDisable.json()).toEqual(body);
+  await expectReceipt(fixture.db, oldDisable);
   const current = await request("/clients/lifecycle", "GET", "read");
   expect(await current.json()).toMatchObject({
     disabled: false,
@@ -114,7 +115,7 @@ test("resource links, immutable owner verification and erasure replay without re
   expect(await status(linked)).toMatchObject({ outcome: "applied" });
   const replay = await request(path, "PUT", "link-once");
   expect(replay.status).toBe(201);
-  expect(await replay.json()).toEqual({ created: true });
+  await expectReceipt(fixture.db, replay);
   expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
   const duplicate = await request(path, "PUT", "link-new-key");
   expect(duplicate.status).toBe(200);
@@ -158,11 +159,10 @@ test("resource links, immutable owner verification and erasure replay without re
   expect(eraseReplay.headers.get("Idempotency-Replayed")).toBe("true");
   expect(await status(eraseReplay)).toEqual(erasedStatus);
   expect((await request(path, "DELETE", "unlink-once")).status).toBe(204);
-  expect(
-    await (
-      await request("/clients/lifecycle/owner", "PUT", "owner-once", ownerInput)
-    ).json(),
-  ).toEqual(ownerBody);
+  await expectReceipt(
+    fixture.db,
+    await request("/clients/lifecycle/owner", "PUT", "owner-once", ownerInput),
+  );
   const changedInput = await request(
     "/clients/lifecycle?confirm=different",
     "DELETE",
@@ -181,7 +181,16 @@ test("resource links, immutable owner verification and erasure replay without re
   expect(events[0]).toMatchObject({
     action: "client.erased",
     organizationId: fixture.tenant.organizationId,
-    data: { before: { id: ownerBody.id }, after: null },
+    schemaVersion: 3,
+    data: {
+      before: { id: ownerBody.id },
+      after: {
+        id: ownerBody.id,
+        deletedAt: expect.any(String),
+        disabled: true,
+        hasClientSecret: false,
+      },
+    },
   });
 });
 

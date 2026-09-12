@@ -1,7 +1,6 @@
 import { identityScopes } from "../auth/grant-scopes.ts";
-import { hasPlatformWriter } from "../db/queries/grants.ts";
 import { adminScopes } from "../http/admin/scopes.ts";
-import { and, desc, eq } from "drizzle-orm";
+import { sql, and, desc, eq } from "drizzle-orm";
 import {
   organizationCapabilities,
   systemBindings,
@@ -31,12 +30,12 @@ export type CapabilityInput = (
   | {
       clientId: string;
       resource: string;
-      grantKind: "client_credentials" | "refresh_token";
+      grantKind: "client_credentials";
     }
   | {
       clientId: string;
       resource: string | null;
-      grantKind: "authorization_code";
+      grantKind: "authorization_code" | "refresh_token";
     }
   | { clientId: null; resource: string; grantKind: "admin_session" }
 ) & {
@@ -49,6 +48,7 @@ export type CapabilityPatch = Partial<
 >;
 const where = (organizationId: string, id: string) =>
   and(
+    sql`${organizationCapabilities.deletedAt} is null`,
     eq(organizationCapabilities.organizationId, organizationId),
     eq(organizationCapabilities.id, id),
   );
@@ -68,6 +68,7 @@ export async function listCapabilities(
       .from(organizationCapabilities)
       .where(
         and(
+          sql`${organizationCapabilities.deletedAt} is null`,
           eq(organizationCapabilities.organizationId, organizationId),
           beforeCursor(organizationCapabilities.id, query.cursor),
         ),
@@ -214,7 +215,7 @@ export async function updateCapability(
   organizationId: string,
   id: string,
   patch: CapabilityPatch,
-  expected: { id: string; revision: number },
+  expected?: { id: string; revision: number },
 ) {
   const { tx } = requirePlatformWriteContext(context);
   required(await lockOrganizationForCommand(context, organizationId));
@@ -226,7 +227,10 @@ export async function updateCapability(
         .where(where(organizationId, id))
     )[0],
   );
-  if (before.id !== expected.id || before.revision !== expected.revision)
+  if (
+    expected &&
+    (before.id !== expected.id || before.revision !== expected.revision)
+  )
     throw new ProblemError(
       412,
       "revision_mismatch",
@@ -251,10 +255,6 @@ export async function updateCapability(
       value !== undefined &&
       JSON.stringify(value) !== JSON.stringify(before[key as keyof Row]),
   );
-  const protectedWriter =
-    before.grantKind === "admin_session" &&
-    before.scopes.includes("platform:write") &&
-    (await hasPlatformWriter(tx, { resource: before.resource! }));
   const row = changed
     ? (
         await tx
@@ -264,15 +264,6 @@ export async function updateCapability(
           .returning()
       )[0]!
     : before;
-  if (
-    protectedWriter &&
-    !(await hasPlatformWriter(tx, { resource: before.resource! }))
-  )
-    throw new ProblemError(
-      409,
-      "last_platform_administrator",
-      "Keep an effective platform administrator before restricting this ceiling",
-    );
   await audit(context, row, before, changed);
   return { row, changed };
 }
@@ -292,21 +283,16 @@ export async function removeCapability(
         .where(where(organizationId, id))
     )[0],
   );
-  if (
-    before.grantKind === "admin_session" &&
-    (
-      await tx
-        .select()
-        .from(systemBindings)
-        .where(eq(systemBindings.organizationId, organizationId))
-    ).length
-  )
-    throw new ProblemError(
-      409,
-      "protected_capability",
-      "The bound platform capability cannot be removed",
-    );
-  await tx.delete(organizationCapabilities).where(where(organizationId, id));
+  const [after] = await tx
+    .update(organizationCapabilities)
+    .set({ deletedAt: sql`now()`, status: "disabled" })
+    .where(
+      and(
+        sql`${organizationCapabilities.deletedAt} is null`,
+        where(organizationId, id),
+      ),
+    )
+    .returning();
   await recordAuditEvent(tx, {
     ...actor,
     organizationId,
@@ -314,7 +300,8 @@ export async function removeCapability(
     targetId: id,
     action: "capability.removed",
     outcome: "success",
-    data: { before, after: null },
+    schemaVersion: 2,
+    data: { before, after, deletionMode: "soft" },
   });
 }
 
@@ -328,9 +315,12 @@ export async function requireNoCapabilityReferences(
     .select({ id: organizationCapabilities.id })
     .from(organizationCapabilities)
     .where(
-      "clientId" in target
-        ? eq(organizationCapabilities.clientId, target.clientId)
-        : eq(organizationCapabilities.resource, target.resource),
+      and(
+        sql`${organizationCapabilities.deletedAt} is null`,
+        "clientId" in target
+          ? eq(organizationCapabilities.clientId, target.clientId)
+          : eq(organizationCapabilities.resource, target.resource),
+      ),
     )
     .limit(1);
   if (rows.length)

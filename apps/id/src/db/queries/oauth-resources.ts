@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   requirePlatformReadContext,
   requirePlatformWriteContext,
@@ -45,6 +46,7 @@ export function listResources(
     .from(oauthResources)
     .where(
       and(
+        sql`${oauthResources.deletedAt} is null`,
         query.q === undefined
           ? undefined
           : or(
@@ -64,19 +66,23 @@ export function readResource(context: PlatformReadContext, identifier: string) {
   const { tx } = requirePlatformReadContext(context);
   return lockResource(tx, identifier, "share");
 }
-export function readResourceForPolicy(
+export async function readResourceForPolicy(
   context: PlatformWriteContext,
   identifier: string,
 ) {
   const { tx } = requirePlatformWriteContext(context);
-  return lockResource(tx, identifier, "share");
+  const row = await lockResource(tx, identifier, "share");
+  await context.revalidate();
+  return row;
 }
-export function lockResourceForCommand(
+export async function lockResourceForCommand(
   context: PlatformWriteContext,
   identifier: string,
 ) {
   const { tx } = requirePlatformWriteContext(context);
-  return lockResource(tx, identifier);
+  const row = await lockResource(tx, identifier);
+  await context.revalidate();
+  return row;
 }
 
 /** Shared resources and this tenant's private resources only; registration is not permission. */
@@ -90,6 +96,7 @@ export async function findResourceForAccess(
     .from(oauthResources)
     .where(
       and(
+        sql`${oauthResources.deletedAt} is null`,
         eq(oauthResources.identifier, identifier),
         or(
           eq(oauthResources.classification, "platform_shared"),
@@ -120,7 +127,12 @@ export async function updateResource(
   const [row] = await executor
     .update(oauthResources)
     .set(patch)
-    .where(eq(oauthResources.identifier, identifier))
+    .where(
+      and(
+        sql`${oauthResources.deletedAt} is null`,
+        eq(oauthResources.identifier, identifier),
+      ),
+    )
     .returning();
   return row ?? null;
 }
@@ -133,7 +145,12 @@ export async function setResourceDisabled(
   const [row] = await executor
     .update(oauthResources)
     .set({ disabled })
-    .where(eq(oauthResources.identifier, identifier))
+    .where(
+      and(
+        sql`${oauthResources.deletedAt} is null`,
+        eq(oauthResources.identifier, identifier),
+      ),
+    )
     .returning();
   return row ?? null;
 }
@@ -142,9 +159,17 @@ export async function deleteResource(
   identifier: string,
 ) {
   const { tx: executor } = requirePlatformWriteContext(context);
-  await executor
-    .delete(oauthResources)
-    .where(eq(oauthResources.identifier, identifier));
+  const [row] = await executor
+    .update(oauthResources)
+    .set({ deletedAt: sql`now()`, disabled: true })
+    .where(
+      and(
+        sql`${oauthResources.deletedAt} is null`,
+        eq(oauthResources.identifier, identifier),
+      ),
+    )
+    .returning();
+  return row!;
 }
 export async function countResourceEntitlements(
   context: PlatformWriteContext,
@@ -154,7 +179,12 @@ export async function countResourceEntitlements(
   const [row] = await executor
     .select({ count: count() })
     .from(entitlements)
-    .where(eq(entitlements.resource, identifier));
+    .where(
+      and(
+        sql`${entitlements.deletedAt} is null`,
+        eq(entitlements.resource, identifier),
+      ),
+    );
   return row!.count;
 }
 
@@ -166,7 +196,12 @@ export function listResourceClients(
   return executor
     .select()
     .from(oauthClientResources)
-    .where(eq(oauthClientResources.resourceId, resource))
+    .where(
+      and(
+        sql`${oauthClientResources.deletedAt} is null`,
+        eq(oauthClientResources.resourceId, resource),
+      ),
+    )
     .orderBy(desc(oauthClientResources.id));
 }
 
@@ -178,7 +213,12 @@ export async function hasResourceClients(
   const rows = await executor
     .select({ id: oauthClientResources.id })
     .from(oauthClientResources)
-    .where(eq(oauthClientResources.resourceId, resource))
+    .where(
+      and(
+        sql`${oauthClientResources.deletedAt} is null`,
+        eq(oauthClientResources.resourceId, resource),
+      ),
+    )
     .limit(1);
   return rows.length > 0;
 }

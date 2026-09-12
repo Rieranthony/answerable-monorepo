@@ -1,8 +1,4 @@
-import { platformWriterCheck } from "./platform-writer.ts";
-import {
-  revokeOrganizationGrantContexts,
-  deleteOrganizationGrantContexts,
-} from "../db/queries/grant-contexts.ts";
+import { revokeOrganizationGrantContexts } from "../db/queries/grant-contexts.ts";
 import {
   requirePlatformWriteContext,
   type PlatformWriteContext,
@@ -27,6 +23,7 @@ function configuration(
 ) {
   return {
     id: row.id,
+    deletedAt: row.deletedAt,
     revision: row.revision,
     slug: row.slug,
     name: row.name,
@@ -51,7 +48,7 @@ function audit(
     targetType: "organization",
     targetId: id,
     outcome: "success",
-    schemaVersion: action === "organization.erased" ? 2 : 1,
+    schemaVersion: action === "organization.erased" ? 3 : 1,
     data,
   });
 }
@@ -130,12 +127,10 @@ export async function disableOrganization(
   const existing = requireOrganization(
     await queries.lockOrganizationForCommand(context, id),
   );
-  const checkWriter = await platformWriterCheck(tx, id);
   const stateChanged = existing.status !== "disabled";
   const row = stateChanged
     ? (await queries.setOrganizationStatus(context, id, "disabled"))!
     : existing;
-  await checkWriter();
   const revokedGrantContexts = await revokeOrganizationGrantContexts(
     context,
     id,
@@ -210,15 +205,19 @@ export async function eraseOrganization(
       "organization_has_clients",
       "Remove the organisation's clients before erasure",
     );
-  const deletedGrantContexts = await deleteOrganizationGrantContexts(
+  const revokedGrantContexts = await revokeOrganizationGrantContexts(
     context,
     id,
   );
-  const effects = await queries.deleteOrganization(context, id);
+  const { row, effects } = await queries.deleteOrganization(context, id);
   await audit(tx, actor, id, "organization.erased", {
     before: configuration(before),
-    after: null,
-    deletedGrantContexts,
+    after: configuration(row),
+    deletionMode: "soft",
+    revokedGrantContexts: revokedGrantContexts.map((row) => ({
+      ...row,
+      organizationId: id,
+    })),
     effects,
   });
 }

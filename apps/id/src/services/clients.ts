@@ -1,7 +1,4 @@
-import {
-  revokeClientGrantContexts,
-  deleteClientGrantContexts,
-} from "../db/queries/grant-contexts.ts";
+import { revokeClientGrantContexts } from "../db/queries/grant-contexts.ts";
 import { requireNoCapabilityReferences } from "./capabilities.ts";
 import {
   requirePlatformWriteContext,
@@ -50,13 +47,17 @@ function requireRow<T>(row: T | null): T {
     );
   return row;
 }
-function publicClient({ clientSecret, ...row }: ClientRow) {
-  return { ...row, hasClientSecret: clientSecret !== null };
+function publicClient({ clientSecret, deletedAt, ...row }: ClientRow) {
+  return {
+    ...row,
+    hasClientSecret: deletedAt === null && clientSecret !== null,
+  };
 }
 /** Allowlisted security settings; credentials and raw JWK/provider configuration stay out. */
 function auditClient(row: ClientRow) {
   return {
     id: row.id,
+    deletedAt: row.deletedAt,
     clientId: row.clientId,
     organizationId: row.organizationId,
     name: row.name,
@@ -82,7 +83,7 @@ function audit(
   action: string,
   data: Record<string, unknown>,
   organizationId?: string | null,
-  schemaVersion: 1 | 2 = 1,
+  schemaVersion: 1 | 2 | 3 = 1,
 ) {
   return recordAuditEvent(tx, {
     ...actor,
@@ -104,6 +105,7 @@ function auditResourceLink(
   resource: Awaited<ReturnType<typeof readResourceForPolicy>>,
   before: boolean,
   after: boolean,
+  relationship: { id: string; deletedAt: Date | null } | null,
 ) {
   return audit(
     tx,
@@ -116,6 +118,7 @@ function auditResourceLink(
         : "client.resource_unlinked",
     {
       resource: identifier,
+      relationship,
       resourceInstanceId: resource?.id ?? null,
       resourceClassification: resource?.classification ?? null,
       resourceOrganizationId: resource?.organizationId ?? null,
@@ -126,7 +129,7 @@ function auditResourceLink(
       resource?.organizationId === client.organizationId
       ? client.organizationId
       : null,
-    2,
+    3,
   );
 }
 /** A client's owner is not entitled to its other tenants' grant identities. */
@@ -144,7 +147,7 @@ async function auditGrantEffects(
       }
     | {
         action: "client.grants_erased";
-        effects: Awaited<ReturnType<typeof queries.deleteClient>>;
+        effects: Awaited<ReturnType<typeof queries.deleteClient>>["effects"];
       },
 ) {
   const { action, ...payload } = details;
@@ -159,9 +162,14 @@ async function auditGrantEffects(
     actor,
     client.clientId,
     action,
-    { clientInstanceId: client.id, grantContexts, ...payload },
+    {
+      clientInstanceId: client.id,
+      grantContexts,
+      ...payload,
+      ...(action === "client.grants_erased" ? { deletionMode: "soft" } : {}),
+    },
     null,
-    2,
+    action === "client.grants_erased" ? 3 : 2,
   );
   return event.id;
 }
@@ -334,7 +342,7 @@ export async function updateClient(
     },
     row!.organizationId,
   );
-  return publicClient(row!);
+  return { body: publicClient(row!), changed };
 }
 async function setDisabled(
   context: PlatformWriteContext,
@@ -503,8 +511,9 @@ export async function linkResource(
     target,
     !result.created,
     true,
+    result.relationship,
   );
-  return result;
+  return { created: result.created };
 }
 export async function unlinkResource(
   context: PlatformWriteContext,
@@ -521,8 +530,17 @@ export async function unlinkResource(
     clientId,
     resource,
   );
-  await auditResourceLink(tx, actor, client, resource, target, removed, false);
-  return { removed };
+  await auditResourceLink(
+    tx,
+    actor,
+    client,
+    resource,
+    target,
+    removed !== null,
+    false,
+    removed,
+  );
+  return { removed: removed !== null };
 }
 
 export async function eraseClient(
@@ -547,16 +565,16 @@ export async function eraseClient(
       "Remove the client's entitlements before erasure",
     );
   await requireNoCapabilityReferences(context, { clientId });
-  const deletedGrantContexts = await deleteClientGrantContexts(
+  const revokedGrantContexts = await revokeClientGrantContexts(
     context,
     existing.id,
   );
-  const effects = await queries.deleteClient(context, clientId);
+  const { row, effects } = await queries.deleteClient(context, clientId);
   const grantEffectsEventId = await auditGrantEffects(
     tx,
     actor,
     existing,
-    deletedGrantContexts,
+    revokedGrantContexts,
     { action: "client.grants_erased", effects },
   );
   await recordAuditEvent(tx, {
@@ -566,17 +584,18 @@ export async function eraseClient(
     targetId: clientId,
     action: "client.erased",
     outcome: "success",
-    schemaVersion: 2,
+    schemaVersion: 3,
     data: {
+      deletionMode: "soft",
       effects: {
         accessTokens: effects.deletedAccessTokens.length,
         refreshTokens: effects.deletedRefreshTokens.length,
-        consents: effects.deletedConsents.length,
-        resourceLinks: effects.deletedClientResources.length,
-        grantContexts: deletedGrantContexts.length,
+        consents: effects.softDeletedConsents.length,
+        resourceLinks: effects.softDeletedClientResources.length,
+        grantContexts: revokedGrantContexts.length,
       },
       before: auditClient(existing),
-      after: null,
+      after: auditClient(row),
       ...(grantEffectsEventId ? { grantEffectsEventId } : {}),
     },
   });

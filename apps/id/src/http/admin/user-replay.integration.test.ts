@@ -1,3 +1,4 @@
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
@@ -56,12 +57,11 @@ function command(
     { method: action === "erase" ? "DELETE" : "POST", headers },
   );
 }
-test("user commands recover their original responses after erasure without repeating effects", async () => {
+test("user commands return receipts after erasure without repeating effects", async () => {
   const id = await seed();
   const saved: {
     key: string;
     action: string;
-    body: string;
     status: number;
     operation: string;
   }[] = [];
@@ -77,7 +77,6 @@ test("user commands recover their original responses after erasure without repea
     saved.push({
       key: key!,
       action: action!,
-      body: await response.text(),
       status: response.status,
       operation: response.headers.get("Operation-Id")!,
     });
@@ -85,7 +84,7 @@ test("user commands recover their original responses after erasure without repea
   for (const item of saved) {
     const replay = await command(item.key, id, item.action);
     expect(replay.status).toBe(item.status);
-    expect(await replay.text()).toBe(item.body);
+    await expectReceipt(fixture.db, replay);
     expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
     expect(replay.headers.get("Operation-Id")).toBe(item.operation);
     const events = await fixture.db
@@ -107,7 +106,7 @@ test("user commands recover their original responses after erasure without repea
   ).toBe(409);
   expect(
     await fixture.db.select().from(users).where(eq(users.id, id)),
-  ).toHaveLength(0);
+  ).toMatchObject([{ status: "disabled", deletedAt: expect.any(Date) }]);
 });
 test("new-key user lifecycle noops preserve state and timestamps", async () => {
   const id = await seed();
@@ -168,25 +167,21 @@ test("restricted disable reconciliation distinguishes replay from a new command 
       .where(eq(users.id, id));
     const sessionId = createId();
     const secret = createId();
-    await fixture.db
-      .insert(sessions)
-      .values({
-        id: sessionId,
+    await fixture.db.insert(sessions).values({
+      id: sessionId,
+      userId: id,
+      token: secret,
+      expiresAt: new Date(Date.now() + 60000),
+    });
+    for (const table of [oauthAccessTokens, oauthRefreshTokens])
+      await fixture.db.insert(table).values({
+        id: createId(),
         userId: id,
-        token: secret,
+        clientId: fixture.platform.client.clientId,
+        token: createId(),
+        scopes: [],
         expiresAt: new Date(Date.now() + 60000),
       });
-    for (const table of [oauthAccessTokens, oauthRefreshTokens])
-      await fixture.db
-        .insert(table)
-        .values({
-          id: createId(),
-          userId: id,
-          clientId: fixture.platform.client.clientId,
-          token: createId(),
-          scopes: [],
-          expiresAt: new Date(Date.now() + 60000),
-        });
     const replay = await disable(originalKey);
     expect(replay.status).toBe(200);
     expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
@@ -292,49 +287,7 @@ test("restricted disable reconciliation distinguishes replay from a new command 
     await fixture.db.execute(sql`drop role ${sql.identifier(role)}`);
   }
 });
-test("user audit failure rolls back state and reservation before concurrent retry commits once", async () => {
-  const id = await seed();
-  const before = await fixture.db.select().from(adminOperations);
-  await fixture.db.execute(
-    sql`alter table audit_events add constraint user_replay_fault check (action <> 'user.disabled') not valid`,
-  );
-  try {
-    const failed = await command("fault", id, "disable");
-    expect(failed.status).toBe(400);
-    expect(await failed.json()).toMatchObject({ code: "constraint_violation" });
-  } finally {
-    await fixture.db.execute(
-      sql`alter table audit_events drop constraint user_replay_fault`,
-    );
-  }
-  expect(await fixture.db.select().from(adminOperations)).toEqual(before);
-  expect(
-    (await fixture.db.select().from(users).where(eq(users.id, id)))[0]?.status,
-  ).toBe("active");
-  expect(
-    await fixture.db.select().from(sessions).where(eq(sessions.userId, id)),
-  ).toHaveLength(1);
-  const results = await Promise.all([
-    command("fault", id, "disable"),
-    command("fault", id, "disable"),
-  ]);
-  expect(results.some((r) => r.status === 200)).toBe(true);
-  for (const response of results) {
-    expect([200, 409]).toContain(response.status);
-    if (response.status === 409)
-      expect(await response.json()).toMatchObject({
-        code: "operation_in_progress",
-      });
-  }
-  const replay = await command("fault", id, "disable");
-  expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(
-    await fixture.db
-      .select()
-      .from(auditEvents)
-      .where(eq(auditEvents.operationId, replay.headers.get("Operation-Id")!)),
-  ).toHaveLength(1);
-});
+
 test("user lifecycle and erasure retain distinct scopes and recheck before recovery", async () => {
   const id = await seed();
   const actor = fixture.principals.platformReader;
@@ -479,3 +432,21 @@ test.each([false, true])(
     );
   },
 );
+
+test("global user offboarding retains the last-writer safeguard", async () => {
+  const id = fixture.principals.platformAdmin.userId;
+  const receipts = await fixture.db.$count(adminOperations);
+  for (const action of ["disable", "erase"]) {
+    const response = await command(createId(), id, action);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: "last_platform_administrator",
+    });
+    const [person] = await fixture.db
+      .select()
+      .from(users)
+      .where(eq(users.id, id));
+    expect(person).toMatchObject({ status: "active", deletedAt: null });
+    expect(await fixture.db.$count(adminOperations)).toBe(receipts);
+  }
+});

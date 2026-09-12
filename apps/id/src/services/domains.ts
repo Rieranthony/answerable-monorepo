@@ -27,6 +27,7 @@ function auditDomain(
 ) {
   return {
     id: row.id,
+    deletedAt: row.deletedAt,
     organizationId: row.organizationId,
     domain: row.domain,
     status: row.status,
@@ -47,6 +48,7 @@ function audit(
     targetId: id,
     action,
     outcome: "success",
+    schemaVersion: data.deletionMode === "soft" ? 2 : 1,
     data,
   });
 }
@@ -146,9 +148,14 @@ export async function deleteOrganizationDomain(
       domainId,
     ),
   );
-  await queries.deleteOrganizationDomain(context, organizationId, domainId);
+  const row = await queries.deleteOrganizationDomain(
+    context,
+    organizationId,
+    domainId,
+  );
   await audit(tx, actor, organizationId, domainId, "domain.deleted", {
     before: auditDomain(before),
-    after: null,
+    after: auditDomain(row!),
+    deletionMode: "soft",
   });
 }

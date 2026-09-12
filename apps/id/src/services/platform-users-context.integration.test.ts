@@ -112,7 +112,6 @@ test("journal exit expires saved users authorisation on commit, replay, conflict
             resultReference: { type: "test", id: "one" },
           };
         }, actor),
-      undefined,
       (authority) => authority.close(),
     );
   expect((await execute()).replayed).toBe(false);
@@ -164,7 +163,6 @@ test("journal replay releases tenant authorisation even without a mutation callb
             resultReference: { type: "test", id: "one" },
           };
         }, actor),
-      undefined,
       (authority) => authority.close(),
     );
   expect((await execute()).replayed).toBe(false);

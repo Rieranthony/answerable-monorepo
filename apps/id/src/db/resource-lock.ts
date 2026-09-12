@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, isNull, eq } from "drizzle-orm";
 import type { Executor } from "./client.ts";
 import { oauthResources } from "./schema/index.ts";
 
@@ -13,7 +13,12 @@ export async function lockResource(
   const [row] = await executor
     .select()
     .from(oauthResources)
-    .where(eq(oauthResources.identifier, identifier))
+    .where(
+      and(
+        isNull(oauthResources.deletedAt),
+        eq(oauthResources.identifier, identifier),
+      ),
+    )
     .for(mode);
   return row ?? null;
 }

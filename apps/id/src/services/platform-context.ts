@@ -18,6 +18,7 @@ export type PlatformReadContext = Readonly<{
 }>;
 
 type PlatformCaller = {
+  freshAuthentication?: boolean;
   principal: Principal;
   environment: Environment;
   claims?: BearerClaims;
@@ -57,6 +58,7 @@ export function requirePlatformReadContext(context: PlatformReadContext) {
 const platformMutation = Symbol("platformMutation");
 const activeMutationContexts = new WeakSet<object>();
 type PlatformMutationContext<Access extends "users" | "write"> = Readonly<{
+  revalidate: () => Promise<void>;
   [platformMutation]: true;
   access: Access;
   actor: Readonly<Actor>;
@@ -70,14 +72,20 @@ async function authorizePlatformMutation<Access extends "users" | "write">(
   caller: PlatformCaller,
   access: Access,
 ) {
+  caller = { ...caller, principal: { ...caller.principal } };
   const identity = actorIdentity(caller.principal);
-  await authorizeCommand(
-    tx,
-    caller.principal,
-    caller.environment,
-    { platform: access === "users" ? "platform:users" : "platform:write" },
-    caller.claims,
-  );
+  const authorize = () =>
+    authorizeCommand(
+      tx,
+      caller.principal,
+      caller.environment,
+      {
+        platform: access === "users" ? "platform:users" : "platform:write",
+        freshAuthentication: caller.freshAuthentication,
+      },
+      caller.claims,
+    );
+  await authorize();
   await setDatabaseScope(
     tx,
     access === "write"
@@ -101,6 +109,9 @@ async function authorizePlatformMutation<Access extends "users" | "write">(
         access,
         actor: commandActor(identity, metadata),
         tx,
+        async revalidate() {
+          if (caller.principal.type === "user") await authorize();
+        },
       });
       activeMutationContexts.add(context);
       try {

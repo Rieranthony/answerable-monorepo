@@ -9,7 +9,7 @@
     "start": "next start -p ${PORT:-47100}",
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "test": "bun test",
     "mosaic": "bun scripts/build-mosaic.ts"
   },

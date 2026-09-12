@@ -27,9 +27,7 @@ export function sessionAuditHooks(db: Executor) {
       userAgent: boundedUserAgent(session.userAgent),
     });
   }
-  // Sign-in success is recorded by the sign-in audit plugin, after the SSO
-  // plugin has provisioned the membership; the session hook only sees the
-  // sign-out, where the session already carries its organisation.
+  // Sign-in success commits in the SSO session-creation transaction.
   return {
     delete: {
       after: (session: Session, context: Context) =>

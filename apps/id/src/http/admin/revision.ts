@@ -5,13 +5,10 @@ export type Revision = { id: string; revision: number };
 export const revisionTag = (value: Revision): string =>
   `"${value.id}:${value.revision}"`;
 
-export function requireRevision(header: string | undefined): Revision {
-  if (header === undefined)
-    throw new ProblemError(
-      428,
-      "precondition_required",
-      "If-Match is required",
-    );
+export function requireRevision(
+  header: string | undefined,
+): Revision | undefined {
+  if (header === undefined) return undefined;
   const match = /^"([^:]+):([1-9][0-9]*)"$/.exec(header);
   const id = z.uuid().safeParse(match?.[1]);
   const revision = Number(match?.[2]);
@@ -27,7 +24,7 @@ export function requireRevision(header: string | undefined): Revision {
 export const revisionParameter = {
   in: "header" as const,
   name: "If-Match",
-  required: true,
+  required: false,
   schema: { type: "string" as const },
   description:
     "The strong ETag returned by the target GET route. Reuse the original tag when retrying the same operation.",
@@ -43,13 +40,7 @@ export const revisionResponseHeaders = {
 export function requirePutRevision(
   ifMatch: string | undefined,
   ifNoneMatch: string | undefined,
-): Revision | null {
-  if (ifMatch === undefined && ifNoneMatch === undefined)
-    throw new ProblemError(
-      428,
-      "precondition_required",
-      "Supply If-Match for replacement or If-None-Match: * for creation",
-    );
+): Revision | null | undefined {
   if (
     ifNoneMatch !== undefined &&
     (ifNoneMatch !== "*" || ifMatch !== undefined)

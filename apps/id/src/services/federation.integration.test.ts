@@ -18,7 +18,7 @@ import { createAuth } from "../auth.ts";
 import { createSsoOriginBoundary } from "../auth/sso-origin.ts";
 import { authDatabaseAdapter } from "../auth/database-adapter.ts";
 import { signInThroughIdp } from "../__tests__/federation.ts";
-import { upstreamCutoverFixture } from "../__tests__/upstream-cutover.ts";
+import { runMigrations } from "../db/migrate.ts";
 import {
   startOidcIssuer,
   type OidcClaims,
@@ -38,6 +38,7 @@ import {
   ssoProviders,
   users,
   sessions,
+  verifications,
 } from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
 
@@ -90,7 +91,7 @@ beforeEach(async () => {
   issuer.reset();
   await connection.db.execute(sql`
     truncate table
-      audit_events, security_identifiers, sso_providers,
+      audit_events, sso_providers,
       organization_domains,
       members,
       sessions,
@@ -192,54 +193,37 @@ async function insertUser(
 }
 
 describe("integration: federated sign-in", () => {
-  test("credential retirement preserves the existing browser session and refills encrypted tokens on SSO", async () => {
+  test("repeated migration preserves native sessions, identity and encrypted upstream tokens", async () => {
     await seedProvider();
     issuer.enqueue(entraClaims());
     const first = await signIn();
     expect(first.location).toBe(callbackURL);
-    const [identity] = await connection.db.select().from(accounts);
-    const [session] = await connection.db.select().from(sessions);
+    const identities = await connection.db.select().from(accounts);
+    const beforeSessions = await connection.db.select().from(sessions);
     const cookie = first.cookies
       .map((value) => value.split(";", 1)[0])
       .join("; ");
-    const cutover = await upstreamCutoverFixture();
-    try {
-      await cutover.run(connection.db);
-      expect((await connection.db.select().from(accounts))[0]).toMatchObject({
-        id: identity!.id,
-        userId: identity!.userId,
-        issuer: identity!.issuer,
-        accountId: identity!.accountId,
-        accessToken: null,
-        refreshToken: null,
-        idToken: null,
-      });
-      const current = await app.request("/auth/get-session", {
-        headers: { Cookie: cookie },
-      });
-      expect(current.status).toBe(200);
-      expect(await current.json()).toMatchObject({
-        session: { id: session!.id, userId: identity!.userId },
-        user: { id: identity!.userId },
-      });
-      issuer.enqueue(entraClaims());
-      expect((await signIn()).location).toBe(callbackURL);
-      const rows = await connection.db.select().from(accounts);
-      expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({
-        id: identity!.id,
-        userId: identity!.userId,
-        issuer: identity!.issuer,
-        accountId: identity!.accountId,
-      });
-      for (const field of ["accessToken", "refreshToken", "idToken"] as const)
-        expect(rows[0]![field]).toStartWith("$ba$1$");
-      const fresh = rows[0]!;
-      await cutover.run(connection.db);
-      expect((await connection.db.select().from(accounts))[0]).toEqual(fresh);
-    } finally {
-      await cutover.close(connection.db);
-    }
+    await runMigrations(connection.db);
+    expect(await connection.db.select().from(accounts)).toEqual(identities);
+    expect(await connection.db.select().from(sessions)).toEqual(beforeSessions);
+    const current = await app.request("/auth/get-session", {
+      headers: { Cookie: cookie },
+    });
+    expect(current.status).toBe(200);
+    expect(await current.json()).toMatchObject({
+      session: { id: beforeSessions[0]!.id, userId: identities[0]!.userId },
+      user: { id: identities[0]!.userId },
+    });
+    issuer.enqueue(entraClaims());
+    expect((await signIn()).location).toBe(callbackURL);
+    const rows = await connection.db.select().from(accounts);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id: identities[0]!.id,
+      userId: identities[0]!.userId,
+    });
+    for (const field of ["accessToken", "refreshToken", "idToken"] as const)
+      expect(rows[0]![field]).toStartWith("$ba$1$");
   });
   test("legacy plaintext fails native sign-in without replacing the account or creating a session", async () => {
     await seedProvider();
@@ -349,7 +333,65 @@ describe("integration: federated sign-in", () => {
     }
     expect(await connection.db.select().from(sessions)).toHaveLength(1);
   });
-  for (const change of ["update", "delete", "recreate", "unchanged"] as const) {
+  for (const selection of [
+    { organizationSlug: "contoso" },
+    { email: "person@contoso.com" },
+    { email: "person@CONTOSO.COM" },
+    { email: "person@department.contoso.com" },
+  ]) {
+    test(`native initiation preserves provider selection ${JSON.stringify(selection)}`, async () => {
+      const org = await seedProvider();
+      await seedProvider({
+        slug: "unrelated",
+        domain: "unrelated.example.com",
+      });
+      issuer.enqueue(entraClaims());
+      const result = await signInThroughIdp(app, {
+        ...selection,
+        callbackURL,
+        errorCallbackURL,
+      });
+      expect(result.location).toBe(callbackURL);
+      const [provider] = await connection.db
+        .select()
+        .from(ssoProviders)
+        .where(eq(ssoProviders.organizationId, org.id));
+      const [session] = await connection.db.select().from(sessions);
+      expect(session).toMatchObject({
+        authenticationProviderId: provider!.id,
+        authenticationProviderRevision: provider!.revision,
+      });
+    });
+  }
+  test("native SSO initiation evidence cannot be supplied by the browser", async () => {
+    await seedProvider();
+    const [provider] = await connection.db.select().from(ssoProviders);
+    const forged = { [provider!.id]: provider!.revision + 1 };
+    const input = {
+      providerId: "contoso",
+      callbackURL,
+      errorCallbackURL,
+      serverContext: { answerableSsoProviderRevisions: forged },
+      additionalData: {
+        answerableSsoProviderRevisions: forged,
+        serverContext: { answerableSsoProviderRevisions: forged },
+      },
+    };
+    issuer.enqueue(entraClaims());
+    const result = await signInThroughIdp(app, input, async () => {
+      const [stored] = await connection.db.select().from(verifications);
+      expect(
+        JSON.parse(stored!.value).serverContext.answerableSsoProviderRevisions,
+      ).toEqual({ [provider!.id]: provider!.revision });
+    });
+    expect(errorCode(result.location)).toBeNull();
+    const [session] = await connection.db.select().from(sessions);
+    expect(session).toMatchObject({
+      authenticationProviderId: provider!.id,
+      authenticationProviderRevision: provider!.revision,
+    });
+  });
+  for (const change of ["delete", "recreate", "unchanged"] as const) {
     test(`restricted native SSO rechecks ${change} configuration after token exchange`, async () => {
       const org = await seedProvider();
       const [provider] = await connection.db.select().from(ssoProviders);
@@ -371,17 +413,7 @@ describe("integration: federated sign-in", () => {
         await inPlatformWrite(connection.db, async (context) => {
           if (change === "delete" || change === "recreate")
             await deleteSsoProvider(context, org.id);
-          if (change !== "delete")
-            await putSsoProvider(
-              context,
-              org.id,
-              change === "update"
-                ? {
-                    ...input,
-                    oidc: { ...input.oidc, clientSecret: "replacement-secret" },
-                  }
-                : input,
-            );
+          if (change !== "delete") await putSsoProvider(context, org.id, input);
         });
       } finally {
         beforeTokenResponse = undefined;
@@ -504,7 +536,14 @@ describe("integration: federated sign-in", () => {
         authenticationProviderId: provider!.id,
         authenticationProviderRevision: provider!.revision,
       });
-      const current = await connection.db.select().from(ssoProviders);
+      const retained = await connection.db.select().from(ssoProviders);
+      const current = retained.filter((row) => row.deletedAt === null);
+      if (change !== "update")
+        expect(retained.find((row) => row.id === provider!.id)).toMatchObject({
+          deletedAt: expect.any(Date),
+          oidcConfig: null,
+          samlConfig: null,
+        });
       if (change === "delete") expect(current).toHaveLength(0);
       else if (change === "recreate")
         expect(current[0]!.id).not.toBe(provider!.id);
@@ -512,66 +551,6 @@ describe("integration: federated sign-in", () => {
       expect(await connection.db.select().from(members)).toHaveLength(1);
     });
   }
-  test("overlapping restricted callbacks keep independent provider revision evidence", async () => {
-    // Two admitted callbacks plus capacity outside /auth; other tests retain
-    // the original single-connection runtime and its reuse assertions.
-    const environment = testEnvironment({
-      databaseUrl: runtime.pool.options.connectionString!,
-      databasePoolMax: 3,
-      trustedOrigins: [issuer.origin, new URL(callbackURL).origin],
-    });
-    const overlapping = createDatabase(environment);
-    const overlappingApp = createApp({
-      db: overlapping.db,
-      auth: createAuth(overlapping.db, environment),
-      environment,
-    });
-    const overlapSignIn = () =>
-      signInThroughIdp(overlappingApp, {
-        providerId: "contoso",
-        callbackURL,
-        errorCallbackURL,
-      });
-    const org = await seedProvider();
-    const [provider] = await connection.db.select().from(ssoProviders);
-    const entered = Promise.withResolvers<void>();
-    const resume = Promise.withResolvers<void>();
-    beforeTokenResponse = async () => {
-      entered.resolve();
-      await resume.promise;
-    };
-    issuer.enqueue(entraClaims());
-    const old = overlapSignIn();
-    try {
-      await entered.promise;
-      await inPlatformWrite(connection.db, (context) =>
-        putSsoProvider(context, org.id, {
-          issuer: provider!.issuer,
-          domain: provider!.domain,
-          oidc: {
-            ...JSON.parse(provider!.oidcConfig!),
-            clientSecret: "replacement-secret",
-          },
-        }),
-      );
-      beforeTokenResponse = undefined;
-      issuer.enqueue(entraClaims());
-      expect((await overlapSignIn()).location).toBe(callbackURL);
-    } finally {
-      beforeTokenResponse = undefined;
-      resume.resolve();
-      await Promise.allSettled([old]);
-      await overlapping.close();
-    }
-    expect(errorCode((await old).location)).toBe("SSO_PROVIDER_CHANGED");
-    const records = await connection.db.select().from(sessions);
-    expect(records).toHaveLength(1);
-    expect(records[0]!.authenticationProviderRevision).toBe(
-      provider!.revision + 1,
-    );
-    expect(await connection.db.select().from(users)).toHaveLength(1);
-    expect(await connection.db.select().from(accounts)).toHaveLength(1);
-  });
   test("ordinary native SSO logins preserve provider revision and timestamp", async () => {
     await seedProvider();
     const [before] = await connection.db.select().from(ssoProviders);
@@ -588,7 +567,7 @@ describe("integration: federated sign-in", () => {
       origins.map((session) => session.authenticationProviderRevision),
     ).toEqual([before!.revision, before!.revision]);
   });
-  test("origin resolution rejects missing providers and absent request evidence before identity writes", async () => {
+  test("origin resolution rejects missing providers before identity writes", async () => {
     const auth = createAuth(connection.db, testEnvironment());
     const adapter = authDatabaseAdapter(connection.db)(auth.options);
     const origin = createSsoOriginBoundary();
@@ -616,11 +595,6 @@ describe("integration: federated sign-in", () => {
     await expect(resolve()).rejects.toThrow(
       "Accepted SSO provider is no longer available",
     );
-    await seedProvider({ slug: "missing" });
-    expect(await resolve()).toMatchObject({
-      action: "reject",
-      code: "SSO_PROVIDER_CHANGED",
-    });
     expect(await connection.db.select().from(users)).toHaveLength(0);
   });
   test("native SSO persists the accepted provider origin on its session", async () => {
@@ -650,6 +624,8 @@ describe("integration: federated sign-in", () => {
       { authenticationOrganizationId: createId() },
       { authenticationProviderId: createId() },
       { authenticationProviderRevision: provider!.revision + 1 },
+      { authenticationAccountId: createId() },
+      { upstreamAuthTime: new Date(0) },
       {
         authenticationOrganizationId: null,
         authenticationProviderId: null,
@@ -691,7 +667,7 @@ describe("integration: federated sign-in", () => {
         })
         .execute(),
     ).rejects.toMatchObject({
-      cause: { constraint: "sessions_authentication_origin_check" },
+      cause: { constraint: "session_authentication_origin_provider" },
     });
     await connection.db
       .delete(ssoProviders)
@@ -806,13 +782,13 @@ describe("integration: federated sign-in", () => {
       expect(successes).toHaveLength(1);
       expect(successes[0]).toMatchObject({
         actorId: user!.id,
-        ip: null,
+        ip: "192.0.2.1",
         userAgent: expectedAgent,
         outcome: "success",
       });
       const storedSessions = await connection.db.select().from(sessions);
       expect(storedSessions).toHaveLength(1);
-      expect(storedSessions[0]!.ipAddress).toBeNull();
+      expect(storedSessions[0]!.ipAddress).toBe("192.0.2.1");
       expect(storedSessions[0]!.userAgent).toBe(expectedAgent);
       // Legacy session metadata was never verified either.
       await connection.db

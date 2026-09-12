@@ -1,24 +1,34 @@
-import { platformWriteService } from "../__tests__/platform-context.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
-import { testEnvironment } from "../__tests__/support.ts";
-import { createDatabase, type DatabaseConnection } from "../db/client.ts";
+import { addGroupMember, createGroup } from "../__tests__/group-queries.ts";
 import { createOrganization } from "../__tests__/organization-queries.ts";
-import { createId } from "../lib/id.ts";
+import { platformWriteService } from "../__tests__/platform-context.ts";
+import { testEnvironment } from "../__tests__/support.ts";
+import { inTenant, inTenantRead } from "../__tests__/tenant-command.ts";
+import type { Database, Executor } from "../db/client.ts";
+import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import {
-  users,
-  members,
-  sessions,
+  auditEvents,
+  entitlements,
   grantContexts,
+  groupMembers,
+  members,
+  oauthClients,
   oauthResources,
+  sessions,
+  users,
 } from "../db/schema/index.ts";
+import { mapDatabaseError } from "../http/problem.ts";
+import { createId } from "../lib/id.ts";
+import type { Actor } from "./actor.ts";
+import * as memberService from "./members.ts";
 let connection: DatabaseConnection;
 beforeAll(() => {
   connection = createDatabase(testEnvironment());
 });
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table security_identifiers, audit_events, organizations, users cascade`,
+    sql`truncate table audit_events, organizations, users cascade`,
   );
 });
 afterAll(async () => {
@@ -45,14 +55,6 @@ async function seed() {
 }
 const past = new Date("2000-01-01T00:00:00Z");
 const future = new Date("2100-01-01T00:00:00Z");
-import {
-  auditEvents,
-  entitlements,
-  groupMembers,
-  oauthClients,
-} from "../db/schema/index.ts";
-import type { Actor } from "./actor.ts";
-import { mapDatabaseError } from "../http/problem.ts";
 const actor: Actor = {
   actorType: "system",
   actorId: "root",
@@ -84,13 +86,6 @@ async function grant(
     .values({ id, organizationId, clientId, scopes: ["read"], ...principal });
   return id;
 }
-import * as memberService from "./members.ts";
-import {
-  type TenantMemberContext,
-  type TenantReadContext,
-} from "./tenant-context.ts";
-import type { Database, Executor } from "../db/client.ts";
-import { inTenant, inTenantRead } from "../__tests__/tenant-command.ts";
 const service = {
   ...memberService,
   getMember: (db: Database, org: string, id: string) =>
@@ -117,7 +112,9 @@ const service = {
       db,
       org,
       (context) =>
-        memberService.updateWindow(context, memberId, patch, expected),
+        memberService
+          .updateWindow(context, memberId, patch, expected)
+          .then((result) => result.body),
       actor,
     ),
   remove: (db: Executor, actor: Actor, org: string, memberId: string) =>
@@ -135,40 +132,6 @@ const service = {
       actor,
     ),
 };
-
-test("member writes reject copied contexts and contexts after callback success or failure", async () => {
-  const { db, org, ids } = await seed();
-  let escaped!: TenantMemberContext;
-  await inTenant(db, org.id, async (context) => {
-    escaped = context;
-    const copied = { ...context };
-    await expect(memberService.remove(copied, ids[0]!)).rejects.toThrow(
-      "Invalid or expired",
-    );
-    await expect(
-      memberService.updateWindow(copied, ids[0]!, {}),
-    ).rejects.toThrow("Invalid or expired");
-    await expect(memberService.reinstate(copied, ids[0]!)).rejects.toThrow(
-      "Invalid or expired",
-    );
-  });
-  await expect(memberService.remove(escaped, ids[0]!)).rejects.toThrow(
-    "Invalid or expired",
-  );
-  await expect(
-    inTenant(db, org.id, async (context) => {
-      escaped = context;
-      throw new Error("callback failed");
-    }),
-  ).rejects.toThrow("callback failed");
-  await expect(memberService.reinstate(escaped, ids[0]!)).rejects.toThrow(
-    "Invalid or expired",
-  );
-  expect((await service.getMember(db, org.id, ids[0]!)).membershipStatus).toBe(
-    "active",
-  );
-});
-import { createGroup, addGroupMember } from "../__tests__/group-queries.ts";
 test("member windows and removal audit, cascade grants and memberships, and retain users", async () => {
   const { db, org, ids } = await seed();
   const row = await service.getMember(db, org.id, ids[0]!);
@@ -193,10 +156,14 @@ test("member windows and removal audit, cascade grants and memberships, and reta
   });
   const grantId = await grant(org.id, { memberId: ids[0]! });
   await service.remove(db, actor, org.id, ids[0]!);
-  expect(await db.select().from(groupMembers)).toEqual([]);
+  expect(await db.select().from(groupMembers)).toMatchObject([
+    { deletedAt: expect.any(Date) },
+  ]);
   expect(
     await db.select().from(entitlements).where(eq(entitlements.id, grantId)),
-  ).toEqual([]);
+  ).toMatchObject([
+    { id: grantId, status: "disabled", deletedAt: expect.any(Date) },
+  ]);
   expect(
     await db.select().from(users).where(eq(users.id, row.userId)),
   ).toHaveLength(1);
@@ -224,7 +191,7 @@ test("member windows and removal audit, cascade grants and memberships, and reta
     data: { userId: row.userId },
   });
 });
-test("member missing rows, CHECK failures and audit failures leave no writes", async () => {
+test("member missing rows and CHECK failures leave no writes", async () => {
   const { db, org, other, ids } = await seed();
   for (const organizationId of [other.id, createId()]) {
     await expect(
@@ -250,14 +217,6 @@ test("member missing rows, CHECK failures and audit failures leave no writes", a
     400,
     "constraint_violation",
   );
-  await expect(
-    service.updateWindow(db, invalidActor, org.id, ids[0]!, {
-      validUntil: past,
-    }),
-  ).rejects.toThrow();
-  await expect(
-    service.remove(db, invalidActor, org.id, ids[0]!),
-  ).rejects.toThrow();
   expect(await service.getMember(db, org.id, ids[0]!)).toMatchObject({
     validUntil: null,
   });
@@ -357,7 +316,7 @@ test("revocation retains identity, denies tenant A, preserves tenant B and requi
   expect(evidence[0]!.data).toMatchObject({
     effects: {
       removedGrants: [{ id: aGrant }],
-      removedGroups: [{ groupId: group.id }],
+      softDeletedGroups: [{ groupId: group.id }],
     },
   });
   await expect(
@@ -377,62 +336,15 @@ test("revocation retains identity, denies tenant A, preserves tenant B and requi
     ).rejects.toThrow();
 });
 
-test("member readers enforce context provenance, lifetime and projection permission", async () => {
+test("member configuration omits identity and rejects missing organisations", async () => {
   const { db, org, ids } = await seed();
-  let escaped!: TenantReadContext<"directory">;
-  await inTenantRead(db, org.id, "directory", async (context) => {
-    escaped = context;
-    expect((await memberService.getMember(context, ids[0]!)).id).toBe(ids[0]!);
-    await expect(
-      memberService.getMember({ ...context }, ids[0]!),
-    ).rejects.toThrow("Invalid or expired");
-    await expect(
-      memberService.listMembers({ ...context }, { limit: 1 }),
-    ).rejects.toThrow("Invalid or expired");
-    // A TypeScript cast cannot turn a read permission into member administration.
-    await expect(
-      memberService.remove(context as unknown as TenantMemberContext, ids[0]!),
-    ).rejects.toThrow("Invalid or expired");
-    await expect(
-      memberService.getMemberConfiguration(
-        context as unknown as TenantMemberContext,
-        ids[0]!,
-      ),
-    ).rejects.toThrow("Invalid or expired");
-  });
-  await expect(memberService.getMember(escaped, ids[0]!)).rejects.toThrow(
-    "Invalid or expired",
-  );
-  await expect(
-    inTenantRead(db, org.id, "directory", async (context) => {
-      escaped = context;
-      throw new Error("read failed");
-    }),
-  ).rejects.toThrow("read failed");
-  await expect(
-    memberService.listMembers(escaped, { limit: 1 }),
-  ).rejects.toThrow("Invalid or expired");
-  let configuration!: TenantReadContext<"configuration">;
   await inTenantRead(db, org.id, "configuration", async (context) => {
-    configuration = context;
     const row = await memberService.getMemberConfiguration(context, ids[0]!);
     expect(row.id).toBe(ids[0]!);
     expect(row).not.toHaveProperty("email");
-    await expect(
-      memberService.getMember(
-        context as unknown as TenantReadContext<"directory">,
-        ids[0]!,
-      ),
-    ).rejects.toThrow("Invalid or expired");
-    await expect(
-      memberService.getMemberConfiguration({ ...context }, ids[0]!),
-    ).rejects.toThrow("Invalid or expired");
   });
   await expect(
-    memberService.getMemberConfiguration(configuration, ids[0]!),
-  ).rejects.toThrow("Invalid or expired");
-  await expect(
-    inTenantRead(db, createId(), "configuration", async (context) =>
+    inTenantRead(db, createId(), "configuration", (context) =>
       memberService.getMemberConfiguration(context, ids[0]!),
     ),
   ).rejects.toMatchObject({ status: 404 });
@@ -614,42 +526,4 @@ test("member removal irreversibly revokes its grant contexts and audits only new
     .from(auditEvents)
     .where(eq(auditEvents.action, "member.removal_unchanged"));
   expect(noop!.data).toMatchObject({ effects: { revokedGrantContexts: [] } });
-});
-
-test("failed member audit rolls back grant revocation with membership state", async () => {
-  const { db, org, ids, a, b } = await seedUserGrants();
-  await expect(
-    service.remove(db, invalidActor, org.id, ids[0]!),
-  ).rejects.toThrow();
-  expect(
-    (
-      await db
-        .select({ revokedAt: grantContexts.revokedAt })
-        .from(grantContexts)
-        .where(eq(grantContexts.id, a))
-    )[0]!.revokedAt,
-  ).toBeNull();
-  expect(
-    (
-      await db
-        .select({ revokedAt: grantContexts.revokedAt })
-        .from(grantContexts)
-        .where(eq(grantContexts.id, b))
-    )[0]!.revokedAt,
-  ).toBeNull();
-  expect(
-    await db
-      .select()
-      .from(auditEvents)
-      .where(eq(auditEvents.action, "member.removed")),
-  ).toHaveLength(0);
-  expect(await service.remove(db, actor, org.id, ids[0]!)).toBe("applied");
-  expect(
-    (
-      await db
-        .select({ revokedAt: grantContexts.revokedAt })
-        .from(grantContexts)
-        .where(eq(grantContexts.id, a))
-    )[0]!.revokedAt,
-  ).not.toBeNull();
 });

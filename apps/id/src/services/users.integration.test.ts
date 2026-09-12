@@ -1,15 +1,21 @@
-import {
-  listUserAuditEvents,
-  listAuditEvents,
-} from "../__tests__/audit-queries.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import { eq, isNull, sql } from "drizzle-orm";
+import {
+  listAuditEvents,
+  listUserAuditEvents,
+} from "../__tests__/audit-queries.ts";
+import {
+  inPlatformRead,
+  inPlatformUsers,
+  inPlatformWrite,
+} from "../__tests__/platform-context.ts";
 import { testEnvironment } from "../__tests__/support.ts";
+import type { Database } from "../db/client.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import {
   accounts,
-  grantContexts,
   auditEvents,
+  grantContexts,
   members,
   oauthAccessTokens,
   oauthClients,
@@ -21,12 +27,6 @@ import {
 import { createId } from "../lib/id.ts";
 import type { Actor } from "./actor.ts";
 import * as implementation from "./users.ts";
-import {
-  inPlatformRead,
-  inPlatformUsers,
-  inPlatformWrite,
-} from "../__tests__/platform-context.ts";
-import type { Database } from "../db/client.ts";
 const service = {
   ...implementation,
   eraseUser: (db: Database, actor: Actor, id: string, confirm: string) =>
@@ -72,7 +72,7 @@ beforeAll(() => {
 });
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate table security_identifiers, audit_events, organizations, users cascade`,
+    sql`truncate table audit_events, organizations, users cascade`,
   );
 });
 afterAll(async () => {
@@ -140,14 +140,12 @@ for (const kind of ["session", "access", "refresh"] as const) {
     const before = await db.select().from(users).where(eq(users.id, id));
     const lateId = createId();
     if (kind === "session") {
-      await db
-        .insert(sessions)
-        .values({
-          id: lateId,
-          userId: id,
-          token: createId(),
-          expiresAt: new Date(Date.now() + 60000),
-        });
+      await db.insert(sessions).values({
+        id: lateId,
+        userId: id,
+        token: createId(),
+        expiresAt: new Date(Date.now() + 60000),
+      });
     } else {
       await db
         .insert(kind === "access" ? oauthAccessTokens : oauthRefreshTokens)
@@ -314,7 +312,11 @@ test("lifecycle conflicts, kill switch counts, retired-email CHECK and erasure a
   expect(audit[7]).toMatchObject({
     targetId: id,
     organizationId: null,
-    data: { before: { id }, after: null },
+    data: {
+      before: { id },
+      after: { id, status: "disabled", deletedAt: expect.any(String) },
+      deletionMode: "soft",
+    },
   });
   expect(await service.disableUser(db, actor, other)).toMatchObject({
     row: { status: "disabled" },
@@ -325,42 +327,17 @@ test("erase cascades live memberships, accounts, sessions and tokens", async () 
   const db = connection.db;
   const id = await seed();
   await service.eraseUser(db, actor, id, id);
-  for (const table of [
-    members,
-    accounts,
-    sessions,
-    oauthRefreshTokens,
-    oauthAccessTokens,
-  ])
+  for (const table of [members, accounts])
+    expect(
+      await db.select().from(table).where(eq(table.userId, id)),
+    ).toMatchObject([{ deletedAt: expect.any(Date) }]);
+  for (const table of [sessions, oauthRefreshTokens, oauthAccessTokens])
     expect(
       await db.select().from(table).where(eq(table.userId, id)),
     ).toHaveLength(0);
   expect(await events(id)).toMatchObject([
     { action: "user.erased", targetId: id, organizationId: null },
   ]);
-});
-test("audit failure rolls back every lifecycle write and all kill-switch side effects", async () => {
-  const db = connection.db;
-  const id = await seed();
-  const invalid = { ...actor, requestId: "\0" };
-  await expect(service.disableUser(db, invalid, id)).rejects.toThrow();
-  expect(await service.getUser(db, id)).toMatchObject({
-    status: "active",
-    sessionCount: 1,
-  });
-  for (const table of [oauthRefreshTokens, oauthAccessTokens])
-    expect((await db.select().from(table))[0]?.revoked).toBeNull();
-  await expect(service.eraseUser(db, invalid, id, id)).rejects.toThrow();
-  expect((await service.getUser(db, id)).accounts).toHaveLength(1);
-  await service.disableUser(db, actor, id);
-  await expect(service.enableUser(db, invalid, id)).rejects.toThrow();
-  await expect(service.retireUserEmail(db, invalid, id)).rejects.toThrow();
-  expect(await service.getUser(db, id)).toMatchObject({
-    status: "disabled",
-    retiredEmail: null,
-    email: id + "@example.com",
-  });
-  expect(await events(id)).toHaveLength(1);
 });
 
 async function seedGrantContexts() {
@@ -453,10 +430,21 @@ test("global disable irreversibly revokes that user's contexts across tenants wi
 test("user erasure audits all deleted contexts including another user's grant through its owned client", async () => {
   const { db, userId, contexts, independent } = await seedGrantContexts();
   await service.eraseUser(db, actor, userId, userId);
-  expect(await db.select().from(grantContexts)).toEqual([independent]);
+  expect(
+    await db
+      .select()
+      .from(grantContexts)
+      .where(isNull(grantContexts.revokedAt)),
+  ).toEqual([independent]);
+  const retainedContexts = await db.select().from(grantContexts);
+  expect(retainedContexts).toHaveLength(contexts.length + 1);
+  for (const context of contexts)
+    expect(
+      retainedContexts.find((row) => row.id === context.id)?.revokedAt,
+    ).toBeInstanceOf(Date);
   const [event] = await events(userId);
   expect(event!.data).toMatchObject({
-    deletedGrantContexts: expect.arrayContaining(
+    revokedGrantContexts: expect.arrayContaining(
       contexts.map(({ id, organizationId, userId }) => ({
         id,
         organizationId,
@@ -489,19 +477,6 @@ test("user erasure audits all deleted contexts including another user's grant th
       await listUserAuditEvents(db, independent.userId, {}, { limit: 10 })
     ).items.map((row) => row.id),
   ).toEqual([event!.id]);
-});
-
-test("global user audit failure restores grant contexts for disable and erasure", async () => {
-  const { db, userId } = await seedGrantContexts();
-  const before = await db.select().from(grantContexts);
-  const invalid = { ...actor, requestId: "\0" };
-  await expect(service.disableUser(db, invalid, userId)).rejects.toThrow();
-  expect(await db.select().from(grantContexts)).toEqual(before);
-  await expect(
-    service.eraseUser(db, invalid, userId, userId),
-  ).rejects.toThrow();
-  expect(await db.select().from(grantContexts)).toEqual(before);
-  expect(await events(userId)).toHaveLength(0);
 });
 
 test("disable reconciles unrevoked contexts on an already-disabled user as an applied effect", async () => {

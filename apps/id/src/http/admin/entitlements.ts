@@ -1,3 +1,4 @@
+import { commandJson } from "./schemas.ts";
 import { platformRead } from "./platform-read.ts";
 import { tenantRead } from "./tenant-read.ts";
 import {
@@ -82,6 +83,7 @@ export const routes = {
     tag: "Entitlements",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     responses: standardResponses(
       {},
       {
@@ -109,12 +111,16 @@ export const routes = {
     tag: "Entitlements",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     parameters: ["organizationId"].map((name) => pathParameter(name, "uuid")),
     orgScope: "org:read",
     responses: standardResponses(
       { orgScope: "org:read" },
       {
-        200: { description: "Success", content: json(page(entitlementSchema)) },
+        200: {
+          description: "Success",
+          content: commandJson(page(entitlementSchema)),
+        },
         ...problemResponses(400, 404),
       },
     ),
@@ -125,10 +131,11 @@ export const routes = {
     operationId: "createEntitlement",
     summary: "Create an organisation entitlement",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts and expired recovery never re-executes. Create an organisation, group or member entitlement to a client, resource or exact client/resource pair and return the entitlement, granting access during its validity window. Prefer updateEntitlement to change existing scopes or dates; validation_failed rejects invalid targets or scopes, not_found means a referenced parent or target is missing, and conflict or constraint_violation rejects duplicate or inconsistent grants.",
+      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Create an organisation, group or member entitlement to a client, resource or exact client/resource pair and return the entitlement, granting access during its validity window. Prefer updateEntitlement to change existing scopes or dates; validation_failed rejects invalid targets or scopes, not_found means a referenced parent or target is missing, and conflict or constraint_violation rejects duplicate or inconsistent grants.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [pathParameter("organizationId", "uuid"), idempotencyParameter],
     requestBody: body(createSchema),
     example: {
@@ -140,9 +147,9 @@ export const routes = {
         201: {
           description: "Success",
           headers: commandResponseHeaders,
-          content: json(entitlementSchema),
+          content: commandJson(entitlementSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -156,6 +163,7 @@ export const routes = {
     tag: "Entitlements",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     parameters: ["organizationId", "entitlementId"].map((name) =>
       pathParameter(name, "uuid"),
     ),
@@ -178,10 +186,11 @@ export const routes = {
     operationId: "updateEntitlement",
     summary: "Update an organisation entitlement",
     description:
-      "Requires Idempotency-Key and the strong If-Match ETag from getEntitlement. Missing conditions return 428; stale or wrong-instance state returns 412. Committed replay precedes the old revision check. Identical authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts and expired recovery never re-executes. Change an entitlement’s scopes or validity window and return the updated entitlement, affecting subsequent access decisions. Prefer createEntitlement to select a different principal or target; validation_failed rejects invalid scopes or an empty patch, not_found means the entitlement is missing, and constraint_violation rejects an invalid window. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input.",
+      "Requires Idempotency-Key and optionally the strong If-Match ETag from getEntitlement. Stale or wrong-instance supplied revisions return 412. Committed replay precedes the old revision check. Identical authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Change an entitlement’s scopes or validity window and return the updated entitlement, affecting subsequent access decisions. Prefer createEntitlement to select a different principal or target; validation_failed rejects invalid scopes or an empty patch, not_found means the entitlement is missing, and constraint_violation rejects an invalid window.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [
       ...["organizationId", "entitlementId"].map((name) =>
         pathParameter(name, "uuid"),
@@ -197,9 +206,9 @@ export const routes = {
         200: {
           description: "Success",
           headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
-          content: json(entitlementSchema),
+          content: commandJson(entitlementSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 412, 428, 503),
+        ...problemResponses(400, 404, 409, 412, 503),
       },
     ),
   },
@@ -209,10 +218,11 @@ export const routes = {
     operationId: "disableEntitlement",
     summary: "Disable an organisation entitlement",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts and expired recovery never re-executes. Disable an organisation entitlement and return the updated record. Prefer enableEntitlement for the opposite transition; not_found means the target is missing and unchanged status records a noop without updating timestamps. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input.",
+      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Disable an organisation entitlement and return the updated record. Prefer enableEntitlement for the opposite transition; not_found means the target is missing and unchanged status records a noop without updating timestamps.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [
       ...["organizationId", "entitlementId"].map((name) =>
         pathParameter(name, "uuid"),
@@ -225,9 +235,9 @@ export const routes = {
         200: {
           description: "Success",
           headers: commandResponseHeaders,
-          content: json(entitlementSchema),
+          content: commandJson(entitlementSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -237,10 +247,11 @@ export const routes = {
     operationId: "enableEntitlement",
     summary: "Enable an organisation entitlement",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts and expired recovery never re-executes. Enable an organisation entitlement and return the updated record. Prefer disableEntitlement for the opposite transition; not_found means the target is missing and unchanged status records a noop without updating timestamps.",
+      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Enable an organisation entitlement and return the updated record. Prefer disableEntitlement for the opposite transition; not_found means the target is missing and unchanged status records a noop without updating timestamps.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [
       ...["organizationId", "entitlementId"].map((name) =>
         pathParameter(name, "uuid"),
@@ -253,9 +264,9 @@ export const routes = {
         200: {
           description: "Success",
           headers: commandResponseHeaders,
-          content: json(entitlementSchema),
+          content: commandJson(entitlementSchema),
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -265,10 +276,11 @@ export const routes = {
     operationId: "removeEntitlement",
     summary: "Remove an organisation entitlement",
     description:
-      "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days without repeating effects. Live changed-input reuse conflicts and expired recovery never re-executes. Remove an organisation entitlement and return no content, removing access supplied by that record. Prefer updateEntitlement to change its validity or scopes; validation_failed rejects malformed ids and not_found means the target is unavailable. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input.",
+      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Soft-delete an organisation entitlement and return no content, removing access supplied by that record. Deletion is terminal; an explicit replacement gets a new UUID. Prefer updateEntitlement to change its validity or scopes; validation_failed rejects malformed ids and not_found means the target is unavailable.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [
       ...["organizationId", "entitlementId"].map((name) =>
         pathParameter(name, "uuid"),
@@ -279,7 +291,7 @@ export const routes = {
       {},
       {
         204: { description: "Success", headers: commandResponseHeaders },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -345,7 +357,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "entitlement", id: row.id },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -398,7 +409,6 @@ export function register(app: Hono<AppEnvironment>) {
           };
         },
         {
-          retention: "ordinary",
           etag: (body) =>
             revisionTag(
               entitlementSchema.pick({ id: true, revision: true }).parse(body),
@@ -431,7 +441,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "entitlement", id: entitlementId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -459,7 +468,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "entitlement", id: entitlementId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -486,7 +494,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "entitlement", id: entitlementId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );

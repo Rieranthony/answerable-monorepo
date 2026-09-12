@@ -71,6 +71,7 @@ export function listClients(context: PlatformReadContext, query: ClientQuery) {
     .from(oauthClients)
     .where(
       and(
+        sql`${oauthClients.deletedAt} is null`,
         query.q === undefined
           ? undefined
           : or(
@@ -93,7 +94,12 @@ function publicClientQuery(executor: Executor, clientId: string) {
   return executor
     .select(publicSelection)
     .from(oauthClients)
-    .where(eq(oauthClients.clientId, clientId))
+    .where(
+      and(
+        sql`${oauthClients.deletedAt} is null`,
+        eq(oauthClients.clientId, clientId),
+      ),
+    )
     .for("share");
 }
 export async function readClient(
@@ -112,12 +118,14 @@ export async function readClientForPolicy(
   const [row] = await publicClientQuery(tx, clientId);
   return row ?? null;
 }
-export function lockClientForCommand(
+export async function lockClientForCommand(
   context: PlatformWriteContext,
   clientId: string,
 ) {
   const { tx } = requirePlatformWriteContext(context);
-  return lockClient(tx, clientId);
+  const row = await lockClient(tx, clientId);
+  await context.revalidate();
+  return row;
 }
 /** Client registration can be shared; this existence check grants no permission. */
 export async function findClientForAccess(
@@ -128,7 +136,12 @@ export async function findClientForAccess(
   const [row] = await tx
     .select({ id: oauthClients.id })
     .from(oauthClients)
-    .where(eq(oauthClients.clientId, clientId));
+    .where(
+      and(
+        sql`${oauthClients.deletedAt} is null`,
+        eq(oauthClients.clientId, clientId),
+      ),
+    );
   return row ?? null;
 }
 
@@ -152,7 +165,12 @@ export async function updateClient(
   const [row] = await executor
     .update(oauthClients)
     .set(patch)
-    .where(eq(oauthClients.clientId, clientId))
+    .where(
+      and(
+        sql`${oauthClients.deletedAt} is null`,
+        eq(oauthClients.clientId, clientId),
+      ),
+    )
     .returning();
   return row ?? null;
 }
@@ -165,7 +183,12 @@ export async function setClientDisabled(
   const [row] = await executor
     .update(oauthClients)
     .set({ disabled })
-    .where(eq(oauthClients.clientId, clientId))
+    .where(
+      and(
+        sql`${oauthClients.deletedAt} is null`,
+        eq(oauthClients.clientId, clientId),
+      ),
+    )
     .returning();
   return row ?? null;
 }
@@ -178,7 +201,12 @@ export async function setClientSecret(
   const [row] = await executor
     .update(oauthClients)
     .set({ clientSecret: digest })
-    .where(eq(oauthClients.clientId, clientId))
+    .where(
+      and(
+        sql`${oauthClients.deletedAt} is null`,
+        eq(oauthClients.clientId, clientId),
+      ),
+    )
     .returning();
   return row ?? null;
 }
@@ -192,8 +220,11 @@ export async function linkClientResource(
     .insert(oauthClientResources)
     .values({ id: createId(), clientId, resourceId: resource })
     .onConflictDoNothing()
-    .returning({ id: oauthClientResources.id });
-  return { created: rows.length > 0 };
+    .returning({
+      id: oauthClientResources.id,
+      deletedAt: oauthClientResources.deletedAt,
+    });
+  return { created: rows.length > 0, relationship: rows[0] ?? null };
 }
 export async function unlinkClientResource(
   context: PlatformWriteContext,
@@ -202,15 +233,20 @@ export async function unlinkClientResource(
 ) {
   const { tx: executor } = requirePlatformWriteContext(context);
   const rows = await executor
-    .delete(oauthClientResources)
+    .update(oauthClientResources)
+    .set({ deletedAt: sql`now()` })
     .where(
       and(
+        sql`${oauthClientResources.deletedAt} is null`,
         eq(oauthClientResources.clientId, clientId),
         eq(oauthClientResources.resourceId, resource),
       ),
     )
-    .returning({ id: oauthClientResources.id });
-  return rows.length > 0;
+    .returning({
+      deletedAt: oauthClientResources.deletedAt,
+      id: oauthClientResources.id,
+    });
+  return rows[0] ?? null;
 }
 export function listClientResources(
   context: PlatformReadContext,
@@ -220,7 +256,12 @@ export function listClientResources(
   return executor
     .select()
     .from(oauthClientResources)
-    .where(eq(oauthClientResources.clientId, clientId))
+    .where(
+      and(
+        sql`${oauthClientResources.deletedAt} is null`,
+        eq(oauthClientResources.clientId, clientId),
+      ),
+    )
     .orderBy(desc(oauthClientResources.id));
 }
 
@@ -232,7 +273,12 @@ export async function countClientEntitlements(
   const [row] = await executor
     .select({ count: count() })
     .from(entitlements)
-    .where(eq(entitlements.clientId, clientId));
+    .where(
+      and(
+        sql`${entitlements.deletedAt} is null`,
+        eq(entitlements.clientId, clientId),
+      ),
+    );
   return row!.count;
 }
 export async function deleteClient(
@@ -286,29 +332,55 @@ export async function deleteClient(
       expiresAt: oauthRefreshTokens.expiresAt,
       revoked: oauthRefreshTokens.revoked,
     });
-  const deletedConsents = await tx
-    .delete(oauthConsents)
-    .where(eq(oauthConsents.clientId, clientId))
+  const softDeletedConsents = await tx
+    .update(oauthConsents)
+    .set({ deletedAt: sql`now()` })
+    .where(
+      and(
+        sql`${oauthConsents.deletedAt} is null`,
+        eq(oauthConsents.clientId, clientId),
+      ),
+    )
     .returning({
+      deletedAt: oauthConsents.deletedAt,
       id: oauthConsents.id,
       userId: oauthConsents.userId,
       clientId: oauthConsents.clientId,
       scopes: oauthConsents.scopes,
       resources: oauthConsents.resources,
     });
-  const deletedClientResources = await tx
-    .delete(oauthClientResources)
-    .where(eq(oauthClientResources.clientId, clientId))
+  const softDeletedClientResources = await tx
+    .update(oauthClientResources)
+    .set({ deletedAt: sql`now()` })
+    .where(
+      and(
+        sql`${oauthClientResources.deletedAt} is null`,
+        eq(oauthClientResources.clientId, clientId),
+      ),
+    )
     .returning({
+      deletedAt: oauthClientResources.deletedAt,
       id: oauthClientResources.id,
       clientId: oauthClientResources.clientId,
       resourceId: oauthClientResources.resourceId,
     });
-  await tx.delete(oauthClients).where(eq(oauthClients.clientId, clientId));
+  const [row] = await tx
+    .update(oauthClients)
+    .set({ deletedAt: sql`now()`, disabled: true, clientSecret: null })
+    .where(
+      and(
+        sql`${oauthClients.deletedAt} is null`,
+        eq(oauthClients.clientId, clientId),
+      ),
+    )
+    .returning();
   return {
-    deletedAccessTokens,
-    deletedRefreshTokens,
-    deletedConsents,
-    deletedClientResources,
+    row: row!,
+    effects: {
+      deletedAccessTokens,
+      deletedRefreshTokens,
+      softDeletedConsents,
+      softDeletedClientResources,
+    },
   };
 }

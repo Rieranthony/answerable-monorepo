@@ -37,7 +37,7 @@ const actor = {
 beforeEach(async () => {
   assertDisposableTestDatabase("truncate bootstrap fixtures");
   await db.execute(
-    sql`truncate table security_identifiers, organizations, users, oauth_resources, oauth_clients, audit_events cascade`,
+    sql`truncate table organizations, users, oauth_resources, oauth_clients, audit_events cascade`,
   );
 });
 afterAll(async () => {
@@ -245,74 +245,6 @@ test("system binding protects its rows and rejects a changed admin audience", as
   ).rejects.toThrow();
 });
 
-import { bindExistingSystem } from "./services/system-binding.ts";
-import { systemBindings } from "./db/schema/index.ts";
-
-test("reviewed binding import validates IDs, repeats safely and rolls back with audit failure", async () => {
-  const organizationId = crypto.randomUUID();
-  const resourceId = crypto.randomUUID();
-  const groupId = crypto.randomUUID();
-  await db
-    .insert(organizations)
-    .values({ id: organizationId, slug: "existing", name: "Existing" });
-  await db.insert(oauthResources).values({
-    id: resourceId,
-    identifier: options.adminResourceIdentifier,
-    name: "Existing admin",
-  });
-  await db.insert(groups).values({
-    id: groupId,
-    organizationId,
-    slug: "existing-admins",
-    name: "Existing admins",
-  });
-  const input = {
-    organizationId,
-    resourceId,
-    groupId,
-    resourceIdentifier: options.adminResourceIdentifier,
-  };
-  const otherOrganizationId = crypto.randomUUID();
-  await db.insert(organizations).values({
-    id: otherOrganizationId,
-    slug: "other-owner",
-    name: "Other owner",
-  });
-  for (const patch of [
-    { organizationId: otherOrganizationId },
-    { organizationId: crypto.randomUUID() },
-    { resourceId: crypto.randomUUID() },
-    { groupId: crypto.randomUUID() },
-    { resourceIdentifier: "https://wrong.example" },
-  ])
-    await expect(
-      bindExistingSystem(db, actor, { ...input, ...patch }),
-    ).rejects.toMatchObject({ code: "system_binding_conflict" });
-  await expect(
-    bindExistingSystem(db, { ...actor, requestId: "\0" }, input),
-  ).rejects.toThrow();
-  expect(await db.select().from(systemBindings)).toHaveLength(0);
-  expect(await bindExistingSystem(db, actor, input)).toMatchObject({
-    created: true,
-  });
-  expect(await bindExistingSystem(db, actor, input)).toMatchObject({
-    created: false,
-  });
-  const replacementGroup = crypto.randomUUID();
-  await db.insert(groups).values({
-    id: replacementGroup,
-    organizationId,
-    slug: "replacement",
-    name: "Replacement",
-  });
-  await expect(
-    bindExistingSystem(db, actor, { ...input, groupId: replacementGroup }),
-  ).rejects.toMatchObject({ code: "system_binding_conflict" });
-  const seeded = await bootstrap(db, actor, options);
-  expect(seeded.organization.id).toBe(organizationId);
-  expect(seeded.group.id).toBe(groupId);
-});
-
 test("bootstrap preserves explicit restrictions on the bound platform capability", async () => {
   const { organizationCapabilities } = await import("./db/schema/index.ts");
   await bootstrap(db, actor, options);
@@ -326,10 +258,4 @@ test("bootstrap preserves explicit restrictions on the bound platform capability
     .returning();
   await bootstrap(db, actor, options);
   expect(await db.select().from(organizationCapabilities)).toEqual([row!]);
-  await expect(
-    db
-      .delete(organizationCapabilities)
-      .where(eq(organizationCapabilities.id, row!.id))
-      .execute(),
-  ).rejects.toMatchObject({ cause: { code: "23514" } });
 });

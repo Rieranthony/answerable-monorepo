@@ -231,7 +231,7 @@ test("session expiry during a policy lock wait denies the command before mutatio
   ]);
   await fixture.db
     .update(sessions)
-    .set({ expiresAt: sql`statement_timestamp() + interval '2 seconds'` })
+    .set({ expiresAt: sql`statement_timestamp() + interval '1 second'` })
     .where(eq(sessions.id, session!.id));
   let readerPid = 0;
   let mutated = false;
@@ -362,7 +362,6 @@ test("concurrent policy lock upgrades roll back one command and permit same-key 
           },
           { requestId: name },
         ),
-      undefined,
       (authority) => authority.close(),
     );
   const outcomes = await Promise.all(

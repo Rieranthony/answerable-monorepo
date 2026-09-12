@@ -48,6 +48,7 @@ export type MemberAccess = {
 const activeOrganization = and(
   eq(organizations.id, members.organizationId),
   eq(organizations.status, "active"),
+  sql`${organizations.deletedAt} is null`,
 );
 export async function memberAccess(
   context: TenantReadContext<"memberAccess"> | TenantMemberContext,
@@ -77,7 +78,12 @@ export async function memberAccess(
       ) order by ${entitlements.id})`.as("sources"),
     })
     .from(entitlements)
-    .where(matchingEntitlements(executor))
+    .where(
+      and(
+        sql`${entitlements.deletedAt} is null`,
+        matchingEntitlements(executor),
+      ),
+    )
     .groupBy(entitlements.clientId, entitlements.resource)
     .as("assigned_targets");
   const rows = await executor
@@ -101,6 +107,11 @@ export async function memberAccess(
     )
     .where(
       and(
+        sql`${oauthResources.deletedAt} is null`,
+        sql`${oauthClients.deletedAt} is null`,
+        sql`${organizations.deletedAt} is null`,
+        sql`${users.deletedAt} is null`,
+        sql`${members.deletedAt} is null`,
         eq(members.organizationId, organizationId),
         eq(members.id, memberId),
         isEffective(members),
@@ -194,6 +205,12 @@ export async function targetAccess(
     .crossJoinLateral(sql`unnest(${entitlements.scopes}) as s(scope)`)
     .where(
       and(
+        sql`${oauthResources.deletedAt} is null`,
+        sql`${oauthClients.deletedAt} is null`,
+        sql`${entitlements.deletedAt} is null`,
+        sql`${users.deletedAt} is null`,
+        sql`${organizations.deletedAt} is null`,
+        sql`${members.deletedAt} is null`,
         eq(members.organizationId, organizationId),
         isEffective(members),
         beforeCursor(members.id, page.cursor),

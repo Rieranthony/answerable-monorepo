@@ -20,10 +20,9 @@ export async function lockResourceGrantTargets(
     ownerUserId: string | null;
     organizationId: string;
     clientId: string;
-    resource: string;
+    resource: string | null;
   },
 ) {
-  await tx.execute(sql`set local lock_timeout = '2s'`);
   const userIds =
     target.ownerUserId === null
       ? [target.userId]
@@ -31,7 +30,7 @@ export async function lockResourceGrantTargets(
   await tx
     .select({ id: users.id })
     .from(users)
-    .where(inArray(users.id, userIds))
+    .where(and(sql`${users.deletedAt} is null`, inArray(users.id, userIds)))
     .orderBy(users.id)
     .for("share")
     .catch(rethrowGrantError);
@@ -39,7 +38,8 @@ export async function lockResourceGrantTargets(
     rethrowGrantError,
   );
   await lockClient(tx, target.clientId, "share").catch(rethrowGrantError);
-  await lockResource(tx, target.resource, "share").catch(rethrowGrantError);
+  if (target.resource !== null)
+    await lockResource(tx, target.resource, "share").catch(rethrowGrantError);
 }
 
 /** Hold subject/owner users (sorted) → organisation → client → resource → family.
@@ -64,12 +64,14 @@ export async function lockResourceGrantPolicy(
       oauthClients,
       eq(oauthClients.id, grantContexts.clientInstanceId),
     )
-    .innerJoin(
+    .leftJoin(
       oauthResources,
       eq(oauthResources.id, grantContexts.resourceInstanceId),
     )
     .where(
       and(
+        sql`${oauthResources.deletedAt} is null`,
+        sql`${oauthClients.deletedAt} is null`,
         eq(grantContexts.id, input.id),
         eq(oauthClients.clientId, input.clientId),
       ),

@@ -46,18 +46,22 @@ export function memberPermissionFields(
   const activeMember = and(
     isEffective(members),
     eq(users.status, "active"),
+    sql`${users.deletedAt} is null`,
     eq(organizations.status, "active"),
+    sql`${organizations.deletedAt} is null`,
   );
   const clientId = includeClient ? oauthClients.clientId : sql`null::text`;
   const loginEligible = includeClient
     ? and(
         activeMember,
         eq(oauthClients.disabled, false),
+        sql`${oauthClients.deletedAt} is null`,
         sql`${oauthClients.grantTypes} @> ARRAY['authorization_code']::text[]`,
       )
     : sql`false`;
   const resourceEligible = and(
     eq(oauthResources.disabled, false),
+    sql`${oauthResources.deletedAt} is null`,
     or(
       eq(oauthResources.classification, "platform_shared"),
       eq(oauthResources.organizationId, members.organizationId),
@@ -88,7 +92,7 @@ export function memberPermissionFields(
     loginEligible: sql<boolean>`coalesce(${loginEligible}, false)`,
     // The capability constraint already restricts admin_session to the bound resource.
     adminEligible: sql<boolean>`coalesce(${and(activeMember, resourceEligible)}, false)`,
-    eligible: sql<boolean>`coalesce(${and(loginEligible, resourceEligible, sql`exists(select 1 from ${oauthClientResources} where ${oauthClientResources.clientId} = ${clientId} and ${oauthClientResources.resourceId} = ${oauthResources.identifier})`)}, false)`,
+    eligible: sql<boolean>`coalesce(${and(loginEligible, resourceEligible, sql`exists(select 1 from ${oauthClientResources} where ${oauthClientResources.clientId} = ${clientId} and ${oauthClientResources.resourceId} = ${oauthResources.identifier} and ${oauthClientResources.deletedAt} is null)`)}, false)`,
     refreshEnabled: includeClient
       ? sql<boolean>`coalesce(${oauthClients.grantTypes} @> ARRAY['refresh_token']::text[], false)`
       : sql<boolean>`false`,
@@ -223,8 +227,21 @@ export function memberPermissionView(decision: MemberPermission) {
 }
 
 /** Client login admission only; resource permission and native provenance are separate. */
-export function evaluateClientLoginPermission(row: PermissionFacts) {
-  const decision = memberDecision(row, "client", "authorization_code");
+export function evaluateClientLoginPermission(
+  row: PermissionFacts,
+  input?: {
+    grantType: "authorization_code" | "refresh_token";
+    requestedScopes: string[];
+    originalScopes: string[];
+  },
+) {
+  const grantType = input?.grantType ?? "authorization_code";
+  const decision = memberDecision(
+    row,
+    "client",
+    grantType,
+    input?.requestedScopes,
+  );
   if (!row.loginEligible) return { ...decision, reason: "context" as const };
   const capability = row.capabilities.find(
     (cap) => cap.resource === null && cap.grantKind === "authorization_code",
@@ -232,10 +249,17 @@ export function evaluateClientLoginPermission(row: PermissionFacts) {
   const assignments = row.assignments.filter(
     (source) => source.resource === null,
   );
-  const scopes = grantScopes(undefined, [
+  const renewal = row.capabilities.find(
+    (cap) => cap.resource === null && cap.grantKind === "refresh_token",
+  );
+  if (grantType === "refresh_token" && (!row.refreshEnabled || !renewal))
+    return { ...decision, reason: "capability" as const };
+  const scopes = grantScopes(input?.requestedScopes, [
     row.client?.scopeCeiling ?? [],
     capability?.scopes ?? [],
     assignments.flatMap((source) => source.scopes),
+    ...(input ? [input.originalScopes] : []),
+    ...(grantType === "refresh_token" ? [renewal!.scopes] : []),
   ]);
   if (!scopes) return { ...decision, reason: "login" as const };
   return {
@@ -247,7 +271,10 @@ export function evaluateClientLoginPermission(row: PermissionFacts) {
       policyVersion: 1,
       evaluatedAt: row.evaluatedAt,
       membership: row.membership,
-      capabilities: [capability!],
+      capabilities: [
+        capability!,
+        ...(grantType === "refresh_token" ? [renewal!] : []),
+      ],
       assignments: assignments.filter((source) =>
         source.scopes.some((scope) => scopes.includes(scope)),
       ),

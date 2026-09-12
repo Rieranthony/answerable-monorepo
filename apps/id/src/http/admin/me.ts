@@ -42,6 +42,7 @@ export const routes = {
     tag: "Me",
     platformScope: "platform:read",
     kind: "read",
+    freshAuthentication: false,
     open: true,
     responses: standardResponses(
       {},

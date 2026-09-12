@@ -1,4 +1,3 @@
-import { platformWriterCheck } from "./platform-writer.ts";
 import {
   requirePlatformWriteContext,
   type PlatformWriteContext,
@@ -23,6 +22,7 @@ function configuration(
 ) {
   return {
     id: row.id,
+    deletedAt: row.deletedAt,
     revision: row.revision,
     organizationId: row.organizationId,
     slug: row.slug,
@@ -36,6 +36,7 @@ function assignment(
 ) {
   return {
     id: row.id,
+    deletedAt: row.deletedAt,
     revision: row.revision,
     organizationId: row.organizationId,
     groupId: row.groupId,
@@ -59,11 +60,12 @@ function audit(
     targetId,
     targetType,
     action,
-    schemaVersion: ["group.erased", "group.enabled", "group.disabled"].includes(
-      action,
-    )
-      ? 2
-      : 1,
+    schemaVersion:
+      data.deletionMode === "soft"
+        ? 3
+        : ["group.erased", "group.enabled", "group.disabled"].includes(action)
+          ? 2
+          : 1,
     data,
     outcome: "success",
   });
@@ -147,7 +149,6 @@ async function setStatus(
 ) {
   const { tx, actor } = requirePlatformWriteContext(context);
   const existing = await lockedGroup(context, organizationId, groupId);
-  const checkWriter = await platformWriterCheck(tx, organizationId);
   const changed = existing.status !== status;
   const policySources = changed
     ? await queries.readGroupPolicyForCommand(context, organizationId, groupId)
@@ -155,7 +156,6 @@ async function setStatus(
   const row = changed
     ? (await queries.setGroupStatus(context, organizationId, groupId, status))!
     : existing;
-  await checkWriter();
   await audit(
     tx,
     actor,
@@ -204,12 +204,15 @@ export async function eraseGroup(
       "confirmation_mismatch",
       "Confirmation must match the group ID",
     );
-  const checkWriter = await platformWriterCheck(tx, organizationId);
-  const effects = await queries.deleteGroup(context, organizationId, groupId);
-  await checkWriter();
+  const { row, effects } = await queries.deleteGroup(
+    context,
+    organizationId,
+    groupId,
+  );
   await audit(tx, actor, organizationId, groupId, "group.erased", {
     before: configuration(before),
-    after: null,
+    after: configuration(row),
+    deletionMode: "soft",
     effects,
   });
 }
@@ -287,7 +290,6 @@ export async function putMember(
       window.validFrom?.getTime() !== before.validFrom?.getTime()) ||
     (window.validUntil !== undefined &&
       window.validUntil?.getTime() !== before.validUntil?.getTime());
-  const checkWriter = await platformWriterCheck(tx, organizationId);
   const result =
     !changed && before
       ? { row: before, created: false }
@@ -297,7 +299,6 @@ export async function putMember(
           memberId,
           ...window,
         });
-  await checkWriter();
   await audit(
     tx,
     actor,
@@ -333,16 +334,24 @@ export async function removeMember(
       memberId,
     ),
   );
-  const checkWriter = await platformWriterCheck(tx, organizationId);
-  await queries.removeGroupMember(context, organizationId, groupId, memberId);
-  await checkWriter();
+  const row = await queries.removeGroupMember(
+    context,
+    organizationId,
+    groupId,
+    memberId,
+  );
   await audit(
     tx,
     actor,
     organizationId,
     memberId,
     "group_member.removed",
-    { groupId, before: assignment(before), after: null },
+    {
+      groupId,
+      before: assignment(before),
+      after: assignment(row!),
+      deletionMode: "soft",
+    },
     "group_member",
   );
 }

@@ -14,7 +14,7 @@ beforeAll(() => {
 afterAll(async () => connection.close());
 beforeEach(async () => {
   await connection.db.execute(
-    sql`truncate audit_events, security_identifiers, organizations, oauth_clients, oauth_resources cascade`,
+    sql`truncate audit_events, organizations, oauth_clients, oauth_resources cascade`,
   );
   const organizationId = createId();
   await connection.db
@@ -125,7 +125,8 @@ test("database rejects resource identity changes", async () => {
 
 test("deleted client and resource identifiers remain permanently reserved", async () => {
   await connection.db
-    .delete(oauthClients)
+    .update(oauthClients)
+    .set({ deletedAt: new Date(), disabled: true, clientSecret: null })
     .where(eq(oauthClients.id, client.id));
   await expect(
     connection.db
@@ -145,7 +146,9 @@ test("deleted client and resource identifiers remain permanently reserved", asyn
     name: "Reserved",
   };
   await connection.db.insert(oauthResources).values(resource);
-  await connection.db.delete(oauthResources);
+  await connection.db
+    .update(oauthResources)
+    .set({ deletedAt: new Date(), disabled: true });
   await expect(
     connection.db
       .insert(oauthResources)
@@ -171,22 +174,7 @@ test("rolled back creation does not reserve an identifier", async () => {
   ).toHaveLength(1);
 });
 
-test("reservation records cannot be changed or deleted", async () => {
-  await expect(
-    Promise.resolve(
-      connection.db.execute(
-        sql`update security_identifiers set identifier = 'changed'`,
-      ),
-    ),
-  ).rejects.toThrow();
-  await expect(
-    Promise.resolve(
-      connection.db.execute(sql`delete from security_identifiers`),
-    ),
-  ).rejects.toThrow();
-});
-
-test("concurrent creation commits one identity and one reservation", async () => {
+test("concurrent creation commits one identity", async () => {
   const outcomes = await Promise.allSettled(
     [1, 2].map(async () => {
       return connection.db
@@ -201,14 +189,6 @@ test("concurrent creation commits one identity and one reservation", async () =>
   expect(
     outcomes.filter((outcome) => outcome.status === "rejected"),
   ).toHaveLength(1);
-  const reservations = await connection.db.execute(
-    sql`select instance_id from security_identifiers where kind = 'client' and identifier = 'concurrent'`,
-  );
-  const [created] = await connection.db
-    .select()
-    .from(oauthClients)
-    .where(eq(oauthClients.clientId, "concurrent"));
-  expect(reservations.rows).toEqual([{ instance_id: created!.id }]);
 });
 
 test("configuration revisions cover SQL changes, reject forged revisions and leave SQL no-ops unchanged", async () => {

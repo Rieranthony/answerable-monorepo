@@ -59,10 +59,6 @@ export async function createAdminFixture(
     trustedOrigins: [issuer.origin, trustedOrigin],
     rootAdminSecret: "fixture-root-secret-at-least-32-characters",
     rootAdminBreakGlass: true,
-    operationReplay: {
-      activeKeyId: "test",
-      keys: { test: Buffer.alloc(32, 3).toString("base64url") },
-    },
     ...overrides,
   });
   const connection = createDatabase(environment);
@@ -73,7 +69,7 @@ export async function createAdminFixture(
   }
   try {
     await db.execute(sql`
-      truncate table security_identifiers, audit_events, entitlements, group_members, groups,
+      truncate table audit_events, entitlements, group_members, groups,
       organization_domains, sso_providers, oauth_client_assertions,
       oauth_access_tokens, oauth_refresh_tokens, oauth_consents,
       oauth_client_resources, oauth_resources, oauth_clients, jwks,
@@ -223,6 +219,7 @@ export async function createAdminFixture(
         email,
         email_verified: true,
         name,
+        auth_time: Math.floor(Date.now() / 1000),
       });
       const callbackURL = `${trustedOrigin}/callback`;
       const signedIn = await signInThroughIdp(app, {

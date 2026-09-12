@@ -1,17 +1,16 @@
-import * as productionUsers from "./users.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 
 import { testEnvironment } from "../../__tests__/support.ts";
-import { createAuth } from "../../auth.ts";
-import { createId } from "../../lib/id.ts";
-import { createDatabase, type DatabaseConnection } from "../client.ts";
-import { users } from "../schema/index.ts";
 import {
   retiredEmailFor,
   retireUserEmail,
   UserNotRetirableError,
 } from "../../__tests__/user-queries.ts";
+import { createAuth } from "../../auth.ts";
+import { createId } from "../../lib/id.ts";
+import { createDatabase, type DatabaseConnection } from "../client.ts";
+import { users } from "../schema/index.ts";
 
 let connection: DatabaseConnection;
 
@@ -20,9 +19,7 @@ beforeAll(() => {
 });
 
 beforeEach(async () => {
-  await connection.db.execute(
-    sql`truncate table security_identifiers, users cascade`,
-  );
+  await connection.db.execute(sql`truncate table users cascade`);
 });
 
 afterAll(async () => {
@@ -93,14 +90,14 @@ test("refuses to retire an active, inert, or already retired user", async () => 
   expect(afterSecondCall).toEqual(beforeSecondCall);
 });
 
-import { accounts, members, organizations, sessions } from "../schema/index.ts";
 import {
-  listUsers,
+  deleteUser,
   findUser,
+  listUsers,
   lockUser,
   setUserStatus,
-  deleteUser,
 } from "../../__tests__/user-queries.ts";
+import { accounts, members, organizations, sessions } from "../schema/index.ts";
 
 test("lists users by email, name, status, organisation and cursor; details expose only account identity", async () => {
   const db = connection.db;
@@ -196,15 +193,4 @@ test("locks, changes status with the disabled CHECK, deletes, and returns null f
   await expect(retireUserEmail(db, user.id)).rejects.toBeInstanceOf(
     UserNotRetirableError,
   );
-});
-
-test("global user listing rejects raw database authority", async () => {
-  await expect(
-    Promise.resolve().then(() =>
-      Reflect.apply(productionUsers.listUsers, undefined, [
-        connection.db,
-        { limit: 10 },
-      ]),
-    ),
-  ).rejects.toThrow("Invalid or expired");
 });

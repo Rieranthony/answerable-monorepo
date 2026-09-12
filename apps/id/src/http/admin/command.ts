@@ -1,4 +1,3 @@
-import { withOrganizationCommandSlot } from "./command-admission.ts";
 import {
   authorizePlatformUsersCommand,
   authorizePlatformWriteCommand,
@@ -14,12 +13,12 @@ import {
   type TenantMemberContext,
 } from "../../services/tenant-context.ts";
 import {
-  createOperationCipher,
+  executeOperation,
   type OperationJson,
-} from "../../services/operation-cipher.ts";
-import { executeOperation } from "../../services/operations.ts";
+} from "../../services/operations.ts";
 import type { AppEnvironment } from "../context.ts";
 import { ProblemError } from "../problem.ts";
+import { freshAuthenticationGuard } from "../../auth/fresh-authentication.ts";
 
 export const idempotencyParameter = {
   in: "header" as const,
@@ -27,7 +26,7 @@ export const idempotencyParameter = {
   required: true,
   schema: { type: "string" as const, minLength: 1, maxLength: 256 },
   description:
-    "Stable key for this logical command. Reuse it with identical input after a lost response. Journalled commands with an organizationId path parameter admit at most two outstanding commands per target organisation per runtime database pool after route authentication. Excess commands return 503 database_busy with Retry-After: 1 before journal checkout; retry the same key and input. This is not a deployment-wide quota or an authentication/checkout bound.",
+    "Stable key for this logical command. Reuse it with identical input after a lost response.",
 };
 
 export const commandResponseHeaders = {
@@ -41,7 +40,7 @@ export const commandResponseHeaders = {
   },
 };
 
-/** HTTP JSON representation is also the encrypted replay representation. */
+/** Normalise first-response values to their HTTP JSON representation. */
 export const operationJson = (value: unknown): OperationJson =>
   JSON.parse(JSON.stringify(value));
 
@@ -52,7 +51,6 @@ type CommandResult = {
   resultReference: { type: string; id: string };
 };
 type CommandOptions = {
-  retention?: "secret" | "ordinary";
   etag?: (body: OperationJson) => string;
 };
 
@@ -63,7 +61,7 @@ async function httpCommand<T>(
   statusCode: number,
   authority: {
     scope: string;
-    authorize: (tx: Executor) => Promise<T>;
+    authorize: (tx: Executor, freshAuthentication: boolean) => Promise<T>;
     release?: (authority: T) => void;
   },
   mutate: (tx: Executor, actor: Actor, authority: T) => Promise<CommandResult>,
@@ -76,52 +74,51 @@ async function httpCommand<T>(
       "invalid_idempotency_key",
       "A 1–256 character Idempotency-Key is required",
     );
-  const environment = context.get("environment");
-  const replayConfiguration = environment.operationReplay;
-  if (!replayConfiguration)
-    throw new ProblemError(
-      503,
-      "operation_replay_unavailable",
-      "Replay encryption is not configured",
-      undefined,
-      { retryable: true },
-    );
   const actor = actorFromContext(context);
-  const result = await withOrganizationCommandSlot(
+  const freshnessPolicy = context.get("freshAuthentication");
+  const needsFreshness =
+    typeof freshnessPolicy === "object"
+      ? Object.keys(await context.req.json()).some(
+          (field) => !freshnessPolicy.unlessOnly.includes(field),
+        )
+      : freshnessPolicy;
+  let checkFreshness: (() => Promise<void>) | undefined;
+  const result = await executeOperation(
     context.get("db"),
-    context.req.param("organizationId"),
-    () =>
-      executeOperation(
-        context.get("db"),
-        {
-          actorInstance: `${actor.actorType}:${actor.actorId}`,
-          authorityScope: authority.scope,
-          name,
-          key,
-          input,
-        },
-        authority.authorize,
-        async (tx, operationId, authorized) => {
-          const result = await mutate(
-            tx,
-            { ...actor, operationId },
-            authorized,
-          );
-          return {
-            outcome: result.outcome ?? "applied",
-            statusCode: result.statusCode ?? statusCode,
-            resultReference: result.resultReference,
-            body: operationJson(result.body),
-          };
-        },
-        {
-          cipher: createOperationCipher(replayConfiguration),
-          retention: options.retention ?? "secret",
-        },
-        authority.release,
-      ),
+    {
+      actorInstance: `${actor.actorType}:${actor.actorId}`,
+      authorityScope: authority.scope,
+      name,
+      key,
+      input,
+    },
+    async (tx) => {
+      const authorized = await authority.authorize(tx, Boolean(needsFreshness));
+      const principal = context.get("principal")!;
+      if (needsFreshness && principal.type === "user")
+        checkFreshness = await freshAuthenticationGuard(
+          tx,
+          principal.sessionId,
+        );
+      return authorized;
+    },
+    async (tx, operationId, authorized) => {
+      await checkFreshness?.();
+      const result = await mutate(tx, { ...actor, operationId }, authorized);
+      // Target-row/audit waits can outlast the freshness window too. Roll
+      // back the whole command and its effects if time elapsed in the body.
+      await checkFreshness?.();
+      return {
+        outcome: result.outcome ?? "applied",
+        statusCode: result.statusCode ?? statusCode,
+        resultReference: result.resultReference,
+        body: operationJson(result.body),
+      };
+    },
+    authority.release,
   );
-  if (options.etag) context.header("ETag", options.etag(result.body!));
+  if (options.etag && !result.replayed)
+    context.header("ETag", options.etag(result.body!));
   context.header("Operation-Id", result.operation.id);
   context.header("Idempotency-Replayed", String(result.replayed));
   context.header("Cache-Control", "no-store");
@@ -148,11 +145,12 @@ export function platformCommand(
     statusCode,
     {
       scope: "platform",
-      authorize: (tx) =>
+      authorize: (tx, freshAuthentication) =>
         authorizePlatformWriteCommand(tx, {
           principal: context.get("principal")!,
           environment: context.get("environment"),
           claims: context.get("bearerClaims"),
+          freshAuthentication,
         }),
       release: (authorized) => authorized.close(),
     },
@@ -176,11 +174,12 @@ export function platformUsersCommand(
     statusCode,
     {
       scope: "platform",
-      authorize: (tx) =>
+      authorize: (tx, freshAuthentication) =>
         authorizePlatformUsersCommand(tx, {
           principal: context.get("principal")!,
           environment: context.get("environment"),
           claims: context.get("bearerClaims"),
+          freshAuthentication,
         }),
       release: (authorized) => authorized.close(),
     },
@@ -204,16 +203,17 @@ export function tenantMemberCommand(
     statusCode,
     {
       scope: `tenant:${organizationId}`,
-      authorize: (tx) =>
+      authorize: (tx, freshAuthentication) =>
         authorizeTenantMemberCommand(tx, {
           principal: context.get("principal")!,
           environment: context.get("environment"),
           claims: context.get("bearerClaims"),
           organizationId,
+          freshAuthentication,
         }),
       release: (authorized) => authorized.close(),
     },
     (_tx, actor, tenant) => tenant.run(mutate, actor),
-    { retention: "ordinary" },
+    {},
   );
 }

@@ -1,3 +1,4 @@
+import { commandJson } from "./schemas.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
 import type { AppEnvironment } from "../context.ts";
@@ -60,7 +61,7 @@ const createSchema = z.discriminatedUnion("grantKind", [
   windowSchema
     .extend({
       clientId: z.string().min(1),
-      resource: z.url(),
+      resource: z.url().nullable().default(null),
       grantKind: z.literal("refresh_token"),
       scopes,
     })
@@ -95,7 +96,7 @@ const patchSchema = windowSchema
 const orgParameter = pathParameter("organizationId", "uuid");
 const idParameter = pathParameter("capabilityId", "uuid");
 const recovery =
-  "Requires Idempotency-Key. Identical authorised retries recover the original result for seven days; changed input returns idempotency_key_reused and expired recovery returns 410 without repeating effects. ";
+  "Requires Idempotency-Key. Identical authorised retries return the receipt; changed input returns idempotency_key_reused. ";
 export const routes = {
   listCapabilities: {
     method: "get",
@@ -108,6 +109,7 @@ export const routes = {
     platformScope: "platform:read",
     orgScope: "org:read",
     kind: "read",
+    freshAuthentication: false,
     parameters: [orgParameter],
     responses: standardResponses(
       { orgScope: "org:read" },
@@ -136,6 +138,7 @@ export const routes = {
     platformScope: "platform:read",
     orgScope: "org:read",
     kind: "read",
+    freshAuthentication: false,
     parameters: [orgParameter, idParameter],
     responses: standardResponses(
       { orgScope: "org:read" },
@@ -156,10 +159,11 @@ export const routes = {
     summary: "Approve an organisation capability",
     description:
       recovery +
-      "Approve an exact client/resource pair for client_credentials in its immutable owner organisation. Registration and compatibility alone grant no machine permission. Only platform writers may approve ceilings. For direct session administration, use admin_session with a null clientId and the bound ID admin resource. Only the platform organisation may receive platform scopes. For user grants use authorization_code: null resource approves login identity scopes, an exact resource approves resource scopes. refresh_token requires an exact resource and approves renewal separately. User scopes must fit the registered client scopes and resource vocabulary; identity and resource scopes cannot be mixed. User clients may serve multiple organisations, while private resources must belong to the approved organisation. Public user OAuth remains closed; approval does not open it. Prefer updateCapability for scopes, windows or status. validation_failed rejects incompatible targets/scopes; not_found means a reference is missing; conflict or constraint_violation means duplicate or inconsistent configuration.",
+      "Approve an exact client/resource pair for client_credentials in its immutable owner organisation. Registration and compatibility alone grant no machine permission. Only platform writers may approve ceilings. For direct session administration, use admin_session with a null clientId and the bound ID admin resource. Only the platform organisation may receive platform scopes. For user grants use authorization_code: null resource approves login identity scopes, an exact resource approves resource scopes. refresh_token approves renewal separately for a client-only login or exact resource pair. User scopes must fit the registered client scopes and resource vocabulary; identity and resource scopes cannot be mixed. User clients may serve multiple organisations, while private resources must belong to the approved organisation. Capabilities approve ceilings; current membership, authentication, assignments and consent are also required. Prefer updateCapability for scopes, windows or status. validation_failed rejects incompatible targets/scopes; not_found means a reference is missing; conflict or constraint_violation means duplicate or inconsistent configuration.",
     tag: "Capabilities",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [orgParameter, idempotencyParameter],
     requestBody: body(createSchema),
     example: {
@@ -176,9 +180,9 @@ export const routes = {
         201: {
           description: "Created capability",
           headers: commandResponseHeaders,
-          content: json(capabilitySchema),
+          content: commandJson(capabilitySchema),
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -189,10 +193,11 @@ export const routes = {
     summary: "Update an organisation capability",
     description:
       recovery +
-      "Requires the strong If-Match ETag from getCapability: missing returns 428, stale returns 412. Committed replay precedes that check. Change scopes, effective windows or active/disabled status; unchanged configuration records a noop. Disabling prevents subsequent machine grants and removes authority supplied by direct-session assignments, but does not revoke already-issued offline JWTs. last_platform_administrator rejects a change that removes the last effective platform writer. Assignments remain. Tenant and target are immutable. validation_failed rejects unsupported fields, grant kinds or scopes; not_found means the capability is missing; constraint_violation rejects inconsistent windows.",
+      "Accepts the strong If-Match ETag from getCapability; stale returns 412. Committed replay precedes that check. Change scopes, effective windows or active/disabled status; unchanged configuration records a noop. Disabling prevents subsequent machine grants and removes authority supplied by direct-session assignments, but does not revoke already-issued offline JWTs. Assignments remain. Tenant and target are immutable. validation_failed rejects unsupported fields, grant kinds or scopes; not_found means the capability is missing; constraint_violation rejects inconsistent windows.",
     tag: "Capabilities",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [
       orgParameter,
       idParameter,
@@ -207,9 +212,9 @@ export const routes = {
         200: {
           description: "Capability",
           headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
-          content: json(capabilitySchema),
+          content: commandJson(capabilitySchema),
         },
-        ...problemResponses(400, 404, 409, 410, 412, 428, 503),
+        ...problemResponses(400, 404, 409, 412, 503),
       },
     ),
   },
@@ -220,10 +225,11 @@ export const routes = {
     summary: "Remove an organisation capability",
     description:
       recovery +
-      "Remove a user, machine or tenant direct-session capability and retain its previous configuration in audit history. Subsequent grants are denied; existing offline tokens remain bounded by expiry. Assignments remain. Remove references before erasing a client or resource. Prefer updateCapability with disabled status for a reversible suspension. validation_failed rejects malformed input; not_found means the capability is unavailable. protected_capability means the bound platform ceiling cannot be removed.",
+      "Soft-delete a user, machine or tenant direct-session capability, retaining its disabled row and before/after audit state. Deletion is terminal; an explicit replacement gets a new UUID. Subsequent grants are denied; existing offline tokens remain bounded by expiry. Assignments remain. Remove references before erasing a client or resource. Prefer updateCapability with disabled status for a reversible suspension. validation_failed rejects malformed input; not_found means the capability is unavailable.",
     tag: "Capabilities",
     platformScope: "platform:write",
     kind: "write",
+    freshAuthentication: true,
     parameters: [orgParameter, idParameter, idempotencyParameter],
     responses: standardResponses(
       {},
@@ -232,7 +238,7 @@ export const routes = {
           description: "Removed capability",
           headers: commandResponseHeaders,
         },
-        ...problemResponses(400, 404, 409, 410, 503),
+        ...problemResponses(400, 404, 409, 503),
       },
     ),
   },
@@ -297,7 +303,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "capability", id: row.id },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );
@@ -338,7 +343,6 @@ export function register(app: Hono<AppEnvironment>) {
           };
         },
         {
-          retention: "ordinary",
           etag: (value) =>
             revisionTag(
               capabilitySchema.pick({ id: true, revision: true }).parse(value),
@@ -370,7 +374,6 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "capability", id: capabilityId },
           };
         },
-        { retention: "ordinary" },
       );
     },
   );

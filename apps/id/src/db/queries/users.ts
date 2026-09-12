@@ -1,4 +1,4 @@
-import { deleteUserGrantContexts } from "./grant-contexts.ts";
+import { revokeUserAndOwnedClientGrantContexts } from "./grant-contexts.ts";
 import {
   requirePlatformReadContext,
   requirePlatformUsersContext,
@@ -61,6 +61,7 @@ export async function retireUserEmail(
     })
     .where(
       and(
+        sql`${users.deletedAt} is null`,
         eq(users.id, userId),
         eq(users.status, "disabled"),
         isNull(users.retiredEmail),
@@ -90,6 +91,7 @@ export function listUsers(context: PlatformReadContext, query: UserQuery) {
     .from(users)
     .where(
       and(
+        sql`${users.deletedAt} is null`,
         query.email === undefined
           ? undefined
           : eq(users.email, query.email.toLowerCase()),
@@ -108,6 +110,7 @@ export function listUsers(context: PlatformReadContext, query: UserQuery) {
                 .from(members)
                 .where(
                   and(
+                    sql`${members.deletedAt} is null`,
                     eq(members.userId, users.id),
                     eq(members.organizationId, query.organizationId),
                   ),
@@ -131,8 +134,9 @@ export async function lockUser(
   const [row] = await executor
     .select()
     .from(users)
-    .where(eq(users.id, userId))
+    .where(and(sql`${users.deletedAt} is null`, eq(users.id, userId)))
     .for("update");
+  await context.revalidate();
   return row ?? null;
 }
 
@@ -142,13 +146,16 @@ export async function userExists(context: PlatformReadContext, userId: string) {
   const rows = await executor
     .select({ id: users.id })
     .from(users)
-    .where(eq(users.id, userId));
+    .where(and(sql`${users.deletedAt} is null`, eq(users.id, userId)));
   return rows.length > 0;
 }
 
 export async function findUser(context: PlatformReadContext, userId: string) {
   const { tx: executor } = requirePlatformReadContext(context);
-  const [row] = await executor.select().from(users).where(eq(users.id, userId));
+  const [row] = await executor
+    .select()
+    .from(users)
+    .where(and(sql`${users.deletedAt} is null`, eq(users.id, userId)));
   if (!row) return null;
   const memberships = await executor
     .select({
@@ -161,7 +168,13 @@ export async function findUser(context: PlatformReadContext, userId: string) {
     })
     .from(members)
     .innerJoin(organizations, eq(organizations.id, members.organizationId))
-    .where(eq(members.userId, userId))
+    .where(
+      and(
+        sql`${organizations.deletedAt} is null`,
+        sql`${members.deletedAt} is null`,
+        eq(members.userId, userId),
+      ),
+    )
     .orderBy(desc(members.id));
   const identities = await executor
     .select({
@@ -171,7 +184,7 @@ export async function findUser(context: PlatformReadContext, userId: string) {
       directoryUserId: accounts.directoryUserId,
     })
     .from(accounts)
-    .where(eq(accounts.userId, userId))
+    .where(and(sql`${accounts.deletedAt} is null`, eq(accounts.userId, userId)))
     .orderBy(desc(accounts.id));
   const [total] = await executor
     .select({ count: count() })
@@ -194,7 +207,7 @@ export async function setUserStatus(
   const [row] = await executor
     .update(users)
     .set({ status, disabledAt: status === "disabled" ? sql`now()` : null })
-    .where(eq(users.id, userId))
+    .where(and(sql`${users.deletedAt} is null`, eq(users.id, userId)))
     .returning();
   return row ?? null;
 }
@@ -227,21 +240,34 @@ export async function deleteUser(
           tx
             .select({ clientId: oauthClients.clientId })
             .from(oauthClients)
-            .where(eq(oauthClients.userId, userId)),
+            .where(
+              and(
+                sql`${oauthClients.deletedAt} is null`,
+                eq(oauthClients.userId, userId),
+              ),
+            ),
         ),
       ),
     )
     .orderBy(oauthRefreshTokens.id)
     .for("update");
-  const deletedGrantContexts = await deleteUserGrantContexts(context, userId);
+  const revokedGrantContexts = await revokeUserAndOwnedClientGrantContexts(
+    context,
+    userId,
+  );
   const membershipIds = tx
     .select({ id: members.id })
     .from(members)
-    .where(eq(members.userId, userId));
+    .where(and(sql`${members.deletedAt} is null`, eq(members.userId, userId)));
   const ownedClientIds = tx
     .select({ clientId: oauthClients.clientId })
     .from(oauthClients)
-    .where(eq(oauthClients.userId, userId));
+    .where(
+      and(
+        sql`${oauthClients.deletedAt} is null`,
+        eq(oauthClients.userId, userId),
+      ),
+    );
   const refreshWhere = or(
     eq(oauthRefreshTokens.userId, userId),
     inArray(oauthRefreshTokens.clientId, ownedClientIds),
@@ -283,15 +309,20 @@ export async function deleteUser(
       expiresAt: oauthRefreshTokens.expiresAt,
       revoked: oauthRefreshTokens.revoked,
     });
-  const deletedConsents = await tx
-    .delete(oauthConsents)
+  const softDeletedConsents = await tx
+    .update(oauthConsents)
+    .set({ deletedAt: sql`now()` })
     .where(
-      or(
-        eq(oauthConsents.userId, userId),
-        inArray(oauthConsents.clientId, ownedClientIds),
+      and(
+        sql`${oauthConsents.deletedAt} is null`,
+        or(
+          eq(oauthConsents.userId, userId),
+          inArray(oauthConsents.clientId, ownedClientIds),
+        ),
       ),
     )
     .returning({
+      deletedAt: oauthConsents.deletedAt,
       id: oauthConsents.id,
       userId: oauthConsents.userId,
       clientId: oauthConsents.clientId,
@@ -332,10 +363,17 @@ export async function deleteUser(
       beforeSessionId: sessions.id,
       afterSessionId: oauthRefreshTokens.sessionId,
     });
-  const removedEntitlements = await tx
-    .delete(entitlements)
-    .where(inArray(entitlements.memberId, membershipIds))
+  const softDeletedEntitlements = await tx
+    .update(entitlements)
+    .set({ deletedAt: sql`now()`, status: "disabled" })
+    .where(
+      and(
+        sql`${entitlements.deletedAt} is null`,
+        inArray(entitlements.memberId, membershipIds),
+      ),
+    )
     .returning({
+      deletedAt: entitlements.deletedAt,
       id: entitlements.id,
       organizationId: entitlements.organizationId,
       revision: entitlements.revision,
@@ -348,10 +386,17 @@ export async function deleteUser(
       validFrom: entitlements.validFrom,
       validUntil: entitlements.validUntil,
     });
-  const removedAssignments = await tx
-    .delete(groupMembers)
-    .where(inArray(groupMembers.memberId, membershipIds))
+  const softDeletedAssignments = await tx
+    .update(groupMembers)
+    .set({ deletedAt: sql`now()` })
+    .where(
+      and(
+        sql`${groupMembers.deletedAt} is null`,
+        inArray(groupMembers.memberId, membershipIds),
+      ),
+    )
     .returning({
+      deletedAt: groupMembers.deletedAt,
       id: groupMembers.id,
       organizationId: groupMembers.organizationId,
       revision: groupMembers.revision,
@@ -360,10 +405,16 @@ export async function deleteUser(
       validFrom: groupMembers.validFrom,
       validUntil: groupMembers.validUntil,
     });
-  const removedMembers = await tx
-    .delete(members)
-    .where(eq(members.userId, userId))
+  const softDeletedMembers = await tx
+    .update(members)
+    .set({
+      deletedAt: sql`now()`,
+      status: "revoked",
+      revokedAt: sql`coalesce(${members.revokedAt}, now())`,
+    })
+    .where(and(sql`${members.deletedAt} is null`, eq(members.userId, userId)))
     .returning({
+      deletedAt: members.deletedAt,
       id: members.id,
       organizationId: members.organizationId,
       userId: members.userId,
@@ -373,18 +424,32 @@ export async function deleteUser(
       validFrom: members.validFrom,
       validUntil: members.validUntil,
     });
-  const deletedClientResources = await tx
-    .delete(oauthClientResources)
-    .where(inArray(oauthClientResources.clientId, ownedClientIds))
+  const softDeletedClientResources = await tx
+    .update(oauthClientResources)
+    .set({ deletedAt: sql`now()` })
+    .where(
+      and(
+        sql`${oauthClientResources.deletedAt} is null`,
+        inArray(oauthClientResources.clientId, ownedClientIds),
+      ),
+    )
     .returning({
+      deletedAt: oauthClientResources.deletedAt,
       id: oauthClientResources.id,
       clientId: oauthClientResources.clientId,
       resourceId: oauthClientResources.resourceId,
     });
-  const deletedClients = await tx
-    .delete(oauthClients)
-    .where(eq(oauthClients.userId, userId))
+  const softDeletedClients = await tx
+    .update(oauthClients)
+    .set({ deletedAt: sql`now()`, disabled: true, clientSecret: null })
+    .where(
+      and(
+        sql`${oauthClients.deletedAt} is null`,
+        eq(oauthClients.userId, userId),
+      ),
+    )
     .returning({
+      deletedAt: oauthClients.deletedAt,
       id: oauthClients.id,
       clientId: oauthClients.clientId,
       userId: oauthClients.userId,
@@ -412,14 +477,34 @@ export async function deleteUser(
       createdAt: sessions.createdAt,
       expiresAt: sessions.expiresAt,
     });
-  const deletedAccounts = await tx
-    .delete(accounts)
-    .where(eq(accounts.userId, userId))
-    .returning({ id: accounts.id, userId: accounts.userId });
-  const deletedInvitations = await tx
-    .delete(invitations)
-    .where(eq(invitations.inviterId, userId))
+  const softDeletedAccounts = await tx
+    .update(accounts)
+    .set({
+      deletedAt: sql`now()`,
+      accessToken: null,
+      refreshToken: null,
+      idToken: null,
+      password: null,
+      accessTokenExpiresAt: null,
+      refreshTokenExpiresAt: null,
+    })
+    .where(and(sql`${accounts.deletedAt} is null`, eq(accounts.userId, userId)))
     .returning({
+      deletedAt: accounts.deletedAt,
+      id: accounts.id,
+      userId: accounts.userId,
+    });
+  const softDeletedInvitations = await tx
+    .update(invitations)
+    .set({ deletedAt: sql`now()`, status: "canceled" })
+    .where(
+      and(
+        sql`${invitations.deletedAt} is null`,
+        eq(invitations.inviterId, userId),
+      ),
+    )
+    .returning({
+      deletedAt: invitations.deletedAt,
       id: invitations.id,
       organizationId: invitations.organizationId,
       status: invitations.status,
@@ -432,13 +517,23 @@ export async function deleteUser(
       revision: ssoProviders.revision,
     })
     .from(ssoProviders)
-    .where(eq(ssoProviders.userId, userId))
+    .where(
+      and(
+        sql`${ssoProviders.deletedAt} is null`,
+        eq(ssoProviders.userId, userId),
+      ),
+    )
     .orderBy(ssoProviders.id)
     .for("update");
   const providers = await tx
     .update(ssoProviders)
     .set({ userId: null, updatedAt: sql`${ssoProviders.updatedAt}` })
-    .where(eq(ssoProviders.userId, userId))
+    .where(
+      and(
+        sql`${ssoProviders.deletedAt} is null`,
+        eq(ssoProviders.userId, userId),
+      ),
+    )
     .returning({
       id: ssoProviders.id,
       organizationId: ssoProviders.organizationId,
@@ -458,27 +553,34 @@ export async function deleteUser(
     };
   });
   const [row] = await tx
-    .delete(users)
-    .where(eq(users.id, userId))
-    .returning({ id: users.id });
+    .update(users)
+    .set({
+      deletedAt: sql`now()`,
+      status: "disabled",
+      disabledAt: sql`now()`,
+      retiredEmail: sql`coalesce(${users.retiredEmail}, ${users.email})`,
+      email: sql`${users.id}::text || '@retired.invalid'`,
+    })
+    .where(and(sql`${users.deletedAt} is null`, eq(users.id, userId)))
+    .returning();
   return row
     ? {
         ...row,
-        deletedGrantContexts,
+        revokedGrantContexts,
         effects: {
           deletedAccessTokens,
           deletedRefreshTokens,
-          deletedConsents,
+          softDeletedConsents,
           clearedAccessTokenSessions,
           clearedRefreshTokenSessions,
-          removedEntitlements,
-          removedAssignments,
-          removedMembers,
-          deletedClientResources,
-          deletedClients,
+          softDeletedEntitlements,
+          softDeletedAssignments,
+          softDeletedMembers,
+          softDeletedClientResources,
+          softDeletedClients,
           deletedSessions,
-          deletedAccounts,
-          deletedInvitations,
+          softDeletedAccounts,
+          softDeletedInvitations,
           detachedSsoProviders,
         },
       }

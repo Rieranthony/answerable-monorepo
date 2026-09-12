@@ -23,28 +23,121 @@ export type PublicAuthRoute = {
   tag: "Sign-in" | "Session" | "Token";
   description?: string;
   requestBody?: RequestBodyObject;
+  security?: Array<Record<string, string[]>>;
 };
 
 export const publicAuthRoutes: ReadonlyArray<PublicAuthRoute> = [
   {
+    method: "GET",
+    path: "/auth/jwks",
+    operationId: "getJwks",
+    summary: "Read public token signing keys",
+    tag: "Token",
+  },
+  {
+    method: "GET",
+    path: "/auth/oauth2/authorize",
+    operationId: "authorizeOAuth",
+    summary: "Start a user authorisation with PKCE",
+    tag: "Token",
+  },
+  {
+    method: "POST",
+    path: "/auth/oauth2/flow",
+    operationId: "readOAuthFlow",
+    summary:
+      "Read the validated application request and available organisations",
+    tag: "Token",
+    security: [{ apiKeyCookie: [] }],
+  },
+  {
+    method: "POST",
+    path: "/auth/oauth2/continue",
+    operationId: "continueOAuthFlow",
+    summary: "Select an independently authenticated organisation",
+    tag: "Token",
+    security: [{ apiKeyCookie: [] }],
+  },
+  {
+    method: "POST",
+    path: "/auth/oauth2/consent",
+    operationId: "consentOAuth",
+    summary: "Accept or deny access for this authorisation",
+    tag: "Token",
+    security: [{ apiKeyCookie: [] }],
+  },
+  {
+    method: "GET",
+    path: "/auth/oauth2/userinfo",
+    operationId: "getUserInfo",
+    summary: "Read identity claims using an active access token",
+    tag: "Token",
+  },
+  {
+    method: "POST",
+    path: "/auth/oauth2/userinfo",
+    operationId: "postUserInfo",
+    summary: "Read identity claims using an active access token",
+    tag: "Token",
+  },
+  {
+    method: "POST",
+    path: "/auth/oauth2/revoke",
+    operationId: "revokeOAuthToken",
+    summary: "Revoke an opaque access token or refresh family",
+    tag: "Token",
+  },
+  {
+    method: "POST",
+    path: "/auth/sso/reauthenticate",
+    operationId: "reauthenticateSso",
+    security: [{ apiKeyCookie: [] }],
+    summary: "Reauthenticate the current work identity",
+    tag: "Sign-in",
+  },
+  {
+    method: "POST",
+    path: "/auth/sso/link",
+    operationId: "linkSso",
+    security: [{ apiKeyCookie: [] }],
+    summary: "Bind another independently verified work identity",
+    tag: "Sign-in",
+  },
+  {
     method: "POST",
     path: "/auth/oauth2/token",
     operationId: "issueToken",
-    summary: "Obtain an access token with client credentials",
+    summary:
+      "Exchange an authorisation code, refresh token or client credentials",
     tag: "Token",
     description:
-      "Only grant_type=client_credentials is accepted. An effective platform-approved capability for the exact owner/client/resource is required; registration and a compatibility link alone do not grant access. Omitted scopes default to the intersection of client, resource and capability ceilings. Authenticate the client with HTTP Basic (client_secret_basic) and send resource= to receive a JWT bound to that resource. At most two machine issuance transactions per verified owner organisation proceed concurrently across instances sharing this database. Excess issuance returns 503 temporarily_unavailable with Retry-After: 1. This limit starts after authentication and policy locking; it does not bound connection checkout or guarantee tenant fairness. Each database lock wait during issuance is limited to two seconds. Database statements have a configurable server-side deadline (ten seconds by default). Lock contention, statement cancellation or an unavailable issuance audit write returns 503 temporarily_unavailable with Retry-After: 1; retry after that delay with fresh client authentication (including a new assertion for private_key_jwt). Successful issuance commits an oauth.token.issued audit fact before returning the token. This is not a total request deadline. Other grant types open with the OIDC provider milestone.",
+      "Supports authorization_code with S256 PKCE, refresh_token and client_credentials. User flows bind a single independently authenticated membership, registered client and optional exact resource. Login requires a client-only authorization_code capability and assignment; resource access additionally requires an exact-pair capability and assignment. Renewal requires a separate matching refresh_token capability. Consent applies to each new flow except explicit first-party bypass. Codes and refresh tokens retain native expiry, single-use and rotation checks. Current authentication provenance, deletion state, grant revocation and permissions are rechecked before every exchange, including cached native refresh responses. Login-only access tokens are opaque; resource access tokens are JWTs. Client credentials require exactly one resource and an effective owner/client/resource capability. Scope widening is refused. Required issuance audit and native effects commit together. Lock contention, statement cancellation or unavailable audit storage returns 503 temporarily_unavailable with Retry-After: 1. Retry with fresh client authentication; a new assertion is required for private_key_jwt.",
     requestBody: {
       required: true,
       content: {
         "application/x-www-form-urlencoded": {
           schema: {
             type: "object",
-            required: ["grant_type", "resource"],
+            required: ["grant_type"],
             properties: {
-              grant_type: { type: "string", enum: ["client_credentials"] },
+              grant_type: {
+                type: "string",
+                enum: [
+                  "client_credentials",
+                  "authorization_code",
+                  "refresh_token",
+                ],
+              },
               resource: { type: "string", format: "uri" },
               scope: { type: "string" },
+              code: { type: "string" },
+              code_verifier: { type: "string" },
+              redirect_uri: { type: "string", format: "uri" },
+              refresh_token: { type: "string" },
+              client_id: { type: "string" },
+              client_secret: { type: "string" },
+              client_assertion: { type: "string" },
+              client_assertion_type: { type: "string" },
             },
           },
         },
@@ -94,33 +187,4 @@ const allowedAuthRoutes = new Set(
 
 export function isAllowedAuthRoute(method: string, path: string): boolean {
   return allowedAuthRoutes.has(`${method.toUpperCase()} ${path}`);
-}
-
-export const allowedTokenGrantTypes = new Set(["client_credentials"]);
-
-export async function inspectTokenRequest(
-  request: Request,
-): Promise<Response | null> {
-  const contentType = request.headers
-    .get("content-type")
-    ?.split(";", 1)[0]
-    ?.trim()
-    .toLowerCase();
-  if (contentType !== "application/x-www-form-urlencoded") return null;
-  try {
-    const form = await request.clone().formData();
-    const grantType = form.get("grant_type");
-    if (grantType !== null && !allowedTokenGrantTypes.has(String(grantType))) {
-      return Response.json(
-        {
-          error: "unsupported_grant_type",
-          error_description: "Only client_credentials is available.",
-        },
-        { status: 400, headers: { "Cache-Control": "no-store" } },
-      );
-    }
-  } catch {
-    return null;
-  }
-  return null;
 }

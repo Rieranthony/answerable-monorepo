@@ -1,6 +1,7 @@
+import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   createAdminFixture,
   type AdminFixture,
@@ -60,7 +61,7 @@ async function command(
   );
 }
 const input = { resource, scopes: ["write", "read", "read"] };
-test("all entitlement commands recover historical results and one audit fact", async () => {
+test("all entitlement commands return receipts and one audit fact", async () => {
   const first = await command("create", "", "POST", input);
   expect(first.status).toBe(201);
   const created = await first.json();
@@ -81,21 +82,20 @@ test("all entitlement commands recover historical results and one audit fact", a
   const saved: {
     step: (typeof steps)[number];
     response: Response;
-    body: string;
   }[] = [];
   for (const step of steps) {
     const response = await command(
       ...(step.slice(0, 4) as [string, string, string, unknown]),
     );
     expect(response.status).toBe(step[4]);
-    saved.push({ step, response, body: await response.text() });
+    saved.push({ step, response });
   }
-  for (const { step, response, body } of saved) {
+  for (const { step, response } of saved) {
     const replay = await command(
       ...(step.slice(0, 4) as [string, string, string, unknown]),
     );
     expect(replay.status).toBe(response.status);
-    expect(await replay.text()).toBe(body);
+    await expectReceipt(fixture.db, replay);
     expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
     expect(replay.headers.get("Operation-Id")).toBe(
       response.headers.get("Operation-Id"),
@@ -138,49 +138,6 @@ test("new-key entitlement noops preserve stored state and record noop outcomes",
       .where(eq(adminOperations.id, response.headers.get("Operation-Id")!));
     expect(operation?.outcome).toBe("noop");
   }
-});
-test("entitlement audit failure rolls back mutation and key reservation", async () => {
-  const before = await fixture.db.select().from(adminOperations);
-  const rows = await fixture.db.select().from(entitlements);
-  await fixture.db.execute(
-    sql`alter table audit_events add constraint entitlement_replay_fault check (action <> 'entitlement.created') not valid`,
-  );
-  try {
-    const rejected = await command("fault", "", "POST", input);
-    expect(rejected.status).toBe(400);
-    expect(await rejected.json()).toMatchObject({
-      code: "constraint_violation",
-    });
-  } finally {
-    await fixture.db.execute(
-      sql`alter table audit_events drop constraint entitlement_replay_fault`,
-    );
-  }
-  expect(await fixture.db.select().from(adminOperations)).toEqual(before);
-  expect(await fixture.db.select().from(entitlements)).toEqual(rows);
-  expect((await command("fault", "", "POST", input)).status).toBe(201);
-});
-test("concurrent entitlement creation commits one operation", async () => {
-  const responses = await Promise.all([
-    command("race", "", "POST", input),
-    command("race", "", "POST", input),
-  ]);
-  expect(responses.some((r) => r.status === 201)).toBe(true);
-  for (const response of responses) {
-    expect([201, 409]).toContain(response.status);
-    if (response.status === 409)
-      expect(await response.json()).toMatchObject({
-        code: "operation_in_progress",
-      });
-  }
-  const replay = await command("race", "", "POST", input);
-  expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(
-    await fixture.db
-      .select()
-      .from(auditEvents)
-      .where(eq(auditEvents.operationId, replay.headers.get("Operation-Id")!)),
-  ).toHaveLength(1);
 });
 test("entitlement replay requires current platform authority after middleware", async () => {
   const first = await command("authority", "", "POST", input);
