@@ -4,7 +4,7 @@
 
 ## Current completion plan
 
-T1 tenant authentication/linking/freshness, T2 production OAuth, T3 terminal soft deletion, T4 operational/recovery tools and T5 single-migration consolidation are integrated. T6 owns final local acceptance and documentation. The [task checklist](../task_plan.md) is the current execution state; earlier implementation reports preserve history.
+T1 tenant authentication/linking/freshness, T2 production OAuth, T3 terminal soft deletion, T4 operational/recovery tools and T5 single-migration consolidation are integrated. T6 owns final local acceptance and documentation. The [acceptance record](id-release-acceptance.md) is the execution record; earlier implementation reports preserve history.
 
 There is no further speculative hardening campaign. A reproduced violation of an existing invariant returns to its implementation owner. Missing external facts do not block finishing local acceptance.
 
