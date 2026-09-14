@@ -32731,6 +32731,7 @@
                           "code": {
                             "type": "string",
                             "enum": [
+                              "untrusted_origin",
                               "insecure_issuer",
                               "private_host",
                               "discovery_unreachable",
@@ -32999,7 +33000,7 @@
           }
         ],
         "summary": "Get the SSO provider",
-        "description": "Return the organisation’s SSO provider with credentials redacted, without changing state. Use putSsoProvider to configure or replace it; validation_failed rejects malformed ids and not_found means the organisation or provider is missing.",
+        "description": "Return the organisation’s SSO provider with credentials redacted and oidc.credentials indicating platform or own, without changing state. Use putSsoProvider to configure or replace it; validation_failed rejects malformed ids and not_found means the organisation or provider is missing.",
         "tags": [
           "SSO provider"
         ],
@@ -33046,8 +33047,12 @@
                     "oidc": {
                       "type": "object",
                       "properties": {
-                        "clientId": {
-                          "type": "string"
+                        "credentials": {
+                          "type": "string",
+                          "enum": [
+                            "platform",
+                            "own"
+                          ]
                         },
                         "tokenEndpointAuthentication": {
                           "type": "string",
@@ -33079,6 +33084,9 @@
                             "type": "string"
                           }
                         },
+                        "clientId": {
+                          "type": "string"
+                        },
                         "hasClientSecret": {
                           "type": "boolean"
                         },
@@ -33087,9 +33095,9 @@
                         }
                       },
                       "required": [
+                        "credentials",
                         "hasClientSecret"
-                      ],
-                      "additionalProperties": false
+                      ]
                     },
                     "createdAt": {
                       "type": "string",
@@ -33400,73 +33408,111 @@
                     "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$"
                   },
                   "oidc": {
-                    "type": "object",
-                    "properties": {
-                      "clientId": {
-                        "type": "string",
-                        "minLength": 1
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "credentials": {
+                            "type": "string",
+                            "const": "platform"
+                          },
+                          "discoveryEndpoint": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "authorizationEndpoint": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "tokenEndpoint": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "jwksEndpoint": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "scopes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "credentials"
+                        ],
+                        "additionalProperties": false
                       },
-                      "clientSecret": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "tokenEndpointAuthentication": {
-                        "type": "string",
-                        "enum": [
-                          "client_secret_post",
-                          "client_secret_basic",
-                          "private_key_jwt"
-                        ]
-                      },
-                      "discoveryEndpoint": {
-                        "type": "string",
-                        "format": "uri"
-                      },
-                      "authorizationEndpoint": {
-                        "type": "string",
-                        "format": "uri"
-                      },
-                      "tokenEndpoint": {
-                        "type": "string",
-                        "format": "uri"
-                      },
-                      "jwksEndpoint": {
-                        "type": "string",
-                        "format": "uri"
-                      },
-                      "scopes": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
+                      {
+                        "type": "object",
+                        "properties": {
+                          "credentials": {
+                            "type": "string",
+                            "const": "own"
+                          },
+                          "clientId": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "clientSecret": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "tokenEndpointAuthentication": {
+                            "type": "string",
+                            "enum": [
+                              "client_secret_post",
+                              "client_secret_basic",
+                              "private_key_jwt"
+                            ]
+                          },
+                          "discoveryEndpoint": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "authorizationEndpoint": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "tokenEndpoint": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "jwksEndpoint": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "scopes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "clientId"
+                        ],
+                        "additionalProperties": false
                       }
-                    },
-                    "required": [
-                      "clientId"
-                    ],
-                    "additionalProperties": false
+                    ]
                   }
                 },
                 "required": [
                   "issuer",
-                  "domain",
-                  "oidc"
+                  "domain"
                 ],
                 "additionalProperties": false
               },
               "example": {
-                "issuer": "https://login.example.com",
-                "domain": "acme.example.com",
-                "oidc": {
-                  "clientId": "acme-client",
-                  "clientSecret": "secret"
-                }
+                "issuer": "https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0",
+                "domain": "acme.example.com"
               }
             }
           }
         },
         "summary": "Put the SSO provider",
-        "description": "Requires Idempotency-Key. Accepts the strong If-Match ETag from getSsoProvider for conditional replacement; conflicting/malformed headers return 400; stale state returns 412. Committed replay precedes the original precondition. Identical authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Create or replace the organisation’s SSO configuration and return the provider with credentials redacted. A real configuration change, including first creation, irreversibly revokes existing tenant grant contexts in the same audited transaction; unchanged configuration preserves them. Other tenants and global browser sessions are preserved. Prefer getSsoProvider to inspect configuration; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict indicates a duplicate provider.",
+        "description": "Requires Idempotency-Key. Accepts the strong If-Match ETag from getSsoProvider for conditional replacement; conflicting/malformed headers return 400; stale state returns 412. Committed replay precedes the original precondition. Identical authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Create or replace the organisation’s SSO configuration and return the provider with credentials redacted. A real configuration change, including first creation, irreversibly revokes existing tenant grant contexts in the same audited transaction; unchanged configuration preserves them. Other tenants and global browser sessions are preserved. Prefer getSsoProvider to inspect configuration; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict indicates a duplicate provider. Omit oidc, or send oidc.credentials \"platform\", to sign the organisation in through Answerable's Google or Microsoft application; generic issuers require oidc.clientId. platform_credentials_unsupported rejects a generic issuer without own credentials; platform_application_missing means the service has no application for that directory.",
         "tags": [
           "SSO provider"
         ],
@@ -33532,8 +33578,12 @@
                         "oidc": {
                           "type": "object",
                           "properties": {
-                            "clientId": {
-                              "type": "string"
+                            "credentials": {
+                              "type": "string",
+                              "enum": [
+                                "platform",
+                                "own"
+                              ]
                             },
                             "tokenEndpointAuthentication": {
                               "type": "string",
@@ -33565,6 +33615,9 @@
                                 "type": "string"
                               }
                             },
+                            "clientId": {
+                              "type": "string"
+                            },
                             "hasClientSecret": {
                               "type": "boolean"
                             },
@@ -33573,9 +33626,9 @@
                             }
                           },
                           "required": [
+                            "credentials",
                             "hasClientSecret"
-                          ],
-                          "additionalProperties": false
+                          ]
                         },
                         "createdAt": {
                           "type": "string",
@@ -33709,8 +33762,12 @@
                         "oidc": {
                           "type": "object",
                           "properties": {
-                            "clientId": {
-                              "type": "string"
+                            "credentials": {
+                              "type": "string",
+                              "enum": [
+                                "platform",
+                                "own"
+                              ]
                             },
                             "tokenEndpointAuthentication": {
                               "type": "string",
@@ -33742,6 +33799,9 @@
                                 "type": "string"
                               }
                             },
+                            "clientId": {
+                              "type": "string"
+                            },
                             "hasClientSecret": {
                               "type": "boolean"
                             },
@@ -33750,9 +33810,9 @@
                             }
                           },
                           "required": [
+                            "credentials",
                             "hasClientSecret"
-                          ],
-                          "additionalProperties": false
+                          ]
                         },
                         "createdAt": {
                           "type": "string",

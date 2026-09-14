@@ -269,7 +269,7 @@ test("SSO test reports a missing provider and an unreachable issuer", async () =
     ssoTestSchema
       .parse(await unreachable.json())
       .problems.map((problem) => problem.code),
-  ).toEqual(["discovery_unreachable"]);
+  ).toEqual(["untrusted_origin", "discovery_unreachable"]);
 });
 
 const preconditions = new Map<string, { name: string; value: string }>();
@@ -551,3 +551,232 @@ for (const existing of [false, true])
         code: "validation_failed",
       });
     });
+
+test("omitted Google oidc uses platform defaults and explicit platform retries replay or noop", async () => {
+  const org = await createOrganization(fixture.db, {
+    slug: "platform-google",
+    name: "Platform Google",
+  });
+  const body = {
+    issuer: "https://accounts.google.com",
+    domain: "acme.example.com",
+  };
+  const first = await command(org.id, "platform-google-create", "PUT", body);
+  expect(first.status).toBe(201);
+  const result = await first.json();
+  expect(result.oidc).toMatchObject({
+    credentials: "platform",
+    clientId: fixture.environment.platformApplications.google!.clientId,
+    hasClientSecret: true,
+    scopes: ["email", "openid", "profile"],
+    tokenEndpointAuthentication: "client_secret_post",
+  });
+  expectRedacted(result);
+  const replay = await command(org.id, "platform-google-create", "PUT", {
+    ...body,
+    oidc: {
+      credentials: "platform",
+      scopes: ["profile", "email", "openid", "email"],
+    },
+  });
+  expect(replay.status).toBe(201);
+  expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
+  await expectReceipt(fixture.db, replay);
+  const noop = await command(org.id, "platform-google-noop", "PUT", body);
+  expect(noop.status).toBe(200);
+  expect(ssoProviderSchema.parse(await noop.json()).oidc).toEqual(
+    ssoProviderSchema.parse(result).oidc,
+  );
+  const [operation] = await fixture.db
+    .select()
+    .from(adminOperations)
+    .where(eq(adminOperations.id, noop.headers.get("Operation-Id")!));
+  expect(operation!.outcome).toBe("noop");
+  const stored = (await findSsoProviderByOrganization(fixture.db, org.id))!;
+  expect(JSON.parse(stored.oidcConfig!)).not.toHaveProperty("clientId");
+  expect(JSON.parse(stored.oidcConfig!)).not.toHaveProperty("clientSecret");
+});
+test("platform validation rejects row credentials and unsupported or unconfigured directories", async () => {
+  const org = await createOrganization(fixture.db, {
+    slug: "platform-validation",
+    name: "Platform validation",
+  });
+  for (const field of [
+    "clientId",
+    "clientSecret",
+    "tokenEndpointAuthentication",
+  ]) {
+    const response = await request(org.id, "", "PUT", {
+      issuer: "https://accounts.google.com",
+      domain: "acme.example.com",
+      oidc: { credentials: "platform", [field]: "disallowed" },
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: "validation_failed" });
+  }
+  const generic = await request(org.id, "", "PUT", {
+    issuer: "https://generic.example.com",
+    domain: "acme.example.com",
+  });
+  expect(generic.status).toBe(400);
+  expect(await generic.json()).toMatchObject({
+    code: "platform_credentials_unsupported",
+  });
+  const microsoft = fixture.environment.platformApplications.microsoft;
+  delete fixture.environment.platformApplications.microsoft;
+  try {
+    const response = await request(
+      org.id,
+      "",
+      "PUT",
+      routes.putSsoProvider.example.body,
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: "platform_application_missing",
+    });
+  } finally {
+    fixture.environment.platformApplications.microsoft = microsoft;
+  }
+});
+test("tenantReader sees the platform client id without credentials", async () => {
+  const organizationId = fixture.tenant.organizationId;
+  const previous = await findSsoProviderByOrganization(
+    fixture.db,
+    organizationId,
+  );
+  const { ssoProviders, entitlements, users } =
+    await import("../../db/schema/index.ts");
+  const { signInThroughIdp } = await import("../../__tests__/federation.ts");
+  try {
+    expect(
+      (
+        await request(organizationId, "", "PUT", {
+          issuer: "https://accounts.google.com",
+          domain: "tenant.example.com",
+          oidc: {
+            credentials: "platform",
+            authorizationEndpoint: `${fixture.issuer.origin}/authorize`,
+            tokenEndpoint: `${fixture.issuer.origin}/token`,
+            jwksEndpoint: `${fixture.issuer.origin}/jwks`,
+          },
+        })
+      ).status,
+    ).toBe(200);
+    const email = "platform-reader@tenant.example.com";
+    fixture.issuer.enqueue({
+      sub: "platform-reader",
+      email,
+      email_verified: true,
+      hd: "tenant.example.com",
+      iss: "https://accounts.google.com",
+    });
+    const signedIn = await signInThroughIdp(fixture.app, {
+      email,
+      callbackURL: `${fixture.trustedOrigin}/callback`,
+    });
+    expect(signedIn.location).toBe(`${fixture.trustedOrigin}/callback`);
+    const [reader] = await fixture.db
+      .select({ memberId: members.id })
+      .from(members)
+      .innerJoin(users, eq(users.id, members.userId))
+      .where(eq(users.email, email));
+    await fixture.db.insert(entitlements).values({
+      id: createId(),
+      organizationId,
+      memberId: reader!.memberId,
+      resource: fixture.platform.adminResource,
+      scopes: ["org:read"],
+    });
+    const response = await fixture.app.request(
+      `/api/admin/v1/organizations/${organizationId}/sso-provider`,
+      {
+        headers: {
+          Cookie: signedIn.cookies
+            .map((cookie) => cookie.split(";", 1)[0])
+            .join("; "),
+          Origin: fixture.trustedOrigin,
+        },
+      },
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.oidc).toMatchObject({
+      credentials: "platform",
+      clientId: fixture.environment.platformApplications.google!.clientId,
+      hasClientSecret: true,
+    });
+    expectRedacted(body);
+    expect(
+      JSON.stringify(body).includes(
+        fixture.environment.platformApplications.google!.clientSecret,
+      ),
+    ).toBe(false);
+  } finally {
+    await fixture.db
+      .update(ssoProviders)
+      .set({ issuer: previous!.issuer, oidcConfig: previous!.oidcConfig })
+      .where(eq(ssoProviders.id, previous!.id));
+  }
+});
+test("SSO diagnosis reports each endpoint on an origin removed from trustedOrigins", async () => {
+  const trustedOrigins = fixture.environment.trustedOrigins;
+  fixture.environment.trustedOrigins = trustedOrigins.filter(
+    (origin) => origin !== fixture.issuer.origin,
+  );
+  try {
+    const response = await request(fixture.tenant.organizationId, "/test");
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(
+      body.problems.filter(
+        (problem: { code: string }) => problem.code === "untrusted_origin",
+      ),
+    ).toHaveLength(4);
+    expect(body.discovery.reachable).toBe(true);
+    expect(body.jwks.reachable).toBe(true);
+  } finally {
+    fixture.environment.trustedOrigins = trustedOrigins;
+  }
+});
+
+for (const [issuer, scopes] of [
+  ["https://accounts.google.com", ["email", "openid", "profile"]],
+  [
+    "https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0",
+    ["email", "offline_access", "openid", "profile"],
+  ],
+] as const) {
+  test(`own credentials for ${issuer} receive directory scopes while preserving explicit choices`, async () => {
+    const org = await createOrganization(fixture.db, {
+      slug: `own-defaults-${createId()}`,
+      name: "Own defaults",
+    });
+    const body = {
+      issuer,
+      domain: "own.example.com",
+      oidc: { credentials: "own", clientId: "own-client" },
+    };
+    const defaults = await request(org.id, "", "PUT", body);
+    expect(defaults.status).toBe(201);
+    expect((await defaults.json()).oidc).toMatchObject({
+      credentials: "own",
+      scopes: [...scopes],
+      tokenEndpointAuthentication: "client_secret_post",
+    });
+    const explicit = await request(org.id, "", "PUT", {
+      ...body,
+      oidc: {
+        ...body.oidc,
+        scopes: ["profile", "openid", "openid"],
+        tokenEndpointAuthentication: "client_secret_basic",
+      },
+    });
+    expect(explicit.status).toBe(200);
+    expect((await explicit.json()).oidc).toMatchObject({
+      credentials: "own",
+      scopes: ["openid", "profile"],
+      tokenEndpointAuthentication: "client_secret_basic",
+    });
+  });
+}

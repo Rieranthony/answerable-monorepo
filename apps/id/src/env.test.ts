@@ -71,6 +71,7 @@ describe("unit: environment", () => {
       betterAuthSecrets: undefined,
       upstreamTokenSecrets: undefined,
       trustedOrigins: ["http://localhost:47100"],
+      platformApplications: {},
       trustedProxyCidrs: [],
       authPagesUrl: "http://localhost:47100",
       oauthRefreshReuseIntervalSeconds: 0,
@@ -348,3 +349,66 @@ for (const key of [
       ).toThrow(key);
   });
 }
+
+test("platform application pairs parse in every environment and blank values are unset", () => {
+  for (const base of [
+    requiredEnvironment,
+    { ...requiredEnvironment, NODE_ENV: "test" },
+    production,
+  ]) {
+    expect(
+      parseEnvironment({
+        ...base,
+        GOOGLE_CLIENT_ID: "",
+        GOOGLE_CLIENT_SECRET: "  ",
+        MICROSOFT_CLIENT_ID: " ",
+        MICROSOFT_CLIENT_SECRET: "",
+      }).platformApplications,
+    ).toEqual({});
+    const parsed = parseEnvironment({
+      ...base,
+      GOOGLE_CLIENT_ID: "google-id",
+      GOOGLE_CLIENT_SECRET: "google-private",
+      MICROSOFT_CLIENT_ID: "microsoft-id",
+      MICROSOFT_CLIENT_SECRET: "microsoft-private",
+    });
+    expect(parsed.platformApplications.google?.clientId === "google-id").toBe(
+      true,
+    );
+    expect(
+      parsed.platformApplications.google?.clientSecret === "google-private",
+    ).toBe(true);
+    expect(
+      parsed.platformApplications.microsoft?.clientId === "microsoft-id",
+    ).toBe(true);
+    expect(
+      parsed.platformApplications.microsoft?.clientSecret ===
+        "microsoft-private",
+    ).toBe(true);
+    for (const [id, secret] of [
+      ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
+      ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET"],
+    ]) {
+      for (const [present, missing] of [
+        [id!, secret!],
+        [secret!, id!],
+      ]) {
+        for (const blank of [undefined, "", "   "]) {
+          const source = {
+            ...base,
+            [present!]: "never-echo-this-value",
+            [missing!]: blank,
+          };
+          expect(() => parseEnvironment(source)).toThrow(
+            `${missing}: Required together with ${present}`,
+          );
+          try {
+            parseEnvironment(source);
+          } catch (error) {
+            expect(String(error).includes("never-echo-this-value")).toBe(false);
+          }
+        }
+      }
+    }
+  }
+});

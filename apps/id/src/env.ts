@@ -1,5 +1,6 @@
 import { findInvalidTrustedProxies } from "@better-auth/core/utils/ip";
 import { z } from "zod";
+import type { PlatformApplications } from "./auth/platform-applications.ts";
 import { upstreamTokenSecretsSchema } from "./auth/upstream-token-storage.ts";
 
 const applicationSecrets = z.string().transform((value, context) => {
@@ -54,6 +55,12 @@ const parseTrustedOrigins = (value: string, fallback: string) => {
   return origins.length > 0 ? origins : [fallback];
 };
 
+const optionalCredential = z.preprocess(
+  (value) =>
+    typeof value === "string" && value.trim() === "" ? undefined : value,
+  z.string().min(1).optional(),
+);
+
 const environmentSchema = z
   .object({
     NODE_ENV: z
@@ -64,6 +71,10 @@ const environmentSchema = z
     BETTER_AUTH_URL: z.url(),
     BETTER_AUTH_SECRET: z.string().min(32),
     BETTER_AUTH_SECRETS: applicationSecrets.optional(),
+    GOOGLE_CLIENT_ID: optionalCredential,
+    GOOGLE_CLIENT_SECRET: optionalCredential,
+    MICROSOFT_CLIENT_ID: optionalCredential,
+    MICROSOFT_CLIENT_SECRET: optionalCredential,
     UPSTREAM_TOKEN_SECRETS: upstreamTokenSecrets.optional(),
     BETTER_AUTH_TRUSTED_ORIGINS: z.string().default(""),
     /** Initial platform slug; persisted system bindings determine authority afterwards. */
@@ -142,6 +153,25 @@ const environmentSchema = z
     { message: "ROOT_ADMIN_BREAK_GLASS requires ROOT_ADMIN_SECRET" },
   )
   .superRefine((environment, context) => {
+    for (const [id, secret] of [
+      ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
+      ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET"],
+    ] as const) {
+      for (const [missing, other] of [
+        [id, secret],
+        [secret, id],
+      ] as const) {
+        if (
+          environment[missing] === undefined &&
+          environment[other] !== undefined
+        )
+          context.addIssue({
+            code: "custom",
+            path: [missing],
+            message: `Required together with ${other}`,
+          });
+      }
+    }
     if (environment.NODE_ENV !== "production") return;
     if (!environment.AUTH_PAGES_URL)
       context.addIssue({
@@ -174,6 +204,24 @@ const environmentSchema = z
       });
   })
   .transform((environment) => ({
+    platformApplications: {
+      ...(environment.GOOGLE_CLIENT_ID
+        ? {
+            google: {
+              clientId: environment.GOOGLE_CLIENT_ID,
+              clientSecret: environment.GOOGLE_CLIENT_SECRET!,
+            },
+          }
+        : {}),
+      ...(environment.MICROSOFT_CLIENT_ID
+        ? {
+            microsoft: {
+              clientId: environment.MICROSOFT_CLIENT_ID,
+              clientSecret: environment.MICROSOFT_CLIENT_SECRET!,
+            },
+          }
+        : {}),
+    } as PlatformApplications,
     nodeEnv: environment.NODE_ENV,
     port: environment.PORT,
     databaseUrl: environment.DATABASE_URL,

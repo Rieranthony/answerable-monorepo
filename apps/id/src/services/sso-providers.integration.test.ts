@@ -1,3 +1,4 @@
+import type { PlatformApplicationIds } from "../auth/platform-applications.ts";
 import { listUserAuditEvents } from "./audit.ts";
 import {
   inPlatformWrite,
@@ -182,11 +183,27 @@ test("secretless and null configurations can be updated, and all audit failures 
   expect(await db.select().from(auditEvents)).toHaveLength(2);
 });
 
-async function grantFixture(withProvider = true) {
+async function grantFixture(
+  withProvider = true,
+  providerInput: implementation.SsoProviderInput = input,
+  ids: PlatformApplicationIds = {},
+) {
   const db = connection.db;
   const org = await createOrganization(db, { slug: "alpha", name: "Alpha" });
   const other = await createOrganization(db, { slug: "beta", name: "Beta" });
-  if (withProvider) await service.putSsoProvider(db, actor, org.id, input);
+  if (withProvider)
+    await inPlatformWrite(
+      db,
+      (context) =>
+        implementation.putSsoProvider(
+          context,
+          org.id,
+          providerInput,
+          undefined,
+          ids,
+        ),
+      actor,
+    );
   const userId = createId();
   const sessionId = createId();
   const authTime = new Date();
@@ -343,3 +360,185 @@ test("unchanged SSO configuration preserves active grants and records empty effe
     .limit(1);
   expect(event!.data!.effects).toEqual({ revokedGrantContexts: [] });
 });
+
+const applicationIds = {
+  google: { clientId: "platform-google" },
+  microsoft: { clientId: "platform-microsoft" },
+};
+const platformIssuers = {
+  google: "https://accounts.google.com",
+  microsoft:
+    "https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0",
+};
+for (const application of ["google", "microsoft"] as const) {
+  test(`${application} platform creation and deletion audit expose only application ids`, async () => {
+    const db = connection.db;
+    const org = await createOrganization(db, {
+      slug: application,
+      name: application,
+    });
+    const created = await inPlatformWrite(
+      db,
+      (context) =>
+        implementation.putSsoProvider(
+          context,
+          org.id,
+          {
+            ...input,
+            issuer: platformIssuers[application],
+            oidc: { credentials: "platform" },
+          },
+          undefined,
+          applicationIds,
+        ),
+      actor,
+    );
+    expect(created).toMatchObject({
+      created: true,
+      changed: true,
+      provider: {
+        oidc: {
+          credentials: "platform",
+          clientId: applicationIds[application].clientId,
+          hasClientSecret: true,
+        },
+      },
+    });
+    expect(
+      await inTenantRead(db, org.id, "directory", (context) =>
+        implementation.getSsoProvider(context, applicationIds),
+      ),
+    ).toEqual(created.provider);
+    await inPlatformWrite(
+      db,
+      (context) =>
+        implementation.deleteSsoProvider(context, org.id, applicationIds),
+      actor,
+    );
+    const events = await db.select().from(auditEvents).orderBy(auditEvents.id);
+    expect(events).toHaveLength(2);
+    expect(events[0]!.data).toMatchObject({
+      before: null,
+      after: { oidc: JSON.parse(JSON.stringify(created.provider.oidc)) },
+      credentialsChanged: true,
+    });
+    expect(events[1]!.data).toMatchObject({
+      before: { oidc: JSON.parse(JSON.stringify(created.provider.oidc)) },
+      deletionMode: "soft",
+    });
+    expect(JSON.stringify(events)).not.toContain('"clientSecret"');
+  });
+}
+test("unsupported or missing platform applications reject before configuration and audit writes", async () => {
+  const db = connection.db;
+  const org = await createOrganization(db, {
+    slug: "missing-app",
+    name: "Missing",
+  });
+  for (const [issuer, status, code] of [
+    [input.issuer, 400, "platform_credentials_unsupported"],
+    [platformIssuers.google, 409, "platform_application_missing"],
+    [platformIssuers.microsoft, 409, "platform_application_missing"],
+  ] as const) {
+    await expect(
+      inPlatformWrite(
+        db,
+        (context) =>
+          implementation.putSsoProvider(context, org.id, {
+            ...input,
+            issuer,
+            oidc: { credentials: "platform" },
+          }),
+        actor,
+      ),
+    ).rejects.toMatchObject({ status, code });
+  }
+  expect(await findSsoProviderByOrganization(db, org.id)).toBeNull();
+  expect(await db.select().from(auditEvents)).toHaveLength(0);
+});
+for (const transition of [
+  "own-platform",
+  "platform-own-secret",
+  "platform-own-no-secret",
+  "platform-platform",
+] as const) {
+  test(`${transition} preserves credential boundaries and revokes grants only on change`, async () => {
+    const own: implementation.SsoProviderInput = {
+      ...input,
+      issuer: platformIssuers.google,
+    };
+    const platform = { ...own, oidc: { credentials: "platform" as const } };
+    const beforeInput = transition === "own-platform" ? own : platform;
+    const afterInput: implementation.SsoProviderInput = transition.startsWith(
+      "platform-own",
+    )
+      ? {
+          ...own,
+          oidc: {
+            clientId: "own-again",
+            ...(transition === "platform-own-secret"
+              ? { clientSecret: "replacement-private" }
+              : {}),
+          },
+        }
+      : platform;
+    const { db, org, contexts, userId } = await grantFixture(
+      true,
+      beforeInput,
+      applicationIds,
+    );
+    const before = await findSsoProviderByOrganization(db, org.id);
+    const changed = transition !== "platform-platform";
+    const result = await inPlatformWrite(
+      db,
+      (context) =>
+        implementation.putSsoProvider(
+          context,
+          org.id,
+          afterInput,
+          undefined,
+          applicationIds,
+        ),
+      actor,
+    );
+    expect(result.changed).toBe(changed);
+    const after = await findSsoProviderByOrganization(db, org.id);
+    if (!changed) expect(after).toEqual(before);
+    const stored = JSON.parse(after!.oidcConfig!);
+    expect(
+      stored.clientSecret ===
+        (transition === "platform-own-secret"
+          ? "replacement-private"
+          : undefined),
+    ).toBe(true);
+    if (afterInput.oidc.credentials === "platform") {
+      expect(stored).not.toHaveProperty("clientId");
+      expect(stored).not.toHaveProperty("tokenEndpointAuthentication");
+    }
+    const grants = await db
+      .select()
+      .from(grantContexts)
+      .orderBy(grantContexts.id);
+    for (const grant of grants)
+      expect(grant.revokedAt !== null).toBe(
+        changed && grant.organizationId === org.id,
+      );
+    const [event] = await db
+      .select()
+      .from(auditEvents)
+      .orderBy(sql`${auditEvents.id} desc`)
+      .limit(1);
+    expect(event!.data).toMatchObject({
+      before: { oidc: { credentials: beforeInput.oidc.credentials ?? "own" } },
+      after: { oidc: JSON.parse(JSON.stringify(result.provider.oidc)) },
+      credentialsChanged: changed,
+      effects: {
+        revokedGrantContexts: changed ? [{ id: contexts[0]!.id, userId }] : [],
+      },
+    });
+    const serialized = JSON.stringify([result.provider, event]);
+    expect(serialized).not.toContain('"clientSecret"');
+    expect(serialized.includes("private-secret")).toBe(false);
+    expect(serialized.includes("replacement-private")).toBe(false);
+  });
+}
