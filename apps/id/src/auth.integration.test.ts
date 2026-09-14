@@ -17,7 +17,6 @@ afterAll(async () => {
 test("never links an upstream identity to an existing user by email", async () => {
   const environment = testEnvironment({
     trustedOrigins: ["https://chat.example.com"],
-    authPagesUrl: "https://pages.example.com",
   });
   const auth = createAuth(connection.db, environment);
 

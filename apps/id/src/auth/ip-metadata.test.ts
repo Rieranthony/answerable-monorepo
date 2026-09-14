@@ -47,7 +47,14 @@ for (const spoof of [false, true])
     },
   );
 
-for (const path of ["/auth/ok", "/api/admin/v1/me", "/healthz", "/readyz"])
+for (const path of [
+  "/auth/ok",
+  "/api/admin/v1/me",
+  "/login",
+  "/assets/tailwind.css",
+  "/healthz",
+  "/readyz",
+])
   test(`production ingress admission at ${path}`, async () => {
     // Better Auth captures NODE_ENV at module load, so production needs a fresh process.
     const child = Bun.spawn(

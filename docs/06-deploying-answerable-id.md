@@ -11,11 +11,13 @@ Everything below is derived from the code on this branch: `apps/id/src/env.ts` (
 
 | Component | What it is | Notes |
 | --- | --- | --- |
-| `apps/id` | One Bun process serving the OAuth/OIDC provider, the admin API, health and discovery on `PORT` (default 47300) | Stateless apart from per-process rate-limit buckets and a five-minute JWKS cache, so replicas are fine |
-| `apps/web` | Next.js site hosting the login, consent and authorise pages under `app/(auth)/` plus the docs | Needs `NEXT_PUBLIC_ID_URL` at **build** time; its origin is ID's `AUTH_PAGES_URL` |
+| `apps/id` | One Bun process serving the OAuth/OIDC provider, the admin API, login, selection, consent, error and security pages, health and discovery on `PORT` (default 47300) | Stateless apart from per-process rate-limit buckets and a five-minute JWKS cache, so replicas are fine |
+| `apps/web` | Next.js site and docs | Public website |
 | PostgreSQL 16 | The only state: users, sessions, native OAuth state, policy, audit, command receipts | Local compose uses `postgres:16-alpine`; production needs your own instance with backups |
 | Ingress | TLS termination and the `x-forwarded-for` header | The **only** network path to `apps/id`; see the first requirement below |
 | Redis | Reserved for later caching | Not used by `apps/id` today; do not provision it for ID |
+
+ID serves its own login, selection, consent, error and security pages at `BETTER_AUTH_URL` (`/login`, `/authorize`, `/consent`, `/error`, `/security`).
 
 ## Requirements and why they exist
 
@@ -25,7 +27,7 @@ Everything below is derived from the code on this branch: `apps/id/src/env.ts` (
 | The application's `DATABASE_URL` is an unprivileged login, never the owner | Row-level security does not apply to the table owner. Eleven tables rely on it for tenant isolation, and audit rows are immutable only because the runtime role cannot update or delete them. Startup refuses an owner or privileged role in every environment except `NODE_ENV=test` | `src/runtime.ts` calls `assertRuntimeRole` before listening |
 | A separate schema-owner login for migrations | DDL, functions, triggers and policies need ownership; the same run provisions the runtime role's permissions so the two never drift | `scripts/migrate.ts` migrates with `DATABASE_MIGRATION_URL`, then runs `configureRuntimeRole` for `DATABASE_RUNTIME_ROLE` |
 | `BETTER_AUTH_URL` is the public issuer origin, `https://` | It becomes the JWT `iss`, the discovery document and the default admin audience (`${BETTER_AUTH_URL}/api/admin`). Changing it invalidates every issued token | `src/env.ts`, `src/auth.ts` |
-| `AUTH_PAGES_URL` set explicitly, and listed in `BETTER_AUTH_TRUSTED_ORIGINS` as an origin only | Users are redirected there for login and consent; cookie-authenticated calls are accepted only from trusted origins (CSRF). The localhost default is refused in production | `src/env.ts` production refinements |
+| Non-empty origin-only `BETTER_AUTH_TRUSTED_ORIGINS` | Lists other browser origins allowed to call the API with cookies and identity-provider endpoint origins. The ID origin itself is always trusted | `src/env.ts` production refinements |
 | Google and Microsoft endpoint origins in `BETTER_AUTH_TRUSTED_ORIGINS` and outbound HTTPS to them | Trust exact origins in use: Microsoft `https://login.microsoftonline.com` (discovery, authorisation, token, keys) and `https://graph.microsoft.com` (userinfo); Google `https://accounts.google.com` (discovery/authorisation), `https://oauth2.googleapis.com` (token/revocation), `https://www.googleapis.com` (JWKS), `https://openidconnect.googleapis.com` (userinfo). The service must reach these endpoints over HTTPS | Provider origin checks; SSO connectivity test reports `untrusted_origin` for a discovered endpoint outside the allowlist |
 | Four independent secret families | `BETTER_AUTH_SECRET` signs browser cookies and encrypts the stored JWKS private keys; `UPSTREAM_TOKEN_SECRETS` encrypts the upstream IdP tokens stored on accounts; `ROOT_ADMIN_SECRET` is the break-glass principal; platform application secrets authenticate Answerable to Google and Microsoft. Compromise of one must not expose the others, and none may be in the database or its backups | `src/env.ts` validation; `src/auth/upstream-token-storage.ts` |
 | `NODE_ENV=production` | Turns on the provider's rate limiter, the runtime-role assertion, the production refinements above and turns off the OpenAPI documents | `src/env.ts`, Better Auth defaults |
@@ -38,9 +40,9 @@ Answerable uses one multi-tenant Entra app registration and one Google OAuth cli
 **Microsoft Entra.**
 
 1. Create an app registration. Set **Supported account types** to **Multiple Entra ID tenants** (older portals: **Accounts in any organizational directory**).
-2. Under **Authentication → Add a platform → Web**, register `https://id.answerable.org/auth/sso/callback` and `https://answerable.org/login`. The second URI is only the landing page for admin consent. For local sign-in, register `http://localhost:47300/auth/sso/callback`.
+2. Under **Authentication → Add a platform → Web**, register `https://id.answerable.org/auth/sso/callback` and `https://id.answerable.org/login`. The second URI is only the landing page for admin consent. For local sign-in, register `http://localhost:47300/auth/sso/callback`.
 3. Copy **Application (client) ID** from **Overview** to `MICROSOFT_CLIENT_ID`. Under **Certificates & secrets**, create a client secret and deliver its value as `MICROSOFT_CLIENT_SECRET` through the secret store. Record its expiry and rotate before it expires.
-4. Obtain customer admin consent with `https://login.microsoftonline.com/<tenant-id>/v2.0/adminconsent?client_id=<MICROSOFT_CLIENT_ID>&scope=openid%20profile%20email%20offline_access&redirect_uri=https%3A%2F%2Fanswerable.org%2Flogin&state=<slug>`. The landing URL returns `admin_consent=True&tenant=<GUID>`. Alternatively, a Global Administrator signs in first and ticks **consent on behalf of your organisation**; only Privileged Role Administrators see that option. The default tenant policy blocks ordinary users from consenting to unverified multi-tenant apps. Requesting `email` on v2.0 supplies the email claim for managed users.
+4. Obtain customer admin consent with `https://login.microsoftonline.com/<tenant-id>/v2.0/adminconsent?client_id=<MICROSOFT_CLIENT_ID>&scope=openid%20profile%20email%20offline_access&redirect_uri=https%3A%2F%2Fid.answerable.org%2Flogin&state=<slug>`. The landing URL returns `admin_consent=True&tenant=<GUID>`. Alternatively, a Global Administrator signs in first and ticks **consent on behalf of your organisation**; only Privileged Role Administrators see that option. The default tenant policy blocks ordinary users from consenting to unverified multi-tenant apps. Requesting `email` on v2.0 supplies the email claim for managed users.
 5. Publisher verification: Not yet. It needs a Partner Center (Cloud Partner Program) ID and a verified publisher domain; track [Q-PUBLISHER-VERIFICATION](02-plan.md#open-register). A certificate credential: Not yet. Better Auth 1.7.2's `private_key_jwt` assertion lacks the `x5t#S256` header Entra requires. Use the client secret until [Q-ENTRA-CERTIFICATE](02-plan.md#open-register) resolves.
 
 **Google.**
@@ -69,8 +71,7 @@ openssl rand -base64 48
 | `NODE_ENV` | `production` | See above |
 | `PORT` | listener port, default 47300 | Ingress upstream |
 | `BETTER_AUTH_URL` | `https://id.answerable.org` | Issuer, discovery, admin audience |
-| `AUTH_PAGES_URL` | origin of the deployed `apps/web` | Login and consent pages |
-| `BETTER_AUTH_TRUSTED_ORIGINS` | `https://answerable.org,https://login.microsoftonline.com,https://graph.microsoft.com,https://accounts.google.com,https://oauth2.googleapis.com,https://www.googleapis.com,https://openidconnect.googleapis.com`; use your `AUTH_PAGES_URL` and the IdP origins in use, with no paths or trailing slash | Browser CORS/CSRF and IdP endpoint trust |
+| `BETTER_AUTH_TRUSTED_ORIGINS` | `https://login.microsoftonline.com,https://graph.microsoft.com,https://accounts.google.com,https://oauth2.googleapis.com,https://www.googleapis.com,https://openidconnect.googleapis.com`; use the IdP origins in use, with no paths or trailing slash | Browser CORS/CSRF and IdP endpoint trust |
 | `TRUSTED_PROXY_CIDRS` | comma-separated IPv4/IPv6 networks of the ingress proxies | Client address resolution |
 | `DATABASE_URL` | `postgres://answerable_id_runtime:…@host/answerable_id` | Application connection, restricted role |
 | `DATABASE_MIGRATION_URL` | owner login, used only by `db:migrate` runs you start by hand; never given to the service | DDL and permission provisioning |
@@ -113,6 +114,8 @@ bun --filter @answerable/id db:migrate
 bun --filter @answerable/id build && bun apps/id/dist/server.js
 ```
 
+The build compiles the sign-in pages' stylesheet into `apps/id/dist/tailwind.css`. The bundle still loads `hono-tailwind` from `node_modules` when it starts, so run it from an installed checkout.
+
 **4. Check it is up** through the ingress, not the pod.
 
 ```bash
@@ -130,7 +133,7 @@ DATABASE_URL='<runtime url>' BETTER_AUTH_SECRET=… UPSTREAM_TOKEN_SECRETS=… \
 bun --filter @answerable/id ops:preflight
 ```
 
-**6. Deploy `apps/web`** built with `NEXT_PUBLIC_ID_URL`, at the origin you put in `AUTH_PAGES_URL`.
+**6. Deploy `apps/web`** for the site and docs.
 
 **7. First run with the root bearer.** Every mutation needs an `Idempotency-Key` header; reuse the same key to retry. `ID=https://id.answerable.org`, `ROOT=$ROOT_ADMIN_SECRET`.
 

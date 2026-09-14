@@ -46,15 +46,6 @@ const upstreamTokenSecrets = z.string().transform((value, context) => {
   }
 });
 
-/** Browser origins Better Auth trusts; the pages origin when none is set. */
-const parseTrustedOrigins = (value: string, fallback: string) => {
-  const origins = value
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-  return origins.length > 0 ? origins : [fallback];
-};
-
 const optionalCredential = z.preprocess(
   (value) =>
     typeof value === "string" && value.trim() === "" ? undefined : value,
@@ -90,7 +81,6 @@ const environmentSchema = z
     ROOT_ADMIN_SECRET: z.string().min(32).optional(),
     /** Override the human platform administrator lockout for break-glass use. */
     ROOT_ADMIN_BREAK_GLASS: z.enum(["true", "false"]).default("false"),
-    AUTH_PAGES_URL: z.url().optional(),
     TRUSTED_PROXY_CIDRS: z
       .string()
       .transform((value) => value.split(",").map((entry) => entry.trim()))
@@ -173,12 +163,6 @@ const environmentSchema = z
       }
     }
     if (environment.NODE_ENV !== "production") return;
-    if (!environment.AUTH_PAGES_URL)
-      context.addIssue({
-        code: "custom",
-        path: ["AUTH_PAGES_URL"],
-        message: "Required in production",
-      });
     if (!environment.TRUSTED_PROXY_CIDRS?.length)
       context.addIssue({
         code: "custom",
@@ -229,10 +213,9 @@ const environmentSchema = z
     betterAuthSecret: environment.BETTER_AUTH_SECRET,
     betterAuthSecrets: environment.BETTER_AUTH_SECRETS,
     upstreamTokenSecrets: environment.UPSTREAM_TOKEN_SECRETS,
-    trustedOrigins: parseTrustedOrigins(
-      environment.BETTER_AUTH_TRUSTED_ORIGINS,
-      environment.AUTH_PAGES_URL ?? "http://localhost:47100",
-    ),
+    trustedOrigins: environment.BETTER_AUTH_TRUSTED_ORIGINS.split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
     platformOrganizationSlug: environment.PLATFORM_ORGANIZATION_SLUG,
     platformOrganizationName: environment.PLATFORM_ORGANIZATION_NAME,
     adminResourceIdentifier: (
@@ -241,7 +224,6 @@ const environmentSchema = z
     ).replace(/\/+$/, ""),
     rootAdminSecret: environment.ROOT_ADMIN_SECRET,
     rootAdminBreakGlass: environment.ROOT_ADMIN_BREAK_GLASS === "true",
-    authPagesUrl: environment.AUTH_PAGES_URL ?? "http://localhost:47100",
     trustedProxyCidrs: environment.TRUSTED_PROXY_CIDRS ?? [],
     oauthRefreshReuseIntervalSeconds:
       environment.OAUTH_REFRESH_REUSE_INTERVAL_SECONDS,

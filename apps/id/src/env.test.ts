@@ -71,10 +71,9 @@ describe("unit: environment", () => {
       betterAuthSecret: requiredEnvironment.BETTER_AUTH_SECRET,
       betterAuthSecrets: undefined,
       upstreamTokenSecrets: undefined,
-      trustedOrigins: ["http://localhost:47100"],
+      trustedOrigins: [],
       platformApplications: {},
       trustedProxyCidrs: [],
-      authPagesUrl: "http://localhost:47100",
       oauthRefreshReuseIntervalSeconds: 0,
       operationalLogIntervalMs: 30_000,
       databasePoolMax: 20,
@@ -143,7 +142,6 @@ describe("unit: environment", () => {
       ADMIN_RESOURCE_IDENTIFIER: "https://admin.example.com/api/admin/",
       BETTER_AUTH_TRUSTED_ORIGINS:
         "https://chat.example.com, https://admin.example.com",
-      AUTH_PAGES_URL: "https://auth.example.com",
     });
 
     expect(environment).toMatchObject({
@@ -160,7 +158,6 @@ describe("unit: environment", () => {
       platformOrganizationName: "Custom platform",
       adminResourceIdentifier: "https://admin.example.com/api/admin",
       trustedOrigins: ["https://chat.example.com", "https://admin.example.com"],
-      authPagesUrl: "https://auth.example.com",
     });
   });
 
@@ -294,7 +291,6 @@ test("statement deadline rejects disabled, fractional and out-of-range values", 
 const production = {
   ...requiredEnvironment,
   NODE_ENV: "production",
-  AUTH_PAGES_URL: "https://auth.example.com",
   BETTER_AUTH_TRUSTED_ORIGINS: "https://auth.example.com",
   TRUSTED_PROXY_CIDRS: "10.0.0.0/8, 2001:db8::/32",
 };
@@ -304,11 +300,7 @@ test("production disables OpenAPI unless explicitly enabled", () => {
     parseEnvironment({ ...production, OPENAPI_ENABLED: "true" }).openApiEnabled,
   ).toBe(true);
 });
-for (const key of [
-  "AUTH_PAGES_URL",
-  "BETTER_AUTH_TRUSTED_ORIGINS",
-  "TRUSTED_PROXY_CIDRS",
-])
+for (const key of ["BETTER_AUTH_TRUSTED_ORIGINS", "TRUSTED_PROXY_CIDRS"])
   test(`production requires ${key}`, () => {
     expect(() => parseEnvironment({ ...production, [key]: undefined })).toThrow(
       key,
@@ -444,4 +436,22 @@ test("default.env lists every variable with an empty value", async () => {
     ),
     "Add the missing variables to default.env",
   ).toEqual([]);
+});
+
+test("trusted origins trim whitespace and discard empty entries without a fallback", () => {
+  for (const value of ["", " , , "]) {
+    expect(
+      parseEnvironment({
+        ...requiredEnvironment,
+        BETTER_AUTH_TRUSTED_ORIGINS: value,
+      }).trustedOrigins,
+    ).toEqual([]);
+  }
+  expect(
+    parseEnvironment({
+      ...requiredEnvironment,
+      BETTER_AUTH_TRUSTED_ORIGINS:
+        " , https://browser.example, , https://issuer.example , ",
+    }).trustedOrigins,
+  ).toEqual(["https://browser.example", "https://issuer.example"]);
 });
