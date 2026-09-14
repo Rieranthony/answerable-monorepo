@@ -10,7 +10,7 @@ Applications need stable identity and common permission decisions across corpora
 
 ## What we're building
 
-Upstream OIDC SSO, a global user directory, tenant memberships, OIDC login, user resource grants, machine grants and an administrative API are implemented. Browser pages live in `apps/web`; identity state lives in `apps/id`.
+Upstream OIDC SSO, a global user directory, tenant memberships, OIDC login, user resource grants, machine grants and an administrative API are implemented. Browser pages and identity state both live in `apps/id`.
 
 The [public guides](../apps/web/content/docs/id/index.mdx) document reachable behaviour. External registration, directory polling, remote logout delivery and a fleet cutover are **Not yet.** They remain in the [plan](02-plan.md).
 

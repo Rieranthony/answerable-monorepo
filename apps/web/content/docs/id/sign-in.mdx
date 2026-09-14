@@ -5,7 +5,7 @@ description: "How sign-in works today: your organisation's identity provider, ch
 
 ## The flow
 
-1. The app sends you to `https://answerable.org/login?organization=<slug>` or `https://answerable.org/login?login_hint=<email>`.
+1. The app sends you to `https://id.answerable.org/login?organization=<slug>` or `https://id.answerable.org/login?login_hint=<email>`.
 2. The page calls `POST /auth/sign-in/sso` with `organizationSlug` or `email`, plus `callbackURL` and `errorCallbackURL`.
 3. Answerable ID returns a `url`. Your browser follows it to Microsoft or Google.
 4. The provider returns to `GET /auth/sso/callback`. Answerable ID checks the token and sets a session cookie.
@@ -27,7 +27,7 @@ The response reads `{"google":false,"microsoft":true}` when only the Microsoft a
 curl -i -c cookies.txt \
   -X POST https://id.answerable.org/auth/sign-in/sso \
   -H 'Content-Type: application/json' \
-  --data '{"email":"you@company.com","callbackURL":"https://answerable.org/login","errorCallbackURL":"https://answerable.org/error"}'
+  --data '{"email":"you@company.com","callbackURL":"https://id.answerable.org/login","errorCallbackURL":"https://id.answerable.org/error"}'
 ```
 
 The response contains the identity provider `url`. The cookie jar keeps the state cookie used when the provider redirects back.
@@ -124,12 +124,12 @@ Applications use [OpenID Connect and OAuth](/docs/id/oauth) with an independentl
 ```bash
 curl -b cookies.txt -c cookies.txt \
   https://id.answerable.org/auth/sso/reauthenticate \
-  -H 'Origin: https://answerable.org' \
+  -H 'Origin: https://id.answerable.org' \
   -H 'Content-Type: application/json' \
-  --data '{"callbackURL":"https://answerable.org/security","errorCallbackURL":"https://answerable.org/security"}'
+  --data '{"callbackURL":"https://id.answerable.org/security","errorCallbackURL":"https://id.answerable.org/security"}'
 ```
 
-**Browser journey.** Open [Account security](/security) and choose **Verify sign-in**. The API example describes the same request; follow its returned `url` using the browser that holds the initiating session and state cookies. Do not copy only the URL into another browser.
+**Browser journey.** Open [Account security](https://id.answerable.org/security) and choose **Verify sign-in**. The API example describes the same request; follow its returned `url` using the browser that holds the initiating session and state cookies. Do not copy only the URL into another browser.
 
 **Upstream proof.** The request uses OIDC `prompt=login` and `max_age=0`. The returned signed `auth_time` must be valid, fresh and at or after the request began. The verified account, user and current provider must match the initiating identity. Missing evidence fails; a newly created broker session does not substitute for upstream authentication.
 
@@ -140,12 +140,12 @@ curl -b cookies.txt -c cookies.txt \
 ```bash
 curl -b cookies.txt -c cookies.txt \
   https://id.answerable.org/auth/sso/link \
-  -H 'Origin: https://answerable.org' \
+  -H 'Origin: https://id.answerable.org' \
   -H 'Content-Type: application/json' \
-  --data '{"providerId":"other-company","callbackURL":"https://answerable.org/security","errorCallbackURL":"https://answerable.org/security"}'
+  --data '{"providerId":"other-company","callbackURL":"https://id.answerable.org/security","errorCallbackURL":"https://id.answerable.org/security"}'
 ```
 
-**Two proofs.** Verify your current sign-in first. Then use **Connect another work account** on [Account security](/security), entering the provider ID supplied by the target organisation’s administrator. Sign in independently through that provider. Both identities must still be eligible when the callback commits; the initiating evidence must remain within five minutes.
+**Two proofs.** Verify your current sign-in first. Then use **Connect another work account** on [Account security](https://id.answerable.org/security), entering the provider ID supplied by the target organisation’s administrator. Sign in independently through that provider. Both identities must still be eligible when the callback commits; the initiating evidence must remain within five minutes.
 
 **One Answerable identity.** A previously unowned upstream identity is bound to your existing global user UUID. Your profile stays unchanged. An absent target membership is created; a revoked, deleted or ineffective membership is rejected. Existing permissions are still required to administer the target organisation.
 

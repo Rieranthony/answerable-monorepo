@@ -31,15 +31,7 @@ for (const agent of [
   "facebookexternalhit/1.1",
   "LinkedInBot/1.0",
 ]) {
-  for (const path of [
-    "/",
-    "/docs",
-    "/docs/id/sign-in",
-    apiPage,
-    "/login?login_hint=private%40example.org",
-    "/consent?client_id=secret",
-    "/error?error=unknown",
-  ]) {
+  for (const path of ["/", "/docs", "/docs/id/sign-in", apiPage]) {
     const response = await fetch(base + path, {
       headers: { "User-Agent": agent },
     })
