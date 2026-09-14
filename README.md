@@ -8,8 +8,8 @@ The [enterprise foundation](docs/05-id-enterprise-foundation.md) implementation 
 
 | Workspace            | What it is                                                                                                                                                          | Status                                                                                                                                                   |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/web`           | Public site (Next.js 16): the waitlist one-pager, the Answerable ID browser pages, and the docs at `/docs` (Fumadocs, Markdown for agents at `.md` and `/llms.txt`) | Live                                                                                                                                                     |
-| `apps/id`            | **Answerable ID** — identity broker for client orgs, OIDC login provider for our apps, OAuth 2.1 authorization server for hosted MCP servers                        | User/machine OAuth, own-tenant SSO, linking, administration and soft deletion implemented; not deployed — [acceptance](reports/id-release-acceptance.md) |
+| `apps/web`           | Public site (Next.js 16): the waitlist one-pager and the docs at `/docs` (Fumadocs, Markdown for agents at `.md` and `/llms.txt`)                                   | Live                                                                                                                                                     |
+| `apps/id`            | **Answerable ID** — identity broker for client orgs, OIDC login provider for our apps, OAuth 2.1 authorization server for hosted MCP servers; serves the sign-in pages | User/machine OAuth, own-tenant SSO, linking, administration and soft deletion implemented; not deployed — [acceptance](reports/id-release-acceptance.md) |
 | `packages/ui`        | Shared React UI: shadcn base-nova components on Base UI and the Tailwind theme, consumed as source by apps/web                                                      | Live                                                                                                                                                     |
 | `packages/countries` | ISO country list, priority order and flag URL helper; framework-free                                                                                                | Live                                                                                                                                                     |
 | `apps/community-mcp` | The tutor MCP (the Omni Accelerator community inside OmniChat)                                                                                                      | **Parked** until Answerable ID ships — its docs and Circle mocks stay in that folder, out of the plan                                                    |
@@ -45,8 +45,8 @@ bun dev
 
 | Service    | Host port | Purpose                                                       |
 | ---------- | --------- | ------------------------------------------------------------- |
-| `web`      | 47100     | Public site and Answerable ID browser pages                   |
-| `id`       | 47300     | Answerable ID API                                             |
+| `web`      | 47100     | Public site                                                   |
+| `id`       | 47300     | Answerable ID API and browser pages                           |
 | `postgres` | 47432     | `answerable_id`, plus `answerable_id_test` for the test suite |
 | `redis`    | 47379     | Session read-cache — later; unused by v1 code                 |
 

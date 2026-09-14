@@ -88,8 +88,6 @@ openssl rand -base64 48
 
 Optional, with defaults that hold for a first deployment: `ADMIN_RESOURCE_IDENTIFIER` (defaults to `${BETTER_AUTH_URL}/api/admin`), `BETTER_AUTH_SECRETS` (versioned ring for rotation; promotion signs everyone out, see the ID README), `DATABASE_POOL_MAX` 20, `DATABASE_STATEMENT_TIMEOUT_MS` 10000, `DATABASE_LOCK_TIMEOUT_MS` 2000, `DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS` 15000, `DATABASE_CONNECTION_TIMEOUT_MS` 5000, `DATABASE_POOL_IDLE_TIMEOUT_MS` 10000, `OPERATIONAL_LOG_INTERVAL_MS` 30000, `OAUTH_REFRESH_REUSE_INTERVAL_SECONDS` 0, `OPENAPI_ENABLED` (off in production).
 
-`apps/web` needs `NEXT_PUBLIC_ID_URL=https://id.answerable.org` when `next build` runs.
-
 ## Install, in order
 
 **1. Database.** Create the database and the runtime login on your PostgreSQL 16 instance. The login has no privileges yet; `db:migrate` grants them.

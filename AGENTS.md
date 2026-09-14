@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Answerable monorepo. Bun 1.3.1, Turborepo. Two apps: `apps/web` (Next.js 16: the site, the Answerable ID browser pages, the docs at `/docs`) and `apps/id` (Answerable ID: Bun, Hono, Better Auth, Postgres). Two shared packages: `packages/ui` (shared React components and Tailwind theme) and `packages/countries` (ISO country data and helpers). Read `README.md`, then `docs/00-orientation.md`. Decisions live in `docs/`; `docs/02-plan.md` lists what not to re-propose.
+Answerable monorepo. Bun 1.3.1, Turborepo. Two apps: `apps/web` (Next.js 16: the site, the docs at `/docs`) and `apps/id` (Answerable ID: Bun, Hono, Better Auth, Postgres, and its browser pages). Two shared packages: `packages/ui` (shared React components and Tailwind theme) and `packages/countries` (ISO country data and helpers). Read `README.md`, then `docs/00-orientation.md`. Decisions live in `docs/`; `docs/02-plan.md` lists what not to re-propose.
 
 ## Documentation
 

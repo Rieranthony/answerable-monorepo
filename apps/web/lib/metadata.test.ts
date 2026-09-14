@@ -3,7 +3,7 @@ import { createMetadata, SITE, DEFAULT_OG_IMAGE } from "./metadata"
 
 describe("page metadata", () => {
   test("defaults to branded, non-indexable metadata", () => {
-    const metadata = createMetadata({ pathname: "/login" })
+    const metadata = createMetadata({ pathname: "/docs" })
     expect(metadata.title).toEqual({ absolute: SITE.name })
     expect(metadata.description).toBe(SITE.description)
     expect(metadata.robots).toEqual({ index: false, follow: true })
@@ -11,7 +11,7 @@ describe("page metadata", () => {
       siteName: SITE.name,
       type: "website",
       locale: "en_GB",
-      url: "https://answerable.org/login",
+      url: "https://answerable.org/docs",
       images: [
         { ...DEFAULT_OG_IMAGE, url: "https://answerable.org/og/default.png" },
       ],
@@ -25,13 +25,13 @@ describe("page metadata", () => {
   test("formats titles once and strips query strings and fragments", () => {
     const metadata = createMetadata({
       title: "Sign in",
-      pathname: "/login?login_hint=private@example.org&client_id=secret#form",
+      pathname: "/docs?login_hint=private@example.org&client_id=secret#form",
     })
     expect(metadata.title).toEqual({ absolute: "Sign in · Answerable" })
-    expect(metadata.alternates?.canonical).toBe("https://answerable.org/login")
+    expect(metadata.alternates?.canonical).toBe("https://answerable.org/docs")
     expect(metadata.openGraph).toMatchObject({
       title: "Sign in · Answerable",
-      url: "https://answerable.org/login",
+      url: "https://answerable.org/docs",
     })
     expect(JSON.stringify(metadata)).not.toContain("private@example.org")
   })
