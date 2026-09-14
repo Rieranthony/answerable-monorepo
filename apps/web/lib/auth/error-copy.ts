@@ -33,6 +33,14 @@ const ERRORS: Record<string, ErrorDescription> = {
     title: "Start sign-in again",
     body: "Your organisation changed its sign-in configuration. Start again to use the current configuration.",
   },
+  platform_application_missing: {
+    title: "Sign-in is temporarily unavailable",
+    body: "Sign-in is not available for your organisation right now. Ask Answerable staff for help.",
+  },
+  invalid_state: {
+    title: "Start sign-in again",
+    body: "Your sign-in could not be completed because its state no longer matched. Start again from the sign-in page.",
+  },
   provider_not_found: {
     title: "We couldn't find your organisation",
     body: "We couldn't find a company sign-in for that email address. Check the address, or ask your IT team whether your organisation uses Answerable ID.",
@@ -93,4 +101,10 @@ const ERRORS: Record<string, ErrorDescription> = {
 
 export function describeError(code: string | null): ErrorDescription {
   return (code && ERRORS[code]) || FALLBACK
+}
+
+export function describeSSOError(code: string | undefined): ErrorDescription {
+  return describeError(
+    code === "platform_application_missing" ? code : "provider_not_found",
+  )
 }

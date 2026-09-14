@@ -6,7 +6,7 @@ import Link from "next/link"
 import { Button } from "@answerable/ui/components/button"
 import { Input } from "@answerable/ui/components/input"
 import { authClient } from "@/lib/auth/client"
-import { describeError } from "@/lib/auth/error-copy"
+import { describeSSOError, type ErrorDescription } from "@/lib/auth/error-copy"
 import type { LoginRoute } from "@/lib/auth/login-routing"
 
 interface LoginFormProps {
@@ -22,7 +22,7 @@ export function LoginForm({ route, oauthQuery }: LoginFormProps) {
   const [checkingSession, setCheckingSession] = useState(true)
   const [sessionEmail, setSessionEmail] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
-  const [message, setMessage] = useState<string | null>(null)
+  const [message, setMessage] = useState<ErrorDescription | null>(null)
   const autoStarted = useRef(false)
   const oauthParameters = new URLSearchParams(oauthQuery ?? "")
   const mustAuthenticate =
@@ -83,13 +83,13 @@ export function LoginForm({ route, oauthQuery }: LoginFormProps) {
       })
 
       if (result.error || !result.data?.url) {
-        setMessage(describeError("provider_not_found").body)
+        setMessage(describeSSOError(result.error?.code))
         return
       }
 
       window.location.assign(result.data.url)
     } catch {
-      setMessage(describeError("provider_not_found").body)
+      setMessage(describeSSOError(undefined))
     }
   }
 
@@ -106,7 +106,10 @@ export function LoginForm({ route, oauthQuery }: LoginFormProps) {
     setPending(false)
 
     if (result.error) {
-      setMessage("We couldn't sign you out. Please try again.")
+      setMessage({
+        title: "We couldn't sign you out",
+        body: "Please try again.",
+      })
       return
     }
 
@@ -142,7 +145,8 @@ export function LoginForm({ route, oauthQuery }: LoginFormProps) {
         </Button>
         {message && (
           <p role="alert" className="mt-4 text-sm/6 font-medium">
-            {message}
+            <span className="block">{message.title}</span>
+            <span className="block font-normal">{message.body}</span>
           </p>
         )}
       </section>
@@ -170,7 +174,8 @@ export function LoginForm({ route, oauthQuery }: LoginFormProps) {
         </button>
         {message && (
           <p role="alert" className="mt-4 text-sm/6 font-medium">
-            {message}
+            <span className="block">{message.title}</span>
+            <span className="block font-normal">{message.body}</span>
           </p>
         )}
       </section>
@@ -206,7 +211,8 @@ export function LoginForm({ route, oauthQuery }: LoginFormProps) {
       </form>
       {message && (
         <p role="alert" className="mt-4 text-sm/6 font-medium">
-          {message}
+          <span className="block">{message.title}</span>
+          <span className="block font-normal">{message.body}</span>
         </p>
       )}
     </section>

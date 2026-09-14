@@ -2,10 +2,10 @@
 
 > **TL;DR**
 > - **Decides:** what a production deployment of `apps/id` needs, in what order, and why each piece exists.
-> - **Rule:** the service is reachable only through the ingress proxies you list; the application never runs as the database owner; every secret family is independent and lives outside Postgres.
+> - **Rule:** the service is reachable only through the ingress proxies you list; the application never runs as the database owner; the four deployment secret families are independent and live outside Postgres; Google and Entra use platform applications by default.
 > - **Not here:** the design (`03-answerable-id.md`), the schema (`04-answerable-id-schema.md`), day-two operations (`../apps/id/OPERATIONS.md`), the release gate (`../reports/answerable-id-release-decision-plan.md`).
 
-Everything below is derived from the code on this branch: `apps/id/src/env.ts` (configuration), `apps/id/src/runtime.ts` (startup checks), `apps/id/src/db/runtime-role.ts` and `apps/id/scripts/migrate.ts` (database roles), `apps/id/src/app.ts` (ingress admission), `apps/id/src/auth.ts` (provider configuration). If the code and this page disagree, the code wins; fix the page.
+Everything below is derived from the code on this branch: `apps/id/src/env.ts` (configuration), `apps/id/src/runtime.ts` (startup checks), `apps/id/src/db/runtime-role.ts` and `apps/id/scripts/migrate.ts` (database roles), `apps/id/src/app.ts` (ingress admission), `apps/id/src/auth.ts` (provider configuration), `apps/id/src/auth/platform-applications.ts` (platform credentials and default scopes). If the code and this page disagree, the code wins; fix the page.
 
 ## What runs
 
@@ -26,9 +26,32 @@ Everything below is derived from the code on this branch: `apps/id/src/env.ts` (
 | A separate schema-owner login for migrations | DDL, functions, triggers and policies need ownership; the same run provisions the runtime role's permissions so the two never drift | `scripts/migrate.ts` migrates with `DATABASE_MIGRATION_URL`, then runs `configureRuntimeRole` for `DATABASE_RUNTIME_ROLE` |
 | `BETTER_AUTH_URL` is the public issuer origin, `https://` | It becomes the JWT `iss`, the discovery document and the default admin audience (`${BETTER_AUTH_URL}/api/admin`). Changing it invalidates every issued token | `src/env.ts`, `src/auth.ts` |
 | `AUTH_PAGES_URL` set explicitly, and listed in `BETTER_AUTH_TRUSTED_ORIGINS` as an origin only | Users are redirected there for login and consent; cookie-authenticated calls are accepted only from trusted origins (CSRF). The localhost default is refused in production | `src/env.ts` production refinements |
-| Three independent secret families | `BETTER_AUTH_SECRET` signs browser cookies and encrypts the stored JWKS private keys; `UPSTREAM_TOKEN_SECRETS` encrypts the upstream IdP tokens stored on accounts; `ROOT_ADMIN_SECRET` is the break-glass principal. Compromise of one must not expose the others, and none may be in the database or its backups | `src/env.ts` validation; `src/auth/upstream-token-storage.ts` |
+| Google and Microsoft endpoint origins in `BETTER_AUTH_TRUSTED_ORIGINS` and outbound HTTPS to them | Trust exact origins in use: Microsoft `https://login.microsoftonline.com` (discovery, authorisation, token, keys) and `https://graph.microsoft.com` (userinfo); Google `https://accounts.google.com` (discovery/authorisation), `https://oauth2.googleapis.com` (token/revocation), `https://www.googleapis.com` (JWKS), `https://openidconnect.googleapis.com` (userinfo). The service must reach these endpoints over HTTPS | Provider origin checks; SSO connectivity test reports `untrusted_origin` for a discovered endpoint outside the allowlist |
+| Four independent secret families | `BETTER_AUTH_SECRET` signs browser cookies and encrypts the stored JWKS private keys; `UPSTREAM_TOKEN_SECRETS` encrypts the upstream IdP tokens stored on accounts; `ROOT_ADMIN_SECRET` is the break-glass principal; platform application secrets authenticate Answerable to Google and Microsoft. Compromise of one must not expose the others, and none may be in the database or its backups | `src/env.ts` validation; `src/auth/upstream-token-storage.ts` |
 | `NODE_ENV=production` | Turns on the provider's rate limiter, the runtime-role assertion, the production refinements above and turns off the OpenAPI documents | `src/env.ts`, Better Auth defaults |
 | PostgreSQL `max_connections` ≥ replicas × `DATABASE_POOL_MAX` + migration and operator sessions | Each replica opens up to `DATABASE_POOL_MAX` connections (default 20). Exhausting the server turns every request into a `database_busy` 503 | `src/db/client.ts` |
+
+## Platform applications: Microsoft Entra and Google
+
+Answerable uses one multi-tenant Entra app registration and one Google OAuth client. Organisation SSO rows select these applications by omitting `oidc` (or setting `oidc: {"credentials":"platform"}`). Credentials live only in the service environment and are injected when Better Auth reads a row; platform rows store no secret. Set each client ID and secret together.
+
+**Microsoft Entra.**
+
+1. Create an app registration. Set **Supported account types** to **Multiple Entra ID tenants** (older portals: **Accounts in any organizational directory**).
+2. Under **Authentication → Add a platform → Web**, register `https://id.answerable.org/auth/sso/callback` and `https://answerable.org/login`. The second URI is only the landing page for admin consent. For local sign-in, register `http://localhost:47300/auth/sso/callback`.
+3. Copy **Application (client) ID** from **Overview** to `MICROSOFT_CLIENT_ID`. Under **Certificates & secrets**, create a client secret and deliver its value as `MICROSOFT_CLIENT_SECRET` through the secret store. Record its expiry and rotate before it expires.
+4. Obtain customer admin consent with `https://login.microsoftonline.com/<tenant-id>/v2.0/adminconsent?client_id=<MICROSOFT_CLIENT_ID>&scope=openid%20profile%20email&redirect_uri=https%3A%2F%2Fanswerable.org%2Flogin&state=<slug>`. The landing URL returns `admin_consent=True&tenant=<GUID>`. Alternatively, a Global Administrator signs in first and ticks **consent on behalf of your organisation**; only Privileged Role Administrators see that option. The default tenant policy blocks ordinary users from consenting to unverified multi-tenant apps. Requesting `email` on v2.0 supplies the email claim for managed users.
+5. Publisher verification: Not yet. It needs a Partner Center (Cloud Partner Program) ID and a verified publisher domain; track [Q-PUBLISHER-VERIFICATION](02-plan.md#open-register). A certificate credential: Not yet. Better Auth 1.7.2's `private_key_jwt` assertion lacks the `x5t#S256` header Entra requires. Use the client secret until [Q-ENTRA-CERTIFICATE](02-plan.md#open-register) resolves.
+
+**Google.**
+
+1. In the Cloud console, open **Google Auth Platform → Branding** and set the app name and support email.
+2. Set **Audience** to **External**; **Internal** admits only our own organisation. Publish to **In production**. An app requesting only `openid`, `email` and `profile` needs no scope verification and is exempt from the 100-test-user cap, unverified-app screen and seven-day refresh-token expiry.
+3. Under **Clients → Create client → Web application**, add the exact **Authorized redirect URI** `https://id.answerable.org/auth/sso/callback` (HTTPS). For local sign-in, use `http://localhost:47300/auth/sso/callback`.
+4. Copy the client ID to `GOOGLE_CLIENT_ID` and the secret, shown once, to `GOOGLE_CLIENT_SECRET` through the secret store. Never put either provider's secret in an SSO PUT body when using platform credentials.
+5. Workspace customers with restricted third-party apps mark the client ID **Trusted** under **Admin console → Security → Access and data control → API controls → Manage App Access → Configure new app**. The default policy allows any third-party app. The `hd` request parameter is only a hint; Answerable ID verifies the ID token's `hd` claim.
+
+Google defaults to `email openid profile`; Entra defaults to `email offline_access openid profile`. Own-credential rows for these issuers receive the same defaults when scopes are omitted. See [directory onboarding](../apps/web/content/docs/id/onboard.mdx#connect-the-directory) for tenant IDs and own credentials.
 
 ## Configuration
 
@@ -47,13 +70,17 @@ openssl rand -base64 48
 | `PORT` | listener port, default 47300 | Ingress upstream |
 | `BETTER_AUTH_URL` | `https://id.answerable.org` | Issuer, discovery, admin audience |
 | `AUTH_PAGES_URL` | origin of the deployed `apps/web` | Login and consent pages |
-| `BETTER_AUTH_TRUSTED_ORIGINS` | comma-separated origins, at least `AUTH_PAGES_URL`; no paths, no trailing slash | CORS and CSRF for cookie calls |
+| `BETTER_AUTH_TRUSTED_ORIGINS` | `https://answerable.org,https://login.microsoftonline.com,https://graph.microsoft.com,https://accounts.google.com,https://oauth2.googleapis.com,https://www.googleapis.com,https://openidconnect.googleapis.com`; use your `AUTH_PAGES_URL` and the IdP origins in use, with no paths or trailing slash | Browser CORS/CSRF and IdP endpoint trust |
 | `TRUSTED_PROXY_CIDRS` | comma-separated IPv4/IPv6 networks of the ingress proxies | Client address resolution |
 | `DATABASE_URL` | `postgres://answerable_id_runtime:…@host/answerable_id` | Application connection, restricted role |
 | `DATABASE_MIGRATION_URL` | owner login, used only by `db:migrate` runs you start by hand; never given to the service | DDL and permission provisioning |
 | `DATABASE_RUNTIME_ROLE` | `answerable_id_runtime` unless you named it differently | Which role `db:migrate` provisions |
 | `BETTER_AUTH_SECRET` | ≥ 32 characters, high entropy | Cookie signing, JWKS private-key encryption |
 | `UPSTREAM_TOKEN_SECRETS` | `[{"version":1,"value":"<base64url key>"}]` | Upstream token encryption; required before the first SSO login |
+| `GOOGLE_CLIENT_ID` | Google Web application client ID | Set together with `GOOGLE_CLIENT_SECRET` when using Google platform credentials |
+| `GOOGLE_CLIENT_SECRET` | Google client secret from the secret store | Environment only; never stored in platform SSO rows |
+| `MICROSOFT_CLIENT_ID` | Multi-tenant Entra Application (client) ID | Set together with `MICROSOFT_CLIENT_SECRET` when using Microsoft platform credentials |
+| `MICROSOFT_CLIENT_SECRET` | Entra client secret from the secret store | Environment only; record expiry and rotate before it |
 | `ROOT_ADMIN_SECRET` | ≥ 32 characters | Break-glass bearer for first run and recovery |
 | `ROOT_ADMIN_BREAK_GLASS` | `false` (set `true` only during a recovery) | Root stops working once a human holds `platform:write` |
 | `PLATFORM_ORGANIZATION_SLUG`, `PLATFORM_ORGANIZATION_NAME` | `answerable`, `Answerable` | Seeded at first boot, bound by immutable id afterwards |
@@ -118,7 +145,7 @@ curl -s -X POST -H "Authorization: Bearer $ROOT" -H "Idempotency-Key: platform-d
 # Your identity provider (Entra example: tenant-specific issuer)
 curl -s -X PUT -H "Authorization: Bearer $ROOT" -H "Idempotency-Key: platform-sso-1" \
   -H "Content-Type: application/json" \
-  -d '{"issuer":"https://login.microsoftonline.com/<tenant-id>/v2.0","domain":"answerable.org","oidc":{"clientId":"<app id>","clientSecret":"<secret>","scopes":["openid","profile","email"]}}' \
+  -d '{"issuer":"https://login.microsoftonline.com/<tenant-id>/v2.0","domain":"answerable.org"}' \
   "$ID/api/admin/v1/organizations/$ORG/sso-provider"
 
 # Prove discovery and JWKS are reachable from the server before anyone signs in
@@ -145,13 +172,15 @@ If you ever remove the last platform administrator, set `ROOT_ADMIN_BREAK_GLASS=
 - **Logs.** Every `OPERATIONAL_LOG_INTERVAL_MS` each process prints `[id] operations` followed by JSON with request counts by route class and status, plus pool counts. Provider diagnostics print only a severity and the event name `provider_diagnostic`, never message text, so a failing sign-in shows up in audit (`auth.signin.failed`), not in logs. The operator signals table is in `../apps/id/OPERATIONS.md`.
 - **Scaling.** Add replicas; nothing is process-local except rate-limit buckets and the JWKS cache. Size `max_connections` from the pool formula above. Long lock waits fail at 2 s and stuck transactions at 15 s by design; raise them only with evidence.
 - **Backups.** Back up PostgreSQL with your provider's tooling and keep `BETTER_AUTH_SECRET`, `BETTER_AUTH_SECRETS` and `UPSTREAM_TOKEN_SECRETS` in the secret store with their own retention: a restored database is unreadable without the keys that were active when its rows were written. There is no restore drill in the repository any more; run one against a copy of production data before relying on backups.
+- **Platform application rotation.** Create a new secret in the provider console, update the environment and rolling-restart every replica while both secrets remain valid; retire the old secret afterwards. No SSO rows, revisions or grants change. Replacing a platform client ID interrupts in-flight sign-ins with `?error=invalid_state&error_description=sso_provider_changed_during_authentication`: the SSO plugin detects the changed application, without a row revision change, so `SSO_PROVIDER_CHANGED` does not apply. For Entra it also changes every user’s pairwise `sub`, so existing accounts stop matching. See [sign-in errors](../apps/web/content/docs/id/sign-in.mdx#when-sign-in-is-refused).
 - **Rotation.** Application secret and upstream key rotation are documented in the ID README. Promoting a new head application secret signs every browser session out.
 
 ## Not ready yet
 
-These are release inputs, not code. The release gate in `../reports/answerable-id-release-decision-plan.md` lists them as E1 to E8; the ones a deployment plan must schedule are:
+These include release evidence and unbuilt capabilities. The release gate in `../reports/answerable-id-release-decision-plan.md` lists them as E1 to E8; the ones a deployment plan must schedule are:
 
-- Real tenant validation against an Entra tenant and a second provider (E1) and against the first consumer (E2, E3).
+- Real tenant validation against an Entra tenant and a second provider (E1) and against the first consumer (E2, E3): Not yet. See the [release plan](02-plan.md#open-register).
+- Publisher verification and an Entra certificate credential: Not yet. Track [Q-PUBLISHER-VERIFICATION and Q-ENTRA-CERTIFICATE](02-plan.md#open-register); the certificate work gates E1.
 - A restore drill against production-shaped data with the real backup system and RTO/RPO (E7).
 - A load test through the real ingress with agreed latency and refusal budgets (E6).
 - A monitoring destination and alert budgets for the signals above; the choice of secret store (`Q-SECRET-STORE` in `02-plan.md`).

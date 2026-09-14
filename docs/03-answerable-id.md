@@ -24,6 +24,8 @@ Only allowlisted authentication routes are public. Administrative routes use typ
 
 Platform staff configure domains and providers. Entra uses a tenant-specific issuer and verified `tid`; guest signals are rejected. Google requires the configured hosted domain and verified email. Generic OIDC requires the configured issuer and verified email/domain. DNS self-verification, guest opt-in and self-service provider configuration are **Not yet.**
 
+Google and Entra default to Answerable’s platform applications: one Google OAuth client and one multi-tenant Entra registration. Omit `oidc` on the SSO PUT or set `credentials: "platform"`; the service injects environment credentials when reading the row, which stores no secret. Own credentials remain available for exceptions and are required for generic OIDC. Both modes use `https://id.answerable.org/auth/sso/callback`. Switching modes revokes the organisation’s user grants and changes Entra pairwise subjects, so existing accounts stop matching. See [deployment](06-deploying-answerable-id.md#platform-applications-microsoft-entra-and-google) and [onboarding](../apps/web/content/docs/id/onboard.mdx#connect-the-directory).
+
 A session records its exact account, provider UUID/revision, authenticated tenant and verified upstream authentication time. That tuple is immutable. Missing upstream `auth_time` remains unknown; broker creation time is not substituted.
 
 A human can exercise tenant authority only after that tenant's own current SSO. Membership alone conveys no trust in another tenant's login. Platform staff authenticate through platform SSO and need explicit platform permissions to administer other tenants.

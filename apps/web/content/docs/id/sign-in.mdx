@@ -11,6 +11,8 @@ description: "How sign-in works today: your organisation's identity provider, ch
 4. The provider returns to `GET /auth/sso/callback`. Answerable ID checks the token and sets a session cookie.
 5. The app reads the session from `GET /auth/get-session`.
 
+Answerable's own Google and Microsoft applications carry the redirect to `https://id.answerable.org/auth/sso/callback` when the organisation uses [platform credentials](/docs/id/onboard#connect-the-directory).
+
 ## Start sign-in
 
 ```bash
@@ -54,16 +56,24 @@ Sign out ends the current session and updates the cookie jar.
 | Email domain          | Enabled for the organisation                              |
 | Answerable ID account | Active                                                    |
 
-The SSO configuration must stay unchanged from the start of sign-in until the callback completes. Changing the provider's credentials or changing and then restoring its configuration requires a new sign-in attempt. Saving unchanged configuration does not interrupt sign-in.
+The SSO configuration must stay unchanged from the start of sign-in until the callback completes. Changing the provider row's credentials or changing and then restoring its configuration requires a new sign-in attempt. Rotating a platform secret in the environment leaves rows, revisions and grants unchanged. Replacing a platform client ID interrupts in-flight sign-ins with `invalid_state` and `error_description=sso_provider_changed_during_authentication`, from the SSO plugin's application check; no row revision changes, so `SSO_PROVIDER_CHANGED` does not apply. Saving unchanged configuration does not interrupt sign-in.
 
 ## When sign-in is refused
 
 If the service cannot securely store upstream credentials, the callback can return HTTP `500` with `authentication_unavailable`. An unreadable existing credential encountered during identity resolution instead redirects with `SSO_USER_RESOLUTION_FAILED`. Neither attempt creates a session. Contact the service operator. Operators should check the dedicated upstream key configuration and credential integrity described in [onboarding](/docs/id/onboard#first-run). Retrying does not convert legacy token rows.
 
-The code arrives on the error page as `?error=<code>`.
+If a configured platform application disappears, `POST /auth/sign-in/sso` returns HTTP `503` JSON with `platform_application_missing`. Start again later and contact Answerable staff. This is an HTTP error, not a `?error=` redirect code.
+
+| HTTP code | Meaning | What to do |
+| --- | --- | --- |
+| `authentication_unavailable` (500) | Upstream credentials cannot be stored securely. | Contact Answerable staff to check upstream token keys. |
+| `platform_application_missing` (503) | The organisation’s platform application is unavailable. | Start again later and contact Answerable staff. |
+
+Redirect codes arrive on the error page as `?error=<code>`.
 
 | Code                               | Meaning                                                                                                                 | What to do                                                                                                       |
 | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `invalid_state` | The sign-in state no longer matches, for example the platform application changed during sign-in or the state cookie is missing. | Start sign-in again. |
 | `provider_not_found`               | No company sign-in was found for the email address.                                                                     | Check the address. Ask your IT team whether your organisation uses Answerable ID.                                |
 | `SSO_USER_RESOLUTION_FAILED`       | The service could not safely resolve the verified identity, including when a stored upstream token cannot be decrypted. | Contact Answerable staff. Operators should check identity records, token key versions and credential integrity.  |
 | `SSO_PROVIDER_CHANGED`             | SSO configuration changed during sign-in, or the server could not verify its original configuration.                    | Start sign-in again; no session was created for this attempt.                                                    |
