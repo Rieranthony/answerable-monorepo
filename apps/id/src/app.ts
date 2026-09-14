@@ -1,3 +1,4 @@
+import { createPagesApp, isPagePath } from "./http/pages/index.ts";
 import { getIP } from "@better-auth/core/utils/ip";
 import { Scalar } from "@scalar/hono-api-reference";
 import { Hono } from "hono";
@@ -63,7 +64,8 @@ export function createApp(services: AppServices) {
       services.environment.nodeEnv === "production" &&
       clientIp === null &&
       (context.req.path.startsWith("/auth/") ||
-        context.req.path.startsWith("/api/admin/"))
+        context.req.path.startsWith("/api/admin/") ||
+        isPagePath(context.req.path))
     ) {
       context.header("Cache-Control", "no-store");
       return context.json({ error: "untrusted_ingress" }, 403);
@@ -103,6 +105,7 @@ export function createApp(services: AppServices) {
     }),
   );
   app.route("/api/admin/v1", createAdminApp(services));
+  app.route("/", createPagesApp());
 
   for (const [path, operationId] of [
     ["/.well-known/openid-configuration", "getOpenIdConfiguration"],

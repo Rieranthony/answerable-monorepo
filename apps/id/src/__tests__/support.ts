@@ -28,7 +28,6 @@ export function testEnvironment(
     trustedOrigins: [],
     platformApplications: {},
     trustedProxyCidrs: [],
-    authPagesUrl: "http://localhost:47100",
     oauthRefreshReuseIntervalSeconds: 0,
     operationalLogIntervalMs: 0,
     databasePoolMax: 1,
