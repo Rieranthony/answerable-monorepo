@@ -203,7 +203,7 @@ Paths below start at `/api/admin/v1`; `{org}` means your organisation ID.
 | Organisation      | `GET /organizations/{org}`                                                                                                                                                                          | `org:read`                  |
 | Sign-in diagnosis | `GET /organizations/{org}/sign-in-diagnosis?email=…`                                                                                                                                                | `org:users`                 |
 | Domains           | `GET /organizations/{org}/domains`                                                                                                                                                                  | `org:read`                  |
-| SSO provider      | `GET /organizations/{org}/sso-provider` (secret redacted)                                                                                                                                           | `org:read`                  |
+| SSO provider      | `GET /organizations/{org}/sso-provider` (returns `oidc.credentials`, `clientId` and `hasClientSecret`; secret redacted)                                                                                                                                           | `org:read`                  |
 | Members           | `GET /organizations/{org}/members`, `GET /organizations/{org}/members/{memberId}`                                                                                                                   | `org:read`                  |
 | Member changes    | `PATCH /organizations/{org}/members/{memberId}` (window), `DELETE /organizations/{org}/members/{memberId}`                                                                                          | `org:users`                 |
 | Groups            | `GET /organizations/{org}/groups`, `GET /organizations/{org}/groups/{groupId}`, `GET /organizations/{org}/groups/{groupId}/members`, `GET /organizations/{org}/groups/{groupId}/members/{memberId}` | `org:read`                  |
@@ -495,9 +495,9 @@ An unchanged patch preserves its ETag. Lifecycle and metadata changes invalidate
 
 
 
-**SSO command retries.** Platform staff must send Idempotency-Key for SSO PUT and delete. A retry returns the receipt; it does not replace later credentials or delete a newly recreated provider. Omitting clientSecret on a new PUT keeps the current secret. Repeating equivalent configuration under a new key records a noop and preserves timestamps. A different supplied secret under an existing key conflicts. PUT accepts optional If-Match with the current provider ETag. Without a precondition it uses the current row; stale supplied state returns 412. Keep the original header with its operation key on retry.
+**SSO command retries.** Platform staff must send Idempotency-Key for SSO PUT and delete. A retry returns the receipt; it does not replace later credentials or delete a newly recreated provider. Platform rows hold no secret; credentials come from the service environment. For own-credential rows, omitting `clientSecret` on a new PUT keeps the current secret. Repeating equivalent configuration under a new key records a noop and preserves timestamps. A different supplied secret under an existing key conflicts. PUT accepts optional If-Match with the current provider ETag. Without a precondition it uses the current row; stale supplied state returns 412. Keep the original header with its operation key on retry.
 
-**Replace SSO configuration.** Read the redacted provider and copy its `ETag`, including quotes, into `SSO_ETAG`. Set `SSO_OPERATION_KEY` once for this intended replacement. Omitting the secret retains the stored value:
+**Replace SSO configuration.** Read the redacted provider and copy its `ETag`, including quotes, into `SSO_ETAG`. Set `SSO_OPERATION_KEY` once for this intended replacement. For own credentials, omitting the secret retains the stored value:
 
 ```bash
 curl -i "$ID_URL/api/admin/v1/organizations/$ORG_ID/sso-provider" \
@@ -511,7 +511,7 @@ curl -X PUT "$ID_URL/api/admin/v1/organizations/$ORG_ID/sso-provider" \
   -d '{"issuer":"https://login.example.com","domain":"example.com","oidc":{"clientId":"directory-client"}}'
 ```
 
-For first creation, use `If-None-Match: *` instead of `If-Match`. Sending both headers is an error. On 412, read and review the current provider before a new command; old tags also fail after deletion and recreation. Secret changes advance the revision even though responses remain redacted.
+For first creation, use `If-None-Match: *` instead of `If-Match`. Sending both headers is an error. On 412, read and review the current provider before a new command; old tags also fail after deletion and recreation. Own-credential secret changes advance the revision even though responses remain redacted. Platform secret rotation uses the environment and restart only; it changes no rows, revisions or grants.
 
 **Group command retries.** Platform staff must send Idempotency-Key for group create, PATCH, enable, disable and erase, and for group membership PUT/delete. A retry returns the receipt. New-key unchanged configuration, lifecycle state or membership windows records a noop. Omitted window fields retain existing values. A removal retry cannot delete a later re-added assignment. Membership result references identify the group/member pair as `<group UUID>:<member UUID>`; these receipts use the platform operation-status route. Group PATCH accepts the optional strong If-Match ETag from getGroup. Membership PUT accepts optional If-Match from getGroupMember; omitted preconditions use the current row.
 
