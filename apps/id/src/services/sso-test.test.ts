@@ -280,3 +280,57 @@ test("DNS failures are unreachable", async () => {
   lookup.mockRejectedValueOnce(new Error("NXDOMAIN"));
   expect(codes(await run([]))).toEqual(["discovery_unreachable"]);
 });
+
+test("trusted origins match exactly for discovery and every discovered endpoint including userinfo", async () => {
+  const endpoints = {
+    ...discovery,
+    authorization_endpoint: "https://authorize.example.com/start",
+    token_endpoint: "https://token.example.com/token",
+    jwks_uri: "https://keys.example.com/jwks",
+    userinfo_endpoint: "https://profile.example.com/userinfo",
+  };
+  const origins = [
+    issuer,
+    "https://authorize.example.com",
+    "https://token.example.com",
+    "https://keys.example.com",
+    "https://profile.example.com",
+  ];
+  expect(
+    codes(await run([json(endpoints), keys()], { trustedOrigins: origins })),
+  ).toEqual([]);
+  for (const origin of origins) {
+    const result = await run([json(endpoints), keys()], {
+      trustedOrigins: origins.filter((value) => value !== origin),
+    });
+    expect(result.problems).toEqual([
+      {
+        code: "untrusted_origin",
+        detail: `Endpoint origin is not trusted: ${origin}`,
+      },
+    ]);
+  }
+  expect(
+    codes(
+      await run([json(endpoints), keys()], {
+        trustedOrigins: origins.map((origin) => `${origin}/`),
+      }),
+    ),
+  ).toEqual(Array(5).fill("untrusted_origin"));
+});
+
+test("discovery reports an untrusted origin even when transport checks refuse it", async () => {
+  for (const [url, failure] of [
+    ["http://id.example.com/discovery", "insecure_issuer"],
+    ["https://127.0.0.1/discovery", "private_host"],
+  ] as const) {
+    expect(
+      codes(await run([], { trustedOrigins: [] }, configuration(issuer, url))),
+    ).toEqual(["untrusted_origin", failure]);
+  }
+  expect(
+    codes(
+      await run([], { trustedOrigins: [] }, configuration(issuer, "invalid")),
+    ),
+  ).toEqual(["insecure_issuer"]);
+});

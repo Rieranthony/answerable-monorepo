@@ -77,6 +77,7 @@ export function createAuth(db: Database, environment: Environment) {
       db,
       ssoOrigin.observeProviders,
       verifiedSso.beforeTransaction,
+      environment.platformApplications,
     ),
     databaseHooks: {
       session: {

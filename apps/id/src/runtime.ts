@@ -44,6 +44,13 @@ export async function startRuntime(
     console.log(
       `[id] seeded platform organisation ${seeded.organization.slug} (${summary})`,
     );
+    console.log(
+      "[id] platform applications",
+      JSON.stringify({
+        google: Boolean(environment.platformApplications.google),
+        microsoft: Boolean(environment.platformApplications.microsoft),
+      }),
+    );
     const auth = authFactory(database.db, environment);
     const app = appFactory({ auth, db: database.db, environment, metrics });
     server = serve({

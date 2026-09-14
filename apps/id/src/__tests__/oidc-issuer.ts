@@ -27,6 +27,7 @@ export async function startOidcIssuer(
     alg: "RS256",
     use: "sig",
   };
+  const tokenRequests: { clientId: string; clientSecret: string | null }[] = [];
   const queued: OidcClaims[] = [];
   const codes = new Map<string, OidcClaims>();
   let origin = "";
@@ -75,11 +76,18 @@ export async function startOidcIssuer(
         const body = await request.formData();
         const code = String(body.get("code") ?? "");
         const claims = codes.get(code);
+        const basic = request.headers.get("authorization");
+        const decoded = basic?.startsWith("Basic ") ? atob(basic.slice(6)) : "";
+        const separator = decoded.indexOf(":");
         const clientId =
           String(body.get("client_id") ?? "") ||
-          atob(
-            request.headers.get("authorization")?.replace(/^Basic /, "") ?? ":",
-          ).split(":")[0]!;
+          decodeURIComponent(decoded.slice(0, separator));
+        const clientSecret = body.has("client_secret")
+          ? String(body.get("client_secret"))
+          : separator >= 0
+            ? decodeURIComponent(decoded.slice(separator + 1))
+            : null;
+        tokenRequests.push({ clientId, clientSecret });
         if (!claims || !clientId) {
           return Response.json({ error: "invalid_grant" }, { status: 400 });
         }
@@ -110,7 +118,9 @@ export async function startOidcIssuer(
 
   return {
     origin,
+    tokenRequests,
     reset() {
+      tokenRequests.length = 0;
       queued.length = 0;
       codes.clear();
     },

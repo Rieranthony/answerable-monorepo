@@ -1,4 +1,8 @@
 import {
+  platformApplicationFor,
+  type PlatformApplicationIds,
+} from "../auth/platform-applications.ts";
+import {
   requirePlatformWriteContext,
   type PlatformWriteContext,
 } from "./platform-context.ts";
@@ -29,8 +33,9 @@ function configuration(
   row: NonNullable<
     Awaited<ReturnType<typeof queries.findSsoProviderForCommand>>
   >,
+  ids: PlatformApplicationIds,
 ) {
-  const redacted = queries.redactSsoProvider(row);
+  const redacted = queries.redactSsoProvider(row, ids);
   return {
     id: redacted.id,
     revision: redacted.revision,
@@ -60,19 +65,38 @@ function audit(
     data,
   });
 }
-export async function getSsoProvider(context: TenantReadContext<"directory">) {
-  return requireRow(await queries.readSsoProvider(context));
+export async function getSsoProvider(
+  context: TenantReadContext<"directory">,
+  ids: PlatformApplicationIds = {},
+) {
+  return requireRow(await queries.readSsoProvider(context, ids));
 }
 export async function putSsoProvider(
   context: PlatformWriteContext,
   organizationId: string,
   input: SsoProviderInput,
   expected?: { id: string; revision: number } | null,
+  ids: PlatformApplicationIds = {},
 ) {
   const { tx, actor } = requirePlatformWriteContext(context);
   const organization = requireRow(
     await lockOrganizationForCommand(context, organizationId),
   );
+  if (input.oidc.credentials === "platform") {
+    const application = platformApplicationFor(input.issuer);
+    if (application === null)
+      throw new ProblemError(
+        400,
+        "platform_credentials_unsupported",
+        "Platform credentials require a Google Workspace or Microsoft Entra issuer",
+      );
+    if (!ids[application])
+      throw new ProblemError(
+        409,
+        "platform_application_missing",
+        "Configure MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET (or the Google pair) before assigning the platform application",
+      );
+  }
   const existing = await queries.findSsoProviderForCommand(
     context,
     organizationId,
@@ -94,7 +118,12 @@ export async function putSsoProvider(
   const stored = JSON.parse(
     existing?.oidcConfig ?? "{}",
   ) as SsoProviderInput["oidc"];
-  if (existing && oidc.clientSecret === undefined)
+  if (
+    existing &&
+    stored.credentials !== "platform" &&
+    oidc.credentials !== "platform" &&
+    oidc.clientSecret === undefined
+  )
     oidc.clientSecret = stored.clientSecret;
   const changed =
     !existing ||
@@ -131,21 +160,27 @@ export async function putSsoProvider(
         ? "sso_provider.updated"
         : "sso_provider.created",
     {
-      before: existing ? configuration(existing) : null,
-      after: configuration(row),
-      credentialsChanged: stored.clientSecret !== oidc.clientSecret,
+      before: existing ? configuration(existing, ids) : null,
+      after: configuration(row, ids),
+      credentialsChanged:
+        (stored.credentials ?? "own") !== (oidc.credentials ?? "own") ||
+        (stored.credentials === "platform"
+          ? undefined
+          : stored.clientSecret) !==
+          (oidc.credentials === "platform" ? undefined : oidc.clientSecret),
       effects: { revokedGrantContexts },
     },
   );
   return {
     created: !existing,
     changed,
-    provider: queries.redactSsoProvider(row),
+    provider: queries.redactSsoProvider(row, ids),
   };
 }
 export async function deleteSsoProvider(
   context: PlatformWriteContext,
   organizationId: string,
+  ids: PlatformApplicationIds = {},
 ) {
   const { tx, actor } = requirePlatformWriteContext(context);
   requireRow(await lockOrganizationForCommand(context, organizationId));
@@ -160,7 +195,7 @@ export async function deleteSsoProvider(
     organizationId,
   );
   await audit(tx, actor, organizationId, row.id, "sso_provider.deleted", {
-    before: configuration(before),
+    before: configuration(before, ids),
     after: {
       id: row.id,
       revision: row.revision,

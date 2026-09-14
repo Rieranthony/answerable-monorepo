@@ -1,3 +1,7 @@
+import {
+  platformApplications as applicationDefaults,
+  type PlatformApplications,
+} from "../auth/platform-applications.ts";
 import { inTenant } from "../__tests__/tenant-command.ts";
 import { inPlatformWrite } from "../__tests__/platform-context.ts";
 import { putSsoProvider, deleteSsoProvider } from "./sso-providers.ts";
@@ -116,11 +120,13 @@ async function seedProvider({
   domain = "contoso.com",
   providerIssuer = entraIssuer,
   endpoints = true,
+  credentials = "own",
 }: {
   slug?: string;
   domain?: string;
   providerIssuer?: string;
   endpoints?: boolean;
+  credentials?: "own" | "platform";
 } = {}) {
   const [organization] = await connection.db
     .insert(organizations)
@@ -136,8 +142,16 @@ async function seedProvider({
     issuer: providerIssuer,
     domain,
     oidc: {
-      clientId: `${slug}-client`,
-      clientSecret: "secret",
+      ...(credentials === "platform"
+        ? {
+            credentials: "platform" as const,
+            scopes: [
+              ...(providerIssuer === "https://accounts.google.com"
+                ? applicationDefaults.google.scopes
+                : applicationDefaults.microsoft.scopes),
+            ],
+          }
+        : { clientId: `${slug}-client`, clientSecret: "secret" }),
       ...(endpoints
         ? {
             authorizationEndpoint: `${issuer.origin}/authorize`,
@@ -1075,4 +1089,216 @@ describe("integration: federated sign-in", () => {
     expect(result.location).toBe(callbackURL);
     expect(await connection.db.select().from(ssoProviders)).toHaveLength(1);
   });
+});
+
+const platformApps: PlatformApplications = {
+  google: {
+    clientId: "federation-google-id",
+    clientSecret: "federation-google-secret",
+  },
+  microsoft: {
+    clientId: "federation-microsoft-id",
+    clientSecret: "federation-microsoft-secret",
+  },
+};
+function platformApp(
+  platformApplications: PlatformApplications = platformApps,
+) {
+  const environment = testEnvironment({
+    platformApplications,
+    trustedOrigins: [issuer.origin, new URL(callbackURL).origin],
+  });
+  return createApp({
+    auth: createAuth(runtime.db, environment),
+    db: runtime.db,
+    environment,
+  });
+}
+for (const application of ["google", "microsoft"] as const) {
+  test(`${application} email-first SSO sends environment credentials and binds session provenance`, async () => {
+    const providerIssuer =
+      application === "google" ? "https://accounts.google.com" : entraIssuer;
+    const organization = await seedProvider({
+      credentials: "platform",
+      providerIssuer,
+    });
+    const configured = platformApp();
+    const start = await configured.request("/auth/sign-in/sso", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: new URL(callbackURL).origin,
+      },
+      body: JSON.stringify({ email: "person@contoso.com", callbackURL }),
+    });
+    expect(start.status).toBe(200);
+    const url = new URL((await start.json()).url);
+    expect(
+      url.searchParams.get("client_id") === platformApps[application]!.clientId,
+    ).toBe(true);
+    expect(url.searchParams.get("scope")!.split(" ").sort()).toEqual([
+      ...applicationDefaults[application].scopes,
+    ]);
+    issuer.enqueue(
+      application === "google"
+        ? {
+            sub: "google-subject",
+            email: "person@contoso.com",
+            email_verified: true,
+            hd: "contoso.com",
+            iss: providerIssuer,
+          }
+        : entraClaims(),
+    );
+    const result = await signInThroughIdp(configured, {
+      email: "person@contoso.com",
+      callbackURL,
+    });
+    expect(result.location).toBe(callbackURL);
+    expect(issuer.tokenRequests).toHaveLength(1);
+    expect(
+      issuer.tokenRequests[0]!.clientId === platformApps[application]!.clientId,
+    ).toBe(true);
+    expect(
+      issuer.tokenRequests[0]!.clientSecret ===
+        platformApps[application]!.clientSecret,
+    ).toBe(true);
+    const [provider] = await connection.db.select().from(ssoProviders);
+    expect(JSON.parse(provider!.oidcConfig!)).not.toHaveProperty("clientId");
+    expect(JSON.parse(provider!.oidcConfig!)).not.toHaveProperty(
+      "clientSecret",
+    );
+    const [session] = await connection.db.select().from(sessions);
+    expect(session).toMatchObject({
+      authenticationOrganizationId: organization.id,
+      authenticationProviderId: provider!.id,
+      authenticationProviderRevision: provider!.revision,
+    });
+  });
+}
+test("platform sign-in fails closed before state or session creation when unconfigured", async () => {
+  await seedProvider({ credentials: "platform" });
+  const log = spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const response = await platformApp({}).request("/auth/sign-in/sso", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: new URL(callbackURL).origin,
+      },
+      body: JSON.stringify({ email: "person@contoso.com", callbackURL }),
+    });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      code: "platform_application_missing",
+    });
+    expect(await connection.db.select().from(sessions)).toHaveLength(0);
+    expect(await connection.db.select().from(verifications)).toHaveLength(0);
+    expect(issuer.tokenRequests).toHaveLength(0);
+  } finally {
+    log.mockRestore();
+  }
+});
+for (const change of ["removed", "client-id", "secret"] as const) {
+  test(`platform application ${change} change between sign-in and callback`, async () => {
+    await seedProvider({ credentials: "platform" });
+    issuer.enqueue(entraClaims());
+    const log = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const updated =
+        change === "removed"
+          ? {}
+          : {
+              ...platformApps,
+              microsoft: {
+                ...platformApps.microsoft!,
+                ...(change === "client-id"
+                  ? { clientId: "changed-id" }
+                  : { clientSecret: "changed-secret" }),
+              },
+            };
+      const result = await signInThroughIdp(
+        platformApp(),
+        { email: "person@contoso.com", callbackURL, errorCallbackURL },
+        async () => platformApp(updated),
+      );
+      if (change === "removed") {
+        expect(result.response.status).toBe(503);
+        expect(await result.response.json()).toMatchObject({
+          code: "platform_application_missing",
+        });
+      } else if (change === "client-id") {
+        expect(result.response.status).toBe(302);
+        expect(errorCode(result.location)).toBe("invalid_state");
+        expect(
+          new URL(result.location!).searchParams.get("error_description"),
+        ).toBe("sso_provider_changed_during_authentication");
+      } else {
+        expect(result.location).toBe(callbackURL);
+        expect(issuer.tokenRequests[0]!.clientSecret === "changed-secret").toBe(
+          true,
+        );
+      }
+      expect(await connection.db.select().from(sessions)).toHaveLength(
+        change === "secret" ? 1 : 0,
+      );
+      expect(issuer.tokenRequests).toHaveLength(change === "secret" ? 1 : 0);
+    } finally {
+      log.mockRestore();
+    }
+  });
+}
+test("adapter hydrates single, multiple and transactional provider reads before observation", async () => {
+  await seedProvider({ credentials: "platform" });
+  const options = createAuth(runtime.db, testEnvironment()).options;
+  const observed: unknown[][] = [];
+  const adapter = authDatabaseAdapter(
+    runtime.db,
+    async (rows) => {
+      observed.push(rows);
+    },
+    undefined,
+    platformApps,
+  )(options);
+  const input = {
+    model: "ssoProvider",
+    where: [{ field: "providerId", value: "contoso" }],
+  };
+  const check = async (bound: Pick<typeof adapter, "findOne" | "findMany">) => {
+    const row = await bound.findOne<{ oidcConfig: string }>(input);
+    const rows = await bound.findMany<{ oidcConfig: string }>(input);
+    expect(rows).toHaveLength(1);
+    for (const current of [row!, ...rows]) {
+      const config = JSON.parse(current.oidcConfig);
+      expect(config.clientId === platformApps.microsoft!.clientId).toBe(true);
+      expect(config.clientSecret === platformApps.microsoft!.clientSecret).toBe(
+        true,
+      );
+    }
+    expect(observed.at(-2)![0]).toEqual(row);
+    expect(observed.at(-1)).toEqual(rows);
+  };
+  await check(adapter);
+  await adapter.transaction(check);
+  const unavailable = authDatabaseAdapter(
+    runtime.db,
+    undefined,
+    undefined,
+    {},
+  )(options);
+  const log = spyOn(console, "error").mockImplementation(() => {});
+  try {
+    for (const method of ["findOne", "findMany"] as const) {
+      await expect(unavailable[method](input)).rejects.toMatchObject({
+        body: { code: "platform_application_missing" },
+      });
+      await expect(
+        unavailable.transaction((bound) => bound[method](input)),
+      ).rejects.toMatchObject({
+        body: { code: "platform_application_missing" },
+      });
+    }
+  } finally {
+    log.mockRestore();
+  }
 });
