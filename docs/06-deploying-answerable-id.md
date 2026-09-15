@@ -120,6 +120,7 @@ curl -s https://id.answerable.org/healthz      # {"status":"ok"} without touchin
 curl -s https://id.answerable.org/readyz       # {"status":"ok"} after one select 1
 curl -s https://id.answerable.org/.well-known/openid-configuration | jq .issuer
 curl -s https://id.answerable.org/auth/jwks    # first call generates the signing key
+curl -s https://id.answerable.org/platform-applications  # {"google":…,"microsoft":…} from the four credential variables
 ```
 
 **5. Preflight the keys** once JWKS exists. This decrypts every stored signing key and upstream token with the delivered secrets and exits non-zero if any key is wrong.
