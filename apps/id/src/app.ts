@@ -26,10 +26,6 @@ const requestIdPattern = /^[A-Za-z0-9._:-]{1,128}$/;
 
 const statusSchema = z.object({ status: z.literal("ok") });
 const unavailableSchema = z.object({ status: z.literal("unavailable") });
-const platformApplicationsSchema = z.object({
-  google: z.boolean(),
-  microsoft: z.boolean(),
-});
 
 export type AppServices = {
   auth: Auth;
@@ -83,11 +79,6 @@ export function createApp(services: AppServices) {
   app.use(
     "/auth/*",
     cors({ origin: services.environment.trustedOrigins, credentials: true }),
-  );
-
-  app.use(
-    "/platform-applications",
-    cors({ origin: services.environment.trustedOrigins }),
   );
 
   app.use(
@@ -176,36 +167,6 @@ export function createApp(services: AppServices) {
       } catch {
         return context.json({ status: "unavailable" as const }, 503);
       }
-    },
-  );
-
-  app.get(
-    "/platform-applications",
-    describeRoute({
-      operationId: "getPlatformApplications",
-      summary: "Read which platform applications can sign people in",
-      tags: ["Sign-in"],
-      description:
-        "Report whether Answerable's shared Google and Microsoft applications have credentials in the service environment. An organisation whose SSO provider uses an unavailable application cannot sign in and receives platform_application_missing; organisations with their own credentials are unaffected. Availability changes only when the service restarts with different credentials.",
-      responses: {
-        200: {
-          description: "Availability of each platform application",
-          content: {
-            "application/json": {
-              schema: resolver(platformApplicationsSchema),
-              example: { google: false, microsoft: true },
-            },
-          },
-        },
-      },
-    }),
-    (context) => {
-      const { google, microsoft } = services.environment.platformApplications;
-      context.header("Cache-Control", "no-store");
-      return context.json({
-        google: google !== undefined,
-        microsoft: microsoft !== undefined,
-      });
     },
   );
 

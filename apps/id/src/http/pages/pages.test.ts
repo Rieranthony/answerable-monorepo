@@ -467,7 +467,7 @@ test("page mounting preserves issuer discovery at both public paths", async () =
   }
 });
 
-test("login footer shows directory availability without credentials", async () => {
+test("login footer shows supported directories regardless of platform credentials", async () => {
   const microsoft = {
     clientId: "private-microsoft-id",
     clientSecret: "private-microsoft-secret",
@@ -483,11 +483,8 @@ test("login footer shows directory availability without credentials", async () =
       "Microsoft Entra ID",
       "Google Workspace",
     );
-    const unavailable = 2 - Object.keys(applications).length;
-    expect(text.match(/Not available/g) ?? []).toHaveLength(unavailable);
-    expect(
-      text.match(/size-4 shrink-0 opacity-40 grayscale/g) ?? [],
-    ).toHaveLength(unavailable);
+    expect(text).not.toContain("Not available");
+    expect(text).not.toContain("grayscale");
     for (const value of [...Object.values(microsoft), ...Object.values(google)])
       expect(text).not.toContain(value);
     expect(text).not.toContain("style=");
@@ -511,7 +508,7 @@ test("invalid email re-renders with the footer without calling auth", async () =
     expect(f.requests).toHaveLength(0);
   }
 });
-test("other pages do not show directory availability", async () => {
+test("other pages do not show the directory footer", async () => {
   for (const path of ["/error", "/security", "/authorize", "/consent"]) {
     const text = await html(await fixture().app.request(path));
     expect(text).not.toContain("Works with");

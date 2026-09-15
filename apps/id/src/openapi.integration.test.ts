@@ -53,7 +53,6 @@ test("the public OpenAPI snapshot matches the served document", async () => {
     if (
       [
         "/healthz",
-        "/platform-applications",
         "/readyz",
         "/.well-known/openid-configuration",
         "/.well-known/oauth-authorization-server",
