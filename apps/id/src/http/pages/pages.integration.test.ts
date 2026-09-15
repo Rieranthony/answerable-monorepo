@@ -1,3 +1,10 @@
+import { spyOn } from "bun:test";
+import { createApp } from "../../app.ts";
+import { stubAuth } from "../../__tests__/support.ts";
+import {
+  createOrganizationDomain,
+  setOrganizationDomainStatus,
+} from "../../__tests__/domain-queries.ts";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import {
@@ -24,6 +31,10 @@ const verifier = "v".repeat(64);
 beforeEach(async () => {
   fixture = undefined!;
   fixture = await createAdminFixture();
+  await createOrganizationDomain(fixture.db, {
+    organizationId: fixture.tenant.organizationId,
+    domain: "second.example.com",
+  });
   await fixture.db.insert(oauthClients).values({
     id: createId(),
     clientId,
@@ -240,4 +251,176 @@ test("security renders both actions and forwards verification state cookies", as
     fixture.issuer.origin,
   );
   expect(cookie(verify)).not.toBe("");
+});
+
+type Reply = {
+  data?: unknown;
+  status?: number;
+  cookies?: string[];
+  throws?: boolean;
+};
+function scriptedFixture(replies: Record<string, Reply> = {}) {
+  const requests: {
+    path: string;
+    method: string;
+    headers: Headers;
+    body: unknown;
+  }[] = [];
+  const auth = stubAuth();
+  auth.handler = async (request) => {
+    const path = new URL(request.url).pathname;
+    requests.push({
+      path,
+      method: request.method,
+      headers: request.headers,
+      body: request.method === "POST" ? await request.json() : undefined,
+    });
+    const reply = replies[path] ?? {
+      data:
+        path === "/auth/get-session"
+          ? null
+          : { url: "https://issuer.example/next" },
+    };
+    if (reply.throws) throw new Error("Unavailable");
+    return Response.json(reply.data ?? null, {
+      status: reply.status ?? 200,
+      headers: reply.cookies?.map((value) => ["set-cookie", value]),
+    });
+  };
+  return {
+    app: createApp({
+      auth,
+      db: fixture.db,
+      environment: fixture.environment,
+    }),
+    requests,
+  };
+}
+function post(
+  body: Record<string, string> = {},
+  origin = "http://localhost:47300",
+) {
+  return {
+    method: "POST",
+    headers: {
+      origin,
+      cookie: "session=old",
+      "content-type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams(body),
+  };
+}
+
+const query = "client_id=client&sig=signed";
+test("email routing preserves SSO request headers, cookies and OAuth query", async () => {
+  for (const suffix of ["", "?" + query]) {
+    const f = scriptedFixture({
+      "/auth/sign-in/sso": {
+        data: { url: "https://issuer.example" },
+        cookies: ["state=abc", "state2=def"],
+      },
+    });
+    const response = await f.app.request(
+      "/login" + suffix,
+      post({ email: "person@second.example.com" }, "https://foreign.example"),
+    );
+    expect(response.status).toBe(302);
+    expect(response.headers.getSetCookie()).toEqual([
+      "state=abc",
+      "state2=def",
+    ]);
+    const sent = f.requests[0]!;
+    expect(sent.headers.get("origin")).toBe("https://foreign.example");
+    expect(sent.headers.get("cookie")).toBe("session=old");
+    expect(sent.body).toEqual({
+      organizationSlug: "tenant",
+      loginHint: "person@second.example.com",
+      callbackURL: "http://localhost:47300/login" + (suffix || "?"),
+      errorCallbackURL: "http://localhost:47300/error",
+      ...(suffix ? { oauth_query: query } : {}),
+    });
+  }
+});
+
+test("typed email SSO failures retain the form, address and footer", async () => {
+  for (const reply of [
+    { data: { code: "platform_application_missing" }, status: 400 },
+    { data: {} },
+    { throws: true },
+    {},
+  ]) {
+    const response = await scriptedFixture({
+      "/auth/sign-in/sso": reply,
+    }).app.request("/login", post({ email: "person@second.example.com" }));
+    expect(response.status).toBe(200);
+    const text = await response.text();
+    for (const value of [
+      'role="alert"',
+      "Work email",
+      'value="person@second.example.com"',
+      "Works with",
+    ])
+      expect(text).toContain(value);
+  }
+});
+test("a routing lookup failure retains the login form", async () => {
+  await fixture.close();
+  const response = await page("/login", "", {
+    email: "person@second.example.com",
+  });
+  expect(response.status).toBe(200);
+  const text = await response.text();
+  expect(text).toContain("Works with");
+  expect(text).toContain('role="alert"');
+  expect(text).toContain("couldn&#39;t find your organisation");
+  expect(text).toContain('value="person@second.example.com"');
+  expect(response.headers.getSetCookie()).toEqual([]);
+  fixture = undefined!;
+});
+test("a second organisation domain signs in with a normalised login hint", async () => {
+  fixture.issuer.enqueue({
+    sub: "second-domain-person",
+    email: "person@second.example.com",
+    email_verified: true,
+    auth_time: Math.floor(Date.now() / 1000),
+  });
+  const started = await page("/login", "", {
+    email: " Person@SECOND.EXAMPLE.COM ",
+  });
+  const url = new URL(started.headers.get("location")!);
+  expect(url.origin).toBe(fixture.issuer.origin);
+  expect(url.pathname).toBe("/authorize");
+  expect(url.searchParams.get("login_hint")).toBe("person@second.example.com");
+  const completed = await finishSso(started);
+  expect(cookie(completed)).not.toBe("");
+  expect(await (await page("/login", cookie(completed))).text()).toContain(
+    "Signed in as person@second.example.com",
+  );
+});
+test("unknown and disabled domains do not start SSO or contact the issuer", async () => {
+  const domain = await createOrganizationDomain(fixture.db, {
+    organizationId: fixture.tenant.organizationId,
+    domain: "disabled.example.com",
+  });
+  await setOrganizationDomainStatus(
+    fixture.db,
+    fixture.tenant.organizationId,
+    domain.id,
+    "disabled",
+  );
+  const fetchSpy = spyOn(globalThis, "fetch");
+  try {
+    for (const domain of ["unknown.example.com", "disabled.example.com"]) {
+      fetchSpy.mockClear();
+      const response = await page("/login", "", { email: "person@" + domain });
+      expect(response.status).toBe(200);
+      const text = await response.text();
+      expect(text).toContain("couldn&#39;t find your organisation");
+      expect(text).toContain("Works with");
+      expect(response.headers.getSetCookie()).toEqual([]);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    }
+  } finally {
+    fetchSpy.mockRestore();
+  }
 });

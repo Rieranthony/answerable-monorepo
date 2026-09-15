@@ -1,3 +1,5 @@
+import { findDomainOrganizationSlug } from "../../../db/queries/organization-domains.ts";
+import { DirectoryAvailability } from "../views/directory-availability.tsx";
 import type { Hono } from "hono";
 import { jsx } from "hono/jsx";
 import type { AppEnvironment } from "../../context.ts";
@@ -13,7 +15,7 @@ import { LoginForm, SignedIn } from "../views/login.tsx";
 
 export async function startSignIn(
   context: PageContext,
-  identity: { email: string } | { organizationSlug: string },
+  identity: { organizationSlug: string; loginHint?: string },
   callbackURL: string,
   origin: string | null,
 ) {
@@ -57,7 +59,12 @@ async function renderLogin(context: PageContext, message?: ErrorDescription) {
     if (pending) return context.redirect(`/authorize?${pending}`, 302);
     return context.render(
       jsx(SignedIn, { email, query: query.toString(), message }),
-      { title: "Sign in" },
+      {
+        title: "Sign in",
+        footer: jsx(DirectoryAvailability, {
+          applications: context.get("environment").platformApplications,
+        }),
+      },
     );
   }
   if (route.mode === "auto" && !message) {
@@ -81,7 +88,12 @@ async function renderLogin(context: PageContext, message?: ErrorDescription) {
       query: query.toString(),
       message,
     }),
-    { title: "Sign in" },
+    {
+      title: "Sign in",
+      footer: jsx(DirectoryAvailability, {
+        applications: context.get("environment").platformApplications,
+      }),
+    },
   );
 }
 
@@ -90,26 +102,41 @@ export function registerLogin(app: Hono<AppEnvironment>) {
   app.post("/login", async (context) => {
     const query = new URL(context.req.url).searchParams;
     const body = await context.req.parseBody();
-    const email = typeof body.email === "string" ? body.email.trim() : "";
+    const email =
+      typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
     let message = describeSSOError(undefined);
-    if (email) {
+    const domain = email.slice(email.lastIndexOf("@") + 1);
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       try {
-        const result = await startSignIn(
-          context,
-          { email },
-          `${serviceOrigin(context)}/login?${query}`,
-          context.req.header("origin") ?? null,
+        const slug = await findDomainOrganizationSlug(
+          context.get("db"),
+          domain,
         );
-        if (result.ok && result.data?.url)
-          return context.redirect(result.data.url, 302);
-        message = describeSSOError(result.data?.code);
+        if (!slug) {
+          message = describeSSOError("provider_not_found");
+        } else {
+          const result = await startSignIn(
+            context,
+            { organizationSlug: slug, loginHint: email },
+            `${serviceOrigin(context)}/login?${query}`,
+            context.req.header("origin") ?? null,
+          );
+          if (result.ok && result.data?.url)
+            return context.redirect(result.data.url, 302);
+          message = describeSSOError(result.data?.code);
+        }
       } catch {
         message = describeSSOError(undefined);
       }
     }
     return context.render(
       jsx(LoginForm, { email, query: query.toString(), message }),
-      { title: "Sign in" },
+      {
+        title: "Sign in",
+        footer: jsx(DirectoryAvailability, {
+          applications: context.get("environment").platformApplications,
+        }),
+      },
     );
   });
   app.post("/sign-out", async (context) => {

@@ -4,9 +4,11 @@ import { Logo } from "../ui/logo.tsx";
 export function Document({
   title,
   children,
+  footer,
 }: {
   title: string;
   children: Child;
+  footer?: Child;
 }) {
   return (
     <html lang="en" class="dark">
@@ -18,13 +20,12 @@ export function Document({
         <link rel="stylesheet" href="/assets/tailwind.css" />
       </head>
       <body>
-        <div class="flex min-h-svh flex-col">
-          <header class="px-6 py-6">
+        <div class="grid min-h-svh grid-rows-[1fr_auto_1fr] gap-y-16 px-6 py-6">
+          <header class="self-start">
             <Logo class="h-auto w-32" />
           </header>
-          <main class="flex grow items-center justify-center px-6 py-16">
-            <section class="w-full max-w-sm">{children}</section>
-          </main>
+          <main class="mx-auto w-full max-w-sm">{children}</main>
+          {footer}
         </div>
       </body>
     </html>

@@ -1,3 +1,4 @@
+import type { PlatformApplications } from "../../auth/platform-applications.ts";
 import { expect, test } from "bun:test";
 import { createApp } from "../../app.ts";
 import {
@@ -36,7 +37,10 @@ type Reply = {
   cookies?: string[];
   throws?: boolean;
 };
-function fixture(replies: Record<string, Reply> = {}) {
+function fixture(
+  replies: Record<string, Reply> = {},
+  platformApplications: PlatformApplications = {},
+) {
   const requests: {
     path: string;
     method: string;
@@ -70,7 +74,7 @@ function fixture(replies: Record<string, Reply> = {}) {
     app: createApp({
       auth,
       db: stubDatabase(),
-      environment: testEnvironment(),
+      environment: testEnvironment({ platformApplications }),
     }),
     requests,
   };
@@ -118,6 +122,7 @@ test("login renders signed-out, signed-in, hinted and forced-authentication stat
   await html(
     await fixture(signedIn).app.request("/login"),
     "Signed in as person@example.com",
+    "Works with",
     "Verify sign-in or connect a work account",
     'action="/sign-out?"',
   );
@@ -129,32 +134,6 @@ test("login renders signed-out, signed-in, hinted and forced-authentication stat
       await fixture(signedIn).app.request("/login?" + query + "&" + forced),
       "Work email",
     );
-  for (const suffix of ["", "?" + query]) {
-    const f = fixture({
-      "/auth/sign-in/sso": {
-        data: { url: "https://issuer.example" },
-        cookies: ["state=abc", "state2=def"],
-      },
-    });
-    const response = await f.app.request(
-      "/login" + suffix,
-      post({ email: "person@example.com" }, "https://foreign.example"),
-    );
-    expect(response.status).toBe(302);
-    expect(response.headers.getSetCookie()).toEqual([
-      "state=abc",
-      "state2=def",
-    ]);
-    const sent = f.requests[0]!;
-    expect(sent.headers.get("origin")).toBe("https://foreign.example");
-    expect(sent.headers.get("cookie")).toBe("session=old");
-    expect(sent.body).toEqual({
-      email: "person@example.com",
-      callbackURL: "http://localhost:47300/login" + (suffix || "?"),
-      errorCallbackURL: "http://localhost:47300/error",
-      ...(suffix ? { oauth_query: query } : {}),
-    });
-  }
 });
 test("automatic sign-in and sign-in errors retain the form and email", async () => {
   const f = fixture();
@@ -168,16 +147,13 @@ test("automatic sign-in and sign-in errors retain the form and email", async () 
     { throws: true },
     {},
   ]) {
-    for (const auto of [true, false])
-      await html(
-        await fixture({ "/auth/sign-in/sso": reply }).app.request(
-          auto ? "/login?organization=tenant" : "/login",
-          auto ? undefined : post({ email: "person@example.com" }),
-        ),
-        'role="alert"',
-        "Work email",
-        ...(auto ? [] : ['value="person@example.com"']),
-      );
+    await html(
+      await fixture({ "/auth/sign-in/sso": reply }).app.request(
+        "/login?organization=tenant",
+      ),
+      'role="alert"',
+      "Work email",
+    );
   }
   await html(await fixture().app.request("/login", post()), 'role="alert"');
 });
@@ -200,6 +176,7 @@ test("sign-out clears cookies and handles service failures", async () => {
       }).app.request("/sign-out", post()),
       "couldn&#39;t sign you out",
       "Please try again.",
+      "Works with",
     );
   await html(
     await fixture({ "/auth/sign-out": { status: 400 } }).app.request(
@@ -487,5 +464,57 @@ test("page mounting preserves issuer discovery at both public paths", async () =
       issuer: "http://localhost:47300",
     });
     expect(response.headers.get("content-security-policy")).toBeNull();
+  }
+});
+
+test("login footer shows directory availability without credentials", async () => {
+  const microsoft = {
+    clientId: "private-microsoft-id",
+    clientSecret: "private-microsoft-secret",
+  };
+  const google = {
+    clientId: "private-google-id",
+    clientSecret: "private-google-secret",
+  };
+  for (const applications of [{ microsoft, google }, { microsoft }, {}]) {
+    const text = await html(
+      await fixture({}, applications).app.request("/login"),
+      "Works with",
+      "Microsoft Entra ID",
+      "Google Workspace",
+    );
+    const unavailable = 2 - Object.keys(applications).length;
+    expect(text.match(/Not available/g) ?? []).toHaveLength(unavailable);
+    expect(
+      text.match(/size-4 shrink-0 opacity-40 grayscale/g) ?? [],
+    ).toHaveLength(unavailable);
+    for (const value of [...Object.values(microsoft), ...Object.values(google)])
+      expect(text).not.toContain(value);
+    expect(text).not.toContain("style=");
+  }
+});
+test("invalid email re-renders with the footer without calling auth", async () => {
+  for (const email of [
+    "",
+    "missing-at",
+    "person@",
+    "@example.com",
+    "person@bad domain",
+    "person@@example.com",
+  ]) {
+    const f = fixture();
+    await html(
+      await f.app.request("/login", post({ email })),
+      'role="alert"',
+      "Works with",
+    );
+    expect(f.requests).toHaveLength(0);
+  }
+});
+test("other pages do not show directory availability", async () => {
+  for (const path of ["/error", "/security", "/authorize", "/consent"]) {
+    const text = await html(await fixture().app.request(path));
+    expect(text).not.toContain("Works with");
+    expect(text).not.toContain("<footer");
   }
 });
