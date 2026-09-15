@@ -13,6 +13,14 @@ description: "How sign-in works today: your organisation's identity provider, ch
 
 Answerable's own Google and Microsoft applications carry the redirect to `https://id.answerable.org/auth/sso/callback` when the organisation uses [platform credentials](/docs/id/onboard#connect-the-directory).
 
+## Check which company accounts work
+
+```bash
+curl https://id.answerable.org/platform-applications
+```
+
+The response reads `{"google":false,"microsoft":true}` when only the Microsoft application has credentials. The sign-in page greys out a company account that is not available. An organisation that uses an unavailable application gets `platform_application_missing`; an organisation with its own credentials is unaffected.
+
 ## Start sign-in
 
 ```bash
