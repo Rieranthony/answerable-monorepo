@@ -1,5 +1,5 @@
 import { findDomainOrganizationSlug } from "../../../db/queries/organization-domains.ts";
-import { DirectoryAvailability } from "../views/directory-availability.tsx";
+import { DirectoryLogos } from "../views/directory-logos.tsx";
 import type { Hono } from "hono";
 import { jsx } from "hono/jsx";
 import type { AppEnvironment } from "../../context.ts";
@@ -61,9 +61,7 @@ async function renderLogin(context: PageContext, message?: ErrorDescription) {
       jsx(SignedIn, { email, query: query.toString(), message }),
       {
         title: "Sign in",
-        footer: jsx(DirectoryAvailability, {
-          applications: context.get("environment").platformApplications,
-        }),
+        footer: jsx(DirectoryLogos, {}),
       },
     );
   }
@@ -90,9 +88,7 @@ async function renderLogin(context: PageContext, message?: ErrorDescription) {
     }),
     {
       title: "Sign in",
-      footer: jsx(DirectoryAvailability, {
-        applications: context.get("environment").platformApplications,
-      }),
+      footer: jsx(DirectoryLogos, {}),
     },
   );
 }
@@ -133,9 +129,7 @@ export function registerLogin(app: Hono<AppEnvironment>) {
       jsx(LoginForm, { email, query: query.toString(), message }),
       {
         title: "Sign in",
-        footer: jsx(DirectoryAvailability, {
-          applications: context.get("environment").platformApplications,
-        }),
+        footer: jsx(DirectoryLogos, {}),
       },
     );
   });

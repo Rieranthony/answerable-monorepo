@@ -4143,44 +4143,6 @@
         }
       }
     },
-    "/platform-applications": {
-      "get": {
-        "operationId": "getPlatformApplications",
-        "summary": "Read which platform applications can sign people in",
-        "tags": [
-          "Sign-in"
-        ],
-        "description": "Report whether Answerable's shared Google and Microsoft applications have credentials in the service environment. An organisation whose SSO provider uses an unavailable application cannot sign in and receives platform_application_missing; organisations with their own credentials are unaffected. Availability changes only when the service restarts with different credentials.",
-        "responses": {
-          "200": {
-            "description": "Availability of each platform application",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "google": {
-                      "type": "boolean"
-                    },
-                    "microsoft": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "google",
-                    "microsoft"
-                  ]
-                },
-                "example": {
-                  "google": false,
-                  "microsoft": true
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/readyz": {
       "get": {
         "operationId": "getReadiness",

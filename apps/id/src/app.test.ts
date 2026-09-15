@@ -262,7 +262,6 @@ describe("unit: Hono application", () => {
       "/auth/sso/link",
       "/auth/sso/reauthenticate",
       "/healthz",
-      "/platform-applications",
       "/readyz",
     ]);
     for (const route of publicAuthRoutes) {
@@ -800,43 +799,3 @@ for (const header of ["X-HTTP-Method-Override", "X-Method-Override"]) {
     expect(reached).toEqual(["GET /auth/ok"]);
   });
 }
-
-test("platform application availability follows the environment and trusted browser origins", async () => {
-  const credentials = {
-    clientId: "availability-client",
-    clientSecret: "availability-secret",
-  };
-  for (const { platformApplications, expected } of [
-    { platformApplications: {}, expected: { google: false, microsoft: false } },
-    {
-      platformApplications: { microsoft: credentials },
-      expected: { google: false, microsoft: true },
-    },
-    {
-      platformApplications: { google: credentials, microsoft: credentials },
-      expected: { google: true, microsoft: true },
-    },
-  ]) {
-    const app = createApp({
-      auth: stubAuth(),
-      db: stubDatabase(),
-      environment: testEnvironment({
-        platformApplications,
-        trustedOrigins: ["https://pages.example"],
-      }),
-    });
-    for (const origin of ["https://pages.example", "https://evil.example"]) {
-      const response = await app.request("/platform-applications", {
-        headers: { Origin: origin },
-      });
-      const body = await response.text();
-      expect(response.status).toBe(200);
-      expect(response.headers.get("cache-control")).toBe("no-store");
-      expect(response.headers.get("access-control-allow-origin")).toBe(
-        origin === "https://pages.example" ? origin : null,
-      );
-      expect(JSON.parse(body)).toEqual(expected);
-      expect(body.includes("availability-")).toBe(false);
-    }
-  }
-});
