@@ -39,6 +39,8 @@ bun --env-file=.env run --filter @answerable/id db:migrate
 bun dev
 ```
 
+`default.env` lists every variable the monorepo reads, with empty values. Add a new variable there as well as to the working template; the ID test suite checks it.
+
 `apps/web` reads its own env file: `cp apps/web/.env.example apps/web/.env.local`. The waitlist form writes to a Google Sheet through a service account (`GOOGLE_SHEETS_ID`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`). All three are optional locally (without them the form logs the address to the terminal and reports success) and required in production, where the form returns an error if any is missing. The file walks through creating the service account and sharing the sheet.
 
 | Service    | Host port | Purpose                                                       |

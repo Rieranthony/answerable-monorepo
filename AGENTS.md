@@ -47,4 +47,5 @@ Here's how we write documentation. These are Lee Robinson's ten principles (http
 - Ports: web 47100 · id 47300 · postgres 47432 · redis 47379.
 - Style: Prettier without semicolons in `apps/web`, `packages/ui` and `packages/countries`, with semicolons in `apps/id`. Tests are colocated `*.test.ts`; `apps/id` enforces 100% line and function coverage, integration tests end in `.integration.test.ts`.
 - OpenAPI: `bun --env-file=.env run --filter @answerable/id openapi:export` regenerates `apps/id/openapi.json` and `apps/id/openapi.admin.json`; tests fail when either drifts.
+- Env: `default.env` is the tracked inventory of every variable, with empty values; add new variables there and to `.env.example`. `.env` files stay ignored and never hold committed values.
 - Commits: imperative, sentence case, no prefix, no trailing period.

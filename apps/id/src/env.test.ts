@@ -4,6 +4,7 @@ import {
   EnvironmentValidationError,
   loadEnvironment,
   parseEnvironment,
+  environmentVariableNames,
 } from "./env.ts";
 
 const requiredEnvironment = {
@@ -411,4 +412,36 @@ test("platform application pairs parse in every environment and blank values are
       }
     }
   }
+});
+
+test("default.env lists every variable with an empty value", async () => {
+  const assignments = (
+    await Bun.file(new URL("../../../default.env", import.meta.url)).text()
+  )
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !line.startsWith("#"));
+  const names = assignments.map((line) => line.split("=", 1)[0]!);
+  expect(
+    assignments
+      .filter((line) => !/^[A-Z][A-Z0-9_]*=$/.test(line))
+      .map((line) => line.split("=", 1)[0]),
+    "default.env holds names with empty values only",
+  ).toEqual([]);
+  expect(names.filter((name, index) => names.indexOf(name) !== index)).toEqual(
+    [],
+  );
+  // Read outside the service schema: migrations, the test database and the OpenAPI export.
+  const tooling = [
+    "DATABASE_MIGRATION_URL",
+    "DATABASE_RUNTIME_ROLE",
+    "PUBLIC_ID_URL",
+    "TEST_DATABASE_URL",
+  ];
+  expect(
+    [...environmentVariableNames, ...tooling].filter(
+      (name) => !names.includes(name),
+    ),
+    "Add the missing variables to default.env",
+  ).toEqual([]);
 });

@@ -261,6 +261,9 @@ const environmentSchema = z
         : environment.OPENAPI_ENABLED === "true",
   }));
 
+/** Every variable the service reads; default.env at the repository root lists each one. */
+export const environmentVariableNames = Object.keys(environmentSchema.in.shape);
+
 export type Environment = z.output<typeof environmentSchema>;
 
 export class EnvironmentValidationError extends Error {
