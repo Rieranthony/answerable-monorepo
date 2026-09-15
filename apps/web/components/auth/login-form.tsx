@@ -5,14 +5,9 @@ import Link from "next/link"
 
 import { Button } from "@answerable/ui/components/button"
 import { Input } from "@answerable/ui/components/input"
-import { DirectoryAvailability } from "@/components/auth/directory-availability"
 import { authClient } from "@/lib/auth/client"
 import { describeSSOError, type ErrorDescription } from "@/lib/auth/error-copy"
 import type { LoginRoute } from "@/lib/auth/login-routing"
-import {
-  readPlatformApplications,
-  type PlatformApplications,
-} from "@/lib/auth/platform-applications"
 
 interface LoginFormProps {
   route: LoginRoute
@@ -28,9 +23,6 @@ export function LoginForm({ route, oauthQuery }: LoginFormProps) {
   const [sessionEmail, setSessionEmail] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [message, setMessage] = useState<ErrorDescription | null>(null)
-  const [applications, setApplications] = useState<PlatformApplications | null>(
-    null,
-  )
   const autoStarted = useRef(false)
   const oauthParameters = new URLSearchParams(oauthQuery ?? "")
   const mustAuthenticate =
@@ -57,21 +49,6 @@ export function LoginForm({ route, oauthQuery }: LoginFormProps) {
       .finally(() => {
         if (active) setCheckingSession(false)
       })
-
-    return () => {
-      active = false
-    }
-  }, [])
-
-  useEffect(() => {
-    let active = true
-
-    // Unknown availability renders nothing; sign-in itself still works.
-    void readPlatformApplications(process.env.NEXT_PUBLIC_ID_URL).then(
-      (result) => {
-        if (active) setApplications(result)
-      },
-    )
 
     return () => {
       active = false
@@ -238,7 +215,6 @@ export function LoginForm({ route, oauthQuery }: LoginFormProps) {
           <span className="block font-normal">{message.body}</span>
         </p>
       )}
-      {applications && <DirectoryAvailability applications={applications} />}
     </section>
   )
 }
