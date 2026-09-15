@@ -1,3 +1,6 @@
+import { eq } from "drizzle-orm";
+import { organizations, organizationDomains } from "../schema/index.ts";
+import { findDomainOrganizationSlug } from "./organization-domains.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import * as queries from "../../__tests__/domain-queries.ts";
@@ -101,4 +104,47 @@ test("domain queries scope rows, paginate newest first, filter and enforce activ
   expect(
     await queries.setOrganizationDomainStatus(db, a.id, first.id, "active"),
   ).toMatchObject({ status: "active" });
+});
+
+test("domain routing requires an active, undeleted domain and organisation", async () => {
+  const db = connection.db;
+  const organization = await createOrganization(db, {
+    slug: "routing",
+    name: "Routing",
+  });
+  const domain = await queries.createOrganizationDomain(db, {
+    organizationId: organization.id,
+    domain: "routing.example.com",
+  });
+  expect(await findDomainOrganizationSlug(db, domain.domain)).toBe("routing");
+  expect(await findDomainOrganizationSlug(db, " ROUTING.EXAMPLE.COM ")).toBe(
+    "routing",
+  );
+  expect(
+    await findDomainOrganizationSlug(db, "unknown.example.com"),
+  ).toBeNull();
+  for (const [index, target] of [
+    organizationDomains,
+    organizationDomains,
+    organizations,
+    organizations,
+  ].entries()) {
+    const owner = await createOrganization(db, {
+      slug: `routing-${index}`,
+      name: "Routing",
+    });
+    const entry = await queries.createOrganizationDomain(db, {
+      organizationId: owner.id,
+      domain: `routing-${index}.example.com`,
+    });
+    await db
+      .update(target)
+      .set({
+        status: "disabled",
+        ...(target === organizations ? { disabledAt: new Date() } : {}),
+        ...(index % 2 ? { deletedAt: new Date() } : {}),
+      })
+      .where(eq(target.id, target === organizations ? owner.id : entry.id));
+    expect(await findDomainOrganizationSlug(db, entry.domain)).toBeNull();
+  }
 });

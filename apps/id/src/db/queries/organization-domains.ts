@@ -1,3 +1,4 @@
+import type { Executor } from "../client.ts";
 import { sql } from "drizzle-orm";
 import {
   requirePlatformWriteContext,
@@ -60,6 +61,28 @@ export async function organizationAcceptsDomain(
     .limit(1);
 
   return organization !== undefined;
+}
+
+export async function findDomainOrganizationSlug(db: Executor, domain: string) {
+  const [organization] = await db
+    .select({ slug: organizations.slug })
+    .from(organizationDomains)
+    .innerJoin(
+      organizations,
+      eq(organizationDomains.organizationId, organizations.id),
+    )
+    .where(
+      and(
+        sql`${organizations.deletedAt} is null`,
+        sql`${organizationDomains.deletedAt} is null`,
+        eq(organizationDomains.domain, normalizeDomain(domain)),
+        eq(organizationDomains.status, "active"),
+        eq(organizations.status, "active"),
+      ),
+    )
+    .limit(1);
+
+  return organization?.slug ?? null;
 }
 
 export type DomainQuery = PageQuery & { status?: LifecycleStatus };

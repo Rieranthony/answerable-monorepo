@@ -1,5 +1,7 @@
 import type { ComponentProps } from "react"
 
+import { MICROSOFT_LOGO } from "@answerable/ui/lib/directory-logos"
+
 import { cn } from "@answerable/ui/lib/utils"
 
 /**
@@ -10,16 +12,15 @@ function MicrosoftLogo({ className, ...props }: ComponentProps<"svg">) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 21 21"
+      viewBox={MICROSOFT_LOGO.viewBox}
       aria-hidden="true"
       data-slot="microsoft-logo"
       className={cn("size-4 shrink-0", className)}
       {...props}
     >
-      <rect x="1" y="1" width="9" height="9" fill="#F25022" />
-      <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
-      <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
-      <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
+      {MICROSOFT_LOGO.paths.map((path) => (
+        <path key={path.d} fill={path.fill} d={path.d} />
+      ))}
     </svg>
   )
 }

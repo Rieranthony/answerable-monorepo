@@ -15,7 +15,10 @@ import { registerError } from "./routes/error.ts";
 
 declare module "hono" {
   interface ContextRenderer {
-    (content: Child, props: { title: string }): Response | Promise<Response>;
+    (
+      content: Child,
+      props: { title: string; footer?: Child },
+    ): Response | Promise<Response>;
   }
 }
 const pages = [
@@ -58,9 +61,12 @@ export function createPagesApp(): Hono<AppEnvironment> {
     });
     app.use(
       route,
-      jsxRenderer(({ children, title }) => Document({ children, title }), {
-        docType: true,
-      }),
+      jsxRenderer(
+        ({ children, title, footer }) => Document({ children, title, footer }),
+        {
+          docType: true,
+        },
+      ),
     );
   }
   // The build writes the compiled stylesheet next to the bundle; source runs
