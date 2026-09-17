@@ -3,17 +3,21 @@
   "private": true,
   "workspaces": [
     "apps/*",
+    "mcps/*",
     "packages/*"
   ],
   "scripts": {
-    "dev": "bun run env:up && turbo run dev",
+    "dev": "bun run env:up && turbo run dev --filter='./apps/*'",
+    "mcp:dev": "bun --env-file=.env run --filter @answerable/mcp-e2e dev",
+    "mcp:test": "bun test packages/auth/src packages/mcp-base/src mcps/e2e/src",
     "env:up": "docker compose up -d --wait",
     "env:down": "docker compose down",
     "env:reset": "docker compose down -v",
     "build": "turbo run build",
     "test": "turbo run test",
     "lint": "turbo run lint",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck",
+    "mcp:test:e2e": "bun mcps/e2e/scripts/id-e2e.ts && bun mcps/e2e/scripts/interruption.ts startup && bun mcps/e2e/scripts/interruption.ts"
   },
   "packageManager": "bun@1.3.1",
   "devDependencies": {

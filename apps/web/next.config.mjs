@@ -2,6 +2,7 @@ import { createMDX } from "fumadocs-mdx/next"
 
 /** @type {import("next").NextConfig} */
 const config = {
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   serverExternalPackages: ["@takumi-rs/core"],
   transpilePackages: ["@answerable/ui", "@answerable/countries"],
   async headers() {

@@ -65,7 +65,7 @@ export function OAuthRequest({ consent = false }: { consent?: boolean }) {
       throw new Error(
         "We couldn't start your organisation's sign-in. Please try again.",
       )
-    window.location.assign(response.data.url)
+    // Better Auth owns the successful SSO redirect.
   }
 
   const selected = flow?.memberships.find(

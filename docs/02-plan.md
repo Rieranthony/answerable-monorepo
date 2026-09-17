@@ -2,6 +2,8 @@
 
 This is the dependency order, not a deployment claim. The [design](03-answerable-id.md) is current behaviour; the [foundation acceptance](../reports/id-release-acceptance.md) and [release decision](../reports/answerable-id-release-decision-plan.md) hold evidence and the remaining gates.
 
+**MCP foundation:** [Shared creation and end-to-end validation](07-mcp-platform-draft.md) is implemented and locally accepted. Run `bun run mcp:test:e2e` for real ID login, Apps actions, lifecycle and interruption checks. The [evidence ledger](../reports/mcp-foundation-evidence.md) records the tested scope. The admin MCP remains outside this workstream.
+
 Last updated 2026-09-11.
 
 ## How we build

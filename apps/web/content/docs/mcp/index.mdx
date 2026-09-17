@@ -1,21 +1,45 @@
 ---
 title: MCP servers
-description: "Hosted MCP servers will authenticate through Answerable ID. Not yet available."
+description: "Build MCP Apps servers in the Answerable monorepo and test them through local Answerable ID."
 ---
+
+```sh
+bun run mcp:test:e2e
+```
+
+Run this from the monorepo after installing [the local test requirements](/docs/mcp/local-testing). It authenticates through real local Answerable ID and exercises an interactive MCP Apps view.
 
 ## Status
 
-Not yet. MCP servers arrive after the OIDC provider and entitlements described in [Answerable ID](/docs/id).
+**Local foundation:** implemented and locally tested. `packages/mcp-base` supplies Hono transport, official MCP Apps integration and typed tools, prompts and resources. `packages/auth` verifies Answerable ID resource tokens. `mcps/e2e` is the first consumer.
 
-## What they will be
+**Hosted product MCPs:** not yet. The admin MCP and community tutor are outside the current foundation work.
 
-- Each server will be an OAuth resource server of Answerable ID.
-- Each server will publish RFC 9728 metadata naming Answerable ID as its authorization server.
-- Tokens will be bound to one server with the RFC 8707 `resource` parameter, live for 5 to 15 minutes, and be verified locally against Answerable ID's JSON Web Key Set (JWKS).
-- External tools such as Claude Code and Claude Desktop will connect with PKCE and exact redirect URIs. CIMD will be preferred over dynamic client registration.
+## Package boundaries
 
-## The first server
+| Package | Responsibility |
+| --- | --- |
+| `@answerable/mcp-base` | Server creation, tool/prompt/resource definitions, views and permissions |
+| `@answerable/mcp-base/apps` | Official framework-independent Apps browser API |
+| `@answerable/mcp-base/apps/react` | Official Apps React hooks |
+| `@answerable/mcp-base/build` | Bundle a view into a self-contained HTML resource |
+| `@answerable/mcp-base/testing` | Connect an official MCP client for tests |
+| `@answerable/auth` | Verify ID-issued user resource tokens against trusted signing keys |
 
-Not yet. The community tutor is parked until Answerable ID ships.
+Every MCP inherits Apps support. Individual tools may omit a view and still return structured data and text. A chat application must support the MCP Apps extension to render a view; arbitrary UI support is insufficient.
 
-It will search the community, list and read courses and lessons, and run server-graded lesson checks. Those checks will use authored questions and can record a completed lesson under each course's policy.
+## Authentication
+
+The chat application is the OAuth client. Answerable ID handles login, consent and token issuance. Each MCP is a resource server with its own canonical resource URL and immutable resource ID. It does not run another Better Auth instance.
+
+The base verifies signature, issuer, audience, token type, expiry and ID's user claim shape. It rejects machine and proof-bound tokens in this version. Each request gets an immutable principal; domain services must enforce object-level tenant access. Views call tools through the host bridge and receive no bearer credentials from our base.
+
+Offline signature verification cannot observe immediate grant revocation. Existing valid tokens remain acceptable until expiry; refresh and new grants are controlled by ID. The verifier caps token lifetime at 900 seconds by default. `maxTokenLifetimeSeconds` can set a reviewed limit from 1 to 3600 seconds; configure the ID resource within that limit. See [application authorisation](/docs/id/oauth).
+
+## Foundation plan
+
+The implemented foundation includes shared auth, Apps registration, typed tools/prompts/resources, lifecycle checks and shared browser builds. The local journey tests both normal execution and interruption cleanup.
+
+**Not yet:** external chat-host certification and production MCP deployment.
+
+Continue with [authoring](/docs/mcp/authoring) or [local testing](/docs/mcp/local-testing).

@@ -49,6 +49,16 @@ jobs:
       - name: Test countries
         run: bun --filter @answerable/countries test
 
+      - name: Install MCP browser test runtime
+        working-directory: mcps/e2e
+        run: bun x playwright install --with-deps chromium
+
+      - name: Test MCP foundation and Apps interaction
+        run: bun run mcp:test
+
+      - name: Test real ID login and MCP Apps
+        run: bun run mcp:test:e2e
+
       - name: Test with coverage
         run: bun --filter @answerable/id test:coverage
 

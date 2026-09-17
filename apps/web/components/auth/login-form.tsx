@@ -87,7 +87,7 @@ export function LoginForm({ route, oauthQuery }: LoginFormProps) {
         return
       }
 
-      window.location.assign(result.data.url)
+      // Better Auth owns the successful SSO redirect.
     } catch {
       setMessage(describeError("provider_not_found").body)
     }

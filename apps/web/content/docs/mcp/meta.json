@@ -1,4 +1,8 @@
 {
   "title": "MCP servers",
-  "pages": ["index"]
+  "pages": [
+    "index",
+    "authoring",
+    "local-testing"
+  ]
 }

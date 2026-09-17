@@ -133,3 +133,5 @@ Refresh revocation closes that authorisation family. Another authorisation for t
 | `authentication_unavailable`                    | An unexpected provider failure occurred                                          | Retry; contact Answerable staff if it persists                                |
 
 Transport limits can return HTTP 408, 413 or plain-text HTTP 503 before OAuth processing. The [API reference](/docs/id/api) describes each reachable endpoint. Successful authorisation, issuance, replay and revocation persist versioned [audit facts](/docs/id/manage) with durable user, membership, client, resource and authentication subjects in the same transaction as native effects.
+
+For hosted MCP development, use the [shared MCP foundation](/docs/mcp) and its [local browser acceptance test](/docs/mcp/local-testing).
