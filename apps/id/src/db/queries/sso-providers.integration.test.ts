@@ -70,6 +70,7 @@ test("provider queries create, find, update, redact and delete", async () => {
   );
   expect(queries.redactSsoProvider(updated).oidc).toEqual({
     ...oidc,
+    credentials: "own",
     pkce: true,
     hasClientSecret: false,
   });
@@ -171,4 +172,100 @@ test("SSO read projections expose only their intended configuration", async () =
       discoveryEndpoint: undefined,
     }),
   );
+});
+
+for (const [application, issuer] of [
+  ["google", "https://accounts.google.com"],
+  [
+    "microsoft",
+    "https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0",
+  ],
+] as const) {
+  test(`platform ${application} serialization and redaction never persist credentials`, async () => {
+    const org = await createOrganization(connection.db, {
+      slug: application,
+      name: application,
+    });
+    for (const endpoints of [
+      {},
+      {
+        discoveryEndpoint: "https://idp.example/discovery",
+        authorizationEndpoint: "https://idp.example/authorize",
+        tokenEndpoint: "https://idp.example/token",
+        jwksEndpoint: "https://idp.example/jwks",
+        scopes: ["openid"],
+      },
+    ]) {
+      const input = {
+        organizationId: org.id,
+        providerId: org.slug,
+        issuer,
+        domain: "example.com",
+        oidc: { credentials: "platform" as const, ...endpoints },
+      };
+      const serialized = productionQueries.serializeSsoProviderConfig(input);
+      expect(JSON.parse(serialized)).toEqual({
+        issuer,
+        credentials: "platform",
+        pkce: true,
+        discoveryEndpoint: `${issuer}/.well-known/openid-configuration`,
+        overrideUserInfo: false,
+        ...endpoints,
+      });
+    }
+    const row = await queries.createSsoProvider(connection.db, {
+      organizationId: org.id,
+      providerId: org.slug,
+      issuer,
+      domain: "example.com",
+      oidc: { credentials: "platform" },
+    });
+    const ids = { [application]: { clientId: "platform-id" } };
+    expect(productionQueries.redactSsoProvider(row, ids).oidc).toMatchObject({
+      credentials: "platform",
+      clientId: "platform-id",
+      hasClientSecret: true,
+      tokenEndpointAuthentication: "client_secret_post",
+    });
+    expect(productionQueries.redactSsoProvider(row).oidc).toMatchObject({
+      credentials: "platform",
+      clientId: undefined,
+      hasClientSecret: false,
+      tokenEndpointAuthentication: "client_secret_post",
+    });
+    expect(
+      productionQueries.redactSsoProvider(
+        { ...row, issuer: "https://generic.example.com" },
+        ids,
+      ).oidc,
+    ).toMatchObject({
+      credentials: "platform",
+      clientId: undefined,
+      hasClientSecret: false,
+      tokenEndpointAuthentication: undefined,
+    });
+    const { inTenantRead } = await import("../../__tests__/tenant-command.ts");
+    expect(
+      await inTenantRead(connection.db, org.id, "directory", (context) =>
+        productionQueries.readSsoProvider(context, ids),
+      ),
+    ).toEqual(productionQueries.redactSsoProvider(row, ids));
+  });
+}
+test("explicit own credentials retain the previous byte representation", () => {
+  const input = {
+    issuer: "https://idp.example",
+    oidc: { clientId: "id", clientSecret: "secret" },
+  };
+  const legacy =
+    '{"issuer":"https://idp.example","clientId":"id","clientSecret":"secret","tokenEndpointAuthentication":"client_secret_post","pkce":true,"discoveryEndpoint":"https://idp.example/.well-known/openid-configuration","overrideUserInfo":false}';
+  expect(productionQueries.serializeSsoProviderConfig(input) === legacy).toBe(
+    true,
+  );
+  expect(
+    productionQueries.serializeSsoProviderConfig({
+      ...input,
+      oidc: { ...input.oidc, credentials: "own" },
+    }) === legacy,
+  ).toBe(true);
 });

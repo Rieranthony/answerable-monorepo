@@ -1,5 +1,6 @@
 import { findInvalidTrustedProxies } from "@better-auth/core/utils/ip";
 import { z } from "zod";
+import type { PlatformApplications } from "./auth/platform-applications.ts";
 import { upstreamTokenSecretsSchema } from "./auth/upstream-token-storage.ts";
 
 const applicationSecrets = z.string().transform((value, context) => {
@@ -45,14 +46,11 @@ const upstreamTokenSecrets = z.string().transform((value, context) => {
   }
 });
 
-/** Browser origins Better Auth trusts; the pages origin when none is set. */
-const parseTrustedOrigins = (value: string, fallback: string) => {
-  const origins = value
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-  return origins.length > 0 ? origins : [fallback];
-};
+const optionalCredential = z.preprocess(
+  (value) =>
+    typeof value === "string" && value.trim() === "" ? undefined : value,
+  z.string().min(1).optional(),
+);
 
 const environmentSchema = z
   .object({
@@ -64,6 +62,10 @@ const environmentSchema = z
     BETTER_AUTH_URL: z.url(),
     BETTER_AUTH_SECRET: z.string().min(32),
     BETTER_AUTH_SECRETS: applicationSecrets.optional(),
+    GOOGLE_CLIENT_ID: optionalCredential,
+    GOOGLE_CLIENT_SECRET: optionalCredential,
+    MICROSOFT_CLIENT_ID: optionalCredential,
+    MICROSOFT_CLIENT_SECRET: optionalCredential,
     UPSTREAM_TOKEN_SECRETS: upstreamTokenSecrets.optional(),
     BETTER_AUTH_TRUSTED_ORIGINS: z.string().default(""),
     /** Initial platform slug; persisted system bindings determine authority afterwards. */
@@ -79,7 +81,6 @@ const environmentSchema = z
     ROOT_ADMIN_SECRET: z.string().min(32).optional(),
     /** Override the human platform administrator lockout for break-glass use. */
     ROOT_ADMIN_BREAK_GLASS: z.enum(["true", "false"]).default("false"),
-    AUTH_PAGES_URL: z.url().optional(),
     TRUSTED_PROXY_CIDRS: z
       .string()
       .transform((value) => value.split(",").map((entry) => entry.trim()))
@@ -142,13 +143,26 @@ const environmentSchema = z
     { message: "ROOT_ADMIN_BREAK_GLASS requires ROOT_ADMIN_SECRET" },
   )
   .superRefine((environment, context) => {
+    for (const [id, secret] of [
+      ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
+      ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET"],
+    ] as const) {
+      for (const [missing, other] of [
+        [id, secret],
+        [secret, id],
+      ] as const) {
+        if (
+          environment[missing] === undefined &&
+          environment[other] !== undefined
+        )
+          context.addIssue({
+            code: "custom",
+            path: [missing],
+            message: `Required together with ${other}`,
+          });
+      }
+    }
     if (environment.NODE_ENV !== "production") return;
-    if (!environment.AUTH_PAGES_URL)
-      context.addIssue({
-        code: "custom",
-        path: ["AUTH_PAGES_URL"],
-        message: "Required in production",
-      });
     if (!environment.TRUSTED_PROXY_CIDRS?.length)
       context.addIssue({
         code: "custom",
@@ -174,6 +188,24 @@ const environmentSchema = z
       });
   })
   .transform((environment) => ({
+    platformApplications: {
+      ...(environment.GOOGLE_CLIENT_ID
+        ? {
+            google: {
+              clientId: environment.GOOGLE_CLIENT_ID,
+              clientSecret: environment.GOOGLE_CLIENT_SECRET!,
+            },
+          }
+        : {}),
+      ...(environment.MICROSOFT_CLIENT_ID
+        ? {
+            microsoft: {
+              clientId: environment.MICROSOFT_CLIENT_ID,
+              clientSecret: environment.MICROSOFT_CLIENT_SECRET!,
+            },
+          }
+        : {}),
+    } as PlatformApplications,
     nodeEnv: environment.NODE_ENV,
     port: environment.PORT,
     databaseUrl: environment.DATABASE_URL,
@@ -181,10 +213,9 @@ const environmentSchema = z
     betterAuthSecret: environment.BETTER_AUTH_SECRET,
     betterAuthSecrets: environment.BETTER_AUTH_SECRETS,
     upstreamTokenSecrets: environment.UPSTREAM_TOKEN_SECRETS,
-    trustedOrigins: parseTrustedOrigins(
-      environment.BETTER_AUTH_TRUSTED_ORIGINS,
-      environment.AUTH_PAGES_URL ?? "http://localhost:47100",
-    ),
+    trustedOrigins: environment.BETTER_AUTH_TRUSTED_ORIGINS.split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
     platformOrganizationSlug: environment.PLATFORM_ORGANIZATION_SLUG,
     platformOrganizationName: environment.PLATFORM_ORGANIZATION_NAME,
     adminResourceIdentifier: (
@@ -193,7 +224,6 @@ const environmentSchema = z
     ).replace(/\/+$/, ""),
     rootAdminSecret: environment.ROOT_ADMIN_SECRET,
     rootAdminBreakGlass: environment.ROOT_ADMIN_BREAK_GLASS === "true",
-    authPagesUrl: environment.AUTH_PAGES_URL ?? "http://localhost:47100",
     trustedProxyCidrs: environment.TRUSTED_PROXY_CIDRS ?? [],
     oauthRefreshReuseIntervalSeconds:
       environment.OAUTH_REFRESH_REUSE_INTERVAL_SECONDS,
@@ -212,6 +242,9 @@ const environmentSchema = z
         ? environment.NODE_ENV !== "production"
         : environment.OPENAPI_ENABLED === "true",
   }));
+
+/** Every variable the service reads; default.env at the repository root lists each one. */
+export const environmentVariableNames = Object.keys(environmentSchema.in.shape);
 
 export type Environment = z.output<typeof environmentSchema>;
 

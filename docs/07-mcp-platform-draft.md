@@ -52,7 +52,7 @@ Offline verification cannot detect grant or membership revocation before access-
 - SDK-over-HTTP tests prove discovery, schema checks, scopes, concurrent identity isolation, prompts/resources, redacted errors, deadlines and cancellation.
 - The reference service proves tenant ownership and durable create/delete receipts. Retrying an uncertain response uses the same operation key and cannot create a duplicate effect.
 - Chromium renders the actual Apps resource and performs allowed and denied actions. A second composition reuses read tools and omits write tools entirely.
-- `bun run mcp:test:e2e` authenticates through real local ID and web pages, obtains real issued tokens, checks wrong-resource and cross-tenant denial, refreshes, disables the test organisation, checks refresh denial and waits for actual access-token expiry.
+- `bun run mcp:test:e2e` authenticates through real local ID browser pages, obtains real issued tokens, checks wrong-resource and cross-tenant denial, refreshes, disables the test organisation, checks refresh denial and waits for actual access-token expiry.
 - The runner owns an isolated database, temporary files and processes. Startup and browser-phase interruption checks prove cleanup releases its container and reserved ports.
 
 Run foundation tests, typecheck, lint, build and the real-ID journey after shared changes. Local harness success does not certify an external chat host, a real corporate provider or production deployment. Record the selected host, version, registration mode, reachable origins, OAuth result, text fallback and Apps actions before claiming that host works.

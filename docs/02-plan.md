@@ -4,7 +4,7 @@ This is the dependency order, not a deployment claim. The [design](03-answerable
 
 **MCP foundation:** [Shared creation and end-to-end validation](07-mcp-platform-draft.md) is implemented and locally accepted. Run `bun run mcp:test:e2e` for real ID login, Apps actions, lifecycle and interruption checks. The [evidence ledger](../reports/mcp-foundation-evidence.md) records the tested scope. The admin MCP remains outside this workstream.
 
-Last updated 2026-09-11.
+Last updated 2026-09-17.
 
 ## How we build
 
@@ -28,7 +28,7 @@ Last updated 2026-09-11.
 | 2b, 2b.1 | Admin platform, 49 journalled mutations, F0–F6 local mechanisms integrated                | Local acceptance passed; external evidence below remains required.                                      |
 | 2c       | Tenant membership administration exists                                                   | **Not yet:** broader self-service, DNS verification, guest opt-in and tenant rate policy.                          |
 | 3        | Production code/refresh/OIDC, selection and consent implemented                           | Actual OmniChat configuration/verifier acceptance.                                                                 |
-| 3a       | Login, selection, consent and security pages exist                                        | **Not yet:** full administrative console.                                                                          |
+| 3a       | Login, selection, consent and security pages are served by Answerable ID                  | **Not yet:** full administrative console.                                                                          |
 | 4        | Exact-pair policy, capability ceilings and truthful access views implemented              | Actual consumer A/B denial matrix.                                                                                 |
 | 5        | Resource-bound user/machine tokens implemented                                            | **Not yet:** DCR/CIMD and resource-server metadata/integration; prove external Claude path.                        |
 | 6        | Explicit verified linking and inert identity-binding rules implemented                    | **Not yet:** bulk import/cell migration tooling and tested cell rollback.                                          |
@@ -48,6 +48,7 @@ Stable IDs; never renumber. Resolve into the design doc or this page and delete 
 | ID                         | Question                                                                                                                                                                                                                                                                                                                                  | Gates                               | Resolve by                                                                    |
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------- |
 | `Q-PUBLISHER-VERIFICATION` | Microsoft publisher verification for the multi-tenant app — weeks of process                                                                                                                                                                                                                                                              | The validation spike's first bullet | Start now (MPN + domain verification)                                         |
+| `Q-ENTRA-CERTIFICATE` | Certificate credential on the multi-tenant Entra app: Better Auth 1.7.2 signs assertions with `alg`/`typ`/`kid` only; Entra documents `x5t#S256` with `PS256`. Not yet. | E1 | House assertion getter or an upstream contribution, verified on the real tenant. |
 | `Q-ENTRA-CLAIMS`           | Confirm on a real tenant which guest signal is authoritative (`idp` / `acct`), whether `email` or `preferred_username` is the stable login display address, and how `xms_edov` affects verification                                                                                                                                       | Step 2 sign-off                     | Validation spike against a real tenant                                        |
 | `Q-AID-LISTENER`           | The design says the tailnet-only listener handles per-user MCP connect, but connect is a browser bounce — `/authorize` + callback must be public; only `/token`/refresh can be tailnet. The admin API is split the same way: tenant-tier routes (`x-tier: tenant`) are public, platform-tier routes (`x-tier: platform`) are tailnet-only | Steps 5, 9                          | Decide in the skeleton's route layout                                         |
 | `Q-RESOURCE-PARAM`         | Does the fork's MCP OAuth client send RFC 8707 `resource`?                                                                                                                                                                                                                                                                                | Step 5                              | Spike against the fork; else default the audience from the client↔server link |
@@ -71,7 +72,7 @@ RFC 8693 token exchange (built off the critical path, contributed upstream) · S
 - Identity inside the fork's database — apps consume identity through standard OIDC.
 - Per-app registrations in client directories — one multi-tenant app, one consent per org.
 - A standalone identity appliance (Keycloak) or a hosted IdP of record — Better Auth in our own service, our own Postgres.
-- Client secrets on the multi-tenant app — certificate credential.
+- Treating a client secret as the final multi-tenant Entra credential — it is the documented interim until [Q-ENTRA-CERTIFICATE](#open-register) resolves; a certificate credential is Not yet.
 - Node in production, or a CDN/WAF in front, for now — Bun everywhere; TLS at the ingress.
 - Dates and headcount in the docs — order, not time.
 - Seed accounts, password-based administrators, or a bootstrap CLI — the platform is seeded at startup and the root secret is the only break-glass.

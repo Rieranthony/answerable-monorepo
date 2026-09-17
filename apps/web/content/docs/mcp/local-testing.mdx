@@ -13,7 +13,7 @@ Requires Bun 1.3.1 and Docker Compose. Run from the monorepo root. The command e
 
 ## What the test proves
 
-1. Start isolated PostgreSQL, real ID, real web login pages, local corporate OIDC fixtures and the e2e MCP.
+1. Start isolated PostgreSQL, real ID and its browser login pages, local corporate OIDC fixtures and the e2e MCP.
 2. Follow the MCP authentication challenge to resource metadata and ID’s advertised OAuth endpoints.
 3. Sign in as a user in each of two organisations, select the organisation and consent.
 4. Exchange an authorisation code using PKCE for a real ID resource token.
@@ -31,12 +31,11 @@ The corporate providers are test fixtures. ID, its restricted runtime database r
 | --- | --- |
 | Disposable PostgreSQL | `47532` |
 | ID | `47600` |
-| Web login pages | `47601` |
 | MCP | `47602` |
 | OAuth callback | `47603` |
 | Concurrent-run guard | `47604` |
 
-Allow roughly two minutes, including a wall-clock wait for the fixture's 60-second access tokens. Keep these ports free. Other fixture servers use allocated loopback ports. The guard prevents two runners from managing the same Compose project. PostgreSQL belongs to `answerable-mcp-e2e`; the runner never reads your normal `DATABASE_URL`. Next uses a separate `.next-mcp-e2e` output directory.
+Allow roughly two minutes, including a wall-clock wait for the fixture's 60-second access tokens. Keep these ports free. Other fixture servers use allocated loopback ports. The guard prevents two runners from managing the same Compose project. PostgreSQL belongs to `answerable-mcp-e2e`; the runner never reads your normal `DATABASE_URL`.
 
 ## Faster checks
 

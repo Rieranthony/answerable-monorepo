@@ -51,9 +51,9 @@ openssl rand -base64 48
      -H "Authorization: Bearer $ROOT_ADMIN_SECRET"
    ```
 
-3. **Say which work accounts are staff.** Two calls. The first says that emails on our domain belong to the platform organisation. The second says which directory checks those accounts: Google Workspace or Microsoft Entra, with the app credentials that directory gave us. A third call checks that the directory answers.
+3. **Say which work accounts are staff.** The first says that emails on our domain belong to the platform organisation. The second says which directory checks those accounts: Google Workspace or Microsoft Entra, using Answerable’s platform application from the service environment. A third call checks that the directory answers.
 
-   Set `STAFF_DOMAIN` (for example `answerable.org`), `STAFF_ISSUER` (the directory's issuer URL from the [table below](#connect-the-directory)), `SSO_CLIENT_ID` and `SSO_CLIENT_SECRET` first.
+   Set `STAFF_DOMAIN` (for example `answerable.org`) and `STAFF_ISSUER` (the directory's issuer URL from the [table below](#connect-the-directory)). Configure the matching `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` or `MICROSOFT_CLIENT_ID`/`MICROSOFT_CLIENT_SECRET` pair in the service environment first.
 
    ```bash
    curl "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/domains" \
@@ -67,7 +67,7 @@ openssl rand -base64 48
      -H "If-None-Match: *" \
      -H "Authorization: Bearer $ROOT_ADMIN_SECRET" \
      -H "Content-Type: application/json" \
-     -d '{"issuer":"'"$STAFF_ISSUER"'","domain":"'"$STAFF_DOMAIN"'","oidc":{"clientId":"'"$SSO_CLIENT_ID"'","clientSecret":"'"$SSO_CLIENT_SECRET"'"}}'
+     -d '{"issuer":"'"$STAFF_ISSUER"'","domain":"'"$STAFF_DOMAIN"'"}'
 
    curl "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/sso-provider/test" \
      -H "Authorization: Bearer $ROOT_ADMIN_SECRET"
@@ -75,7 +75,7 @@ openssl rand -base64 48
 
    An empty `problems` list means the directory is reachable. The test cannot check the credentials themselves; the next step does that.
 
-4. **Sign in.** Open [the login page](https://answerable.org/login) and sign in with your work account. This creates your user and your membership of the platform organisation. You have no admin rights yet.
+4. **Sign in.** Open [the login page](https://id.answerable.org/login) and sign in with your work account. This creates your user and your membership of the platform organisation. You have no admin rights yet.
 
 5. **Give yourself admin rights.** Find your member record by email, copy its `id` into `STAFF_MEMBER`, then add it to the `platform-admins` group. The group already carries every platform scope, so joining it is all it takes.
 
@@ -103,7 +103,7 @@ openssl rand -base64 48
 
 7. **Put the secret away.** Remove `ROOT_ADMIN_SECRET` from the deployment, or keep it in your secret store with `ROOT_ADMIN_BREAK_GLASS=false`. If one day no staff member can administer the service, deploy with the secret and `ROOT_ADMIN_BREAK_GLASS=true`, repair access, then turn it off again. Every use of the secret, allowed or refused, is written to the audit log as `admin.root_request`.
 
-**The next staff member.** They sign in once (step 4). You repeat step 5 for them with your own browser session instead of the root secret, adding `-H "Origin: https://answerable.org"` because writes from a browser session must name the site they come from. Nothing else is needed.
+**The next staff member.** They sign in once (step 4). You repeat step 5 for them with your own browser session instead of the root secret, adding `-H "Origin: https://id.answerable.org"` because writes from a browser session must name the site they come from. Nothing else is needed.
 
 ## Get a staff token
 
@@ -115,7 +115,7 @@ Set `MACHINE_LINK_KEY` and `MACHINE_CAPABILITY_KEY` once for their separate comm
 curl https://id.answerable.org/api/admin/v1/clients \
   -H "Idempotency-Key: staff-automation-v1" \
   -H "Cookie: $SESSION_COOKIE" \
-  -H "Origin: https://answerable.org" \
+  -H "Origin: https://id.answerable.org" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Staff automation",
@@ -130,13 +130,13 @@ curl https://id.answerable.org/api/admin/v1/clients \
 curl -X PUT "https://id.answerable.org/api/admin/v1/clients/$CLIENT_ID/resources/https%3A%2F%2Fid.answerable.org%2Fapi%2Fadmin" \
   -H "Idempotency-Key: $MACHINE_LINK_KEY" \
   -H "Cookie: $SESSION_COOKIE" \
-  -H "Origin: https://answerable.org"
+  -H "Origin: https://id.answerable.org"
 
 # Approve the machine ceiling separately from registration and linking.
 curl "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/capabilities" \
   -H "Idempotency-Key: $MACHINE_CAPABILITY_KEY" \
   -H "Cookie: $SESSION_COOKIE" \
-  -H "Origin: https://answerable.org" \
+  -H "Origin: https://id.answerable.org" \
   -H "Content-Type: application/json" \
   -d '{"clientId":"'"$CLIENT_ID"'","resource":"https://id.answerable.org/api/admin","grantKind":"client_credentials","scopes":["platform:read","platform:users","platform:write"]}'
 
@@ -209,6 +209,7 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/sso-provider/tes
 | `private_host`          | A host is private or resolves to a private address.                                  | Use public provider endpoints.                            |
 | `discovery_unreachable` | Discovery failed, timed out or returned a non-success status; redirects are refused. | Check the discovery URL and connectivity.                 |
 | `discovery_invalid`     | Discovery JSON is missing required URLs or exceeds the size limit.                   | Correct the provider's discovery document.                |
+| `untrusted_origin` | A discovered endpoint origin is missing from `BETTER_AUTH_TRUSTED_ORIGINS`. | Ask Answerable staff to add its exact trusted origin and check outbound HTTPS, then rerun the test. |
 | `issuer_mismatch`       | Discovery issuer differs from the configured issuer.                                 | Use the exact tenant issuer.                              |
 | `jwks_unreachable`      | JWKS failed, timed out or returned a non-success status; redirects are refused.      | Check the discovery document's JWKS URL and connectivity. |
 | `jwks_invalid`          | JWKS is invalid or exceeds the size limit.                                           | Correct the provider's key document.                      |
@@ -253,9 +254,37 @@ curl -X DELETE "https://id.answerable.org/api/admin/v1/organizations/$ORG/domain
 
 ## Connect the directory
 
-**Changing the directory.** Creating, replacing or deleting SSO configuration revokes existing user authorisations for that organisation. An unchanged configuration preserves them. Restoring an earlier configuration does not restore revoked grants. Other organisations and global browser sessions are preserved. [User OAuth](/docs/id/oauth) validates the selected organisation's accepted account, provider UUID and configuration revision before creating or using a grant.
+```bash
+curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$ORG/sso-provider" \
+  -H "Idempotency-Key: $SSO_OPERATION_KEY" \
+  -H "If-None-Match: *" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "issuer": "https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0",
+    "domain": "contoso.com"
+  }'
+```
 
-Set `SSO_OPERATION_KEY` once for this configuration command and reuse it with identical input on retry. PUT and delete require keys; retries return receipts. Omit `clientSecret` to retain the stored secret on a new update. Creation and replacement accept optional preconditions. Supply the current provider ETag in `If-Match` to refuse stale changes, and retain it with the key on retry.
+**Platform credentials are the default.** Omit `oidc`, as above, or send `oidc: {"credentials":"platform"}`. Google and Entra use Answerable's single application for that directory. Staff configure its client ID and secret together in the service environment; the row stores no secret. Every provider returns to `https://id.answerable.org/auth/sso/callback` (local: `http://localhost:47300/auth/sso/callback`).
+
+| Directory | `issuer` | What is pinned | What the organisation's IT does |
+| --- | --- | --- | --- |
+| Microsoft Entra | `https://login.microsoftonline.com/<directory-id>/v2.0` | The directory ID; guests and other directories refuse | Use the admin consent link below, or an admin signs in first and grants organisation-wide consent. |
+| Google Workspace | `https://accounts.google.com` | The hosted domain; personal accounts refuse | If third-party apps are restricted, mark Answerable's client ID Trusted in Workspace App access control. |
+| Generic OIDC | The directory's exact issuer URL | Issuer and verified email/domain | Register the callback URL and send own client credentials to Answerable staff. |
+
+**Entra consent.** Send IT `https://login.microsoftonline.com/<tenant-id>/v2.0/adminconsent?client_id=<MICROSOFT_CLIENT_ID>&scope=openid%20profile%20email%20offline_access&redirect_uri=https%3A%2F%2Fid.answerable.org%2Flogin&state=<slug>`. It returns `admin_consent=True&tenant=<GUID>`. Alternatively, a Global Administrator signs in first and ticks **consent on behalf of your organisation** (only Privileged Role Administrators see it). Default tenant policy blocks ordinary users from consenting to unverified multi-tenant apps.
+
+```bash
+curl -s "https://login.microsoftonline.com/$CUSTOMER_DOMAIN/v2.0/.well-known/openid-configuration" | jq -r .issuer
+```
+
+**Find the Entra tenant ID.** Set `CUSTOMER_DOMAIN` to the customer's domain. The returned issuer contains its tenant GUID; use that complete tenant-specific issuer in the PUT.
+
+**Google app access.** The default Workspace policy allows third-party apps. If restricted, IT uses **Security → Access and data control → API controls → Manage App Access → Configure new app**, finds the client ID and marks it **Trusted**. The `hd` request parameter is only a hint; Answerable ID verifies the ID-token claim.
+
+**Own credentials are the exception.** Use this body for a separate Entra registration; generic OIDC also requires its own credentials and issuer:
 
 ```bash
 curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$ORG/sso-provider" \
@@ -270,12 +299,13 @@ curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$ORG/sso-provi
   }'
 ```
 
-| Directory        | `issuer`                                                | What is pinned                                        |
-| ---------------- | ------------------------------------------------------- | ----------------------------------------------------- |
-| Microsoft Entra  | `https://login.microsoftonline.com/<directory-id>/v2.0` | The directory id; guests and other directories refuse |
-| Google Workspace | `https://accounts.google.com`                           | The hosted domain; personal accounts refuse           |
+**Defaults.** When scopes are omitted, both platform and own-credential Google rows use `email openid profile`; Entra rows use `email offline_access openid profile`.
 
-**One row per organisation.** `PUT` creates or replaces it; omit `clientSecret` on an update to keep the stored one. `GET` never returns the secret. The consent the client's IT gives is to Answerable's single multi-tenant app; nothing is registered per app. What each sign-in checks is on the [sign-in page](/docs/id/sign-in#what-is-checked). Guest opt-in per organisation: [Not yet.](/docs/id#today-and-next)
+**Changing the directory.** Creating, replacing or deleting SSO configuration revokes that organisation's user grants. Switching between own and platform credentials is a configuration change; for Entra it also changes every user's pairwise `sub`, so existing accounts stop matching. Unchanged configuration preserves grants; restoring an earlier configuration does not restore revoked grants. Other organisations and global browser sessions are preserved. [User OAuth](/docs/id/oauth) checks the accepted account, provider UUID and configuration revision.
+
+**Retries.** Set `SSO_OPERATION_KEY` once and reuse it with identical input. PUT and delete require keys; retries return receipts. Use `If-None-Match: *` for creation or the current provider ETag in `If-Match` to refuse stale updates, retaining the original header on retry. For own credentials, omit `clientSecret` on an update to keep the stored secret.
+
+**One row per organisation.** `PUT` creates or replaces it. `GET` returns `oidc.credentials` (`platform` or `own`), `clientId` and `hasClientSecret`, never the secret. See [sign-in checks](/docs/id/sign-in#what-is-checked). Guest opt-in: [Not yet.](/docs/id#today-and-next)
 
 ## Register what they may use
 
@@ -448,6 +478,8 @@ Every write, every denied attempt, every sign-in success, rejection and sign-out
 
 | Code                      | Meaning                                                       | What to do                                                              |
 | ------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `platform_credentials_unsupported` | HTTP 400: platform credentials requested for an issuer other than Google or Entra. | Supply own OIDC credentials or use the correct Google/Entra issuer. |
+| `platform_application_missing` | HTTP 409 on PUT: the platform application is absent from the service environment. | Configure both client ID and secret, restart the service and retry. A later disappearance gives HTTP 503 JSON at sign-in; see [sign-in errors](/docs/id/sign-in#when-sign-in-is-refused). |
 | `root_locked`             | Root is locked because a human platform administrator exists. | Use your own credentials, or enable break-glass for emergency recovery. |
 | `client_has_entitlements` | Entitlements still reference the client.                      | Remove all referencing entitlements before erasure.                     |
 
@@ -457,6 +489,7 @@ See [all admin error codes](/docs/id/manage#errors), including confirmation and 
 
 | Capability                                | Plan                                |
 | ----------------------------------------- | ----------------------------------- |
+| Certificate credential on the Entra application | [Not yet.](/docs/id#today-and-next) |
 | Domain verification by DNS                | [Not yet.](/docs/id#today-and-next) |
 | Organisations configuring their own SSO   | [Not yet.](/docs/id#today-and-next) |
 | Guest accounts, opted in per organisation | [Not yet.](/docs/id#today-and-next) |

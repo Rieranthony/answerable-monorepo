@@ -59,6 +59,16 @@ export async function createAdminFixture(
     trustedOrigins: [issuer.origin, trustedOrigin],
     rootAdminSecret: "fixture-root-secret-at-least-32-characters",
     rootAdminBreakGlass: true,
+    platformApplications: {
+      google: {
+        clientId: "platform-google-id",
+        clientSecret: "platform-google-secret",
+      },
+      microsoft: {
+        clientId: "platform-microsoft-id",
+        clientSecret: "platform-microsoft-secret",
+      },
+    },
     ...overrides,
   });
   const connection = createDatabase(environment);

@@ -35,7 +35,7 @@ try {
   const compose = Bun.spawn(["docker", "compose", "-p", "answerable-mcp-e2e", "-f", join(root, "mcps/e2e/compose.yaml"), "ps", "-q"], { stdout: "pipe", stderr: "pipe" })
   assert.equal(await compose.exited, 0)
   assert.equal((await new Response(compose.stdout).text()).trim(), "", "No fixture container remains")
-  for (const port of [47532, 47600, 47601, 47602, 47603, 47604]) {
+  for (const port of [47532, 47600, 47602, 47603, 47604]) {
     const probe = Bun.serve({ hostname: "127.0.0.1", port, fetch: () => new Response("probe") })
     probe.stop(true)
   }

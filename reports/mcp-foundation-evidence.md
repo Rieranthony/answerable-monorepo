@@ -55,6 +55,12 @@ Post-simplification verification on 17 September 2026:
 
 The sandbox initially blocked fixture listeners and Turbopack worker processes. The same checks passed with the required local networking/process permissions; no source workaround was added.
 
+## Main integration validation
+
+After integrating main’s move of browser pages into Answerable ID, the fixture runs from the ID workspace so it uses Hono’s JSX configuration. The e2e runner uses ID’s `/login` directly; the separate Next.js process, output configuration and reserved web port are removed. MCP configuration is listed in `default.env`.
+
+Fresh checks pass: 42 MCP tests (119 assertions), 63 web tests (180 assertions), root typecheck/lint/build, production documentation routes and the full real-ID journey with both interruption checks. Stale generated Next.js files from the previous runner were removed locally; no compatibility workaround was added to the application.
+
 ## Remaining limits
 
 Offline verification does not revoke already-issued access tokens before expiry. Cancellation is cooperative, does not undo committed effects and has no cross-request registry in this stateless transport. Real corporate providers, external hosts, machine principals, production deployment and the future admin MCP need separate acceptance.

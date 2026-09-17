@@ -8,8 +8,8 @@ The [enterprise foundation](docs/05-id-enterprise-foundation.md) implementation 
 
 | Workspace            | What it is                                                                                                                                                          | Status                                                                                                                                                   |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/web`           | Public site (Next.js 16): the waitlist one-pager, the Answerable ID browser pages, and the docs at `/docs` (Fumadocs, Markdown for agents at `.md` and `/llms.txt`) | Live                                                                                                                                                     |
-| `apps/id`            | **Answerable ID** — identity broker for client orgs, OIDC login provider for our apps, OAuth 2.1 authorization server for hosted MCP servers                        | User/machine OAuth, own-tenant SSO, linking, administration and soft deletion implemented; not deployed — [acceptance](reports/id-release-acceptance.md) |
+| `apps/web`           | Public site (Next.js 16): the waitlist one-pager and the docs at `/docs` (Fumadocs, Markdown for agents at `.md` and `/llms.txt`)                                   | Live                                                                                                                                                     |
+| `apps/id`            | **Answerable ID** — identity broker for client orgs, OIDC login provider for our apps, OAuth 2.1 authorization server for hosted MCP servers; serves the sign-in pages | User/machine OAuth, own-tenant SSO, linking, administration and soft deletion implemented; not deployed — [acceptance](reports/id-release-acceptance.md) |
 | `packages/ui`        | Shared React UI: shadcn base-nova components on Base UI and the Tailwind theme, consumed as source by apps/web                                                      | Live                                                                                                                                                     |
 | `packages/countries` | ISO country list, priority order and flag URL helper; framework-free                                                                                                | Live                                                                                                                                                     |
 | `packages/auth` | Shared Answerable ID user resource-token verification | Locally tested |
@@ -42,12 +42,14 @@ bun --env-file=.env run --filter @answerable/id db:migrate
 bun dev
 ```
 
+`default.env` lists every variable the monorepo reads, with empty values. Add a new variable there as well as to the working template; the ID test suite checks it.
+
 `apps/web` reads its own env file: `cp apps/web/.env.example apps/web/.env.local`. The waitlist form writes to a Google Sheet through a service account (`GOOGLE_SHEETS_ID`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`). All three are optional locally (without them the form logs the address to the terminal and reports success) and required in production, where the form returns an error if any is missing. The file walks through creating the service account and sharing the sheet.
 
 | Service    | Host port | Purpose                                                       |
 | ---------- | --------- | ------------------------------------------------------------- |
-| `web`      | 47100     | Public site and Answerable ID browser pages                   |
-| `id`       | 47300     | Answerable ID API                                             |
+| `web`      | 47100     | Public site                                                   |
+| `id`       | 47300     | Answerable ID API and browser pages                           |
 | `postgres` | 47432     | `answerable_id`, plus `answerable_id_test` for the test suite |
 | `redis`    | 47379     | Session read-cache — later; unused by v1 code                 |
 

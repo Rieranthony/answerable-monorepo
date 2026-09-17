@@ -4,6 +4,7 @@ import {
   EnvironmentValidationError,
   loadEnvironment,
   parseEnvironment,
+  environmentVariableNames,
 } from "./env.ts";
 
 const requiredEnvironment = {
@@ -70,9 +71,9 @@ describe("unit: environment", () => {
       betterAuthSecret: requiredEnvironment.BETTER_AUTH_SECRET,
       betterAuthSecrets: undefined,
       upstreamTokenSecrets: undefined,
-      trustedOrigins: ["http://localhost:47100"],
+      trustedOrigins: [],
+      platformApplications: {},
       trustedProxyCidrs: [],
-      authPagesUrl: "http://localhost:47100",
       oauthRefreshReuseIntervalSeconds: 0,
       operationalLogIntervalMs: 30_000,
       databasePoolMax: 20,
@@ -141,7 +142,6 @@ describe("unit: environment", () => {
       ADMIN_RESOURCE_IDENTIFIER: "https://admin.example.com/api/admin/",
       BETTER_AUTH_TRUSTED_ORIGINS:
         "https://chat.example.com, https://admin.example.com",
-      AUTH_PAGES_URL: "https://auth.example.com",
     });
 
     expect(environment).toMatchObject({
@@ -158,7 +158,6 @@ describe("unit: environment", () => {
       platformOrganizationName: "Custom platform",
       adminResourceIdentifier: "https://admin.example.com/api/admin",
       trustedOrigins: ["https://chat.example.com", "https://admin.example.com"],
-      authPagesUrl: "https://auth.example.com",
     });
   });
 
@@ -292,7 +291,6 @@ test("statement deadline rejects disabled, fractional and out-of-range values", 
 const production = {
   ...requiredEnvironment,
   NODE_ENV: "production",
-  AUTH_PAGES_URL: "https://auth.example.com",
   BETTER_AUTH_TRUSTED_ORIGINS: "https://auth.example.com",
   TRUSTED_PROXY_CIDRS: "10.0.0.0/8, 2001:db8::/32",
 };
@@ -302,11 +300,7 @@ test("production disables OpenAPI unless explicitly enabled", () => {
     parseEnvironment({ ...production, OPENAPI_ENABLED: "true" }).openApiEnabled,
   ).toBe(true);
 });
-for (const key of [
-  "AUTH_PAGES_URL",
-  "BETTER_AUTH_TRUSTED_ORIGINS",
-  "TRUSTED_PROXY_CIDRS",
-])
+for (const key of ["BETTER_AUTH_TRUSTED_ORIGINS", "TRUSTED_PROXY_CIDRS"])
   test(`production requires ${key}`, () => {
     expect(() => parseEnvironment({ ...production, [key]: undefined })).toThrow(
       key,
@@ -348,3 +342,116 @@ for (const key of [
       ).toThrow(key);
   });
 }
+
+test("platform application pairs parse in every environment and blank values are unset", () => {
+  for (const base of [
+    requiredEnvironment,
+    { ...requiredEnvironment, NODE_ENV: "test" },
+    production,
+  ]) {
+    expect(
+      parseEnvironment({
+        ...base,
+        GOOGLE_CLIENT_ID: "",
+        GOOGLE_CLIENT_SECRET: "  ",
+        MICROSOFT_CLIENT_ID: " ",
+        MICROSOFT_CLIENT_SECRET: "",
+      }).platformApplications,
+    ).toEqual({});
+    const parsed = parseEnvironment({
+      ...base,
+      GOOGLE_CLIENT_ID: "google-id",
+      GOOGLE_CLIENT_SECRET: "google-private",
+      MICROSOFT_CLIENT_ID: "microsoft-id",
+      MICROSOFT_CLIENT_SECRET: "microsoft-private",
+    });
+    expect(parsed.platformApplications.google?.clientId === "google-id").toBe(
+      true,
+    );
+    expect(
+      parsed.platformApplications.google?.clientSecret === "google-private",
+    ).toBe(true);
+    expect(
+      parsed.platformApplications.microsoft?.clientId === "microsoft-id",
+    ).toBe(true);
+    expect(
+      parsed.platformApplications.microsoft?.clientSecret ===
+        "microsoft-private",
+    ).toBe(true);
+    for (const [id, secret] of [
+      ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
+      ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET"],
+    ]) {
+      for (const [present, missing] of [
+        [id!, secret!],
+        [secret!, id!],
+      ]) {
+        for (const blank of [undefined, "", "   "]) {
+          const source = {
+            ...base,
+            [present!]: "never-echo-this-value",
+            [missing!]: blank,
+          };
+          expect(() => parseEnvironment(source)).toThrow(
+            `${missing}: Required together with ${present}`,
+          );
+          try {
+            parseEnvironment(source);
+          } catch (error) {
+            expect(String(error).includes("never-echo-this-value")).toBe(false);
+          }
+        }
+      }
+    }
+  }
+});
+
+test("default.env lists every variable with an empty value", async () => {
+  const assignments = (
+    await Bun.file(new URL("../../../default.env", import.meta.url)).text()
+  )
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !line.startsWith("#"));
+  const names = assignments.map((line) => line.split("=", 1)[0]!);
+  expect(
+    assignments
+      .filter((line) => !/^[A-Z][A-Z0-9_]*=$/.test(line))
+      .map((line) => line.split("=", 1)[0]),
+    "default.env holds names with empty values only",
+  ).toEqual([]);
+  expect(names.filter((name, index) => names.indexOf(name) !== index)).toEqual(
+    [],
+  );
+  // Read outside the service schema: migrations, the test database and the OpenAPI export.
+  const tooling = [
+    "DATABASE_MIGRATION_URL",
+    "DATABASE_RUNTIME_ROLE",
+    "PUBLIC_ID_URL",
+    "TEST_DATABASE_URL",
+  ];
+  expect(
+    [...environmentVariableNames, ...tooling].filter(
+      (name) => !names.includes(name),
+    ),
+    "Add the missing variables to default.env",
+  ).toEqual([]);
+});
+
+test("trusted origins trim whitespace and discard empty entries without a fallback", () => {
+  for (const value of ["", " , , "]) {
+    expect(
+      parseEnvironment({
+        ...requiredEnvironment,
+        BETTER_AUTH_TRUSTED_ORIGINS: value,
+      }).trustedOrigins,
+    ).toEqual([]);
+  }
+  expect(
+    parseEnvironment({
+      ...requiredEnvironment,
+      BETTER_AUTH_TRUSTED_ORIGINS:
+        " , https://browser.example, , https://issuer.example , ",
+    }).trustedOrigins,
+  ).toEqual(["https://browser.example", "https://issuer.example"]);
+});

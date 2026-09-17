@@ -1,3 +1,7 @@
+import {
+  platformApplicationFor,
+  platformApplications,
+} from "../../auth/platform-applications.ts";
 import { commandJson } from "./schemas.ts";
 import { platformRead } from "./platform-read.ts";
 import { tenantRead } from "./tenant-read.ts";
@@ -33,7 +37,8 @@ const paramSchema = uuidParam("organizationId");
 const parameters = [
   pathParameter("organizationId", "uuid"),
 ] satisfies AdminRoute["parameters"];
-const oidcSchema = z.strictObject({
+const ownOidcSchema = z.strictObject({
+  credentials: z.literal("own").optional(),
   clientId: z.string().min(1),
   clientSecret: z.string().min(1).optional(),
   tokenEndpointAuthentication: z
@@ -45,10 +50,19 @@ const oidcSchema = z.strictObject({
   jwksEndpoint: z.url().optional(),
   scopes: z.array(z.string()).optional(),
 });
+const platformOidcSchema = z.strictObject({
+  credentials: z.literal("platform"),
+  discoveryEndpoint: z.url().optional(),
+  authorizationEndpoint: z.url().optional(),
+  tokenEndpoint: z.url().optional(),
+  jwksEndpoint: z.url().optional(),
+  scopes: z.array(z.string()).optional(),
+});
+const oidcSchema = z.union([platformOidcSchema, ownOidcSchema]);
 const putSchema = z.object({
   issuer: z.url(),
   domain: hostSchema,
-  oidc: oidcSchema,
+  oidc: oidcSchema.optional(),
 });
 export const ssoProviderSchema = z.object({
   id: z.uuid(),
@@ -57,7 +71,16 @@ export const ssoProviderSchema = z.object({
   providerId: z.string(),
   issuer: z.string(),
   domain: z.string(),
-  oidc: oidcSchema.omit({ clientSecret: true }).extend({
+  oidc: z.object({
+    credentials: z.enum(["platform", "own"]),
+    tokenEndpointAuthentication: z
+      .enum(["client_secret_post", "client_secret_basic", "private_key_jwt"])
+      .optional(),
+    discoveryEndpoint: z.url().optional(),
+    authorizationEndpoint: z.url().optional(),
+    tokenEndpoint: z.url().optional(),
+    jwksEndpoint: z.url().optional(),
+    scopes: z.array(z.string()).optional(),
     clientId: z.string().optional(),
     hasClientSecret: z.boolean(),
     pkce: z.boolean().optional(),
@@ -116,7 +139,7 @@ export const routes = {
     operationId: "getSsoProvider",
     summary: "Get the SSO provider",
     description:
-      "Return the organisation’s SSO provider with credentials redacted, without changing state. Use putSsoProvider to configure or replace it; validation_failed rejects malformed ids and not_found means the organisation or provider is missing.",
+      "Return the organisation’s SSO provider with credentials redacted and oidc.credentials indicating platform or own, without changing state. Use putSsoProvider to configure or replace it; validation_failed rejects malformed ids and not_found means the organisation or provider is missing.",
     tag: "SSO provider",
     platformScope: "platform:read",
     kind: "read",
@@ -141,7 +164,7 @@ export const routes = {
     operationId: "putSsoProvider",
     summary: "Put the SSO provider",
     description:
-      "Requires Idempotency-Key. Accepts the strong If-Match ETag from getSsoProvider for conditional replacement; conflicting/malformed headers return 400; stale state returns 412. Committed replay precedes the original precondition. Identical authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Create or replace the organisation’s SSO configuration and return the provider with credentials redacted. A real configuration change, including first creation, irreversibly revokes existing tenant grant contexts in the same audited transaction; unchanged configuration preserves them. Other tenants and global browser sessions are preserved. Prefer getSsoProvider to inspect configuration; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict indicates a duplicate provider.",
+      'Requires Idempotency-Key. Accepts the strong If-Match ETag from getSsoProvider for conditional replacement; conflicting/malformed headers return 400; stale state returns 412. Committed replay precedes the original precondition. Identical authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Create or replace the organisation’s SSO configuration and return the provider with credentials redacted. A real configuration change, including first creation, irreversibly revokes existing tenant grant contexts in the same audited transaction; unchanged configuration preserves them. Other tenants and global browser sessions are preserved. Prefer getSsoProvider to inspect configuration; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict indicates a duplicate provider. Omit oidc, or send oidc.credentials "platform", to sign the organisation in through Answerable\'s Google or Microsoft application; generic issuers require oidc.clientId. platform_credentials_unsupported rejects a generic issuer without own credentials; platform_application_missing means the service has no application for that directory.',
     tag: "SSO provider",
     platformScope: "platform:write",
     kind: "write",
@@ -167,9 +190,9 @@ export const routes = {
     requestBody: body(putSchema),
     example: {
       body: {
-        issuer: "https://login.example.com",
+        issuer:
+          "https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0",
         domain: "acme.example.com",
-        oidc: { clientId: "acme-client", clientSecret: "secret" },
       },
     },
     responses: standardResponses(
@@ -228,7 +251,10 @@ export function register(app: Hono<AppEnvironment>) {
               context.req.param("organizationId")!,
             ),
           ),
-          context.get("ssoTest"),
+          {
+            ...context.get("ssoTest"),
+            trustedOrigins: context.get("environment").trustedOrigins,
+          },
         ),
       ),
   );
@@ -237,10 +263,11 @@ export function register(app: Hono<AppEnvironment>) {
     routes.getSsoProvider,
     validate("param", paramSchema),
     async (context) => {
-      const result = await tenantRead(
-        context,
-        "directory",
-        service.getSsoProvider,
+      const result = await tenantRead(context, "directory", (tenant) =>
+        service.getSsoProvider(
+          tenant,
+          context.get("environment").platformApplications,
+        ),
       );
       context.header("ETag", revisionTag(result));
       return context.json(result);
@@ -258,7 +285,12 @@ export function register(app: Hono<AppEnvironment>) {
       );
       const organizationId = context.req.param("organizationId")!;
       const input = putSchema.parse(await context.req.json());
-      input.oidc.tokenEndpointAuthentication ??= "client_secret_post";
+      input.oidc ??= { credentials: "platform" };
+      const application = platformApplicationFor(input.issuer);
+      if (application)
+        input.oidc.scopes ??= [...platformApplications[application].scopes];
+      if (input.oidc.credentials !== "platform")
+        input.oidc.tokenEndpointAuthentication ??= "client_secret_post";
       input.oidc.discoveryEndpoint ??= `${input.issuer}/.well-known/openid-configuration`;
       if (input.oidc.scopes)
         input.oidc.scopes = [...new Set(input.oidc.scopes)].sort();
@@ -271,8 +303,9 @@ export function register(app: Hono<AppEnvironment>) {
           const result = await service.putSsoProvider(
             platform,
             organizationId,
-            input,
+            { ...input, oidc: input.oidc! },
             expected,
+            context.get("environment").platformApplications,
           );
           return {
             body: result.provider,
@@ -302,7 +335,11 @@ export function register(app: Hono<AppEnvironment>) {
         { organizationId },
         204,
         async (platform) => {
-          const id = await service.deleteSsoProvider(platform, organizationId);
+          const id = await service.deleteSsoProvider(
+            platform,
+            organizationId,
+            context.get("environment").platformApplications,
+          );
           return { body: null, resultReference: { type: "sso_provider", id } };
         },
       );

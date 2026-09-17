@@ -331,3 +331,44 @@ test("a real occupied listen port closes the seeded runtime's database pool", as
     if (!database.pool.ended) await database.close();
   }
 });
+
+test("startup reports only platform application availability after the seed line", async () => {
+  const log = spyOn(console, "log").mockImplementation(() => {});
+  try {
+    for (const configured of [false, true]) {
+      log.mockClear();
+      const runtime = await startRuntime(
+        testEnvironment({
+          port: 0,
+          platformApplications: configured
+            ? {
+                google: {
+                  clientId: "private-google-id",
+                  clientSecret: "private-google-secret",
+                },
+                microsoft: {
+                  clientId: "private-microsoft-id",
+                  clientSecret: "private-microsoft-secret",
+                },
+              }
+            : {},
+        }),
+        { seed: async () => seedResult, authFactory: stubAuth },
+      );
+      try {
+        expect(log.mock.calls[0]![0]).toStartWith(
+          "[id] seeded platform organisation",
+        );
+        expect(log.mock.calls[1]).toEqual([
+          "[id] platform applications",
+          JSON.stringify({ google: configured, microsoft: configured }),
+        ]);
+        expect(JSON.stringify(log.mock.calls).includes("private-")).toBe(false);
+      } finally {
+        await runtime.shutdown();
+      }
+    }
+  } finally {
+    log.mockRestore();
+  }
+});

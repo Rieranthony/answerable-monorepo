@@ -20,14 +20,13 @@ if (!manifestPath || !process.argv.includes("--isolated-mcp-fixture")) throw new
 // Fixed separate container/port, not DATABASE_URL or the normal ID test database.
 const databaseUrl = "postgres://answerable:answerable@127.0.0.1:47532/answerable_id_test";
 const idOrigin = "http://127.0.0.1:47600";
-const webOrigin = "http://127.0.0.1:47601";
 const mcpOrigin = "http://127.0.0.1:47602";
 const callback = "http://127.0.0.1:47603/callback";
 const upstreams = await Promise.all([startOidcIssuer(), startOidcIssuer()]);
 const environment = testEnvironment({
-  databaseUrl, betterAuthUrl: idOrigin, port: 47600, authPagesUrl: webOrigin,
+  databaseUrl, betterAuthUrl: idOrigin, port: 47600,
   adminResourceIdentifier: `${idOrigin}/api/admin`,
-  trustedOrigins: [webOrigin, callback, ...upstreams.map(upstream => upstream.origin)], databasePoolMax: 4,
+  trustedOrigins: [callback, ...upstreams.map(upstream => upstream.origin)], databasePoolMax: 4,
 });
 const setup = createDatabase(environment);
 await runMigrations(setup.db);
@@ -82,7 +81,7 @@ const runtime = createDatabase({ ...environment, databaseUrl: runtimeUrl.href })
 const auth = createAuth(runtime.db, environment);
 const app = createApp({ auth, db: runtime.db, environment });
 const server = Bun.serve({ hostname: "127.0.0.1", port: 47600, fetch: app.fetch });
-await Bun.write(manifestPath, JSON.stringify({ idOrigin, webOrigin, mcpOrigin, callback, clientId, resource, resourceInstanceId, scopes, tenants }));
+await Bun.write(manifestPath, JSON.stringify({ idOrigin, mcpOrigin, callback, clientId, resource, resourceInstanceId, scopes, tenants }));
 console.log("Isolated ID fixture ready");
 let closing = false;
 async function close() {

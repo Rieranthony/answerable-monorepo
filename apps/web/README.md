@@ -1,6 +1,6 @@
 # Answerable web
 
-The Next.js app serves the public Answerable site and the browser-facing Answerable ID login, consent, and error pages. The identity service itself remains an API in `apps/id`.
+The Next.js app serves the public Answerable site and the docs at `/docs`. Answerable ID serves its API and browser pages from `apps/id`.
 
 ## Local development
 

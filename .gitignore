@@ -3,7 +3,6 @@ node_modules/
 
 # builds
 .next/
-.next-mcp-e2e/
 coverage/
 dist/
 out/

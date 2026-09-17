@@ -7,6 +7,7 @@ import { ProblemError } from "../http/problem.ts";
 import { classifyIssuer } from "./federation.ts";
 
 export const ssoProblemCodes = [
+  "untrusted_origin",
   "insecure_issuer",
   "private_host",
   "discovery_unreachable",
@@ -16,6 +17,7 @@ export const ssoProblemCodes = [
   "jwks_invalid",
 ] as const;
 export type SsoTestOptions = {
+  trustedOrigins?: string[];
   fetch?: typeof fetch;
   timeoutMs?: number;
   allowPrivateHosts?: boolean;
@@ -56,6 +58,7 @@ const discoverySchema = z.object({
   authorization_endpoint: z.url(),
   token_endpoint: z.url(),
   jwks_uri: z.url(),
+  userinfo_endpoint: z.url().optional(),
 });
 const jwksSchema = z.object({
   keys: z.array(z.object({ kty: z.string().min(1) })),
@@ -161,7 +164,14 @@ export async function testSsoProvider(
     }
     return true;
   }
+  function checkTrustedOrigin(value: string) {
+    if (!options.trustedOrigins || !URL.canParse(value)) return;
+    const { origin } = new URL(value);
+    if (!options.trustedOrigins.includes(origin))
+      problem("untrusted_origin", `Endpoint origin is not trusted: ${origin}`);
+  }
   async function inspect() {
+    checkTrustedOrigin(url);
     if (!allowed(issuer) || !allowed(url)) return;
     const fetcher = options.fetch ?? fetch;
     const signal = AbortSignal.timeout(options.timeoutMs ?? 5000);
@@ -188,6 +198,14 @@ export async function testSsoProvider(
         "Discovery must contain issuer, authorization_endpoint, token_endpoint and jwks_uri URLs within 256 KiB",
       );
       return;
+    }
+    for (const endpoint of [
+      discovery.authorization_endpoint,
+      discovery.token_endpoint,
+      discovery.jwks_uri,
+      discovery.userinfo_endpoint,
+    ]) {
+      if (endpoint) checkTrustedOrigin(endpoint);
     }
     result.discovery.issuerMatches = discovery.issuer === issuer;
     result.discovery.authorizationEndpoint = discovery.authorization_endpoint;

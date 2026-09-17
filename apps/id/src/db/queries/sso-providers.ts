@@ -1,3 +1,8 @@
+import {
+  platformApplicationFor,
+  platformApplications,
+  type PlatformApplicationIds,
+} from "../../auth/platform-applications.ts";
 import { and } from "drizzle-orm";
 import {
   requirePlatformReadContext,
@@ -19,26 +24,45 @@ import { ssoProviders } from "../schema/index.ts";
 type TokenEndpointAuthentication =
   "client_secret_post" | "client_secret_basic" | "private_key_jwt";
 
+type OidcEndpoints = {
+  scopes?: string[];
+  discoveryEndpoint?: string;
+  authorizationEndpoint?: string;
+  tokenEndpoint?: string;
+  jwksEndpoint?: string;
+};
+export type OwnOidc = OidcEndpoints & {
+  credentials?: "own";
+  clientId: string;
+  clientSecret?: string;
+  tokenEndpointAuthentication?: TokenEndpointAuthentication;
+};
+export type PlatformOidc = OidcEndpoints & { credentials: "platform" };
 export type CreateSsoProviderInput = {
   organizationId: string;
   providerId: string;
   issuer: string;
   domain: string;
-  oidc: {
-    clientId: string;
-    clientSecret?: string;
-    authorizationEndpoint?: string;
-    tokenEndpoint?: string;
-    jwksEndpoint?: string;
-    tokenEndpointAuthentication?: TokenEndpointAuthentication;
-    scopes?: string[];
-    discoveryEndpoint?: string;
-  };
+  oidc: OwnOidc | PlatformOidc;
 };
 
 export function serializeSsoProviderConfig(
   input: Pick<CreateSsoProviderInput, "issuer" | "oidc">,
 ): string {
+  if (input.oidc.credentials === "platform")
+    return JSON.stringify({
+      issuer: input.issuer,
+      credentials: "platform",
+      pkce: true,
+      discoveryEndpoint:
+        input.oidc.discoveryEndpoint ??
+        `${input.issuer}/.well-known/openid-configuration`,
+      scopes: input.oidc.scopes,
+      authorizationEndpoint: input.oidc.authorizationEndpoint,
+      tokenEndpoint: input.oidc.tokenEndpoint,
+      jwksEndpoint: input.oidc.jwksEndpoint,
+      overrideUserInfo: false,
+    });
   return JSON.stringify({
     issuer: input.issuer,
     clientId: input.oidc.clientId,
@@ -114,10 +138,13 @@ export async function findSsoProviderForCommand(
   return provider ?? null;
 }
 
-export async function readSsoProvider(context: TenantReadContext<"directory">) {
+export async function readSsoProvider(
+  context: TenantReadContext<"directory">,
+  ids: PlatformApplicationIds = {},
+) {
   const { tx, organizationId } = requireTenantDirectoryContext(context);
   const [provider] = await providerQuery(tx, organizationId);
-  return provider ? redactSsoProvider(provider) : null;
+  return provider ? redactSsoProvider(provider, ids) : null;
 }
 
 export async function readSsoIssuer(
@@ -201,10 +228,16 @@ export async function deleteSsoProvider(
   return row ?? null;
 }
 
-export function redactSsoProvider(row: typeof ssoProviders.$inferSelect) {
+export function redactSsoProvider(
+  row: typeof ssoProviders.$inferSelect,
+  ids: PlatformApplicationIds = {},
+) {
   const config = JSON.parse(
     row.oidcConfig ?? "{}",
   ) as CreateSsoProviderInput["oidc"];
+  const application = platformApplicationFor(row.issuer);
+  const platform = config.credentials === "platform";
+  const id = application ? ids[application] : undefined;
   return {
     id: row.id,
     revision: row.revision,
@@ -213,15 +246,20 @@ export function redactSsoProvider(row: typeof ssoProviders.$inferSelect) {
     issuer: row.issuer,
     domain: row.domain,
     oidc: {
-      clientId: config.clientId,
-      tokenEndpointAuthentication: config.tokenEndpointAuthentication,
+      credentials: config.credentials ?? "own",
+      clientId: platform ? id?.clientId : config.clientId,
+      tokenEndpointAuthentication: platform
+        ? application
+          ? platformApplications[application].tokenEndpointAuthentication
+          : undefined
+        : config.tokenEndpointAuthentication,
       discoveryEndpoint: config.discoveryEndpoint,
       authorizationEndpoint: config.authorizationEndpoint,
       tokenEndpoint: config.tokenEndpoint,
       jwksEndpoint: config.jwksEndpoint,
       scopes: config.scopes,
       pkce: (config as { pkce?: boolean }).pkce,
-      hasClientSecret: Boolean(config.clientSecret),
+      hasClientSecret: platform ? Boolean(id) : Boolean(config.clientSecret),
     },
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

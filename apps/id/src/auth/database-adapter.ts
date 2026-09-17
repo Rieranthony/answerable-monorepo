@@ -1,3 +1,7 @@
+import {
+  hydrateSsoProviderRow,
+  type PlatformApplications,
+} from "./platform-applications.ts";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import type { BetterAuthOptions } from "better-auth";
 import type { Database, Executor } from "../db/client.ts";
@@ -13,6 +17,7 @@ export function authDatabaseAdapter(
   db: Database,
   onProviderRead?: (rows: unknown[]) => Promise<void>,
   beforeTransaction?: (tx: Executor) => Promise<void>,
+  platformApplications: PlatformApplications = {},
 ) {
   return (options: BetterAuthOptions) => {
     const adapter = drizzleAdapter(db, { ...config, transaction: true })(
@@ -48,14 +53,30 @@ export function authDatabaseAdapter(
     const wrap = (base: typeof adapter): typeof adapter => ({
       ...base,
       findOne: async <T>(input: Parameters<typeof adapter.findOne>[0]) => {
-        const row = await base.findOne<T>(visible(input));
-        if (input.model === "ssoProvider") await onProviderRead?.([row]);
+        let row = await base.findOne<T>(visible(input));
+        if (input.model === "ssoProvider") {
+          row = hydrateSsoProviderRow(row, platformApplications);
+          await onProviderRead?.([row]);
+        }
         return row;
       },
       findMany: async <T>(input: Parameters<typeof adapter.findMany>[0]) => {
-        const rows = await base.findMany<T>(visible(input));
-        if (input.model === "ssoProvider") await onProviderRead?.(rows);
+        let rows = await base.findMany<T>(visible(input));
+        if (input.model === "ssoProvider") {
+          rows = rows.map((row) =>
+            hydrateSsoProviderRow(row, platformApplications),
+          );
+          await onProviderRead?.(rows);
+        }
         return rows;
+      },
+      // Better Auth locks the provider with an update and compares its returned
+      // identity boundary with the configuration read before token exchange.
+      update: async <T>(input: Parameters<typeof adapter.update>[0]) => {
+        const row = await base.update<T>(input);
+        return input.model === "ssoProvider"
+          ? hydrateSsoProviderRow(row, platformApplications)
+          : row;
       },
       count: (input) => base.count(visible(input)),
     });

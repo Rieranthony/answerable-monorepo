@@ -75,22 +75,16 @@ try {
   console.log("[e2e] Starting isolated PostgreSQL")
   await command([...compose, "up", "-d", "--wait"])
   ensureRunning()
-  const id = Bun.spawn([process.execPath, "apps/id/scripts/mcp-e2e-fixture.ts", manifestPath, "--isolated-mcp-fixture"], { cwd: root, stdout: "inherit", stderr: "inherit" })
+  const id = Bun.spawn([process.execPath, "scripts/mcp-e2e-fixture.ts", manifestPath, "--isolated-mcp-fixture"], { cwd: join(root, "apps/id"), stdout: "inherit", stderr: "inherit" })
   processes.push(id)
   await waitFor(() => Bun.file(manifestPath).exists(), "ID fixture")
   const manifest = await Bun.file(manifestPath).json() as {
-    idOrigin: string; webOrigin: string; mcpOrigin: string; callback: string; clientId: string;
+    idOrigin: string; mcpOrigin: string; callback: string; clientId: string;
     resource: string; resourceInstanceId: string; scopes: string[];
     tenants: Array<{ email: string; organizationId: string; slug: string }>;
   }
   ensureRunning()
-  console.log("[e2e] Starting real web login pages")
-  const web = Bun.spawn([process.execPath, "node_modules/next/dist/bin/next", "dev", "--port", "47601", "--hostname", "127.0.0.1"], {
-    cwd: join(root, "apps/web"), stdout: "ignore", stderr: "inherit",
-    env: { ...process.env, NODE_ENV: "development", NEXT_PUBLIC_ID_URL: manifest.idOrigin, NEXT_DIST_DIR: ".next-mcp-e2e" },
-  })
-  processes.push(web)
-  await waitFor(async () => (await fetch(`${manifest.webOrigin}/login`)).ok, "web login")
+  await waitFor(async () => (await fetch(`${manifest.idOrigin}/login`)).ok, "ID login pages")
   const html = await buildView({ entry: join(root, "mcps/e2e/src/views/records.tsx"), title: "ID acceptance records" })
   ensureRunning()
   records = createRecordStore(join(directory, "records.sqlite"))
@@ -129,14 +123,14 @@ try {
   const results: string[] = []
   const expiryChecks: Array<{ accessToken: string; expiresAt: number }> = []
   for (const tenant of manifest.tenants) {
-    console.log(`[e2e] Authenticating ${tenant.slug} through ID and web pages`)
+    console.log(`[e2e] Authenticating ${tenant.slug} through ID browser pages`)
     const context: BrowserContext = await browser.newContext()
     const page: Page = await context.newPage()
     page.setDefaultTimeout(30_000)
     let upstreamNavigations = 0
     page.on("request", request => {
       const url = new URL(request.url())
-      if (request.isNavigationRequest() && url.pathname === "/authorize" && ![manifest.idOrigin, manifest.webOrigin].includes(url.origin)) upstreamNavigations++
+      if (request.isNavigationRequest() && url.pathname === "/authorize" && url.origin !== manifest.idOrigin) upstreamNavigations++
     })
     const verifier = crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "")
     const challenge = Buffer.from(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))).toString("base64url")

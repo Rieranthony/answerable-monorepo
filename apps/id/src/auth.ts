@@ -1,3 +1,4 @@
+import { serviceUrl } from "./lib/service-url.ts";
 import { authDatabaseAdapter } from "./auth/database-adapter.ts";
 import { userOAuthProvider } from "./auth/user-provider.ts";
 import { sso } from "@better-auth/sso";
@@ -77,6 +78,7 @@ export function createAuth(db: Database, environment: Environment) {
       db,
       ssoOrigin.observeProviders,
       verifiedSso.beforeTransaction,
+      environment.platformApplications,
     ),
     databaseHooks: {
       session: {
@@ -278,10 +280,10 @@ export function createAuth(db: Database, environment: Environment) {
             environment.oauthRefreshReuseIntervalSeconds,
           // hashClientSecret mirrors this digest for bootstrap clients.
           storeClientSecret: "hashed",
-          loginPage: `${environment.authPagesUrl}/login`,
-          consentPage: `${environment.authPagesUrl}/consent`,
+          loginPage: `${serviceUrl(environment)}/login`,
+          consentPage: `${serviceUrl(environment)}/consent`,
         },
-        `${environment.authPagesUrl}/authorize`,
+        `${serviceUrl(environment)}/authorize`,
       ),
       openAPI({ disableDefaultReference: true }),
     ],
