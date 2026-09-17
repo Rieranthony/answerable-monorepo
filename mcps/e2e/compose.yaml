@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: answerable
+      POSTGRES_PASSWORD: answerable
+      POSTGRES_DB: answerable_id_test
+    ports:
+      - "127.0.0.1:47532:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U answerable -d answerable_id_test"]
+      interval: 1s
+      timeout: 5s
+      retries: 30

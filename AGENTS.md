@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Answerable monorepo. Bun 1.3.1, Turborepo. Two apps: `apps/web` (Next.js 16: the site, the docs at `/docs`) and `apps/id` (Answerable ID: Bun, Hono, Better Auth, Postgres, and its browser pages). Two shared packages: `packages/ui` (shared React components and Tailwind theme) and `packages/countries` (ISO country data and helpers). Read `README.md`, then `docs/00-orientation.md`. Decisions live in `docs/`; `docs/02-plan.md` lists what not to re-propose.
+Answerable monorepo. Bun 1.3.1, Turborepo. Two apps: `apps/web` (Next.js 16: the site, the docs at `/docs`) and `apps/id` (Answerable ID: Bun, Hono, Better Auth, Postgres, and its browser pages). Shared packages: `packages/ui` (React components and Tailwind theme), `packages/countries` (ISO country data), `packages/auth` (Answerable ID resource-token verification) and `packages/mcp-base` (Hono, MCP Apps and typed authoring). Runnable MCPs live in `mcps/*`; `mcps/e2e` is the permanent local acceptance consumer. Read `README.md`, then `docs/00-orientation.md`. Decisions live in `docs/`; `docs/02-plan.md` lists what not to re-propose.
 
 ## Documentation
 
@@ -49,3 +49,7 @@ Here's how we write documentation. These are Lee Robinson's ten principles (http
 - OpenAPI: `bun --env-file=.env run --filter @answerable/id openapi:export` regenerates `apps/id/openapi.json` and `apps/id/openapi.admin.json`; tests fail when either drifts.
 - Env: `default.env` is the tracked inventory of every variable, with empty values; add new variables there and to `.env.example`. `.env` files stay ignored and never hold committed values.
 - Commits: imperative, sentence case, no prefix, no trailing period.
+
+## MCP foundation
+
+Read `docs/07-mcp-platform-draft.md` and `reports/mcp-foundation-evidence.md` before extending the base. Use `apps/web/content/docs/mcp/authoring.mdx` to create a consumer; `mcps/e2e` is the executable reference. Root `bun dev` starts apps only. Run `bun run mcp:test` for base/browser checks and `bun run mcp:test:e2e` for real ID and lifecycle acceptance (Docker and Playwright Chromium required). The e2e runner owns isolated ports 47532 and 47600 and 47602–47604; it never uses the normal ID database. Do not add a Better Auth instance to an MCP. Admin MCP work and external-host/production acceptance remain separate.

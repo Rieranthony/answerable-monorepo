@@ -35,6 +35,22 @@
       "dependsOn": ["^build"],
       "outputs": ["coverage/**"]
     },
+    "@answerable/mcp-e2e#test": {
+      "cache": false,
+      "dependsOn": ["^build"]
+    },
+    "@answerable/mcp-base#test": {
+      "cache": false,
+      "dependsOn": ["^build"]
+    },
+    "@answerable/auth#test": {
+      "cache": false
+    },
+    "@answerable/mcp-e2e#dev": {
+      "cache": false,
+      "persistent": true,
+      "env": ["MCP_ID_ISSUER", "MCP_ID_JWKS_URL", "MCP_RESOURCE_URL", "MCP_RESOURCE_INSTANCE_ID", "MCP_RECORDS_PATH", "MCP_ALLOW_LOCAL_HTTP", "MCP_PORT"]
+    },
     "lint": {},
     "typecheck": {}
   }

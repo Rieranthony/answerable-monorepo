@@ -1,0 +1,60 @@
+---
+title: Test MCPs locally
+description: "Run an isolated browser journey through real Answerable ID, MCP tools and an MCP Apps view."
+---
+
+```sh
+bun install
+(cd mcps/e2e && bun x playwright install chromium)
+bun run mcp:test:e2e
+```
+
+Requires Bun 1.3.1 and Docker Compose. Run from the monorepo root. The command exits non-zero on failure and cleans up its own processes and disposable database.
+
+## What the test proves
+
+1. Start isolated PostgreSQL, real ID and its browser login pages, local corporate OIDC fixtures and the e2e MCP.
+2. Follow the MCP authentication challenge to resource metadata and ID’s advertised OAuth endpoints.
+3. Sign in as a user in each of two organisations, select the organisation and consent.
+4. Exchange an authorisation code using PKCE for a real ID resource token.
+5. Retrieve the walkthrough prompt and guide resource, read identity, create records and deny cross-tenant reads.
+6. Render the MCP Apps resource through the official host bridge; create and delete records through the UI.
+7. Reject a resource token at a different MCP resource.
+8. Refresh each grant, disable its fixture organisation, verify refresh denial, then wait for actual access-token expiry and verify rejection.
+9. Interrupt additional fixtures during startup and browser login, then verify the container is removed and all reserved ports are released.
+
+The corporate providers are test fixtures. ID, its restricted runtime database role, token issuance, MCP verification and Apps communication are real. No successful resource token is substituted by the test.
+
+## Ports and data
+
+| Service | Loopback port |
+| --- | --- |
+| Disposable PostgreSQL | `47532` |
+| ID | `47600` |
+| MCP | `47602` |
+| OAuth callback | `47603` |
+| Concurrent-run guard | `47604` |
+
+Allow roughly two minutes, including a wall-clock wait for the fixture's 60-second access tokens. Keep these ports free. Other fixture servers use allocated loopback ports. The guard prevents two runners from managing the same Compose project. PostgreSQL belongs to `answerable-mcp-e2e`; the runner never reads your normal `DATABASE_URL`.
+
+## Faster checks
+
+```sh
+bun run mcp:test
+bun run typecheck
+bun run lint
+```
+
+The foundation suite uses controlled signing keys for claim rejection, rotation and outage cases. Its browser test checks allowed and denied Apps actions. Record tests check tenant isolation and durable retry receipts. These tests complement the real-ID journey.
+
+## Run a configured MCP
+
+`bun run mcp:dev` starts the e2e MCP with root `.env` configuration. It requires an existing ID resource registration, client, capabilities and assignments. Include `offline_access` in the resource's allowed scopes if grants must remain refreshable. Set the `MCP_*` values documented in `.env.example` and `mcps/e2e/README.md`. This command does not provision or authenticate a user.
+
+See [ID authorisation](/docs/id/oauth) for those access requirements and [authoring](/docs/mcp/authoring) for package APIs.
+
+## Limits
+
+The local test host proves the Apps protocol path. External chat applications still need individual testing for extension support, OAuth registration and network access. A cloud connector cannot reach a developer's loopback address automatically.
+
+**Not yet:** external chat-host and production deployment acceptance. See the [foundation plan](/docs/mcp#foundation-plan).
