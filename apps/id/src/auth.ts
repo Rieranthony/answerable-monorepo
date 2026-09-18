@@ -46,6 +46,7 @@ export function createAuth(db: Database, environment: Environment) {
   const auth = betterAuth({
     appName: "Answerable ID",
     onAPIError: {
+      errorURL: `${serviceUrl(environment)}/error`,
       onError(error) {
         if (isAPIError(error)) return;
 

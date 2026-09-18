@@ -4,6 +4,8 @@ import { describeError, describeSSOError } from "./error-copy.ts";
 
 const KNOWN_CODES = [
   "provider_not_found",
+  "state_not_found",
+  "state_mismatch",
   "organization_disabled",
   "directory_mismatch",
   "guest_account",
@@ -59,12 +61,12 @@ describe("unit: SSO start failures", () => {
     );
   });
 
-  test("preserves the existing fallback for other failures and a missing URL", () => {
+  test("uses a general sign-in error for unknown failures and a missing URL", () => {
     expect(describeSSOError("unexpected_error")).toEqual(
-      describeError("provider_not_found"),
+      describeError(null),
     );
     expect(describeSSOError(undefined)).toEqual(
-      describeError("provider_not_found"),
+      describeError(null),
     );
   });
 

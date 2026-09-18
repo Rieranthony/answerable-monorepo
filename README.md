@@ -55,6 +55,8 @@ bun dev
 
 Uncommon host ports so nothing clashes with other local projects. Answerable ID itself runs on the host at `http://localhost:47300`. Other commands: `bun run env:down` · `bun run env:reset` (wipes data) · `bun run test` (Answerable ID against Postgres, plus the web unit tests) · `bun run build` · `bun run lint`.
 
+The development-only [OAuth test](apps/web/README.md#local-oauth-test) lets the web app exercise ID as an independent OAuth client at `http://localhost:47100/oauth-test`. ID owns every authentication page at `http://localhost:47300`.
+
 ## How we build
 
 ### MCP Apps foundation

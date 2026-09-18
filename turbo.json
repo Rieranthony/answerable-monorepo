@@ -1,21 +1,5 @@
 {
   "$schema": "https://turborepo.com/schema.json",
-  "globalEnv": [
-    "DATABASE_URL",
-    "TEST_DATABASE_URL",
-    "REDIS_URL",
-    "BETTER_AUTH_URL",
-    "BETTER_AUTH_SECRET",
-    "BETTER_AUTH_TRUSTED_ORIGINS",
-    "PLATFORM_ORGANIZATION_SLUG",
-    "PLATFORM_ORGANIZATION_NAME",
-    "ADMIN_RESOURCE_IDENTIFIER",
-    "ROOT_ADMIN_SECRET",
-    "ROOT_ADMIN_BREAK_GLASS",
-    "GOOGLE_SHEETS_ID",
-    "GOOGLE_SERVICE_ACCOUNT_EMAIL",
-    "GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY"
-  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -23,7 +7,11 @@
     },
     "web#build": {
       "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", "../id/openapi.json", "../id/openapi.admin.json"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "../id/openapi.json",
+        "../id/openapi.admin.json"
+      ],
       "outputs": [".next/**", "!.next/cache/**"]
     },
     "dev": {
@@ -52,6 +40,61 @@
       "env": ["MCP_ID_ISSUER", "MCP_ID_JWKS_URL", "MCP_RESOURCE_URL", "MCP_RESOURCE_INSTANCE_ID", "MCP_RECORDS_PATH", "MCP_ALLOW_LOCAL_HTTP", "MCP_PORT"]
     },
     "lint": {},
-    "typecheck": {}
-  }
+    "typecheck": {},
+    "@answerable/id#dev": {
+      "cache": false,
+      "persistent": true,
+      "env": ["PORT"],
+      "passThroughEnv": [
+        "TEST_DATABASE_URL",
+        "PLATFORM_ORGANIZATION_SLUG",
+        "PLATFORM_ORGANIZATION_NAME",
+        "ADMIN_RESOURCE_IDENTIFIER",
+        "ROOT_ADMIN_SECRET",
+        "ROOT_ADMIN_BREAK_GLASS",
+        "DATABASE_*",
+        "BETTER_AUTH_*",
+        "UPSTREAM_TOKEN_SECRETS",
+        "MICROSOFT_*",
+        "GOOGLE_CLIENT_*",
+        "TRUSTED_PROXY_CIDRS",
+        "OPERATIONAL_LOG_INTERVAL_MS",
+        "OAUTH_REFRESH_REUSE_INTERVAL_SECONDS",
+        "OPENAPI_ENABLED"
+      ]
+    },
+    "web#dev": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": ["OAUTH_TEST_*"],
+      "env": ["PORT"]
+    },
+    "@answerable/id#test": {
+      "cache": false,
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"],
+      "passThroughEnv": [
+        "TEST_DATABASE_URL",
+        "PLATFORM_ORGANIZATION_SLUG",
+        "PLATFORM_ORGANIZATION_NAME",
+        "ADMIN_RESOURCE_IDENTIFIER",
+        "ROOT_ADMIN_SECRET",
+        "ROOT_ADMIN_BREAK_GLASS",
+        "DATABASE_*",
+        "BETTER_AUTH_*",
+        "UPSTREAM_TOKEN_SECRETS",
+        "MICROSOFT_*",
+        "GOOGLE_CLIENT_*",
+        "TRUSTED_PROXY_CIDRS",
+        "OPERATIONAL_LOG_INTERVAL_MS",
+        "OAUTH_REFRESH_REUSE_INTERVAL_SECONDS",
+        "OPENAPI_ENABLED"
+      ]
+    }
+  },
+  "globalEnv": [
+    "GOOGLE_SHEETS_ID",
+    "GOOGLE_SERVICE_ACCOUNT_EMAIL",
+    "GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY"
+  ]
 }

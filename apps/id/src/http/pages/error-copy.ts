@@ -37,6 +37,14 @@ const ERRORS: Record<string, ErrorDescription> = {
     title: "Sign-in is temporarily unavailable",
     body: "Sign-in is not available for your organisation right now. Ask Answerable staff for help.",
   },
+  state_not_found: {
+    title: "Start sign-in again",
+    body: "Start from the sign-in page. The callback address only accepts a response from your company sign-in.",
+  },
+  state_mismatch: {
+    title: "Start sign-in again",
+    body: "Your sign-in expired or no longer matches this browser. Start again from the sign-in page.",
+  },
   invalid_state: {
     title: "Start sign-in again",
     body: "Your sign-in could not be completed because its state no longer matched. Start again from the sign-in page.",
@@ -104,7 +112,5 @@ export function describeError(code: string | null): ErrorDescription {
 }
 
 export function describeSSOError(code: string | undefined): ErrorDescription {
-  const publicCode =
-    code === "platform_application_missing" ? code : "provider_not_found";
-  return describeError(publicCode);
+  return describeError(code ?? null);
 }

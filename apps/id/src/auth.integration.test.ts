@@ -31,3 +31,11 @@ test("never links an upstream identity to an existing user by email", async () =
   expect(Object.keys(schema.paths)).toContain("/sign-in/sso");
   expect(Object.keys(schema.paths)).toContain("/sso/callback");
 });
+
+test("missing SSO callback state returns to the ID-owned error page", async () => {
+  const environment = testEnvironment();
+  const auth = createAuth(connection.db, environment);
+  const response = await auth.handler(new Request(`${environment.betterAuthUrl}/auth/sso/callback`));
+  expect(response.status).toBe(302);
+  expect(response.headers.get("location")).toBe(`${environment.betterAuthUrl}/error?error=state_not_found`);
+});

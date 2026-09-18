@@ -53,3 +53,7 @@ Here's how we write documentation. These are Lee Robinson's ten principles (http
 ## MCP foundation
 
 Read `docs/07-mcp-platform-draft.md` and `reports/mcp-foundation-evidence.md` before extending the base. Use `apps/web/content/docs/mcp/authoring.mdx` to create a consumer; `mcps/e2e` is the executable reference. Root `bun dev` starts apps only. Run `bun run mcp:test` for base/browser checks and `bun run mcp:test:e2e` for real ID and lifecycle acceptance (Docker and Playwright Chromium required). The e2e runner owns isolated ports 47532 and 47600 and 47602–47604; it never uses the normal ID database. Do not add a Better Auth instance to an MCP. Admin MCP work and external-host/production acceptance remain separate.
+
+## ID and consumer boundaries
+
+All ID login, consent, organisation selection, security and error pages are Hono server-rendered pages in `apps/id`, using `hono-tailwind` and shared UI definitions. Never put identity-provider pages in `apps/web`. The web app is a separate OAuth consumer through its development-only `/oauth-test` page; it must not read ID cookies, root credentials or the ID database.

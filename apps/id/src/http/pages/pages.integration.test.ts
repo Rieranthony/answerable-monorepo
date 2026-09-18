@@ -372,7 +372,8 @@ test("a routing lookup failure retains the login form", async () => {
   const text = await response.text();
   expect(text).toContain("Works with");
   expect(text).toContain('role="alert"');
-  expect(text).toContain("couldn&#39;t find your organisation");
+  expect(text).toContain("couldn&#39;t sign you in");
+  expect(text).not.toContain("couldn&#39;t find your organisation");
   expect(text).toContain('value="person@second.example.com"');
   expect(response.headers.getSetCookie()).toEqual([]);
   fixture = undefined!;
