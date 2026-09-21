@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --hot src/server.ts",
+    "dev": "bun --env-file=../../.env --hot src/server.ts",
     "start": "bun src/server.ts",
     "build": "bun scripts/build-css.ts && bun build src/server.ts --outdir dist --target bun --external hono-tailwind",
     "typecheck": "tsc --noEmit",
