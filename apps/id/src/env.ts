@@ -264,7 +264,13 @@ export class EnvironmentValidationError extends Error {
 export function parseEnvironment(
   source: Record<string, string | undefined>,
 ): Environment {
-  const result = environmentSchema.safeParse(source);
+  const result = environmentSchema.safeParse({
+    ...source,
+    BETTER_AUTH_URL:
+      source.NODE_ENV === "production" && !source.BETTER_AUTH_URL?.trim()
+        ? "https://id.answerable.org"
+        : source.BETTER_AUTH_URL,
+  });
 
   if (!result.success) throw new EnvironmentValidationError(result.error);
 

@@ -294,6 +294,41 @@ const production = {
   BETTER_AUTH_TRUSTED_ORIGINS: "https://auth.example.com",
   TRUSTED_PROXY_CIDRS: "10.0.0.0/8, 2001:db8::/32",
 };
+test("production defaults the ID origin and admin audience when the URL is unset or blank", () => {
+  for (const value of [undefined, "", "   "]) {
+    const environment = parseEnvironment({
+      ...production,
+      BETTER_AUTH_URL: value,
+    });
+    expect(environment.betterAuthUrl).toBe("https://id.answerable.org");
+    expect(environment.adminResourceIdentifier).toBe(
+      "https://id.answerable.org/api/admin",
+    );
+  }
+});
+
+test("production preserves explicit ID origins and rejects invalid overrides", () => {
+  expect(
+    parseEnvironment({ ...production, BETTER_AUTH_URL: "https://id.example.com" })
+      .betterAuthUrl,
+  ).toBe("https://id.example.com");
+  expect(() =>
+    parseEnvironment({ ...production, BETTER_AUTH_URL: "invalid" }),
+  ).toThrow("BETTER_AUTH_URL");
+});
+
+test("development and test still require an explicit ID origin", () => {
+  for (const nodeEnv of [undefined, "development", "test"]) {
+    expect(() =>
+      parseEnvironment({
+        ...requiredEnvironment,
+        NODE_ENV: nodeEnv,
+        BETTER_AUTH_URL: undefined,
+      }),
+    ).toThrow("BETTER_AUTH_URL");
+  }
+});
+
 test("production disables OpenAPI unless explicitly enabled", () => {
   expect(parseEnvironment(production).openApiEnabled).toBe(false);
   expect(
