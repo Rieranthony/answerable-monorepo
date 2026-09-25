@@ -37,4 +37,4 @@ Register the resource and a client in ID first: [Connect Claude Code](../../apps
 bun run mcp:test
 ```
 
-`src/apps.test.ts` renders the real view in Chromium through the official MCP Apps host bridge (`src/testing/host.ts`); the view never receives a token.
+`src/mcp.test.ts` checks every tool, the prompt and the resource in-process with `createTestMcp`, for a fully entitled and a read-only caller; copy it when you write an MCP. `src/apps.test.ts` renders the real view in Chromium through the official MCP Apps host bridge (`src/testing/host.ts`); the view never receives a token.
