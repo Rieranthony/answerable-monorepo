@@ -1,174 +1,134 @@
-import { afterEach, expect, test } from "bun:test"
-import { exportJWK, generateKeyPair, SignJWT } from "jose"
-import { createIdVerifier, AuthenticationError } from "./index"
+import { afterEach, expect, spyOn, test } from "bun:test"
+import { AuthenticationError, createIdVerifier } from "./index"
+import { createTestIssuer, type TestIssuer } from "./testing"
 
-const issuer = "https://id.example.test"
-const resource = "https://fixture.example.test/mcp"
-const resourceInstanceId = crypto.randomUUID()
-const now = Math.floor(Date.now() / 1000)
-const identity = {
-  sub: crypto.randomUUID(),
-  subject_type: "user",
-  organization_id: crypto.randomUUID(),
-  membership_id: crypto.randomUUID(),
-  grant_id: crypto.randomUUID(),
-  client_instance: crypto.randomUUID(),
-  resource_instance: resourceInstanceId,
-  client_id: "fixture-client",
-  azp: "fixture-client",
-  organization_authorization_version: 1,
-  authorization_version: 1,
-  upstream_auth_time: now,
-  scope: "e2e:read e2e:write",
+const resource = "https://mcp.test/mcp"
+const issuers: TestIssuer[] = []
+afterEach(() => { for (const issuer of issuers.splice(0)) issuer.stop() })
+async function fixture(algorithm?: "EdDSA" | "ES256" | "RS256") {
+  const issuer = await createTestIssuer({ algorithm })
+  issuers.push(issuer)
+  return { ...issuer, verify: createIdVerifier({ issuer: issuer.issuer, resource }) }
 }
 
-const servers: Array<ReturnType<typeof Bun.serve>> = []
-afterEach(() => {
-  for (const server of servers.splice(0)) server.stop(true)
-})
-
-async function fixture() {
-  const key = await generateKeyPair("EdDSA")
-  let keys = [{ ...(await exportJWK(key.publicKey)), kid: "first", alg: "EdDSA" }]
-  let requests = 0
-  let unavailable = false
-  const server = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    fetch() {
-      requests++
-      return unavailable
-        ? new Response("Unavailable", { status: 503 })
-        : Response.json({ keys })
-    },
-  })
-  servers.push(server)
-  const config = {
-    issuer,
-    resource,
-    resourceInstanceId,
-    jwksUrl: new URL("/jwks", server.url).href,
-    allowLocalHttp: true,
-    cooldownDuration: 0,
-  }
-  const verify = createIdVerifier(config)
-  async function token(
-    changes: Record<string, unknown> = {},
-    header: Record<string, unknown> = {},
-  ) {
-    return new SignJWT({
-      ...identity,
-      iss: issuer,
-      aud: resource,
-      iat: now,
-      exp: now + 300,
-      ...changes,
-    })
-      .setProtectedHeader({ alg: "EdDSA", typ: "at+jwt", kid: "first", ...header })
-      .sign(key.privateKey)
-  }
-  return {
-    verify,
-    token,
-    config,
-    requests: () => requests,
-    outage: () => { unavailable = true },
-    async rotate() {
-      const next = await generateKeyPair("EdDSA")
-      keys = [...keys, { ...(await exportJWK(next.publicKey)), kid: "next", alg: "EdDSA" }]
-      return new SignJWT({ ...identity, iss: issuer, aud: resource, iat: now, exp: now + 300 })
-        .setProtectedHeader({ alg: "EdDSA", typ: "at+jwt", kid: "next" })
-        .sign(next.privateKey)
-    },
-  }
-}
-
-test("verifies ID user claims against network JWKS and returns immutable safe context", async () => {
-  const f = await fixture()
-  const principal = await f.verify(await f.token({ aud: [resource, "https://id.example.test/userinfo"] }))
-  expect(principal).toMatchObject({
-    type: "user",
-    userId: identity.sub,
-    organizationId: identity.organization_id,
-    membershipId: identity.membership_id,
-    resourceInstanceId,
-    scopes: ["e2e:read", "e2e:write"],
-  })
+test("valid tokens return only a frozen principal and de-duplicated scopes", async () => {
+  const issuer = await fixture()
+  const userId = crypto.randomUUID()
+  const organizationId = crypto.randomUUID()
+  const principal = await issuer.verify(await issuer.sign({ resource, userId, organizationId, scopes: ["read", "write", "read"] }))
+  expect(principal).toEqual({ userId, organizationId, membershipId: expect.any(String), grantId: expect.any(String), clientId: "test-client", scopes: ["read", "write"], expiresAt: expect.any(Number) })
   expect(Object.isFrozen(principal)).toBe(true)
   expect(Object.isFrozen(principal.scopes)).toBe(true)
-  expect(principal).not.toHaveProperty("token")
-  await Promise.all([f.verify(await f.token()), f.verify(await f.token())])
-  expect(f.requests()).toBe(1)
 })
-
-test.each([
-  ["wrong issuer", { iss: "https://attacker.test" }],
-  ["wrong audience", { aud: "https://other.test/mcp" }],
-  ["expired", { exp: now - 1 }],
-  ["not yet valid", { nbf: now + 300 }],
-  ["future issuance", { iat: now + 300 }],
-  ["missing expiry", { exp: undefined }],
-  ["wrong resource instance", { resource_instance: crypto.randomUUID() }],
-  ["machine", { subject_type: "client" }],
-  ["missing membership", { membership_id: undefined }],
-  ["bad user id", { sub: "alice@example.test" }],
-  ["client mismatch", { azp: "another-client" }],
-  ["invalid version", { authorization_version: 0 }],
-  ["invalid scopes", { scope: ["e2e:read"] }],
-  ["proof-bound token without proof", { cnf: { jkt: "key" } }],
-])("rejects %s", async (_label, changes) => {
-  const f = await fixture()
-  await expect(f.verify(await f.token(changes))).rejects.toBeInstanceOf(AuthenticationError)
-})
-
-test("rejects ID tokens, forged signatures and opaque credentials", async () => {
-  const f = await fixture()
-  await expect(f.verify(await f.token({}, { typ: "JWT" }))).rejects.toBeInstanceOf(AuthenticationError)
-  const other = await generateKeyPair("EdDSA")
-  const forged = await new SignJWT({ ...identity, iss: issuer, aud: resource, exp: now + 300, iat: now })
-    .setProtectedHeader({ typ: "at+jwt", alg: "EdDSA", kid: "first" })
-    .sign(other.privateKey)
-  await expect(f.verify(forged)).rejects.toBeInstanceOf(AuthenticationError)
-  await expect(f.verify("opaque")).rejects.toBeInstanceOf(AuthenticationError)
-})
-
-test("refreshes JWKS for a rotated key and continues using cached keys during an outage", async () => {
-  const f = await fixture()
-  const original = await f.token()
-  await f.verify(original)
-  await f.verify(await f.rotate())
-  expect(f.requests()).toBe(2)
-  f.outage()
-  await f.verify(original)
-  expect(f.requests()).toBe(2)
-  await expect(createIdVerifier(f.config)(original)).rejects.toBeInstanceOf(AuthenticationError)
-})
-
-test("rejects insecure issuer/JWKS configuration unless explicitly local", () => {
-  const config = { issuer, resource, resourceInstanceId, jwksUrl: "http://evil.test/jwks" }
-  expect(() => createIdVerifier(config)).toThrow()
-  expect(() => createIdVerifier({ ...config, allowLocalHttp: true })).toThrow()
-  expect(() => createIdVerifier({ ...config, jwksUrl: "https://user:secret@id.test/jwks" })).toThrow()
-})
-
-test("enforces a configured maximum token lifetime and validates cache bounds", async () => {
-  const f = await fixture()
-  await expect(f.verify(await f.token({ exp: now + 901 }))).rejects.toBeInstanceOf(AuthenticationError)
-  const short = createIdVerifier({ ...f.config, maxTokenLifetimeSeconds: 60 })
-  await expect(short(await f.token())).rejects.toBeInstanceOf(AuthenticationError)
-  for (const overrides of [{ maxTokenLifetimeSeconds: 0 }, { cacheMaxAge: -1 }, { timeoutDuration: 0 }, { cooldownDuration: -1 }]) {
-    expect(() => createIdVerifier({ ...f.config, ...overrides })).toThrow()
+for (const algorithm of ["ES256", "RS256"] as const) {
+  test(`accepts ${algorithm}`, async () => {
+    const issuer = await fixture(algorithm)
+    expect((await issuer.verify(await issuer.sign({ resource }))).clientId).toBe("test-client")
+  })
+}
+const invalidClaims: [string, Record<string, unknown>][] = [
+  ["issuer", { iss: "https://wrong.test" }], ["audience", { aud: "https://wrong.test/mcp" }],
+  ["expired", { exp: 1 }], ["future nbf", { nbf: Math.floor(Date.now() / 1000) + 3600 }],
+  ["missing exp", { exp: undefined }], ["missing iat", { iat: undefined }],
+  ["client subject", { subject_type: "client" }], ["missing membership", { membership_id: undefined }],
+  ["non-UUID subject", { sub: "not-a-uuid" }], ["different azp", { azp: "another-client" }],
+  ["non-string scope", { scope: ["read"] }], ["proof-bound token", { cnf: { jkt: "key" } }],
+]
+for (const [name, claims] of invalidClaims) {
+  test(`rejects ${name} with a safe authentication error`, async () => {
+    const issuer = await fixture()
+    await expect(issuer.verify(await issuer.sign({ resource, claims }))).rejects.toThrow(new AuthenticationError())
+  })
+}
+test("rejects the wrong type, an unpublished signature and opaque tokens", async () => {
+  const issuer = await fixture()
+  const other = await fixture()
+  for (const token of [await issuer.sign({ resource, header: { typ: "JWT" } }), await other.sign({ resource, claims: { iss: issuer.issuer } }), "opaque"]) {
+    await expect(issuer.verify(token)).rejects.toBeInstanceOf(AuthenticationError)
   }
 })
-
-test("an outage rejects unknown keys and expired caches without accepting unverifiable tokens", async () => {
-  const f = await fixture()
-  await f.verify(await f.token())
-  const unknownKeyToken = await f.rotate()
-  const uncached = createIdVerifier({ ...f.config, cacheMaxAge: 0 })
-  await uncached(await f.token())
-  f.outage()
-  await expect(f.verify(unknownKeyToken)).rejects.toBeInstanceOf(AuthenticationError)
-  expect((await f.verify(await f.token())).userId).toBe(identity.sub)
-  await expect(uncached(await f.token())).rejects.toBeInstanceOf(AuthenticationError)
+test("does not require resource pins or cap the token lifetime", async () => {
+  const issuer = await fixture()
+  expect((await issuer.verify(await issuer.sign({ resource, expiresIn: "2h", claims: { azp: "test-client", resource_instance: "ignored" } }))).scopes).toEqual([])
+})
+test("concurrent verification fetches JWKS once", async () => {
+  const issuer = await fixture()
+  const token = await issuer.sign({ resource })
+  await Promise.all(Array.from({ length: 10 }, () => issuer.verify(token)))
+  expect(issuer.jwksRequests()).toBe(1)
+})
+test("picks up a rotated key after the default JOSE cooldown", async () => {
+  const issuer = await fixture()
+  await issuer.verify(await issuer.sign({ resource }))
+  await issuer.rotate()
+  const token = await issuer.sign({ resource })
+  const now = Date.now()
+  const clock = spyOn(Date, "now").mockReturnValue(now + 31_000)
+  try {
+    await issuer.verify(token)
+    expect(issuer.jwksRequests()).toBe(2)
+  } finally { clock.mockRestore() }
+})
+test("cached keys survive an outage, but unseen keys fail", async () => {
+  const issuer = await fixture()
+  const known = await issuer.sign({ resource })
+  await issuer.verify(known)
+  await issuer.rotate()
+  const unknown = await issuer.sign({ resource })
+  issuer.outage(true)
+  await issuer.verify(known)
+  const now = Date.now()
+  const clock = spyOn(Date, "now").mockReturnValue(now + 31_000)
+  try { await expect(issuer.verify(unknown)).rejects.toBeInstanceOf(AuthenticationError) } finally { clock.mockRestore() }
+})
+test("failed discovery is retried", async () => {
+  const issuer = await fixture()
+  const token = await issuer.sign({ resource })
+  issuer.outage(true)
+  await expect(issuer.verify(token)).rejects.toBeInstanceOf(AuthenticationError)
+  issuer.outage(false)
+  await issuer.verify(token)
+})
+for (const mismatch of ["issuer", "origin"]) {
+  test(`discovery rejects a different ${mismatch}`, async () => {
+    const signer = await fixture()
+    let keyRequests = 0
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request): Response {
+      if (new URL(request.url).pathname === "/jwks") keyRequests++
+      return Response.json({ issuer: mismatch === "issuer" ? signer.issuer : server.url.origin, jwks_uri: mismatch === "origin" ? `${signer.issuer}/jwks` : new URL("/jwks", server.url).href })
+    } })
+    try {
+      const verify = createIdVerifier({ issuer: server.url.origin, resource })
+      await expect(verify(await signer.sign({ resource, claims: { iss: server.url.origin } }))).rejects.toBeInstanceOf(AuthenticationError)
+      expect(keyRequests).toBe(0)
+      expect(signer.jwksRequests()).toBe(0)
+    } finally { server.stop(true) }
+  })
+}
+test("discovery inserts the well-known path before an issuer path", async () => {
+  const signer = await fixture()
+  const paths: string[] = []
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request): Promise<Response> {
+    const path = new URL(request.url).pathname
+    paths.push(path)
+    if (path === "/.well-known/oauth-authorization-server/tenant") return Response.json({ issuer: `${server.url.origin}/tenant`, jwks_uri: new URL("/jwks", server.url).href })
+    return fetch(`${signer.issuer}/jwks`)
+  } })
+  try {
+    const issuer = `${server.url.origin}/tenant`
+    await createIdVerifier({ issuer, resource })(await signer.sign({ resource, claims: { iss: issuer } }))
+    expect(paths).toEqual(["/.well-known/oauth-authorization-server/tenant", "/jwks"])
+  } finally { server.stop(true) }
+})
+for (const field of ["issuer", "resource"] as const) {
+  for (const [url, rule] of [["http://evil.test", "HTTPS"], ["https://user:password@id.test", "credentials"], ["https://id.test?x=1", "query"], ["https://id.test#x", "fragment"], ["invalid", "valid URL"]]) {
+    test(`${field} rejects ${rule}`, () => {
+      expect(() => createIdVerifier({ issuer: "https://id.test", resource, [field]: url })).toThrow(rule)
+    })
+  }
+}
+test("loopback HTTP needs no opt-in and construction performs no discovery", () => {
+  for (const host of ["localhost", "127.0.0.1", "[::1]"]) {
+    expect(createIdVerifier({ issuer: `http://${host}`, resource: `http://${host}/mcp` })).toBeFunction()
+  }
 })

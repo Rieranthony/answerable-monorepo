@@ -1,232 +1,236 @@
-import { afterEach, expect, test } from "bun:test"
-import { exportJWK, generateKeyPair, SignJWT } from "jose"
+import { afterEach, expect, spyOn, test } from "bun:test"
+import { createTestIssuer, type TestIssuer } from "@answerable/auth/testing"
 import { z } from "zod"
-import { createMcpApp, defineTool, defineView, definePrompt, defineResource } from "./index"
+import { createMcpApp, defineTool, defineView, definePrompt, defineResource, ToolError, type ToolContext } from "./index"
 import { connectTestClient } from "./testing"
 
-const cleanup: Array<() => unknown> = []
-afterEach(async () => {
-  for (const close of cleanup.splice(0).reverse()) await close()
+const resource = "https://mcp.test/mcp"
+const auth = { issuer: "https://id.test", resource }
+const cleanups: (() => void | Promise<void>)[] = []
+afterEach(async () => { for (const close of cleanups.splice(0).reverse()) await close() })
+const view = defineView({ name: "example", html: "<!doctype html><title>Example</title>" })
+let executions = 0
+const read = defineTool({
+  name: "read", title: "Read organisation", description: "Read the caller's organisation", scopes: ["read"], view,
+  input: z.object({ label: z.string().trim().min(1) }).strict(),
+  output: z.object({ organizationId: z.uuid(), label: z.string() }),
+  async execute(input, { principal }) {
+    executions++
+    return { data: { organizationId: principal.organizationId, label: input.label }, text: input.label }
+  },
+})
+const write = defineTool({
+  name: "write", description: "Requires both permissions", scopes: ["read", "write"],
+  input: z.object({}), output: z.object({}), async execute() { return { data: {}, text: "Written" } },
+})
+const invalid = defineTool({
+  name: "invalid", description: "Invalid output", scopes: ["read"],
+  input: z.object({}), output: z.object({ value: z.string().max(2) }),
+  async execute() { return { data: { value: "private-output-secret" }, text: "private-output-secret" } },
+})
+const failed = defineTool({
+  name: "failed", description: "Unexpected failure", scopes: ["read"],
+  input: z.object({}), output: z.object({}), async execute() { throw new Error("private-exception-secret") },
+})
+const known = defineTool({
+  name: "known", description: "Domain failure", scopes: ["read"],
+  input: z.object({}), output: z.object({}), async execute() { throw new ToolError("record_not_found", "No accessible record exists") },
+})
+const prompt = definePrompt({
+  name: "guide", description: "Organisation instructions", scopes: ["content"], input: z.object({ topic: z.string().trim() }),
+  async execute({ topic }, { principal }) {
+    return { messages: [{ role: "user", content: { type: "text", text: `${topic}:${principal.organizationId}` } }] }
+  },
+})
+const document = defineResource({
+  name: "document", uri: "fixture://document", description: "Organisation document", mimeType: "text/plain", scopes: ["content"],
+  async read({ principal }) { return principal.organizationId },
+})
+const broken = defineResource({
+  name: "broken", uri: "fixture://broken", description: "Failure", mimeType: "text/plain", scopes: ["content"],
+  async read() { throw new Error("private-resource-secret") },
+})
+const brokenPrompt = definePrompt({
+  name: "broken_prompt", description: "Failure", scopes: ["content"], input: z.object({}),
+  async execute() { throw new Error("private-prompt-secret") },
 })
 
-async function fixture(options: { handlerTimeoutMs?: number } = {}) {
-  const key = await generateKeyPair("EdDSA")
-  const jwk = { ...(await exportJWK(key.publicKey)), kid: "test", alg: "EdDSA" }
-  const keys = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => Response.json({ keys: [jwk] }) })
-  cleanup.push(() => keys.stop(true))
-  const resourceInstanceId = crypto.randomUUID()
-  const resource = "https://fixture.test/mcp"
-  const issuer = "https://id.test"
-  let calls = 0
-  const view = defineView({ name: "identity", html: "<!doctype html><title>Identity</title>" })
-  const tool = defineTool({
-    name: "identity_get",
-    description: "Read authenticated identity",
-    input: z.object({}),
-    output: z.object({ tenant: z.uuid() }),
-    scopes: ["identity:read"],
-    view,
-    async execute(_input, context) {
-      calls++
-      await new Promise(resolve => setTimeout(resolve, 2))
-      return { data: { tenant: context.principal.organizationId }, text: "Authenticated" }
-    },
-  })
-  let aborted = false
-  let waitingStarted = false
-  const waiting = defineTool({
-    name: "wait_for_abort", description: "Exercise request cancellation", input: z.object({}), output: z.object({}), scopes: ["identity:read"],
-    async execute(_input, context) {
-      waitingStarted = true
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, 300)
-        context.signal.addEventListener("abort", () => { aborted = true; clearTimeout(timer); resolve() }, { once: true })
-      })
-      context.signal.throwIfAborted()
-      return { data: {}, text: "Finished waiting" }
-    },
-  })
-  let reads = 0
-  const prompt = definePrompt({
-    name: "fixture_walkthrough", description: "Explain the fixture", input: z.object({ title: z.string() }), scopes: ["guide:read"],
-    async execute({ title }, context) {
-      reads++
-      return { messages: [{ role: "user", content: { type: "text", text: `${title}: ${context.principal.organizationId}` } }] }
-    },
-  })
-  const guide = defineResource({
-    name: "fixture_guide", uri: "fixture://guide", description: "Fixture guide", mimeType: "text/plain", scopes: ["guide:read"],
-    async read(context) { reads++; return context.principal.organizationId },
-  })
-  const invalidOutput = defineTool({
-    name: "invalid_output", description: "Exercise output validation", input: z.object({ value: z.number().positive() }),
-    output: z.object({ value: z.number().positive() }), scopes: ["identity:read"],
-    async execute() { calls++; return { data: { value: -1 }, text: "Internal invalid value" } },
-  })
-  const failingResource = defineResource({
-    name: "failing_resource", uri: "fixture://failure", description: "Exercise failure redaction", mimeType: "text/plain", scopes: ["guide:read"],
-    async read() { throw new Error("secret-database-connection") },
-  })
-  const logs: unknown[] = []
-  const config = {
-    name: "fixture",
-    version: "0.1.0",
-    auth: { issuer, resource, resourceInstanceId, jwksUrl: new URL("jwks", keys.url).href, allowLocalHttp: true },
-    log: (event: unknown) => { logs.push(event) },
-    ...options,
-    tools: [tool, invalidOutput, waiting], prompts: [prompt], resources: [guide, failingResource],
-    services: {},
+async function fixture() {
+  const issuer = await createTestIssuer()
+  cleanups.push(() => issuer.stop())
+  const app = createMcpApp({
+    name: "test", version: "1", auth: { issuer: issuer.issuer, resource }, services: {},
+    tools: [read, write, invalid, failed, known], prompts: [prompt, brokenPrompt], resources: [document, broken],
     allowedHosts: ["127.0.0.1"],
-  }
-  const app = createMcpApp(config)
+  })
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: app.fetch })
-  cleanup.push(() => server.stop(true))
-  const url = new URL("/mcp", server.url)
-  async function connect(scopes = "identity:read", tenant = crypto.randomUUID()) {
-    const token = await new SignJWT({
-      sub: crypto.randomUUID(), subject_type: "user", organization_id: tenant,
-      membership_id: crypto.randomUUID(), grant_id: crypto.randomUUID(),
-      client_instance: crypto.randomUUID(), resource_instance: resourceInstanceId,
-      client_id: "test", azp: "test", scope: scopes, authorization_version: 1,
-      organization_authorization_version: 1, upstream_auth_time: null,
-    }).setProtectedHeader({ alg: "EdDSA", kid: "test", typ: "at+jwt" })
-      .setIssuer(issuer).setAudience(resource).setIssuedAt().setExpirationTime("5m").sign(key.privateKey)
-    const client = await connectTestClient({ url, accessToken: token })
-    cleanup.push(() => client.close())
-    return { client, tenant, token }
-  }
-  return { connect, url, config, logs, calls: () => calls, reads: () => reads, aborted: () => aborted, waitingStarted: () => waitingStarted }
+  cleanups.push(() => { server.stop(true) })
+  return { issuer, app, url: new URL("/mcp", server.url), base: server.url }
+}
+async function clientFor(issuer: TestIssuer, url: URL, scopes: string[], protocol?: "2025" | "2026-07-28", organizationId = crypto.randomUUID()) {
+  const accessToken = await issuer.sign({ resource, scopes, organizationId })
+  const client = await connectTestClient({ url, accessToken, protocol })
+  cleanups.push(() => client.close())
+  return { client, organizationId }
 }
 
-test("challenges unauthenticated requests and serves protected-resource metadata", async () => {
-  const f = await fixture()
-  const response = await fetch(f.url, { method: "POST" })
+test("HTTP routes expose health, discovery and a bearer challenge", async () => {
+  const { url, base, issuer } = await fixture()
+  const response = await fetch(url, { method: "POST" })
   expect(response.status).toBe(401)
-  expect(response.headers.get("www-authenticate")).toContain("resource_metadata=")
-  const metadata = await fetch(new URL("/.well-known/oauth-protected-resource/mcp", f.url))
-  expect(await metadata.json()).toMatchObject({ resource: f.config.auth.resource, authorization_servers: [f.config.auth.issuer] })
-  expect(f.calls()).toBe(0)
+  expect(response.headers.get("WWW-Authenticate")).toContain('resource_metadata="https://mcp.test/.well-known/oauth-protected-resource/mcp"')
+  expect(response.headers.get("Cache-Control")).toBe("no-store")
+  expect(await (await fetch(new URL("/health", base))).json()).toEqual({ status: "ok" })
+  expect((await fetch(new URL("/unknown", base))).status).toBe(404)
+  expect(await (await fetch(new URL("/.well-known/oauth-protected-resource/mcp", base))).json()).toEqual({
+    resource, authorization_servers: [issuer.issuer], scopes_supported: ["content", "read", "write"], bearer_methods_supported: ["header"], resource_name: "test",
+  })
+})
+test("rejects untrusted hosts, origins and a token for another audience", async () => {
+  const { url, app, issuer } = await fixture()
+  expect((await app.fetch(new Request(url, { headers: { Host: "evil.test" } }))).status).toBe(403)
+  const token = await issuer.sign({ resource, scopes: ["read"] })
+  const before = executions
+  const response = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${token}`, Origin: "https://evil.test", "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "read", arguments: { label: "test" } } }) })
+  expect(response.status).toBe(403)
+  expect(executions).toBe(before)
+  const other = await issuer.sign({ resource: "https://other.test/mcp" })
+  expect((await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${other}` } })).status).toBe(401)
 })
 
-test("SDK client discovers an Apps tool, reads its view and receives structured results", async () => {
-  const f = await fixture()
-  const { client, tenant } = await f.connect()
-  const tools = await client.listTools()
-  expect(tools.tools[0]._meta).toMatchObject({ ui: { resourceUri: "ui://identity/index.html" } })
-  const view = await client.readResource({ uri: "ui://identity/index.html" })
-  expect(view.contents[0].mimeType).toBe("text/html;profile=mcp-app")
-  const result = await client.callTool({ name: "identity_get", arguments: {} })
-  expect(result.structuredContent).toEqual({ tenant })
-  expect(result.isError).not.toBe(true)
+for (const protocol of [undefined, "2026-07-28"] as const) {
+  const era = protocol ?? "default 2025"
+  test(`${era}: scopes filter tools and views, and results retain the caller`, async () => {
+    const { issuer, url } = await fixture()
+    const { client, organizationId } = await clientFor(issuer, url, ["read"], protocol)
+    const listed = (await client.listTools()).tools
+    expect(listed.map(tool => tool.name)).toEqual(["read", "invalid", "failed", "known"])
+    expect(listed.find(tool => tool.name === "read")).toMatchObject({ title: "Read organisation", _meta: { ui: { resourceUri: view.uri } } })
+    expect((await client.callTool({ name: "read", arguments: { label: "  trimmed  " } })).structuredContent).toEqual({ organizationId, label: "trimmed" })
+    expect((await client.readResource({ uri: view.uri })).contents[0]).toEqual({ uri: view.uri, mimeType: "text/html;profile=mcp-app", text: view.html })
+    await expect(client.callTool({ name: "write", arguments: {} })).rejects.toThrow()
+    const denied = await clientFor(issuer, url, ["write"], protocol)
+    expect(denied.client.getServerCapabilities()?.tools).toBeDefined()
+    expect((await denied.client.listTools()).tools).toEqual([])
+    await expect(denied.client.readResource({ uri: view.uri })).rejects.toThrow()
+    const granted = await clientFor(issuer, url, ["read", "write"], protocol)
+    expect((await granted.client.listTools()).tools.map(tool => tool.name)).toContain("write")
+    expect((await granted.client.callTool({ name: "write", arguments: {} })).isError).not.toBe(true)
+  })
+  test(`${era}: concurrent clients retain separate organisations`, async () => {
+    const { issuer, url } = await fixture()
+    const [alice, bob] = await Promise.all([clientFor(issuer, url, ["read"], protocol), clientFor(issuer, url, ["read"], protocol)])
+    const results = await Promise.all([alice, bob].map(({ client }) => client.callTool({ name: "read", arguments: { label: "concurrent" } })))
+    expect(results[0]!.structuredContent).toMatchObject({ organizationId: alice.organizationId })
+    expect(results[1]!.structuredContent).toMatchObject({ organizationId: bob.organizationId })
+    expect(alice.organizationId).not.toBe(bob.organizationId)
+  })
+  test(`${era}: input validation and safe tool failures`, async () => {
+    const { issuer, url } = await fixture()
+    const { client } = await clientFor(issuer, url, ["read"], protocol)
+    const before = executions
+    const badInput = await client.callTool({ name: "read", arguments: { label: 123 } }).catch(error => error)
+    expect(badInput instanceof Error || badInput.isError === true).toBe(true)
+    expect(executions).toBe(before)
+    const log = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      for (const name of ["invalid", "failed"]) {
+        const result = await client.callTool({ name, arguments: {} })
+        expect(result).toMatchObject({ isError: true, content: [{ type: "text", text: "tool_failed: The tool could not complete" }], _meta: { code: "tool_failed" } })
+        expect(JSON.stringify(result)).not.toContain("private-")
+      }
+      expect(log.mock.calls.map(call => call[0])).toEqual(["[mcp] tool invalid failed", "[mcp] tool failed failed"])
+    } finally { log.mockRestore() }
+    expect(await client.callTool({ name: "known", arguments: {} })).toMatchObject({ isError: true, content: [{ type: "text", text: "record_not_found: No accessible record exists" }], _meta: { code: "record_not_found" } })
+  })
+  test(`${era}: prompts and resources are scope-filtered, typed and redact failures`, async () => {
+    const { issuer, url } = await fixture()
+    const { client, organizationId } = await clientFor(issuer, url, ["content"], protocol)
+    expect((await client.listPrompts()).prompts.map(item => item.name)).toEqual(["guide", "broken_prompt"])
+    expect((await client.listResources()).resources.map(item => item.uri)).toEqual([document.uri, broken.uri])
+    expect((await client.getPrompt({ name: "guide", arguments: { topic: "  hello  " } })).messages[0]!.content).toEqual({ type: "text", text: `hello:${organizationId}` })
+    expect((await client.readResource({ uri: document.uri })).contents[0]).toMatchObject({ text: organizationId })
+    const log = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      for (const run of [() => client.readResource({ uri: broken.uri }), () => client.getPrompt({ name: "broken_prompt", arguments: {} })]) {
+        const error = await run().then(() => { throw new Error("Expected failure") }, error => error)
+        expect(error.message).toContain("Content could not be read")
+        expect(error.message).not.toContain("private-")
+      }
+      expect(log.mock.calls.map(call => call[0])).toEqual(["[mcp] resource broken failed", "[mcp] prompt broken_prompt failed"])
+    } finally { log.mockRestore() }
+    const denied = await clientFor(issuer, url, ["read"], protocol)
+    expect(denied.client.getServerCapabilities()?.prompts).toBeDefined()
+    expect((await denied.client.listPrompts()).prompts).toEqual([])
+    expect((await denied.client.listResources()).resources.map(item => item.uri)).toEqual([view.uri])
+    await expect(denied.client.getPrompt({ name: "guide", arguments: { topic: "hello" } })).rejects.toThrow()
+    await expect(denied.client.readResource({ uri: document.uri })).rejects.toThrow()
+  })
+}
+
+test("duplicate tools, prompts, resource URIs and distinct views throw at construction", () => {
+  const config = { name: "test", version: "1", auth, services: {}, tools: [read] }
+  expect(() => createMcpApp({ ...config, tools: [read, read] })).toThrow("Duplicate tool")
+  expect(() => createMcpApp({ ...config, prompts: [prompt, prompt] })).toThrow("Duplicate prompt")
+  expect(() => createMcpApp({ ...config, resources: [document, document] })).toThrow("Duplicate resource")
+  expect(() => createMcpApp({ ...config, resources: [{ ...document, uri: view.uri }] })).toThrow("Duplicate resource")
+  expect(() => createMcpApp({ ...config, tools: [read, { ...read, name: "second", view: defineView({ name: view.name, html: view.html }) }] })).toThrow("Conflicting view")
+  expect(() => createMcpApp({ ...config, tools: [read, { ...read, name: "second" }] })).not.toThrow()
 })
-
-test("missing scopes cannot invoke a tool and concurrent clients retain their own tenant", async () => {
-  const f = await fixture()
-  const denied = await f.connect("other:read")
-  const result = await denied.client.callTool({ name: "identity_get", arguments: {} })
-  expect(result.isError).toBe(true)
-  expect(f.calls()).toBe(0)
-  const a = await f.connect()
-  const b = await f.connect()
-  const [ra, rb] = await Promise.all([a.client.callTool({ name: "identity_get", arguments: {} }), b.client.callTool({ name: "identity_get", arguments: {} })])
-  expect(ra.structuredContent).toEqual({ tenant: a.tenant })
-  expect(rb.structuredContent).toEqual({ tenant: b.tenant })
+test("authoring helpers validate names, scopes and views", () => {
+  expect(Object.isFrozen(view)).toBe(true)
+  expect(() => defineView({ name: "Bad", html: "x" })).toThrow("Invalid view name")
+  expect(() => defineView({ name: "empty", html: " " })).toThrow("View HTML is empty; build the view first")
+  for (const scopes of [[], [""], ["has space"]]) {
+    expect(() => defineTool({ name: "test", description: "", scopes, input: z.object({}), output: z.object({}), async execute() { return { data: {}, text: "" } } })).toThrow("scopes")
+    expect(() => definePrompt({ name: "test", description: "", scopes, input: z.object({}), async execute() { return { messages: [] } } })).toThrow("scopes")
+    expect(() => defineResource({ name: "test", uri: "fixture://test", description: "", mimeType: "text/plain", scopes, async read() { return "" } })).toThrow("scopes")
+  }
+  expect(() => defineResource({ name: "test", uri: view.uri, description: "", mimeType: "text/html", scopes: ["read"], async read() { return "" } })).toThrow("Use defineView for ui:// resources")
 })
-
-test("duplicate tools fail at construction", async () => {
-  const f = await fixture()
-  expect(() => createMcpApp({ ...f.config, tools: [...f.config.tools, ...f.config.tools] })).toThrow("Duplicate tool")
+test("the resource URL is the endpoint and the challenge names the metadata route that is served", async () => {
+  for (const [resource, endpoint, metadata] of [
+    ["https://mcp.test", "/", "/.well-known/oauth-protected-resource"],
+    ["https://mcp.test/nested/tools", "/nested/tools", "/.well-known/oauth-protected-resource/nested/tools"],
+    ["https://mcp.test/mcp/", "/mcp/", "/.well-known/oauth-protected-resource/mcp"],
+  ] as const) {
+    const app = createMcpApp({ name: "test", version: "1", auth: { ...auth, resource }, services: {}, tools: [] })
+    const request = (path: string) => new Request(`https://mcp.test${path}`, { headers: { Host: "mcp.test" } })
+    const challenge = await app.fetch(request(endpoint))
+    expect(challenge.status).toBe(401)
+    expect(challenge.headers.get("WWW-Authenticate")).toContain(`resource_metadata="https://mcp.test${metadata}"`)
+    expect(await (await app.fetch(request(metadata))).json()).toMatchObject({ resource })
+  }
 })
-
-
-test("prompts and ordinary resources use typed arguments and the authenticated tenant", async () => {
-  const f = await fixture()
-  const { client, tenant } = await f.connect("guide:read")
-  expect((await client.listPrompts()).prompts.map(prompt => prompt.name)).toEqual(["fixture_walkthrough"])
-  expect((await client.listResources()).resources.map(resource => resource.uri)).toContain("fixture://guide")
-  const prompt = await client.getPrompt({ name: "fixture_walkthrough", arguments: { title: "Walkthrough" } })
-  expect(prompt.messages[0].content).toEqual({ type: "text", text: `Walkthrough: ${tenant}` })
-  expect((await client.readResource({ uri: "fixture://guide" })).contents[0]).toMatchObject({ text: tenant, mimeType: "text/plain" })
-  expect(f.calls()).toBe(0)
-  expect(f.reads()).toBe(2)
-})
-
-test("prompt and resource calls cannot bypass scopes or missing prompt arguments", async () => {
-  const f = await fixture()
-  const denied = await f.connect()
-  await expect(denied.client.getPrompt({ name: "fixture_walkthrough", arguments: { title: "Denied" } })).rejects.toThrow("insufficient_scope")
-  await expect(denied.client.readResource({ uri: "fixture://guide" })).rejects.toThrow("insufficient_scope")
-  const allowed = await f.connect("guide:read")
-  await expect(allowed.client.getPrompt({ name: "fixture_walkthrough", arguments: {} })).rejects.toThrow()
-  expect(f.reads()).toBe(0)
-})
-
-test("duplicate prompt names and resource URIs fail before serving", async () => {
-  const f = await fixture()
-  expect(() => createMcpApp({ ...f.config, prompts: [...f.config.prompts, ...f.config.prompts] })).toThrow("Duplicate prompt")
-  expect(() => createMcpApp({ ...f.config, resources: [...f.config.resources, ...f.config.resources] })).toThrow("Duplicate resource")
-})
-
-
-test("invalid input never runs and invalid output is returned as a safe tool failure", async () => {
-  const f = await fixture()
-  const { client } = await f.connect()
-  const invalid = await client.callTool({ name: "invalid_output", arguments: { value: -1 } })
-  expect(invalid.isError).toBe(true)
-  expect(f.calls()).toBe(0)
-  const output = await client.callTool({ name: "invalid_output", arguments: { value: 1 } })
-  expect(output.isError).toBe(true)
-  expect(JSON.stringify(output)).not.toContain("Internal invalid value")
-  expect(output.structuredContent).toBeUndefined()
-  expect(f.calls()).toBe(1)
-  await expect(client.callTool({ name: "not_selected", arguments: {} })).rejects.toThrow("not found")
-  expect(f.calls()).toBe(1)
-})
-
-test("resource failures redact internal exception messages", async () => {
-  const f = await fixture()
-  const { client } = await f.connect("guide:read")
-  await expect(client.readResource({ uri: "fixture://failure" })).rejects.toThrow("Content could not be read")
-})
-
-
-test("handler deadline aborts downstream work and returns a bounded HTTP failure", async () => {
-  const f = await fixture({ handlerTimeoutMs: 30 })
-  const { client } = await f.connect()
-  await expect(client.callTool({ name: "wait_for_abort", arguments: {} })).rejects.toMatchObject({ status: 504 })
-  expect(f.aborted()).toBe(true)
-  expect((await client.callTool({ name: "identity_get", arguments: {} })).isError).not.toBe(true)
-})
-
-
-test("HTTP cancellation reaches the handler and closes its request", async () => {
-  const f = await fixture()
-  const { token } = await f.connect()
+test("aborting the HTTP request aborts the tool context", async () => {
+  const issuer = await createTestIssuer()
+  cleanups.push(() => issuer.stop())
+  const entered = Promise.withResolvers<AbortSignal>()
+  const observed = Promise.withResolvers<void>()
+  const app = createMcpApp({
+    name: "abort", version: "1", auth: { issuer: issuer.issuer, resource }, services: {},
+    tools: [defineTool({
+      name: "wait", description: "Wait for cancellation", scopes: ["read"], input: z.object({}), output: z.object({}),
+      async execute(_input, context: ToolContext) {
+        entered.resolve(context.signal)
+        await new Promise<void>(resolve => context.signal.addEventListener("abort", () => {
+          observed.resolve()
+          resolve()
+        }, { once: true }))
+        return { data: {}, text: "Aborted" }
+      },
+    })],
+  })
   const controller = new AbortController()
-  const app = createMcpApp(f.config)
-  const response = app.fetch(new Request(f.url, {
+  const token = await issuer.sign({ resource, scopes: ["read"] })
+  const response = app.fetch(new Request(resource, {
     method: "POST", signal: controller.signal,
-    headers: { Host: f.url.host, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 42, method: "tools/call", params: { name: "wait_for_abort", arguments: {} } }),
-  }))
-  const limit = Date.now() + 1000
-  while (!f.waitingStarted() && Date.now() < limit) await Bun.sleep(1)
-  if (!f.waitingStarted()) throw new Error(`Handler did not start: ${await (await response).text()}`)
-  expect(f.waitingStarted()).toBe(true)
+    headers: { Host: "mcp.test", Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream", "MCP-Protocol-Version": "2025-11-25" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "wait", arguments: {} } }),
+  })).then(response => response.text()).catch(() => "")
+  const signal = await entered.promise
   controller.abort()
-  expect((await response).status).toBe(408)
-  expect(f.aborted()).toBe(true)
-})
-
-
-test("request logs contain bounded response metadata and no bearer or tool data", async () => {
-  const f = await fixture()
-  const response = await fetch(f.url, { method: "POST", headers: { Authorization: "Bearer secret-sentinel" } })
-  expect(response.status).toBe(401)
-  expect(f.logs).toHaveLength(1)
-  expect(f.logs[0]).toEqual({ requestId: response.headers.get("x-request-id"), status: 401, durationMs: expect.any(Number) })
-  expect(JSON.stringify(f.logs)).not.toContain("secret-sentinel")
-  const { client } = await f.connect()
-  await client.callTool({ name: "identity_get", arguments: {} })
-  expect(f.logs).toContainEqual(expect.objectContaining({ status: 200 }))
+  await observed.promise
+  expect(signal.aborted).toBe(true)
+  await response
 })

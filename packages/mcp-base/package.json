@@ -5,10 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./apps/react": "./src/apps/react.ts",
     "./build": "./src/build.ts",
-    "./testing": "./src/testing.ts",
-    "./apps": "./src/apps/index.ts"
+    "./testing": "./src/testing.ts"
   },
   "scripts": {
     "test": "bun test",
@@ -17,12 +15,10 @@
   },
   "dependencies": {
     "@answerable/auth": "workspace:*",
+    "@modelcontextprotocol/client": "2.1.0",
+    "@modelcontextprotocol/core": "2.1.0",
     "@modelcontextprotocol/ext-apps": "2.0.0",
-    "@modelcontextprotocol/core": "2.0.0",
-    "@modelcontextprotocol/client": "2.0.0",
-    "@modelcontextprotocol/server": "2.0.0",
-    "@modelcontextprotocol/hono": "2.0.0",
-    "hono": "4.13.8",
+    "@modelcontextprotocol/server": "2.1.0",
     "zod": "4.6.5"
   },
   "devDependencies": {

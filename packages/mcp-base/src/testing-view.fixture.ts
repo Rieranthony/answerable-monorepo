@@ -1,4 +1,4 @@
-import { App } from "@answerable/mcp-base/apps"
+import { App } from "@modelcontextprotocol/ext-apps"
 
 document.getElementById("root")!.textContent = "fixture-rendered"
 

@@ -37,7 +37,7 @@
     "@answerable/mcp-e2e#dev": {
       "cache": false,
       "persistent": true,
-      "env": ["MCP_ID_ISSUER", "MCP_ID_JWKS_URL", "MCP_RESOURCE_URL", "MCP_RESOURCE_INSTANCE_ID", "MCP_RECORDS_PATH", "MCP_ALLOW_LOCAL_HTTP", "MCP_PORT"]
+      "env": ["MCP_ID_ISSUER", "MCP_RESOURCE_URL", "MCP_PORT"]
     },
     "lint": {},
     "typecheck": {},

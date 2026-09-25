@@ -2,32 +2,20 @@ import { createRemoteJWKSet, jwtVerify } from "jose"
 import { z } from "zod"
 
 export type IdVerifierConfig = {
+  /** Trusted Answerable ID issuer, for example https://id.answerable.org. */
   issuer: string
+  /** This service's canonical resource URL as registered in ID; the token audience must contain it. */
   resource: string
-  resourceInstanceId: string
-  /** Explicit, trusted configuration. Never derived from an incoming token. */
-  jwksUrl: string
-  /** Development only: permits HTTP for loopback origins, never remote hosts. */
-  allowLocalHttp?: boolean
-  /** Maximum exp - iat in seconds; default 900, at most ID's 3600-second limit. */
-  maxTokenLifetimeSeconds?: number
-  cacheMaxAge?: number
-  cooldownDuration?: number
-  timeoutDuration?: number
 }
 
 export type UserPrincipal = Readonly<{
-  type: "user"
   userId: string
   organizationId: string
   membershipId: string
   grantId: string
   clientId: string
-  clientInstanceId: string
-  resourceInstanceId: string
   scopes: readonly string[]
   expiresAt: number
-  upstreamAuthTime: number | null
 }>
 
 export class AuthenticationError extends Error {
@@ -43,77 +31,63 @@ const claimsSchema = z.object({
   organization_id: z.uuid(),
   membership_id: z.uuid(),
   grant_id: z.uuid(),
-  client_instance: z.uuid(),
-  resource_instance: z.uuid(),
   client_id: z.string().min(1),
-  azp: z.string().min(1).optional(),
-  authorization_version: z.number().int().positive(),
-  organization_authorization_version: z.number().int().positive(),
-  upstream_auth_time: z.number().int().nonnegative().nullable(),
+  azp: z.string().optional(),
   scope: z.string(),
   exp: z.number().int().positive(),
-  iat: z.number().int().nonnegative(),
-  // Proof-bound credentials need a separate supported verifier, not bearer acceptance.
   cnf: z.never().optional(),
 })
 
-function trustedUrl(value: string, allowLocalHttp: boolean) {
-  const url = new URL(value)
+function trustedUrl(value: string, name: string) {
+  let url: URL
+  try { url = new URL(value) } catch { throw new Error(`${name} must be a valid URL`) }
+  if (url.username || url.password) throw new Error(`${name} must not contain credentials`)
+  if (value.includes("?")) throw new Error(`${name} must not contain a query string`)
+  if (value.includes("#")) throw new Error(`${name} must not contain a fragment`)
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
-  if (
-    url.username || url.password || url.hash || url.search ||
-    (url.protocol !== "https:" && !(allowLocalHttp && local && url.protocol === "http:"))
-  ) throw new Error("ID issuer, resource and JWKS must use HTTPS (or explicitly enabled local HTTP)")
+  if (url.protocol !== "https:" && !(local && url.protocol === "http:")) {
+    throw new Error(`${name} must use HTTPS or loopback HTTP`)
+  }
   return url
 }
 
-/** Validate resource access tokens without creating sessions or querying ID's database. */
-export function createIdVerifier(config: IdVerifierConfig) {
-  trustedUrl(config.issuer, config.allowLocalHttp === true)
-  trustedUrl(config.resource, config.allowLocalHttp === true)
-  const jwksUrl = trustedUrl(config.jwksUrl, config.allowLocalHttp === true)
-  z.uuid().parse(config.resourceInstanceId)
-  const maxLifetime = z.number().int().min(1).max(3600).parse(config.maxTokenLifetimeSeconds ?? 900)
-  const cacheMaxAge = z.number().int().nonnegative().parse(config.cacheMaxAge ?? 300_000)
-  const cooldownDuration = z.number().int().nonnegative().parse(config.cooldownDuration ?? 30_000)
-  const timeoutDuration = z.number().int().positive().parse(config.timeoutDuration ?? 5_000)
-  const keys = createRemoteJWKSet(jwksUrl, {
-    cacheMaxAge,
-    cooldownDuration,
-    timeoutDuration,
-  })
-  return async (token: string): Promise<UserPrincipal> => {
+export function createIdVerifier(config: IdVerifierConfig): (token: string) => Promise<UserPrincipal> {
+  const { issuer, resource } = config
+  const issuerUrl = trustedUrl(issuer, "issuer")
+  trustedUrl(resource, "resource")
+  let discovery: Promise<ReturnType<typeof createRemoteJWKSet>> | undefined
+  async function discover() {
+    const metadataUrl = new URL(issuerUrl)
+    metadataUrl.pathname = `/.well-known/oauth-authorization-server${issuerUrl.pathname === "/" ? "" : issuerUrl.pathname}`
+    const response = await fetch(metadataUrl, { signal: AbortSignal.timeout(5000), redirect: "error" })
+    if (!response.ok) throw new Error("ID discovery failed")
+    const metadata = z.object({ issuer: z.literal(issuer), jwks_uri: z.string() }).parse(await response.json())
+    const jwksUrl = trustedUrl(metadata.jwks_uri, "jwks_uri")
+    if (jwksUrl.origin !== issuerUrl.origin) throw new Error("jwks_uri must share the issuer origin")
+    return createRemoteJWKSet(jwksUrl)
+  }
+  return async token => {
     try {
-      const { payload } = await jwtVerify(token, keys, {
-        issuer: config.issuer,
-        audience: config.resource,
-        algorithms: ["EdDSA"],
-        typ: "at+jwt",
-        requiredClaims: ["exp", "iat", "sub"],
+      discovery ??= discover().catch(error => {
+        discovery = undefined
+        throw error
+      })
+      const { payload } = await jwtVerify(token, await discovery, {
+        issuer, audience: resource, algorithms: ["EdDSA", "ES256", "RS256"],
+        typ: "at+jwt", requiredClaims: ["exp", "iat", "sub"],
       })
       const claims = claimsSchema.parse(payload)
-      if (
-        claims.resource_instance !== config.resourceInstanceId ||
-        (claims.azp !== undefined && claims.azp !== claims.client_id) ||
-        claims.iat > Math.floor(Date.now() / 1000) ||
-        claims.exp <= claims.iat ||
-        claims.exp - claims.iat > maxLifetime
-      ) throw new AuthenticationError()
+      if (claims.azp !== undefined && claims.azp !== claims.client_id) throw new AuthenticationError()
       return Object.freeze({
-        type: "user",
         userId: claims.sub,
         organizationId: claims.organization_id,
         membershipId: claims.membership_id,
         grantId: claims.grant_id,
         clientId: claims.client_id,
-        clientInstanceId: claims.client_instance,
-        resourceInstanceId: claims.resource_instance,
         scopes: Object.freeze([...new Set(claims.scope.split(" ").filter(Boolean))]),
         expiresAt: claims.exp,
-        upstreamAuthTime: claims.upstream_auth_time,
       })
     } catch {
-      // Neither cryptographic details nor token contents belong in client responses.
       throw new AuthenticationError()
     }
   }
