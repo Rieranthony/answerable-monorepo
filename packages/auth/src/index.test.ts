@@ -1,14 +1,11 @@
-import { afterEach, expect, spyOn, test } from "bun:test"
+import { expect, spyOn, test } from "bun:test"
 import { AuthenticationError, createIdVerifier } from "./index"
-import { createTestIssuer, type TestIssuer } from "./testing"
+import { createTestIssuer } from "./testing"
 
 const resource = "https://mcp.test/mcp"
-const issuers: TestIssuer[] = []
-afterEach(() => { for (const issuer of issuers.splice(0)) issuer.stop() })
 async function fixture(algorithm?: "EdDSA" | "ES256" | "RS256") {
   const issuer = await createTestIssuer({ algorithm })
-  issuers.push(issuer)
-  return { ...issuer, verify: createIdVerifier({ issuer: issuer.issuer, resource }) }
+  return { ...issuer, verify: createIdVerifier({ issuer: issuer.issuer, resource, fetch: issuer.fetch }) }
 }
 
 test("valid tokens return only a frozen principal and de-duplicated scopes", async () => {
@@ -93,32 +90,29 @@ for (const mismatch of ["issuer", "origin"]) {
   test(`discovery rejects a different ${mismatch}`, async () => {
     const signer = await fixture()
     let keyRequests = 0
-    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request): Response {
+    const issuer = "https://discovery.test"
+    const verify = createIdVerifier({ issuer, resource, async fetch(input, init) {
+      const request = (input instanceof Request ? new Request(input, init) : new Request(String(input), init))
       if (new URL(request.url).pathname === "/jwks") keyRequests++
-      return Response.json({ issuer: mismatch === "issuer" ? signer.issuer : server.url.origin, jwks_uri: mismatch === "origin" ? `${signer.issuer}/jwks` : new URL("/jwks", server.url).href })
+      return Response.json({ issuer: mismatch === "issuer" ? signer.issuer : issuer, jwks_uri: mismatch === "origin" ? `${signer.issuer}/jwks` : `${issuer}/jwks` })
     } })
-    try {
-      const verify = createIdVerifier({ issuer: server.url.origin, resource })
-      await expect(verify(await signer.sign({ resource, claims: { iss: server.url.origin } }))).rejects.toBeInstanceOf(AuthenticationError)
-      expect(keyRequests).toBe(0)
-      expect(signer.jwksRequests()).toBe(0)
-    } finally { server.stop(true) }
+    await expect(verify(await signer.sign({ resource, claims: { iss: issuer } }))).rejects.toBeInstanceOf(AuthenticationError)
+    expect(keyRequests).toBe(0)
+    expect(signer.jwksRequests()).toBe(0)
   })
 }
 test("discovery inserts the well-known path before an issuer path", async () => {
   const signer = await fixture()
   const paths: string[] = []
-  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request): Promise<Response> {
-    const path = new URL(request.url).pathname
+  const issuer = "https://discovery.test/tenant"
+  const verify = createIdVerifier({ issuer, resource, async fetch(input, init) {
+    const path = new URL((input instanceof Request ? new Request(input, init) : new Request(String(input), init)).url).pathname
     paths.push(path)
-    if (path === "/.well-known/oauth-authorization-server/tenant") return Response.json({ issuer: `${server.url.origin}/tenant`, jwks_uri: new URL("/jwks", server.url).href })
-    return fetch(`${signer.issuer}/jwks`)
+    if (path === "/.well-known/oauth-authorization-server/tenant") return Response.json({ issuer, jwks_uri: "https://discovery.test/jwks" })
+    return signer.fetch(`${signer.issuer}/jwks`)
   } })
-  try {
-    const issuer = `${server.url.origin}/tenant`
-    await createIdVerifier({ issuer, resource })(await signer.sign({ resource, claims: { iss: issuer } }))
-    expect(paths).toEqual(["/.well-known/oauth-authorization-server/tenant", "/jwks"])
-  } finally { server.stop(true) }
+  await verify(await signer.sign({ resource, claims: { iss: issuer } }))
+  expect(paths).toEqual(["/.well-known/oauth-authorization-server/tenant", "/jwks"])
 })
 for (const field of ["issuer", "resource"] as const) {
   for (const [url, rule] of [["http://evil.test", "HTTPS"], ["https://user:password@id.test", "credentials"], ["https://id.test?x=1", "query"], ["https://id.test#x", "fragment"], ["invalid", "valid URL"]]) {
@@ -130,5 +124,21 @@ for (const field of ["issuer", "resource"] as const) {
 test("loopback HTTP needs no opt-in and construction performs no discovery", () => {
   for (const host of ["localhost", "127.0.0.1", "[::1]"]) {
     expect(createIdVerifier({ issuer: `http://${host}`, resource: `http://${host}/mcp` })).toBeFunction()
+  }
+})
+
+test("uses the global fetch by default", async () => {
+  const issuer = await createTestIssuer()
+  const verify = createIdVerifier({ issuer: issuer.issuer, resource })
+  const fetch = spyOn(globalThis, "fetch").mockImplementation(issuer.fetch as typeof globalThis.fetch)
+  try {
+    expect((await verify(await issuer.sign({ resource }))).clientId).toBe("test-client")
+  } finally { fetch.mockRestore() }
+})
+test("test issuer routes are in-process and origin-bound", async () => {
+  const issuer = await createTestIssuer({ issuer: "http://localhost:1234" })
+  expect(issuer.issuer).toBe("http://localhost:1234")
+  for (const [url, method] of [[`${issuer.issuer}/missing`, "GET"], [`${issuer.issuer}/jwks`, "POST"], ["https://other.test/jwks", "GET"]]) {
+    expect((await issuer.fetch(url!, { method })).status).toBe(404)
   }
 })

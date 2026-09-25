@@ -1,5 +1,4 @@
-import type { UserPrincipal } from "@answerable/auth"
-import { ToolError } from "@answerable/mcp-base"
+import { ToolError, type UserPrincipal } from "@answerable/mcp"
 import type { FixtureRecord } from "./contracts"
 
 export type RecordStore = ReturnType<typeof createRecordStore>

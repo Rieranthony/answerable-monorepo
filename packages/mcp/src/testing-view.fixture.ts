@@ -1,3 +1,4 @@
+import "./testing-view.fixture.css"
 import { App } from "@modelcontextprotocol/ext-apps"
 
 document.getElementById("root")!.textContent = "fixture-rendered"

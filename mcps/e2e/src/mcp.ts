@@ -1,55 +1,23 @@
-import { createMcpApp, defineTool, defineView, definePrompt, defineResource, type ToolContext } from "@answerable/mcp-base"
-import type { IdVerifierConfig } from "@answerable/auth"
+import { createMcpServer, defineTool, defineView, definePrompt, defineResource, type IdVerifierConfig } from "@answerable/mcp"
 import { z } from "zod"
 import { createInput, deleteInput, recordSchema, recordsOutput, recordsViewOutput } from "./contracts"
 import type { RecordStore } from "./records"
 
-type Services = { records: RecordStore }
-type Context = ToolContext<Services>
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
 
-export const identityGet = defineTool({
+const identityGet = defineTool({
   name: "identity_get",
   description: "Read your verified Answerable ID identity and permissions",
   input: z.object({}).strict(),
   output: z.object({ userId: z.uuid(), organizationId: z.uuid(), scopes: z.array(z.string()) }),
   scopes: ["e2e:identity"],
   annotations: readOnly,
-  async execute(_input, context: Context) {
-    const { userId, organizationId, scopes } = context.principal
-    return { data: { userId, organizationId, scopes: [...scopes] }, text: `Authenticated in organisation ${organizationId}` }
+  async execute(_input, { principal }) {
+    return { userId: principal.userId, organizationId: principal.organizationId, scopes: [...principal.scopes] }
   },
 })
 
-export const recordsList = defineTool({
-  name: "records_list", description: "List up to 100 test records in your organisation",
-  input: z.object({}).strict(), output: recordsOutput, scopes: ["e2e:read"], annotations: readOnly,
-  async execute(_input, context: Context) {
-    const records = context.services.records.list(context.principal)
-    return { data: { records }, text: `${records.length} test records` }
-  },
-})
-
-export const recordsCreate = defineTool({
-  name: "records_create", description: "Create a test record",
-  input: createInput, output: recordSchema, scopes: ["e2e:write"],
-  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
-  async execute(input, context: Context) {
-    const record = context.services.records.create(context.principal, input.title)
-    return { data: record, text: `Created ${record.title}` }
-  },
-})
-
-export const recordsDelete = defineTool({
-  name: "records_delete", description: "Delete a test record",
-  input: deleteInput, output: z.object({ deleted: z.literal(true), id: z.uuid() }), scopes: ["e2e:write"],
-  annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
-  async execute(input, context: Context) {
-    return { data: context.services.records.remove(context.principal, input.recordId), text: "Deleted the test record" }
-  },
-})
-
-export const fixtureWalkthrough = definePrompt({
+const fixtureWalkthrough = definePrompt({
   name: "fixture_walkthrough", description: "Walk through safe test-record operations",
   input: z.object({}).strict(), scopes: ["e2e:read"],
   async execute() {
@@ -57,7 +25,7 @@ export const fixtureWalkthrough = definePrompt({
   },
 })
 
-export const fixtureGuide = defineResource({
+const fixtureGuide = defineResource({
   name: "fixture_guide", uri: "fixture://guide", description: "How to use the test MCP",
   mimeType: "text/markdown", scopes: ["e2e:read"],
   async read() {
@@ -65,26 +33,46 @@ export const fixtureGuide = defineResource({
   },
 })
 
-export function createE2eMcp(config: {
-  auth: IdVerifierConfig
-  viewHtml: string
-  records: RecordStore
-  allowedHosts?: string[]
-  allowedOrigins?: string[]
-}) {
-  const view = defineView({ name: "records", html: config.viewHtml })
-  const recordsShow = defineTool({
-    name: "records_show", description: "Open your organisation's interactive test records",
-    input: z.object({}).strict(), output: recordsViewOutput, scopes: ["e2e:read"], view, annotations: readOnly,
-    async execute(_input, context: Context) {
-      const records = context.services.records.list(context.principal)
-      return { data: { records, canWrite: context.principal.scopes.includes("e2e:write") }, text: `${records.length} test records` }
+/** The e2e MCP. Tools that need the record store are defined here and reach it by closure. */
+export function createE2eMcp({ auth, records, viewHtml }: { auth: IdVerifierConfig; records: RecordStore; viewHtml: string }) {
+  const recordsList = defineTool({
+    name: "records_list", description: "List up to 100 test records in your organisation",
+    input: z.object({}).strict(), output: recordsOutput, scopes: ["e2e:read"], annotations: readOnly,
+    async execute(_input, { principal }) {
+      return { records: records.list(principal) }
     },
   })
-  return createMcpApp({
-    name: "answerable-e2e", version: "0.1.0", auth: config.auth,
-    services: { records: config.records }, allowedHosts: config.allowedHosts, allowedOrigins: config.allowedOrigins,
-    prompts: [fixtureWalkthrough], resources: [fixtureGuide],
+
+  const recordsShow = defineTool({
+    name: "records_show", description: "Open your organisation's interactive test records",
+    input: z.object({}).strict(), output: recordsViewOutput, scopes: ["e2e:read"], annotations: readOnly,
+    view: defineView({ name: "records", html: viewHtml }),
+    async execute(_input, { principal }) {
+      return { records: records.list(principal), canWrite: principal.scopes.includes("e2e:write") }
+    },
+  })
+
+  const recordsCreate = defineTool({
+    name: "records_create", description: "Create a test record",
+    input: createInput, output: recordSchema, scopes: ["e2e:write"],
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    async execute({ title }, { principal }) {
+      return records.create(principal, title)
+    },
+  })
+
+  const recordsDelete = defineTool({
+    name: "records_delete", description: "Delete a test record",
+    input: deleteInput, output: z.object({ deleted: z.literal(true), id: z.uuid() }), scopes: ["e2e:write"],
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    async execute({ recordId }, { principal }) {
+      return records.remove(principal, recordId)
+    },
+  })
+
+  return createMcpServer({
+    name: "answerable-e2e", version: "0.1.0", auth,
     tools: [identityGet, recordsList, recordsShow, recordsCreate, recordsDelete],
+    prompts: [fixtureWalkthrough], resources: [fixtureGuide],
   })
 }

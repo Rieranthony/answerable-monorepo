@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "bun run env:up && turbo run dev --filter='./apps/*'",
     "mcp:dev": "bun --env-file=.env run --filter @answerable/mcp-e2e dev",
-    "mcp:test": "bun test packages/auth/src packages/mcp-base/src mcps/e2e/src",
+    "mcp:test": "bun run --filter @answerable/auth --filter @answerable/mcp --filter @answerable/mcp-e2e test",
     "env:up": "docker compose up -d --wait",
     "env:down": "docker compose down",
     "env:reset": "docker compose down -v",
