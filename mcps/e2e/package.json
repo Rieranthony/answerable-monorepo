@@ -12,9 +12,7 @@
     "start": "bun src/server.ts"
   },
   "dependencies": {
-    "@answerable/auth": "workspace:*",
-    "@answerable/mcp-base": "workspace:*",
-    "@modelcontextprotocol/core": "2.1.0",
+    "@answerable/mcp": "workspace:*",
     "@modelcontextprotocol/ext-apps": "2.0.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",

@@ -1,10 +1,10 @@
 ---
 title: Author an MCP
-description: "Create an MCP server from the shared base: tools, prompts, resources and MCP Apps views."
+description: "Create an MCP server on Answerable ID: tools, prompts, resources, MCP Apps views and in-process tests."
 ---
 
 ```ts
-import { createMcpApp, defineTool, readMcpEnvironment } from "@answerable/mcp-base"
+import { createMcpServer, defineTool, readMcpEnvironment } from "@answerable/mcp"
 import { z } from "zod"
 
 const identityGet = defineTool({
@@ -14,20 +14,17 @@ const identityGet = defineTool({
   output: z.object({ organizationId: z.uuid() }),
   scopes: ["example:read"],
   annotations: { readOnlyHint: true, openWorldHint: false },
-  async execute(_input, context) {
-    return {
-      data: { organizationId: context.principal.organizationId },
-      text: "Authenticated with Answerable ID",
-    }
+  async execute(_input, { principal }) {
+    return { organizationId: principal.organizationId }
   },
 })
 
 const { auth, port } = readMcpEnvironment(process.env)
-const app = createMcpApp({ name: "example", version: "0.1.0", auth, services: {}, tools: [identityGet] })
-Bun.serve({ hostname: "127.0.0.1", port, fetch: app.fetch })
+const server = createMcpServer({ name: "example", version: "0.1.0", auth, tools: [identityGet] })
+Bun.serve({ hostname: "127.0.0.1", port, fetch: server.fetch })
 ```
 
-Save this as `mcps/example/src/server.ts`. `createMcpApp` returns a web-standard `{ fetch }` handler; the entry point owns the listener.
+Save this as `mcps/example/src/server.ts`. `createMcpServer` returns a web-standard `{ fetch }` handler; the entry point owns the listener.
 
 ## Create a workspace
 
@@ -36,8 +33,8 @@ Save this as `mcps/example/src/server.ts`. `createMcpApp` returns a web-standard
   "name": "@answerable/mcp-example",
   "private": true,
   "type": "module",
-  "scripts": { "dev": "bun --hot src/server.ts", "start": "bun src/server.ts" },
-  "dependencies": { "@answerable/mcp-base": "workspace:*", "zod": "4.6.5" }
+  "scripts": { "dev": "bun --hot src/server.ts", "start": "bun src/server.ts", "test": "bun test" },
+  "dependencies": { "@answerable/mcp": "workspace:*", "zod": "4.6.5" }
 }
 ```
 
@@ -63,13 +60,53 @@ Register the resource, a client and its access in ID before the first sign-in; s
 
 ## Tools
 
-`defineTool` takes `name`, `description`, Zod `input` and `output` objects, `scopes`, optional `title`, `annotations` and `view`, and `execute(input, context)`. `execute` returns `data` (checked against `output`) and `text` for hosts that ignore structured content.
+`defineTool` takes `name`, `description`, Zod `input` and `output` objects, `scopes`, optional `title`, `annotations` and `view`, and `execute(input, context)`. It returns the tool as frozen data.
+
+**Output.** `execute` returns the output. The server checks it against `output`, drops every field the schema does not declare, and sends the result as `structuredContent` and as the same JSON in a text block. Claude Code shows the model only the structured content, so put everything the model needs in the output.
 
 **Scopes decide visibility.** A token lists only the tools whose every scope it carries. A tool it cannot use is absent from `tools/list`, and calling it returns the protocol's unknown-tool error.
 
-**Context.** `context.principal` holds `userId`, `organizationId`, `membershipId`, `grantId`, `clientId`, `scopes` and `expiresAt`. `context.services` is what you passed to `createMcpApp`. `context.signal` aborts when the host cancels or disconnects. Constrain every query by `principal.organizationId`.
+**Context.** `context.principal` holds `userId`, `organizationId`, `membershipId`, `grantId`, `clientId`, `scopes` and `expiresAt`. `context.signal` aborts when the host cancels or disconnects. Constrain every query by `principal.organizationId`.
 
-**Errors.** Throw `new ToolError(code, message)` for a safe, expected failure. Any other exception returns `tool_failed` without its message.
+**Dependencies.** Pass them by closure: define the tools inside a function that receives them.
+
+```ts
+import { createMcpServer, defineTool, type IdVerifierConfig } from "@answerable/mcp"
+
+export function createExampleMcp({ auth, records }: { auth: IdVerifierConfig; records: RecordStore }) {
+  const recordsList = defineTool({
+    name: "records_list",
+    description: "List your organisation's records",
+    input: z.object({}).strict(),
+    output: z.object({ records: z.array(recordSchema) }),
+    scopes: ["example:read"],
+    async execute(_input, { principal }) {
+      return { records: await records.list(principal.organizationId) }
+    },
+  })
+  return createMcpServer({ name: "example", version: "0.1.0", auth, tools: [recordsList] })
+}
+```
+
+**Composition.** A tool is plain data, so ordinary code composes it: collect tools from several modules into one array, wrap `execute` to audit every call, or call `execute` directly in a unit test.
+
+```ts
+import { defineTool, type Tool } from "@answerable/mcp"
+
+function audited(tool: Tool, log: (line: string) => void): Tool {
+  return defineTool({
+    ...tool,
+    async execute(input, context) {
+      log(`${context.principal.userId} ${tool.name}`)
+      return tool.execute(input, context)
+    },
+  })
+}
+
+const tools = [recordsList, recordsCreate].map(tool => audited(tool, console.info))
+```
+
+**Errors.** Throw `new ToolError(code, message)` for a safe, expected failure. Any other exception, or an output that does not match `output`, returns `tool_failed` without its message and logs `[mcp] tool <name> failed`.
 
 ## Prompts and resources
 
@@ -78,16 +115,45 @@ Register the resource, a client and its access in ID before the first sign-in; s
 ## Views
 
 ```ts
-import { buildView } from "@answerable/mcp-base/build"
+import { buildView } from "@answerable/mcp/build"
 
 const html = await buildView({ entry: "src/views/records.tsx", title: "Records" })
 ```
 
-Build each view before starting the server, pass the HTML to `defineView({ name, html })`, and set the view on a tool. The base registers it as a `ui://` resource with the MCP Apps MIME type. Browser code imports `useApp` from `@modelcontextprotocol/ext-apps/react` or `App` from `@modelcontextprotocol/ext-apps`. A view calls tools through the host, with the same scope and organisation checks; it never receives a token. `mcps/e2e` is the working example.
+Build each view before starting the server, pass the HTML to `defineView({ name, html })`, and set the view on a tool. The server registers it as a `ui://` resource with the MCP Apps MIME type. Browser code imports `useApp` from `@modelcontextprotocol/ext-apps/react` or `App` from `@modelcontextprotocol/ext-apps`. A view calls tools through the host, with the same scope and organisation checks; it never receives a token. `mcps/e2e` is the working example.
+
+## Test
+
+```ts
+import { expect, test } from "bun:test"
+import { createTestMcp } from "@answerable/mcp/testing"
+import { createExampleMcp } from "./mcp"
+
+test("lists the caller's records", async () => {
+  const mcp = await createTestMcp(auth => createExampleMcp({ auth, records: createRecordStore() }))
+  try {
+    const client = await mcp.connect({ scopes: ["example:read"] })
+    const result = await client.callTool({ name: "records_list", arguments: {} })
+    expect(result.structuredContent).toEqual({ records: [] })
+  } finally {
+    await mcp.close()
+  }
+})
+```
+
+`createTestMcp` runs the MCP and a local ID issuer inside the test process: no port and no network. `connect` signs a token for the MCP and connects the official MCP client.
+
+| Option | Default |
+| --- | --- |
+| `scopes` | Every scope the MCP advertises |
+| `organizationId`, `userId` | Random UUIDs |
+| `protocol` | The client's default; `"2026-07-28"` pins the new revision |
+
+`mcp.fetch` sends a raw HTTP request, for example to check a `401`. `mcp.issuer.sign` makes an unusual token, such as an expired one. `mcp.close()` closes every client. `mcps/e2e/src/mcp.test.ts` is the working example; [Test MCPs locally](/docs/mcp/local-testing) covers the real sign-in through ID.
 
 ## Health
 
-`GET /health` returns `{ "status": "ok" }` without authentication.
+`GET /health` returns `{ "status": "ok" }` without authentication, whatever the `Host` header, so load balancers and container probes can call it by address.
 
 ## Errors
 
@@ -96,6 +162,6 @@ Build each view before starting the server, pass the HTML to `defineView({ name,
 | `401 invalid_token` | Missing, expired or foreign token, or a token for another MCP | Sign in through ID for this MCP's resource URL |
 | `403` on the MCP endpoint | The `Host` or browser `Origin` is not allowed | Call the MCP by its registered host name, or set `allowedHosts` / `allowedOrigins` |
 | Unknown tool, prompt or resource | Not defined, or the token lacks its scopes | Check the token's scopes against the definition |
-| Tool result `tool_failed` | Unexpected handler failure or invalid output | Read the server logs |
+| Tool result `tool_failed` | Unexpected handler failure, or output that does not match `output` | Read the server logs |
 | Tool result with your code | A `ToolError` you threw | Handle the code |
 | `Invalid MCP configuration: …` at start | A missing or invalid variable | Set the named variable |

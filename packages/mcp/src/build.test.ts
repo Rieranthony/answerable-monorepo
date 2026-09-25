@@ -8,5 +8,10 @@ test("browser entry bundles into standalone HTML with no external scripts", asyn
   const html = await buildView({ entry: new URL("./testing-view.fixture.ts", import.meta.url).pathname, title: "Test <view>" })
   expect(html).toContain("Test &lt;view&gt;")
   expect(html).toContain("fixture-rendered")
+  expect(html).toMatch(/<style>[^<]*body[^<]*color:[^<]+<\/style>/)
   expect(html).not.toContain("<script src=")
+})
+
+test("views reject separately emitted assets", async () => {
+  await expect(buildView({ entry: new URL("./testing-asset.fixture.ts", import.meta.url).pathname, title: "Asset" })).rejects.toThrow("Views must bundle to one script and optional CSS")
 })

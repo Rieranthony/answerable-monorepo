@@ -86,9 +86,7 @@
       "name": "@answerable/mcp-e2e",
       "version": "0.0.0",
       "dependencies": {
-        "@answerable/auth": "workspace:*",
-        "@answerable/mcp-base": "workspace:*",
-        "@modelcontextprotocol/core": "2.1.0",
+        "@answerable/mcp": "workspace:*",
         "@modelcontextprotocol/ext-apps": "2.0.0",
         "react": "19.2.4",
         "react-dom": "19.2.4",
@@ -134,13 +132,12 @@
         "typescript-eslint": "8.48.1",
       },
     },
-    "packages/mcp-base": {
-      "name": "@answerable/mcp-base",
+    "packages/mcp": {
+      "name": "@answerable/mcp",
       "version": "0.0.0",
       "dependencies": {
         "@answerable/auth": "workspace:*",
         "@modelcontextprotocol/client": "2.1.0",
-        "@modelcontextprotocol/core": "2.1.0",
         "@modelcontextprotocol/ext-apps": "2.0.0",
         "@modelcontextprotocol/server": "2.1.0",
         "zod": "4.6.5",
@@ -149,7 +146,6 @@
         "@eslint/js": "9.39.5",
         "@types/bun": "1.3.1",
         "eslint": "9.39.5",
-        "jose": "6.2.12",
         "typescript": "5.9.3",
         "typescript-eslint": "8.48.1",
       },
@@ -198,7 +194,7 @@
 
     "@answerable/id": ["@answerable/id@workspace:apps/id"],
 
-    "@answerable/mcp-base": ["@answerable/mcp-base@workspace:packages/mcp-base"],
+    "@answerable/mcp": ["@answerable/mcp@workspace:packages/mcp"],
 
     "@answerable/mcp-e2e": ["@answerable/mcp-e2e@workspace:mcps/e2e"],
 

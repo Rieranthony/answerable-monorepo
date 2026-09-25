@@ -21,11 +21,12 @@ const principal = await verify(accessToken)
 - **URLs.** HTTPS, or HTTP on `localhost`, `127.0.0.1` or `[::1]`. No credentials, query or fragment.
 - **Failures.** Every rejection throws `AuthenticationError` with no detail. Answer it with a `401` challenge.
 - **Revocation.** Verification is offline: an issued token stays valid until it expires. Constrain every query by `organizationId`.
+- **HTTP client.** `fetch` replaces the client for discovery and key requests; the default is the global `fetch`.
 
-`@answerable/auth/testing` exports `createTestIssuer()`, a local issuer that signs ID-shaped tokens for tests.
+`@answerable/auth/testing` exports `createTestIssuer()`, an in-process issuer that signs ID-shaped tokens for tests. Pass its `fetch` to the verifier; nothing listens on a port.
 
 ```sh
 bun run --filter @answerable/auth test
 ```
 
-MCP servers use this package through [`@answerable/mcp-base`](../mcp-base/README.md).
+MCP servers use this package through [`@answerable/mcp`](../mcp/README.md).

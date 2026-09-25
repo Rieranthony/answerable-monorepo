@@ -27,7 +27,7 @@
       "cache": false,
       "dependsOn": ["^build"]
     },
-    "@answerable/mcp-base#test": {
+    "@answerable/mcp#test": {
       "cache": false,
       "dependsOn": ["^build"]
     },
