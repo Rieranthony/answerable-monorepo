@@ -29,6 +29,7 @@ import {
   oauthClientResources,
   oauthClients,
   oauthConsents,
+  organizationCapabilities,
   oauthRefreshTokens,
   oauthResources,
   sessions,
@@ -36,7 +37,10 @@ import {
   verifications,
 } from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
-import { createCapability } from "../services/capabilities.ts";
+import {
+  createCapability,
+  updateCapability,
+} from "../services/capabilities.ts";
 import { hashClientSecret } from "../services/client-secrets.ts";
 import { currentGrantAuthentication } from "./grant-authentication.ts";
 
@@ -175,6 +179,7 @@ async function start(
   scope = "openid offline_access mail:read",
   target: string | null = resource,
   acceptJson = false,
+  claims?: string,
 ) {
   const query = new URLSearchParams({
     client_id: clientId,
@@ -184,6 +189,7 @@ async function start(
     ...(target ? { resource: target } : {}),
     state: "client-state",
     nonce: "client-nonce",
+    ...(claims ? { claims } : {}),
     code_challenge_method: "S256",
     code_challenge: createHash("sha256").update(verifier).digest("base64url"),
   });
@@ -1925,3 +1931,219 @@ for (const mode of ["plain", "missing-public-challenge"] as const) {
     expect(await fixture.db.select().from(grantContexts)).toHaveLength(0);
   });
 }
+
+async function offerSendScope() {
+  const scopes = [
+    "openid",
+    "email",
+    "offline_access",
+    "mail:read",
+    "mail:send",
+  ];
+  await fixture.db
+    .update(oauthClients)
+    .set({ scopes })
+    .where(eq(oauthClients.clientId, clientId));
+  await fixture.db
+    .update(oauthResources)
+    .set({ allowedScopes: scopes })
+    .where(eq(oauthResources.identifier, resource));
+  const [capability] = await fixture.db
+    .select()
+    .from(organizationCapabilities)
+    .where(
+      and(
+        eq(
+          organizationCapabilities.organizationId,
+          fixture.tenant.organizationId,
+        ),
+        eq(organizationCapabilities.clientId, clientId),
+        eq(organizationCapabilities.resource, resource),
+        eq(organizationCapabilities.grantKind, "authorization_code"),
+      ),
+    );
+  await inPlatformWrite(fixture.db, (context) =>
+    updateCapability(
+      context,
+      fixture.tenant.organizationId,
+      capability!.id,
+      { scopes: ["mail:read", "mail:send"] },
+      capability!,
+    ),
+  );
+}
+
+for (const skipConsent of [false, true]) {
+  test(`partial entitlement stores and issues the granted subset (skipConsent=${skipConsent})`, async () => {
+    await offerSendScope();
+    await fixture.db
+      .update(oauthClients)
+      .set({ skipConsent })
+      .where(eq(oauthClients.clientId, clientId));
+    const requested = ["openid", "offline_access", "mail:read", "mail:send"];
+    const granted = ["mail:read", "offline_access", "openid"];
+    const selection = await start(requested.join(" "));
+    const initial = await request("/oauth2/flow", {
+      oauth_query: selection.search.slice(1),
+    });
+    expect((await initial.json()).grantedScopes).toBeNull();
+    let callback = await select(selection);
+    if (!skipConsent) {
+      expect(callback.pathname).toBe("/consent");
+      const details = await request("/oauth2/flow", {
+        oauth_query: callback.search.slice(1),
+      });
+      expect(await details.json()).toMatchObject({
+        scopes: requested,
+        grantedScopes: granted,
+      });
+      const accepted = await request("/oauth2/consent", {
+        oauth_query: callback.search.slice(1),
+        accept: true,
+      });
+      expect(accepted.status).toBe(200);
+      callback = new URL((await accepted.json()).url);
+      const [consent] = await fixture.db.select().from(oauthConsents);
+      expect(consent!.scopes.slice().sort()).toEqual(granted);
+    }
+    const [stored] = await fixture.db
+      .select()
+      .from(verifications)
+      .where(
+        sql`${verifications.value}::jsonb->>'type' = 'authorization_code'`,
+      );
+    expect(JSON.parse(stored!.value).query.scope.split(" ").sort()).toEqual(
+      granted,
+    );
+    const [event] = await fixture.db
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.action, "oauth.user.authorized"));
+    expect(event!.data).toMatchObject({
+      scopes: granted,
+      decision: {
+        requestedScopes: requested.slice().sort(),
+        grantedScopes: granted,
+        scopes: ["mail:read"],
+      },
+    });
+    const response = await exchange({
+      grant_type: "authorization_code",
+      code: callback.searchParams.get("code")!,
+      redirect_uri: redirect,
+      code_verifier: verifier,
+      resource,
+    });
+    expect(response.status).toBe(200);
+    const issued = await response.json();
+    expect(issued.scope.split(" ").sort()).toEqual(granted);
+    expect(
+      String(decodeJwt(issued.access_token).scope).split(" ").sort(),
+    ).toEqual(granted);
+    expect(issued.id_token).toBeString();
+    expect(issued.refresh_token).toBeString();
+    const refreshed = await exchange({
+      grant_type: "refresh_token",
+      refresh_token: issued.refresh_token,
+      resource,
+    });
+    expect(refreshed.status).toBe(200);
+    const next = await refreshed.json();
+    expect(next.scope.split(" ").sort()).toEqual(granted);
+    const widened = await exchange({
+      grant_type: "refresh_token",
+      refresh_token: next.refresh_token,
+      resource,
+      scope: "mail:send",
+    });
+    expect(widened.status).toBe(400);
+    expect(await widened.json()).toMatchObject({ error: "invalid_scope" });
+  });
+}
+
+test("browser authorisation drops unapproved identity scopes", async () => {
+  await fixture.db
+    .update(entitlements)
+    .set({ scopes: ["openid", "offline_access"] })
+    .where(
+      and(
+        eq(entitlements.clientId, clientId),
+        sql`${entitlements.resource} is null`,
+      ),
+    );
+  const issued = await issue("openid email offline_access mail:read");
+  expect(issued.scope.split(" ").sort()).toEqual([
+    "mail:read",
+    "offline_access",
+    "openid",
+  ]);
+  expect(String(decodeJwt(issued.access_token).scope).split(" ")).not.toContain(
+    "email",
+  );
+});
+
+for (const refusal of ["service", "login", "claims"] as const) {
+  test(`empty ${refusal} approval refuses selection without storing a grant`, async () => {
+    await offerSendScope();
+    await fixture.db
+      .update(entitlements)
+      .set({ scopes: ["offline_access"] })
+      .where(
+        and(
+          eq(entitlements.clientId, clientId),
+          sql`${entitlements.resource} is null`,
+        ),
+      );
+    const selection = await start(
+      refusal === "service"
+        ? "openid offline_access mail:send"
+        : refusal === "login"
+          ? "openid"
+          : "openid offline_access mail:read",
+      refusal === "login" ? null : resource,
+      false,
+      refusal === "claims"
+        ? JSON.stringify({ id_token: { email: null } })
+        : undefined,
+    );
+    const response = await request("/oauth2/continue", {
+      oauth_query: selection.search.slice(1),
+      postLogin: true,
+      memberId: fixture.principals.tenantAdmin.memberId,
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ error: "access_denied" });
+    expect(await fixture.db.$count(grantContexts)).toBe(0);
+  });
+}
+
+test("denying partial consent audits the offered scopes without minting a code", async () => {
+  await offerSendScope();
+  const consent = await select(
+    await start("openid offline_access mail:read mail:send"),
+  );
+  const response = await request("/oauth2/consent", {
+    oauth_query: consent.search.slice(1),
+    accept: false,
+  });
+  expect(response.status).toBe(200);
+  expect(new URL((await response.json()).url).searchParams.get("error")).toBe(
+    "access_denied",
+  );
+  const [event] = await fixture.db
+    .select()
+    .from(auditEvents)
+    .where(eq(auditEvents.action, "oauth.user.denied"));
+  expect(event!.schemaVersion).toBe(4);
+  expect(event!.data).toMatchObject({
+    scopes: ["mail:read", "offline_access", "openid"],
+    decision: { grantedScopes: ["mail:read", "offline_access", "openid"] },
+  });
+  expect(await fixture.db.$count(oauthConsents)).toBe(0);
+  expect(
+    await fixture.db.$count(
+      verifications,
+      sql`${verifications.value}::jsonb->>'type' = 'authorization_code'`,
+    ),
+  ).toBe(0);
+});

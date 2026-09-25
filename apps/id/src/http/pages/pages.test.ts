@@ -19,6 +19,13 @@ const flow: OAuthFlow = {
   },
   resource: { name: "Test service", identifier: "https://service.example" },
   scopes: ["openid", "profile", "email", "offline_access", "custom:scope"],
+  grantedScopes: [
+    "openid",
+    "profile",
+    "email",
+    "offline_access",
+    "custom:scope",
+  ],
   memberships: [
     {
       memberId,
@@ -201,7 +208,7 @@ test("OAuth views show request details, selection, consent and empty states", as
     await fixture({
       "/auth/oauth2/flow": { data: { ...flow, status: "consent" } },
     }).app.request("/consent?" + query),
-    "Requested access",
+    "Access it will receive",
     "Confirm who you are",
     "Read your name",
     "Read your email address",
@@ -513,5 +520,31 @@ test("other pages do not show the directory footer", async () => {
     const text = await html(await fixture().app.request(path));
     expect(text).not.toContain("Works with");
     expect(text).not.toContain("<footer");
+  }
+});
+
+test("consent lists granted access and names withheld scopes only when needed", async () => {
+  for (const grantedScopes of [flow.scopes, ["openid", "custom:scope"], null]) {
+    const response = await fixture({
+      "/auth/oauth2/flow": {
+        data: { ...flow, status: "consent", grantedScopes },
+      },
+    }).app.request("/consent?" + query);
+    const text = await response.text();
+    if (grantedScopes === null) {
+      // Without a granted set there is nothing to accept.
+      expect(text).not.toContain("Access it will receive");
+      expect(text).not.toContain('value="accept"');
+      expect(text).toContain("Return to the application");
+    } else if (grantedScopes === flow.scopes) {
+      expect(text).toContain("Access it will receive");
+      expect(text).not.toContain("Not approved");
+    } else {
+      expect(text).toContain("Access it will receive");
+      expect(text).toContain(
+        'Not approved for Tenant: <code class="font-mono text-xs">profile</code>, <code class="font-mono text-xs">email</code>, <code class="font-mono text-xs">offline_access</code>',
+      );
+      expect(text).not.toContain("Read your email address");
+    }
   }
 });

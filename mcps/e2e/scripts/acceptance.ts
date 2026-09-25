@@ -27,7 +27,7 @@ const manifestSchema = z.object({
   clientId: z.string(),
   scopes: z.array(z.string()),
   rootSecret: z.string(),
-  tenants: z.array(z.object({ slug: z.string(), email: z.string(), organizationId: z.uuid() })),
+  tenants: z.array(z.object({ slug: z.string(), email: z.string(), organizationId: z.uuid(), scopes: z.array(z.string()) })),
 })
 const view = "<!doctype html><title>Records</title>"
 const allTools = ["identity_get", "records_create", "records_delete", "records_list", "records_show"]
@@ -158,6 +158,19 @@ async function signIn(
   try {
     await page.getByRole("heading", { name: "Choose an organisation" }).waitFor()
     await page.getByRole("button", { name: "Continue", exact: true }).click()
+    await page.getByRole("heading", { name: "Access it will receive" }).waitFor()
+    const withheld = manifest.scopes.filter(scope => !tenant.scopes.includes(scope))
+    const scopeList = await page.locator("section ul").innerText()
+    for (const scope of tenant.scopes) assert.ok(scopeList.includes(scope))
+    assert.ok(scopeList.includes("Stay connected after you leave"))
+    if (withheld.length) {
+      step(`${tenant.slug}: consent names the unapproved scopes`)
+      const notice = await page.getByText(`Not approved for ${tenant.slug}:`).innerText()
+      for (const scope of withheld) {
+        assert.ok(notice.includes(scope))
+        assert.ok(!scopeList.includes(scope))
+      }
+    } else assert.equal(await page.getByText(/Not approved for/).count(), 0)
     await page.getByRole("button", { name: "Accept", exact: true }).click()
     await page.waitForURL(`${manifest.callback}?**`)
   } catch (error) {
@@ -208,17 +221,22 @@ try {
     const oauth = await signIn(browser, manifest, tenant)
     const tokens = oauth.state.tokens
     assert.ok(tokens?.access_token && tokens.refresh_token, "ID issues an access and a refresh token")
+    const expectedScopes = [...tenant.scopes, "offline_access"].sort()
+    const partial = !tenant.scopes.includes("e2e:write")
     const claims = decodeJwt(tokens.access_token)
+    assert.deepEqual(tokens.scope?.split(" ").sort(), expectedScopes)
+    assert.deepEqual(String(claims.scope).split(" ").sort(), expectedScopes)
     assert.equal(claims.aud, manifest.resource, "The access token's audience is this MCP")
     assert.equal(Number(claims.exp) - Number(claims.iat), 60, "The resource's 60-second lifetime is honoured")
 
     for (const protocol of ["2025", "2026-07-28"] as const) {
       step(`${tenant.slug}: MCP calls with a ${protocol} client`)
       const client = await connect(manifest.resource, oauth.provider, protocol)
-      assert.deepEqual((await client.listTools()).tools.map(item => item.name).sort(), allTools)
+      assert.deepEqual((await client.listTools()).tools.map(item => item.name).sort(), partial ? ["identity_get", "records_list", "records_show"] : allTools)
       const identity = await tool(client, "identity_get")
       assert.equal(identity.organizationId, tenant.organizationId, "The token carries the selected organisation")
       assert.equal(identity.userId, claims.sub)
+      assert.deepEqual((identity.scopes as string[]).slice().sort(), expectedScopes)
       const guide = await client.readResource({ uri: "fixture://guide" })
       assert.ok(JSON.stringify(guide.contents).includes("organisation"))
       const walkthrough = await client.getPrompt({ name: "fixture_walkthrough", arguments: {} })
@@ -227,15 +245,22 @@ try {
 
     step(`${tenant.slug}: tenant isolation`)
     const client = await connect(manifest.resource, oauth.provider, "2026-07-28")
-    const record = await tool(client, "records_create", { title: `${tenant.slug} record` })
-    const listed = z.object({ records: z.array(z.object({ id: z.string(), organizationId: z.string() })) }).parse(await tool(client, "records_list"))
-    assert.deepEqual(listed.records.map(item => item.id), [record.id], "Each organisation sees only its own records")
-    for (const [otherSlug, otherId] of created) {
-      const denied = await client.callTool({ name: "records_delete", arguments: { recordId: otherId } })
-      assert.equal(denied.isError, true, `${tenant.slug} cannot delete a ${otherSlug} record`)
-      assert.ok(JSON.stringify(denied.content).includes("record_not_found"))
+    if (partial) {
+      step(`${tenant.slug}: read-only access excludes other organisations' records and refuses writes`)
+      const listed = z.object({ records: z.array(z.object({ id: z.string(), organizationId: z.string() })) }).parse(await tool(client, "records_list"))
+      assert.deepEqual(listed.records, [])
+      await assert.rejects(tool(client, "records_create", { title: "Unapproved write" }))
+    } else {
+      const record = await tool(client, "records_create", { title: `${tenant.slug} record` })
+      const listed = z.object({ records: z.array(z.object({ id: z.string(), organizationId: z.string() })) }).parse(await tool(client, "records_list"))
+      assert.deepEqual(listed.records.map(item => item.id), [record.id], "Each organisation sees only its own records")
+      for (const [otherSlug, otherId] of created) {
+        const denied = await client.callTool({ name: "records_delete", arguments: { recordId: otherId } })
+        assert.equal(denied.isError, true, `${tenant.slug} cannot delete a ${otherSlug} record`)
+        assert.ok(JSON.stringify(denied.content).includes("record_not_found"))
+      }
+      created.set(tenant.slug, String(record.id))
     }
-    created.set(tenant.slug, String(record.id))
 
     step(`${tenant.slug}: the token is refused by another MCP`)
     const elsewhere = await fetch(otherResource, {
@@ -252,6 +277,8 @@ try {
     const refreshed = await connect(manifest.resource, oauth.provider, "2025")
     assert.equal((await tool(refreshed, "identity_get")).organizationId, tenant.organizationId)
     assert.notEqual(oauth.state.tokens?.refresh_token, before, "ID rotates the refresh token")
+    assert.deepEqual(oauth.state.tokens?.scope?.split(" ").sort(), expectedScopes)
+    assert.deepEqual(String(decodeJwt(oauth.state.tokens!.access_token).scope).split(" ").sort(), expectedScopes)
 
     step(`${tenant.slug}: disabling the organisation stops refresh`)
     const disabled = await fetch(`${manifest.idOrigin}/api/admin/v1/organizations/${tenant.organizationId}/disable`, {

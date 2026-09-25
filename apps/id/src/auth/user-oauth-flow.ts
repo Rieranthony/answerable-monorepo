@@ -31,6 +31,7 @@ import { currentGrantAuthentication } from "./grant-authentication.ts";
 import { lockResourceGrantPolicy } from "./lock-resource-grant-policy.ts";
 import { userResourcePolicy } from "./user-resource-policy.ts";
 import { rethrowGrantError } from "./grant-error.ts";
+import { narrowAuthorizationCode } from "./narrow-authorization-code.ts";
 import { recordUserOAuth } from "./user-oauth-audit.ts";
 
 type Context = Parameters<typeof getOAuthProviderApi>[0];
@@ -226,15 +227,20 @@ export function createUserOAuthFlow(
       > | null = null;
       if (flow.grantId) {
         await lockResourceGrantPolicy(adapter, { id: flow.grantId, clientId });
+        // Issue the entitled subset (RFC 6749 §3.3); issuance then checks it exactly.
         const decision = await userResourcePolicy(tx, {
           id: flow.grantId,
           clientId,
           resource,
           requestedScopes: scopes,
           grantType: "authorization_code",
+          narrow: true,
         });
         if (
           !decision.allowed ||
+          // Native refuses a claims request without openid.
+          (params.has("claims") &&
+            !decision.grantedScopes?.includes("openid")) ||
           decision.grant.authenticationSessionId !== session.session.id ||
           !(await currentGrantAuthentication(tx, decision.grant))
         )
@@ -316,19 +322,39 @@ export function createUserOAuthFlow(
           client,
           resource: target ?? null,
           scopes,
+          grantedScopes: acceptedDecision?.grantedScopes ?? null,
           memberships,
           selectedMemberId: selected ?? null,
           status: flow.status,
         };
       }
+      const granted = acceptedDecision!.grantedScopes!;
       const result = await active.run(
         { flow, sessionId: session.session.id },
         () =>
           run({
             ...ctx,
+            // Native consent stores and codes only the accepted scopes.
+            ...(action === "consent" && ctx.body.accept === true
+              ? { body: { ...ctx.body, scope: granted.join(" ") } }
+              : {}),
             context: {
               ...ctx.context,
               adapter: { ...ctx.context.adapter, ...adapter },
+              // Skip-consent clients receive their code here, from the original query.
+              internalAdapter: {
+                ...ctx.context.internalAdapter,
+                createVerificationValue: (data) =>
+                  ctx.context.internalAdapter.createVerificationValue({
+                    ...data,
+                    value: narrowAuthorizationCode(
+                      data.value,
+                      flow.grantId!,
+                      granted,
+                      invalid,
+                    ),
+                  }),
+              },
             },
           }),
       );
@@ -349,7 +375,7 @@ export function createUserOAuthFlow(
               : "oauth.user.authorized",
           requestId: ctx.headers?.get("x-request-id"),
           data: {
-            scopes,
+            scopes: granted,
             decision: acceptedDecision,
           },
         });

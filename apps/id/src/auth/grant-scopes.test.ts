@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { grantScopes } from "./grant-scopes.ts";
+import { grantScopes, narrowScopes } from "./grant-scopes.ts";
 
 test("defaults are the intersection of every ceiling, never a union", () => {
   expect(
@@ -21,4 +21,19 @@ test("explicit scopes reject overreach rather than silently narrowing the reques
     "read",
     "write",
   ]);
+});
+
+test("narrowing keeps only requested scopes in every ceiling", () => {
+  expect(
+    narrowScopes(
+      ["write", "read", "read", "openid"],
+      [
+        ["read", "openid", "extra"],
+        ["openid", "read"],
+      ],
+    ),
+  ).toEqual(["openid", "read"]);
+  expect(narrowScopes(["write"], [["read"]])).toBeNull();
+  expect(narrowScopes([], [["read"]])).toBeNull();
+  expect(narrowScopes(["read"], [])).toBeNull();
 });

@@ -2122,6 +2122,19 @@
                         "type": "string"
                       }
                     },
+                    "grantedScopes": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "memberships": {
                       "type": "array",
                       "items": {
@@ -2181,6 +2194,7 @@
                     "client",
                     "resource",
                     "scopes",
+                    "grantedScopes",
                     "memberships",
                     "selectedMemberId",
                     "status"

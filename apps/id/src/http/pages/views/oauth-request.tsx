@@ -10,6 +10,7 @@ export type OAuthFlow = {
   client: { clientId: string; name: string | null; uri: string | null };
   resource: { identifier: string; name: string } | null;
   scopes: string[];
+  grantedScopes: string[] | null;
   memberships: {
     memberId: string;
     organizationId: string;
@@ -34,6 +35,11 @@ export function OAuthRequest({
   const selected = flow?.memberships.find(
     (member) => member.memberId === flow.selectedMemberId,
   );
+  const granted = flow?.grantedScopes;
+  const withheld =
+    flow && granted
+      ? flow.scopes.filter((scope) => !granted.includes(scope))
+      : [];
   return (
     <section aria-labelledby="oauth-heading">
       <h1 id="oauth-heading" class="text-xl/6 font-bold">
@@ -74,11 +80,11 @@ export function OAuthRequest({
               </div>
             )}
           </dl>
-          {consent && flow.status === "consent" && selected ? (
+          {consent && flow.status === "consent" && selected && granted ? (
             <>
-              <h2 class="mt-6 text-sm/6 font-bold">Requested access</h2>
+              <h2 class="mt-6 text-sm/6 font-bold">Access it will receive</h2>
               <ul class="mt-2 list-disc space-y-2 pl-5 text-sm/6">
-                {flow.scopes.map((scope) => (
+                {granted.map((scope) => (
                   <li key={scope}>
                     {scopeCopy[scope] ?? (
                       <code class="font-mono text-xs">{scope}</code>
@@ -86,6 +92,17 @@ export function OAuthRequest({
                   </li>
                 ))}
               </ul>
+              {withheld.length > 0 && (
+                <p class="text-muted-foreground mt-4 text-sm/6">
+                  Not approved for {selected.name}:{" "}
+                  {withheld.map((scope, index) => (
+                    <>
+                      {index > 0 && ", "}
+                      <code class="font-mono text-xs">{scope}</code>
+                    </>
+                  ))}
+                </p>
+              )}
               <form
                 method="post"
                 action={`/consent?${query}`}

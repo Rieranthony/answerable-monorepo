@@ -1,3 +1,4 @@
+import { and, eq, isNull } from "drizzle-orm";
 import { spyOn } from "bun:test";
 import { createApp } from "../../app.ts";
 import { stubAuth } from "../../__tests__/support.ts";
@@ -122,12 +123,12 @@ function page(path: string, session = "", fields?: Record<string, string>) {
     ...(fields ? { body: new URLSearchParams(fields) } : {}),
   });
 }
-async function start(session = "") {
+async function start(session = "", scope = "openid offline_access mail:read") {
   const query = new URLSearchParams({
     client_id: clientId,
     response_type: "code",
     redirect_uri: redirect,
-    scope: "openid offline_access mail:read",
+    scope,
     resource,
     state: "page-state",
     code_challenge_method: "S256",
@@ -207,9 +208,13 @@ for (const decision of ["accept", "deny"])
     expect(continued.status).toBe(302);
     const consent = new URL(continued.headers.get("location")!);
     expect(consent.pathname).toBe("/consent");
-    expect(
-      await (await page(consent.pathname + consent.search, session)).text(),
-    ).toContain("Requested access");
+    const consentHtml = await (
+      await page(consent.pathname + consent.search, session)
+    ).text();
+    expect(consentHtml).toContain("Access it will receive");
+    expect(consentHtml).toContain("Confirm who you are");
+    expect(consentHtml).toContain("mail:read");
+    expect(consentHtml).not.toContain("Not approved");
     const result = await page(consent.pathname + consent.search, session, {
       decision,
     });
@@ -424,4 +429,33 @@ test("unknown and disabled domains do not start SSO or contact the issuer", asyn
   } finally {
     fetchSpy.mockRestore();
   }
+});
+
+test("partial consent displays the approved list and withheld identity scopes", async () => {
+  await fixture.db
+    .update(entitlements)
+    .set({ scopes: ["openid", "offline_access"] })
+    .where(
+      and(eq(entitlements.clientId, clientId), isNull(entitlements.resource)),
+    );
+  const session = fixture.principals.tenantAdmin.cookie;
+  const selection = await start(
+    session,
+    "openid email offline_access mail:read",
+  );
+  const continued = await page(selection.pathname + selection.search, session, {
+    member: fixture.principals.tenantAdmin.memberId,
+  });
+  expect(continued.status).toBe(302);
+  const consent = new URL(continued.headers.get("location")!);
+  expect(consent.pathname).toBe("/consent");
+  const text = await (
+    await page(consent.pathname + consent.search, session)
+  ).text();
+  expect(text).toContain("Access it will receive");
+  expect(text).toContain("Confirm who you are");
+  expect(text).toContain("mail:read");
+  expect(text).toContain("Not approved for tenant:");
+  expect(text).toContain('<code class="font-mono text-xs">email</code>');
+  expect(text).not.toContain("Read your email address");
 });

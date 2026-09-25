@@ -14,7 +14,7 @@ import {
   organizationCapabilities,
   entitlements,
 } from "../db/schema/index.ts";
-import { grantScopes, identityScopes } from "./grant-scopes.ts";
+import { grantScopes, identityScopes, narrowScopes } from "./grant-scopes.ts";
 type Source = {
   id: string;
   revision: number;
@@ -221,9 +221,13 @@ type MemberPermission =
 
 /** Keep denied registration and source facts internal; expose only the coarse reason. */
 export function memberPermissionView(decision: MemberPermission) {
-  return decision.allowed
-    ? decision
-    : { allowed: false as const, reason: decision.reason };
+  if (decision.allowed) {
+    // Explanations evaluate no request, so the admin view has no granted set.
+    const { grantedScopes, ...view } = decision;
+    void grantedScopes;
+    return view;
+  }
+  return { allowed: false as const, reason: decision.reason };
 }
 
 /** Client login admission only; resource permission and native provenance are separate. */
@@ -233,6 +237,7 @@ export function evaluateClientLoginPermission(
     grantType: "authorization_code" | "refresh_token";
     requestedScopes: string[];
     originalScopes: string[];
+    narrow?: boolean;
   },
 ) {
   const grantType = input?.grantType ?? "authorization_code";
@@ -254,19 +259,30 @@ export function evaluateClientLoginPermission(
   );
   if (grantType === "refresh_token" && (!row.refreshEnabled || !renewal))
     return { ...decision, reason: "capability" as const };
-  const scopes = grantScopes(input?.requestedScopes, [
+  // Narrowing drops unapproved scopes; scopes beyond the original request are refused.
+  if (
+    input?.requestedScopes.some(
+      (scope) => !input.originalScopes.includes(scope),
+    )
+  )
+    return { ...decision, reason: "login" as const };
+  const ceilings = [
     row.client?.scopeCeiling ?? [],
     capability?.scopes ?? [],
     assignments.flatMap((source) => source.scopes),
     ...(input ? [input.originalScopes] : []),
     ...(grantType === "refresh_token" ? [renewal!.scopes] : []),
-  ]);
+  ];
+  const scopes = input?.narrow
+    ? narrowScopes(input.requestedScopes, ceilings)
+    : grantScopes(input?.requestedScopes, ceilings);
   if (!scopes) return { ...decision, reason: "login" as const };
   return {
     ...decision,
     allowed: true as const,
     reason: "approved" as const,
     scopes,
+    grantedScopes: input ? scopes : null,
     evidence: {
       policyVersion: 1,
       evaluatedAt: row.evaluatedAt,
@@ -301,6 +317,7 @@ export function evaluateAdminPermission(row: PermissionFacts) {
     allowed: true as const,
     reason: "approved" as const,
     scopes,
+    grantedScopes: null,
     evidence: {
       policyVersion: 1,
       evaluatedAt: row.evaluatedAt,
@@ -323,6 +340,7 @@ export function evaluateUserResourcePermission(
     grantType: "authorization_code" | "refresh_token";
     requestedScopes?: string[];
     originalScopes?: string[];
+    narrow?: boolean;
   },
 ) {
   const decision = memberDecision(
@@ -356,6 +374,7 @@ export function evaluateUserResourcePermission(
     (source) => source.resource === input.resource,
   );
   if (
+    !input.narrow &&
     input.requestedScopes?.some(
       (scope) => identityScopes.has(scope) && !login.scopes.includes(scope),
     )
@@ -373,16 +392,30 @@ export function evaluateUserResourcePermission(
     ...(input.originalScopes === undefined ? [] : [input.originalScopes]),
   ];
   if (input.grantType === "refresh_token") ceilings.push(renewal!.scopes);
-  const scopes = grantScopes(
-    input.requestedScopes?.filter((scope) => !identityScopes.has(scope)),
-    ceilings,
+  const requested = input.requestedScopes?.filter(
+    (scope) => !identityScopes.has(scope),
   );
+  const scopes = input.narrow
+    ? narrowScopes(requested ?? [], ceilings)
+    : grantScopes(requested, ceilings);
   if (!scopes) return { ...decision, reason: "scope" as const };
   return {
     ...decision,
     allowed: true as const,
     reason: "approved" as const,
     scopes,
+    grantedScopes:
+      input.requestedScopes === undefined
+        ? null
+        : [
+            ...new Set([
+              ...scopes,
+              ...input.requestedScopes.filter(
+                (scope) =>
+                  identityScopes.has(scope) && login.scopes.includes(scope),
+              ),
+            ]),
+          ].sort(),
     evidence: {
       policyVersion: 1,
       evaluatedAt: row.evaluatedAt,

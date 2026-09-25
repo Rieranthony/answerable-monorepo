@@ -14,16 +14,20 @@ import {
   evaluateClientLoginPermission,
   memberPermissionFields,
 } from "./member-permission.ts";
-/** Caller supplies the authenticated client and native stored reference, never a requested tenant. */
+/** Caller supplies the authenticated client and native stored reference, never a requested tenant.
+ * Narrow only in browser authorisation; native issuance uses stored code or refresh-token scopes.
+ */
 export async function userResourcePolicy(
   executor: Executor,
   input: {
     id: string;
     clientId: string;
     resource: string | null;
-    grantType: "authorization_code" | "refresh_token";
     requestedScopes: string[];
-  },
+  } & (
+    | { grantType: "authorization_code"; narrow?: boolean }
+    | { grantType: "refresh_token"; narrow?: never }
+  ),
 ) {
   const [subject] = await executor
     .select({ userId: grantContexts.userId })

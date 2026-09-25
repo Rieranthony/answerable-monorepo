@@ -23,7 +23,11 @@ const callback = "http://127.0.0.1:47603/callback";
 const clientId = "mcp-e2e-browser";
 const scopes = ["e2e:identity", "e2e:read", "e2e:write"];
 const rootSecret = `${crypto.randomUUID()}${crypto.randomUUID()}`;
-const upstreams = await Promise.all([startOidcIssuer(), startOidcIssuer()]);
+const upstreams = await Promise.all([
+  startOidcIssuer(),
+  startOidcIssuer(),
+  startOidcIssuer(),
+]);
 const environment = testEnvironment({
   databaseUrl,
   betterAuthUrl: idOrigin,
@@ -109,7 +113,7 @@ await admin(
 );
 
 const tenants = [];
-for (const [index, slug] of ["mcp-alpha", "mcp-beta"].entries()) {
+for (const [index, slug] of ["mcp-alpha", "mcp-beta", "mcp-gamma"].entries()) {
   const upstream = upstreams[index]!;
   const domain = `${slug}.example.test`;
   const organization = await admin("POST", "/organizations", {
@@ -154,7 +158,13 @@ for (const [index, slug] of ["mcp-alpha", "mcp-beta"].entries()) {
     clientId,
     scopes: ["openid", "offline_access"],
   });
-  await admin("POST", `${path}/entitlements`, { clientId, resource, scopes });
+  const entitledScopes =
+    slug === "mcp-gamma" ? ["e2e:identity", "e2e:read"] : scopes;
+  await admin("POST", `${path}/entitlements`, {
+    clientId,
+    resource,
+    scopes: entitledScopes,
+  });
   const email = `tester@${domain}`;
   // Each company sign-in consumes one queued identity.
   for (let signIn = 0; signIn < 3; signIn++)
@@ -165,7 +175,7 @@ for (const [index, slug] of ["mcp-alpha", "mcp-beta"].entries()) {
       name: "MCP tester",
       auth_time: Math.floor(Date.now() / 1000),
     });
-  tenants.push({ slug, email, organizationId });
+  tenants.push({ slug, email, organizationId, scopes: entitledScopes });
 }
 
 await Bun.write(

@@ -42,6 +42,7 @@ const flowResponse = z.object({
   }),
   resource: z.object({ identifier: z.string(), name: z.string() }).nullable(),
   scopes: z.array(z.string()),
+  grantedScopes: z.array(z.string()).nullable(),
   memberships: z.array(
     z.object({
       memberId: z.uuid(),

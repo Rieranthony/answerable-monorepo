@@ -12,6 +12,21 @@ export function grantScopes(
     : null;
 }
 
+/** Keep only requested scopes present in every ceiling; an empty intersection is refused. */
+export function narrowScopes(
+  requested: readonly string[],
+  ceilings: readonly (readonly string[])[],
+): string[] | null {
+  const selected = [...new Set(requested)]
+    .filter(
+      (scope) =>
+        ceilings.length > 0 &&
+        ceilings.every((ceiling) => ceiling.includes(scope)),
+    )
+    .sort();
+  return selected.length ? selected : null;
+}
+
 export const identityScopes: ReadonlySet<string> = new Set([
   "openid",
   "profile",
