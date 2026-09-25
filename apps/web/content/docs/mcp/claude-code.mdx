@@ -68,7 +68,7 @@ curl "$ID/api/admin/v1/organizations/$ORG/entitlements" \
   -d '{"clientId":"claude-code-local","resource":"'"$MCP"'","scopes":["e2e:identity","e2e:read","e2e:write"]}'
 ```
 
-**Every scope.** Entitle the organisation to every scope the MCP lists. Claude Code asks for all of them, and ID refuses a partial match: Not yet. See [capabilities and entitlements](/docs/id/onboard#grant-access).
+**Every scope.** Claude Code asks for every scope the MCP lists. ID issues the ones the organisation is entitled to, and Claude Code sees only the tools they cover. See [capabilities and entitlements](/docs/id/onboard#grant-access). A partial entitlement in Claude Code by hand: Not yet tested.
 
 ## Start the server
 

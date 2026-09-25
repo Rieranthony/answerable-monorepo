@@ -38,7 +38,7 @@ Views import the official MCP Apps browser API, `@modelcontextprotocol/ext-apps`
 
 ## Limits
 
-**Partial entitlements.** An organisation must be entitled to every scope the MCP lists. When it holds only some of them, ID refuses the sign-in instead of issuing the subset: Not yet.
+**Partial entitlements.** ID issues the entitled subset of the requested scopes. The MCP lists only the tools, prompts and resources the token's scopes cover.
 
 **Revocation.** The MCP verifies tokens offline, so a disabled organisation's issued access token works until it expires; refresh stops at once. Keep resource token lifetimes short.
 

@@ -20,7 +20,7 @@ MCPs live in `mcps/*`. Better Auth stays in ID; an MCP never creates accounts or
 
 **Two settings.** The verifier needs the issuer and the resource URL. Keys come from the issuer's metadata. HTTP is allowed only on loopback addresses, so production cannot drift onto it. The audience already binds a token to one MCP, so there is no resource UUID pin; ID owns token lifetimes, so there is no second cap.
 
-**Scopes decide visibility.** A token lists only the tools, prompts and resources whose scopes it carries. Organisation admins, not end users, control entitlements, so a scope a person lacks is not something the host can obtain for them by re-authorising; hiding it keeps the model from trying. Advertised capabilities follow the definitions, not the caller.
+**Scopes decide visibility.** ID issues the entitled subset of what the host asks for. A token lists only the tools, prompts and resources whose scopes it carries. Organisation admins, not end users, control entitlements, so a scope a person lacks is not something the host can obtain for them by re-authorising; hiding it keeps the model from trying. Advertised capabilities follow the definitions, not the caller.
 
 **Offline verification.** An MCP checks tokens against ID's published keys and never calls ID per request. A disabled organisation's issued token works until it expires; refresh stops at once. Keep resource lifetimes short (the acceptance uses 60 seconds).
 
@@ -30,6 +30,5 @@ MCPs live in `mcps/*`. Better Auth stays in ID; an MCP never creates accounts or
 
 ## Not yet
 
-- Issuing the entitled subset when an organisation holds only some of an MCP's scopes: [`Q-SCOPE-SUBSET`](02-plan.md#open-register).
 - Automatic client registration for hosts (client ID metadata documents or dynamic registration): [`Q-MCP-CLIENT-REGISTRATION`](02-plan.md#open-register).
 - Machine principals, a hosted deployment, Claude.ai against a public URL, and the admin MCP.

@@ -13,15 +13,16 @@ Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It takes
 
 ## What the acceptance proves
 
-1. ID starts from production migrations, served through the restricted runtime role, and is provisioned only through its admin API: the MCP resource, a public client, two organisations with company sign-in, capabilities and entitlements.
+1. ID starts from production migrations, served through the restricted runtime role, and is provisioned only through its admin API: the MCP resource, a public client, three organisations with company sign-in, capabilities and entitlements.
 2. The official MCP client follows the MCP's `401` to its metadata, discovers ID and builds the sign-in: PKCE S256, the MCP URL as `resource`, the advertised scopes plus `offline_access`.
 3. A real browser completes ID's pages: email, company sign-in, organisation, consent. The callback carries ID's `iss` (RFC 9207), which the client checks.
 4. The access token's audience is the MCP and its lifetime is the resource's 60 seconds.
-5. A 2025 client and a 2026-07-28 client both see all five tools, the prompt and the resource, and `identity_get` returns the selected organisation.
-6. Each organisation sees only its own records and cannot delete another's.
-7. A second MCP at another URL refuses the token with `401`.
-8. The client refreshes an expired access token by itself, and ID rotates the refresh token.
-9. Disabling the organisation through the admin API makes refresh fail with `invalid_grant`; the issued access token keeps working until it expires.
+5. For the fully entitled organisations, a 2025 client and a 2026-07-28 client both see all five tools, the prompt and the resource, and `identity_get` returns the selected organisation.
+6. The partially entitled organisation receives a token without `e2e:write` and sees only `identity_get`, `records_list` and `records_show`. The consent page names what was not approved, writes fail and refresh keeps the subset.
+7. Each organisation sees only its own records and cannot delete another's.
+8. A second MCP at another URL refuses the token with `401`.
+9. The client refreshes an expired access token by itself, and ID rotates the refresh token.
+10. Disabling the organisation through the admin API makes refresh fail with `invalid_grant`; the issued access token keeps working until it expires.
 
 The company directories are local test issuers. ID, its database role, its pages, token issuance, the MCP and the MCP client are real.
 
