@@ -5,7 +5,7 @@ export const recordSchema = z.object({
   organizationId: z.uuid(),
   creatorId: z.uuid(),
   title: z.string().trim().min(1).max(200),
-  createdAt: z.string().datetime(),
+  createdAt: z.iso.datetime(),
 })
 export const createInput = z.object({
   title: z.string().trim().min(1).max(200),

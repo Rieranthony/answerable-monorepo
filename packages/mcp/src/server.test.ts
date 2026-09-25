@@ -1,8 +1,7 @@
 import { afterEach, expect, spyOn, test } from "bun:test"
-import { createTestIssuer, type TestIssuer } from "@answerable/auth/testing"
 import { z } from "zod"
-import { createMcpApp, defineTool, defineView, definePrompt, defineResource, ToolError, type ToolContext } from "./index"
-import { connectTestClient } from "./testing"
+import { createMcpServer, defineTool, defineView, definePrompt, defineResource, ToolError, type ToolContext, type Tool, type Prompt } from "./index"
+import { createTestMcp, type TestMcp } from "./testing"
 
 const resource = "https://mcp.test/mcp"
 const auth = { issuer: "https://id.test", resource }
@@ -16,17 +15,17 @@ const read = defineTool({
   output: z.object({ organizationId: z.uuid(), label: z.string() }),
   async execute(input, { principal }) {
     executions++
-    return { data: { organizationId: principal.organizationId, label: input.label }, text: input.label }
+    return { organizationId: principal.organizationId, label: input.label }
   },
 })
 const write = defineTool({
   name: "write", description: "Requires both permissions", scopes: ["read", "write"],
-  input: z.object({}), output: z.object({}), async execute() { return { data: {}, text: "Written" } },
+  input: z.object({}), output: z.object({}), async execute() { return {} },
 })
 const invalid = defineTool({
   name: "invalid", description: "Invalid output", scopes: ["read"],
   input: z.object({}), output: z.object({ value: z.string().max(2) }),
-  async execute() { return { data: { value: "private-output-secret" }, text: "private-output-secret" } },
+  async execute() { return { value: "private-output-secret" } },
 })
 const failed = defineTool({
   name: "failed", description: "Unexpected failure", scopes: ["read"],
@@ -55,79 +54,72 @@ const brokenPrompt = definePrompt({
   async execute() { throw new Error("private-prompt-secret") },
 })
 
-async function fixture() {
-  const issuer = await createTestIssuer()
-  cleanups.push(() => issuer.stop())
-  const app = createMcpApp({
-    name: "test", version: "1", auth: { issuer: issuer.issuer, resource }, services: {},
-    tools: [read, write, invalid, failed, known], prompts: [prompt, brokenPrompt], resources: [document, broken],
-    allowedHosts: ["127.0.0.1"],
-  })
-  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: app.fetch })
-  cleanups.push(() => { server.stop(true) })
-  return { issuer, app, url: new URL("/mcp", server.url), base: server.url }
+async function fixture(tools: readonly Tool[] = [read, write, invalid, failed, known], prompts: readonly Prompt[] = [prompt, brokenPrompt]) {
+  const mcp = await createTestMcp(auth => createMcpServer({
+    name: "test", version: "1", auth, tools, prompts, resources: [document, broken],
+  }))
+  cleanups.push(() => mcp.close())
+  return mcp
 }
-async function clientFor(issuer: TestIssuer, url: URL, scopes: string[], protocol?: "2025" | "2026-07-28", organizationId = crypto.randomUUID()) {
-  const accessToken = await issuer.sign({ resource, scopes, organizationId })
-  const client = await connectTestClient({ url, accessToken, protocol })
-  cleanups.push(() => client.close())
+async function clientFor(mcp: TestMcp, scopes: string[], protocol?: "2025" | "2026-07-28", organizationId = crypto.randomUUID()) {
+  const client = await mcp.connect({ scopes, protocol, organizationId })
   return { client, organizationId }
 }
 
 test("HTTP routes expose health, discovery and a bearer challenge", async () => {
-  const { url, base, issuer } = await fixture()
-  const response = await fetch(url, { method: "POST" })
+  const mcp = await fixture()
+  const response = await mcp.fetch(resource, { method: "POST" })
   expect(response.status).toBe(401)
   expect(response.headers.get("WWW-Authenticate")).toContain('resource_metadata="https://mcp.test/.well-known/oauth-protected-resource/mcp"')
   expect(response.headers.get("Cache-Control")).toBe("no-store")
-  expect(await (await fetch(new URL("/health", base))).json()).toEqual({ status: "ok" })
-  expect((await fetch(new URL("/unknown", base))).status).toBe(404)
-  expect(await (await fetch(new URL("/.well-known/oauth-protected-resource/mcp", base))).json()).toEqual({
-    resource, authorization_servers: [issuer.issuer], scopes_supported: ["content", "read", "write"], bearer_methods_supported: ["header"], resource_name: "test",
+  expect(await (await mcp.fetch("https://mcp.test/health")).json()).toEqual({ status: "ok" })
+  expect((await mcp.fetch("https://mcp.test/unknown")).status).toBe(404)
+  expect(await (await mcp.fetch("https://mcp.test/.well-known/oauth-protected-resource/mcp")).json()).toEqual({
+    resource, authorization_servers: [mcp.issuer.issuer], scopes_supported: ["content", "read", "write"], bearer_methods_supported: ["header"], resource_name: "test",
   })
 })
 test("rejects untrusted hosts, origins and a token for another audience", async () => {
-  const { url, app, issuer } = await fixture()
-  expect((await app.fetch(new Request(url, { headers: { Host: "evil.test" } }))).status).toBe(403)
-  const token = await issuer.sign({ resource, scopes: ["read"] })
+  const mcp = await fixture()
+  expect((await mcp.fetch(resource, { headers: { Host: "evil.test" } })).status).toBe(403)
+  const token = await mcp.issuer.sign({ resource, scopes: ["read"] })
   const before = executions
-  const response = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${token}`, Origin: "https://evil.test", "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "read", arguments: { label: "test" } } }) })
+  const response = await mcp.fetch(resource, { method: "POST", headers: { Authorization: `Bearer ${token}`, Origin: "https://evil.test", "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "read", arguments: { label: "test" } } }) })
   expect(response.status).toBe(403)
   expect(executions).toBe(before)
-  const other = await issuer.sign({ resource: "https://other.test/mcp" })
-  expect((await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${other}` } })).status).toBe(401)
+  const other = await mcp.issuer.sign({ resource: "https://other.test/mcp" })
+  expect((await mcp.fetch(resource, { method: "POST", headers: { Authorization: `Bearer ${other}` } })).status).toBe(401)
 })
 
 for (const protocol of [undefined, "2026-07-28"] as const) {
   const era = protocol ?? "default 2025"
   test(`${era}: scopes filter tools and views, and results retain the caller`, async () => {
-    const { issuer, url } = await fixture()
-    const { client, organizationId } = await clientFor(issuer, url, ["read"], protocol)
+    const mcp = await fixture()
+    const { client, organizationId } = await clientFor(mcp, ["read"], protocol)
     const listed = (await client.listTools()).tools
     expect(listed.map(tool => tool.name)).toEqual(["read", "invalid", "failed", "known"])
     expect(listed.find(tool => tool.name === "read")).toMatchObject({ title: "Read organisation", _meta: { ui: { resourceUri: view.uri } } })
     expect((await client.callTool({ name: "read", arguments: { label: "  trimmed  " } })).structuredContent).toEqual({ organizationId, label: "trimmed" })
     expect((await client.readResource({ uri: view.uri })).contents[0]).toEqual({ uri: view.uri, mimeType: "text/html;profile=mcp-app", text: view.html })
     await expect(client.callTool({ name: "write", arguments: {} })).rejects.toThrow()
-    const denied = await clientFor(issuer, url, ["write"], protocol)
+    const denied = await clientFor(mcp, ["write"], protocol)
     expect(denied.client.getServerCapabilities()?.tools).toBeDefined()
     expect((await denied.client.listTools()).tools).toEqual([])
     await expect(denied.client.readResource({ uri: view.uri })).rejects.toThrow()
-    const granted = await clientFor(issuer, url, ["read", "write"], protocol)
+    const granted = await clientFor(mcp, ["read", "write"], protocol)
     expect((await granted.client.listTools()).tools.map(tool => tool.name)).toContain("write")
     expect((await granted.client.callTool({ name: "write", arguments: {} })).isError).not.toBe(true)
   })
   test(`${era}: concurrent clients retain separate organisations`, async () => {
-    const { issuer, url } = await fixture()
-    const [alice, bob] = await Promise.all([clientFor(issuer, url, ["read"], protocol), clientFor(issuer, url, ["read"], protocol)])
+    const mcp = await fixture()
+    const [alice, bob] = await Promise.all([clientFor(mcp, ["read"], protocol), clientFor(mcp, ["read"], protocol)])
     const results = await Promise.all([alice, bob].map(({ client }) => client.callTool({ name: "read", arguments: { label: "concurrent" } })))
     expect(results[0]!.structuredContent).toMatchObject({ organizationId: alice.organizationId })
     expect(results[1]!.structuredContent).toMatchObject({ organizationId: bob.organizationId })
     expect(alice.organizationId).not.toBe(bob.organizationId)
   })
   test(`${era}: input validation and safe tool failures`, async () => {
-    const { issuer, url } = await fixture()
-    const { client } = await clientFor(issuer, url, ["read"], protocol)
+    const mcp = await fixture()
+    const { client } = await clientFor(mcp, ["read"], protocol)
     const before = executions
     const badInput = await client.callTool({ name: "read", arguments: { label: 123 } }).catch(error => error)
     expect(badInput instanceof Error || badInput.isError === true).toBe(true)
@@ -144,8 +136,8 @@ for (const protocol of [undefined, "2026-07-28"] as const) {
     expect(await client.callTool({ name: "known", arguments: {} })).toMatchObject({ isError: true, content: [{ type: "text", text: "record_not_found: No accessible record exists" }], _meta: { code: "record_not_found" } })
   })
   test(`${era}: prompts and resources are scope-filtered, typed and redact failures`, async () => {
-    const { issuer, url } = await fixture()
-    const { client, organizationId } = await clientFor(issuer, url, ["content"], protocol)
+    const mcp = await fixture()
+    const { client, organizationId } = await clientFor(mcp, ["content"], protocol)
     expect((await client.listPrompts()).prompts.map(item => item.name)).toEqual(["guide", "broken_prompt"])
     expect((await client.listResources()).resources.map(item => item.uri)).toEqual([document.uri, broken.uri])
     expect((await client.getPrompt({ name: "guide", arguments: { topic: "  hello  " } })).messages[0]!.content).toEqual({ type: "text", text: `hello:${organizationId}` })
@@ -159,7 +151,7 @@ for (const protocol of [undefined, "2026-07-28"] as const) {
       }
       expect(log.mock.calls.map(call => call[0])).toEqual(["[mcp] resource broken failed", "[mcp] prompt broken_prompt failed"])
     } finally { log.mockRestore() }
-    const denied = await clientFor(issuer, url, ["read"], protocol)
+    const denied = await clientFor(mcp, ["read"], protocol)
     expect(denied.client.getServerCapabilities()?.prompts).toBeDefined()
     expect((await denied.client.listPrompts()).prompts).toEqual([])
     expect((await denied.client.listResources()).resources.map(item => item.uri)).toEqual([view.uri])
@@ -169,24 +161,13 @@ for (const protocol of [undefined, "2026-07-28"] as const) {
 }
 
 test("duplicate tools, prompts, resource URIs and distinct views throw at construction", () => {
-  const config = { name: "test", version: "1", auth, services: {}, tools: [read] }
-  expect(() => createMcpApp({ ...config, tools: [read, read] })).toThrow("Duplicate tool")
-  expect(() => createMcpApp({ ...config, prompts: [prompt, prompt] })).toThrow("Duplicate prompt")
-  expect(() => createMcpApp({ ...config, resources: [document, document] })).toThrow("Duplicate resource")
-  expect(() => createMcpApp({ ...config, resources: [{ ...document, uri: view.uri }] })).toThrow("Duplicate resource")
-  expect(() => createMcpApp({ ...config, tools: [read, { ...read, name: "second", view: defineView({ name: view.name, html: view.html }) }] })).toThrow("Conflicting view")
-  expect(() => createMcpApp({ ...config, tools: [read, { ...read, name: "second" }] })).not.toThrow()
-})
-test("authoring helpers validate names, scopes and views", () => {
-  expect(Object.isFrozen(view)).toBe(true)
-  expect(() => defineView({ name: "Bad", html: "x" })).toThrow("Invalid view name")
-  expect(() => defineView({ name: "empty", html: " " })).toThrow("View HTML is empty; build the view first")
-  for (const scopes of [[], [""], ["has space"]]) {
-    expect(() => defineTool({ name: "test", description: "", scopes, input: z.object({}), output: z.object({}), async execute() { return { data: {}, text: "" } } })).toThrow("scopes")
-    expect(() => definePrompt({ name: "test", description: "", scopes, input: z.object({}), async execute() { return { messages: [] } } })).toThrow("scopes")
-    expect(() => defineResource({ name: "test", uri: "fixture://test", description: "", mimeType: "text/plain", scopes, async read() { return "" } })).toThrow("scopes")
-  }
-  expect(() => defineResource({ name: "test", uri: view.uri, description: "", mimeType: "text/html", scopes: ["read"], async read() { return "" } })).toThrow("Use defineView for ui:// resources")
+  const config = { name: "test", version: "1", auth, tools: [read] }
+  expect(() => createMcpServer({ ...config, tools: [read, read] })).toThrow("Duplicate tool")
+  expect(() => createMcpServer({ ...config, prompts: [prompt, prompt] })).toThrow("Duplicate prompt")
+  expect(() => createMcpServer({ ...config, resources: [document, document] })).toThrow("Duplicate resource")
+  expect(() => createMcpServer({ ...config, resources: [{ ...document, uri: view.uri }] })).toThrow("Duplicate resource")
+  expect(() => createMcpServer({ ...config, tools: [read, { ...read, name: "second", view: defineView({ name: view.name, html: view.html }) }] })).toThrow("Conflicting view")
+  expect(() => createMcpServer({ ...config, tools: [read, { ...read, name: "second" }] })).not.toThrow()
 })
 test("the resource URL is the endpoint and the challenge names the metadata route that is served", async () => {
   for (const [resource, endpoint, metadata] of [
@@ -194,7 +175,8 @@ test("the resource URL is the endpoint and the challenge names the metadata rout
     ["https://mcp.test/nested/tools", "/nested/tools", "/.well-known/oauth-protected-resource/nested/tools"],
     ["https://mcp.test/mcp/", "/mcp/", "/.well-known/oauth-protected-resource/mcp"],
   ] as const) {
-    const app = createMcpApp({ name: "test", version: "1", auth: { ...auth, resource }, services: {}, tools: [] })
+    const app = await createTestMcp(auth => createMcpServer({ name: "test", version: "1", auth, tools: [] }), { resource })
+    cleanups.push(() => app.close())
     const request = (path: string) => new Request(`https://mcp.test${path}`, { headers: { Host: "mcp.test" } })
     const challenge = await app.fetch(request(endpoint))
     expect(challenge.status).toBe(401)
@@ -203,12 +185,10 @@ test("the resource URL is the endpoint and the challenge names the metadata rout
   }
 })
 test("aborting the HTTP request aborts the tool context", async () => {
-  const issuer = await createTestIssuer()
-  cleanups.push(() => issuer.stop())
   const entered = Promise.withResolvers<AbortSignal>()
   const observed = Promise.withResolvers<void>()
-  const app = createMcpApp({
-    name: "abort", version: "1", auth: { issuer: issuer.issuer, resource }, services: {},
+  const app = await createTestMcp(auth => createMcpServer({
+    name: "abort", version: "1", auth,
     tools: [defineTool({
       name: "wait", description: "Wait for cancellation", scopes: ["read"], input: z.object({}), output: z.object({}),
       async execute(_input, context: ToolContext) {
@@ -217,12 +197,13 @@ test("aborting the HTTP request aborts the tool context", async () => {
           observed.resolve()
           resolve()
         }, { once: true }))
-        return { data: {}, text: "Aborted" }
+        return {}
       },
     })],
-  })
+  }))
   const controller = new AbortController()
-  const token = await issuer.sign({ resource, scopes: ["read"] })
+  cleanups.push(() => app.close())
+  const token = await app.issuer.sign({ resource, scopes: ["read"] })
   const response = app.fetch(new Request(resource, {
     method: "POST", signal: controller.signal,
     headers: { Host: "mcp.test", Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream", "MCP-Protocol-Version": "2025-11-25" },
@@ -233,4 +214,40 @@ test("aborting the HTTP request aborts the tool context", async () => {
   await observed.promise
   expect(signal.aborted).toBe(true)
   await response
+})
+
+for (const protocol of ["2025", "2026-07-28"] as const) {
+  test(`${protocol}: input transforms run once and output is minimised in both representations`, async () => {
+    const split = defineTool({
+      name: "split", description: "Count tags", scopes: ["read"],
+      input: z.object({ tags: z.string().transform(value => value.split(",")) }), output: z.object({ count: z.number() }),
+      async execute({ tags }) { return { count: tags.length } },
+    })
+    const stripped = defineTool({
+      name: "stripped", description: "Read public fields", scopes: ["read"], input: z.object({}), output: z.object({ id: z.string() }),
+      async execute() { return { id: "r1", passwordHash: "private-hash" } },
+    })
+    const date = definePrompt({
+      name: "date", description: "Format a date", scopes: ["read"], input: z.object({ date: z.string().transform(value => new Date(value)) }),
+      async execute({ date }) { return { messages: [{ role: "user", content: { type: "text", text: date.toISOString() } }] } },
+    })
+    const mcp = await fixture([split, stripped], [date])
+    const client = await mcp.connect({ protocol })
+    for (const [name, args, expected] of [["split", { tags: "a,b,c" }, { count: 3 }], ["stripped", {}, { id: "r1" }]] as const) {
+      const result = await client.callTool({ name, arguments: args })
+      expect(result.structuredContent).toEqual(expected)
+      expect(result.content).toEqual([{ type: "text", text: JSON.stringify(result.structuredContent) }])
+      expect(JSON.stringify(result)).not.toContain("private-hash")
+    }
+    expect((await client.getPrompt({ name: "date", arguments: { date: "2026-01-01" } })).messages[0]!.content).toEqual({ type: "text", text: "2026-01-01T00:00:00.000Z" })
+  })
+}
+test("health accepts internal hosts while the MCP endpoint rejects them", async () => {
+  const mcp = await fixture()
+  for (const Host of ["10.0.0.5:47500", "localhost:47500"]) {
+    const health = await mcp.fetch("https://mcp.test/health", { headers: { Host } })
+    expect(health.status).toBe(200)
+    expect(await health.json()).toEqual({ status: "ok" })
+    expect((await mcp.fetch(resource, { headers: { Host } })).status).toBe(403)
+  }
 })

@@ -1,4 +1,4 @@
-import { buildView } from "@answerable/mcp-base/build"
+import { buildView } from "@answerable/mcp/build"
 
 const html = await buildView({
   entry: new URL("../src/views/records.tsx", import.meta.url).pathname,

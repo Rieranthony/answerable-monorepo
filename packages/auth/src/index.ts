@@ -1,4 +1,4 @@
-import { createRemoteJWKSet, jwtVerify } from "jose"
+import { createRemoteJWKSet, customFetch, jwtVerify } from "jose"
 import { z } from "zod"
 
 export type IdVerifierConfig = {
@@ -6,6 +6,8 @@ export type IdVerifierConfig = {
   issuer: string
   /** This service's canonical resource URL as registered in ID; the token audience must contain it. */
   resource: string
+  /** HTTP client for discovery and key requests. Default: the global fetch. */
+  fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 }
 
 export type UserPrincipal = Readonly<{
@@ -53,18 +55,19 @@ function trustedUrl(value: string, name: string) {
 
 export function createIdVerifier(config: IdVerifierConfig): (token: string) => Promise<UserPrincipal> {
   const { issuer, resource } = config
+  const fetcher = config.fetch ?? ((input, init) => fetch(input, init))
   const issuerUrl = trustedUrl(issuer, "issuer")
   trustedUrl(resource, "resource")
   let discovery: Promise<ReturnType<typeof createRemoteJWKSet>> | undefined
   async function discover() {
     const metadataUrl = new URL(issuerUrl)
     metadataUrl.pathname = `/.well-known/oauth-authorization-server${issuerUrl.pathname === "/" ? "" : issuerUrl.pathname}`
-    const response = await fetch(metadataUrl, { signal: AbortSignal.timeout(5000), redirect: "error" })
+    const response = await fetcher(metadataUrl, { signal: AbortSignal.timeout(5000), redirect: "error" })
     if (!response.ok) throw new Error("ID discovery failed")
     const metadata = z.object({ issuer: z.literal(issuer), jwks_uri: z.string() }).parse(await response.json())
     const jwksUrl = trustedUrl(metadata.jwks_uri, "jwks_uri")
     if (jwksUrl.origin !== issuerUrl.origin) throw new Error("jwks_uri must share the issuer origin")
-    return createRemoteJWKSet(jwksUrl)
+    return createRemoteJWKSet(jwksUrl, { [customFetch]: fetcher })
   }
   return async token => {
     try {

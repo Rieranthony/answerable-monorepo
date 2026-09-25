@@ -1,8 +1,7 @@
 import { expect, test } from "bun:test"
 import { chromium } from "@playwright/test"
-import { buildView, bundleBrowser } from "@answerable/mcp-base/build"
-import { connectTestClient } from "@answerable/mcp-base/testing"
-import { createTestIssuer } from "@answerable/auth/testing"
+import { buildView, bundleBrowser } from "@answerable/mcp/build"
+import { createTestMcp } from "@answerable/mcp/testing"
 import { createE2eMcp } from "./mcp"
 import { createRecordStore } from "./records"
 
@@ -10,13 +9,9 @@ test("Apps view creates and deletes through the real MCP client and hides ungran
   const html = await buildView({ entry: new URL("./views/records.tsx", import.meta.url).pathname, title: "Test records" })
   const hostBuild = await bundleBrowser(new URL("./testing/host.ts", import.meta.url).pathname)
   const hostJs = hostBuild[0].text
-  const issuer = await createTestIssuer()
   const records = createRecordStore()
   const tenant = crypto.randomUUID()
-  const resource = "https://fixture.test/mcp"
-  const auth = { issuer: issuer.issuer, resource }
-  const app = createE2eMcp({ auth, records, viewHtml: html, allowedHosts: ["127.0.0.1"] })
-  const mcp = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: app.fetch })
+  const mcp = await createTestMcp(auth => createE2eMcp({ auth, records, viewHtml: html }))
   const host = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(req) {
     const path = new URL(req.url).pathname
     if (path === "/host.js") return new Response(hostJs, { headers: { "Content-Type": "text/javascript" } })
@@ -26,8 +21,7 @@ test("Apps view creates and deletes through the real MCP client and hides ungran
   try {
     browser = await chromium.launch({ headless: true, timeout: 10_000 })
     for (const write of [true, false]) {
-      const token = await issuer.sign({ resource, organizationId: tenant, scopes: write ? ["e2e:read", "e2e:write"] : ["e2e:read"] })
-      const client = await connectTestClient({ url: new URL("/mcp", mcp.url), accessToken: token })
+      const client = await mcp.connect({ organizationId: tenant, scopes: write ? ["e2e:read", "e2e:write"] : ["e2e:read"] })
       const page = await browser.newPage()
       page.setDefaultTimeout(5_000)
       try {
@@ -59,7 +53,6 @@ test("Apps view creates and deletes through the real MCP client and hides ungran
   } finally {
     await browser?.close()
     host.stop(true)
-    mcp.stop(true)
-    issuer.stop()
+    await mcp.close()
   }
 }, 30_000)

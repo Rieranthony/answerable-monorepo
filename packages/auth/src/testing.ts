@@ -14,10 +14,10 @@ export type TestIssuer = {
   rotate(): Promise<void>
   outage(unavailable: boolean): void
   jwksRequests(): number
-  stop(): void
+  fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>
 }
 
-export async function createTestIssuer(options: { algorithm?: "EdDSA" | "ES256" | "RS256" } = {}): Promise<TestIssuer> {
+export async function createTestIssuer(options: { algorithm?: "EdDSA" | "ES256" | "RS256"; issuer?: string } = {}): Promise<TestIssuer> {
   const alg = options.algorithm ?? "EdDSA"
   const keys: JWK[] = []
   let signingKey: CryptoKey
@@ -31,10 +31,14 @@ export async function createTestIssuer(options: { algorithm?: "EdDSA" | "ES256" 
     keys.push({ ...await exportJWK(pair.publicKey), kid, alg })
   }
   await rotate()
-  const server = Bun.serve({
-    hostname: "127.0.0.1", port: 0,
-    fetch(request): Response {
-      const path = new URL(request.url).pathname
+  const issuer = options.issuer ?? "https://id.test"
+  return {
+    issuer,
+    async fetch(input, init) {
+      const request = input instanceof Request ? new Request(input, init) : new Request(String(input), init)
+      const url = new URL(request.url)
+      if (url.origin !== new URL(issuer).origin) return new Response("Not found", { status: 404 })
+      const path = url.pathname
       if (path === "/jwks") requests++
       if (unavailable) return new Response("Unavailable", { status: 503 })
       if (request.method === "GET" && path === "/.well-known/oauth-authorization-server") {
@@ -43,10 +47,6 @@ export async function createTestIssuer(options: { algorithm?: "EdDSA" | "ES256" 
       if (request.method === "GET" && path === "/jwks") return Response.json({ keys })
       return new Response("Not found", { status: 404 })
     },
-  })
-  const issuer = server.url.origin
-  return {
-    issuer,
     async sign(options) {
       const token = new UnsecuredJWT({
         iss: issuer, aud: options.resource, sub: options.userId ?? crypto.randomUUID(),
@@ -61,6 +61,5 @@ export async function createTestIssuer(options: { algorithm?: "EdDSA" | "ES256" 
     rotate,
     outage(value) { unavailable = value },
     jwksRequests: () => requests,
-    stop() { server.stop(true) },
   }
 }

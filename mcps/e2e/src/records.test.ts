@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test"
-import type { UserPrincipal } from "@answerable/auth"
-import { ToolError } from "@answerable/mcp-base"
+import { ToolError, type UserPrincipal } from "@answerable/mcp"
 import { createRecordStore } from "./records"
 
 function principal(): UserPrincipal {
