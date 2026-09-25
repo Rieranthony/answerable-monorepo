@@ -1,58 +1,35 @@
 # MCP foundation
 
-## Purpose and status
+## Purpose
 
-Make MCP workspaces small compositions of reusable tools, prompts and MCP Apps views. Shared packages own authentication and protocol setup. The permanent `mcps/e2e` consumer proves the complete local journey through Answerable ID.
+Any MCP server we build signs people in with Answerable ID and needs almost no setup: two URLs, its tools and a port. These packages are written to become the public SDK for building on Answerable. `mcps/e2e` proves the whole path against real ID. How-to guides live at [`/docs/mcp`](../apps/web/content/docs/mcp/index.mdx); results live in the [evidence](../reports/mcp-foundation-evidence.md).
 
-The foundation is implemented and locally tested. The “95% setup” target is an architectural aim, not a measured percentage. Admin MCP work, machine principals and production deployment are outside this foundation. External chat-host compatibility remains unverified.
-
-Use the [authoring guide](../apps/web/content/docs/mcp/authoring.mdx) to create a consumer and the [evidence report](../reports/mcp-foundation-evidence.md) to assess acceptance.
-
-## Package responsibilities
+## Packages
 
 | Workspace | Responsibility |
 | --- | --- |
-| `packages/auth` | Verify Answerable ID user resource tokens using trusted issuer, audience, resource UUID and JWKS configuration |
-| `packages/mcp-base` | Hono transport, discovery challenge, scope checks, typed definitions, Apps registration and browser builds |
-| `mcps/e2e` | Executable reference: injected tenant-owned storage, reusable definitions, React Apps view and isolated real-ID tests |
+| `packages/auth` | Verify an ID access token for any service; a local test issuer |
+| `packages/mcp-base` | An MCP server from definitions, on the official SDK; view builds; a test client |
+| `mcps/e2e` | Reference server and the real-ID acceptance |
 
-MCPs live under `mcps/*`. Better Auth remains in Answerable ID; MCPs do not create identity accounts or sessions. Domain services own tenant filtering, storage and idempotency. Shared tool packages should be extracted when a second consumer needs the same domain operation.
+MCPs live in `mcps/*`. Better Auth stays in ID; an MCP never creates accounts or sessions, and never reads ID's database. Extract a shared package only when a second consumer needs it: the app sign-in client in `apps/web/lib/oauth-test` has one consumer, so it stays there.
 
-Workspace generation is deferred until a second real MCP establishes what repeats. There is no parallel template implementation to maintain.
+## Decisions
 
-## Public interfaces
+**Official SDK primitives.** `requireBearerAuth`, `createMcpHandler` and the SDK's host and origin checks do the protocol work. One definition serves the 2026-07-28 revision and falls back to stateless 2025 serving. We write only the Answerable parts: the verifier, scope-aware registration and the definitions API.
 
-- `createMcpApp({ name, version, auth, services, tools, prompts?, resources? })` returns a Hono app. The consumer starts and stops its listener and services.
-- `defineTool` accepts Zod input/output schemas, scopes, annotations, an optional view and an execution function. Results include structured data and text so tools remain useful without UI support.
-- `definePrompt` returns official MCP prompt results; `defineResource` exposes fixed-URI text. Both check scopes before invoking handlers. Retrieval must not perform writes.
-- `defineView` registers compiled HTML as a `ui://` resource through the official MCP Apps SDK. Browser code imports `/apps` or `/apps/react`; `/build` produces standalone HTML.
-- `readMcpEnvironment` parses common trusted ID settings and the port. Consumers add their own domain settings.
+**Two settings.** The verifier needs the issuer and the resource URL. Keys come from the issuer's metadata. HTTP is allowed only on loopback addresses, so production cannot drift onto it. The audience already binds a token to one MCP, so there is no resource UUID pin; ID owns token lifetimes, so there is no second cap.
 
-Every HTTP request has its own SDK server and immutable principal. Handler context contains `principal`, `services`, `requestId` and `signal`. Shared services must not store a mutable current user.
+**Scopes decide visibility.** A token lists only the tools, prompts and resources whose scopes it carries. Organisation admins, not end users, control entitlements, so a scope a person lacks is not something the host can obtain for them by re-authorising; hiding it keeps the model from trying. Advertised capabilities follow the definitions, not the caller.
 
-The base retains host/origin checks, duplicate registration checks, input/output validation, safe errors, liveness and bounded request logs. Deadlines default to 30 seconds after authentication, configurable up to five minutes. Abort signals are cooperative; stateless requests do not share a cancellation registry.
+**Offline verification.** An MCP checks tokens against ID's published keys and never calls ID per request. A disabled organisation's issued token works until it expires; refresh stops at once. Keep resource lifetimes short (the acceptance uses 60 seconds).
 
-Browser bundling runs in a separate Bun process because same-process browser/server imports reproduced a Bun 1.3.1 module-cache failure. Keep this workaround until the runtime can pass the existing bundle tests without it.
+**Views.** MCP Apps views are built into one HTML resource in a separate Bun process, because an in-process build breaks the test suite on Bun 1.3.1. Views call tools through the host with the same scope and organisation checks and never see a token.
 
-## Authentication flow
+**Acceptance through the real product.** The fixture runs ID from production migrations and its restricted runtime role, and provisions everything through the admin API with the root secret, as an operator would. The journey uses the SDK's own OAuth client, as hosts do, and a real browser on ID's pages. Company directories are local test issuers.
 
-1. A client receives an HTTP 401 challenge pointing to protected-resource metadata.
-2. The metadata identifies the configured Answerable ID issuer and resource. The client discovers ID's OAuth endpoints.
-3. The user signs in through ID and their organisation's upstream provider. The client obtains a resource-bound access token using authorisation code and PKCE.
-4. The MCP verifies the signature, issuer, audience, immutable resource UUID, token type and user claims. Scope checks precede handler execution; services constrain object access to the verified tenant.
-5. Apps actions travel through the authenticated host bridge and the same tool checks. The iframe receives no bearer token.
+## Not yet
 
-The local client is pre-registered. Registration support must be tested separately for each external host.
-
-Offline verification cannot detect grant or membership revocation before access-token expiry. Default maximum token lifetime is 900 seconds; key-cache lifetime is 300 seconds, unknown-key cooldown 30 seconds and key-fetch timeout five seconds. Cached valid keys can survive a temporary ID outage; unverifiable tokens fail closed.
-
-## Test acceptance
-
-- Signed-token tests prove issuer/audience/type/time/claim rejection, JWKS rotation and outage behaviour.
-- SDK-over-HTTP tests prove discovery, schema checks, scopes, concurrent identity isolation, prompts/resources, redacted errors, deadlines and cancellation.
-- The reference service proves tenant ownership and durable create/delete receipts. Retrying an uncertain response uses the same operation key and cannot create a duplicate effect.
-- Chromium renders the actual Apps resource and performs allowed and denied actions. A second composition reuses read tools and omits write tools entirely.
-- `bun run mcp:test:e2e` authenticates through real local ID browser pages, obtains real issued tokens, checks wrong-resource and cross-tenant denial, refreshes, disables the test organisation, checks refresh denial and waits for actual access-token expiry.
-- The runner owns an isolated database, temporary files and processes. Startup and browser-phase interruption checks prove cleanup releases its container and reserved ports.
-
-Run foundation tests, typecheck, lint, build and the real-ID journey after shared changes. Local harness success does not certify an external chat host, a real corporate provider or production deployment. Record the selected host, version, registration mode, reachable origins, OAuth result, text fallback and Apps actions before claiming that host works.
+- Issuing the entitled subset when an organisation holds only some of an MCP's scopes: [`Q-SCOPE-SUBSET`](02-plan.md#open-register).
+- Automatic client registration for hosts (client ID metadata documents or dynamic registration): [`Q-MCP-CLIENT-REGISTRATION`](02-plan.md#open-register).
+- Machine principals, a hosted deployment, Claude.ai against a public URL, and the admin MCP.

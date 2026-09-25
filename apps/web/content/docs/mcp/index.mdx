@@ -1,45 +1,47 @@
 ---
 title: MCP servers
-description: "Build MCP Apps servers in the Answerable monorepo and test them through local Answerable ID."
+description: "Build MCP servers that sign people in with Answerable ID, and test them against real ID."
 ---
 
 ```sh
 bun run mcp:test:e2e
 ```
 
-Run this from the monorepo after installing [the local test requirements](/docs/mcp/local-testing). It authenticates through real local Answerable ID and exercises an interactive MCP Apps view.
+Run this from the monorepo after installing [the local test requirements](/docs/mcp/local-testing). It signs two organisations into the e2e MCP through real Answerable ID, with the official MCP SDK's OAuth client and a real browser.
 
 ## Status
 
-**Local foundation:** implemented and locally tested. `packages/mcp-base` supplies Hono transport, official MCP Apps integration and typed tools, prompts and resources. `packages/auth` verifies Answerable ID resource tokens. `mcps/e2e` is the first consumer.
+**Local foundation:** implemented and tested. `@answerable/mcp-base` builds an MCP server on the official MCP TypeScript SDK. `@answerable/auth` verifies Answerable ID access tokens. `mcps/e2e` is the reference server.
 
-**Hosted product MCPs:** not yet. The admin MCP and community tutor are outside the current foundation work.
+**External hosts:** Claude Code connects with a pre-registered client; see [Connect Claude Code](/docs/mcp/claude-code). Claude.ai and hosted deployment: Not yet.
 
-## Package boundaries
+## How a request is authorised
+
+1. The host posts to the MCP endpoint. The server refuses a foreign `Host` or browser `Origin`.
+2. Without a valid token, the server answers `401` with `WWW-Authenticate: Bearer resource_metadata="…"`. The host reads the [protected-resource metadata](https://datatracker.ietf.org/doc/html/rfc9728), discovers Answerable ID and signs the person in with PKCE and the MCP's URL as `resource`.
+3. The server verifies the token against ID's published keys: issuer, audience (the MCP's URL), type `at+jwt`, expiry and the user and organisation claims.
+4. The server registers only the tools, prompts and resources whose scopes the token carries, then answers in the host's protocol version (2026-07-28, or 2025 for older hosts).
+
+The MCP never sees a password, never runs Better Auth and never reads ID's database.
+
+## Packages
 
 | Package | Responsibility |
 | --- | --- |
-| `@answerable/mcp-base` | Server creation, tool/prompt/resource definitions, views and permissions |
-| `@answerable/mcp-base/apps` | Official framework-independent Apps browser API |
-| `@answerable/mcp-base/apps/react` | Official Apps React hooks |
-| `@answerable/mcp-base/build` | Bundle a view into a self-contained HTML resource |
-| `@answerable/mcp-base/testing` | Connect an official MCP client for tests |
-| `@answerable/auth` | Verify ID-issued user resource tokens against trusted signing keys |
+| `@answerable/auth` | Verify an Answerable ID access token for any service |
+| `@answerable/auth/testing` | A local issuer that signs test tokens |
+| `@answerable/mcp-base` | `createMcpApp`, `defineTool`, `definePrompt`, `defineResource`, `defineView` |
+| `@answerable/mcp-base/build` | Bundle an MCP Apps view into one HTML resource |
+| `@answerable/mcp-base/testing` | Connect the official MCP client with a bearer token |
 
-Every MCP inherits Apps support. Individual tools may omit a view and still return structured data and text. A chat application must support the MCP Apps extension to render a view; arbitrary UI support is insufficient.
+Views import the official MCP Apps browser API, `@modelcontextprotocol/ext-apps`, directly.
 
-## Authentication
+## Limits
 
-The chat application is the OAuth client. Answerable ID handles login, consent and token issuance. Each MCP is a resource server with its own canonical resource URL and immutable resource ID. It does not run another Better Auth instance.
+**Partial entitlements.** An organisation must be entitled to every scope the MCP lists. When it holds only some of them, ID refuses the sign-in instead of issuing the subset: Not yet.
 
-The base verifies signature, issuer, audience, token type, expiry and ID's user claim shape. It rejects machine and proof-bound tokens in this version. Each request gets an immutable principal; domain services must enforce object-level tenant access. Views call tools through the host bridge and receive no bearer credentials from our base.
+**Revocation.** The MCP verifies tokens offline, so a disabled organisation's issued access token works until it expires; refresh stops at once. Keep resource token lifetimes short.
 
-Offline signature verification cannot observe immediate grant revocation. Existing valid tokens remain acceptable until expiry; refresh and new grants are controlled by ID. The verifier caps token lifetime at 900 seconds by default. `maxTokenLifetimeSeconds` can set a reviewed limit from 1 to 3600 seconds; configure the ID resource within that limit. See [application authorisation](/docs/id/oauth).
+**Client registration.** Hosts use a client registered in ID ahead of time. Dynamic registration and client ID metadata documents: Not yet.
 
-## Foundation plan
-
-The implemented foundation includes shared auth, Apps registration, typed tools/prompts/resources, lifecycle checks and shared browser builds. The local journey tests both normal execution and interruption cleanup.
-
-**Not yet:** external chat-host certification and production MCP deployment.
-
-Continue with [authoring](/docs/mcp/authoring) or [local testing](/docs/mcp/local-testing).
+Continue with [authoring](/docs/mcp/authoring), [local testing](/docs/mcp/local-testing) or [Connect Claude Code](/docs/mcp/claude-code).

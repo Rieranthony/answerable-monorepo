@@ -1,0 +1,95 @@
+---
+title: Connect Claude Code
+description: "Register an MCP server and a Claude Code client in Answerable ID, then sign in from Claude Code."
+---
+
+```bash
+claude mcp add --transport http answerable-e2e http://localhost:47500/mcp \
+  --client-id claude-code-local --callback-port 47700
+```
+
+Run this once the server and client below are registered. Then open Claude Code, run `/mcp`, select `answerable-e2e` and choose **Authenticate**. Your browser opens Answerable ID: sign in with your work account, choose the organisation and accept. Ask Claude to call `identity_get`; it returns your organisation.
+
+## Register the server
+
+Set `ID` to the ID origin, `TOKEN` to a [staff token](/docs/id/onboard#get-a-staff-token) and `ORG` to the organisation that will use the server. Every write needs its own `Idempotency-Key`.
+
+```bash
+export ID=http://localhost:47300
+export MCP=http://localhost:47500/mcp
+export MCP_PATH=http%3A%2F%2Flocalhost%3A47500%2Fmcp
+
+curl "$ID/api/admin/v1/resources" \
+  -H "Idempotency-Key: e2e-resource-v1" -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"classification":"platform_shared","organizationId":null,"identifier":"'"$MCP"'","name":"E2E MCP","allowedScopes":["e2e:identity","e2e:read","e2e:write","offline_access"],"accessTokenTtl":900}'
+```
+
+**Resource.** The URL is the token audience. It must match `MCP_RESOURCE_URL` exactly: `localhost` and `127.0.0.1` are different resources.
+
+**Lifetime.** Claude Code refreshes an access token that is close to expiry before using it. With a 300-second lifetime it refreshed before every request; with 900 seconds it did not. A shorter lifetime ends access sooner after a revocation, at the cost of those refreshes.
+
+## Register Claude Code as a client
+
+```bash
+curl "$ID/api/admin/v1/clients" \
+  -H "Idempotency-Key: claude-code-local-v1" -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"clientId":"claude-code-local","name":"Claude Code (local)","tokenEndpointAuthMethod":"none","grantTypes":["authorization_code","refresh_token"],"redirectUris":["http://localhost:47700/callback"],"scopes":["openid","offline_access","e2e:identity","e2e:read","e2e:write"]}'
+
+curl -X PUT "$ID/api/admin/v1/clients/claude-code-local/resources/$MCP_PATH" \
+  -H "Idempotency-Key: claude-code-local-link-v1" -H "Authorization: Bearer $TOKEN"
+```
+
+**Public client.** Claude Code runs on your machine, so it has no secret; PKCE protects the code. The redirect URI must match `--callback-port` exactly.
+
+## Grant the organisation access
+
+```bash
+for grant in authorization_code refresh_token; do
+  curl "$ID/api/admin/v1/organizations/$ORG/capabilities" \
+    -H "Idempotency-Key: claude-login-$grant-v1" -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"clientId":"claude-code-local","resource":null,"grantKind":"'"$grant"'","scopes":["openid","offline_access"]}'
+  curl "$ID/api/admin/v1/organizations/$ORG/capabilities" \
+    -H "Idempotency-Key: claude-e2e-$grant-v1" -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"clientId":"claude-code-local","resource":"'"$MCP"'","grantKind":"'"$grant"'","scopes":["e2e:identity","e2e:read","e2e:write"]}'
+done
+
+curl "$ID/api/admin/v1/organizations/$ORG/entitlements" \
+  -H "Idempotency-Key: claude-login-entitlement-v1" -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"clientId":"claude-code-local","scopes":["openid","offline_access"]}'
+
+curl "$ID/api/admin/v1/organizations/$ORG/entitlements" \
+  -H "Idempotency-Key: claude-e2e-entitlement-v1" -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"clientId":"claude-code-local","resource":"'"$MCP"'","scopes":["e2e:identity","e2e:read","e2e:write"]}'
+```
+
+**Every scope.** Entitle the organisation to every scope the MCP lists. Claude Code asks for all of them, and ID refuses a partial match: Not yet. See [capabilities and entitlements](/docs/id/onboard#grant-access).
+
+## Start the server
+
+```bash
+bun run --filter @answerable/mcp-e2e build
+MCP_ID_ISSUER=http://localhost:47300 MCP_RESOURCE_URL=http://localhost:47500/mcp \
+  bun run --filter @answerable/mcp-e2e start
+```
+
+## Other hosts
+
+**Claude.ai and Claude Desktop connectors.** They connect from Anthropic's servers, so they cannot reach `localhost`. Register `https://claude.ai/api/mcp/auth_callback` as the redirect URI and enter the client ID under the connector's advanced settings once the MCP has a public URL: Not yet tested.
+
+**Automatic registration.** Claude Code and Claude.ai can register themselves when an authorisation server supports dynamic registration or client ID metadata documents. ID supports neither: Not yet.
+
+## Errors
+
+| Error | Meaning | What to do |
+| --- | --- | --- |
+| "Access is unavailable for this organisation" | The organisation lacks a capability or entitlement, or holds only some of the MCP's scopes | Grant every scope above to the organisation |
+| `invalid_redirect` | The callback port differs from the registered redirect URI | Use `--callback-port 47700`, or register the port you use |
+| `invalid_target` | The resource is unknown, not linked to the client, or written differently | Use the exact registered URL and link it |
+| `invalid_client` | The client ID is unknown or disabled | Check `claude mcp get answerable-e2e` against the registration |
+| `401` after signing in | The MCP's issuer or resource differs from ID's | Set `MCP_ID_ISSUER` to ID's origin and `MCP_RESOURCE_URL` to the registered URL |

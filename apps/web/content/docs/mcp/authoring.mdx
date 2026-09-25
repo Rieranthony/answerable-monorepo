@@ -1,13 +1,13 @@
 ---
 title: Author an MCP
-description: "Define reusable tools, prompts, resources and MCP Apps views through the shared base."
+description: "Create an MCP server from the shared base: tools, prompts, resources and MCP Apps views."
 ---
 
 ```ts
-import { defineTool } from "@answerable/mcp-base"
+import { createMcpApp, defineTool, readMcpEnvironment } from "@answerable/mcp-base"
 import { z } from "zod"
 
-export const identityGet = defineTool({
+const identityGet = defineTool({
   name: "identity_get",
   description: "Read your authenticated organisation",
   input: z.object({}).strict(),
@@ -21,121 +21,81 @@ export const identityGet = defineTool({
     }
   },
 })
+
+const { auth, port } = readMcpEnvironment(process.env)
+const app = createMcpApp({ name: "example", version: "0.1.0", auth, services: {}, tools: [identityGet] })
+Bun.serve({ hostname: "127.0.0.1", port, fetch: app.fetch })
 ```
 
-Approve the tool's scopes in ID before calling it. Definitions are ordinary TypeScript exports: select them explicitly in each MCP's `tools` array. Move shared domain tools into a package when a second MCP needs them.
+Save this as `mcps/example/src/server.ts`. `createMcpApp` returns a web-standard `{ fetch }` handler; the entry point owns the listener.
 
 ## Create a workspace
-
-Create `mcps/example/package.json` with the shared base and the schemas your tools use:
 
 ```json
 {
   "name": "@answerable/mcp-example",
   "private": true,
   "type": "module",
-  "scripts": {
-    "dev": "bun --hot src/server.ts",
-    "start": "bun src/server.ts"
-  },
-  "dependencies": {
-    "@answerable/mcp-base": "workspace:*",
-    "zod": "4.6.5"
-  }
+  "scripts": { "dev": "bun --hot src/server.ts", "start": "bun src/server.ts" },
+  "dependencies": { "@answerable/mcp-base": "workspace:*", "zod": "4.6.5" }
 }
 ```
 
-Save the tool above as `mcps/example/src/tools.ts`, then add the server below as `src/server.ts`. Run `bun install` from the monorepo root. The existing `mcps/*` workspace pattern includes the new package.
+Save this as `mcps/example/package.json`, then run `bun install` from the repository root. The `mcps/*` workspace pattern includes it.
 
-Register a distinct resource in ID and authorise a client, capabilities and assignments for `example:read`. In `mcps/example/.env`, set:
+## Configure
 
 ```dotenv
 MCP_ID_ISSUER=http://localhost:47300
-MCP_ID_JWKS_URL=http://localhost:47300/auth/jwks
 MCP_RESOURCE_URL=http://localhost:47500/mcp
-MCP_RESOURCE_INSTANCE_ID=replace-with-the-registered-resource-uuid
-MCP_ALLOW_LOCAL_HTTP=true
 MCP_PORT=47500
 ```
 
-Use the exact registered resource URL and UUID. Each simultaneously running MCP needs its own port. From `mcps/example`, run `bun run dev`; Bun loads that workspace's `.env`. Root `bun dev` starts the ordinary apps only.
+`readMcpEnvironment(process.env)` reads these three variables and returns `{ auth, port }`.
 
-`mcps/e2e` is the executable reference for React Apps views, build scripts, TypeScript/ESLint configuration and tests. Add only the dependencies and scripts your consumer uses; its SQLite store and real-ID orchestration are test-fixture concerns. Workspace generation is deferred until a second real MCP establishes what repeats.
+**Issuer.** The Answerable ID origin. The verifier reads ID's signing keys from the issuer's metadata; never take an issuer from a token.
 
-## Create the server
+**Resource.** The MCP's canonical URL, exactly as registered in ID. It is the token audience, and its path is the MCP endpoint.
 
-```ts
-import { createMcpApp, readMcpEnvironment } from "@answerable/mcp-base"
-import { identityGet } from "./tools"
+**HTTP.** Both URLs must use HTTPS, except on `localhost`, `127.0.0.1` or `[::1]`.
 
-const { auth, port } = readMcpEnvironment(process.env)
-const app = createMcpApp({
-  name: "example",
-  version: "0.1.0",
-  auth,
-  services: {},
-  tools: [identityGet],
-})
-const server = Bun.serve({ hostname: "127.0.0.1", port, fetch: app.fetch })
-const close = () => { void server.stop() }
-process.once("SIGINT", close)
-process.once("SIGTERM", close)
-```
+Register the resource, a client and its access in ID before the first sign-in; see [Connect Claude Code](/docs/mcp/claude-code#register-the-server). Each MCP running at the same time needs its own port.
 
+## Tools
 
-`createMcpApp` takes `name`, `version`, `auth`, `services` and `tools`; `prompts` and `resources` are optional arrays. It returns a Hono app without opening a port. A Bun entry point serves `app.fetch` and owns process shutdown.
+`defineTool` takes `name`, `description`, Zod `input` and `output` objects, `scopes`, optional `title`, `annotations` and `view`, and `execute(input, context)`. `execute` returns `data` (checked against `output`) and `text` for hosts that ignore structured content.
 
-Use `readMcpEnvironment(process.env)` from the base for the common ID and port settings. It validates the `MCP_*` variables documented in the repository environment example and returns `{ auth, port }`.
+**Scopes decide visibility.** A token lists only the tools whose every scope it carries. A tool it cannot use is absent from `tools/list`, and calling it returns the protocol's unknown-tool error.
 
-`auth` contains the trusted `issuer`, `jwksUrl`, canonical `resource` URL and `resourceInstanceId`. Local HTTP requires `allowLocalHttp: true` and loopback addresses. Never derive these values from an incoming token.
+**Context.** `context.principal` holds `userId`, `organizationId`, `membershipId`, `grantId`, `clientId`, `scopes` and `expiresAt`. `context.services` is what you passed to `createMcpApp`. `context.signal` aborts when the host cancels or disconnects. Constrain every query by `principal.organizationId`.
 
-A handler receives `principal`, injected `services`, `requestId` and an abort `signal`. Read the organisation from the verified principal and constrain every domain query by it. Business services own their storage and retry behaviour.
-
-## Health and logs
-
-`/health` reports liveness. Consumers own any dependency-specific operational checks.
-
-The default request log contains only request ID, HTTP status and duration. Pass `log(event)` for your own sink or `log: false` to disable it. Tools and services supply their own business audit facts.
-
-## Deadlines
-
-The factory's `handlerTimeoutMs` defaults to 30 seconds after authentication, with a maximum of five minutes. A deadline aborts the handler signal and returns HTTP 504 with `request_timeout`. Pass the signal to downstream calls and check it before writes.
-
-Cancellation is cooperative and does not undo committed effects. Retry an uncertain write with its original operation key. This stateless transport does not keep a session-wide registry for cancellation notifications sent in another HTTP request.
-
-## Attach a view
-
-Use `buildView({ entry, title })` from `@answerable/mcp-base/build` to compile a browser entry into HTML. Pass that HTML to `defineView({ name, html })`, then assign the returned view to a tool's `view` property.
-
-For the first Apps view, use `mcps/e2e/scripts/build.ts` and `src/views/records.tsx` as working examples. Declare React, React DOM and their types in your workspace when using React, matching the versions in the reference consumer. Build the HTML before starting the server; keep the browser entry separate from `src/server.ts`.
-
-The base registers the `ui://` resource and associates it with the tool through the official MCP Apps SDK. React views import the official `useApp` hook through `@answerable/mcp-base/apps/react`; framework-independent views use `/apps`.
-
-Keep browser schemas in browser-safe modules. Do not import server entry points, databases or authentication configuration into a view. A view's tool calls pass through the same scope and tenant checks as calls from the model.
+**Errors.** Throw `new ToolError(code, message)` for a safe, expected failure. Any other exception returns `tool_failed` without its message.
 
 ## Prompts and resources
 
-`definePrompt` accepts `name`, `description`, a Zod object `input`, `scopes` and `execute(input, context)`. Return the official MCP prompt result, including its `messages`. Retrieving a prompt should describe actions, never perform writes.
+`definePrompt` takes `name`, `description`, a Zod `input`, `scopes` and `execute(input, context)`, which returns an MCP prompt result. `defineResource` takes `name`, a fixed `uri`, `description`, `mimeType`, `scopes` and `read(context)`, which returns text. Both follow the same scope rule as tools. Reading a prompt or resource must not change data.
 
-`defineResource` accepts `name`, a fixed `uri`, `description`, `mimeType`, `scopes` and `read(context)`. Return text. Use `defineView` for `ui://` resources. Both helpers enforce scopes before invoking the handler.
+## Views
 
-The test MCP exposes `fixture_walkthrough` and `fixture://guide`; retrieving them leaves its records unchanged.
+```ts
+import { buildView } from "@answerable/mcp-base/build"
 
-## Failure behaviour
+const html = await buildView({ entry: "src/views/records.tsx", title: "Records" })
+```
 
-| Failure | Result | Caller action |
+Build each view before starting the server, pass the HTML to `defineView({ name, html })`, and set the view on a tool. The base registers it as a `ui://` resource with the MCP Apps MIME type. Browser code imports `useApp` from `@modelcontextprotocol/ext-apps/react` or `App` from `@modelcontextprotocol/ext-apps`. A view calls tools through the host, with the same scope and organisation checks; it never receives a token. `mcps/e2e` is the working example.
+
+## Health
+
+`GET /health` returns `{ "status": "ok" }` without authentication.
+
+## Errors
+
+| Error | Meaning | What to do |
 | --- | --- | --- |
-| Missing or invalid token | HTTP 401 with resource discovery challenge | Authenticate through ID for this resource |
-| Untrusted browser origin | HTTP 403 | Use an explicitly permitted host origin |
-| Missing tool scope | Tool error with `insufficient_scope` | Obtain the required authorised grant |
-| Missing prompt/resource scope | Protocol error with `insufficient_scope` | Obtain the required authorised grant |
-| Handler deadline | HTTP 504 with `request_timeout` | Retry uncertain writes with their original operation key |
-| Cancelled HTTP request | HTTP 408 with `request_cancelled`, if deliverable | Check the operation outcome before starting a new action |
-| Invalid tool input | SDK validation error result | Correct the arguments |
-| Invalid tool output or unexpected handler failure | Tool error with `tool_failed` | Investigate the handler; retry uncertain writes with their original operation key |
-| Unknown tool, prompt or resource | SDK protocol error | Discover the registered definitions |
-| Unexpected prompt/resource failure | Generic protocol error and request ID | Investigate the server using the request ID |
-
-`ToolError(code, message)` marks a safe domain error for callers. Never include credentials or internal exception details in it. Tool annotations describe behaviour; they do not enforce permissions or make operations idempotent.
-
-See [local testing](/docs/mcp/local-testing) for the permanent example and [ID authorisation](/docs/id/oauth) for registration requirements.
+| `401 invalid_token` | Missing, expired or foreign token, or a token for another MCP | Sign in through ID for this MCP's resource URL |
+| `403` on the MCP endpoint | The `Host` or browser `Origin` is not allowed | Call the MCP by its registered host name, or set `allowedHosts` / `allowedOrigins` |
+| Unknown tool, prompt or resource | Not defined, or the token lacks its scopes | Check the token's scopes against the definition |
+| Tool result `tool_failed` | Unexpected handler failure or invalid output | Read the server logs |
+| Tool result with your code | A `ToolError` you threw | Handle the code |
+| `Invalid MCP configuration: …` at start | A missing or invalid variable | Set the named variable |

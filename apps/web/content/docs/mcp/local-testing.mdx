@@ -1,6 +1,6 @@
 ---
 title: Test MCPs locally
-description: "Run an isolated browser journey through real Answerable ID, MCP tools and an MCP Apps view."
+description: "Sign organisations into the e2e MCP through real Answerable ID, a browser and the official MCP OAuth client."
 ---
 
 ```sh
@@ -9,52 +9,51 @@ bun install
 bun run mcp:test:e2e
 ```
 
-Requires Bun 1.3.1 and Docker Compose. Run from the monorepo root. The command exits non-zero on failure and cleans up its own processes and disposable database.
+Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It takes about ten seconds, exits non-zero on the first failure and removes its database and processes either way, including after Ctrl-C.
 
-## What the test proves
+## What the acceptance proves
 
-1. Start isolated PostgreSQL, real ID and its browser login pages, local corporate OIDC fixtures and the e2e MCP.
-2. Follow the MCP authentication challenge to resource metadata and ID’s advertised OAuth endpoints.
-3. Sign in as a user in each of two organisations, select the organisation and consent.
-4. Exchange an authorisation code using PKCE for a real ID resource token.
-5. Retrieve the walkthrough prompt and guide resource, read identity, create records and deny cross-tenant reads.
-6. Render the MCP Apps resource through the official host bridge; create and delete records through the UI.
-7. Reject a resource token at a different MCP resource.
-8. Refresh each grant, disable its fixture organisation, verify refresh denial, then wait for actual access-token expiry and verify rejection.
-9. Interrupt additional fixtures during startup and browser login, then verify the container is removed and all reserved ports are released.
+1. ID starts from production migrations, served through the restricted runtime role, and is provisioned only through its admin API: the MCP resource, a public client, two organisations with company sign-in, capabilities and entitlements.
+2. The official MCP client follows the MCP's `401` to its metadata, discovers ID and builds the sign-in: PKCE S256, the MCP URL as `resource`, the advertised scopes plus `offline_access`.
+3. A real browser completes ID's pages: email, company sign-in, organisation, consent. The callback carries ID's `iss` (RFC 9207), which the client checks.
+4. The access token's audience is the MCP and its lifetime is the resource's 60 seconds.
+5. A 2025 client and a 2026-07-28 client both see all five tools, the prompt and the resource, and `identity_get` returns the selected organisation.
+6. Each organisation sees only its own records and cannot delete another's.
+7. A second MCP at another URL refuses the token with `401`.
+8. The client refreshes an expired access token by itself, and ID rotates the refresh token.
+9. Disabling the organisation through the admin API makes refresh fail with `invalid_grant`; the issued access token keeps working until it expires.
 
-The corporate providers are test fixtures. ID, its restricted runtime database role, token issuance, MCP verification and Apps communication are real. No successful resource token is substituted by the test.
+The company directories are local test issuers. ID, its database role, its pages, token issuance, the MCP and the MCP client are real.
 
-## Ports and data
+## Ports
 
 | Service | Loopback port |
 | --- | --- |
 | Disposable PostgreSQL | `47532` |
 | ID | `47600` |
-| MCP | `47602` |
+| e2e MCP | `47602` |
 | OAuth callback | `47603` |
-| Concurrent-run guard | `47604` |
+| Second MCP | `47605` |
 
-Allow roughly two minutes, including a wall-clock wait for the fixture's 60-second access tokens. Keep these ports free. Other fixture servers use allocated loopback ports. The guard prevents two runners from managing the same Compose project. PostgreSQL belongs to `answerable-mcp-e2e`; the runner never reads your normal `DATABASE_URL`.
+Keep these free. PostgreSQL belongs to the Compose project `answerable-mcp-e2e`; the run never reads your `DATABASE_URL`.
 
 ## Faster checks
 
 ```sh
 bun run mcp:test
-bun run typecheck
-bun run lint
 ```
 
-The foundation suite uses controlled signing keys for claim rejection, rotation and outage cases. Its browser test checks allowed and denied Apps actions. Record tests check tenant isolation and durable retry receipts. These tests complement the real-ID journey.
+This runs the verifier, base and e2e suites with a local test issuer, including Chromium rendering the real MCP Apps view through the official host bridge. No Docker.
 
-## Run a configured MCP
+## Run the e2e MCP by hand
 
-`bun run mcp:dev` starts the e2e MCP with root `.env` configuration. It requires an existing ID resource registration, client, capabilities and assignments. Include `offline_access` in the resource's allowed scopes if grants must remain refreshable. Set the `MCP_*` values documented in `.env.example` and `mcps/e2e/README.md`. This command does not provision or authenticate a user.
+```sh
+bun run --filter @answerable/mcp-e2e build
+bun run mcp:dev
+```
 
-See [ID authorisation](/docs/id/oauth) for those access requirements and [authoring](/docs/mcp/authoring) for package APIs.
+`mcp:dev` reads `MCP_ID_ISSUER`, `MCP_RESOURCE_URL` and `MCP_PORT` from the root `.env`. The resource and a client must already be registered in your local ID; [Connect Claude Code](/docs/mcp/claude-code) shows how.
 
 ## Limits
 
-The local test host proves the Apps protocol path. External chat applications still need individual testing for extension support, OAuth registration and network access. A cloud connector cannot reach a developer's loopback address automatically.
-
-**Not yet:** external chat-host and production deployment acceptance. See the [foundation plan](/docs/mcp#foundation-plan).
+The acceptance does not certify an external host, a real company directory or a production deployment. [Connect Claude Code](/docs/mcp/claude-code) covers the first two by hand.
