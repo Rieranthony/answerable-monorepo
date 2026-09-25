@@ -11,7 +11,7 @@ Run this from the monorepo after installing [the local test requirements](/docs/
 
 ## Status
 
-**Local foundation:** implemented and tested. `@answerable/mcp-base` builds an MCP server on the official MCP TypeScript SDK. `@answerable/auth` verifies Answerable ID access tokens. `mcps/e2e` is the reference server.
+**Local foundation:** implemented and tested. `@answerable/mcp` builds an MCP server on the official MCP TypeScript SDK. `@answerable/auth` verifies Answerable ID access tokens. `mcps/e2e` is the reference server.
 
 **External hosts:** Claude Code connects with a pre-registered client; see [Connect Claude Code](/docs/mcp/claude-code). Claude.ai and hosted deployment: Not yet.
 
@@ -29,10 +29,10 @@ The MCP never sees a password, never runs Better Auth and never reads ID's datab
 | Package | Responsibility |
 | --- | --- |
 | `@answerable/auth` | Verify an Answerable ID access token for any service |
-| `@answerable/auth/testing` | A local issuer that signs test tokens |
-| `@answerable/mcp-base` | `createMcpApp`, `defineTool`, `definePrompt`, `defineResource`, `defineView` |
-| `@answerable/mcp-base/build` | Bundle an MCP Apps view into one HTML resource |
-| `@answerable/mcp-base/testing` | Connect the official MCP client with a bearer token |
+| `@answerable/auth/testing` | An in-process issuer that signs test tokens |
+| `@answerable/mcp` | `createMcpServer`, `defineTool`, `definePrompt`, `defineResource`, `defineView` |
+| `@answerable/mcp/build` | Bundle an MCP Apps view into one HTML resource |
+| `@answerable/mcp/testing` | `createTestMcp`: run an MCP in-process with the official MCP client |
 
 Views import the official MCP Apps browser API, `@modelcontextprotocol/ext-apps`, directly.
 

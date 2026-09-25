@@ -51,6 +51,29 @@ Tree: branch `claude/id-scope-subset` on `main` 8fa5833. Versions as above.
 
 **Not yet tried.** A partial entitlement in Claude Code by hand.
 
+## 25 September 2026: authoring API and in-process tests
+
+Tree: branch `claude/mcp-sdk-dx` (pull request 11), rebased on `main` d55220d. `@answerable/mcp-base` became `@answerable/mcp`, `createMcpApp` became `createMcpServer`. Audit and decisions: [report](https://claude.ai/artifact/6x1jjfwhZgqUhx7PseJ9Cj).
+
+| Check | Result |
+| --- | --- |
+| `bun run mcp:test` | auth 37 pass, 100% lines and functions; mcp 27 pass, 100% lines and functions; e2e 7 pass, including Chromium Apps |
+| `bun run mcp:test:e2e` | Pass, three runs in a row after the rebase: 9, 8 and 9 seconds, three organisations including the partially entitled `mcp-gamma`; no container, process or port left |
+| Root typecheck, lint and build | Pass (7, 7 and 3 tasks) |
+| `bun --filter web test` | 78 pass |
+| `bun --filter @answerable/id test:coverage` | 2,040 pass, 0 fail, 100% line and function coverage, after the rebase at load average 10 to 15 |
+
+**Found by testing.**
+
+- A valid call was refused whenever an input schema transformed its value. SDK 2.1 already passes the parsed arguments to the handler and the base parsed them again: `z.string().transform(s => s.split(","))` with `"a,b,c"` returned `tool_failed`, and a prompt argument transformed into a `Date` failed. The handler now uses the SDK's parsed value; both cases are regression tests.
+- `GET /health` answered 403 to any Host but the resource's (`10.0.0.5:47500`, `localhost:47500`), so container probes by address would fail. It is now answered before the Host check.
+- Claude Code 2.1.282 shows the model only `structuredContent` when a tool returns it. Three runs against a probe server: the model read a value that existed only in `structuredContent`, printed the raw result as that JSON alone, and never saw a phrase placed only in the text block. Tools now return their output and the server sends the same JSON as text.
+- The output schema already dropped undeclared fields: a tool returning `{ id, passwordHash }` sent `{ "id": "r1" }`. Kept, with a test.
+- Codex's `workspace-write` sandbox cannot listen on a port (`EADDRINUSE`); 24 of 35 verifier tests failed there. The verifier takes an optional `fetch` and the test issuer is in-process, so the auth, MCP and e2e unit suites open no port. The Chromium test and the acceptance still need ports.
+- One server per request costs 0.83 ms per tool call with 5 tools and 1.86 ms with 100, in-process with token verification (200 calls). No caching is needed.
+
+**Size.** Source in `packages/mcp`, `packages/auth` and the e2e server went from 658 to 618 lines with the test harness added; tests went from 56 to 71.
+
 ## Limits
 
 The acceptance uses local test issuers for company directories, a pre-registered public client and loopback HTTP. It does not certify Claude.ai, another host, another company directory or a production deployment.

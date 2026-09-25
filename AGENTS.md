@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Answerable monorepo. Bun 1.3.1, Turborepo. Two apps: `apps/web` (Next.js 16: the site, the docs at `/docs`) and `apps/id` (Answerable ID: Bun, Hono, Better Auth, Postgres, and its browser pages). Shared packages: `packages/ui` (React components and Tailwind theme), `packages/countries` (ISO country data), `packages/auth` (Answerable ID access-token verification) and `packages/mcp-base` (MCP servers on the official SDK). Runnable MCPs live in `mcps/*`; `mcps/e2e` is the permanent local acceptance consumer. Read `README.md`, then `docs/00-orientation.md`. Decisions live in `docs/`; `docs/02-plan.md` lists what not to re-propose.
+Answerable monorepo. Bun 1.3.1, Turborepo. Two apps: `apps/web` (Next.js 16: the site, the docs at `/docs`) and `apps/id` (Answerable ID: Bun, Hono, Better Auth, Postgres, and its browser pages). Shared packages: `packages/ui` (React components and Tailwind theme), `packages/countries` (ISO country data), `packages/auth` (Answerable ID access-token verification) and `packages/mcp` (MCP servers on the official SDK). Runnable MCPs live in `mcps/*`; `mcps/e2e` is the permanent local acceptance consumer. Read `README.md`, then `docs/00-orientation.md`. Decisions live in `docs/`; `docs/02-plan.md` lists what not to re-propose.
 
 ## Documentation
 
@@ -42,7 +42,7 @@ Here's how we write documentation. These are Lee Robinson's ten principles (http
 
 ## Repo card
 
-- Gates, from the root: `bun run typecheck` · `bun run lint` · `bun run build` · `bun --filter web test` · `bun --filter @answerable/id test:coverage` (needs Postgres: `bun run env:up`, then `bun --filter @answerable/id db:test:migrate`) · `bun --filter @answerable/countries test`. CI runs the same.
+- Gates, from the root: `bun run typecheck` · `bun run lint` · `bun run build` · `bun --filter web test` · `bun --filter @answerable/id test:coverage` (needs Postgres: `bun run env:up`, then `bun --filter @answerable/id db:test:migrate`) · `bun --filter @answerable/countries test` · `bun run mcp:test` · `bun run mcp:test:e2e` (Docker and Playwright Chromium). CI runs the same.
 - First run: Set `ROOT_ADMIN_SECRET`, start the service (the platform organisation is seeded at boot), then with the root bearer add the platform domain and SSO provider, sign in once, and add yourself to the `platform-admins` group; root locks itself afterwards.
 - Ports: web 47100 · id 47300 · postgres 47432 · redis 47379.
 - Style: Prettier without semicolons in `apps/web`, `packages/ui` and `packages/countries`, with semicolons in `apps/id`. Tests are colocated `*.test.ts`; `apps/id` enforces 100% line and function coverage, integration tests end in `.integration.test.ts`.
@@ -52,7 +52,7 @@ Here's how we write documentation. These are Lee Robinson's ten principles (http
 
 ## MCP foundation
 
-Read `docs/07-mcp-platform-draft.md` before extending the base; `apps/web/content/docs/mcp/authoring.mdx` shows how to create an MCP and `mcps/e2e` is the reference. Build on the official MCP SDK's primitives rather than re-implementing transport or OAuth. Root `bun dev` starts apps only. Run `bun run mcp:test` for the package and browser suites and `bun run mcp:test:e2e` for the real-ID acceptance (Docker and Playwright Chromium). The acceptance owns ports 47532, 47600, 47602, 47603 and 47605 and never touches the normal ID database. Do not add a Better Auth instance to an MCP.
+Read `docs/07-mcp-platform-draft.md` before extending the base; `apps/web/content/docs/mcp/authoring.mdx` shows how to create an MCP and `mcps/e2e` is the reference. Build on the official MCP SDK's primitives rather than re-implementing transport or OAuth. Root `bun dev` starts apps only. Run `bun run mcp:test` for the package and browser suites and `bun run mcp:test:e2e` for the real-ID acceptance (Docker and Playwright Chromium). MCP unit tests run in-process with `@answerable/mcp/testing` and open no port; `packages/auth` and `packages/mcp` enforce 100% line and function coverage. The acceptance owns ports 47532, 47600, 47602, 47603 and 47605 and never touches the normal ID database. Do not add a Better Auth instance to an MCP.
 
 ## ID and consumer boundaries
 
