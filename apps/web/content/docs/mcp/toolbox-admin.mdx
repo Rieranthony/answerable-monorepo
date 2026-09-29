@@ -155,7 +155,7 @@ A row is keyed by the host's OAuth client id (percent-encode one that is a URL).
 
 **Which hosts need `meta`.** A host that caps the tools in a request needs it: VS Code Copilot caps a request at 128. Hosts that govern by tool name, such as Claude Code's approvals and Claude.ai's per-tool controls, need the direct list where it fits, so leave them on `auto`.
 
-**Not yet:** the Toolbox stores these rows and does not read them. The meta projection is Not yet, so every host gets the direct list.
+The Toolbox reads the row on every request that lists or calls tools: `auto` serves the direct list while the caller's granted tools number at most `direct_limit`, else the [meta projection](/docs/mcp/toolbox#the-meta-projection). A change applies to the host's next request. Pins: Not yet.
 
 ## Grant strings for people
 
@@ -220,7 +220,7 @@ A body may carry only the fields listed; an unknown field answers `400`. Respons
 | Organisation ids | Catalogue, host client and evidence routes do not check an organisation against ID; the enable call does |
 | Atomicity | The enable call is not atomic: a failure leaves what it made, and a repeat finishes it |
 | ID unavailable | The enable call fails with `502`. The other routes need the Toolbox's database, and ID only once, to fetch its signing keys |
-| Host client settings | Stored; read by the meta projection: Not yet |
+| Host client settings | Read on every request; a change reaches a `2026-07-28` host after its 30-second `tools/list` cache |
 
 ## Errors
 

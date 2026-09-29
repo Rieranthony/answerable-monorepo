@@ -3,6 +3,335 @@
   "version": "2026-09-29",
   "tools": [
     {
+      "identity": "toolbox/toolbox.describe",
+      "name": "toolbox_describe",
+      "version": "2026-09-29",
+      "kind": "read",
+      "title": "Describe capabilities",
+      "description": "Describe up to 5 capabilities you may use, by identity: the full description, kind, policy class, and the JSON Schemas of the arguments that toolbox_execute or toolbox_prepare takes and of the result. An identity you may not use answers NOT_FOUND.",
+      "scopes": [
+        "toolbox"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "identities": {
+            "minItems": 1,
+            "maxItems": 5,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 100,
+              "description": "A capability's identity, <provider>/<domain>.<operation>, such as e2e/records.list"
+            },
+            "description": "1 to 5 identities, such as those toolbox_search returns"
+          }
+        },
+        "required": [
+          "identities"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "identity": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "read",
+                    "mutate"
+                  ]
+                },
+                "policy_class": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "agent",
+                        "controlled",
+                        "human"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Who may commit a mutation's intent; null for a read"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "input": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {},
+                  "description": "JSON Schema of its arguments"
+                },
+                "output": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {},
+                  "description": "JSON Schema of its result; for a mutation, the results of its receipt"
+                }
+              },
+              "required": [
+                "identity",
+                "kind",
+                "policy_class",
+                "description",
+                "input",
+                "output"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "capabilities"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "identity": "toolbox/toolbox.execute",
+      "name": "toolbox_execute",
+      "version": "2026-09-29",
+      "kind": "read",
+      "title": "Run a capability",
+      "description": "Run a read capability you may use, by identity, with its arguments as toolbox_describe gives them; returns the capability's own result. A mutation answers INVALID_INPUT: prepare it with toolbox_prepare. An identity you may not use answers NOT_FOUND; arguments that fail its schema answer INVALID_INPUT naming the fields.",
+      "scopes": [
+        "toolbox"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "identity": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "A capability's identity, <provider>/<domain>.<operation>, such as e2e/records.list"
+          },
+          "arguments": {
+            "default": {},
+            "description": "The capability's input, as toolbox_describe gives its schema",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "identity"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": {},
+        "description": "The capability's result"
+      }
+    },
+    {
+      "identity": "toolbox/toolbox.prepare",
+      "name": "toolbox_prepare",
+      "version": "2026-09-29",
+      "kind": "read",
+      "title": "Prepare a mutation",
+      "description": "Prepare a mutation you may use, by identity, with its arguments as toolbox_describe gives them. Changes nothing: returns the intent, with its preview, commit token and commit_tool: toolbox_commit, or toolbox_commit_confirmed once the person has seen the preview's summary. With validate_only true it records nothing. A read answers INVALID_INPUT: run it with toolbox_execute.",
+      "scopes": [
+        "toolbox"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "identity": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "A capability's identity, <provider>/<domain>.<operation>, such as e2e/records.list"
+          },
+          "arguments": {
+            "default": {},
+            "description": "The capability's input, as toolbox_describe gives its schema",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "validate_only": {
+            "default": false,
+            "description": "Return the preview without recording an intent or issuing a commit token; default false",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "identity"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": {},
+        "description": "The intent, as the mutation's own prepare tool returns it"
+      }
+    },
+    {
+      "identity": "toolbox/toolbox.search",
+      "name": "toolbox_search",
+      "version": "2026-09-29",
+      "kind": "read",
+      "title": "Search capabilities",
+      "description": "Search the capabilities you may use by words from their identity, title, description or argument names, best match first. Returns each one's identity, title, first sentence, kind and policy class; then describe it with toolbox_describe, run a read with toolbox_execute or prepare a mutation with toolbox_prepare.",
+      "scopes": [
+        "toolbox"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Words to look for, such as \"list records\"; any of them may match"
+          },
+          "limit": {
+            "default": 10,
+            "description": "Results per page, 1 to 20; default 10",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          },
+          "cursor": {
+            "description": "next_cursor from the previous page",
+            "type": "string",
+            "pattern": "^\\d{1,9}$"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "identity": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "description": {
+                  "type": "string",
+                  "description": "The first sentence of its description"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "read",
+                    "mutate"
+                  ]
+                },
+                "policy_class": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "agent",
+                        "controlled",
+                        "human"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Who may commit a mutation's intent; null for a read"
+                }
+              },
+              "required": [
+                "identity",
+                "title",
+                "description",
+                "kind",
+                "policy_class"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "has_more": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "has_more"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "identity": "toolbox/toolbox.whoami",
       "name": "toolbox_whoami",
       "version": "2026-09-29",

@@ -4,6 +4,7 @@ import { SQL } from "bun"
 import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
 import { createRecordStore } from "@answerable/mcp-e2e/records"
 import { toolboxAdminResource } from "@answerable/mcp-toolbox/admin"
+import { writeCatalogue } from "@answerable/mcp-toolbox/catalogue"
 import { createEvidence } from "@answerable/mcp-toolbox/evidence"
 import { allowedScopes } from "@answerable/mcp-toolbox/grants"
 import { migrate } from "@answerable/mcp-toolbox/migrate"
@@ -18,6 +19,7 @@ import {
   entitle,
   launchBrowser,
   linkClient,
+  refusal,
   registerClient,
   registerResource,
   serve,
@@ -34,17 +36,22 @@ const resource = "http://127.0.0.1:47604/mcp"
 const toolboxAdmin = toolboxAdminResource(resource)
 const callback = "http://127.0.0.1:47603/callback"
 const clientId = "toolbox-browser"
+// A second host client, set to the meta projection in the Toolbox; alpha signs in through it too.
+const metaClientId = "toolbox-meta"
 const hubClientId = "toolbox-hub"
 const staffClientId = "toolbox-staff"
 const database = "answerable_toolbox_acceptance"
 const tenants = [
-  { slug: "toolbox-alpha", grants: ["e2e"] },
-  { slug: "toolbox-beta", grants: ["e2e/records"] },
-  { slug: "toolbox-gamma", grants: [] },
+  { slug: "toolbox-alpha", grants: ["e2e"], signIns: 2 },
+  { slug: "toolbox-beta", grants: ["e2e/records"], signIns: 1 },
+  { slug: "toolbox-gamma", grants: [], signIns: 1 },
 ]
 const providers = [createE2eProvider({ records: createRecordStore(), viewHtml: "<!doctype html><title>Records</title>" })]
 const records = ["e2e_records_create", "e2e_records_delete", "e2e_records_list", "e2e_records_show"]
 const commits = ["toolbox_commit", "toolbox_commit_confirmed"]
+const metaTools = ["toolbox_whoami", "toolbox_search", "toolbox_describe", "toolbox_execute", "toolbox_prepare", ...commits]
+const intentSchema = z.object({ intent_id: z.uuid(), commit_token: z.string(), commit_tool: z.string(), policy_class: z.string(), preview: z.object({ summary: z.string() }) })
+const commitArgs = ({ intent_id, commit_token }: z.infer<typeof intentSchema>) => ({ intent_id, commit_token })
 const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
 
 let id: Id
@@ -54,6 +61,7 @@ let browser: Awaited<ReturnType<typeof launchBrowser>>
 let poller: ReturnType<typeof startGrantsPoller> | undefined
 const { tracer, spans } = createMemoryTracer()
 const sessions = new Map<string, { organizationId: string; oauth: OAuthSession }>()
+let meta: OAuthSession
 // What the Toolbox asked ID, for the evidence report: each access-view read with its latency, token requests and audit-log polls.
 const asked = { access: [] as number[], tokens: 0, polls: 0 }
 let reads = 0
@@ -107,13 +115,14 @@ const names = async (client: Client) => (await client.listTools()).tools.map(ite
 const events = (organisation: string) => db`select kind, outcome, capability_identity, execution_id::text as execution_id, trace_id, span_id from evidence_events where organisation_id = ${organisation} order by seq`
 
 beforeAll(async () => {
-  id = await startId({ tenants: tenants.map(({ slug }) => ({ slug, signIns: 1 })) })
+  id = await startId({ tenants: tenants.map(({ slug, signIns }) => ({ slug, signIns })) })
   const { admin, manifest } = id
-  step("Registering the Toolbox resource, its admin resource and a public client")
+  step("Registering the Toolbox resource, its admin resource and two public clients")
   // The resource allows only `toolbox` and `offline_access`: enabling an organisation widens it to the providers' grant strings.
   await registerResource(admin, { identifier: resource, scopes: ["toolbox"], accessTokenTtl: 60 })
   await registerResource(admin, { identifier: toolboxAdmin, scopes: ["toolbox:admin"], accessTokenTtl: 300 })
   await registerClient(admin, { clientId, redirectUri: callback, scopes: ["toolbox"] })
+  await registerClient(admin, { clientId: metaClientId, redirectUri: callback, scopes: ["toolbox"] })
   step("Registering the Toolbox's machine client and a staff client in the platform organisation")
   const organisations = z.object({ items: z.array(z.object({ id: z.uuid(), slug: z.string() })) }).parse(await admin("GET", "/organizations?q=answerable"))
   const platform = organisations.items.find(organisation => organisation.slug === "answerable")!
@@ -138,14 +147,17 @@ beforeAll(async () => {
   poller = startGrantsPoller({ id: hubId, grants: toolbox.grants })
   serve(47_604, toolbox.fetch)
   serve(Number(new URL(callback).port), () => new Response("Signed in. You can close this page."))
-  // The catalogue is the ceiling: gamma may use e2e but has no entitlement to any of it until J3.
-  step("Enabling the Toolbox for each organisation through its admin API, then entitling members")
+  // The catalogue is the ceiling: gamma may use e2e but has no entitlement to any of it until J3. Alpha also signs in through the meta host client.
+  step("Enabling the Toolbox for each organisation through its admin API, then entitling members and setting the meta host client")
   for (const { slug, grants } of tenants) {
     const { organizationId } = tenant(slug)
-    const enabled = await toolboxAdminCall("POST", `/organisations/${organizationId}/enable`, { hostClientIds: [clientId], providers: providers.map(provider => provider.id) })
+    const hostClientIds = slug === "toolbox-alpha" ? [clientId, metaClientId] : [clientId]
+    const enabled = await toolboxAdminCall("POST", `/organisations/${organizationId}/enable`, { hostClientIds, providers: providers.map(provider => provider.id) })
     if (enabled.status !== 200) throw new Error(`Enabling ${slug} answered ${enabled.status}: ${JSON.stringify(enabled.body)}`)
     if (grants.length) await entitle(admin, organizationId, { resource, scopes: grants })
   }
+  const host = await toolboxAdminCall("PUT", `/host-clients/${metaClientId}`, { projection: "meta" })
+  if (host.status !== 200) throw new Error(`Setting ${metaClientId} to meta answered ${host.status}: ${JSON.stringify(host.body)}`)
   browser = await launchBrowser()
 })
 afterAll(async () => {
@@ -164,6 +176,9 @@ test("each organisation signs in to the Toolbox through ID, and its token carrie
     expect(String(claims.scope).split(" ").sort()).toEqual(["offline_access", "toolbox"])
     sessions.set(slug, { organizationId, oauth })
   }
+  step("toolbox-alpha: signing in again through the meta host client")
+  const { slug, email } = tenant("toolbox-alpha")
+  meta = await signIn(browser, { idOrigin: id.manifest.idOrigin, resource, clientId: metaClientId, callback, scopes: ["toolbox"] }, { slug, email, scopes: ["toolbox"] })
 })
 
 describe("J1 direct list", () => {
@@ -225,14 +240,85 @@ describe("J2 partial and denied", () => {
   })
 })
 
+describe("J6 human class", () => {
+  test("with e2e/records.delete set to human for beta, its prepare waits for an approval: both commit tools answer APPROVAL_REQUIRED, pending", async () => {
+    const { organizationId } = session("toolbox-beta")
+    await writeCatalogue(db, organizationId, "e2e", { enabled: true, overrides: { policy_class: { "e2e/records.delete": "human" } } })
+    const client = await clientFor("toolbox-beta")
+    const created = intentSchema.parse(await tool(client, "e2e_records_create", { title: "Beta's record" }))
+    const record = z.object({ results: z.object({ id: z.uuid() }) }).parse(await tool(client, "toolbox_commit", commitArgs(created))).results
+    const prepared = await tool(client, "e2e_records_delete", { id: record.id })
+    expect(prepared).toMatchObject({ policy_class: "human", commit_tool: "toolbox_commit_confirmed", approval: { required: true, status: "pending" } })
+    const intent = intentSchema.parse(prepared)
+    for (const [name, args] of [["toolbox_commit", commitArgs(intent)], ["toolbox_commit_confirmed", { ...commitArgs(intent), preview_summary: intent.preview.summary }]] as const) {
+      const refused = await refusal(client, name, args)
+      expect(refused).toMatchObject({ code: "APPROVAL_REQUIRED", retry: { policy: "after_approval" } })
+      // No approval.url: approval pages are Not yet.
+      expect(refused.details).toEqual({ approval: { class: "human", commit_tool: "toolbox_commit_confirmed", status: "pending" } })
+    }
+    expect<unknown>(await db`select status from intents where intent_id = ${intent.intent_id}`).toEqual([{ status: "awaiting_approval" }])
+    const kinds = await db`select kind from evidence_events where intent_id = ${intent.intent_id} order by seq`
+    expect(kinds.map((row: { kind: string }) => row.kind)).toEqual(["intent.prepared", "intent.approval_requested", "capability.completed"])
+    step("toolbox-beta: the intent waits as awaiting_approval; the approval page is Not yet")
+  })
+})
+
+describe("J7 meta projection", () => {
+  const metaClient = () => connect(resource, meta.provider, "2026-07-28")
+
+  test("alpha, through the host client set to meta, lists exactly toolbox_whoami, the four meta tools and the two commit tools", async () => {
+    expect(await names(await metaClient())).toEqual(metaTools)
+  })
+
+  test("toolbox_search finds e2e/records.list by a word of its description; toolbox_describe gives its schemas; toolbox_execute runs it", async () => {
+    const client = await metaClient()
+    const latencies: number[] = []
+    for (let run = 0; run < 20; run++) {
+      const started = performance.now()
+      const found = await tool(client, "toolbox_search", { query: "oldest" })
+      latencies.push(performance.now() - started)
+      expect(found).toEqual({
+        items: [{ identity: "e2e/records.list", title: null, description: "List your organisation's test records, oldest first, 20 per page by default and at most 100.", kind: "read", policy_class: null }],
+        next_cursor: null, has_more: false,
+      })
+    }
+    latencies.sort((a, b) => a - b)
+    step(`toolbox_search: 20 calls, median ${latencies[10]!.toFixed(1)} ms, max ${latencies.at(-1)!.toFixed(1)} ms`)
+    const [described] = z.object({ capabilities: z.array(z.object({ identity: z.string(), input: z.record(z.string(), z.unknown()), output: z.record(z.string(), z.unknown()) })) })
+      .parse(await tool(client, "toolbox_describe", { identities: ["e2e/records.list"] })).capabilities
+    expect(described!.input).toMatchObject({ type: "object", properties: { limit: {}, cursor: {} }, additionalProperties: false })
+    expect(described!.output).toMatchObject({ type: "object", required: ["items", "next_cursor", "has_more"] })
+    expect(await tool(client, "toolbox_execute", { identity: "e2e/records.list" })).toEqual({ items: [], next_cursor: null, has_more: false })
+  })
+
+  test("toolbox_prepare prepares e2e/records.create and toolbox_commit commits it; e2e/records.delete commits with toolbox_commit_confirmed and the summary", async () => {
+    const client = await metaClient()
+    const created = intentSchema.parse(await tool(client, "toolbox_prepare", { identity: "e2e/records.create", arguments: { title: "Through the meta tools" } }))
+    expect(created).toMatchObject({ policy_class: "agent", commit_tool: "toolbox_commit" })
+    const record = z.object({ results: z.object({ id: z.uuid(), title: z.string() }) }).parse(await tool(client, "toolbox_commit", commitArgs(created))).results
+    expect(record.title).toBe("Through the meta tools")
+    const removed = intentSchema.parse(await tool(client, "toolbox_prepare", { identity: "e2e/records.delete", arguments: { id: record.id } }))
+    expect(removed).toMatchObject({ policy_class: "controlled", commit_tool: "toolbox_commit_confirmed" })
+    expect(await tool(client, "toolbox_commit_confirmed", { ...commitArgs(removed), preview_summary: removed.preview.summary })).toMatchObject({ status: "committed", results: { deleted: true, id: record.id } })
+    expect(await tool(client, "toolbox_execute", { identity: "e2e/records.list" })).toEqual({ items: [], next_cursor: null, has_more: false })
+  })
+})
+
 describe("J3 grant change without re-authorisation", () => {
-  test("an entitlement added to gamma in ID reaches the same token within 60 seconds", async () => {
+  test("an entitlement added to gamma in ID reaches the same token within 60 seconds, and a listening client hears tools/list_changed", async () => {
     const { oauth, organizationId } = session("toolbox-gamma")
     // Start from a fresh access token, so that the whole wait fits in its 60 seconds.
     oauth.state.tokens = { ...oauth.state.tokens!, access_token: "expired" }
     const client = await clientFor("toolbox-gamma", "2025")
     expect(await names(client)).toEqual(["toolbox_whoami"])
     const token = oauth.state.tokens!.access_token
+    // A 2026-07-28 client that listens: on each tools/list_changed it lists again; it resolves once the list holds the new tool.
+    let heard!: (at: number) => void
+    const changed = new Promise<number>(resolve => { heard = resolve })
+    await connect(resource, oauth.provider, "2026-07-28", (error, tools) => {
+      if (error) throw error
+      if (tools?.some(item => item.name === "e2e_identity_get")) heard(performance.now())
+    })
     step("toolbox-gamma: adding an entitlement to e2e/identity in ID")
     await entitle(id.admin, organizationId, { resource, scopes: ["e2e/identity"] })
     const started = performance.now()
@@ -246,6 +332,9 @@ describe("J3 grant change without re-authorisation", () => {
     expect(listed).toEqual(["toolbox_whoami", "e2e_identity_get"])
     expect(latency).toBeLessThan(60_000)
     expect(oauth.state.tokens!.access_token).toBe(token)
+    const notified = Math.round(await Promise.race([changed, Bun.sleep(Math.max(0, 60_000 - latency)).then(() => Infinity)]) - started)
+    step(`toolbox-gamma: tools/list_changed heard ${notified} ms after the entitlement, and the listening client's new list held e2e_identity_get`)
+    expect(notified).toBeLessThan(60_000)
   })
 })
 
@@ -262,16 +351,30 @@ test("J2: disabling gamma's organisation stops refresh with invalid_grant", asyn
 })
 
 describe("J10 evidence", () => {
-  test("alpha's chain verifies, one event for each of its two calls", async () => {
-    expect(await createEvidence(db).verify(session("toolbox-alpha").organizationId)).toEqual({ ok: true, length: 2 })
+  const alpha = () => session("toolbox-alpha").organizationId
+  const length = async () => (await db`select count(*)::int as events from evidence_events where organisation_id = ${alpha()}`)[0].events as number
+
+  test("alpha's chain verifies: its calls, intents, commits and receipts", async () => {
+    const events = await length()
+    expect(events).toBeGreaterThan(2)
+    expect(await createEvidence(db).verify(alpha())).toEqual({ ok: true, length: events })
   })
 
   test("an update and a delete through the superuser connection are refused by the trigger", async () => {
-    const organisation = session("toolbox-alpha").organizationId
+    const organisation = alpha()
     const run = async (query: PromiseLike<unknown>) => { await query }
     await expect(run(db`update evidence_events set outcome = 'failure' where organisation_id = ${organisation}`)).rejects.toThrow("evidence_events is append-only: UPDATE is refused")
     await expect(run(db`delete from evidence_events where organisation_id = ${organisation}`)).rejects.toThrow("evidence_events is append-only: DELETE is refused")
-    expect(await createEvidence(db).verify(organisation)).toEqual({ ok: true, length: 2 })
+    expect(await createEvidence(db).verify(organisation)).toEqual({ ok: true, length: await length() })
+  })
+
+  test("erasing the preview of alpha's first intent.prepared keeps the chain valid and the row's payload_hash unchanged", async () => {
+    const [prepared] = await db`select id::text, payload_ref::text, payload_hash from evidence_events where organisation_id = ${alpha()} and kind = 'intent.prepared' order by seq limit 1`
+    expect<unknown>(await db`select body ->> 'summary' as summary from evidence_payloads where id = ${prepared.payload_ref}`).toEqual([{ summary: "Create record “Through the meta tools”" }])
+    await createEvidence(db).erase(prepared.payload_ref)
+    expect<unknown>(await db`select body, hash, erased_at is not null as erased from evidence_payloads where id = ${prepared.payload_ref}`).toEqual([{ body: null, hash: prepared.payload_hash, erased: true }])
+    expect<unknown>(await db`select payload_hash from evidence_events where id = ${prepared.id}`).toEqual([{ payload_hash: prepared.payload_hash }])
+    expect(await createEvidence(db).verify(alpha())).toEqual({ ok: true, length: await length() })
   })
 })
 
@@ -299,7 +402,7 @@ describe("administration", () => {
 
   test("the enable calls left the Toolbox resource allowing the providers' grant strings and linked to the host client; a repeat reports everything as existing and changes nothing in ID", async () => {
     const resourcePath = `/resources/${encodeURIComponent(resource)}`
-    expect(await held(resourcePath)).toMatchObject({ allowedScopes: allowedScopes(providers), clients: [clientId] })
+    expect(await held(resourcePath)).toMatchObject({ allowedScopes: allowedScopes(providers), clients: expect.arrayContaining([clientId, metaClientId]) })
     const state = async () => ({ resource: await held(resourcePath), capabilities: await held(`/organizations/${alpha()}/capabilities`), entitlements: await held(`/organizations/${alpha()}/entitlements`) })
     const before = await state()
     step("toolbox-alpha: calling the enable operation a second time")
@@ -327,9 +430,9 @@ describe("administration", () => {
   })
 
   test("the evidence check runs through the admin API, and host clients are stored", async () => {
-    expect(await toolboxAdminCall("GET", `/organisations/${alpha()}/evidence/verify`)).toMatchObject({ status: 200, body: { ok: true, length: 2 } })
+    expect(await toolboxAdminCall("GET", `/organisations/${alpha()}/evidence/verify`)).toMatchObject({ status: 200, body: { ok: true } })
     expect(await toolboxAdminCall("PUT", `/host-clients/${clientId}`, { projection: "meta", direct_limit: 20 })).toMatchObject({ status: 200, body: { client_id: clientId, projection: "meta", direct_limit: 20 } })
-    expect(await toolboxAdminCall("GET", "/host-clients")).toMatchObject({ body: { items: [{ client_id: clientId, projection: "meta", direct_limit: 20 }] } })
+    expect(await toolboxAdminCall("GET", "/host-clients")).toMatchObject({ body: { items: expect.arrayContaining([{ client_id: clientId, projection: "meta", direct_limit: 20 }, { client_id: metaClientId, projection: "meta", direct_limit: 40 }]) } })
     expect((await toolboxAdminCall("DELETE", `/host-clients/${clientId}`)).status).toBe(204)
   })
 })

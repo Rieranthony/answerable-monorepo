@@ -204,7 +204,7 @@ Every array defaults to empty. Echoing the arguments is not a preview: say what 
 | `normal` | `controlled` | `<id>_commit_confirmed`, after the person sees the summary | 30 minutes |
 | `high` | `human` | A person's approval. Not yet | 24 hours |
 
-`<id>` is the provider id. A human-class intent is recorded as `awaiting_approval`; both commit tools answer `APPROVAL_REQUIRED` until it expires, because approval pages are Not yet.
+`<id>` is the provider id. A human-class intent is recorded as `awaiting_approval`; both commit tools answer `APPROVAL_REQUIRED` with `details.approval.status: "pending"` until it expires, because approval pages are Not yet.
 
 ```ts
 import { createMcpServer, riskClass } from "@answerable/mcp"
@@ -304,7 +304,7 @@ const server = createMcpServer({ provider, auth, intents })
 clock += 10 * 60_000 // every agent-class intent prepared so far has expired
 ```
 
-By default each server keeps intents in memory, lost when the process stops. The store owns the clock and decides expiry, so a test moves `now` instead of waiting. `IntentStore` is four members: `now()`, `insert(intent)`, `get(intentId)`, which marks an intent `expired` once `expires_at` has passed, and `transition(intentId, from, to, receipt?)`, a compare-and-set on the status. A Postgres store: Not yet.
+By default each server keeps intents in memory, lost when the process stops. The store owns the clock and decides expiry, so a test moves `now` instead of waiting. `IntentStore` is four members: `now()`, `insert(intent)`, `get(intentId)`, which marks an intent `expired` once `expires_at` has passed, and `transition(intentId, from, to, receipt?)`, a compare-and-set on the status. [The Toolbox](/docs/mcp/toolbox#mutations-through-the-toolbox) keeps its intents in Postgres with a store of its own.
 
 ### Views and mutations
 
@@ -339,7 +339,7 @@ const server = createMcpServer({ provider, auth })
 Bun.serve({ hostname: "127.0.0.1", port, fetch: server.fetch })
 ```
 
-Save this as `mcps/example/src/server.ts`. `createMcpServer` returns a web-standard `{ fetch }` handler; the entry point owns the listener.
+Save this as `mcps/example/src/server.ts`. `createMcpServer` returns `{ fetch, toolsChanged, call }`: `fetch` is the web-standard handler the entry point serves; the other two are for [changes](#changes) and [hubs](#hubs).
 
 **What it serves.** `GET /health`, the protected-resource metadata, and the MCP endpoint at the resource URL's path behind the bearer gate. It answers both the 2026 and the 2025 protocol revisions, builds a fresh MCP server per request and sends `Cache-Control: no-store`. The server's name and version are the provider's id and version.
 
@@ -347,13 +347,28 @@ Save this as `mcps/example/src/server.ts`. `createMcpServer` returns a web-stand
 
 **Cache hint.** `tools/list` tells `2026-07-28` hosts they may keep the list for 30 seconds, for that caller alone (`ttlMs: 30000`, `cacheScope: "private"`): a token's scopes never change during its life.
 
-**Hubs.** Three options, off by default, serve several providers at one endpoint, as [the Toolbox](/docs/mcp/toolbox) does:
+### Changes
+
+```ts
+server.toolsChanged() // every caller listening for changes lists its tools again
+```
+
+Every server advertises `tools.listChanged: true`. `toolsChanged()` sends `notifications/tools/list_changed` to every caller that listens: a `2026-07-28` host that opened `subscriptions/listen` with `toolsListChanged`, as the official client does when given `listChanged` options. It reaches every listener of the server, whoever they are. A listen stream sends a keep-alive comment every 5 seconds, inside `Bun.serve`'s default 10-second idle timeout, which would otherwise close it.
+
+**2025 hosts: Not yet.** The SDK serves the 2025 revision statelessly, so `GET` answers `405` and no stream can carry a notification; a 2025 host sees a change when it lists again.
+
+### Hubs
+
+Four options, off by default, serve several providers at one endpoint, as [the Toolbox](/docs/mcp/toolbox) does:
 
 | Option | Effect |
 | --- | --- |
 | `mount` | Providers served beside `provider`. Their tools are named `<provider id>_<wire name>` after `provider`'s own, their mutations commit through `provider`'s commit tools, and their views keep their URIs. Their prompts and resources are not served; `scopes_supported` lists `provider`'s scopes only |
-| `allow(principal, tool, called)` | Decides which tools the caller sees and may call, in place of scopes, for each request that lists or calls tools or reads views; `called` is true for the tool a call names. A `ToolError` it throws answers any call with that envelope, and a list fails |
-| `wrapCall(call, run)` | Runs around every tool and prepare call with the tool, wire name, principal, execution id, JSON-RPC id and `_meta`. Return what `run()` returns, or throw a `ToolError` to answer with it instead |
+| `allow(principal, tool, called)` | Decides which tools the caller may use, in place of scopes, for each request that lists or calls tools or reads views; `called` is true for the tool a call names. A `ToolError` it throws answers any call with that envelope, and a list fails |
+| `project(principal, usable)` | Returns which of the usable tools are served to the caller as tools, for a hub that offers some capabilities through its own tools instead. The others stay usable: their intents commit, and `call` runs them. A tool the caller may not use is never served, whatever it returns |
+| `wrapCall(call, run)` | Runs around every tool, prepare and commit call with the tool, wire name, principal, execution id, JSON-RPC id and `_meta`. For a commit, `call.tool` is `{ kind: "commit", identity, version }`: `<id>/commit` or `<id>/commit_confirmed` at the provider's version. Return what `run()` returns, or throw a `ToolError` to answer with it instead |
+
+**`call(tool, args, context)`** runs a tool the server serves exactly as its direct call runs it, for the caller in `context`: the arguments are checked (`INVALID_INPUT` names the tool's own fields), the handler runs within its own timeout, the output is checked, and a mutation is prepared and its intent recorded, with the commit tool of its class. The codes the tool declares pass through the calling tool unchanged. It is for a hub's own tools, such as the Toolbox's `toolbox_execute`: it does not decide whether the caller may use the tool, and it runs inside the calling tool's `wrapCall`.
 
 ## Create a workspace
 

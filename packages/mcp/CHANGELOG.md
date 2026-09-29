@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.0
+
+What the Toolbox's meta projection, its intents in Postgres and `tools/list_changed` need from `createMcpServer`. Breaking: `createMcpServer` returns `McpServerHandle`, and `wrapCall` runs around commit calls too.
+
+- `project(principal, usable)`: which of the tools a caller may use are served to them as tools, for a hub that offers some capabilities through its own tools. The others stay usable: their intents commit, and `call` runs them. A tool the caller may not use is never served, whatever it returns.
+- `createMcpServer` returns `{ fetch, toolsChanged, call }`, typed `McpServerHandle`. `toolsChanged()` sends `notifications/tools/list_changed` to every caller that listens with `subscriptions/listen` (2026-07-28); a 2025 caller has no stream to carry it. `call(tool, args, context)` runs a served tool exactly as its direct call runs it, for a hub's own tools; it does not decide whether the caller may use the tool and runs inside the calling tool's `wrapCall`.
+- Every server advertises `tools.listChanged: true` on every request, a hub's `initialize` included. Listen streams send a keep-alive every 5 seconds, since `Bun.serve` closes a connection idle for 10 seconds by default.
+- `wrapCall` runs around commit calls: `ToolCall.tool` is then `{ kind: "commit", identity, version }`, at the provider's version.
+- `APPROVAL_REQUIRED` for a human-class intent carries `details.approval.status: "pending"`.
+- A tool that runs another served tool passes on the custom codes that tool declares, instead of answering `INTERNAL`.
+
 ## 0.5.0
 
 The kit judged as one: fewer options, one definition of each helper. Breaking: three server options and the options of `createTestMcp` are gone.

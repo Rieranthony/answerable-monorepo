@@ -174,13 +174,12 @@ Define tools, mutations and providers, and serve them as an MCP server.
 ### createMcpServer
 
 ```ts
-function createMcpServer(config: McpServerConfig): {
-  fetch(request: Request): Promise<Response>
-}
+function createMcpServer(config: McpServerConfig): McpServerHandle
 ```
 
 Serve a provider over MCP: `/health`, the protected-resource metadata and the MCP endpoint behind Answerable ID sign-in.
-It returns a web-standard `{ fetch }` handler; the caller owns the listener. `tools/list` tells 2026-07-28 hosts they may keep it for 30 seconds, for that caller alone.
+It returns a web-standard `fetch` handler, which the caller serves, with `toolsChanged` and `call`. `tools/list` tells 2026-07-28 hosts they may keep
+it for 30 seconds, for that caller alone.
 
 **Example**
 
@@ -216,9 +215,15 @@ type McpServerConfig = {
    */
   allow?: (principal: UserPrincipal, tool: Served<Tool | Mutation>, called: boolean) => boolean | Promise<boolean>
   /**
-   * Runs around every call of a tool or a prepare tool. `run` parses the arguments, runs the handler within its timeout and checks the output;
-   * it returns the structured content or throws what the call answers. Return what `run` returns, or throw a `ToolError` to answer with it instead.
-   * Default: `run()`.
+   * Which of the tools a caller may use are served to them as tools, decided for each request, for a hub that offers some capabilities through
+   * its own tools instead. The others stay usable: their intents commit, and `call` runs them. A tool the caller may not use is never served,
+   * whatever this returns. Default: all of them.
+   */
+  project?: (principal: UserPrincipal, usable: readonly Served<Tool | Mutation>[]) => readonly Served<Tool | Mutation>[] | Promise<readonly Served<Tool | Mutation>[]>
+  /**
+   * Runs around every call of a tool, a prepare tool or a commit tool. `run` parses the arguments, runs the handler within its timeout and checks
+   * the output, or commits; it returns the structured content or throws what the call answers. Return what `run` returns, or throw a `ToolError`
+   * to answer with it instead. Default: `run()`.
    */
   wrapCall?: (call: ToolCall, run: () => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>
 }
@@ -226,11 +231,39 @@ type McpServerConfig = {
 
 What `createMcpServer` takes: the provider, the ID issuer and resource to trust, and optional overrides.
 
+### McpServerHandle
+
+```ts
+type McpServerHandle = {
+  /** Answer one HTTP request: the web-standard handler the entry point serves. */
+  fetch(request: Request): Promise<Response>
+  /**
+   * Tell every caller that listens for changes (`subscriptions/listen`, protocol 2026-07-28) that its tool list may have changed, so that it lists
+   * again. It reaches every listener of this server, whoever they are. A 2025 caller has no stream to carry it and sees the change when it lists again.
+   */
+  toolsChanged(): void
+  /**
+   * Run a tool this server serves exactly as its direct call runs it, for the caller in `context`: parse `args` (answering `INVALID_INPUT`), run
+   * the handler within its timeout and check the output; for a mutation, prepare it and record the intent its prepare tool would. Returns the
+   * structured content. It is for a hub's own tools, such as one that runs a capability by identity: it does not decide whether the caller may
+   * use the tool, and it runs inside the calling tool's `wrapCall`, not one of its own.
+   */
+  call(tool: Served<Tool | Mutation>, args: Record<string, unknown>, context: ToolContext): Promise<Record<string, unknown>>
+}
+```
+
+What `createMcpServer` returns.
+
 ### ToolCall
 
 ```ts
 type ToolCall = Readonly<{
-  tool: Served<Tool | Mutation>
+  /** What the call runs: a tool, a mutation (its prepare tool), or a commit tool, `<id>/commit` or `<id>/commit_confirmed` at the provider's version. */
+  tool: Served<Tool | Mutation> | Readonly<{
+    kind: "commit"
+    identity: string
+    version: string
+  }>
   /** The name the call used. */
   name: string
   principal: UserPrincipal
@@ -243,7 +276,7 @@ type ToolCall = Readonly<{
 }>
 ```
 
-One call of a tool or a mutation's prepare tool, as `wrapCall` receives it.
+One call of a tool, a mutation's prepare tool or a commit tool, as `wrapCall` receives it.
 
 ### defineTool
 

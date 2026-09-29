@@ -7,8 +7,9 @@ import { outcome, preparePlan, type Mutation, type Target } from "./mutation"
 import { hashToken } from "./prepare"
 import type { Served } from "./provider"
 
-const approvalRequired = (intent: Intent, commit_tool: string, message: string) =>
-  new ToolError("APPROVAL_REQUIRED", message, { details: { approval: { class: intent.policy_class, commit_tool } } })
+// A human-class intent also says where its approval stands.
+const approvalRequired = ({ policy_class, approval }: Intent, commit_tool: string, message: string) =>
+  new ToolError("APPROVAL_REQUIRED", message, { details: { approval: { class: policy_class, commit_tool, ...(approval.required ? { status: approval.status } : {}) } } })
 
 /** The receipt of an intent that is no longer `prepared`, or the error that says why it cannot be committed. */
 function settled(intent: Intent, id: string): Receipt {

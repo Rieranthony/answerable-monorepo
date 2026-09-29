@@ -274,6 +274,37 @@ Tree: branch `claude/toolbox-goal` on `main` 3ac5614, brief B7 of the Toolbox go
 
 **Size.** `mcps/toolbox/src` source 1,026 lines in 17 files, tests 1,285 in 13 files, test support 238; migrations 143.
 
+## 29 September 2026: Toolbox mutations, the meta projection and list_changed (brief B6)
+
+Tree: branch `claude/toolbox-goal` on `main` 3ac5614, brief B6 of the Toolbox goal, built beside B7. Versions as above; `@answerable/mcp` 0.6.0, `@answerable/mcp-toolbox` 0.2.0.
+
+| Check | Result |
+| --- | --- |
+| Root typecheck, lint and build | Pass with `--force` (9, 9 and 3 tasks) |
+| `bun --filter web test` | 78 pass |
+| `bun run mcp:test` | auth 41 pass, 100%; mcp 171 pass and 5 todo, 100%; e2e 44 pass and 4 todo; Toolbox 88 pass and 2 todo across 15 files, 100% lines and functions (run against a private Postgres on port 47442 while B7 held the shared test database) |
+| `bun run mcp:check @answerable/mcp-toolbox` | 4 tasks pass |
+| `bun run mcp:test:e2e` | 48 pass at 100%: 33.2 and 35.8 seconds by the agent; nothing left behind |
+| Coordinator, after merging B6 over B7 | Typecheck, lint and build pass with `--force` (9, 9 and 3 tasks); web 78; `mcp:test` auth 52, mcp 176 at 100%, e2e 48, Toolbox 117 across 17 files at 100%; `mcp:check` 4 tasks; `mcp:test:e2e` 52 pass at 100% in 36 seconds at load average 57, nothing left behind; J3 listed after 15.0 seconds; 45 grant reads answered by 4 access-view calls (91.1%), median 34.2 ms and maximum 38.1 ms; 3 token requests, 2 audit-log reads; 46 evidence events in 3 chains |
+
+**What changed.** The Toolbox keeps intents in Postgres (`intents`, compare-and-set per transition, expiry judged by the database's clock or an injected one) and records every transition as evidence through a decorator over the store: `intent.prepared` with the preview as an erasable payload, `intent.approval_requested`, `intent.committed` and `receipt.issued`, `intent.stale`, `intent.expired`. Every granted mutation's prepare tool is served prefixed and commits through `toolbox_commit` and `toolbox_commit_confirmed`, with the organisation's policy-class override applied. `host_clients` chooses the projection (`direct`, `meta` or `auto` with a `direct_limit` of 40); the meta projection serves `toolbox_whoami`, `toolbox_search` (Postgres full text over the caller's usable capabilities, ranked identity over title over description, paginated), `toolbox_describe` (up to 5 identities, schemas from the manifest), `toolbox_execute` (reads only) and `toolbox_prepare`, plus the two commit tools. A grant change invalidates the cache and publishes `tools/list_changed` to every 2026-07-28 listener. `@answerable/mcp` gains `project`, a `McpServerHandle` with `toolsChanged` and `call`, `wrapCall` over commit calls, `tools.listChanged` advertised and a 5-second keep-alive on `subscriptions/listen`.
+
+**What the journeys proved.** J3: the listening client heard `tools/list_changed` 10.8 to 11.8 seconds after the entitlement change and listed the new tool; a 2025 client polling every 5 seconds saw it at 15.0 seconds. J6: with `policy_class` overridden to `human` for `e2e/records.delete`, beta's prepare returns `policy_class: "human"`, the confirmed commit tool and a pending approval; both commit tools answer `APPROVAL_REQUIRED`; the intent is `awaiting_approval`; evidence holds `intent.prepared` and `intent.approval_requested`. J7: through a host client set to `meta`, alpha sees exactly the seven meta tools; search finds `e2e/records.list` by a word from its description; describe returns its schemas; execute runs it; prepare and `toolbox_commit` create a record; prepare and `toolbox_commit_confirmed` with the summary delete it. J10: erasing the preview payload keeps the chain valid and the row's `payload_hash` unchanged.
+
+**Measured.** `toolbox_search` median 7.5 to 10.6 ms, maximum 11.5 to 20.7 ms over 20 calls; the grant cache answered 45 reads with 4 access-view calls (91.1% hits) in each of three runs.
+
+**Found by testing.**
+
+- A 2025 client cannot receive `list_changed`: the SDK serves that revision statelessly and a GET answers 405, so there is no stream. Documented as Not yet, with per-organisation targeting.
+- `Bun.serve` closes a connection idle for 10 seconds; the SDK's 15-second keep-alive on `subscriptions/listen` cut the stream at about 12 seconds and the client re-sent the request. A 5-second keep-alive held one stream for 20 seconds.
+- Bun 1.3.1's `toMatchObject` writes asymmetric matchers into the object it checks: `expect.stringMatching` replaced a commit token and broke the next call.
+- `Bun.sql` stores a string bound as `::jsonb` as a JSON string; binding JSON text as `::text::jsonb` and reading it back as text round-trips every value, including null against absent. Arrays cannot be bound for `= any()`.
+- Two agents running the acceptance at the same time destroy each other's run through the fixed Compose project name; both reruns were clean.
+
+**Decisions recorded.** `toolbox_search` pages for real (`cursor`, a true `has_more`), because a fixed `has_more: false` would be silent truncation and the conformance kit refuses it; `toolbox_describe` answers `{ capabilities }`, bounded at 5, for the same reason. A meta call that names a hidden capability records that capability's denial, as a direct call does. Prepare and commit rows carry `intent_id`, and commits `receipt_id`. An intent that expires unseen gets its `intent.expired` row when next read; there is no sweep. Catalogue, host-client and manifest changes send no `list_changed` yet.
+
+**Size.** `mcps/toolbox/src` source 942 lines in 16 files, tests 1,298 in 15 files, test support 110; migrations 166.
+
 ## Limits
 
 The acceptance uses local test issuers for company directories, a pre-registered public client and loopback HTTP. It does not certify Claude.ai, another host, another company directory or a production deployment.

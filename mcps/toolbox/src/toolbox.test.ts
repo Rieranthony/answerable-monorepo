@@ -1,9 +1,7 @@
 import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test"
 import { SQL } from "bun"
 import { defineMutation, defineProvider, defineTool, type Provider } from "@answerable/mcp"
-import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
-import { createRecordStore } from "@answerable/mcp-e2e/records"
-import { createTestMcp, errorOf, type TestMcp } from "@answerable/mcp/testing"
+import { errorOf } from "@answerable/mcp/testing"
 import { z } from "zod"
 import { writeCatalogue } from "./catalogue"
 import { migrate } from "./db/migrate"
@@ -11,16 +9,15 @@ import { createEvidence } from "./evidence"
 import { createMemoryTracer } from "./spans"
 import { testDatabase, testDatabaseUrl } from "./test/database"
 import { createFakeId } from "./test/fake-id"
+import { createHub, e2e, names, resource, view, type Hub } from "./test/hub"
 import { createToolbox } from "./toolbox"
 
 const db = testDatabase()
 const evidence = createEvidence(db)
-const resource = "https://mcp.test/mcp"
-const view = "<!doctype html><title>Records</title>"
 beforeAll(() => migrate(db))
 afterAll(() => db.close())
-const mcps: TestMcp[] = []
-afterEach(async () => { await Promise.all(mcps.splice(0).map(mcp => mcp.close())) })
+const hubs: Hub[] = []
+afterEach(async () => { await Promise.all(hubs.splice(0).map(hub => hub.mcp.close())) })
 
 // Results of any size: {"text":"…"} is 11 bytes of JSON around its text.
 const bulk = defineProvider({ id: "bulk", version: "2026-09-29", tools: [
@@ -37,25 +34,11 @@ const bulk = defineProvider({ id: "bulk", version: "2026-09-29", tools: [
   }),
 ] })
 
-async function hub(providers: Provider[] = [createE2eProvider({ records: createRecordStore(), viewHtml: view })]) {
-  const id = createFakeId()
-  const { tracer, spans } = createMemoryTracer()
-  let toolbox!: Awaited<ReturnType<typeof createToolbox>>
-  const mcp = await createTestMcp(async auth => (toolbox = await createToolbox({ providers, auth, db, id: id.config, spans: tracer })))
-  mcps.push(mcp)
-  async function member(grants: string[], { enable = providers.map(provider => provider.id), scopes = ["toolbox"] }: { enable?: string[]; scopes?: string[] } = {}) {
-    const organizationId = crypto.randomUUID()
-    const membershipId = crypto.randomUUID()
-    const userId = crypto.randomUUID()
-    id.grant(organizationId, membershipId, [{ kind: "resource", id: resource, scopes: [...grants, "toolbox"] }, { kind: "client_resource", id: "test-client", resource, scopes: ["toolbox", "offline_access"] }])
-    for (const provider of enable) await writeCatalogue(db, organizationId, provider, { enabled: true })
-    const connect = (protocol?: "2025" | "2026-07-28") => mcp.connect({ organizationId, membershipId, userId, scopes, protocol })
-    return { organizationId, membershipId, userId, connect }
-  }
-  return { id, spans, mcp, member, toolbox: () => toolbox }
+async function hub(providers?: Provider[]) {
+  const created = await createHub(db, providers)
+  hubs.push(created)
+  return created
 }
-type Client = Awaited<ReturnType<TestMcp["connect"]>>
-const names = async (client: Client) => (await client.listTools()).tools.map(tool => tool.name)
 const events = (organisation: string) => db`select kind, outcome, capability_identity, error_code, data, trace_id, span_id, execution_id::text, request_id, reason from evidence_events where organisation_id = ${organisation} order by seq`
 const everything = ["toolbox_whoami", "e2e_identity_get", "e2e_records_create", "e2e_records_delete", "e2e_records_list", "e2e_records_show", "toolbox_commit", "toolbox_commit_confirmed"]
 
@@ -74,7 +57,7 @@ test("a member granted a provider sees toolbox_whoami, then its capabilities by 
 })
 
 test("providers are listed in order of their ids, whatever order they are mounted in", async () => {
-  const { member } = await hub([createE2eProvider({ records: createRecordStore(), viewHtml: view }), bulk])
+  const { member } = await hub([e2e(), bulk])
   expect(await names(await (await member(["e2e/identity", "bulk/items.dump"])).connect())).toEqual(["toolbox_whoami", "bulk_items_dump", "e2e_identity_get"])
 })
 
@@ -160,8 +143,9 @@ test("a read's result above 100 KiB answers RESULT_TOO_LARGE, a failure in the e
     message: "The result of bulk/items.dump is 102401 bytes, above the 100 KiB limit (102400 bytes); narrow the request with limit, cursor or filters",
   })
   expect((await client.callTool({ name: "bulk_items_load", arguments: { size: 110_000 } })).structuredContent).toMatchObject({ commit_tool: "toolbox_commit" })
-  expect((await events(reader.organizationId)).map((row: { outcome: string; error_code: string | null; data: unknown }) => [row.outcome, row.error_code, row.data])).toEqual([
-    ["success", null, { result_bytes: 102_400 }], ["failure", "RESULT_TOO_LARGE", {}], ["success", null, { result_bytes: expect.any(Number) }],
+  expect((await events(reader.organizationId)).map((row: { kind: string; outcome: string; error_code: string | null; data: unknown }) => [row.kind, row.outcome, row.error_code, row.data])).toEqual([
+    ["capability.completed", "success", null, { result_bytes: 102_400 }], ["capability.completed", "failure", "RESULT_TOO_LARGE", {}],
+    ["intent.prepared", "success", null, { policy_class: "agent" }], ["capability.completed", "success", null, { result_bytes: expect.any(Number) }],
   ])
   expect(spans().filter(span => span.attributes["answerable.organisation.id"] === reader.organizationId).map(span => span.attributes["error.type"])).toEqual([undefined, "RESULT_TOO_LARGE", undefined])
 })
@@ -173,6 +157,64 @@ test("a mutation through the hub prepares and commits with toolbox_commit", asyn
   expect(intent.commit_tool).toBe("toolbox_commit")
   const receipt = await client.callTool({ name: "toolbox_commit", arguments: { intent_id: intent.intent_id, commit_token: intent.commit_token } })
   expect(receipt.structuredContent).toMatchObject({ status: "committed", results: { title: "Through the hub" } })
+})
+
+test("intents live in Postgres and each transition is evidence; a commit call has its own evidence row and span, joined by the intent", async () => {
+  const { member, spans } = await hub()
+  const alpha = await member(["e2e/records.create"])
+  const client = await alpha.connect()
+  const intent = (await client.callTool({ name: "e2e_records_create", arguments: { title: "Kept" } })).structuredContent as { intent_id: string; commit_token: string }
+  const args = { intent_id: intent.intent_id, commit_token: intent.commit_token }
+  expect(errorOf(await client.callTool({ name: "toolbox_commit_confirmed", arguments: { ...args, preview_summary: "x" } })).code).toBe("APPROVAL_REQUIRED")
+  const receipt = (await client.callTool({ name: "toolbox_commit", arguments: args })).structuredContent as { receipt_id: string }
+  expect<unknown>(await db`select status, receipt ->> 'receipt_id' as receipt_id from intents where intent_id = ${intent.intent_id}`).toEqual([{ status: "committed", receipt_id: receipt.receipt_id }])
+  const rows = await db`select kind, outcome, capability_identity, capability_version, error_code, intent_id::text, receipt_id::text from evidence_events where organisation_id = ${alpha.organizationId} order by seq`
+  const row = (kind: string, capability_identity: string, fields: object = {}) => ({
+    kind, outcome: "success", capability_identity, capability_version: "2026-09-29", error_code: null, intent_id: intent.intent_id, receipt_id: null, ...fields,
+  })
+  expect(rows).toEqual([
+    row("intent.prepared", "e2e/records.create"), row("capability.completed", "e2e/records.create"),
+    row("capability.completed", "toolbox/commit_confirmed", { outcome: "failure", error_code: "APPROVAL_REQUIRED", intent_id: null }),
+    row("intent.committed", "e2e/records.create", { receipt_id: receipt.receipt_id }), row("receipt.issued", "e2e/records.create", { receipt_id: receipt.receipt_id }),
+    row("capability.completed", "toolbox/commit", { receipt_id: receipt.receipt_id }),
+  ])
+  const own = spans().filter(span => span.attributes["answerable.organisation.id"] === alpha.organizationId)
+  expect(own.map(span => [span.name, span.attributes["gen_ai.tool.name"], span.attributes["error.type"]])).toEqual([
+    ["tools/call e2e/records.create", "e2e_records_create", undefined], ["tools/call toolbox/commit_confirmed", "toolbox_commit_confirmed", "APPROVAL_REQUIRED"],
+    ["tools/call toolbox/commit", "toolbox_commit", undefined],
+  ])
+  expect(await evidence.verify(alpha.organizationId)).toEqual({ ok: true, length: 6 })
+})
+
+test("an organisation's human class holds an intent for approval: both commit tools answer APPROVAL_REQUIRED, pending, with no URL", async () => {
+  const { member } = await hub()
+  const beta = await member(["e2e/records"])
+  await writeCatalogue(db, beta.organizationId, "e2e", { enabled: true, overrides: { policy_class: { "e2e/records.delete": "human" } } })
+  const client = await beta.connect()
+  const created = (await client.callTool({ name: "e2e_records_create", arguments: { title: "Held" } })).structuredContent as { intent_id: string; commit_token: string }
+  const record = ((await client.callTool({ name: "toolbox_commit", arguments: { intent_id: created.intent_id, commit_token: created.commit_token } })).structuredContent as { results: { id: string } }).results
+  const intent = (await client.callTool({ name: "e2e_records_delete", arguments: { id: record.id } })).structuredContent as { intent_id: string; commit_token: string; preview: { summary: string } }
+  expect(intent).toMatchObject({ policy_class: "human", commit_tool: "toolbox_commit_confirmed", approval: { required: true, status: "pending" } })
+  for (const [name, extra] of [["toolbox_commit", {}], ["toolbox_commit_confirmed", { preview_summary: intent.preview.summary }]] as const) {
+    expect(errorOf(await client.callTool({ name, arguments: { intent_id: intent.intent_id, commit_token: intent.commit_token, ...extra } }))).toMatchObject({
+      code: "APPROVAL_REQUIRED", retry: { policy: "after_approval" }, details: { approval: { class: "human", commit_tool: "toolbox_commit_confirmed", status: "pending" } },
+    })
+  }
+  expect<unknown>(await db`select status from intents where intent_id = ${intent.intent_id}`).toEqual([{ status: "awaiting_approval" }])
+  const kinds = await db`select kind from evidence_events where organisation_id = ${beta.organizationId} and intent_id = ${intent.intent_id} order by seq`
+  expect(kinds.map((row: { kind: string }) => row.kind)).toEqual(["intent.prepared", "intent.approval_requested", "capability.completed"])
+})
+
+test("a grant change the poller reports reaches each listening 2026-07-28 caller as tools/list_changed; the same token then lists it", async () => {
+  const { member, id, toolbox } = await hub()
+  const gamma = await member([])
+  const client = await gamma.connect("2026-07-28")
+  const changed = new Promise(resolve => client.setNotificationHandler("notifications/tools/list_changed", resolve))
+  await client.listen({ toolsListChanged: true })
+  id.grant(gamma.organizationId, gamma.membershipId, [{ kind: "resource", id: resource, scopes: ["e2e/identity"] }])
+  toolbox().grants.invalidate([gamma.organizationId])
+  expect(await changed).toMatchObject({ method: "notifications/tools/list_changed" })
+  expect(await names(client)).toEqual(["toolbox_whoami", "e2e_identity_get"])
 })
 
 test("grants are read from ID and cached; after an invalidation the same token sees the change", async () => {

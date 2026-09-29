@@ -9,7 +9,7 @@ bun install
 bun run mcp:test:e2e
 ```
 
-Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It runs `bun test` in `packages/acceptance`: the journeys below and the kit's own tests. It exits non-zero when a test fails, and it removes its database and processes either way, including after Ctrl-C (exit 130) or SIGTERM (exit 143). With the e2e and Toolbox journeys, three runs took 31.6, 32.3 and 30.5 seconds.
+Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It runs `bun test` in `packages/acceptance`: the journeys below and the kit's own tests. It exits non-zero when a test fails, and it removes its database and processes either way, including after Ctrl-C (exit 130) or SIGTERM (exit 143). With the e2e and Toolbox journeys, three runs took 44.9, 33.2 and 35.8 seconds.
 
 ## What the e2e journeys prove
 
@@ -79,9 +79,9 @@ The company directories are local test issuers. ID, its database role, its pages
 
 `packages/acceptance/src/journeys/toolbox.journeys.test.ts` starts its own ID and runs [the Toolbox](/docs/mcp/toolbox) and its [admin API](/docs/mcp/toolbox-admin) in the test process on port `47604`, with the e2e provider mounted.
 
-**Setup.** Through ID's admin API: the Toolbox resource, allowing `allowedScopes(providers)` with a 60-second token lifetime; a public client asking for `toolbox`; for each of three organisations the login pair rows and the `toolbox` pair rows; and the Toolbox's machine client in the platform organisation with a `platform:read` capability for the admin resource. Entitlements to the Toolbox resource carry grant strings: `toolbox-alpha` gets `e2e`, `toolbox-beta` gets `e2e/records`, `toolbox-gamma` nothing. The journey creates and migrates `answerable_toolbox_acceptance` on the disposable PostgreSQL, enables `e2e` in each organisation's catalogue by writing the rows (the admin API that does it is Not yet), starts the audit-log poller and keeps spans in memory.
+**Setup.** Through ID's admin API: the Toolbox resource, allowing only `toolbox` and `offline_access` with a 60-second token lifetime; the Toolbox's admin resource; two public clients asking for `toolbox`, `toolbox-browser` and `toolbox-meta`; and two machine clients in the platform organisation, the Toolbox's (`platform:read` and `platform:write` for ID's admin resource) and a staff client (`toolbox:admin` for the Toolbox's admin resource). The journey creates and migrates `answerable_toolbox_acceptance` on the disposable PostgreSQL, starts the Toolbox with the audit-log poller and in-memory spans, and calls its [enable operation](/docs/mcp/toolbox-admin#enable-an-organisation) for each of three organisations (for `toolbox-alpha` with both public clients): it links the clients to the Toolbox resource, widens the resource to the grant strings of `e2e`, and makes the login and `toolbox` rows and the catalogue row. Entitlements to the Toolbox resource then carry grant strings: `toolbox-alpha` gets `e2e`, `toolbox-beta` gets `e2e/records`, `toolbox-gamma` nothing. The catalogue is the ceiling: gamma may use `e2e` but has no entitlement to any of it until J3. `toolbox-meta` is set to the meta projection through the admin API.
 
-1. Each organisation signs in through ID with the SDK's OAuth client and a real browser; its token carries `toolbox` and `offline_access` only.
+1. Each organisation signs in through ID with the SDK's OAuth client and a real browser; its token carries `toolbox` and `offline_access` only. `toolbox-alpha` signs in a second time, through `toolbox-meta`.
 
 **J1, direct list.**
 
@@ -94,24 +94,35 @@ The company directories are local test issuers. ID, its database role, its pages
 5. `toolbox-beta` lists `toolbox_whoami`, the four records tools and the two commit tools.
 6. `toolbox-gamma` lists only `toolbox_whoami`; calling `e2e_records_list` is the unknown-tool error, and its chain holds one `capability.denied` event.
 
+**J6, human class.**
+
+7. With `policy_class` set to `human` for `e2e/records.delete` in `toolbox-beta`'s catalogue, beta creates a record through `e2e_records_create` and `toolbox_commit`, then `e2e_records_delete` returns `policy_class: "human"`, `commit_tool: "toolbox_commit_confirmed"` and `approval: { required: true, status: "pending" }`. `toolbox_commit` and `toolbox_commit_confirmed`, with the right summary, both answer `APPROVAL_REQUIRED` with `details.approval` `{ class: "human", commit_tool: "toolbox_commit_confirmed", status: "pending" }` and no URL. The intent is stored `awaiting_approval`, and its evidence is `intent.prepared`, `intent.approval_requested` and the prepare call's `capability.completed`. The approval page is Not yet.
+
+**J7, meta projection.**
+
+8. `toolbox-alpha`, through `toolbox-meta`, lists exactly `toolbox_whoami`, `toolbox_search`, `toolbox_describe`, `toolbox_execute`, `toolbox_prepare`, `toolbox_commit` and `toolbox_commit_confirmed`.
+9. `toolbox_search` for `oldest`, a word of its description only, returns `e2e/records.list` alone, with its first sentence, twenty times: in three runs, a median of 7.5 to 10.6 ms and a maximum of 11.5 to 20.7 ms per call. `toolbox_describe` returns its input and output schemas, and `toolbox_execute` runs it.
+10. `toolbox_prepare` prepares `e2e/records.create` as an agent-class intent and `toolbox_commit` commits it; `toolbox_prepare` of `e2e/records.delete` for that record returns a controlled-class intent, and `toolbox_commit_confirmed` with its summary deletes the record.
+
 **J3, a grant change without re-authorisation.**
 
-7. An entitlement to `e2e/identity` is added to `toolbox-gamma` in ID. Polling `tools/list` every 5 seconds with the same access token lists `e2e_identity_get` within 60 seconds: after 15.1 seconds in each of four runs, so between 10 and 15 seconds after the change at that polling interval. `list_changed`: Not yet.
-8. Disabling `toolbox-gamma` through the admin API makes refresh fail with `invalid_grant`.
+11. An entitlement to `e2e/identity` is added to `toolbox-gamma` in ID. Polling `tools/list` every 5 seconds with the same access token lists `e2e_identity_get` within 60 seconds, and a `2026-07-28` client that listens (the kit's `onToolsChanged`) hears `tools/list_changed` and lists the new tool. In three runs: listed after 15.0 seconds each time, heard after 10.8, 11.8 and 11.6 seconds.
+12. Disabling `toolbox-gamma` through the admin API makes refresh fail with `invalid_grant`.
 
 **J10, evidence.**
 
-9. `toolbox-alpha`'s chain verifies with two events, one per call.
-10. An `UPDATE` and a `DELETE` on `evidence_events` through the journey's superuser connection are refused by the trigger, and the chain still verifies. Payload erasure through the hub: Not yet.
+13. `toolbox-alpha`'s chain verifies: its calls, its intents' transitions and its commits.
+14. An `UPDATE` and a `DELETE` on `evidence_events` through the journey's superuser connection are refused by the trigger, and the chain still verifies.
+15. Erasing the preview of alpha's first `intent.prepared` removes the payload's body, keeps the event's `payload_hash`, and the chain still verifies.
 
-The test after J10 logs what the Toolbox asked ID. In two recent runs: 11 grant reads answered by 4 access-view calls each (a 63.6% cache hit rate), a median access-view latency of 30.5 and 34.9 ms and a maximum of 43.5 and 60.3 ms, 3 token requests (the `platform:read` tokens of the poller and the grants reader, and the enable call's `platform:read platform:write` token) and 2 audit-log reads.
+The last test logs what the Toolbox asked ID. In each of three runs: 45 grant reads answered by 4 access-view calls (a 91.1% cache hit rate), 2 token requests and 2 audit-log reads; the median access-view latency was 34.5 to 63.1 ms and the maximum 35.0 to 65.9 ms.
 
 **Administration.**
 
-11. The admin API refuses a person's token with `401`, and lists the mounted providers and their capabilities to staff.
-12. The enable calls left the Toolbox resource allowing the grant strings of `e2e` and linked to the host client. Calling it again for `toolbox-alpha` reports all nine steps as existing and changes nothing in ID.
-13. `PUT` catalogue with `e2e/records.list` disabled hides that tool from `toolbox-alpha` and from no one else, 4 to 14 ms later in eight runs; a second `PUT` restores it.
-14. The evidence check runs through the admin API, and a host client row is stored and removed.
+16. The admin API refuses a person's token with `401`, and lists the mounted providers and their capabilities to staff.
+17. The enable calls left the Toolbox resource allowing the grant strings of `e2e` and linked to both host clients. Calling it again for `toolbox-alpha` reports all nine steps as existing and changes nothing in ID.
+18. `PUT` catalogue with `e2e/records.list` disabled hides that tool from `toolbox-alpha` and from no one else, 4 to 14 ms later in eight runs; a second `PUT` restores it.
+19. The evidence check runs through the admin API, and a host client row is stored and removed.
 
 ## Ports
 
@@ -143,7 +154,7 @@ Keep these free. PostgreSQL belongs to the Compose project `answerable-mcp-e2e`;
 | `serve(port, fetch)` | Serves a fetch handler on a loopback port until the kit stops. |
 | `launchBrowser()` | Starts headless Chromium with Playwright's signal handlers off, so cleanup runs on Ctrl-C. |
 | `signIn(browser, { idOrigin, resource, clientId, callback, scopes }, { slug, email, scopes })` | Signs one person in as a host does: the SDK follows the MCP's `401`, a real browser completes ID's pages, the SDK exchanges the code. Returns an `OAuthSession`, `{ provider, state }`: the SDK's `OAuthClientProvider` for a client registered in ID ahead of time, and the tokens, authorisation URL and discovery result it saved. The first `scopes` are what the MCP advertises; the second are what the organisation is entitled to, and the consent page must list exactly those and name the rest as not approved. |
-| `connect(resource, provider, protocol)` | Connects the official MCP client, as a `"2025"` client or pinned to `"2026-07-28"`. |
+| `connect(resource, provider, protocol, onToolsChanged?)` | Connects the official MCP client, as a `"2025"` client or pinned to `"2026-07-28"`. With `onToolsChanged(error, tools)`, a `"2026-07-28"` client listens for `tools/list_changed` and, on each, lists the tools again and passes them, or the error. |
 | `tool(client, name, args?)` | Calls a tool and returns its `structuredContent`. A failed call throws with the envelope's code and message. |
 | `refusal(client, name, args?)` | Calls a tool that must fail and returns the `error` of its envelope, read with [`errorOf`](/docs/mcp/testing#serve-a-provider-in-process). |
 | `step(message)` | Prints `[acceptance] message`. |

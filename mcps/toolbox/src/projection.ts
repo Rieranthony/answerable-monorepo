@@ -1,5 +1,5 @@
 import { riskClass, type Mutation, type PolicyClass, type Provider, type Served } from "@answerable/mcp"
-import type { Catalogue } from "./catalogue"
+import type { Catalogue, HostClient } from "./catalogue"
 
 /** Whether a caller may use a capability: its provider is enabled for the organisation, not disabled there, and one of the caller's grant strings covers it. */
 export function allowed(grants: readonly string[], catalogue: Catalogue, { identity }: { identity: string }) {
@@ -14,4 +14,8 @@ export const policyClassOf = (catalogue: Catalogue, mutation: Served<Mutation>):
   catalogue.get(mutation.identity.split("/")[0]!)?.overrides.policy_class[mutation.identity] ?? riskClass[mutation.risk]
 
 /** A provider as the Toolbox serves it: its tools by domain, then operation. */
-export const project = (provider: Provider): Provider => ({ ...provider, tools: provider.tools.toSorted((a, b) => (a.name < b.name ? -1 : 1)) })
+export const ordered = (provider: Provider): Provider => ({ ...provider, tools: provider.tools.toSorted((a, b) => (a.name < b.name ? -1 : 1)) })
+
+/** The projection a caller gets from their host client's settings and the number of tools granted to them, the Toolbox's own excluded. */
+export const projectionOf = ({ projection, direct_limit }: HostClient, granted: number): "direct" | "meta" =>
+  projection === "auto" ? (granted <= direct_limit ? "direct" : "meta") : projection

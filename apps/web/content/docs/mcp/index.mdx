@@ -13,9 +13,9 @@ Run this from the monorepo after installing [the local test requirements](/docs/
 
 **Local foundation:** implemented and tested. `@answerable/mcp` defines read tools, [prepared mutations](/docs/mcp/authoring#mutations) and providers, serves them on the official MCP TypeScript SDK, answers every tool failure with one [error envelope](/docs/mcp/errors), exports each provider's contract as a manifest, and checks a provider against the standard with [the conformance kit](/docs/mcp/testing). A mutation is prepared first, which records an intent and changes nothing, then committed through a commit tool. `@answerable/auth` verifies Answerable ID access tokens. `mcps/e2e` is the reference server: three read tools, `records.create` and `records.delete`. Every export is in the [API reference](/docs/mcp/reference).
 
-**The Toolbox:** [`mcps/toolbox`](/docs/mcp/toolbox) is one MCP endpoint that serves each person the capabilities their organisation granted them. It reads grant strings from ID's member access view with a 60-second cache and an audit-log poller, holds the catalogue, lists `toolbox_whoami` and the granted tools directly, records every call in a hash-chained evidence log and as a span, and mounts the e2e provider. Its journeys run against real ID.
+**The Toolbox:** [`mcps/toolbox`](/docs/mcp/toolbox) is one MCP endpoint that serves each person the capabilities their organisation granted them. It reads grant strings from ID's member access view with a 60-second cache and an audit-log poller, holds the catalogue, lists `toolbox_whoami` and the granted tools directly or through its meta tools (`toolbox_search`, `toolbox_describe`, `toolbox_execute`, `toolbox_prepare`), keeps intents in Postgres, sends `tools/list_changed` when a grant changes, records every call and every intent transition in a hash-chained evidence log and every call as a span, and mounts the e2e provider. Its journeys run against real ID.
 
-**Not yet:** human approvals, operations for long work, a Postgres intent store, and the Toolbox's meta tools, `list_changed` and administration API.
+**Not yet:** human approvals, operations for long work, and the Toolbox's administration API.
 
 **External hosts:** Claude Code connects with a pre-registered client; see [Connect Claude Code](/docs/mcp/claude-code). Claude.ai and hosted deployment: Not yet.
 

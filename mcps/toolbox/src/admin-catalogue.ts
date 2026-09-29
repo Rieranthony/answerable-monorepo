@@ -1,7 +1,7 @@
 import type { SQL } from "bun"
 import { manifest, type Provider } from "@answerable/mcp"
 import { z } from "zod"
-import { readCatalogue, writeCatalogue } from "./catalogue"
+import { readCatalogue, readHostClient, writeCatalogue, writeHostClient } from "./catalogue"
 import { parse, Problem } from "./problem"
 
 const entry = z.object({
@@ -47,10 +47,8 @@ export function createCatalogueAdmin(db: SQL, providers: readonly Provider[]) {
       return { items: [...await db`select client_id, projection, direct_limit from host_clients order by client_id collate "C"`] }
     },
     async putHostClient(clientId: string, body: unknown) {
-      const { projection, direct_limit } = parse(host, body)
-      const [row] = await db`insert into host_clients (client_id, projection, direct_limit) values (${clientId}, ${projection}, ${direct_limit})
-        on conflict (client_id) do update set projection = excluded.projection, direct_limit = excluded.direct_limit returning client_id, projection, direct_limit`
-      return { ...row }
+      await writeHostClient(db, clientId, parse(host, body))
+      return { client_id: clientId, ...(await readHostClient(db, clientId)) }
     },
     async removeHostClient(clientId: string) {
       if (!(await db`delete from host_clients where client_id = ${clientId} returning client_id`).length) throw new Problem(404, "host_client_not_found", `There is no host client ${clientId}`)

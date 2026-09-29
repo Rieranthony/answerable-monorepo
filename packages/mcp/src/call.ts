@@ -21,6 +21,9 @@ export async function parseArguments<Schema extends z.ZodObject>(schema: Schema,
   throw new ToolError("INVALID_INPUT", message, { details: { field_violations: violations } })
 }
 
+// Errors a definition declared: a tool that runs another served tool passes them on unchanged.
+const declared = new WeakSet<ToolError>()
+
 /**
  * Run a definition's handler `body` with a context whose signal also aborts after `timeoutMs`; past it, answer `TIMEOUT` without waiting for `body`.
  * A custom code the definition does not declare is the author's bug: it becomes a plain error, which answers `INTERNAL` and is logged.
@@ -32,8 +35,11 @@ export async function bounded<T>({ name, timeoutMs, errors }: { name: string; ti
     return await Promise.race([body(Object.freeze({ ...context, signal: AbortSignal.any([context.signal, deadline]) })), timedOut])
   } catch (error) {
     if (deadline.aborted) throw new ToolError("TIMEOUT", `The tool did not finish within ${timeoutMs} ms`)
-    if (error instanceof ToolError && !Object.hasOwn(errorCodes, error.code) && !errors.includes(error.code)) {
-      throw new Error(`${name} threw ${error.code}, which its definition does not declare; add it to errors`, { cause: error })
+    if (error instanceof ToolError && !declared.has(error)) {
+      if (!Object.hasOwn(errorCodes, error.code) && !errors.includes(error.code)) {
+        throw new Error(`${name} threw ${error.code}, which its definition does not declare; add it to errors`, { cause: error })
+      }
+      declared.add(error)
     }
     throw error
   }

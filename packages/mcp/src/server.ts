@@ -16,9 +16,10 @@ import { intentView, recordIntent } from "./prepare"
 import type { Provider, Served } from "./provider"
 import { readAnnotations, wireDescription, wireName, type Tool } from "./tool"
 
-/** One call of a tool or a mutation's prepare tool, as `wrapCall` receives it. */
+/** One call of a tool, a mutation's prepare tool or a commit tool, as `wrapCall` receives it. */
 export type ToolCall = Readonly<{
-  tool: Served<Tool | Mutation>
+  /** What the call runs: a tool, a mutation (its prepare tool), or a commit tool, `<id>/commit` or `<id>/commit_confirmed` at the provider's version. */
+  tool: Served<Tool | Mutation> | Readonly<{ kind: "commit"; identity: string; version: string }>
   /** The name the call used. */
   name: string
   principal: UserPrincipal
@@ -51,11 +52,35 @@ export type McpServerConfig = {
    */
   allow?: (principal: UserPrincipal, tool: Served<Tool | Mutation>, called: boolean) => boolean | Promise<boolean>
   /**
-   * Runs around every call of a tool or a prepare tool. `run` parses the arguments, runs the handler within its timeout and checks the output;
-   * it returns the structured content or throws what the call answers. Return what `run` returns, or throw a `ToolError` to answer with it instead.
-   * Default: `run()`.
+   * Which of the tools a caller may use are served to them as tools, decided for each request, for a hub that offers some capabilities through
+   * its own tools instead. The others stay usable: their intents commit, and `call` runs them. A tool the caller may not use is never served,
+   * whatever this returns. Default: all of them.
+   */
+  project?: (principal: UserPrincipal, usable: readonly Served<Tool | Mutation>[]) => readonly Served<Tool | Mutation>[] | Promise<readonly Served<Tool | Mutation>[]>
+  /**
+   * Runs around every call of a tool, a prepare tool or a commit tool. `run` parses the arguments, runs the handler within its timeout and checks
+   * the output, or commits; it returns the structured content or throws what the call answers. Return what `run` returns, or throw a `ToolError`
+   * to answer with it instead. Default: `run()`.
    */
   wrapCall?: (call: ToolCall, run: () => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>
+}
+
+/** What `createMcpServer` returns. */
+export type McpServerHandle = {
+  /** Answer one HTTP request: the web-standard handler the entry point serves. */
+  fetch(request: Request): Promise<Response>
+  /**
+   * Tell every caller that listens for changes (`subscriptions/listen`, protocol 2026-07-28) that its tool list may have changed, so that it lists
+   * again. It reaches every listener of this server, whoever they are. A 2025 caller has no stream to carry it and sees the change when it lists again.
+   */
+  toolsChanged(): void
+  /**
+   * Run a tool this server serves exactly as its direct call runs it, for the caller in `context`: parse `args` (answering `INVALID_INPUT`), run
+   * the handler within its timeout and check the output; for a mutation, prepare it and record the intent its prepare tool would. Returns the
+   * structured content. It is for a hub's own tools, such as one that runs a capability by identity: it does not decide whether the caller may
+   * use the tool, and it runs inside the calling tool's `wrapCall`, not one of its own.
+   */
+  call(tool: Served<Tool | Mutation>, args: Record<string, unknown>, context: ToolContext): Promise<Record<string, unknown>>
 }
 
 const validateOnly = z.boolean().default(false).describe("Return the preview without recording an intent or issuing a commit token; default false")
@@ -65,6 +90,8 @@ type Peeked = { method?: string; name?: string }
 const decided = new Set(["tools/list", "tools/call", "resources/list", "resources/read"])
 // A caller's tool list changes only with its scopes, fixed for a token's life, or with a hub's grants.
 const cacheHints = { "tools/list": { ttlMs: 30_000, cacheScope: "private" as const } }
+// Bun.serve closes a connection idle for 10 seconds by default, so a subscriptions/listen stream sends a keep-alive comment more often than that.
+const keepAliveMs = 5_000
 
 // The method and tool name of a request, read from a copy of its body, so that `allow` runs only when tools matter and can tell a call from a list.
 async function peek(request: Request): Promise<Peeked> {
@@ -105,7 +132,8 @@ function wireNames(provider: Provider, mount: readonly Provider[]) {
 
 /**
  * Serve a provider over MCP: `/health`, the protected-resource metadata and the MCP endpoint behind Answerable ID sign-in.
- * It returns a web-standard `{ fetch }` handler; the caller owns the listener. `tools/list` tells 2026-07-28 hosts they may keep it for 30 seconds, for that caller alone.
+ * It returns a web-standard `fetch` handler, which the caller serves, with `toolsChanged` and `call`. `tools/list` tells 2026-07-28 hosts they may keep
+ * it for 30 seconds, for that caller alone.
  *
  * @example
  * ```ts
@@ -117,15 +145,15 @@ function wireNames(provider: Provider, mount: readonly Provider[]) {
  * Bun.serve({ hostname: "127.0.0.1", port, fetch: server.fetch })
  * ```
  */
-export function createMcpServer(config: McpServerConfig): { fetch(request: Request): Promise<Response> } {
-  const { provider, auth, mount = [], allow } = config
+export function createMcpServer(config: McpServerConfig): McpServerHandle {
+  const { provider, auth, mount = [], allow, project } = config
   const { intents = createMemoryIntentStore(), policyClass = (mutation: Served<Mutation>) => riskClass[mutation.risk], wrapCall = (_call, run) => run() } = config
   const names = wireNames(provider, mount)
   const served = [...names.keys()]
   const views = new Set<View>(served.flatMap(tool => tool.kind === "read" && tool.view ? [tool.view] : []))
   const mutations = served.filter(tool => tool.kind === "mutate")
   const prepareInputs = new Map(mutations.map(mutation => [mutation, mutation.input.extend({ validate_only: validateOnly })]))
-  const commits = commitTools(provider.id)
+  const commits = commitTools(provider.id).map(commit => ({ ...commit, call: Object.freeze({ kind: "commit" as const, identity: commit.identity, version: provider.version }) }))
   const verify = createIdVerifier(auth)
   const resourceUrl = new URL(auth.resource)
   // The resource URL is the endpoint; the SDK's 401 challenge names this metadata URL.
@@ -135,7 +163,7 @@ export function createMcpServer(config: McpServerConfig): { fetch(request: Reque
   const definitions = [...provider.tools, ...provider.prompts, ...provider.resources]
   const scopes = [...new Set(definitions.flatMap(item => [...item.scopes]))].sort()
   const capabilities = {
-    ...(served.length ? { tools: {} } : {}),
+    ...(served.length ? { tools: { listChanged: true } } : {}),
     ...(provider.prompts.length ? { prompts: {} } : {}),
     ...(views.size || provider.resources.length ? { resources: {} } : {}),
   }
@@ -152,12 +180,34 @@ export function createMcpServer(config: McpServerConfig): { fetch(request: Reque
       },
     },
   })
-  // The tools a caller sees; a tool it cannot use is not registered, so calling it answers the unknown-tool error.
-  async function visible(principal: UserPrincipal, { method, name }: Peeked) {
+  // The tools a caller may use; a tool it cannot use is not registered, so calling it answers the unknown-tool error.
+  async function usable(principal: UserPrincipal, { method, name }: Peeked) {
     if (!allow) return served.filter(tool => permits(principal, tool))
     if (method !== undefined && !decided.has(method)) return []
     const decisions = await Promise.all(served.map(tool => allow(principal, tool, method === "tools/call" && names.get(tool) === name)))
     return served.filter((_, index) => decisions[index])
+  }
+  // The usable tools served to the caller as tools.
+  async function projected(principal: UserPrincipal, tools: Served<Tool | Mutation>[]) {
+    if (!project || !tools.length) return tools
+    const chosen = new Set(await project(principal, tools))
+    return tools.filter(tool => chosen.has(tool))
+  }
+  // A tool's direct path: parse the arguments, run the handler within its timeout and check the output; a mutation's prepare records an intent.
+  async function perform(tool: Served<Tool | Mutation>, args: Record<string, unknown>, call: ToolContext) {
+    if (tool.kind === "read") {
+      const input = await parseArguments(tool.input, args)
+      return tool.output.parseAsync(await bounded(tool, call, bound => tool.execute(input, bound)))
+    }
+    const { validate_only, ...input } = await parseArguments(prepareInputs.get(tool)!, args)
+    const plan = await bounded(tool, call, bound => preparePlan(tool, input, bound))
+    const policy = await policyClass(tool, call.principal)
+    // The intent keeps the arguments as sent; a commit parses them again to run prepare.
+    const sent = Object.fromEntries(Object.entries(args).filter(([key]) => key !== "validate_only"))
+    return recordIntent({
+      mutation: tool, input: sent, plan,
+      policyClass: policy, commitTool: commitToolName(provider.id, policy), principal: call.principal, store: intents, validateOnly: validate_only === true,
+    })
   }
   const handler = createMcpHandler(async ({ authInfo, requestInfo }) => {
     const { principal, request = {} } = authInfo!.extra as { principal: UserPrincipal; request?: Peeked }
@@ -167,19 +217,21 @@ export function createMcpServer(config: McpServerConfig): { fetch(request: Reque
     const context = (signal: AbortSignal): ToolContext => Object.freeze({
       principal, executionId: Bun.randomUUIDv7(), signal: requestInfo?.signal ? AbortSignal.any([signal, requestInfo.signal]) : signal,
     })
+    let permitted: Served<Tool | Mutation>[]
     let tools: Served<Tool | Mutation>[]
     try {
-      tools = await visible(principal, request)
+      permitted = await usable(principal, request)
+      tools = await projected(principal, permitted)
     } catch (error) {
       if (!(error instanceof ToolError) || called === undefined) throw error
       // Whatever the call names, so that a refusal reveals nothing about which tools exist.
       server.registerTool(called, { inputSchema: advertised(z.object({})) }, () => answer(called, Bun.randomUUIDv7(), async () => { throw error }))
       return server
     }
-    const permitted = new Set<Served<Tool | Mutation>>(tools)
-    const wrapped = (tool: Served<Tool | Mutation>, call: ToolContext, mcpReq: { id: string | number; _meta?: Record<string, unknown> }, run: () => Promise<Record<string, unknown>>) =>
-      answer(tool.name, call.executionId, () => wrapCall(Object.freeze({
-        tool, name: names.get(tool)!, principal, executionId: call.executionId, requestId: mcpReq.id, meta: mcpReq._meta ?? {},
+    // A failure is logged under the tool's name, or a commit tool's wire name.
+    const wrapped = (tool: ToolCall["tool"], name: string, call: ToolContext, mcpReq: { id: string | number; _meta?: Record<string, unknown> }, run: () => Promise<Record<string, unknown>>) =>
+      answer(tool.kind === "commit" ? name : tool.name, call.executionId, () => wrapCall(Object.freeze({
+        tool, name, principal, executionId: call.executionId, requestId: mcpReq.id, meta: mcpReq._meta ?? {},
       }), run))
     const registeredViews = new Set<View>()
     for (const tool of tools) {
@@ -191,41 +243,28 @@ export function createMcpServer(config: McpServerConfig): { fetch(request: Reque
           _meta: { "com.answerable/capability": { ...capability, ...deprecated }, ...(tool.view ? { ui: { resourceUri: tool.view.uri } } : {}) },
         }, (args, sdkContext) => {
           const call = context(sdkContext.mcpReq.signal)
-          return wrapped(tool, call, sdkContext.mcpReq, async () => {
-            const input = await parseArguments(tool.input, args)
-            return tool.output.parseAsync(await bounded(tool, call, bound => tool.execute(input, bound)))
-          })
+          return wrapped(tool, names.get(tool)!, call, sdkContext.mcpReq, () => perform(tool, args, call))
         })
         if (tool.view) registeredViews.add(tool.view)
         continue
       }
-      const policy = await policyClass(tool, principal)
       registerAppTool(server, names.get(tool)!, {
         title: tool.title, description: wireDescription(tool), inputSchema: advertised(prepareInputs.get(tool)!), outputSchema: intentView, annotations: readAnnotations,
-        _meta: { "com.answerable/capability": { ...capability, risk: tool.risk, policy_class: policy, ...deprecated } },
+        _meta: { "com.answerable/capability": { ...capability, risk: tool.risk, policy_class: await policyClass(tool, principal), ...deprecated } },
       }, (args, sdkContext) => {
         const call = context(sdkContext.mcpReq.signal)
-        return wrapped(tool, call, sdkContext.mcpReq, async () => {
-          const { validate_only, ...input } = await parseArguments(prepareInputs.get(tool)!, args)
-          const plan = await bounded(tool, call, bound => preparePlan(tool, input, bound))
-          // The intent keeps the arguments as sent; a commit parses them again to run prepare.
-          const sent = Object.fromEntries(Object.entries(args).filter(([key]) => key !== "validate_only"))
-          return recordIntent({
-            mutation: tool, input: sent, plan,
-            policyClass: policy, commitTool: commitToolName(provider.id, policy), principal, store: intents, validateOnly: validate_only === true,
-          })
-        })
+        return wrapped(tool, names.get(tool)!, call, sdkContext.mcpReq, () => perform(tool, args, call))
       })
     }
     // A caller who can use no mutation gets the unknown-tool error from the commit tools too.
-    for (const commit of tools.some(tool => tool.kind === "mutate") ? commits : []) {
+    for (const commit of permitted.some(tool => tool.kind === "mutate") ? commits : []) {
       registerAppTool(server, commit.name, {
         description: commit.description, inputSchema: advertised(commit.input), outputSchema: receipt, annotations: commit.annotations, _meta: commit.meta,
       }, (args, sdkContext) => {
         const call = context(sdkContext.mcpReq.signal)
-        return answer(commit.name, call.executionId, async () => commitIntent({
+        return wrapped(commit.call, commit.name, call, sdkContext.mcpReq, async () => commitIntent({
           id: provider.id, tool: commit.name, input: await parseArguments(commit.input, args), context: call, store: intents, mutations,
-          permitted: mutation => permitted.has(mutation),
+          permitted: mutation => permitted.includes(mutation),
         }))
       })
     }
@@ -255,7 +294,7 @@ export function createMcpServer(config: McpServerConfig): { fetch(request: Reque
       }))
     }
     return server
-  })
+  }, { keepAliveMs })
   return {
     async fetch(request) {
       const pathname = new URL(request.url).pathname
@@ -275,6 +314,11 @@ export function createMcpServer(config: McpServerConfig): { fetch(request: Reque
       }
       response.headers.set("Cache-Control", "no-store")
       return response
+    },
+    toolsChanged: () => handler.notify.toolsChanged(),
+    async call(tool, args, context) {
+      if (!names.has(tool)) throw new Error(`${tool.identity} is not served by this server; mount its provider`)
+      return perform(tool, args, context)
     },
   }
 }

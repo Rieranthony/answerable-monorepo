@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test"
 import { defineMutation, defineProvider, defineTool } from "@answerable/mcp"
 import { z } from "zod"
-import { ingest, readCatalogue, writeCatalogue } from "./catalogue"
+import { ingest, readCatalogue, readHostClient, writeCatalogue, writeHostClient } from "./catalogue"
 import { migrate } from "./db/migrate"
 import { testDatabase } from "./test/database"
 
@@ -119,4 +119,15 @@ test("capabilities a later version adds stay off for the organisations that enab
   await ingest(db, [provider(id, { version: "2026-10-02", extra: ["tickets.export", "tickets.merge", "tickets.tag"] })])
   expect(await disabled(plain, id)).toEqual([`${id}/tickets.tag`])
   expect(await disabled(chosen, id)).toEqual([`${id}/tickets.export`, `${id}/tickets.merge`, `${id}/tickets.search`, `${id}/tickets.tag`])
+})
+
+test("a host client without a row gets auto with a direct limit of 40; a row sets both, defaulting either, and is rewritten in place", async () => {
+  const clientId = `client-${crypto.randomUUID()}`
+  expect(await readHostClient(db, clientId)).toEqual({ projection: "auto", direct_limit: 40 })
+  await writeHostClient(db, clientId, { projection: "meta" })
+  expect(await readHostClient(db, clientId)).toEqual({ projection: "meta", direct_limit: 40 })
+  await writeHostClient(db, clientId, { direct_limit: 3 })
+  expect(await readHostClient(db, clientId)).toEqual({ projection: "auto", direct_limit: 3 })
+  await expect(writeHostClient(db, clientId, { projection: "list" as "meta" })).rejects.toThrow()
+  await expect(writeHostClient(db, clientId, { direct_limit: -1 })).rejects.toThrow()
 })

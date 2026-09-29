@@ -46,7 +46,7 @@ Every tool failure is `{ "isError": true, "content": [{ "type": "text", "text": 
 | Code | Meaning | Retry | What to do |
 | --- | --- | --- | --- |
 | `INVALID_INPUT` | The input failed the schema or a business rule | `after_fix_input` | Fix the fields in `details.field_violations` |
-| `NOT_FOUND` | A named resource does not exist for this caller; another organisation's resource is not found either | `never` | Check the identifier, for example with a list tool |
+| `NOT_FOUND` | A named resource does not exist for this caller; another organisation's resource is not found either. The Toolbox's meta tools answer it for a capability you may not use, as for one that does not exist | `never` | Check the identifier, for example with a list tool or `toolbox_search` |
 | `PERMISSION_DENIED` | The caller may not perform the operation; a commit answers it too when the caller can no longer use the mutation (its token lacks the scopes, or a hub's grants no longer cover it) | `never` | Ask for access, then prepare again |
 | `PRECONDITION_FAILED` | The current state does not allow the operation; `details.preconditions` says what | `after_state_change` | Change that state first |
 | `RESULT_TOO_LARGE` | A read's result exceeded 100 KiB of JSON; `details.bytes` is its size and `details.limit` the limit, 102,400 bytes | `after_fix_input` | Narrow the request with `limit`, `cursor` or filters |
@@ -68,7 +68,7 @@ Every tool failure is `{ "isError": true, "content": [{ "type": "text", "text": 
 | `OPERATION_NOT_FOUND`, `OPERATION_EXPIRED` | The operation handle is unknown or gone | `never` | Not yet: operations do not exist |
 | `INTERNAL` | An unexpected failure, or a handler that threw a [custom code](#custom-codes) its definition does not declare | `after_delay` | Call again once; if it persists, the operator reads the server log for the `request_id`, which names an undeclared code |
 
-**Who answers what.** The server answers `INVALID_INPUT` for bad arguments, `TIMEOUT` and `INTERNAL` for every tool. The commit tools answer the `INTENT_*` codes, `COMMIT_TOKEN_INVALID`, `PRINCIPAL_MISMATCH`, `APPROVAL_REQUIRED`, `COMMIT_IN_PROGRESS` and `PERMISSION_DENIED`, in [this order](/docs/mcp/authoring#commit-tools). [The Toolbox](/docs/mcp/toolbox#limits) answers `RESULT_TOO_LARGE` and `UPSTREAM_UNAVAILABLE`. Your handlers throw the rest with `ToolError`. `errorCodes` in `@answerable/mcp` exports the table as data ([reference](/docs/mcp/reference#errorcodes)).
+**Who answers what.** The server answers `INVALID_INPUT` for bad arguments, `TIMEOUT` and `INTERNAL` for every tool. The commit tools answer the `INTENT_*` codes, `COMMIT_TOKEN_INVALID`, `PRINCIPAL_MISMATCH`, `APPROVAL_REQUIRED`, `COMMIT_IN_PROGRESS` and `PERMISSION_DENIED`, in [this order](/docs/mcp/authoring#commit-tools). [The Toolbox](/docs/mcp/toolbox#errors) answers `RESULT_TOO_LARGE` and `UPSTREAM_UNAVAILABLE`; its meta tools answer `NOT_FOUND` for a capability you may not use and `INVALID_INPUT` for a capability sent to the wrong one of `toolbox_execute` and `toolbox_prepare`. Your handlers throw the rest with `ToolError`. `errorCodes` in `@answerable/mcp` exports the table as data ([reference](/docs/mcp/reference#errorcodes)).
 
 ## Custom codes
 
@@ -96,14 +96,14 @@ The intent stays `stale`: a later commit answers `INTENT_STALE` without `details
 
 ## Approval
 
-`details.approval` of `APPROVAL_REQUIRED`: `{ "class": "controlled", "commit_tool": "e2e_commit_confirmed" }`.
+`details.approval` of `APPROVAL_REQUIRED`: `{ "class": "controlled", "commit_tool": "e2e_commit_confirmed" }`. A human-class intent adds its approval's `"status": "pending"`; `url` is Not yet.
 
 | Case | What to do |
 | --- | --- |
 | An agent-class intent sent to `<id>_commit_confirmed` | Commit it with `<id>_commit` |
 | A controlled-class intent sent to `<id>_commit` | Show the person the preview, then call `<id>_commit_confirmed` with `preview_summary` |
 | `preview_summary` differs from the intent's summary | Pass `preview.summary` word for word |
-| A human-class intent | It needs a person's approval. Not yet: there is no approval page and no `approval.url`, so the intent waits until it expires |
+| A human-class intent, whichever commit tool, with `status: "pending"` | It needs a person's approval. Not yet: there is no approval page and no `approval.url`, so the intent waits as `awaiting_approval` until it expires, 24 hours after prepare |
 
 A refused commit leaves the intent committable.
 

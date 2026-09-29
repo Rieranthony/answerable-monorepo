@@ -84,6 +84,16 @@ test("invalidating an organisation reads its members again and keeps other organ
   expect(reads()).toBe(3)
 })
 
+test("an invalidation that names an organisation calls changed once, whether or not any of its members is cached; naming none does not", () => {
+  const id = createFakeId()
+  let changes = 0
+  const grants = createGrantsReader({ id: id.config, resource: toolbox, changed: () => { changes++ } })
+  grants.invalidate([])
+  expect(changes).toBe(0)
+  grants.invalidate(new Set([crypto.randomUUID(), crypto.randomUUID()]))
+  expect(changes).toBe(1)
+})
+
 test("when ID fails, a cached entry answers until its 60 seconds end, and without one the read answers UPSTREAM_UNAVAILABLE", async () => {
   const { id, grants, caller } = setup()
   const log = spyOn(console, "error").mockImplementation(() => {})

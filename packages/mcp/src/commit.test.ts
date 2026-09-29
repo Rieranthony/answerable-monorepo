@@ -241,7 +241,7 @@ test("the wrong commit tool or a different summary answers APPROVAL_REQUIRED and
   expect(await ok(client, "test_commit", commitArgs(agent))).toMatchObject({ results: { title: "Renamed" } })
 })
 
-test("a human-class intent waits for an approval: both commit tools answer APPROVAL_REQUIRED", async () => {
+test("a human-class intent waits for an approval: both commit tools answer APPROVAL_REQUIRED with the pending approval and no URL", async () => {
   const { connect, intents, docs } = await serve()
   const client = await connect()
   const intent = await ok(client, "docs_publish", { id: "d1" })
@@ -249,7 +249,7 @@ test("a human-class intent waits for an approval: both commit tools answer APPRO
   for (const [name, args] of [["test_commit", commitArgs(intent)], ["test_commit_confirmed", confirmedArgs(intent)]] as const) {
     expect(await refused(client, name, args)).toEqual({
       code: "APPROVAL_REQUIRED", message: `Intent ${intent.intent_id} is human class and needs a person's approval, which this server cannot record yet`,
-      retry: { policy: "after_approval" }, details: { approval: { class: "human", commit_tool: "test_commit_confirmed" } }, request_id: requestId,
+      retry: { policy: "after_approval" }, details: { approval: { class: "human", commit_tool: "test_commit_confirmed", status: "pending" } }, request_id: requestId,
     })
   }
   expect(docs.get("d1")).toEqual({ title: "First", version: 1 })

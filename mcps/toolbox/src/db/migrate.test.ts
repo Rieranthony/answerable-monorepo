@@ -8,12 +8,12 @@ afterAll(() => db.close())
 test("migrations apply once, in order, and a second run changes nothing", async () => {
   await migrate(db)
   const before = await db`select name, applied_at from schema_migrations order by name`
-  expect(before.map((row: { name: string }) => row.name)).toEqual(["0001_catalogue.sql", "0002_evidence.sql", "0003_host_clients.sql"])
+  expect(before.map((row: { name: string }) => row.name)).toEqual(["0001_catalogue.sql", "0002_evidence.sql", "0003_host_clients.sql", "0004_intents.sql"])
   expect(await migrate(db)).toEqual([])
   expect(await db`select name, applied_at from schema_migrations order by name`).toEqual(before)
   const tables = await db`select table_name from information_schema.tables where table_schema = 'public' order by table_name`
   expect(tables.map((row: { table_name: string }) => row.table_name)).toEqual([
-    "capabilities", "evidence_events", "evidence_payloads", "host_clients", "organisation_catalogue", "providers", "schema_migrations",
+    "capabilities", "evidence_events", "evidence_payloads", "host_clients", "intents", "organisation_catalogue", "providers", "schema_migrations",
   ])
 })
 
@@ -24,7 +24,7 @@ test("a fresh schema receives every migration, each in its own transaction", asy
     const scoped = await db.reserve()
     try {
       await scoped.unsafe(`set search_path to ${schema}`)
-      expect(await migrate(scoped)).toEqual(["0001_catalogue.sql", "0002_evidence.sql", "0003_host_clients.sql"])
+      expect(await migrate(scoped)).toEqual(["0001_catalogue.sql", "0002_evidence.sql", "0003_host_clients.sql", "0004_intents.sql"])
     } finally { scoped.release() }
   } finally { await db.unsafe(`drop schema ${schema} cascade`) }
 })

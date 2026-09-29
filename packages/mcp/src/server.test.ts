@@ -167,7 +167,7 @@ for (const protocol of [undefined, "2026-07-28"] as const) {
     expect((await client.readResource({ uri: view.uri })).contents[0]).toEqual({ uri: view.uri, mimeType: "text/html;profile=mcp-app", text: view.html })
     await expect(client.callTool({ name: "org_write", arguments: {} })).rejects.toThrow("Tool org_write not found")
     const denied = await clientFor(mcp, ["write"], protocol)
-    expect(denied.client.getServerCapabilities()?.tools).toBeDefined()
+    expect(denied.client.getServerCapabilities()?.tools).toEqual({ listChanged: true })
     expect((await denied.client.listTools()).tools).toEqual([])
     await expect(denied.client.readResource({ uri: view.uri })).rejects.toThrow()
     const granted = await clientFor(mcp, ["read", "write"], protocol)

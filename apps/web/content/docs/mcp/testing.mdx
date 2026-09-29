@@ -181,7 +181,7 @@ The in-process tests use a local issuer. `bun run mcp:test:e2e` signs three orga
 | Schemas | The schema checks read the manifest's JSON Schema. `output_schema_declared` looks through `properties`, `items`, `anyOf` and `oneOf`, not `$ref` |
 | Errors | `errors_use_envelope` provokes the errors the server answers itself. It does not call a handler's own `ToolError` paths: test them yourself |
 | Stale | `commit_rejects_stale` moves the first target only |
-| Intent store | The memory store. A Postgres store: Not yet |
+| Intent store | The memory store, with the kit's own clock |
 
 ## Errors
 

@@ -63,3 +63,18 @@ export async function writeCatalogue(db: SQL, organisationId: string, providerId
   await db`insert into organisation_catalogue (organisation_id, provider_id, enabled, overrides) values (${organisationId}, ${providerId}, ${entry.enabled}, ${overrides})
     on conflict (organisation_id, provider_id) do update set enabled = excluded.enabled, overrides = excluded.overrides, updated_at = now()`
 }
+
+/** How the Toolbox serves a host client's callers: `direct`, `meta`, or `auto`, direct while their granted tools number at most `direct_limit`. */
+export type HostClient = { projection: "direct" | "meta" | "auto"; direct_limit: number }
+
+/** A host client's settings; without a row, `auto` with a direct limit of 40. */
+export async function readHostClient(db: SQL, clientId: string): Promise<HostClient> {
+  const [row] = await db`select projection, direct_limit from host_clients where client_id = ${clientId}`
+  return row ?? { projection: "auto", direct_limit: 40 }
+}
+
+/** Set a host client's settings; a field left out takes its default. */
+export async function writeHostClient(db: SQL, clientId: string, { projection = "auto", direct_limit = 40 }: Partial<HostClient>) {
+  await db`insert into host_clients (client_id, projection, direct_limit) values (${clientId}, ${projection}, ${direct_limit})
+    on conflict (client_id) do update set projection = excluded.projection, direct_limit = excluded.direct_limit`
+}
