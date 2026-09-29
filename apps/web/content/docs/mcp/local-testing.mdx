@@ -9,7 +9,7 @@ bun install
 bun run mcp:test:e2e
 ```
 
-Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It runs `bun test` in `packages/acceptance`: the journeys below and the kit's own tests. It exits non-zero when a test fails, and it removes its database and processes either way, including after Ctrl-C (exit 130) or SIGTERM (exit 143). Three runs took 9.2, 7.9 and 7.8 seconds.
+Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It runs `bun test` in `packages/acceptance`: the journeys below and the kit's own tests. It exits non-zero when a test fails, and it removes its database and processes either way, including after Ctrl-C (exit 130) or SIGTERM (exit 143). With the e2e and Toolbox journeys, three runs took 31.6, 32.3 and 30.5 seconds.
 
 ## What the e2e journeys prove
 
@@ -41,7 +41,38 @@ Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It runs 
 13. The client refreshes an expired access token by itself, ID rotates the refresh token, and the new tokens keep the same scopes.
 14. Disabling the organisation through the admin API makes refresh fail with `invalid_grant`; the access token already issued keeps working until it expires.
 
-The company directories are local test issuers. ID, its database role, its pages, token issuance, the MCP and the MCP client are real. Journeys against the Toolbox: Not yet.
+The company directories are local test issuers. ID, its database role, its pages, token issuance, the MCP and the MCP client are real.
+
+## What the Toolbox journeys prove
+
+`packages/acceptance/src/journeys/toolbox.journeys.test.ts` starts its own ID and runs [the Toolbox](/docs/mcp/toolbox) in the test process on port `47604`, with the e2e provider mounted.
+
+**Setup.** Through ID's admin API: the Toolbox resource, allowing `allowedScopes(providers)` with a 60-second token lifetime; a public client asking for `toolbox`; for each of three organisations the login pair rows and the `toolbox` pair rows; and the Toolbox's machine client in the platform organisation with a `platform:read` capability for the admin resource. Entitlements to the Toolbox resource carry grant strings: `toolbox-alpha` gets `e2e`, `toolbox-beta` gets `e2e/records`, `toolbox-gamma` nothing. The journey creates and migrates `answerable_toolbox_acceptance` on the disposable PostgreSQL, enables `e2e` in each organisation's catalogue by writing the rows (the admin API that does it is Not yet), starts the audit-log poller and keeps spans in memory.
+
+1. Each organisation signs in through ID with the SDK's OAuth client and a real browser; its token carries `toolbox` and `offline_access` only.
+
+**J1, direct list.**
+
+2. `toolbox-alpha` lists `toolbox_whoami`, `e2e_identity_get`, `e2e_records_create`, `e2e_records_delete`, `e2e_records_list`, `e2e_records_show`, `toolbox_commit` and `toolbox_commit_confirmed`, in that order, with read-only annotations on the reads and prepare tools, `_meta` identities, versions, risks and policy classes, and the confirmed commit tool marked destructive with `anthropic/requiresUserInteraction`.
+3. `toolbox_whoami` returns the token's user and membership, the organisation, the host client, the grant `e2e` and the five capabilities with their policy classes.
+4. `e2e_records_list` succeeds, and a `capability.completed` row and a span exist for that call, joined by execution, trace and span ids.
+
+**J2, partial and denied.**
+
+5. `toolbox-beta` lists `toolbox_whoami`, the four records tools and the two commit tools.
+6. `toolbox-gamma` lists only `toolbox_whoami`; calling `e2e_records_list` is the unknown-tool error, and its chain holds one `capability.denied` event.
+
+**J3, a grant change without re-authorisation.**
+
+7. An entitlement to `e2e/identity` is added to `toolbox-gamma` in ID. Polling `tools/list` every 5 seconds with the same access token lists `e2e_identity_get` within 60 seconds: after 15.1 seconds in each of four runs, so between 10 and 15 seconds after the change at that polling interval. `list_changed`: Not yet.
+8. Disabling `toolbox-gamma` through the admin API makes refresh fail with `invalid_grant`.
+
+**J10, evidence.**
+
+9. `toolbox-alpha`'s chain verifies with two events, one per call.
+10. An `UPDATE` and a `DELETE` on `evidence_events` through the journey's superuser connection are refused by the trigger, and the chain still verifies. Payload erasure through the hub: Not yet.
+
+The last test logs what the Toolbox asked ID. In the recorded runs: 11 grant reads answered by 4 access-view calls (a 63.6% cache hit rate), with a median access-view latency of 31 to 34 ms and at most 55 ms, 2 token requests and 2 audit-log reads.
 
 ## Ports
 
@@ -51,6 +82,7 @@ The company directories are local test issuers. ID, its database role, its pages
 | ID | `47600` |
 | e2e MCP | `47602` |
 | OAuth callback | `47603` |
+| Toolbox | `47604` |
 | Second MCP | `47605` |
 
 Keep these free. PostgreSQL belongs to the Compose project `answerable-mcp-e2e`; the run never reads your `DATABASE_URL`. Journey files run one after another, each starting and stopping its own ID, so they share these ports and cannot run in parallel.
@@ -64,7 +96,7 @@ Keep these free. PostgreSQL belongs to the Compose project `answerable-mcp-e2e`;
 | `startId({ tenants })` | Starts PostgreSQL and ID, and returns `{ manifest, admin, stop }`. `tenants` is `[{ slug, signIns }]`: one organisation each, with a company directory that accepts `signIns` sign-ins. `manifest` holds `idOrigin`, `adminResource`, `rootSecret` and each tenant's `slug`, `email` and `organizationId`. |
 | `id.admin(method, path, body?, headers?)` | Calls ID's admin API as root with a fresh `Idempotency-Key`. A status outside 2xx throws with the body. |
 | `id.stop()` | Ends ID, brings PostgreSQL down with its volume, removes the temporary directory and closes everything else the kit opened. Safe to call twice; also runs on Ctrl-C and SIGTERM. |
-| `registerResource(admin, { identifier, scopes, accessTokenTtl })` | Registers the MCP's resource; `offline_access` is added to `scopes`. |
+| `registerResource(admin, { identifier, scopes, accessTokenTtl })` | Registers the MCP's resource; `offline_access` is added to `scopes` unless listed. |
 | `registerClient(admin, { clientId, redirectUri, scopes })` | Registers a public client for the authorisation code and refresh token grants. |
 | `linkClient(admin, clientId, resource)` | Lets the client ask for the resource. |
 | `grantOrganisation(admin, organizationId, { clientId, resource, scopes, entitledScopes? })` | Approves the client and the resource for an organisation and entitles its members to `entitledScopes`, all of `scopes` by default. |
@@ -129,7 +161,7 @@ Copy `e2e.journeys.test.ts` for a fuller one: several organisations, a partial e
 bun run mcp:test
 ```
 
-This runs the verifier, base and e2e suites with a local test issuer, including Chromium rendering the real MCP Apps view through the official host bridge. No Docker, and it does not include the acceptance.
+This runs the verifier, base, e2e and Toolbox suites with a local test issuer, including Chromium rendering the real MCP Apps view through the official host bridge. The Toolbox suite needs the development PostgreSQL on port `47432` (`bun run env:up`); it resets `answerable_toolbox_test` first. It does not include the acceptance.
 
 ## Run the e2e MCP by hand
 

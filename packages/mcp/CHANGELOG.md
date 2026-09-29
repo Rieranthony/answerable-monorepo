@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0
+
+What a hub such as the Toolbox needs from `createMcpServer`, each option off by default, and `createTestMcp` for a hub.
+
+- `mount`: providers served beside `provider` at one endpoint. Their tools are named `<provider id>_<wire name>` and listed after `provider`'s own, which keep their names; every mutation commits through `provider`'s commit tools; views keep their `ui://` URIs, and two providers that define different views at one URI are refused, as is a provider mounted twice. Mounted prompts and resources are not served, and `scopes_supported` lists `provider`'s scopes only.
+- `allow(principal, tool, called)`: decides which tools a caller sees and may call, in place of the scope rule, for each request that lists or calls tools or reads views; other requests, such as `initialize`, see no tools and run no decision. `called` is true for the tool a `tools/call` names, so a hidden tool that was asked for can be recorded. A `ToolError` thrown by `allow` answers any call with its envelope, whatever the call names; a list fails. A commit rechecks the same decision. With `allow`, the server reads a copy of each request's body to learn its method and tool.
+- `wrapCall(call, run)`: runs around every call of a tool or a prepare tool, with `ToolCall` (`tool`, `name`, `principal`, `executionId`, the JSON-RPC `requestId` and the request's `meta`). `run` parses, executes and checks the output; the wrapper returns that content or a replacement the output schema accepts, and what it throws answers the call. Commit calls do not pass through it.
+- `cacheHints`: the 2026-07-28 revision's cache hints for list results, passed to the MCP SDK.
+- `policyClass` may return a promise.
+- `createTestMcp` also takes `(auth) => server` in place of a provider, to serve a hub in-process.
+- A commit refused because the caller can no longer use the mutation says `Your access no longer covers <identity>`, without the scopes, since `allow` may decide instead of scopes.
+- `UserPrincipal` has `organizationAuthorizationVersion` (`@answerable/auth` 0.2.0); the conformance kit's caller has version 1.
+
 ## 0.3.0
 
 The conformance kit, declared errors and documentation comments on every export. Breaking: a handler that throws an undeclared custom error code answers `INTERNAL`.

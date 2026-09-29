@@ -3,7 +3,7 @@ import { ToolError, type UserPrincipal } from "@answerable/mcp"
 import { createRecordStore } from "./records"
 
 function principal(): UserPrincipal {
-  return { userId: crypto.randomUUID(), organizationId: crypto.randomUUID(), membershipId: crypto.randomUUID(), grantId: crypto.randomUUID(), clientId: "test", scopes: [], expiresAt: 1 }
+  return { userId: crypto.randomUUID(), organizationId: crypto.randomUUID(), membershipId: crypto.randomUUID(), grantId: crypto.randomUUID(), clientId: "test", scopes: [], expiresAt: 1, organizationAuthorizationVersion: 1 }
 }
 const firstPage = { limit: 20 }
 

@@ -1,0 +1,257 @@
+---
+title: The Toolbox
+description: "One MCP endpoint that serves each person the capabilities their organisation granted them: what they see, how authority is read from Answerable ID, the catalogue, evidence and spans."
+---
+
+```bash
+claude mcp add --transport http answerable-toolbox http://localhost:47400/mcp \
+  --client-id claude-code-toolbox --callback-port 47700
+```
+
+The Toolbox (`mcps/toolbox`) is one MCP server for every organisation. It signs people in with Answerable ID, reads what their organisation granted them from ID, and lists exactly those capabilities as tools. Every call is checked again, recorded in a hash-chained evidence log and traced as a span.
+
+Run the line above once the Toolbox runs locally with its registrations ([below](#run-it-locally)), then choose **Authenticate** in Claude Code's `/mcp` and ask Claude to call `toolbox_whoami`.
+
+## What a person sees
+
+The **direct projection**: one tool per capability the person may use, a prepare tool per mutation, plus the shared tools.
+
+| Order | Tools |
+| --- | --- |
+| First | `toolbox_whoami`, for every caller whose token carries `toolbox` |
+| Then | Each provider's tools by provider id, then domain, then operation, named `<provider>_<domain>_<operation>`: `e2e_identity_get`, `e2e_records_create`, `e2e_records_delete`, `e2e_records_list`, `e2e_records_show` |
+| Last | `toolbox_commit` and `toolbox_commit_confirmed`, when at least one mutation is listed |
+
+**Hidden means refused.** A capability the person may not use is absent from `tools/list`, and calling it answers the protocol's unknown-tool error, as a name that does not exist does. Authority is checked on every request, never taken from an earlier list.
+
+**`_meta` and annotations** are those of [`@answerable/mcp`](/docs/mcp/authoring#what-the-wire-carries): `_meta["com.answerable/capability"]` carries the identity (`e2e/records.list`), version and kind, and for a mutation its risk and the caller's policy class. They describe; they never authorise.
+
+**Cache hint.** `tools/list` tells `2026-07-28` hosts it may be cached privately for 30 seconds (`ttlMs: 30000`, `cacheScope: "private"`).
+
+**Views** keep their URIs: `e2e_records_show` opens `ui://records/index.html`, served while the tool is listed.
+
+A token without the `toolbox` scope lists nothing, and every call is the unknown-tool error. The Toolbox's protected-resource metadata lists `scopes_supported: ["toolbox"]`, so hosts ask for `toolbox` and `offline_access` only.
+
+## toolbox_whoami
+
+```json
+{
+  "user_id": "0199a0d2-…",
+  "organisation_id": "0199a0d1-…",
+  "membership_id": "0199a0d3-…",
+  "client_id": "claude-code-toolbox",
+  "grants": ["e2e/records"],
+  "capabilities": [
+    { "identity": "e2e/records.create", "kind": "mutate", "policy_class": "agent" },
+    { "identity": "e2e/records.delete", "kind": "mutate", "policy_class": "controlled" },
+    { "identity": "e2e/records.list", "kind": "read", "policy_class": null },
+    { "identity": "e2e/records.show", "kind": "read", "policy_class": null }
+  ]
+}
+```
+
+The caller's person, organisation, membership and host client from the token; the grant strings ID holds for them; and each capability they may use, with the policy class of each mutation in their organisation (`null` for a read). Its identity is `toolbox/toolbox.whoami`: the Toolbox's own provider is `toolbox`, and its tools are named after their `toolbox` domain.
+
+## Grant strings
+
+An entitlement whose resource is the Toolbox carries grant strings in its `scopes`:
+
+| Grant string | Covers |
+| --- | --- |
+| `e2e/records.list` | One capability |
+| `e2e/records` | Every capability of that domain in the provider |
+| `e2e` | Every capability of the provider |
+| `toolbox/approve` | Approving human-class intents. Read, not yet used: approvals are Not yet |
+| `toolbox/code` | `toolbox_run`. Read, not yet used: Not yet |
+
+Rows are additive; there is no deny. Principals are the organisation, a group or a member, as for any entitlement. The pair rows `(host client, Toolbox)` carry `toolbox` and let ID issue the token; they stay separate from grant rows, so a person's capabilities do not depend on the host. `toolbox`, `offline_access` and anything that is not a grant string are ignored.
+
+ID refuses an entitlement scope that is not in the resource's `allowedScopes`, so the Toolbox resource must allow every grant string it accepts. `allowedScopes(providers)` from `@answerable/mcp-toolbox/grants` returns the list: `offline_access`, `toolbox`, `toolbox/approve` and each mounted provider's id, domains and capabilities.
+
+## How authority is read
+
+For each request that lists or calls tools, the Toolbox takes the verified token's organisation and membership and asks ID:
+
+```bash
+curl "$ID/api/admin/v1/organizations/$ORGANISATION_ID/members/$MEMBERSHIP_ID/access" \
+  -H "Authorization: Bearer $TOOLBOX_MACHINE_TOKEN"
+```
+
+**The access view.** It keeps the top-level `scopes` of every target whose resource is the Toolbox, both `kind: "resource"` and `kind: "client_resource"`, and keeps the grant strings. The token is the Toolbox's machine client's, a `client_credentials` token for ID's admin resource with `platform:read`, reused until 30 seconds before it expires.
+
+**The cache.** Grant strings are cached per organisation, member and the token's `organization_authorization_version` for 60 seconds. A token with another version reads again.
+
+**The poller.** Every 15 seconds the Toolbox reads ID's audit log (`GET /api/admin/v1/audit-events?limit=200`, newest first, back to the last event it saw) and marks stale the cache of every organisation named by an `entitlement.*`, `group_member.*`, `group.*`, `member.*` or `organization.*` event; the next request reads again. Its first poll only records the newest event.
+
+**The bound.** A change in ID reaches the person within 60 seconds even when the poller is down, and usually within one poll. In the acceptance, an entitlement added to a member reached the same access token after 15.1 seconds, listed by polling `tools/list` every 5 seconds.
+
+**When ID fails.** A stale entry answers until its 60 seconds end. Without one, a call answers `UPSTREAM_UNAVAILABLE` whatever tool it names, and listing tools fails; connecting still works.
+
+A capability is **allowed** when its provider is enabled in the organisation's catalogue, the organisation has not disabled it, and one of the caller's grant strings covers it.
+
+## The catalogue
+
+The catalogue is the ceiling: an organisation uses only providers enabled for it, whatever its entitlements say.
+
+| Table | Holds |
+| --- | --- |
+| `providers` | Each mounted provider's id, version and manifest |
+| `capabilities` | Each capability at each version: kind, risk, default policy class, title, description, schemas and a search vector |
+| `organisation_catalogue` | Per organisation and provider: `enabled`, and `overrides` with `disabled` (identities) and `policy_class` (identity to class) |
+
+**At boot** the Toolbox ingests every provider's manifest. A capability already stored at the same version with another kind, risk, input or output refuses the boot, naming it: give the tool a new version. Titles and descriptions update in place.
+
+**Policy class.** A mutation's class for a caller is the organisation's `policy_class` override, else the class its `risk` gives (`low` agent, `normal` controlled, `high` human). It shows in `_meta` and `toolbox_whoami`.
+
+**Enable an organisation:** Not yet; the admin API that performs it arrives with the Toolbox administration. Until then, write the row:
+
+```bash
+psql postgres://answerable:answerable@localhost:47432/answerable_toolbox -c "
+  insert into organisation_catalogue (organisation_id, provider_id, enabled) values ('$ORG', 'e2e', true)
+  on conflict (organisation_id, provider_id) do update set enabled = excluded.enabled, updated_at = now()"
+```
+
+In code, `writeCatalogue(db, organisationId, providerId, { enabled, overrides? })` from `@answerable/mcp-toolbox/catalogue` does the same.
+
+## Evidence
+
+Every call of a tool or a prepare tool appends one event to its organisation's chain in `evidence_events`:
+
+| Kind | When | Outcome |
+| --- | --- | --- |
+| `capability.completed` | The call ran | `success`, with `data.result_bytes` (and `truncated: true` when it was truncated), or `failure` with `error_code` |
+| `capability.denied` | A call named a capability that exists but the caller may not use | `denied`, with `reason` `not granted` or `no toolbox scope` |
+
+A call to a name that does not exist records nothing. The other kinds of the design (`intent.*`, `receipt.issued`, `operation.*`, `run.*`, `limit.refused`) are accepted by the table and not yet written.
+
+**What a row holds.** The organisation, actor, host client, capability identity and version, execution id, JSON-RPC id, trace and span ids, outcome and bounded `data` (at most 4 KiB). Inputs, results and secrets are never recorded.
+
+**The chain.** A database trigger takes a per-organisation lock, sets `seq` to the organisation's next number and `row_hash` to SHA-256 over the previous row's hash and every field, each written as its byte length, a colon and its text. The migration `mcps/toolbox/migrations/0002_evidence.sql` spells the layout out. Another trigger refuses `UPDATE`, `DELETE` and `TRUNCATE`.
+
+```ts
+import { SQL } from "bun"
+import { createEvidence } from "@answerable/mcp-toolbox/evidence"
+
+const evidence = createEvidence(new SQL(process.env.TOOLBOX_DATABASE_URL!))
+console.log(await evidence.verify(organisationId)) // { ok: true, length: 2 }, or { ok: false, length, broken_at }
+```
+
+`verify` walks the chain in `seq` order and recomputes every hash; `broken_at` is the first event whose fields, number or link no longer match.
+
+**Payloads.** An event may carry an erasable body in `evidence_payloads`; the chain holds only its hash, so `erase(payloadId)` removes the body and the chain still verifies. Nothing writes payloads yet: previews arrive with mutations through the hub.
+
+**Not yet:** nightly verification, publishing chain heads outside the database, and retention.
+
+## Spans
+
+One server span per call, named `tools/call <identity>`:
+
+| Attribute | Value |
+| --- | --- |
+| `mcp.method.name` | `tools/call` |
+| `gen_ai.tool.name` | The tool name called, such as `e2e_records_list` |
+| `gen_ai.tool.call.id` | The execution id, also the error envelope's `request_id` and the evidence row's `execution_id` |
+| `jsonrpc.request.id` | The JSON-RPC id |
+| `error.type` | The error code of a failed call |
+| `answerable.organisation.id` | The organisation |
+| `answerable.user.hash` | SHA-256 of the Toolbox's resource URL, a colon and the user id; never the id itself |
+| `answerable.client.name` | The host's OAuth client id |
+| `answerable.capability.identity`, `answerable.capability.version` | The capability |
+| `answerable.outcome`, `answerable.result.bytes` | `success` with the result's size, or `failure` |
+
+A W3C `traceparent` in the request's `_meta` becomes the span's parent. Set `OTEL_EXPORTER_OTLP_ENDPOINT` to export spans over OTLP/HTTP as JSON to `<endpoint>/v1/traces`, with `service.name` `answerable-toolbox`; without it, spans get ids and go nowhere. **Not yet:** client spans per upstream call, and the `mcp.server.operation.duration` histogram.
+
+## Run it locally
+
+Set `ID`, `TOKEN` (a [staff token](/docs/id/onboard#get-a-staff-token)), `ORG` (your organisation) and `PLATFORM_ORG` (the platform organisation). Each write needs its own `Idempotency-Key`.
+
+```bash
+export ID=http://localhost:47300
+export TOOLBOX=http://localhost:47400/mcp
+export TOOLBOX_PATH=http%3A%2F%2Flocalhost%3A47400%2Fmcp
+export ADMIN_PATH=http%3A%2F%2Flocalhost%3A47300%2Fapi%2Fadmin
+export SCOPES='["e2e","e2e/identity","e2e/identity.get","e2e/records","e2e/records.create","e2e/records.delete","e2e/records.list","e2e/records.show","offline_access","toolbox","toolbox/approve"]'
+
+curl "$ID/api/admin/v1/resources" -H "Idempotency-Key: toolbox-resource-v1" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"classification":"platform_shared","organizationId":null,"identifier":"'"$TOOLBOX"'","name":"Toolbox","allowedScopes":'"$SCOPES"',"accessTokenTtl":900}'
+```
+
+`SCOPES` is what `allowedScopes(providers)` returns for the e2e provider; recompute it when you mount another provider.
+
+**The host client.** Register `claude-code-toolbox` as in [Connect Claude Code](/docs/mcp/claude-code#register-claude-code-as-a-client), with `"scopes":["openid","offline_access","toolbox"]`, link it to `$TOOLBOX_PATH`, and give your organisation the login pair rows and the `(claude-code-toolbox, Toolbox)` pair rows with `"scopes":["toolbox"]`, exactly as that page shows for the e2e MCP.
+
+**A grant.** Entitle your organisation to the whole e2e provider:
+
+```bash
+curl "$ID/api/admin/v1/organizations/$ORG/entitlements" -H "Idempotency-Key: toolbox-e2e-v1" -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"resource":"'"$TOOLBOX"'","scopes":["e2e"]}'
+```
+
+**The Toolbox's machine client**, owned by the platform organisation:
+
+```bash
+curl "$ID/api/admin/v1/clients" -H "Idempotency-Key: toolbox-hub-v1" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"clientId":"toolbox-hub","name":"Toolbox","organizationId":"'"$PLATFORM_ORG"'","tokenEndpointAuthMethod":"client_secret_basic","grantTypes":["client_credentials"],"clientCredentialsScopes":["platform:read"]}'
+curl -X PUT "$ID/api/admin/v1/clients/toolbox-hub/resources/$ADMIN_PATH" -H "Idempotency-Key: toolbox-hub-link-v1" -H "Authorization: Bearer $TOKEN"
+curl "$ID/api/admin/v1/organizations/$PLATFORM_ORG/capabilities" -H "Idempotency-Key: toolbox-hub-capability-v1" -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"clientId":"toolbox-hub","resource":"http://localhost:47300/api/admin","grantKind":"client_credentials","scopes":["platform:read"]}'
+```
+
+The first call answers `clientSecret` once: put it in `TOOLBOX_ID_CLIENT_SECRET` in the root `.env`, with `TOOLBOX_ID_CLIENT_ID=toolbox-hub`. Then:
+
+```bash
+bun --env-file=.env run --filter @answerable/mcp-toolbox db:migrate
+bun run toolbox:dev
+```
+
+Write your organisation's catalogue row for `e2e` ([above](#the-catalogue)) in the `answerable_toolbox` database, then connect Claude Code with the line at the top of this page.
+
+## Environment
+
+Read from the root `.env` by `bun run toolbox:dev`; every variable is listed in `default.env`.
+
+| Variable | Meaning | Local value |
+| --- | --- | --- |
+| `TOOLBOX_DATABASE_URL` | The Toolbox's Postgres | `postgres://answerable:answerable@localhost:47432/answerable_toolbox` |
+| `TOOLBOX_TEST_DATABASE_URL` | The test database, reset by `db:test:migrate` | `postgres://answerable:answerable@localhost:47432/answerable_toolbox_test` (the default) |
+| `TOOLBOX_ID_ISSUER` | Answerable ID's origin | `http://localhost:47300` |
+| `TOOLBOX_RESOURCE_URL` | The Toolbox's URL as registered in ID; its path is the endpoint | `http://localhost:47400/mcp` |
+| `TOOLBOX_PORT` | The loopback port | `47400` (the default) |
+| `TOOLBOX_ID_CLIENT_ID`, `TOOLBOX_ID_CLIENT_SECRET` | The Toolbox's machine client in ID | `toolbox-hub` and its secret |
+| `TOOLBOX_ID_ADMIN_RESOURCE` | ID's admin resource, ID's `ADMIN_RESOURCE_IDENTIFIER` | `http://localhost:47300/api/admin` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Optional OTLP/HTTP collector | `http://localhost:4318` |
+
+`GET /health` answers `{ "status": "ok" }` while the database answers `select 1`, and `503` with `{ "status": "unavailable" }` otherwise, whatever the `Host` header.
+
+## Limits
+
+| Limit | Value |
+| --- | --- |
+| Result size | A read's result above 100 KiB of JSON answers `{ "truncated": true, "message": "Narrow the request with limit, cursor or filters." }` as structured content and text; each read's output schema admits it. Prepare results are not truncated |
+| Grant freshness | At most 60 seconds, usually one 15-second poll |
+| Providers | Mounted in process; each provider id once. Their prompts and resources are not served through the Toolbox; their views are |
+| Scope checks inside a provider | A Toolbox token carries only `toolbox`, so a handler that reads `principal.scopes` sees no provider scopes: the e2e view's `canWrite` is false through the Toolbox, and its create and delete buttons stay hidden |
+| Meta projection (`toolbox_search`, `toolbox_describe`, `toolbox_execute`, `toolbox_prepare`), `tools/list_changed`, host client settings, pins | Not yet |
+| Mutations | Prepare tools and `toolbox_commit` / `toolbox_commit_confirmed` work as in any [`@answerable/mcp` server](/docs/mcp/authoring#mutations), with intents in memory, lost on restart. Intent evidence, the Postgres intent store and human approvals: Not yet |
+| Rate limits and budgets | Not yet |
+| Enabling an organisation, the catalogue admin API | Not yet |
+
+## Errors
+
+| You see | Meaning | What to do |
+| --- | --- | --- |
+| `Tool <name> not found` | No such tool, or you may not use it: no grant string covers it, its provider is not enabled for your organisation, the organisation disabled it, or the token lacks `toolbox` | Call `toolbox_whoami` to see your grants; ask an administrator for an entitlement |
+| Tool result `UPSTREAM_UNAVAILABLE` | ID did not answer with your access and none is cached | Retry after `retry.after_ms`; check ID and the `TOOLBOX_ID_*` settings |
+| `tools/list` fails with an internal error | The same, for a list | Retry; the server log shows `[toolbox] reading access failed` |
+| Log `Answerable ID refused the Toolbox's client credentials (401)…` | The machine client's ID, secret or `platform:read` capability is wrong | Fix `TOOLBOX_ID_CLIENT_ID`, `TOOLBOX_ID_CLIENT_SECRET` or the capability |
+| Log `[toolbox] reading ID's audit log failed` | The poller could not read the audit log | Changes still arrive within 60 seconds; fix ID or the machine client |
+| Commit answers `PERMISSION_DENIED` | Your grant no longer covers the prepared mutation | Ask for access, then prepare again |
+| `401 invalid_token` | The token is for another resource, or expired | Sign in for the Toolbox's exact URL |
+| `Invalid Toolbox configuration: <VARIABLE>: …` at start | A variable is missing or invalid | Set it as in [Environment](#environment) |
+| `Capability <identity> version <date> changed its input without a new version…` at start | A provider changed a contract without a new version | Give the tool a new version in its definition or its provider |
+| `Missing the e2e records view…` at start | The view is not built | Run `bun run --filter @answerable/mcp-e2e build` |
+| `503 {"status":"unavailable"}` from `/health` | The database does not answer | Check `TOOLBOX_DATABASE_URL` and Postgres |
+| `evidence_events is append-only: UPDATE is refused` | Something tried to change evidence | Evidence is never changed; erase a payload with `erase` instead |
+| `Refusing to reset <database>; expected answerable_toolbox_test` | `db:test:migrate` points elsewhere | Point `TOOLBOX_TEST_DATABASE_URL` at `answerable_toolbox_test` |
+
+The journeys that prove this against real ID are in [Test MCPs locally](/docs/mcp/local-testing#what-the-toolbox-journeys-prove). The SDK options the Toolbox is built on are in [the server section](/docs/mcp/authoring#the-server).

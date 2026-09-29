@@ -1,3 +1,4 @@
+import type { IdVerifierConfig } from "@answerable/auth"
 import { createTestIssuer, type TestIssuer } from "@answerable/auth/testing"
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client"
 import { getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/server"
@@ -19,6 +20,7 @@ export type TestMcp = {
 /**
  * Serve a provider in-process with a local ID issuer and the official MCP client: no port, no network.
  * `intents` and `policyClass` pass to `createMcpServer`; `resource` is the MCP's URL, default `https://mcp.test/mcp`.
+ * In place of a provider, pass a function that builds a server, such as a hub, from the local issuer's `auth`; `intents` and `policyClass` are then its own.
  *
  * @example
  * ```ts
@@ -31,10 +33,14 @@ export type TestMcp = {
  * await mcp.close()
  * ```
  */
-export async function createTestMcp(provider: Provider, options: { resource?: string } & Pick<McpServerConfig, "intents" | "policyClass"> = {}): Promise<TestMcp> {
+export async function createTestMcp(
+  served: Provider | ((auth: IdVerifierConfig) => { fetch(request: Request): Promise<Response> } | Promise<{ fetch(request: Request): Promise<Response> }>),
+  options: { resource?: string } & Pick<McpServerConfig, "intents" | "policyClass"> = {},
+): Promise<TestMcp> {
   const issuer = await createTestIssuer()
   const resource = options.resource ?? "https://mcp.test/mcp"
-  const server = createMcpServer({ provider, auth: { issuer: issuer.issuer, resource, fetch: issuer.fetch }, intents: options.intents, policyClass: options.policyClass })
+  const auth = { issuer: issuer.issuer, resource, fetch: issuer.fetch }
+  const server = typeof served === "function" ? await served(auth) : createMcpServer({ provider: served, auth, intents: options.intents, policyClass: options.policyClass })
   const clients: Client[] = []
   const fetch = async (input: string | URL | Request, init?: RequestInit) => {
     const request = new Request(input, init)

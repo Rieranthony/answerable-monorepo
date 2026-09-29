@@ -439,7 +439,7 @@ test("commit rechecks the mutation's scopes: the same person without them answer
   const intent = await ok(writer, "docs_rename", { id: "d1", title: "Renamed" })
   const publisher = await connect({ scopes: ["test:publish"] })
   expect(await refused(publisher, "test_commit", commitArgs(intent))).toEqual({
-    code: "PERMISSION_DENIED", message: "Your access no longer covers test/docs.rename, which needs test:write", retry: { policy: "never" }, request_id: requestId,
+    code: "PERMISSION_DENIED", message: "Your access no longer covers test/docs.rename", retry: { policy: "never" }, request_id: requestId,
   })
   expect(await ok(writer, "test_commit", commitArgs(intent))).toMatchObject({ results: { title: "Renamed" } })
 })

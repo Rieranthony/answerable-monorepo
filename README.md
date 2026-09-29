@@ -15,6 +15,7 @@ The [enterprise foundation](docs/05-id-enterprise-foundation.md) implementation 
 | `packages/auth` | Verify Answerable ID access tokens in any service; an in-process test issuer | Locally tested |
 | `packages/mcp` | MCP servers on the official SDK: scope-aware tools, prompts, resources and MCP Apps views; in-process tests | Locally tested |
 | `mcps/e2e` | Reference MCP: the tools, prompt, resource and MCP Apps view every new MCP is compared with | Local acceptance passes |
+| `mcps/toolbox` | The Toolbox: one MCP endpoint serving each person the capabilities their organisation granted, with evidence and spans | Local acceptance passes |
 | `packages/acceptance` | The acceptance kit and journeys: real ID, the official MCP OAuth client, a browser and ID's pages | Locally tested |
 | `apps/community-mcp` | The tutor MCP (the Omni Accelerator community inside OmniChat)                                                                                                      | **Parked** until Answerable ID ships — its docs and Circle mocks stay in that folder, out of the plan                                                    |
 
@@ -51,7 +52,8 @@ bun dev
 | ---------- | --------- | ------------------------------------------------------------- |
 | `web`      | 47100     | Public site                                                   |
 | `id`       | 47300     | Answerable ID API and browser pages                           |
-| `postgres` | 47432     | `answerable_id`, plus `answerable_id_test` for the test suite |
+| `toolbox`  | 47400     | The Toolbox MCP (`bun run toolbox:dev`)                       |
+| `postgres` | 47432     | `answerable_id`, plus `answerable_id_test` for the test suite; `answerable_toolbox` and `answerable_toolbox_test` for the Toolbox |
 | `redis`    | 47379     | Session read-cache — later; unused by v1 code                 |
 
 Uncommon host ports so nothing clashes with other local projects. Answerable ID itself runs on the host at `http://localhost:47300`. Other commands: `bun run env:down` · `bun run env:reset` (wipes data) · `bun run test` (Answerable ID against Postgres, plus the web unit tests) · `bun run build` · `bun run lint`.

@@ -42,6 +42,16 @@
       "persistent": true,
       "env": ["MCP_ID_ISSUER", "MCP_RESOURCE_URL", "MCP_PORT"]
     },
+    "@answerable/mcp-toolbox#test": {
+      "cache": false,
+      "dependsOn": ["^build"],
+      "passThroughEnv": ["TOOLBOX_*"]
+    },
+    "@answerable/mcp-toolbox#dev": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": ["TOOLBOX_*", "OTEL_EXPORTER_OTLP_ENDPOINT"]
+    },
     "lint": {},
     "typecheck": {},
     "@answerable/id#dev": {

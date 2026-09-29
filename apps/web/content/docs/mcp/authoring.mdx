@@ -86,7 +86,7 @@ Annotations describe the tool for hosts; they never authorise anything.
 
 | Field | Meaning |
 | --- | --- |
-| `principal` | `userId`, `organizationId`, `membershipId`, `grantId`, `clientId`, `scopes` and `expiresAt` from the verified token |
+| `principal` | `userId`, `organizationId`, `membershipId`, `grantId`, `clientId`, `scopes`, `expiresAt` and `organizationAuthorizationVersion` from the verified token |
 | `executionId` | A UUIDv7 minted for this call; it is the error envelope's `request_id` and appears in the server log |
 | `signal` | Aborts when the host cancels, disconnects or the tool's timeout passes |
 
@@ -276,7 +276,7 @@ They return the receipt:
 1. The intent exists: else `INTENT_NOT_FOUND`.
 2. The caller's user, membership and client are the preparer's: else `PRINCIPAL_MISMATCH`, before anything about the intent is revealed.
 3. Its status: `committed` returns the stored receipt with `idempotent_replay: true`; `committing` answers `COMMIT_IN_PROGRESS`; `expired`, `stale` and `failed` answer `INTENT_EXPIRED`, `INTENT_STALE` and `INTENT_CONSUMED`; `awaiting_approval` answers `APPROVAL_REQUIRED`.
-4. This server serves the intent's capability version, else `INTENT_NOT_FOUND`; the token still carries the mutation's scopes, else `PERMISSION_DENIED`.
+4. This server serves the intent's capability version, else `INTENT_NOT_FOUND`; the caller can still use the mutation (the token carries its scopes, or a hub's `allow` still admits it), else `PERMISSION_DENIED`.
 5. The SHA-256 of `commit_token` matches: else `COMMIT_TOKEN_INVALID`.
 6. The tool matches the class, and a controlled intent's `preview_summary` matches: else `APPROVAL_REQUIRED` with `details.approval`.
 7. The intent moves to `committing`: the token is spent.
@@ -342,6 +342,15 @@ Save this as `mcps/example/src/server.ts`. `createMcpServer` returns a web-stand
 **What it serves.** `GET /health`, the protected-resource metadata, and the MCP endpoint at the resource URL's path behind the bearer gate. It answers both the 2026 and the 2025 protocol revisions, builds a fresh MCP server per request and sends `Cache-Control: no-store`. The server's name and version are the provider's id and version.
 
 **Hosts and origins.** It refuses a `Host` header or browser `Origin` other than the resource URL's host name. Pass `allowedHosts` or `allowedOrigins` (host names) to widen either list.
+
+**Hubs.** Four options, off by default, serve several providers at one endpoint, as [the Toolbox](/docs/mcp/toolbox) does:
+
+| Option | Effect |
+| --- | --- |
+| `mount` | Providers served beside `provider`. Their tools are named `<provider id>_<wire name>` after `provider`'s own, their mutations commit through `provider`'s commit tools, and their views keep their URIs. Their prompts and resources are not served; `scopes_supported` lists `provider`'s scopes only |
+| `allow(principal, tool, called)` | Decides which tools the caller sees and may call, in place of scopes, for each request that lists or calls tools or reads views; `called` is true for the tool a call names. A `ToolError` it throws answers any call with that envelope, and a list fails |
+| `wrapCall(call, run)` | Runs around every tool and prepare call with the tool, wire name, principal, execution id, JSON-RPC id and `_meta`; returns `run()`'s content or a replacement the output schema accepts |
+| `cacheHints` | Cache hints for `2026-07-28` list results, such as `{ "tools/list": { ttlMs: 30000, cacheScope: "private" } }` |
 
 ## Create a workspace
 

@@ -1,0 +1,112 @@
+{
+  "id": "toolbox",
+  "version": "2026-09-29",
+  "tools": [
+    {
+      "identity": "toolbox/toolbox.whoami",
+      "name": "toolbox_whoami",
+      "version": "2026-09-29",
+      "kind": "read",
+      "title": "Who am I",
+      "description": "Read who you are to the Toolbox: your user, organisation, membership and host client, the grant strings your organisation gave you, and each capability you may use with its kind and policy class. Call it when a tool you expect is missing.",
+      "scopes": [
+        "toolbox"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "organisation_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "membership_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "client_id": {
+            "type": "string",
+            "description": "The OAuth client of the host you are using"
+          },
+          "grants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Grant strings from your organisation's entitlements: a provider (e2e), a domain (e2e/records) or a capability (e2e/records.list)"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "identity": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "read",
+                    "mutate"
+                  ]
+                },
+                "policy_class": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "agent",
+                        "controlled",
+                        "human"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Who may commit a mutation's intent; null for a read"
+                }
+              },
+              "required": [
+                "identity",
+                "kind",
+                "policy_class"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "user_id",
+          "organisation_id",
+          "membership_id",
+          "client_id",
+          "grants",
+          "capabilities"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "prompts": [],
+  "resources": []
+}

@@ -58,6 +58,8 @@ type UserPrincipal = Readonly<{
   scopes: readonly string[]
   /** Expiry, in seconds since the epoch. */
   expiresAt: number
+  /** The organisation's authorisation version when the token was issued; ID advances it when it disables the organisation. */
+  organizationAuthorizationVersion: number
 }>
 ```
 
@@ -168,11 +170,50 @@ type McpServerConfig = {
   /** Where intents live. Default: a memory store for this server. */
   intents?: IntentStore
   /** The policy class of a mutation for one caller, decided for each request. Default: from the mutation's `risk`. */
-  policyClass?: (mutation: Served<Mutation>, principal: UserPrincipal) => PolicyClass
+  policyClass?: (mutation: Served<Mutation>, principal: UserPrincipal) => PolicyClass | Promise<PolicyClass>
+  /**
+   * Providers served beside `provider` at the same endpoint, as a hub mounts them. Their tools are named `<provider id>_<wire name>` after
+   * `provider`'s own, their mutations commit through `provider`'s commit tools, and their views keep their URIs. Their prompts and resources
+   * are not served, and `scopes_supported` lists only `provider`'s scopes. Default: none.
+   */
+  mount?: readonly Provider[]
+  /**
+   * Which tools a caller sees and may call, decided in place of the scope rule for each request that lists or calls tools or reads views; other
+   * requests, such as `initialize`, see no tools. `called` is true when the request calls that tool, so a hub can record the refusal.
+   * A `ToolError` it throws answers a call with that error whatever the call names; a list fails. Default: the token carries every scope of the tool.
+   */
+  allow?: (principal: UserPrincipal, tool: Served<Tool | Mutation>, called: boolean) => boolean | Promise<boolean>
+  /**
+   * Runs around every call of a tool or a prepare tool. `run` parses the arguments, runs the handler within its timeout and checks the output;
+   * it returns the structured content or throws what the call answers. Return that content, or a replacement the tool's output schema accepts.
+   * Default: `run()`.
+   */
+  wrapCall?: (call: ToolCall, run: () => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>
+  /** Cache hints for the 2026-07-28 revision's list results, for example `{ "tools/list": { ttlMs: 30_000, cacheScope: "private" } }`. Default: none, so hosts may not cache them. */
+  cacheHints?: ServerOptions["cacheHints"]
 }
 ```
 
 What `createMcpServer` takes: the provider, the ID issuer and resource to trust, and optional overrides.
+
+### ToolCall
+
+```ts
+type ToolCall = Readonly<{
+  tool: Served<Tool | Mutation>
+  /** The name the call used. */
+  name: string
+  principal: UserPrincipal
+  /** The handler's `executionId`, a UUIDv7, and the error envelope's `request_id`. */
+  executionId: string
+  /** The JSON-RPC id of the request. */
+  requestId: string | number
+  /** The request's `_meta`, such as a W3C `traceparent`. Untrusted, like every argument. */
+  meta: Readonly<Record<string, unknown>>
+}>
+```
+
+One call of a tool or a mutation's prepare tool, as `wrapCall` receives it.
 
 ### defineTool
 
@@ -859,13 +900,18 @@ Serve a provider in-process and run the conformance kit against it.
 ### createTestMcp
 
 ```ts
-function createTestMcp(provider: Provider, options?: {
+function createTestMcp(served: Provider | ((auth: IdVerifierConfig) => {
+  fetch(request: Request): Promise<Response>
+} | Promise<{
+  fetch(request: Request): Promise<Response>
+}>), options?: {
   resource?: string
 } & Pick<McpServerConfig, "intents" | "policyClass">): Promise<TestMcp>
 ```
 
 Serve a provider in-process with a local ID issuer and the official MCP client: no port, no network.
 `intents` and `policyClass` pass to `createMcpServer`; `resource` is the MCP's URL, default `https://mcp.test/mcp`.
+In place of a provider, pass a function that builds a server, such as a hub, from the local issuer's `auth`; `intents` and `policyClass` are then its own.
 
 **Example**
 

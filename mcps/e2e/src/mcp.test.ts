@@ -12,7 +12,7 @@ async function fixture() {
   mcps.push(mcp)
   return { mcp, records }
 }
-const member = (organizationId: string): UserPrincipal => ({ userId: crypto.randomUUID(), organizationId, membershipId: crypto.randomUUID(), grantId: crypto.randomUUID(), clientId: "test", scopes: [], expiresAt: 1 })
+const member = (organizationId: string): UserPrincipal => ({ userId: crypto.randomUUID(), organizationId, membershipId: crypto.randomUUID(), grantId: crypto.randomUUID(), clientId: "test", scopes: [], expiresAt: 1, organizationAuthorizationVersion: 1 })
 type Client = Awaited<ReturnType<TestMcp["connect"]>>
 // Returns the text mirror, parsed, after checking that it equals the structured content.
 async function ok(client: Client, name: string, args: Record<string, unknown> = {}) {

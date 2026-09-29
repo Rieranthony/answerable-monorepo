@@ -197,6 +197,37 @@ Tree: branch `claude/toolbox-goal` on `main` 3ac5614, brief B4 of the Toolbox go
 
 **Size.** `packages/acceptance/src` source 330 lines, tests 485; the deleted `mcps/e2e/scripts/acceptance.ts` was 267.
 
+## 29 September 2026: the Toolbox core (brief B5)
+
+Tree: branch `claude/toolbox-goal` on `main` 3ac5614, brief B5 of the Toolbox goal. Versions as above, plus OpenTelemetry `api` 1.9.1, `sdk-trace-base` 2.11.0, `exporter-trace-otlp-http` 0.222.0 and `resources` 2.11.0; `@answerable/mcp` 0.4.0, `@answerable/auth` 0.2.0, `@answerable/mcp-toolbox` 0.1.0.
+
+| Check | Result |
+| --- | --- |
+| Root typecheck, lint and build | Pass with `--force` (9, 9 and 3 tasks; `mcps/toolbox` is the ninth workspace) |
+| `bun --filter web test` | 78 pass |
+| `bun run mcp:test` | auth 41 pass, 100%; mcp 167 pass and 5 todo across 16 files, 100%; e2e 44 pass and 4 todo; Toolbox 64 pass and 2 todo across 11 files, 100% lines and functions |
+| `bun run mcp:check @answerable/mcp-toolbox` | 4 tasks pass |
+| `bun run mcp:test:e2e` | 42 pass (e2e and Toolbox journeys), acceptance 100%: 32.3 and 30.5 seconds by the agent, 32 seconds by the coordinator; nothing left behind |
+| `bun --filter @answerable/id test:coverage` | Not required (no change under `apps/id`); the coordinator's run on the B4 tree gave 2,040 pass, 100%, in 523 seconds |
+
+**What changed.** `mcps/toolbox`: one MCP endpoint on Answerable ID that mounts providers (the e2e provider first), ingests their manifests into `providers` and `capabilities` (a changed contract under an old version refuses the boot), reads each caller's grant strings from ID's member access view through a machine client (cached 60 seconds per organisation, member and authorisation version; an audit-log poller every 15 seconds invalidates the organisations named), projects exactly the granted capabilities in a deterministic order with `toolbox_whoami` first, records an evidence row and an OpenTelemetry span for every call, and answers `/health` from the database. `evidence_events` is a hash chain per organisation assigned by a `BEFORE INSERT` trigger under an advisory lock; updates, deletes and truncates are refused; `verify` recomputes the chain. `@answerable/mcp` gains `mount`, `allow`, `wrapCall` and `cacheHints` on `createMcpServer` and a server form of `createTestMcp`; `@answerable/auth` exposes `organizationAuthorizationVersion`. New page `toolbox.mdx`; the acceptance owns port 47604 and creates `answerable_toolbox_acceptance` on its Compose Postgres.
+
+**What the journeys proved.** J1: alpha lists `toolbox_whoami`, the three e2e reads, the two prepare tools and the two commit tools, in that order, with honest annotations and `_meta`; `toolbox_whoami` returns the person, organisation and grant strings; a call leaves a `capability.completed` row and a span. J2: beta (grant `e2e/records`) lists only the records domain; gamma (no grant) lists only `toolbox_whoami`, its call is the unknown-tool error and leaves a `capability.denied` row; disabling gamma stops refresh. J3: an entitlement added through ID's admin API is listed on the same token 15.1 seconds later in every run (polling every 5 seconds; the real arrival is between 10 and 15 seconds). J10: alpha's chain verifies with length 2; an `UPDATE` and a `DELETE` on `evidence_events` are refused by the trigger.
+
+**Measured.** 11 grant reads answered by 4 access-view calls (63.6% cache hits); access-view latency median 31 to 34 ms, maximum 45 to 67 ms; 2 token requests and 2 audit-log reads per journey file.
+
+**Found by testing.**
+
+- OpenTelemetry works on Bun 1.3.1: the in-memory exporter held a span whose parent came from a `traceparent`, and a local `Bun.serve` received `POST /v1/traces` as JSON with the same trace and parent span ids; `spans.test.ts` repeats the proof.
+- `Bun.sql`: a query runs only when awaited (`expect(query).rejects` hangs unless wrapped); objects go into `jsonb` directly and `JSON.stringify` stores a JSON string; numbers and booleans cannot be bound to `jsonb`, arrays cannot be bound as `text[]`, and `bigint` comes back as a string.
+- `seq::text as seq` made `order by seq` sort as text and broke `verify` at seq 10; the column is qualified now.
+- ID facts: a `client_credentials` client needs `organizationId` (the platform organisation), a link to the admin resource and a `client_credentials` capability with `platform:read`; `clientSecret` is returned once; audit event ids are UUIDv7, which the poller relies on.
+- Bun 1.3.1's `toMatchObject` reports a frozen object as not frozen afterwards; frozenness is asserted when the call is received.
+
+**Decisions recorded.** `toolbox_whoami` is `toolbox/toolbox.whoami` (R2 needs two parts); the hub's own provider is unprefixed. Evidence and spans wrap the whole call, not `execute`, so `INVALID_INPUT` and `TIMEOUT` are recorded. `allow` runs only for requests that list or call tools or read views, so `initialize` needs no grant read. Mounted providers' prompts and resources are not served through the hub. J3 enables the e2e provider for gamma too, since the catalogue is the ceiling. Left for B6: evidence and spans on commit calls; for the cleanup pass: the truncation of results above 100 KiB, which rewrites read schemas into a union.
+
+**Size.** `mcps/toolbox/src` source 663 lines in 12 files, tests 814 in 11 files, test support 83; migrations 137.
+
 ## Limits
 
 The acceptance uses local test issuers for company directories, a pre-registered public client and loopback HTTP. It does not certify Claude.ai, another host, another company directory or a production deployment.

@@ -45,7 +45,7 @@ Every tool failure is `{ "isError": true, "content": [{ "type": "text", "text": 
 | --- | --- | --- | --- |
 | `INVALID_INPUT` | The input failed the schema or a business rule | `after_fix_input` | Fix the fields in `details.field_violations` |
 | `NOT_FOUND` | A named resource does not exist for this caller; another organisation's resource is not found either | `never` | Check the identifier, for example with a list tool |
-| `PERMISSION_DENIED` | The caller may not perform the operation; a commit whose token no longer carries the mutation's scopes answers it too | `never` | Ask for access, then prepare again |
+| `PERMISSION_DENIED` | The caller may not perform the operation; a commit answers it too when the caller can no longer use the mutation (its token lacks the scopes, or a hub's grants no longer cover it) | `never` | Ask for access, then prepare again |
 | `PRECONDITION_FAILED` | The current state does not allow the operation; `details.preconditions` says what | `after_state_change` | Change that state first |
 | `INTENT_STALE` | A target's version moved, or a target disappeared or appeared, since prepare; `details.targets` says which | `after_reprepare` | Prepare again and show the new preview |
 | `INTENT_EXPIRED` | The intent passed `expires_at` before it was committed | `after_reprepare` | Prepare again |

@@ -1,6 +1,6 @@
 import { bounded } from "./call"
 import { commitToolName } from "./commit-tools"
-import { permits, type ToolContext } from "./definitions"
+import type { ToolContext } from "./definitions"
 import { ToolError } from "./errors"
 import type { Intent, IntentStore, Receipt } from "./intents"
 import { outcome, preparePlan, type Mutation, type Target } from "./mutation"
@@ -75,11 +75,13 @@ type CommitRequest = {
   context: ToolContext
   store: IntentStore
   mutations: readonly Served<Mutation>[]
+  /** Whether the caller may still use a mutation. */
+  permitted(mutation: Served<Mutation>): boolean
 }
 
 /** Commit an intent: check it can be committed by this caller through this tool, claim it, then apply it. */
 export async function commitIntent(request: CommitRequest): Promise<Receipt> {
-  const { id, tool, input, context, store, mutations } = request
+  const { id, tool, input, context, store, mutations, permitted } = request
   const { principal } = context
   const intent = await store.get(input.intent_id)
   if (!intent) throw new ToolError("INTENT_NOT_FOUND", `No intent ${input.intent_id} exists; prepare the mutation again`)
@@ -92,7 +94,7 @@ export async function commitIntent(request: CommitRequest): Promise<Receipt> {
   if (!mutation) {
     throw new ToolError("INTENT_NOT_FOUND", `Intent ${intent_id} is for ${intent.capability_identity} version ${intent.capability_version}, which this server does not serve; prepare it again`)
   }
-  if (!permits(principal, mutation)) throw new ToolError("PERMISSION_DENIED", `Your access no longer covers ${mutation.identity}, which needs ${mutation.scopes.join(", ")}`)
+  if (!permitted(mutation)) throw new ToolError("PERMISSION_DENIED", `Your access no longer covers ${mutation.identity}`)
   if (hashToken(input.commit_token) !== intent.commit_token_hash) throw new ToolError("COMMIT_TOKEN_INVALID", `The commit token does not match intent ${intent_id}`)
   const needed = commitToolName(id, intent.policy_class)
   if (tool !== needed) {

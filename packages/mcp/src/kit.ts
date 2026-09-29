@@ -44,7 +44,7 @@ export async function createKit(provider: Provider, fixture: ConformanceFixture)
   const clients = { owner: await mcp.connect({ ...caller, scopes }), other: await mcp.connect({ scopes }) }
   return {
     provider, manifest: contract, fixture, stored,
-    principal: { ...caller, grantId: crypto.randomUUID(), scopes, expiresAt: Math.floor(Date.now() / 1000) + 300 },
+    principal: { ...caller, grantId: crypto.randomUUID(), scopes, expiresAt: Math.floor(Date.now() / 1000) + 300, organizationAuthorizationVersion: 1 },
     async call(name, args, as = "owner") { return await clients[as].callTool({ name, arguments: args }) as CallToolResult },
     advanceTo(epochMs) { clock.now = Math.max(clock.now, epochMs) },
     close: () => mcp.close(),

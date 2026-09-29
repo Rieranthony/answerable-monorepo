@@ -20,9 +20,9 @@ export function createAdmin({ idOrigin, rootSecret }: { idOrigin: string; rootSe
 
 const signIn = ["openid", "offline_access"]
 
-/** Register an MCP's resource in ID, as an operator does for a new MCP. `scopes` are what its tools ask for; `offline_access` is added. */
+/** Register an MCP's resource in ID, as an operator does for a new MCP. `scopes` are what its tools ask for; `offline_access` is added unless listed. */
 export function registerResource(admin: Admin, { identifier, scopes, accessTokenTtl }: { identifier: string; scopes: readonly string[]; accessTokenTtl: number }) {
-  return admin("POST", "/resources", { classification: "platform_shared", organizationId: null, identifier, name: identifier, allowedScopes: [...scopes, "offline_access"], accessTokenTtl })
+  return admin("POST", "/resources", { classification: "platform_shared", organizationId: null, identifier, name: identifier, allowedScopes: [...new Set([...scopes, "offline_access"])], accessTokenTtl })
 }
 
 /** Register a public client that signs people in with the authorisation code flow and refresh tokens, limited to `scopes`. */

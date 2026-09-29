@@ -1,7 +1,7 @@
 import { createIdVerifier, type IdVerifierConfig, type UserPrincipal } from "@answerable/auth"
 import {
   INTERNAL_ERROR, ProtocolError, createMcpHandler, McpServer, requireBearerAuth, OAuthError, OAuthErrorCode,
-  hostHeaderValidationResponse, originValidationResponse, getOAuthProtectedResourceMetadataUrl,
+  hostHeaderValidationResponse, originValidationResponse, getOAuthProtectedResourceMetadataUrl, readRequestBody, type ServerOptions,
 } from "@modelcontextprotocol/server"
 import { registerAppTool, registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server"
 import { z } from "zod"
@@ -9,11 +9,26 @@ import { advertised, answer, bounded, parseArguments } from "./call"
 import { commitIntent } from "./commit"
 import { commitToolName, commitTools, receipt } from "./commit-tools"
 import { permits, type ToolContext, type View } from "./definitions"
+import { ToolError } from "./errors"
 import { createMemoryIntentStore, type IntentStore } from "./intents"
 import { preparePlan, riskClass, type Mutation, type PolicyClass } from "./mutation"
 import { intentView, recordIntent } from "./prepare"
 import type { Provider, Served } from "./provider"
-import { readAnnotations, wireDescription, wireName } from "./tool"
+import { readAnnotations, wireDescription, wireName, type Tool } from "./tool"
+
+/** One call of a tool or a mutation's prepare tool, as `wrapCall` receives it. */
+export type ToolCall = Readonly<{
+  tool: Served<Tool | Mutation>
+  /** The name the call used. */
+  name: string
+  principal: UserPrincipal
+  /** The handler's `executionId`, a UUIDv7, and the error envelope's `request_id`. */
+  executionId: string
+  /** The JSON-RPC id of the request. */
+  requestId: string | number
+  /** The request's `_meta`, such as a W3C `traceparent`. Untrusted, like every argument. */
+  meta: Readonly<Record<string, unknown>>
+}>
 
 /** What `createMcpServer` takes: the provider, the ID issuer and resource to trust, and optional overrides. */
 export type McpServerConfig = {
@@ -26,10 +41,71 @@ export type McpServerConfig = {
   /** Where intents live. Default: a memory store for this server. */
   intents?: IntentStore
   /** The policy class of a mutation for one caller, decided for each request. Default: from the mutation's `risk`. */
-  policyClass?: (mutation: Served<Mutation>, principal: UserPrincipal) => PolicyClass
+  policyClass?: (mutation: Served<Mutation>, principal: UserPrincipal) => PolicyClass | Promise<PolicyClass>
+  /**
+   * Providers served beside `provider` at the same endpoint, as a hub mounts them. Their tools are named `<provider id>_<wire name>` after
+   * `provider`'s own, their mutations commit through `provider`'s commit tools, and their views keep their URIs. Their prompts and resources
+   * are not served, and `scopes_supported` lists only `provider`'s scopes. Default: none.
+   */
+  mount?: readonly Provider[]
+  /**
+   * Which tools a caller sees and may call, decided in place of the scope rule for each request that lists or calls tools or reads views; other
+   * requests, such as `initialize`, see no tools. `called` is true when the request calls that tool, so a hub can record the refusal.
+   * A `ToolError` it throws answers a call with that error whatever the call names; a list fails. Default: the token carries every scope of the tool.
+   */
+  allow?: (principal: UserPrincipal, tool: Served<Tool | Mutation>, called: boolean) => boolean | Promise<boolean>
+  /**
+   * Runs around every call of a tool or a prepare tool. `run` parses the arguments, runs the handler within its timeout and checks the output;
+   * it returns the structured content or throws what the call answers. Return that content, or a replacement the tool's output schema accepts.
+   * Default: `run()`.
+   */
+  wrapCall?: (call: ToolCall, run: () => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>
+  /** Cache hints for the 2026-07-28 revision's list results, for example `{ "tools/list": { ttlMs: 30_000, cacheScope: "private" } }`. Default: none, so hosts may not cache them. */
+  cacheHints?: ServerOptions["cacheHints"]
 }
 
 const validateOnly = z.boolean().default(false).describe("Return the preview without recording an intent or issuing a commit token; default false")
+const message = z.object({ method: z.string(), params: z.object({ name: z.string().optional() }).optional() })
+type Peeked = { method?: string; name?: string }
+// Requests whose answer depends on which tools, and so which views, the caller may use.
+const decided = new Set(["tools/list", "tools/call", "resources/list", "resources/read"])
+
+// The method and tool name of a request, read from a copy of its body, so that `allow` runs only when tools matter and can tell a call from a list.
+async function peek(request: Request): Promise<Peeked> {
+  try {
+    const body = await readRequestBody(request.clone())
+    const { method, params } = message.parse(JSON.parse(body.tooLarge ? "" : body.text))
+    return { method, name: params?.name }
+  } catch {
+    return {}
+  }
+}
+
+// Each tool with its name on the wire: `provider`'s own unprefixed, mounted ones prefixed with their provider's id.
+function wireNames(provider: Provider, mount: readonly Provider[]) {
+  const ids = new Set([provider.id])
+  for (const { id } of mount) {
+    if (ids.has(id)) throw new Error(`Provider ${id} is mounted twice`)
+    ids.add(id)
+  }
+  const owner = new Map<string, string>()
+  const views = new Map<string, View>()
+  for (const { id, tools } of [provider, ...mount]) {
+    for (const tool of tools) {
+      if (tool.kind !== "read" || !tool.view) continue
+      const shared = views.get(tool.view.uri)
+      if (shared && shared !== tool.view) {
+        throw new Error(`Providers ${owner.get(tool.view.uri)} and ${id} define two different views at ${tool.view.uri}; share one defineView result, or rename one view`)
+      }
+      views.set(tool.view.uri, tool.view)
+      owner.set(tool.view.uri, id)
+    }
+  }
+  return new Map<Served<Tool | Mutation>, string>([
+    ...provider.tools.map(tool => [tool, wireName(tool.name)] as const),
+    ...mount.flatMap(({ id, tools }) => tools.map(tool => [tool, `${id}_${wireName(tool.name)}`] as const)),
+  ])
+}
 
 /**
  * Serve a provider over MCP: `/health`, the protected-resource metadata and the MCP endpoint behind Answerable ID sign-in.
@@ -46,9 +122,12 @@ const validateOnly = z.boolean().default(false).describe("Return the preview wit
  * ```
  */
 export function createMcpServer(config: McpServerConfig): { fetch(request: Request): Promise<Response> } {
-  const { provider, auth, allowedHosts, allowedOrigins, intents = createMemoryIntentStore(), policyClass = (mutation: Served<Mutation>) => riskClass[mutation.risk] } = config
-  const views = new Set<View>(provider.tools.flatMap(tool => tool.kind === "read" && tool.view ? [tool.view] : []))
-  const mutations = provider.tools.filter(tool => tool.kind === "mutate")
+  const { provider, auth, allowedHosts, allowedOrigins, mount = [], allow, cacheHints } = config
+  const { intents = createMemoryIntentStore(), policyClass = (mutation: Served<Mutation>) => riskClass[mutation.risk], wrapCall = (_call, run) => run() } = config
+  const names = wireNames(provider, mount)
+  const served = [...names.keys()]
+  const views = new Set<View>(served.flatMap(tool => tool.kind === "read" && tool.view ? [tool.view] : []))
+  const mutations = served.filter(tool => tool.kind === "mutate")
   const prepareInputs = new Map(mutations.map(mutation => [mutation, mutation.input.extend({ validate_only: validateOnly })]))
   const commits = commitTools(provider.id)
   const verify = createIdVerifier(auth)
@@ -61,7 +140,7 @@ export function createMcpServer(config: McpServerConfig): { fetch(request: Reque
   const definitions = [...provider.tools, ...provider.prompts, ...provider.resources]
   const scopes = [...new Set(definitions.flatMap(item => [...item.scopes]))].sort()
   const capabilities = {
-    ...(provider.tools.length ? { tools: {} } : {}),
+    ...(served.length ? { tools: {} } : {}),
     ...(provider.prompts.length ? { prompts: {} } : {}),
     ...(views.size || provider.resources.length ? { resources: {} } : {}),
   }
@@ -71,33 +150,53 @@ export function createMcpServer(config: McpServerConfig): { fetch(request: Reque
       async verifyAccessToken(token) {
         try {
           const principal = await verify(token)
-          return { token, clientId: principal.clientId, scopes: [...principal.scopes], expiresAt: principal.expiresAt, resource: resourceUrl, extra: { principal } }
+          return { token, clientId: principal.clientId, scopes: [...principal.scopes], expiresAt: principal.expiresAt, resource: resourceUrl, extra: { principal } as Record<string, unknown> }
         } catch {
           throw new OAuthError(OAuthErrorCode.InvalidToken, "Invalid access token")
         }
       },
     },
   })
-  const handler = createMcpHandler(({ authInfo, requestInfo }) => {
-    const principal = authInfo!.extra!.principal as UserPrincipal
+  // The tools a caller sees; a tool it cannot use is not registered, so calling it answers the unknown-tool error.
+  async function visible(principal: UserPrincipal, { method, name }: Peeked) {
+    if (!allow) return served.filter(tool => permits(principal, tool))
+    if (method !== undefined && !decided.has(method)) return []
+    const decisions = await Promise.all(served.map(tool => allow(principal, tool, method === "tools/call" && names.get(tool) === name)))
+    return served.filter((_, index) => decisions[index])
+  }
+  const handler = createMcpHandler(async ({ authInfo, requestInfo }) => {
+    const { principal, request = {} } = authInfo!.extra as { principal: UserPrincipal; request?: Peeked }
+    const called = request.method === "tools/call" ? request.name : undefined
     // Capabilities follow the definitions, not the caller's scopes, so every caller sees the same server.
-    const server = new McpServer({ name: provider.id, version: provider.version }, { capabilities })
+    const server = new McpServer({ name: provider.id, version: provider.version }, { capabilities, cacheHints })
     const context = (signal: AbortSignal): ToolContext => Object.freeze({
       principal, executionId: Bun.randomUUIDv7(), signal: requestInfo?.signal ? AbortSignal.any([signal, requestInfo.signal]) : signal,
     })
-    const permitted = (definition: { scopes: readonly string[] }) => permits(principal, definition)
-    const tools = provider.tools.filter(permitted)
+    let tools: Served<Tool | Mutation>[]
+    try {
+      tools = await visible(principal, request)
+    } catch (error) {
+      if (!(error instanceof ToolError) || called === undefined) throw error
+      // Whatever the call names, so that a refusal reveals nothing about which tools exist.
+      server.registerTool(called, { inputSchema: advertised(z.object({})) }, () => answer(called, Bun.randomUUIDv7(), async () => { throw error }))
+      return server
+    }
+    const permitted = new Set<Served<Tool | Mutation>>(tools)
+    const wrapped = (tool: Served<Tool | Mutation>, call: ToolContext, mcpReq: { id: string | number; _meta?: Record<string, unknown> }, run: () => Promise<Record<string, unknown>>) =>
+      answer(tool.name, call.executionId, () => wrapCall(Object.freeze({
+        tool, name: names.get(tool)!, principal, executionId: call.executionId, requestId: mcpReq.id, meta: mcpReq._meta ?? {},
+      }), run))
     const registeredViews = new Set<View>()
     for (const tool of tools) {
       const capability = { identity: tool.identity, version: tool.version, kind: tool.kind }
       const deprecated = tool.deprecated ? { deprecated: tool.deprecated } : {}
       if (tool.kind === "read") {
-        registerAppTool(server, wireName(tool.name), {
+        registerAppTool(server, names.get(tool)!, {
           title: tool.title, description: wireDescription(tool), inputSchema: advertised(tool.input), outputSchema: tool.output, annotations: readAnnotations,
           _meta: { "com.answerable/capability": { ...capability, ...deprecated }, ...(tool.view ? { ui: { resourceUri: tool.view.uri } } : {}) },
         }, (args, sdkContext) => {
           const call = context(sdkContext.mcpReq.signal)
-          return answer(tool.name, call.executionId, async () => {
+          return wrapped(tool, call, sdkContext.mcpReq, async () => {
             const input = await parseArguments(tool.input, args)
             return tool.output.parseAsync(await bounded(tool, call, bound => tool.execute(input, bound)))
           })
@@ -105,13 +204,13 @@ export function createMcpServer(config: McpServerConfig): { fetch(request: Reque
         if (tool.view) registeredViews.add(tool.view)
         continue
       }
-      const policy = policyClass(tool, principal)
-      registerAppTool(server, wireName(tool.name), {
+      const policy = await policyClass(tool, principal)
+      registerAppTool(server, names.get(tool)!, {
         title: tool.title, description: wireDescription(tool), inputSchema: advertised(prepareInputs.get(tool)!), outputSchema: intentView, annotations: readAnnotations,
         _meta: { "com.answerable/capability": { ...capability, risk: tool.risk, policy_class: policy, ...deprecated } },
       }, (args, sdkContext) => {
         const call = context(sdkContext.mcpReq.signal)
-        return answer(tool.name, call.executionId, async () => {
+        return wrapped(tool, call, sdkContext.mcpReq, async () => {
           const { validate_only, ...input } = await parseArguments(prepareInputs.get(tool)!, args)
           const plan = await bounded(tool, call, bound => preparePlan(tool, input, bound))
           // The intent keeps the arguments as sent; a commit parses them again to run prepare.
@@ -131,10 +230,11 @@ export function createMcpServer(config: McpServerConfig): { fetch(request: Reque
         const call = context(sdkContext.mcpReq.signal)
         return answer(commit.name, call.executionId, async () => commitIntent({
           id: provider.id, tool: commit.name, input: await parseArguments(commit.input, args), context: call, store: intents, mutations,
+          permitted: mutation => permitted.has(mutation),
         }))
       })
     }
-    for (const prompt of provider.prompts.filter(permitted)) {
+    for (const prompt of provider.prompts.filter(definition => permits(principal, definition))) {
       server.registerPrompt(prompt.name, { description: prompt.description, argsSchema: prompt.input }, async (input, sdkContext) => {
         try {
           return await prompt.execute(input, context(sdkContext.mcpReq.signal))
@@ -144,7 +244,7 @@ export function createMcpServer(config: McpServerConfig): { fetch(request: Reque
         }
       })
     }
-    for (const resource of provider.resources.filter(permitted)) {
+    for (const resource of provider.resources.filter(definition => permits(principal, definition))) {
       server.registerResource(resource.name, resource.uri, { description: resource.description, mimeType: resource.mimeType }, async (_uri, sdkContext) => {
         try {
           return { contents: [{ uri: resource.uri, mimeType: resource.mimeType, text: await resource.read(context(sdkContext.mcpReq.signal)) }] }
@@ -175,6 +275,7 @@ export function createMcpServer(config: McpServerConfig): { fetch(request: Reque
       let response = originValidationResponse(request, origins)
       if (!response) {
         const authInfo = await gate(request)
+        if (!(authInfo instanceof Response) && allow && request.method === "POST") authInfo.extra = { ...authInfo.extra, request: await peek(request) }
         response = authInfo instanceof Response ? authInfo : await handler.fetch(request, { authInfo })
       }
       response.headers.set("Cache-Control", "no-store")

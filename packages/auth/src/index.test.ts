@@ -13,7 +13,7 @@ test("valid tokens return only a frozen principal and de-duplicated scopes", asy
   const userId = crypto.randomUUID()
   const organizationId = crypto.randomUUID()
   const principal = await issuer.verify(await issuer.sign({ resource, userId, organizationId, scopes: ["read", "write", "read"] }))
-  expect(principal).toEqual({ userId, organizationId, membershipId: expect.any(String), grantId: expect.any(String), clientId: "test-client", scopes: ["read", "write"], expiresAt: expect.any(Number) })
+  expect(principal).toEqual({ userId, organizationId, membershipId: expect.any(String), grantId: expect.any(String), clientId: "test-client", scopes: ["read", "write"], expiresAt: expect.any(Number), organizationAuthorizationVersion: 1 })
   expect(Object.isFrozen(principal)).toBe(true)
   expect(Object.isFrozen(principal.scopes)).toBe(true)
 })
@@ -30,6 +30,9 @@ const invalidClaims: [string, Record<string, unknown>][] = [
   ["client subject", { subject_type: "client" }], ["missing membership", { membership_id: undefined }],
   ["non-UUID subject", { sub: "not-a-uuid" }], ["different azp", { azp: "another-client" }],
   ["non-string scope", { scope: ["read"] }], ["proof-bound token", { cnf: { jkt: "key" } }],
+  ["missing organisation authorisation version", { organization_authorization_version: undefined }],
+  ["zero organisation authorisation version", { organization_authorization_version: 0 }],
+  ["fractional organisation authorisation version", { organization_authorization_version: 1.5 }],
 ]
 for (const [name, claims] of invalidClaims) {
   test(`rejects ${name} with a safe authentication error`, async () => {
@@ -43,6 +46,10 @@ test("rejects the wrong type, an unpublished signature and opaque tokens", async
   for (const token of [await issuer.sign({ resource, header: { typ: "JWT" } }), await other.sign({ resource, claims: { iss: issuer.issuer } }), "opaque"]) {
     await expect(issuer.verify(token)).rejects.toBeInstanceOf(AuthenticationError)
   }
+})
+test("the organisation's authorisation version is the token's, which ID advances when it disables the organisation", async () => {
+  const issuer = await fixture()
+  expect((await issuer.verify(await issuer.sign({ resource, claims: { organization_authorization_version: 7 } }))).organizationAuthorizationVersion).toBe(7)
 })
 test("does not require resource pins or cap the token lifetime", async () => {
   const issuer = await fixture()

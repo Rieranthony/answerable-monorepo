@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from "bun:test"
-import { createAdmin, entitle, type Admin } from "./admin"
+import { createAdmin, entitle, registerResource, type Admin } from "./admin"
 
 const requests: Request[] = []
 const server = Bun.serve({
@@ -44,4 +44,15 @@ test("entitle sends the resource and scopes, and a member or a group only when g
     ["POST", "/organizations/org-1/entitlements", { resource: "https://toolbox.test/mcp", scopes: ["toolbox/docs:read"], memberId: "member-1" }],
     ["POST", "/organizations/org-1/entitlements", { resource: "https://toolbox.test/mcp", scopes: ["toolbox/docs:read"], groupId: "group-1" }],
   ])
+})
+
+test("registerResource adds offline_access to the allowed scopes once", async () => {
+  const bodies: unknown[] = []
+  const fake: Admin = async (_method, _path, body) => {
+    bodies.push(body)
+    return {}
+  }
+  await registerResource(fake, { identifier: "https://mcp.test/mcp", scopes: ["e2e:read"], accessTokenTtl: 60 })
+  await registerResource(fake, { identifier: "https://toolbox.test/mcp", scopes: ["offline_access", "toolbox"], accessTokenTtl: 60 })
+  expect(bodies.map(body => (body as { allowedScopes: string[] }).allowedScopes)).toEqual([["e2e:read", "offline_access"], ["offline_access", "toolbox"]])
 })

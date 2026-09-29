@@ -31,6 +31,7 @@ Bun.serve({ hostname: "127.0.0.1", port, fetch: server.fetch })
 - `manifest(provider)` is the provider's contract as JSON; commit it and test it for drift.
 - `@answerable/mcp/build` bundles an MCP Apps view into one HTML resource, in a separate Bun process (an in-process build breaks this repository's test suite on Bun 1.3.1).
 - A tool or mutation lists the custom `<PROVIDER>_<CODE>` codes it throws in `errors`; a handler that throws an undeclared custom code answers `INTERNAL`. The manifest carries the list.
+- A hub serves several providers at one endpoint: `createMcpServer({ provider, mount, allow, wrapCall, cacheHints, auth })` names mounted tools `<provider id>_<wire name>`, lets `allow(principal, tool, called)` decide visibility per request in place of scopes, and runs `wrapCall(call, run)` around every tool and prepare call. The Toolbox (`mcps/toolbox`) is the one hub.
 - `@answerable/mcp/testing` serves a provider in-process with a local ID issuer and the official MCP client: no port, no network. `assertProviderConformance(provider, fixture)` registers one test per check of [the standard](../../docs/09-mcp-design-standard.md), so a failure names the check and the tool to change.
 
 ```ts

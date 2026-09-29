@@ -1,0 +1,41 @@
+{
+  "name": "@answerable/mcp-toolbox",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./catalogue": "./src/catalogue.ts",
+    "./evidence": "./src/evidence.ts",
+    "./grants": "./src/grants.ts",
+    "./migrate": "./src/db/migrate.ts",
+    "./poller": "./src/poller.ts",
+    "./spans": "./src/spans.ts",
+    "./toolbox": "./src/toolbox.ts"
+  },
+  "scripts": {
+    "dev": "bun run --filter @answerable/mcp-e2e build && bun --hot src/server.ts",
+    "start": "bun src/server.ts",
+    "test": "bun run db:test:migrate && bun test",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src scripts --max-warnings 0",
+    "db:migrate": "bun scripts/migrate.ts",
+    "db:test:migrate": "bun scripts/migrate.ts --test"
+  },
+  "dependencies": {
+    "@answerable/auth": "workspace:*",
+    "@answerable/mcp": "workspace:*",
+    "@answerable/mcp-e2e": "workspace:*",
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "0.222.0",
+    "@opentelemetry/resources": "2.11.0",
+    "@opentelemetry/sdk-trace-base": "2.11.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/bun": "1.3.1",
+    "eslint": "9.39.5",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.48.1"
+  }
+}

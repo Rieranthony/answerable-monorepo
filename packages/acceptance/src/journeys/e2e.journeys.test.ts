@@ -68,7 +68,7 @@ function session(slug: string) {
 }
 const clientFor = (slug: string, protocol: (typeof protocols)[number] = "2026-07-28") => connect(resource, session(slug).oauth.provider, protocol)
 const prepare = async (client: Client, name: string, args: Record<string, unknown>) => intentSchema.parse(await tool(client, name, args))
-const owner = (organizationId: string): UserPrincipal => ({ userId: crypto.randomUUID(), organizationId, membershipId: crypto.randomUUID(), grantId: crypto.randomUUID(), clientId, scopes: [], expiresAt: 0 })
+const owner = (organizationId: string): UserPrincipal => ({ userId: crypto.randomUUID(), organizationId, membershipId: crypto.randomUUID(), grantId: crypto.randomUUID(), clientId, scopes: [], expiresAt: 0, organizationAuthorizationVersion: 1 })
 const listed = async (client: Client) => z.object({ items: z.array(recordSchema) }).parse(await tool(client, "records_list")).items
 
 beforeAll(async () => {

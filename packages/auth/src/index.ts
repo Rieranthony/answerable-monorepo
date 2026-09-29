@@ -25,6 +25,8 @@ export type UserPrincipal = Readonly<{
   scopes: readonly string[]
   /** Expiry, in seconds since the epoch. */
   expiresAt: number
+  /** The organisation's authorisation version when the token was issued; ID advances it when it disables the organisation. */
+  organizationAuthorizationVersion: number
 }>
 
 /** Thrown for every rejected token, always with the same message so that it reveals nothing; answer it with a `401` challenge. */
@@ -40,6 +42,7 @@ const claimsSchema = z.object({
   subject_type: z.literal("user"),
   organization_id: z.uuid(),
   membership_id: z.uuid(),
+  organization_authorization_version: z.number().int().positive(),
   grant_id: z.uuid(),
   client_id: z.string().min(1),
   azp: z.string().optional(),
@@ -109,6 +112,7 @@ export function createIdVerifier(config: IdVerifierConfig): (token: string) => P
         clientId: claims.client_id,
         scopes: Object.freeze([...new Set(claims.scope.split(" ").filter(Boolean))]),
         expiresAt: claims.exp,
+        organizationAuthorizationVersion: claims.organization_authorization_version,
       })
     } catch {
       throw new AuthenticationError()

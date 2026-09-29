@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "bun run env:up && turbo run dev --filter='./apps/*'",
     "mcp:dev": "bun --env-file=.env run --filter @answerable/mcp-e2e dev",
-    "mcp:test": "bun run --filter @answerable/auth --filter @answerable/mcp --filter @answerable/mcp-e2e test",
+    "toolbox:dev": "bun --env-file=.env run --filter @answerable/mcp-toolbox dev",
+    "mcp:test": "bun run --filter @answerable/auth --filter @answerable/mcp --filter @answerable/mcp-e2e --filter @answerable/mcp-toolbox test",
     "mcp:check": "turbo run typecheck lint test --filter",
     "env:up": "docker compose up -d --wait",
     "env:down": "docker compose down",

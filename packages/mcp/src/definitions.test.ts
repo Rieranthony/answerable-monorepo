@@ -20,7 +20,7 @@ test("prompts, resources and views validate names, scopes and URIs", () => {
 })
 
 const context = {
-  principal: { userId: crypto.randomUUID(), organizationId: crypto.randomUUID(), membershipId: crypto.randomUUID(), grantId: crypto.randomUUID(), clientId: "test", expiresAt: 123, scopes: [] },
+  principal: { userId: crypto.randomUUID(), organizationId: crypto.randomUUID(), membershipId: crypto.randomUUID(), grantId: crypto.randomUUID(), clientId: "test", expiresAt: 123, organizationAuthorizationVersion: 1, scopes: [] },
   executionId: Bun.randomUUIDv7(),
   signal: new AbortController().signal,
 }

@@ -72,7 +72,7 @@ export async function createTestIssuer(options: { algorithm?: "EdDSA" | "ES256" 
       const token = new UnsecuredJWT({
         iss: issuer, aud: options.resource, sub: options.userId ?? crypto.randomUUID(),
         subject_type: "user", organization_id: options.organizationId ?? crypto.randomUUID(),
-        membership_id: crypto.randomUUID(), grant_id: crypto.randomUUID(),
+        membership_id: crypto.randomUUID(), organization_authorization_version: 1, grant_id: crypto.randomUUID(),
         client_id: "test-client", scope: (options.scopes ?? []).join(" "),
       }).setIssuedAt().setExpirationTime(options.expiresIn ?? "5m")
       const payload = { ...decodeJwt(token.encode()), ...options.claims }

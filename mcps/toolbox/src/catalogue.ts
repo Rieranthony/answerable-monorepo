@@ -1,0 +1,60 @@
+import type { SQL } from "bun"
+import { manifest, type PolicyClass, type Provider, type Risk } from "@answerable/mcp"
+import { z } from "zod"
+
+/** The class a mutation's `risk` gives it, as `@answerable/mcp` decides by default. */
+export const riskClass: Readonly<Record<Risk, PolicyClass>> = Object.freeze({ low: "agent", normal: "controlled", high: "human" })
+
+const overridesSchema = z.object({
+  /** Identities the organisation may not use even when granted. */
+  disabled: z.array(z.string()).default([]),
+  /** The policy class of a mutation in this organisation, by identity, in place of the one its risk gives. */
+  policy_class: z.record(z.string(), z.enum(["agent", "controlled", "human"])).default({}),
+})
+/** What an organisation changes about a provider it may use. */
+export type Overrides = z.output<typeof overridesSchema>
+/** Whether an organisation may use a provider, and its overrides. */
+export type CatalogueEntry = { enabled: boolean; overrides: Overrides }
+/** An organisation's catalogue, by provider id. A provider without an entry is not enabled. */
+export type Catalogue = ReadonlyMap<string, CatalogueEntry>
+
+/**
+ * Store each provider's manifest and every capability at its version. A capability already stored at the same version with another
+ * kind, risk, input or output refuses the whole ingest, naming it: a contract change needs a new version. Titles and descriptions update in place.
+ */
+export async function ingest(db: SQL, providers: readonly Provider[]) {
+  await db.begin(async tx => {
+    for (const provider of providers) {
+      const contract = manifest(provider)
+      await tx`insert into providers (id, version, manifest) values (${provider.id}, ${provider.version}, ${contract})
+        on conflict (id) do update set version = excluded.version, manifest = excluded.manifest,
+          registered_at = case when providers.manifest = excluded.manifest then providers.registered_at else now() end`
+      for (const tool of contract.tools) {
+        if (tool.kind === "commit") continue
+        const risk = tool.kind === "mutate" ? tool.risk : null
+        const [stored] = await tx`select kind <> ${tool.kind} as kind, risk is distinct from ${risk} as risk, input <> ${tool.input} as input, output <> ${tool.output} as output
+          from capabilities where identity = ${tool.identity} and version = ${tool.version}`
+        const changed = Object.entries(stored ?? {}).filter(([, differs]) => differs).map(([field]) => field)
+        if (changed.length) {
+          throw new Error(`Capability ${tool.identity} version ${tool.version} changed its ${changed.join(" and ")} without a new version; give the tool a new version (YYYY-MM-DD) in its definition or its provider`)
+        }
+        await tx`insert into capabilities (provider_id, identity, version, kind, risk, policy_class_default, title, description, input, output)
+          values (${provider.id}, ${tool.identity}, ${tool.version}, ${tool.kind}, ${risk}, ${risk && riskClass[risk]}, ${tool.title ?? null}, ${tool.description}, ${tool.input}, ${tool.output})
+          on conflict (identity, version) do update set title = excluded.title, description = excluded.description`
+      }
+    }
+  })
+}
+
+/** An organisation's catalogue. */
+export async function readCatalogue(db: SQL, organisationId: string): Promise<Catalogue> {
+  const rows = await db`select provider_id, enabled, overrides from organisation_catalogue where organisation_id = ${organisationId}`
+  return new Map(rows.map((row: { provider_id: string; enabled: boolean; overrides: unknown }) => [row.provider_id, { enabled: row.enabled, overrides: overridesSchema.parse(row.overrides) }]))
+}
+
+/** Enable or disable a provider for an organisation and set its overrides. The provider must have been ingested. */
+export async function writeCatalogue(db: SQL, organisationId: string, providerId: string, entry: { enabled: boolean; overrides?: Partial<Overrides> }) {
+  const overrides = overridesSchema.parse(entry.overrides ?? {})
+  await db`insert into organisation_catalogue (organisation_id, provider_id, enabled, overrides) values (${organisationId}, ${providerId}, ${entry.enabled}, ${overrides})
+    on conflict (organisation_id, provider_id) do update set enabled = excluded.enabled, overrides = excluded.overrides, updated_at = now()`
+}
