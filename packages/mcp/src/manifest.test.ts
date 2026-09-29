@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { z } from "zod"
-import { definePrompt, defineProvider, defineResource, defineTool, manifest } from "./index"
+import { defineMutation, definePrompt, defineProvider, defineResource, defineTool, manifest } from "./index"
 
 const $schema = "https://json-schema.org/draft/2020-12/schema"
 const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const
@@ -69,4 +69,55 @@ test("the manifest carries no code", () => {
   const document = manifest(provider)
   expect(JSON.parse(JSON.stringify(document))).toEqual(document)
   expect(Object.keys(document.tools[1]!)).toEqual(["identity", "name", "version", "kind", "title", "description", "scopes", "annotations", "input", "output"])
+})
+
+test("a mutation carries its risk, effects and the schemas of its input and results, and the provider gains the two commit tools", () => {
+  const plan = async () => ({ targets: [], preview: { summary: "Nothing" } })
+  const document = manifest(defineProvider({
+    id: "acme", version: "2026-09-29",
+    tools: [
+      defineMutation({
+        name: "records.delete", effects: ["cascade_delete"], prepare: plan,
+        async commit() { return { results: { deleted: true }, applied_changes: [], effects_performed: [] } },
+        description: "Delete one of your organisation's records. Commit the intent with acme_commit_confirmed.",
+        input: z.object({ id: z.string() }), output: z.object({ deleted: z.boolean() }),
+      }),
+      defineMutation({
+        name: "records.create", title: "Create", risk: "low", scopes: ["acme:create"], prepare: plan,
+        async commit() { return { results: { id: "r1" }, applied_changes: [], effects_performed: [] } },
+        description: "Create a record in your organisation. Commit the intent with acme_commit.",
+        input: z.object({ title: z.string() }), output: z.object({ id: z.string() }),
+      }),
+      provider.tools[0]!,
+    ],
+  }))
+  expect(document.tools.map(({ identity, name, kind }) => [identity, name, kind])).toEqual([
+    ["acme/commit", "acme_commit", "commit"],
+    ["acme/commit_confirmed", "acme_commit_confirmed", "commit"],
+    ["acme/records.create", "records_create", "mutate"],
+    ["acme/records.delete", "records_delete", "mutate"],
+    ["acme/records.list", "records_list", "read"],
+  ])
+  expect(document.tools[3]).toEqual({
+    identity: "acme/records.delete", name: "records_delete", version: "2026-09-29", kind: "mutate",
+    description: "Delete one of your organisation's records. Commit the intent with acme_commit_confirmed.",
+    scopes: ["acme:write"], risk: "normal", effects: ["cascade_delete"], annotations,
+    input: { $schema, type: "object", properties: { id: { type: "string" } }, required: ["id"], additionalProperties: false },
+    output: { $schema, type: "object", properties: { deleted: { type: "boolean" } }, required: ["deleted"], additionalProperties: false },
+  })
+  expect(Object.keys(document.tools[2]!)).toEqual(["identity", "name", "version", "kind", "title", "description", "scopes", "risk", "effects", "annotations", "input", "output"])
+  const [commitTool, confirmedTool] = document.tools
+  expect(Object.keys(commitTool!)).toEqual(["identity", "name", "kind", "description", "scopes", "annotations", "input", "output"])
+  expect(commitTool).toMatchObject({
+    description: expect.stringContaining("agent-class"), scopes: ["acme:create", "acme:write"],
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    input: { required: ["intent_id", "commit_token"], additionalProperties: false },
+    output: { required: ["receipt_id", "intent_id", "status", "results", "applied_changes", "effects_performed", "committed_at", "committed_by", "idempotent_replay"] },
+  })
+  expect(confirmedTool).toMatchObject({
+    description: expect.stringContaining("preview_summary"), scopes: ["acme:create", "acme:write"],
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    input: { required: ["intent_id", "commit_token", "preview_summary"], additionalProperties: false },
+  })
+  expect(manifest(provider).tools.map(tool => tool.kind)).toEqual(["read", "read"])
 })

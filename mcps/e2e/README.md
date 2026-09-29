@@ -17,11 +17,15 @@ The provider is `e2e`, version `2026-09-29` (`src/mcp.ts`).
 | --- | --- | --- | --- |
 | `identity_get` | `e2e/identity.get` | `e2e:identity` | The verified user, organisation and scopes |
 | `records_list` | `e2e/records.list` | `e2e:read` | Your organisation's records, oldest first: `limit` (default 20, at most 100) and `cursor` in; `items`, `next_cursor` and `has_more` out |
-| `records_show` | `e2e/records.show` | `e2e:read` | The first 20 records in an MCP Apps view |
+| `records_show` | `e2e/records.show` | `e2e:read` | The first 20 records in an MCP Apps view, with `canWrite`; the view creates and deletes through the tools below |
+| `records_create` | `e2e/records.create` | `e2e:write` | Prepares creating a record: risk `low`, so agent class; no targets; the preview names the title. Commit with `e2e_commit`; the receipt's `results` is the record |
+| `records_delete` | `e2e/records.delete` | `e2e:write` | Prepares deleting a record by `id`: risk `normal`, so controlled class; one target with the record's `version` (`serial`). Commit with `e2e_commit_confirmed` and the summary; `NOT_FOUND` for a record outside your organisation |
+| `e2e_commit` | `e2e/commit` | any mutation's | Commits an agent-class intent; returns the receipt |
+| `e2e_commit_confirmed` | `e2e/commit_confirmed` | any mutation's | Commits a controlled-class intent with `preview_summary`; destructive, and asks hosts to confirm with the person |
 
-Writes: Not yet; `records.create` and `records.delete` return with prepared mutations. The record store keeps `create` and `remove` for them, and tests and the acceptance seed records through it.
+Records carry a `version` starting at 1. The record store's `touch(principal, id)` moves it, as another writer would, which is how tests make a prepared delete stale. `createE2eMcp({ auth, records, viewHtml, intents? })` takes an intent store, for example one with a controlled clock.
 
-The prompt `fixture_walkthrough` and the resource `fixture://guide` need `e2e:read`. Records live in memory, per organisation, until the process stops. Errors: `INVALID_INPUT` (bad arguments, or a cursor this list did not issue: list again without one) and `INTERNAL` (unexpected; see the server log).
+The prompt `fixture_walkthrough` and the resource `fixture://guide` need `e2e:read`. Records and intents live in memory, per organisation, until the process stops. Errors: `INVALID_INPUT` (bad arguments, or a cursor this list did not issue: list again without one), `NOT_FOUND` (no such record in your organisation), the commit codes in [MCP errors](../../apps/web/content/docs/mcp/errors.mdx) and `INTERNAL` (unexpected; see the server log).
 
 ## Manifest
 
@@ -47,4 +51,4 @@ Register the resource and a client in ID first: [Connect Claude Code](../../apps
 bun run mcp:test
 ```
 
-`src/mcp.test.ts` checks every tool, pagination, the prompt and the resource in-process with `createTestMcp`, for a fully entitled and a read-only caller; copy it when you write an MCP. `src/apps.test.ts` renders the real view in Chromium through the official MCP Apps host bridge (`src/testing/host.ts`); the view never receives a token.
+`src/mcp.test.ts` checks every tool in-process with `createTestMcp`: pagination, both mutations prepared and committed, a stale delete after `touch`, another organisation's record, a replay, and fully entitled, partial and read-only callers; copy it when you write an MCP. `src/apps.test.ts` renders the real view in Chromium through the official MCP Apps host bridge (`src/testing/host.ts`): it creates a record, shows the summary before deleting it, and hides writes from a reader; the view never receives a token.

@@ -1,5 +1,7 @@
 export { createMcpServer, type McpServerConfig } from "./server"
 export { defineTool, type Tool } from "./tool"
+export { defineMutation, type Mutation, type Plan, type Target, type Preview, type PolicyClass, type Risk, type Effect } from "./mutation"
+export { createMemoryIntentStore, type Intent, type IntentStore, type Receipt } from "./intents"
 export { defineProvider, type Provider } from "./provider"
 export { definePrompt, defineResource, defineView, type Prompt, type Resource, type View, type ToolContext } from "./definitions"
 export { manifest, type Manifest } from "./manifest"

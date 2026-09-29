@@ -2,7 +2,7 @@ import { createTestIssuer, type TestIssuer } from "@answerable/auth/testing"
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client"
 import { getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/server"
 import type { Provider } from "./provider"
-import { createMcpServer } from "./server"
+import { createMcpServer, type McpServerConfig } from "./server"
 
 /** An in-process MCP and its authenticated protocol clients. */
 export type TestMcp = {
@@ -10,17 +10,17 @@ export type TestMcp = {
   readonly issuer: TestIssuer
   /** Send an HTTP request with the URL's Host header by default. */
   fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>
-  /** Connect a client, defaulting to all advertised scopes. */
-  connect(options?: { scopes?: readonly string[]; organizationId?: string; userId?: string; protocol?: "2025" | "2026-07-28" }): Promise<Client>
+  /** Connect a client, defaulting to all advertised scopes and a fresh person, membership and organisation. Pin `userId`, `organizationId` and `membershipId` to connect as the same principal twice. */
+  connect(options?: { scopes?: readonly string[]; organizationId?: string; userId?: string; membershipId?: string; clientId?: string; protocol?: "2025" | "2026-07-28" }): Promise<Client>
   /** Close every client, including clients whose connection failed. */
   close(): Promise<void>
 }
 
-/** Serve a provider in-process with a local ID issuer and the official MCP client: no port, no network. */
-export async function createTestMcp(provider: Provider, options: { resource?: string } = {}): Promise<TestMcp> {
+/** Serve a provider in-process with a local ID issuer and the official MCP client: no port, no network. `intents` and `policyClass` pass to `createMcpServer`. */
+export async function createTestMcp(provider: Provider, options: { resource?: string } & Pick<McpServerConfig, "intents" | "policyClass"> = {}): Promise<TestMcp> {
   const issuer = await createTestIssuer()
   const resource = options.resource ?? "https://mcp.test/mcp"
-  const server = createMcpServer({ provider, auth: { issuer: issuer.issuer, resource, fetch: issuer.fetch } })
+  const server = createMcpServer({ provider, auth: { issuer: issuer.issuer, resource, fetch: issuer.fetch }, intents: options.intents, policyClass: options.policyClass })
   const clients: Client[] = []
   const fetch = async (input: string | URL | Request, init?: RequestInit) => {
     const request = new Request(input, init)
@@ -31,7 +31,8 @@ export async function createTestMcp(provider: Provider, options: { resource?: st
     issuer, fetch,
     async connect(options = {}) {
       const scopes = options.scopes ?? (await (await fetch(getOAuthProtectedResourceMetadataUrl(new URL(resource)))).json()).scopes_supported
-      const token = await issuer.sign({ resource, scopes, organizationId: options.organizationId, userId: options.userId })
+      const claims = Object.fromEntries(Object.entries({ membership_id: options.membershipId, client_id: options.clientId }).filter(([, value]) => value))
+      const token = await issuer.sign({ resource, scopes, organizationId: options.organizationId, userId: options.userId, claims })
       const client = new Client({ name: "answerable-test", version: "0.1.0" }, options.protocol === "2026-07-28" ? { versionNegotiation: { mode: { pin: "2026-07-28" } } } : {})
       clients.push(client)
       await client.connect(new StreamableHTTPClientTransport(new URL(resource), {

@@ -12,7 +12,7 @@ test("records stay within the caller's organisation", () => {
   const alice = principal()
   const bob = principal()
   const created = records.create(alice, "First")
-  expect(created).toMatchObject({ organizationId: alice.organizationId, creatorId: alice.userId, title: "First" })
+  expect(created).toMatchObject({ organizationId: alice.organizationId, creatorId: alice.userId, title: "First", version: 1 })
   expect(records.list(alice, firstPage)).toEqual({ items: [created], next_cursor: null, has_more: false })
   expect(records.list(bob, firstPage)).toEqual({ items: [], next_cursor: null, has_more: false })
   expect(() => records.remove(bob, created.id)).toThrow(new ToolError("NOT_FOUND", "No accessible record exists"))
@@ -48,5 +48,19 @@ test("a cursor this organisation's list did not issue answers INVALID_INPUT", ()
       code: "INVALID_INPUT", message: "cursor: Unknown cursor; list again without one",
       retry: { policy: "after_fix_input" }, details: { field_violations: [{ field: "cursor", message: "Unknown cursor; list again without one" }] },
     })
+  }
+})
+
+test("get reads one record, touch moves its version, and both stay within the organisation", () => {
+  const records = createRecordStore()
+  const alice = principal()
+  const created = records.create(alice, "First")
+  expect(records.get(alice, created.id)).toEqual(created)
+  expect(records.touch(alice, created.id)).toEqual({ ...created, version: 2 })
+  expect(records.get(alice, created.id)).toEqual({ ...created, version: 2 })
+  expect(records.list(alice, firstPage).items).toEqual([{ ...created, version: 2 }])
+  expect(created.version).toBe(1)
+  for (const call of [() => records.get(principal(), created.id), () => records.touch(principal(), created.id), () => records.get(alice, crypto.randomUUID())]) {
+    expect(call).toThrow(new ToolError("NOT_FOUND", "No accessible record exists"))
   }
 })

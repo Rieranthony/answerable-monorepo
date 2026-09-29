@@ -3,6 +3,7 @@
   "pages": [
     "index",
     "authoring",
+    "errors",
     "local-testing",
     "claude-code"
   ]

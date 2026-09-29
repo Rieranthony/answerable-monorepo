@@ -27,12 +27,15 @@ export type Resource = Readonly<{
 const date = z.iso.date()
 export const isDate = (value: string) => date.safeParse(value).success
 
-export function checkScopes(label: string, scopes: readonly string[] | undefined) {
+export function checkScopes(label: string, scopes: readonly string[] | undefined, access: "read" | "write" = "read") {
   if (scopes && (!scopes.length || scopes.some(scope => !scope || /\s/.test(scope)))) {
-    throw new Error(`${label}: scopes must be non-empty and contain no spaces; omit them for the default <provider>:read`)
+    throw new Error(`${label}: scopes must be non-empty and contain no spaces; omit them for the default <provider>:${access}`)
   }
   return scopes && Object.freeze([...scopes])
 }
+
+/** Whether the caller's token carries every scope a definition needs. */
+export const permits = (principal: UserPrincipal, { scopes }: Readonly<{ scopes: readonly string[] }>) => scopes.every(scope => principal.scopes.includes(scope))
 
 /** Define an MCP Apps view from HTML built with `buildView`. */
 export function defineView(input: { name: string; html: string }): View {

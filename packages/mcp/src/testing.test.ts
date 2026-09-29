@@ -46,3 +46,22 @@ test("close also closes a client whose connection failed", async () => {
     close.mockRestore()
   }
 })
+
+test("connect can pin the membership and client, so that two connections are one principal", async () => {
+  const whoami = defineTool({
+    name: "caller.get", description: "A fixture tool that returns the caller's membership and client.",
+    input: z.object({}), output: z.object({ membershipId: z.string(), clientId: z.string() }),
+    async execute(_input, { principal }) { return { membershipId: principal.membershipId, clientId: principal.clientId } },
+  })
+  const mcp = await createTestMcp(defineProvider({ id: "test", version: "2026-09-29", tools: [whoami] }))
+  try {
+    const membershipId = crypto.randomUUID()
+    for (let connection = 0; connection < 2; connection++) {
+      const client = await mcp.connect({ membershipId, clientId: "claude-code" })
+      expect((await client.callTool({ name: "caller_get", arguments: {} })).structuredContent).toEqual({ membershipId, clientId: "claude-code" })
+    }
+    const other = (await (await mcp.connect()).callTool({ name: "caller_get", arguments: {} })).structuredContent
+    expect(other).toMatchObject({ clientId: "test-client" })
+    expect(other).not.toMatchObject({ membershipId })
+  } finally { await mcp.close() }
+})

@@ -12,10 +12,10 @@ const fields = {
   async execute() { return { items: [], next_cursor: null, has_more: false } },
 }
 
-test("five fields make a frozen read tool with a closed input and the default timeout", () => {
+test("five fields make a frozen read tool (kind read) with a closed input and the default timeout", () => {
   const tool = defineTool(fields)
   expect(Object.isFrozen(tool)).toBe(true)
-  expect(tool).toMatchObject({ name: "records.list", description, timeoutMs: 25_000 })
+  expect(tool).toMatchObject({ kind: "read", name: "records.list", description, timeoutMs: 25_000 })
   expect(tool.output).toBe(fields.output)
   expect(tool.input.safeParse({ extra: true }).success).toBe(false)
   expect(tool.input.parse({})).toEqual({ limit: 20 })

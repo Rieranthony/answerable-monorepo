@@ -1,10 +1,16 @@
 import { expect, test } from "bun:test"
 import { z } from "zod"
-import { definePrompt, defineProvider, defineResource, defineTool, defineView, type Tool } from "./index"
+import { defineMutation, definePrompt, defineProvider, defineResource, defineTool, defineView, type Mutation, type Tool } from "./index"
 
 const description = "A fixture tool that returns nothing, used to test providers."
 const tool = (name: string, extra: Partial<Pick<Tool, "version" | "scopes" | "view" | "deprecated">> = {}) => defineTool({
   name, description, input: z.object({}), output: z.object({}), async execute() { return {} }, ...extra,
+})
+const mutation = (name: string, extra: Partial<Pick<Mutation, "version" | "scopes" | "deprecated">> = {}) => defineMutation({
+  name, description, input: z.object({}), output: z.object({}),
+  async prepare() { return { targets: [], preview: { summary: "Nothing" } } },
+  async commit() { return { results: {}, applied_changes: [], effects_performed: [] } },
+  ...extra,
 })
 const prompt = definePrompt({ name: "guide", description: "Guide", input: z.object({}), async execute() { return { messages: [] } } })
 const resource = defineResource({ name: "notes", uri: "fixture://notes", description: "Notes", mimeType: "text/plain", async read() { return "" } })
@@ -59,4 +65,18 @@ test("a deprecated tool names a current tool of the provider as its replacement"
   const refusal = "Provider acme: tool records.find is deprecated in favour of records.search, which is not a current tool of this provider"
   expect(() => defineProvider({ ...base, tools: [old] })).toThrow(refusal)
   expect(() => defineProvider({ ...base, tools: [old, tool("records.search", { deprecated: { ...deprecated, replacement: "records.find" } })] })).toThrow(refusal)
+})
+
+test("mutations join the tools: <id>:write by default, and the same identity, duplicate and deprecation rules", () => {
+  const base = { id: "acme", version: "2026-09-29" }
+  const provider = defineProvider({ ...base, tools: [tool("records.list"), mutation("records.delete"), mutation("records.create", { version: "2026-01-01", scopes: ["acme:create"] })] })
+  expect(provider.tools.map(({ name, kind, identity, version, scopes }) => ({ name, kind, identity, version, scopes }))).toEqual([
+    { name: "records.list", kind: "read", identity: "acme/records.list", version: "2026-09-29", scopes: ["acme:read"] },
+    { name: "records.delete", kind: "mutate", identity: "acme/records.delete", version: "2026-09-29", scopes: ["acme:write"] },
+    { name: "records.create", kind: "mutate", identity: "acme/records.create", version: "2026-01-01", scopes: ["acme:create"] },
+  ])
+  expect(() => defineProvider({ ...base, tools: [tool("records.delete"), mutation("records.delete")] })).toThrow("Provider acme defines tool records.delete twice")
+  const deprecated = { since: "2026-09-29", sunset: "2027-09-29", replacement: "records.delete" }
+  expect(defineProvider({ ...base, tools: [mutation("records.remove", { deprecated }), mutation("records.delete")] }).tools).toHaveLength(2)
+  expect(() => defineProvider({ ...base, tools: [mutation("records.remove", { deprecated })] })).toThrow("Provider acme: tool records.remove is deprecated in favour of records.delete, which is not a current tool of this provider")
 })

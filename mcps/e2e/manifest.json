@@ -3,6 +3,275 @@
   "version": "2026-09-29",
   "tools": [
     {
+      "identity": "e2e/commit",
+      "name": "e2e_commit",
+      "kind": "commit",
+      "description": "Commit an agent-class intent that a prepare tool returned: pass its intent_id and commit_token. Returns the receipt; calling again returns the same receipt with idempotent_replay true. An intent whose commit_tool is e2e_commit_confirmed answers APPROVAL_REQUIRED here.",
+      "scopes": [
+        "e2e:write"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "intent_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "intent_id from the prepare tool's result"
+          },
+          "commit_token": {
+            "type": "string",
+            "description": "commit_token from the prepare tool's result; it works once"
+          }
+        },
+        "required": [
+          "intent_id",
+          "commit_token"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "receipt_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "intent_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "status": {
+            "type": "string",
+            "const": "committed"
+          },
+          "results": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "applied_changes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "from": {
+                  "default": null
+                },
+                "to": {
+                  "default": null
+                }
+              },
+              "required": [
+                "path",
+                "from",
+                "to"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "effects_performed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "committed_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "committed_by": {
+            "type": "object",
+            "properties": {
+              "user_id": {
+                "type": "string"
+              },
+              "membership_id": {
+                "type": "string"
+              },
+              "client_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "user_id",
+              "membership_id",
+              "client_id"
+            ],
+            "additionalProperties": false
+          },
+          "idempotent_replay": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "receipt_id",
+          "intent_id",
+          "status",
+          "results",
+          "applied_changes",
+          "effects_performed",
+          "committed_at",
+          "committed_by",
+          "idempotent_replay"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "identity": "e2e/commit_confirmed",
+      "name": "e2e_commit_confirmed",
+      "kind": "commit",
+      "description": "Commit a controlled-class intent once the person has seen its preview and confirmed it: pass its intent_id, commit_token and preview_summary, which must equal the intent's preview.summary word for word. Returns the receipt; calling again returns the same receipt with idempotent_replay true. A human-class intent needs a person's approval and answers APPROVAL_REQUIRED; commit an agent-class intent with e2e_commit.",
+      "scopes": [
+        "e2e:write"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "intent_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "intent_id from the prepare tool's result"
+          },
+          "commit_token": {
+            "type": "string",
+            "description": "commit_token from the prepare tool's result; it works once"
+          },
+          "preview_summary": {
+            "type": "string",
+            "description": "The intent's preview.summary, word for word as the person saw it"
+          }
+        },
+        "required": [
+          "intent_id",
+          "commit_token",
+          "preview_summary"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "receipt_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "intent_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "status": {
+            "type": "string",
+            "const": "committed"
+          },
+          "results": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "applied_changes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "from": {
+                  "default": null
+                },
+                "to": {
+                  "default": null
+                }
+              },
+              "required": [
+                "path",
+                "from",
+                "to"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "effects_performed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "committed_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "committed_by": {
+            "type": "object",
+            "properties": {
+              "user_id": {
+                "type": "string"
+              },
+              "membership_id": {
+                "type": "string"
+              },
+              "client_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "user_id",
+              "membership_id",
+              "client_id"
+            ],
+            "additionalProperties": false
+          },
+          "idempotent_replay": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "receipt_id",
+          "intent_id",
+          "status",
+          "results",
+          "applied_changes",
+          "effects_performed",
+          "committed_at",
+          "committed_by",
+          "idempotent_replay"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "identity": "e2e/identity.get",
       "name": "identity_get",
       "version": "2026-09-29",
@@ -48,6 +317,139 @@
           "userId",
           "organizationId",
           "scopes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "identity": "e2e/records.create",
+      "name": "records_create",
+      "version": "2026-09-29",
+      "kind": "mutate",
+      "description": "Prepare creating a test record in your organisation. Changes nothing: returns a preview and a commit token; commit the intent with e2e_commit to create the record.",
+      "scopes": [
+        "e2e:write"
+      ],
+      "risk": "low",
+      "effects": [],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The record's title, 1 to 200 characters"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "creatorId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "id",
+          "organizationId",
+          "creatorId",
+          "title",
+          "createdAt",
+          "version"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "identity": "e2e/records.delete",
+      "name": "records_delete",
+      "version": "2026-09-29",
+      "kind": "mutate",
+      "description": "Prepare deleting one of your organisation's test records by id. Changes nothing: returns a preview naming the record; show the person its summary, then commit the intent with e2e_commit_confirmed.",
+      "scopes": [
+        "e2e:write"
+      ],
+      "risk": "normal",
+      "effects": [],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "The record's id, from records.list"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "const": true
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "deleted",
+          "id"
         ],
         "additionalProperties": false
       }
@@ -118,6 +520,11 @@
                   "type": "string",
                   "format": "date-time",
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                "version": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
                 }
               },
               "required": [
@@ -125,7 +532,8 @@
                 "organizationId",
                 "creatorId",
                 "title",
-                "createdAt"
+                "createdAt",
+                "version"
               ],
               "additionalProperties": false
             }
@@ -154,7 +562,7 @@
       "version": "2026-09-29",
       "kind": "read",
       "title": "Test records",
-      "description": "Open your organisation's first 20 test records in an interactive view. Use records.list to read further pages.",
+      "description": "Open your organisation's first 20 test records in an interactive view, where you can also create and delete them. Use records.list to read further pages.",
       "scopes": [
         "e2e:read"
       ],
@@ -203,6 +611,11 @@
                   "type": "string",
                   "format": "date-time",
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                "version": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
                 }
               },
               "required": [
@@ -210,14 +623,19 @@
                 "organizationId",
                 "creatorId",
                 "title",
-                "createdAt"
+                "createdAt",
+                "version"
               ],
               "additionalProperties": false
             }
+          },
+          "canWrite": {
+            "type": "boolean"
           }
         },
         "required": [
-          "items"
+          "items",
+          "canWrite"
         ],
         "additionalProperties": false
       }

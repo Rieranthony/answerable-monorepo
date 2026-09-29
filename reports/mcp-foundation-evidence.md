@@ -118,6 +118,32 @@ Tree: branch `claude/toolbox-goal` on `main` 3ac5614, brief B1 of the Toolbox go
 
 **Size.** `packages/mcp/src` source 541 lines (was 318), tests 768 (was 402); `mcps/e2e/src` source 198 (was 250), tests 183 (was 146).
 
+## 29 September 2026: prepared mutations (brief B3)
+
+Tree: branch `claude/toolbox-goal` on `main` 3ac5614, brief B3 of the Toolbox goal. Versions as above; `@answerable/mcp` 0.2.0.
+
+| Check | Result |
+| --- | --- |
+| Root typecheck, lint and build | Pass with `--force` (7, 7 and 3 tasks) |
+| `bun --filter web test` | 78 pass |
+| `bun run mcp:test` | auth 37 pass, 100% lines and functions; mcp 85 pass across 12 files, 100% lines and functions; e2e 14 pass across 4 files, including Chromium Apps |
+| `bun run mcp:test:e2e` | Pass on three runs: 9.1 and 7.4 seconds by the agent, 9 seconds by the coordinator; three organisations, `mcp-gamma` read-only again; nothing left behind |
+| `bun --filter @answerable/id test:coverage` | 2,040 pass, 0 fail, 100% line and function coverage in 535 seconds by the agent (load average 9.60 to 12.35); the coordinator's run on the B1 tree, before this brief, gave 2,040 pass in 522 seconds |
+
+**What changed.** `defineMutation` with `prepare` and `commit`; intents with single-use `act_` commit tokens stored as SHA-256; policy classes from `risk` (`low` agent, `normal` controlled, `high` human) with 10-minute, 30-minute and 24-hour expiries; the state machine `prepared`, `awaiting_approval`, `committing`, `committed`, `failed`, `expired`, `stale`; staleness by running `prepare` again at commit and comparing every target's version; idempotent replay; receipts; the two commit tools `<id>_commit` and `<id>_commit_confirmed` (the confirmed one carries `anthropic/requiresUserInteraction`); the in-memory intent store with an injectable clock; `createMcpServer({ intents?, policyClass? })`. The e2e MCP regains `records.create` (agent class, no target) and `records.delete` (controlled class, a serial-versioned target), its view creates and deletes through prepare and commit, and the acceptance regains the write steps and the partially entitled organisation. New docs page `errors.mdx`.
+
+**Found by testing.**
+
+- Bun's coverage never counts the closing brace of a `for (;;)` retry loop, so the lost-claim retry in the commit procedure is recursion, tested with a store whose first compare-and-set loses.
+- In Zod 4.6.5 a missing `z.unknown()` key fails at runtime while its TypeScript type is optional, so `from` and `to` in a preview change default to `null`; `.extend()` keeps `.strict()`, so the prepare input with `validate_only` stays closed.
+- The test issuer mints a random membership per token, so two `connect()` calls could never be one principal; `connect` gained `membershipId` and `clientId`.
+- TypeScript carries the type of `plan` from `prepare` into `commit`, so the e2e's `commit` typechecks `plan.title` and `plan.id`.
+- A commit past `timeoutMs` answers `TIMEOUT` while the commit carries on: a repeat answers `COMMIT_IN_PROGRESS`, then the receipt.
+
+**Decisions recorded.** Commit rechecks authority: a token that lost the mutation's scopes answers `PERMISSION_DENIED`, and an intent for a capability version the server no longer serves answers `INTENT_NOT_FOUND`. The intent keeps the arguments as sent and commit parses them again, so input transforms survive storage. A `prepare` that throws during the re-run marks the intent `failed`. The commit tools are visible when the caller can use at least one mutation. The memory store never evicts intents (documented as a limit).
+
+**Size.** `packages/mcp/src` source 1,043 lines (was 549), tests 1,492 (was 767); `mcps/e2e/src` source 310 (was 187), tests 297 (was 187).
+
 ## Limits
 
 The acceptance uses local test issuers for company directories, a pre-registered public client and loopback HTTP. It does not certify Claude.ai, another host, another company directory or a production deployment.

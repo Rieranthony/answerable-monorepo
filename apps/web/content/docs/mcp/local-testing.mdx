@@ -13,17 +13,18 @@ Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It takes
 
 ## What the acceptance proves
 
-1. ID starts from production migrations, served through the restricted runtime role, and is provisioned only through its admin API: the MCP resource, a public client, three organisations with company sign-in, capabilities and entitlements.
-2. The official MCP client follows the MCP's `401` to its metadata, discovers ID and builds the sign-in: PKCE S256, the MCP URL as `resource`, the advertised scopes (`e2e:identity`, `e2e:read`) plus `offline_access`.
-3. A real browser completes ID's pages: email, company sign-in, organisation, consent listing every scope. The callback carries ID's `iss` (RFC 9207), which the client checks.
-4. The access token's audience is the MCP, its lifetime is the resource's 60 seconds, and it carries every requested scope.
-5. For each organisation, a 2025 client and a `2026-07-28` client both see `identity_get`, `records_list` and `records_show`, the prompt and the resource, and `identity_get` returns the selected organisation.
-6. Each organisation's `records_list` returns only the one record seeded for it in the server's store.
-7. A second MCP at another URL refuses the token with `401`.
-8. The client refreshes an expired access token by itself, ID rotates the refresh token, and the new tokens keep the same scopes.
-9. Disabling the organisation through the admin API makes refresh fail with `invalid_grant`; the issued access token keeps working until it expires.
+1. ID starts from production migrations, served through the restricted runtime role, and is provisioned only through its admin API: the MCP resource, a public client, three organisations with company sign-in, capabilities and entitlements. The third organisation is entitled to `e2e:identity` and `e2e:read` only.
+2. The official MCP client follows the MCP's `401` to its metadata, discovers ID and builds the sign-in: PKCE S256, the MCP URL as `resource`, the advertised scopes (`e2e:identity`, `e2e:read`, `e2e:write`) plus `offline_access`.
+3. A real browser completes ID's pages: email, company sign-in, organisation, consent listing every entitled scope. The third organisation's consent names `e2e:write` as not approved. The callback carries ID's `iss` (RFC 9207), which the client checks.
+4. The access token's audience is the MCP, its lifetime is the resource's 60 seconds, and it carries exactly the entitled scopes.
+5. For each organisation, a 2025 client and a `2026-07-28` client both see the prompt and the resource, and `identity_get` returns the selected organisation. The first two see seven tools: `identity_get`, `records_list`, `records_show`, `records_create`, `records_delete`, `e2e_commit` and `e2e_commit_confirmed`; the third sees the three read tools.
+6. The first two organisations each create two records through `records_create` and `e2e_commit`, then delete one: `records_delete` returns the summary, `e2e_commit` answers `APPROVAL_REQUIRED`, and `e2e_commit_confirmed` with the summary deletes it.
+7. Each lists only its own remaining record, and preparing to delete another organisation's record answers `NOT_FOUND`. The third lists no records, and `records_create` and `e2e_commit` are unknown tools to it.
+8. A second MCP at another URL refuses the token with `401`.
+9. The client refreshes an expired access token by itself, ID rotates the refresh token, and the new tokens keep the same scopes.
+10. Disabling the organisation through the admin API makes refresh fail with `invalid_grant`; the issued access token keeps working until it expires.
 
-Not yet, each returning with prepared mutations: writing and deleting records through the MCP, proving an organisation cannot delete another's record, and a partially entitled organisation whose consent page names the scopes it was not approved for.
+Replays, stale targets and expired intents run in the in-process tests (`bun run mcp:test`); against real ID: Not yet.
 
 The company directories are local test issuers. ID, its database role, its pages, token issuance, the MCP and the MCP client are real.
 

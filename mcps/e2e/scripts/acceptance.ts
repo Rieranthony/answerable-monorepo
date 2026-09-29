@@ -13,7 +13,7 @@ import {
 } from "@modelcontextprotocol/client"
 import { decodeJwt } from "jose"
 import { z } from "zod"
-import type { FixtureRecord } from "../src/contracts"
+import { recordsPage } from "../src/contracts"
 import { createE2eMcp } from "../src/mcp"
 import { createRecordStore } from "../src/records"
 
@@ -28,10 +28,11 @@ const manifestSchema = z.object({
   clientId: z.string(),
   scopes: z.array(z.string()),
   rootSecret: z.string(),
-  tenants: z.array(z.object({ slug: z.string(), email: z.string(), organizationId: z.uuid() })),
+  tenants: z.array(z.object({ slug: z.string(), email: z.string(), organizationId: z.uuid(), scopes: z.array(z.string()) })),
 })
 const view = "<!doctype html><title>Records</title>"
-const allTools = ["identity_get", "records_list", "records_show"]
+const readTools = ["identity_get", "records_list", "records_show"]
+const allTools = [...readTools, "records_create", "records_delete", "e2e_commit", "e2e_commit_confirmed"]
 
 const closers: Array<() => unknown> = []
 let fixture: ReturnType<typeof Bun.spawn> | undefined
@@ -160,9 +161,18 @@ async function signIn(
     await page.getByRole("heading", { name: "Choose an organisation" }).waitFor()
     await page.getByRole("button", { name: "Continue", exact: true }).click()
     await page.getByRole("heading", { name: "Access it will receive" }).waitFor()
+    const withheld = manifest.scopes.filter(scope => !tenant.scopes.includes(scope))
     const scopeList = await page.locator("section ul").innerText()
-    for (const scope of manifest.scopes) assert.ok(scopeList.includes(scope))
+    for (const scope of tenant.scopes) assert.ok(scopeList.includes(scope))
     assert.ok(scopeList.includes("Stay connected after you leave"))
+    if (withheld.length) {
+      step(`${tenant.slug}: consent names the unapproved scopes`)
+      const notice = await page.getByText(`Not approved for ${tenant.slug}:`).innerText()
+      for (const scope of withheld) {
+        assert.ok(notice.includes(scope))
+        assert.ok(!scopeList.includes(scope))
+      }
+    } else assert.equal(await page.getByText(/Not approved for/).count(), 0)
     await page.getByRole("button", { name: "Accept", exact: true }).click()
     await page.waitForURL(`${manifest.callback}?**`)
   } catch (error) {
@@ -182,6 +192,17 @@ async function tool(client: Client, name: string, args: Record<string, unknown> 
   return result.structuredContent as Record<string, unknown>
 }
 
+/** The error envelope's code of a refused call. */
+async function refusal(client: Client, name: string, args: Record<string, unknown>) {
+  const result = await client.callTool({ name, arguments: args })
+  assert.equal(result.isError, true, `${name} must refuse`)
+  const [content] = z.array(z.object({ text: z.string() })).parse(result.content)
+  return z.object({ error: z.object({ code: z.string() }) }).parse(JSON.parse(content!.text)).error.code
+}
+
+const intentSchema = z.object({ intent_id: z.uuid(), commit_token: z.string(), commit_tool: z.string(), preview: z.object({ summary: z.string() }) })
+const commitArgs = (intent: z.infer<typeof intentSchema>) => ({ intent_id: intent.intent_id, commit_token: intent.commit_token })
+
 try {
   step("Starting isolated PostgreSQL")
   await run([...compose, "up", "-d", "--wait"])
@@ -198,12 +219,6 @@ try {
   }
   const manifest = manifestSchema.parse(await Bun.file(manifestPath).json())
   const records = createRecordStore()
-  // Writes through the MCP return with prepared mutations; until then, seed one record per organisation in the store.
-  const seeded = new Map<string, FixtureRecord>()
-  for (const { slug, organizationId } of manifest.tenants) {
-    const creator = { userId: crypto.randomUUID(), organizationId, membershipId: crypto.randomUUID(), grantId: crypto.randomUUID(), clientId: "acceptance", scopes: [], expiresAt: 0 }
-    seeded.set(slug, records.create(creator, `${slug} record`))
-  }
   serve(47_602, createE2eMcp({ auth: { issuer: manifest.idOrigin, resource: manifest.resource }, viewHtml: view, records }).fetch)
   const otherPort = 47_605
   const otherResource = `http://127.0.0.1:${otherPort}/mcp`
@@ -213,12 +228,14 @@ try {
   const browser = await chromium.launch({ headless: true, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false })
   closers.push(() => browser.close())
 
+  const created = new Map<string, string>()
   for (const tenant of manifest.tenants) {
     step(`${tenant.slug}: signing in through ID with the MCP SDK's OAuth client`)
     const oauth = await signIn(browser, manifest, tenant)
     const tokens = oauth.state.tokens
     assert.ok(tokens?.access_token && tokens.refresh_token, "ID issues an access and a refresh token")
-    const expectedScopes = [...manifest.scopes, "offline_access"].sort()
+    const expectedScopes = [...tenant.scopes, "offline_access"].sort()
+    const partial = !tenant.scopes.includes("e2e:write")
     const claims = decodeJwt(tokens.access_token)
     assert.deepEqual(tokens.scope?.split(" ").sort(), expectedScopes)
     assert.deepEqual(String(claims.scope).split(" ").sort(), expectedScopes)
@@ -228,7 +245,7 @@ try {
     for (const protocol of ["2025", "2026-07-28"] as const) {
       step(`${tenant.slug}: MCP calls with a ${protocol} client`)
       const client = await connect(manifest.resource, oauth.provider, protocol)
-      assert.deepEqual((await client.listTools()).tools.map(item => item.name), allTools)
+      assert.deepEqual((await client.listTools()).tools.map(item => item.name), partial ? readTools : allTools)
       const identity = await tool(client, "identity_get")
       assert.equal(identity.organizationId, tenant.organizationId, "The token carries the selected organisation")
       assert.equal(identity.userId, claims.sub)
@@ -239,9 +256,35 @@ try {
       assert.ok(JSON.stringify(walkthrough.messages).includes("records_list"))
     }
 
-    step(`${tenant.slug}: each organisation lists only its own records`)
     const client = await connect(manifest.resource, oauth.provider, "2026-07-28")
-    assert.deepEqual(await tool(client, "records_list"), { items: [seeded.get(tenant.slug)], next_cursor: null, has_more: false })
+    if (partial) {
+      step(`${tenant.slug}: read-only access sees no other organisation's records and no writes`)
+      assert.deepEqual(await tool(client, "records_list"), { items: [], next_cursor: null, has_more: false })
+      await assert.rejects(client.callTool({ name: "records_create", arguments: { title: "Unapproved write" } }), /Tool records_create not found/)
+      await assert.rejects(client.callTool({ name: "e2e_commit", arguments: {} }), /Tool e2e_commit not found/)
+    } else {
+      step(`${tenant.slug}: create through records_create and e2e_commit`)
+      const create = async (title: string) => {
+        const intent = intentSchema.parse(await tool(client, "records_create", { title }))
+        assert.equal(intent.commit_tool, "e2e_commit")
+        return z.object({ results: z.object({ id: z.uuid() }) }).parse(await tool(client, "e2e_commit", commitArgs(intent))).results
+      }
+      const kept = await create(`${tenant.slug} record`)
+      const draft = await create(`${tenant.slug} draft`)
+      step(`${tenant.slug}: delete through records_delete and e2e_commit_confirmed with the preview's summary`)
+      const intent = intentSchema.parse(await tool(client, "records_delete", { id: draft.id }))
+      assert.equal(intent.commit_tool, "e2e_commit_confirmed")
+      assert.equal(intent.preview.summary, `Delete record “${tenant.slug} draft”`)
+      assert.equal(await refusal(client, "e2e_commit", commitArgs(intent)), "APPROVAL_REQUIRED")
+      const receipt = await tool(client, "e2e_commit_confirmed", { ...commitArgs(intent), preview_summary: intent.preview.summary })
+      assert.deepEqual(receipt.results, { deleted: true, id: draft.id })
+      step(`${tenant.slug}: each organisation lists only its own records and cannot prepare deleting another's`)
+      assert.deepEqual(recordsPage.parse(await tool(client, "records_list")).items.map(item => item.id), [kept.id])
+      for (const [otherSlug, otherId] of created) {
+        assert.equal(await refusal(client, "records_delete", { id: otherId }), "NOT_FOUND", `${tenant.slug} cannot delete a ${otherSlug} record`)
+      }
+      created.set(tenant.slug, kept.id)
+    }
 
     step(`${tenant.slug}: the token is refused by another MCP`)
     const elsewhere = await fetch(otherResource, {

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0
+
+Prepared mutations. Breaking: a `Tool` carries `kind: "read"`, and provider tools are a union of `Tool` and `Mutation`.
+
+- `defineMutation` takes a read tool's fields with `prepare` and `commit` in place of `execute`, plus optional `risk` (`low`, `normal` by default, `high`), `effects` (from the six-name vocabulary) and `expiresInMs` (may shorten the class's expiry, never lengthen it). Its scopes default to `<provider>:write`; `kind: "mutate"` is derived.
+- `prepare` returns `{ targets, preview, plan? }`: versioned targets, a preview whose `summary` is 1 to 500 characters and whose arrays default to empty, and the author's own plan data, stored as JSON and typed through to `commit`. A preview naming an effect the definition does not declare answers `INTERNAL` and logs the definition to fix.
+- Each mutation is a prepare tool (read-only annotations, `_meta` with `kind: "mutate"`, `risk` and `policy_class`, input plus `validate_only`) returning the intent with a single-use `act_` commit token. A server with mutations adds `<id>_commit` and `<id>_commit_confirmed` (the latter destructive, with `anthropic/requiresUserInteraction`), listed when the caller can use at least one mutation; they return the receipt.
+- Commit checks the principal first, then status (replay, `COMMIT_IN_PROGRESS`, `INTENT_EXPIRED`, `INTENT_STALE`, `INTENT_CONSUMED`, `APPROVAL_REQUIRED`), the served version and scopes, the token hash and the tool for the class; claims the intent by compare-and-set; runs `prepare` again and answers `INTENT_STALE` with `details.targets` when a target moved, disappeared or appeared; then commits and stores the receipt. `timeoutMs` bounds the prepare and the commit; a timed-out commit finishes in the background.
+- Policy classes: `agent` (10 minutes), `controlled` (30 minutes), `human` (24 hours, recorded as `awaiting_approval`; approvals are not built). `createMcpServer({ policyClass })` decides the class per caller; the default follows `risk`.
+- `IntentStore` (`now`, `insert`, `get`, `transition`) and `createMemoryIntentStore({ now? })`, the default per server. `createMcpServer({ intents })` and `createTestMcp(provider, { intents, policyClass })` take a store; `connect({ membershipId, clientId })` pins the principal.
+- `manifest(provider)` gives mutations `risk` and `effects`, their input without `validate_only` and their results schema as `output`, and lists the two commit tools with `kind: "commit"`.
+
 ## 0.1.0
 
 The tool model for capabilities. Breaking: servers take a provider, and tool names are dotted.

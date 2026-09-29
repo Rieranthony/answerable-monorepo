@@ -8,7 +8,9 @@ claude mcp add --transport http answerable-e2e http://localhost:47500/mcp \
   --client-id claude-code-local --callback-port 47700
 ```
 
-Run this once the server and client below are registered. Then open Claude Code, run `/mcp`, select `answerable-e2e` and choose **Authenticate**. Your browser opens Answerable ID: sign in with your work account, choose the organisation and accept. Ask Claude to call `identity_get`; it returns your organisation. The e2e MCP has three read tools; writes: Not yet, they return with prepared mutations.
+Run this once the server and client below are registered. Then open Claude Code, run `/mcp`, select `answerable-e2e` and choose **Authenticate**. Your browser opens Answerable ID: sign in with your work account, choose the organisation and accept. Ask Claude to call `identity_get`; it returns your organisation.
+
+**Writes.** Ask Claude to create a test record: it calls `records_create`, which prepares an intent and changes nothing, then `e2e_commit`. Deleting calls `records_delete`, then `e2e_commit_confirmed` with the preview's summary. The confirmed tool carries `anthropic/requiresUserInteraction`; whether Claude Code then asks you even under an allow rule: not yet tested. See [mutations](/docs/mcp/authoring#mutations).
 
 ## Register the server
 
@@ -22,7 +24,7 @@ export MCP_PATH=http%3A%2F%2Flocalhost%3A47500%2Fmcp
 curl "$ID/api/admin/v1/resources" \
   -H "Idempotency-Key: e2e-resource-v1" -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"classification":"platform_shared","organizationId":null,"identifier":"'"$MCP"'","name":"E2E MCP","allowedScopes":["e2e:identity","e2e:read","offline_access"],"accessTokenTtl":900}'
+  -d '{"classification":"platform_shared","organizationId":null,"identifier":"'"$MCP"'","name":"E2E MCP","allowedScopes":["e2e:identity","e2e:read","e2e:write","offline_access"],"accessTokenTtl":900}'
 ```
 
 **Resource.** The URL is the token audience. It must match `MCP_RESOURCE_URL` exactly: `localhost` and `127.0.0.1` are different resources.
@@ -35,7 +37,7 @@ curl "$ID/api/admin/v1/resources" \
 curl "$ID/api/admin/v1/clients" \
   -H "Idempotency-Key: claude-code-local-v1" -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"clientId":"claude-code-local","name":"Claude Code (local)","tokenEndpointAuthMethod":"none","grantTypes":["authorization_code","refresh_token"],"redirectUris":["http://localhost:47700/callback"],"scopes":["openid","offline_access","e2e:identity","e2e:read"]}'
+  -d '{"clientId":"claude-code-local","name":"Claude Code (local)","tokenEndpointAuthMethod":"none","grantTypes":["authorization_code","refresh_token"],"redirectUris":["http://localhost:47700/callback"],"scopes":["openid","offline_access","e2e:identity","e2e:read","e2e:write"]}'
 
 curl -X PUT "$ID/api/admin/v1/clients/claude-code-local/resources/$MCP_PATH" \
   -H "Idempotency-Key: claude-code-local-link-v1" -H "Authorization: Bearer $TOKEN"
@@ -54,7 +56,7 @@ for grant in authorization_code refresh_token; do
   curl "$ID/api/admin/v1/organizations/$ORG/capabilities" \
     -H "Idempotency-Key: claude-e2e-$grant-v1" -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
-    -d '{"clientId":"claude-code-local","resource":"'"$MCP"'","grantKind":"'"$grant"'","scopes":["e2e:identity","e2e:read"]}'
+    -d '{"clientId":"claude-code-local","resource":"'"$MCP"'","grantKind":"'"$grant"'","scopes":["e2e:identity","e2e:read","e2e:write"]}'
 done
 
 curl "$ID/api/admin/v1/organizations/$ORG/entitlements" \
@@ -65,10 +67,12 @@ curl "$ID/api/admin/v1/organizations/$ORG/entitlements" \
 curl "$ID/api/admin/v1/organizations/$ORG/entitlements" \
   -H "Idempotency-Key: claude-e2e-entitlement-v1" -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"clientId":"claude-code-local","resource":"'"$MCP"'","scopes":["e2e:identity","e2e:read"]}'
+  -d '{"clientId":"claude-code-local","resource":"'"$MCP"'","scopes":["e2e:identity","e2e:read","e2e:write"]}'
 ```
 
-**Every scope.** Claude Code asks for every scope the MCP lists. ID issues the ones the organisation is entitled to, and Claude Code sees only the tools they cover. See [capabilities and entitlements](/docs/id/onboard#grant-access). A partial entitlement in Claude Code by hand: Not yet tested.
+**Every scope.** Claude Code asks for every scope the MCP lists. ID issues the ones the organisation is entitled to, and Claude Code sees only the tools they cover: without `e2e:write`, the three read tools and no commit tools. See [capabilities and entitlements](/docs/id/onboard#grant-access). A partial entitlement in Claude Code by hand: Not yet tested.
+
+**Registered before writes existed?** Add `e2e:write` with `PATCH` to the resource's `allowedScopes`, the client's `scopes`, and the `scopes` of each capability and entitlement above, each call with its own `Idempotency-Key`. See [manage](/docs/id/manage).
 
 ## Start the server
 
@@ -88,8 +92,10 @@ MCP_ID_ISSUER=http://localhost:47300 MCP_RESOURCE_URL=http://localhost:47500/mcp
 
 | Error | Meaning | What to do |
 | --- | --- | --- |
-| "Access is unavailable for this organisation" | The organisation lacks a capability or entitlement, or holds only some of the MCP's scopes | Grant every scope above to the organisation |
+| "Access is unavailable for this organisation" | The organisation lacks a login capability or entitlement for the client, or a capability or entitlement for the MCP (a partial entitlement is fine: ID issues the entitled subset) | Grant the capabilities and an entitlement above to the organisation |
 | `invalid_redirect` | The callback port differs from the registered redirect URI | Use `--callback-port 47700`, or register the port you use |
 | `invalid_target` | The resource is unknown, not linked to the client, or written differently | Use the exact registered URL and link it |
 | `invalid_client` | The client ID is unknown or disabled | Check `claude mcp get answerable-e2e` against the registration |
 | `401` after signing in | The MCP's issuer or resource differs from ID's | Set `MCP_ID_ISSUER` to ID's origin and `MCP_RESOURCE_URL` to the registered URL |
+| `Tool records_create not found` | The token lacks `e2e:write` | Add `e2e:write` as above, then choose **Authenticate** again |
+| A commit tool answers an error | The intent cannot be committed as it is | See [MCP errors](/docs/mcp/errors) |

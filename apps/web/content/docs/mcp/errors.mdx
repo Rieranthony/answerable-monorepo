@@ -1,0 +1,123 @@
+---
+title: MCP errors
+description: "Every error a tool call on an Answerable MCP can answer: the envelope, the retry policies, each code, its meaning and what to do."
+---
+
+```json
+{
+  "error": {
+    "code": "INTENT_STALE",
+    "message": "Intent 0199a4e2-7b06-7000-87bd-91723fe45f93 is stale: “Q3 plan” changed since it was prepared; prepare it again",
+    "retry": { "policy": "after_reprepare" },
+    "details": { "targets": [{ "resource_id": "d7c1", "expected": "17", "current": "18" }] },
+    "request_id": "0199a4e2-8c11-7000-9a3e-5b2d6f1c0e44"
+  }
+}
+```
+
+Every tool failure is `{ "isError": true, "content": [{ "type": "text", "text": "…" }] }` with no `structuredContent`, and the one text block is this envelope as JSON. [Why text only](/docs/mcp/authoring#tool-errors). A model picks its next step from `retry.policy` without reading the message.
+
+## The envelope
+
+| Field | Value |
+| --- | --- |
+| `code` | A code from the table below, or a [custom code](#custom-codes) |
+| `message` | Plain English for the model and the person. `INTERNAL` carries no detail |
+| `retry.policy` | What to do next; see [retry policies](#retry-policies) |
+| `retry.after_ms` | With `after_delay` only: milliseconds to wait. Default 1,000 |
+| `details` | Present only when the code has details: [`field_violations`](#field-violations), [`targets`](#stale-targets), [`approval`](#approval), or your own |
+| `request_id` | The call's execution id, a UUIDv7. The server log names it for `INTERNAL` |
+
+## Retry policies
+
+| Policy | What the caller does |
+| --- | --- |
+| `never` | Stop, and tell the person why |
+| `after_delay` | Wait `after_ms`, then call again with the same arguments |
+| `after_fix_input` | Correct the fields in `details.field_violations`, then call again |
+| `after_state_change` | Wait until what `details.preconditions` names has changed, then call again |
+| `after_reprepare` | Call the mutation's prepare tool again, then commit the new intent |
+| `after_approval` | Commit with the tool in `details.approval.commit_tool`. Human approvals: Not yet |
+
+## Codes
+
+| Code | Meaning | Retry | What to do |
+| --- | --- | --- | --- |
+| `INVALID_INPUT` | The input failed the schema or a business rule | `after_fix_input` | Fix the fields in `details.field_violations` |
+| `NOT_FOUND` | A named resource does not exist for this caller; another organisation's resource is not found either | `never` | Check the identifier, for example with a list tool |
+| `PERMISSION_DENIED` | The caller may not perform the operation; a commit whose token no longer carries the mutation's scopes answers it too | `never` | Ask for access, then prepare again |
+| `PRECONDITION_FAILED` | The current state does not allow the operation; `details.preconditions` says what | `after_state_change` | Change that state first |
+| `INTENT_STALE` | A target's version moved, or a target disappeared or appeared, since prepare; `details.targets` says which | `after_reprepare` | Prepare again and show the new preview |
+| `INTENT_EXPIRED` | The intent passed `expires_at` before it was committed | `after_reprepare` | Prepare again |
+| `INTENT_NOT_FOUND` | No intent has that id, or it is for a capability version this server does not serve | `after_reprepare` | Prepare again |
+| `INTENT_CONSUMED` | The intent was committed once and that commit failed | `after_reprepare` | Prepare again |
+| `INTENT_CANCELLED` | The intent was cancelled | `after_reprepare` | Not yet: intents cannot be cancelled |
+| `COMMIT_TOKEN_INVALID` | The commit token does not match the intent | `never` | Pass the `commit_token` the prepare tool returned for this intent |
+| `PRINCIPAL_MISMATCH` | Another person, membership or client prepared the intent | `never` | Prepare your own intent |
+| `APPROVAL_REQUIRED` | The intent's class needs the other commit tool, the person's confirmed summary, or a human approval | `after_approval` | See [approval](#approval) |
+| `APPROVAL_DENIED` | A person refused the approval | `never` | Not yet: approvals do not exist |
+| `COMMIT_IN_PROGRESS` | Another commit of this intent is running | `after_delay` | Call again; a finished commit answers with its receipt |
+| `IDEMPOTENCY_KEY_MISMATCH` | The same idempotency key came with different input | `never` | Not yet: prepare takes no idempotency key |
+| `RATE_LIMITED`, `BUDGET_EXHAUSTED` | A limit refused the call | `after_delay` | Wait `after_ms`. Not yet: the SDK enforces no limits; a handler may throw them |
+| `UPSTREAM_REJECTED` | The source refused; `details.upstream` carries its code | `never` | Read `details.upstream`. A handler that calls a source throws it; no Answerable provider does yet |
+| `UPSTREAM_UNAVAILABLE` | The source did not answer | `after_delay` | Call again later. A handler that calls a source throws it; no Answerable provider does yet |
+| `TIMEOUT` | The tool ran past its `timeoutMs` | `after_delay` | Call again; a commit may still finish, so call the commit tool again for its receipt |
+| `OPERATION_NOT_FOUND`, `OPERATION_EXPIRED` | The operation handle is unknown or gone | `never` | Not yet: operations do not exist |
+| `INTERNAL` | An unexpected failure | `after_delay` | Call again once; if it persists, the operator reads the server log for the `request_id` |
+
+**Who answers what.** The server answers `INVALID_INPUT` for bad arguments, `TIMEOUT` and `INTERNAL` for every tool. The commit tools answer the `INTENT_*` codes, `COMMIT_TOKEN_INVALID`, `PRINCIPAL_MISMATCH`, `APPROVAL_REQUIRED`, `COMMIT_IN_PROGRESS` and `PERMISSION_DENIED`, in [this order](/docs/mcp/authoring#commit-tools). Your handlers throw the rest with `ToolError`. `errorCodes` in `@answerable/mcp` exports the table as data.
+
+## Custom codes
+
+```ts
+throw new ToolError("ACME_QUOTA_EXCEEDED", "Your plan allows 100 projects", { retry: { policy: "after_state_change" } })
+```
+
+A provider may add `<PROVIDER>_<CODE>` in capitals, with an explicit retry. Any other code, or a custom code without `retry`, throws when the error is constructed.
+
+## Field violations
+
+```json
+{ "field_violations": [{ "field": "nested.count", "message": "Invalid input: expected number, received string" }, { "field": "extra", "message": "Unknown field" }] }
+```
+
+`details` of `INVALID_INPUT`: one entry per problem. `field` is the dotted path; the top level is `""`. An unknown top-level field has the message `Unknown field`. The envelope's `message` joins them as `field: message; …`.
+
+## Stale targets
+
+`details.targets` of `INTENT_STALE`: one entry per target that changed since prepare.
+
+| Field | Value |
+| --- | --- |
+| `resource_id` | The target's id |
+| `expected` | The version `prepare` saw; `null` when the target appeared since |
+| `current` | The version now; `null` when the target disappeared |
+
+The intent stays `stale`: a later commit answers `INTENT_STALE` without `details`.
+
+## Approval
+
+`details.approval` of `APPROVAL_REQUIRED`: `{ "class": "controlled", "commit_tool": "e2e_commit_confirmed" }`.
+
+| Case | What to do |
+| --- | --- |
+| An agent-class intent sent to `<id>_commit_confirmed` | Commit it with `<id>_commit` |
+| A controlled-class intent sent to `<id>_commit` | Show the person the preview, then call `<id>_commit_confirmed` with `preview_summary` |
+| `preview_summary` differs from the intent's summary | Pass `preview.summary` word for word |
+| A human-class intent | It needs a person's approval. Not yet: there is no approval page and no `approval.url`, so the intent waits until it expires |
+
+A refused commit leaves the intent committable.
+
+## Not tool errors
+
+A tool the token cannot use answers the protocol's `Tool <name> not found`, never an envelope, so the tools of other scopes cannot be enumerated. Authentication answers HTTP `401`, a foreign `Host` or `Origin` HTTP `403`. See [the authoring errors](/docs/mcp/authoring#errors).
+
+## Limits
+
+| Limit | Value |
+| --- | --- |
+| Envelopes per failure | One, in the one text block |
+| `after_ms` default | 1,000 |
+| Custom code shape | `^[A-Z][A-Z0-9]*_[A-Z0-9_]+$` |
+| `INTERNAL` message | Always `The tool could not complete` |
+| `Retry-After` from a source into `after_ms` | Not yet |
