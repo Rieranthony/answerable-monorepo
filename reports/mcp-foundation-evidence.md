@@ -74,6 +74,22 @@ Tree: branch `claude/mcp-sdk-dx` (pull request 11), rebased on `main` d55220d. `
 
 **Size.** Source in `packages/mcp`, `packages/auth` and the e2e server went from 658 to 618 lines with the test harness added; tests went from 56 to 71.
 
+## 29 September 2026: pull request 11 rebased for the Toolbox goal
+
+Tree: branch `claude/toolbox-goal` on `main` 3ac5614, carrying pull request 11 (5b7ff19 and 6b06214). Versions: Bun 1.3.1; MCP TypeScript SDK (server, client, core) 2.1.0; MCP Apps 2.0.0; JOSE 6.2.12; Zod 4.6.5; Playwright 1.63.0 Chromium; Better Auth 1.7.2 in ID.
+
+| Check | Result |
+| --- | --- |
+| Root typecheck, lint and build | Pass with `--force`, so nothing came from the Turbo cache (7, 7 and 3 tasks) |
+| `bun --filter web test` | 78 pass |
+| `bun run mcp:test` | auth 37 pass, 100% lines and functions; mcp 27 pass, 100% lines and functions; e2e 7 pass, including Chromium Apps |
+| `bun run mcp:test:e2e` | Pass, three runs in a row: 9, 8 and 7 seconds, three organisations including the partially entitled `mcp-gamma`; no container, volume, network, temporary directory, process or port left |
+| `bun --filter @answerable/id test:coverage` | 2,040 pass, 0 fail, 100% line and function coverage in 559 seconds; one-minute load average 15.02 at the start, 7.03 to 14.43 over 55 samples during the run |
+
+**Found by testing.**
+
+- `bun run env:up` from a worktree recreates the main checkout's running Postgres: the Compose project name is the same and the init directory's bind mount path differs (`docker compose --dry-run up -d --wait` printed `Container answerable-postgres-1  Recreate`). The ID suite ran against the Postgres already on port 47432, in its disposable `answerable_id_test` database, without `env:up`.
+
 ## Limits
 
 The acceptance uses local test issuers for company directories, a pre-registered public client and loopback HTTP. It does not certify Claude.ai, another host, another company directory or a production deployment.
