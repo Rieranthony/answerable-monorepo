@@ -65,7 +65,7 @@ function demo(fault: Fault = () => ({})) {
     async commit({ plan, preview }) { return { results: { id: add(plan.title).id }, applied_changes: preview.changes, effects_performed: [] } },
   })
   const rename = defineMutation({
-    name: "notes.rename", description: "Prepare renaming a note. Changes nothing: returns a preview; show its summary, then commit the intent with demo_commit_confirmed.",
+    name: "notes.rename", description: "Prepare renaming a note. Changes nothing: returns a preview; show its summary, then commit the intent with the tool its commit_tool names.",
     input: z.object({ id: z.string(), title: z.string().min(1).max(50) }), output: z.object({ id: z.string() }),
     async prepare({ id, title }) {
       const at = target(id)

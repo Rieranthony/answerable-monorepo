@@ -326,7 +326,7 @@
       "name": "records_create",
       "version": "2026-09-29",
       "kind": "mutate",
-      "description": "Prepare creating a test record in your organisation. Changes nothing: returns a preview and a commit token; commit the intent with e2e_commit to create the record.",
+      "description": "Prepare creating a test record in your organisation. Changes nothing: returns a preview and a commit token; commit the intent with the tool its commit_tool names to create the record.",
       "scopes": [
         "e2e:write"
       ],
@@ -405,7 +405,7 @@
       "name": "records_delete",
       "version": "2026-09-29",
       "kind": "mutate",
-      "description": "Prepare deleting one of your organisation's test records by id. Changes nothing: returns a preview naming the record; show the person its summary, then commit the intent with e2e_commit_confirmed.",
+      "description": "Prepare deleting one of your organisation's test records by id. Changes nothing: returns a preview naming the record; show the person its summary, then commit the intent with the tool its commit_tool names.",
       "scopes": [
         "e2e:write"
       ],

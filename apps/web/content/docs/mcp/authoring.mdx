@@ -139,7 +139,7 @@ import { records } from "./records"
 
 export const recordsDelete = defineMutation({
   name: "records.delete",
-  description: "Prepare deleting one of your organisation's records. Changes nothing: returns a preview; show the person its summary, then commit it with example_commit_confirmed.",
+  description: "Prepare deleting one of your organisation's records. Changes nothing: returns a preview; show the person its summary, then commit the intent with the tool its commit_tool names.",
   input: z.object({ id: z.uuid() }),
   output: z.object({ deleted: z.literal(true) }),
   async prepare({ id }, { principal }) {
@@ -424,7 +424,7 @@ The description is what a model reads to choose a tool. Write operational docume
 | What it does | `List the RFIs of a project, newest first.` |
 | When to use it and what to call first | `Use projects.search first to find the project id.` |
 | Its limits | `20 per page by default and at most 100.` |
-| Whether it changes state | A mutation: `Prepare deleting a record. Changes nothing: returns a preview; commit it with example_commit_confirmed.` |
+| Whether it changes state | A mutation: `Prepare deleting a record. Changes nothing: returns a preview; commit the intent with the tool its commit_tool names.` Name no commit tool: a hub serves the mutation under its own commit tools, and the intent's `commit_tool` says which |
 | What identifiers mean | `id is the record's id from records.list.` |
 
 `defineTool` refuses fewer than 40 or more than 1,000 characters. The conformance kit adds two checks, `descriptions_operational` (a mutation's description says `prepare` or `intent`) and `deprecations_mirrored` (a deprecated tool's description ends with the deprecation sentence).

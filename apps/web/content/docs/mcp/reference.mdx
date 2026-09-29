@@ -357,7 +357,7 @@ import { z } from "zod"
 
 export const recordsDelete = defineMutation({
   name: "records.delete",
-  description: "Prepare deleting one of your organisation's records. Changes nothing: returns a preview; show the person its summary, then commit it with example_commit_confirmed.",
+  description: "Prepare deleting one of your organisation's records. Changes nothing: returns a preview; show the person its summary, then commit the intent with the tool its commit_tool names.",
   input: z.object({ id: z.uuid() }),
   output: z.object({ deleted: z.literal(true) }),
   async prepare({ id }, { principal }) {

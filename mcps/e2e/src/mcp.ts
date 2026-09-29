@@ -53,7 +53,7 @@ export function createE2eProvider({ records, viewHtml }: { records: RecordStore;
 
   const recordsCreate = defineMutation({
     name: "records.create", risk: "low",
-    description: "Prepare creating a test record in your organisation. Changes nothing: returns a preview and a commit token; commit the intent with e2e_commit to create the record.",
+    description: "Prepare creating a test record in your organisation. Changes nothing: returns a preview and a commit token; commit the intent with the tool its commit_tool names to create the record.",
     input: z.object({ title: recordSchema.shape.title.describe("The record's title, 1 to 200 characters") }),
     output: recordSchema,
     async prepare({ title }) {
@@ -67,7 +67,7 @@ export function createE2eProvider({ records, viewHtml }: { records: RecordStore;
 
   const recordsDelete = defineMutation({
     name: "records.delete",
-    description: "Prepare deleting one of your organisation's test records by id. Changes nothing: returns a preview naming the record; show the person its summary, then commit the intent with e2e_commit_confirmed.",
+    description: "Prepare deleting one of your organisation's test records by id. Changes nothing: returns a preview naming the record; show the person its summary, then commit the intent with the tool its commit_tool names.",
     input: z.object({ id: z.uuid().describe("The record's id, from records.list") }),
     output: z.object({ deleted: z.literal(true), id: z.uuid() }),
     async prepare({ id }, { principal }) {
