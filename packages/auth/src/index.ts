@@ -1,14 +1,19 @@
 import { createRemoteJWKSet, customFetch, jwtVerify } from "jose"
 import { z } from "zod"
 
-/** The issuer and resource a verifier trusts, and the HTTP client it uses for discovery. */
-export type IdVerifierConfig = {
+/** The kinds of token a verifier may accept: `user` for a person's token, `client` for a machine client's `client_credentials` token. */
+export type SubjectType = "user" | "client"
+
+/** The issuer and resource a verifier trusts, the token kinds it accepts and the HTTP client it uses for discovery. */
+export type IdVerifierConfig<S extends SubjectType = "user"> = {
   /** Trusted Answerable ID issuer, for example https://id.answerable.org. */
   issuer: string
   /** This service's canonical resource URL as registered in ID; the token audience must contain it. */
   resource: string
   /** HTTP client for discovery and key requests. Default: the global fetch. */
   fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+  /** The token kinds to accept; a verifier returns `UserPrincipal` for `user` and `MachinePrincipal` for `client`. Default: `["user"]`. */
+  subjectTypes?: readonly S[]
 }
 
 /** The caller a verified access token names. Constrain every query by `organizationId`. */
@@ -29,6 +34,27 @@ export type UserPrincipal = Readonly<{
   organizationAuthorizationVersion: number
 }>
 
+/** The machine client a verified `client_credentials` token names. Constrain every query by `organizationId`. */
+export type MachinePrincipal = Readonly<{
+  /** Always `client`: a verifier that accepts both kinds returns `UserPrincipal | MachinePrincipal`, and `"subjectType" in principal` narrows it. */
+  subjectType: "client"
+  /** The OAuth client that asked for the token, which is also the token's subject. */
+  clientId: string
+  /** The organisation that owns the client. */
+  organizationId: string
+  /** The scopes ID issued: the client's allowed subset of the ones requested. */
+  scopes: readonly string[]
+  /** Expiry, in seconds since the epoch. */
+  expiresAt: number
+  /** The client's authorisation version when the token was issued; ID advances it when the client's authority changes. */
+  authorizationVersion: number
+  /** The owning organisation's authorisation version when the token was issued; ID advances it when it disables the organisation. */
+  organizationAuthorizationVersion: number
+}>
+
+/** What a verifier that accepts `S` returns. */
+type Verified<S extends SubjectType> = ("user" extends S ? UserPrincipal : never) | ("client" extends S ? MachinePrincipal : never)
+
 /** Thrown for every rejected token, always with the same message so that it reveals nothing; answer it with a `401` challenge. */
 export class AuthenticationError extends Error {
   constructor() {
@@ -37,19 +63,21 @@ export class AuthenticationError extends Error {
   }
 }
 
-const claimsSchema = z.object({
-  sub: z.uuid(),
-  subject_type: z.literal("user"),
+const version = z.number().int().positive()
+const shared = {
   organization_id: z.uuid(),
-  membership_id: z.uuid(),
-  organization_authorization_version: z.number().int().positive(),
-  grant_id: z.uuid(),
+  organization_authorization_version: version,
   client_id: z.string().min(1),
   azp: z.string().optional(),
   scope: z.string(),
   exp: z.number().int().positive(),
   cnf: z.never().optional(),
-})
+}
+const claimsSchema = z.discriminatedUnion("subject_type", [
+  z.object({ ...shared, subject_type: z.literal("user"), sub: z.uuid(), membership_id: z.uuid(), grant_id: z.uuid() }),
+  // A machine client is its own subject.
+  z.object({ ...shared, subject_type: z.literal("client"), sub: z.string().min(1), authorization_version: version }).refine(claims => claims.sub === claims.client_id),
+])
 
 function trustedUrl(value: string, name: string) {
   let url: URL
@@ -67,6 +95,7 @@ function trustedUrl(value: string, name: string) {
 /**
  * Create a function that verifies an Answerable ID access token against the issuer's published keys, offline, and returns its caller.
  * The keys are read from the issuer's metadata on first use; every failure throws `AuthenticationError`.
+ * It accepts a person's token only, unless `subjectTypes` lists `client` for machine tokens (`MachinePrincipal`).
  *
  * @example
  * ```ts
@@ -76,8 +105,10 @@ function trustedUrl(value: string, name: string) {
  * const principal = await verify(accessToken)
  * ```
  */
-export function createIdVerifier(config: IdVerifierConfig): (token: string) => Promise<UserPrincipal> {
+export function createIdVerifier<S extends SubjectType = "user">(config: IdVerifierConfig<S>): (token: string) => Promise<Verified<S>> {
   const { issuer, resource } = config
+  const accepted: readonly SubjectType[] = config.subjectTypes ?? ["user"]
+  if (!accepted.length) throw new Error("subjectTypes must list user, client or both")
   const fetcher = config.fetch ?? ((input, init) => fetch(input, init))
   const issuerUrl = trustedUrl(issuer, "issuer")
   trustedUrl(resource, "resource")
@@ -103,17 +134,17 @@ export function createIdVerifier(config: IdVerifierConfig): (token: string) => P
         typ: "at+jwt", requiredClaims: ["exp", "iat", "sub"],
       })
       const claims = claimsSchema.parse(payload)
-      if (claims.azp !== undefined && claims.azp !== claims.client_id) throw new AuthenticationError()
-      return Object.freeze({
-        userId: claims.sub,
+      if (!accepted.includes(claims.subject_type) || (claims.azp !== undefined && claims.azp !== claims.client_id)) throw new AuthenticationError()
+      const common = {
         organizationId: claims.organization_id,
-        membershipId: claims.membership_id,
-        grantId: claims.grant_id,
         clientId: claims.client_id,
         scopes: Object.freeze([...new Set(claims.scope.split(" ").filter(Boolean))]),
         expiresAt: claims.exp,
         organizationAuthorizationVersion: claims.organization_authorization_version,
-      })
+      }
+      return Object.freeze(claims.subject_type === "user"
+        ? { userId: claims.sub, membershipId: claims.membership_id, grantId: claims.grant_id, ...common }
+        : { subjectType: "client", authorizationVersion: claims.authorization_version, ...common }) as Verified<S>
     } catch {
       throw new AuthenticationError()
     }

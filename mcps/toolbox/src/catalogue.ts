@@ -18,6 +18,7 @@ export type Catalogue = ReadonlyMap<string, CatalogueEntry>
 /**
  * Store each provider's manifest and every capability at its version. A capability already stored at the same version with another
  * kind, risk, input or output refuses the whole ingest, naming it: a contract change needs a new version. Titles and descriptions update in place.
+ * A capability the provider never had before stays off for every organisation that has the provider enabled: its identity joins their `overrides.disabled`.
  */
 export async function ingest(db: SQL, providers: readonly Provider[]) {
   await db.begin(async tx => {
@@ -26,6 +27,7 @@ export async function ingest(db: SQL, providers: readonly Provider[]) {
       await tx`insert into providers (id, version, manifest) values (${provider.id}, ${provider.version}, ${contract})
         on conflict (id) do update set version = excluded.version, manifest = excluded.manifest,
           registered_at = case when providers.manifest = excluded.manifest then providers.registered_at else now() end`
+      const known = new Set((await tx`select identity from capabilities where provider_id = ${provider.id}`).map((row: { identity: string }) => row.identity))
       for (const tool of contract.tools) {
         if (tool.kind === "commit") continue
         const risk = tool.kind === "mutate" ? tool.risk : null
@@ -38,6 +40,12 @@ export async function ingest(db: SQL, providers: readonly Provider[]) {
         await tx`insert into capabilities (provider_id, identity, version, kind, risk, title, description, input, output)
           values (${provider.id}, ${tool.identity}, ${tool.version}, ${tool.kind}, ${risk}, ${tool.title ?? null}, ${tool.description}, ${tool.input}, ${tool.output})
           on conflict (identity, version) do update set title = excluded.title, description = excluded.description`
+      }
+      const added = contract.tools.filter(tool => tool.kind !== "commit" && !known.has(tool.identity)).map(tool => tool.identity)
+      if (added.length) {
+        await tx`update organisation_catalogue set updated_at = now(), overrides = jsonb_set(overrides, '{disabled}', (
+            select coalesce(jsonb_agg(identity order by identity), '[]') from (select distinct jsonb_array_elements_text(overrides -> 'disabled' || ${added}::jsonb) as identity) as merged))
+          where provider_id = ${provider.id} and enabled`
       }
     }
   })

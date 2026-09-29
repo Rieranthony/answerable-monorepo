@@ -10,7 +10,7 @@ beforeAll(() => migrate(db))
 afterAll(() => db.close())
 
 const providerId = () => `c${crypto.randomUUID().slice(0, 8)}`
-function provider(id: string, { version = "2026-09-29", title = "Search tickets", limit = 100 } = {}) {
+function provider(id: string, { version = "2026-09-29", title = "Search tickets", limit = 100, extra = [] as string[] } = {}) {
   const search = defineTool({
     name: "tickets.search", title, description: "Search the organisation's tickets by words in their subject, newest first.",
     input: z.object({ query: z.string(), limit: z.number().int().max(limit).default(20) }), output: z.object({ ids: z.array(z.string()) }),
@@ -22,7 +22,11 @@ function provider(id: string, { version = "2026-09-29", title = "Search tickets"
     async prepare({ id }) { return { targets: [], preview: { summary: `Close ${id}` } } },
     async commit() { return { results: { closed: true }, applied_changes: [], effects_performed: [] } },
   })
-  return defineProvider({ id, version, tools: [search, close] })
+  const added = extra.map(name => defineTool({
+    name, description: "Read one more thing from the organisation's tickets, added in a later version of the provider.",
+    input: z.object({}), output: z.object({}), async execute() { return {} },
+  }))
+  return defineProvider({ id, version, tools: [search, close, ...added] })
 }
 const rows = (id: string) => db`select identity, version, kind, risk, title, input -> 'required' as required from capabilities where provider_id = ${id} order by identity, version`
 
@@ -85,4 +89,34 @@ test("an organisation's catalogue is read by provider, with default overrides, a
   expect(await readCatalogue(db, organisation)).toEqual(new Map([[id, { enabled: false, overrides }]]))
   await expect(writeCatalogue(db, organisation, id, { enabled: true, overrides: { disabled: [], policy_class: { x: "nobody" as "human" } } })).rejects.toThrow()
   await expect(writeCatalogue(db, organisation, providerId(), { enabled: true })).rejects.toThrow()
+})
+
+test("capabilities a later version adds stay off for the organisations that enabled the provider, once, and for no one else", async () => {
+  const id = providerId()
+  await ingest(db, [provider(id)])
+  const [chosen, plain, off, none] = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()]
+  await writeCatalogue(db, chosen, id, { enabled: true, overrides: { disabled: [`${id}/tickets.search`], policy_class: { [`${id}/tickets.close`]: "human" } } })
+  await writeCatalogue(db, plain, id, { enabled: true })
+  await writeCatalogue(db, off, id, { enabled: false })
+  const other = providerId()
+  await ingest(db, [provider(other)])
+  await writeCatalogue(db, plain, other, { enabled: true })
+  const disabled = async (organisation: string, provider: string) => (await readCatalogue(db, organisation)).get(provider)?.overrides.disabled
+
+  await ingest(db, [provider(id, { version: "2026-10-01", extra: ["tickets.export", "tickets.merge"] })])
+  expect(await disabled(chosen, id)).toEqual([`${id}/tickets.export`, `${id}/tickets.merge`, `${id}/tickets.search`])
+  expect(await disabled(plain, id)).toEqual([`${id}/tickets.export`, `${id}/tickets.merge`])
+  expect(await disabled(off, id)).toEqual([])
+  expect(await disabled(none, id)).toBeUndefined()
+  expect(await disabled(plain, other)).toEqual([])
+  expect((await readCatalogue(db, chosen)).get(id)!.overrides.policy_class).toEqual({ [`${id}/tickets.close`]: "human" })
+
+  // Ingesting again adds nothing, and the organisation's own choice sticks: an identity it enabled again is not disabled a second time.
+  await writeCatalogue(db, plain, id, { enabled: true })
+  await ingest(db, [provider(id, { version: "2026-10-01", extra: ["tickets.export", "tickets.merge"] })])
+  expect(await disabled(plain, id)).toEqual([])
+  // Only what is new is added: a version that changes an old tool's description or adds one more.
+  await ingest(db, [provider(id, { version: "2026-10-02", extra: ["tickets.export", "tickets.merge", "tickets.tag"] })])
+  expect(await disabled(plain, id)).toEqual([`${id}/tickets.tag`])
+  expect(await disabled(chosen, id)).toEqual([`${id}/tickets.export`, `${id}/tickets.merge`, `${id}/tickets.search`, `${id}/tickets.tag`])
 })

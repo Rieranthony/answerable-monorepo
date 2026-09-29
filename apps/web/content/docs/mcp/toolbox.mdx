@@ -66,7 +66,7 @@ An entitlement whose resource is the Toolbox carries grant strings in its `scope
 
 Rows are additive; there is no deny. Principals are the organisation, a group or a member, as for any entitlement. The pair rows `(host client, Toolbox)` carry `toolbox` and let ID issue the token; they stay separate from grant rows, so a person's capabilities do not depend on the host. `toolbox`, `offline_access` and anything that is not a grant string are ignored.
 
-ID refuses an entitlement scope that is not in the resource's `allowedScopes`, so the Toolbox resource must allow every grant string it accepts. `allowedScopes(providers)` from `@answerable/mcp-toolbox/grants` returns the list: `offline_access`, `toolbox`, `toolbox/approve` and each mounted provider's id, domains and capabilities.
+ID refuses an entitlement scope that is not in the resource's `allowedScopes`, so the Toolbox resource must allow every grant string it accepts. `allowedScopes(providers)` from `@answerable/mcp-toolbox/grants` returns the list: `offline_access`, `toolbox`, `toolbox/approve` and each mounted provider's id, domains and capabilities. The [enable call](/docs/mcp/toolbox-admin#what-the-call-does) widens the resource to the providers it names.
 
 ## How authority is read
 
@@ -98,20 +98,17 @@ The catalogue is the ceiling: an organisation uses only providers enabled for it
 | `providers` | Each mounted provider's id, version and manifest |
 | `capabilities` | Each capability at each version: kind, risk, default policy class, title, description, schemas and a search vector |
 | `organisation_catalogue` | Per organisation and provider: `enabled`, and `overrides` with `disabled` (identities) and `policy_class` (identity to class) |
+| `host_clients` | Per host's OAuth client id: `projection` and `direct_limit` |
 
 **At boot** the Toolbox ingests every provider's manifest. A capability already stored at the same version with another kind, risk, input or output refuses the boot, naming it: give the tool a new version. Titles and descriptions update in place.
 
 **Policy class.** A mutation's class for a caller is the organisation's `policy_class` override, else the class its `risk` gives (`low` agent, `normal` controlled, `high` human). It shows in `_meta` and `toolbox_whoami`.
 
-**Enable an organisation:** Not yet; the admin API that performs it arrives with the Toolbox administration. Until then, write the row:
+**Enable an organisation** with one call to the [admin API](/docs/mcp/toolbox-admin#enable-an-organisation): it makes the rows Answerable ID needs to issue a host client's token to the organisation and enables the named providers in the catalogue. Repeating it changes nothing. Then disable a capability or set a policy class with `PUT /admin/v1/organisations/{id}/catalogue/{provider}` ([the catalogue](/docs/mcp/toolbox-admin#the-catalogue)).
 
-```bash
-psql postgres://answerable:answerable@localhost:47432/answerable_toolbox -c "
-  insert into organisation_catalogue (organisation_id, provider_id, enabled) values ('$ORG', 'e2e', true)
-  on conflict (organisation_id, provider_id) do update set enabled = excluded.enabled, updated_at = now()"
-```
+**New capabilities stay off until enabled.** When a provider version adds a capability the provider never had, the boot appends its identity to `overrides.disabled` of every organisation that has the provider enabled, and the organisation's entry is what turns it on.
 
-In code, `writeCatalogue(db, organisationId, providerId, { enabled, overrides? })` from `@answerable/mcp-toolbox/catalogue` does the same.
+**Host clients.** `host_clients` holds, per OAuth client id, the `projection` (`direct`, `meta` or `auto`) and the `direct_limit` (default 40) that the projection for that host uses. Staff write it through the [admin API](/docs/mcp/toolbox-admin#host-clients); the Toolbox does not read it yet (the meta projection is in the Limits table).
 
 ## Evidence
 
@@ -163,48 +160,14 @@ A W3C `traceparent` in the request's `_meta` becomes the span's parent. Set `OTE
 
 ## Run it locally
 
-Set `ID`, `TOKEN` (a [staff token](/docs/id/onboard#get-a-staff-token)), `ORG` (your organisation) and `PLATFORM_ORG` (the platform organisation). Each write needs its own `Idempotency-Key`.
-
-```bash
-export ID=http://localhost:47300
-export TOOLBOX=http://localhost:47400/mcp
-export TOOLBOX_PATH=http%3A%2F%2Flocalhost%3A47400%2Fmcp
-export ADMIN_PATH=http%3A%2F%2Flocalhost%3A47300%2Fapi%2Fadmin
-export SCOPES='["e2e","e2e/identity","e2e/identity.get","e2e/records","e2e/records.create","e2e/records.delete","e2e/records.list","e2e/records.show","offline_access","toolbox","toolbox/approve"]'
-
-curl "$ID/api/admin/v1/resources" -H "Idempotency-Key: toolbox-resource-v1" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"classification":"platform_shared","organizationId":null,"identifier":"'"$TOOLBOX"'","name":"Toolbox","allowedScopes":'"$SCOPES"',"accessTokenTtl":900}'
-```
-
-`SCOPES` is what `allowedScopes(providers)` returns for the e2e provider; recompute it when you mount another provider.
-
-**The host client.** Register `claude-code-toolbox` as in [Connect Claude Code](/docs/mcp/claude-code#register-claude-code-as-a-client), with `"scopes":["openid","offline_access","toolbox"]`, link it to `$TOOLBOX_PATH`, and give your organisation the login pair rows and the `(claude-code-toolbox, Toolbox)` pair rows with `"scopes":["toolbox"]`, exactly as that page shows for the e2e MCP.
-
-**A grant.** Entitle your organisation to the whole e2e provider:
-
-```bash
-curl "$ID/api/admin/v1/organizations/$ORG/entitlements" -H "Idempotency-Key: toolbox-e2e-v1" -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" -d '{"resource":"'"$TOOLBOX"'","scopes":["e2e"]}'
-```
-
-**The Toolbox's machine client**, owned by the platform organisation:
-
-```bash
-curl "$ID/api/admin/v1/clients" -H "Idempotency-Key: toolbox-hub-v1" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"clientId":"toolbox-hub","name":"Toolbox","organizationId":"'"$PLATFORM_ORG"'","tokenEndpointAuthMethod":"client_secret_basic","grantTypes":["client_credentials"],"clientCredentialsScopes":["platform:read"]}'
-curl -X PUT "$ID/api/admin/v1/clients/toolbox-hub/resources/$ADMIN_PATH" -H "Idempotency-Key: toolbox-hub-link-v1" -H "Authorization: Bearer $TOKEN"
-curl "$ID/api/admin/v1/organizations/$PLATFORM_ORG/capabilities" -H "Idempotency-Key: toolbox-hub-capability-v1" -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" -d '{"clientId":"toolbox-hub","resource":"http://localhost:47300/api/admin","grantKind":"client_credentials","scopes":["platform:read"]}'
-```
-
-The first call answers `clientSecret` once: put it in `TOOLBOX_ID_CLIENT_SECRET` in the root `.env`, with `TOOLBOX_ID_CLIENT_ID=toolbox-hub`. Then:
+[Register the Toolbox in ID](/docs/mcp/toolbox-admin#register-the-toolbox-in-id), put the machine client's secret in `TOOLBOX_ID_CLIENT_SECRET` in the root `.env`, with `TOOLBOX_ID_CLIENT_ID=toolbox-hub`, and start the Toolbox:
 
 ```bash
 bun --env-file=.env run --filter @answerable/mcp-toolbox db:migrate
 bun run toolbox:dev
 ```
 
-Write your organisation's catalogue row for `e2e` ([above](#the-catalogue)) in the `answerable_toolbox` database, then connect Claude Code with the line at the top of this page.
+Then [enable your organisation](/docs/mcp/toolbox-admin#enable-an-organisation), [entitle its members](/docs/mcp/toolbox-admin#grant-strings-for-people) and connect Claude Code with the line at the top of this page.
 
 ## Environment
 
@@ -217,11 +180,11 @@ Read from the root `.env` by `bun run toolbox:dev`; every variable is listed in 
 | `TOOLBOX_ID_ISSUER` | Answerable ID's origin | `http://localhost:47300` |
 | `TOOLBOX_RESOURCE_URL` | The Toolbox's URL as registered in ID; its path is the endpoint | `http://localhost:47400/mcp` |
 | `TOOLBOX_PORT` | The loopback port | `47400` (the default) |
-| `TOOLBOX_ID_CLIENT_ID`, `TOOLBOX_ID_CLIENT_SECRET` | The Toolbox's machine client in ID | `toolbox-hub` and its secret |
+| `TOOLBOX_ID_CLIENT_ID`, `TOOLBOX_ID_CLIENT_SECRET` | The Toolbox's machine client in ID, with `platform:read` and `platform:write` | `toolbox-hub` and its secret |
 | `TOOLBOX_ID_ADMIN_RESOURCE` | ID's admin resource, ID's `ADMIN_RESOURCE_IDENTIFIER` | `http://localhost:47300/api/admin` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Optional OTLP/HTTP collector | `http://localhost:4318` |
 
-`GET /health` answers `{ "status": "ok" }` while the database answers `select 1`, and `503` with `{ "status": "unavailable" }` otherwise, whatever the `Host` header.
+The admin API's audience is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`, such as `http://localhost:47400/admin`; it has no variable. `GET /health` answers `{ "status": "ok" }` while the database answers `select 1`, and `503` with `{ "status": "unavailable" }` otherwise, whatever the `Host` header.
 
 ## Limits
 
@@ -234,7 +197,7 @@ Read from the root `.env` by `bun run toolbox:dev`; every variable is listed in 
 | Meta projection (`toolbox_search`, `toolbox_describe`, `toolbox_execute`, `toolbox_prepare`), `tools/list_changed`, host client settings, pins | Not yet |
 | Mutations | Prepare tools and `toolbox_commit` / `toolbox_commit_confirmed` work as in any [`@answerable/mcp` server](/docs/mcp/authoring#mutations), with intents in memory, lost on restart. Intent evidence, the Postgres intent store and human approvals: Not yet |
 | Rate limits and budgets | Not yet |
-| Enabling an organisation, the catalogue admin API | Not yet |
+| Administration | The [admin API](/docs/mcp/toolbox-admin) is platform tier: machine clients with `toolbox:admin`. Self-service purchase, and administration by an organisation's own administrators: Not yet |
 
 ## Errors
 
@@ -244,7 +207,7 @@ Read from the root `.env` by `bun run toolbox:dev`; every variable is listed in 
 | Tool result `UPSTREAM_UNAVAILABLE` | ID did not answer with your access and none is cached | Retry after `retry.after_ms`; check ID and the `TOOLBOX_ID_*` settings |
 | `tools/list` fails with an internal error | The same, for a list | Retry; the server log shows `[toolbox] reading access failed` |
 | Tool result `RESULT_TOO_LARGE` | A read answered more than 100 KiB of JSON | Call it again with a smaller `limit`, a `cursor` or narrower filters |
-| Log `Answerable ID refused the Toolbox's client credentials (401)…` | The machine client's ID, secret or `platform:read` capability is wrong | Fix `TOOLBOX_ID_CLIENT_ID`, `TOOLBOX_ID_CLIENT_SECRET` or the capability |
+| Log `Answerable ID refused the Toolbox's client credentials (401)…` | The machine client's ID, secret or `platform:read` capability is wrong, or, for the enable call, its `platform:write` | Fix `TOOLBOX_ID_CLIENT_ID`, `TOOLBOX_ID_CLIENT_SECRET` or the capability |
 | Log `[toolbox] reading ID's audit log failed` | The poller could not read the audit log | Changes still arrive within 60 seconds; fix ID or the machine client |
 | Commit answers `PERMISSION_DENIED` | Your grant no longer covers the prepared mutation | Ask for access, then prepare again |
 | `401 invalid_token` | The token is for another resource, or expired | Sign in for the Toolbox's exact URL |
@@ -255,4 +218,4 @@ Read from the root `.env` by `bun run toolbox:dev`; every variable is listed in 
 | `evidence_events is append-only: UPDATE is refused` | Something tried to change evidence | Evidence is never changed; erase a payload with `erase` instead |
 | `Refusing to reset <database>; expected answerable_toolbox_test` | `db:test:migrate` points elsewhere | Point `TOOLBOX_TEST_DATABASE_URL` at `answerable_toolbox_test` |
 
-The journeys that prove this against real ID are in [Test MCPs locally](/docs/mcp/local-testing#what-the-toolbox-journeys-prove). The SDK options the Toolbox is built on are in [the server section](/docs/mcp/authoring#the-server).
+Administration errors are in [Administer the Toolbox](/docs/mcp/toolbox-admin#errors). The journeys that prove this against real ID are in [Test MCPs locally](/docs/mcp/local-testing#what-the-toolbox-journeys-prove). The SDK options the Toolbox is built on are in [the server section](/docs/mcp/authoring#the-server).

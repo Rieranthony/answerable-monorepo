@@ -1,0 +1,247 @@
+---
+title: Administer the Toolbox
+description: "Enable the Toolbox for an organisation in one call, then manage its catalogue, host clients and grant strings through the platform-tier admin API, with cURL."
+---
+
+**Answerable staff.** This page is for us. Every step is a `curl` command. The Toolbox itself is described in [The Toolbox](/docs/mcp/toolbox).
+
+## Enable an organisation
+
+```bash
+export ID=http://localhost:47300
+export TOOLBOX=http://localhost:47400
+export ORG=0199a0d1-0000-7000-8000-000000000000   # the organisation's id in ID
+
+# A token for the Toolbox's admin resource, from the staff client registered below
+TOOLBOX_TOKEN=$(curl -s "$ID/auth/oauth2/token" --user "toolbox-staff:$STAFF_SECRET" \
+  --data-urlencode grant_type=client_credentials \
+  --data-urlencode resource="$TOOLBOX/admin" \
+  --data-urlencode scope=toolbox:admin | jq -r .access_token)
+
+curl "$TOOLBOX/admin/v1/organisations/$ORG/enable" \
+  -H "Authorization: Bearer $TOOLBOX_TOKEN" -H "Content-Type: application/json" \
+  -d '{"hostClientIds":["claude-code-toolbox"],"providers":["e2e"]}'
+```
+
+```json
+{
+  "organisation_id": "0199a0d1-0000-7000-8000-000000000000",
+  "created": [
+    "allowed scopes of http://localhost:47400/mcp",
+    "link claude-code-toolbox",
+    "capability claude-code-toolbox login authorization_code",
+    "capability claude-code-toolbox login refresh_token",
+    "capability claude-code-toolbox toolbox authorization_code",
+    "capability claude-code-toolbox toolbox refresh_token",
+    "entitlement claude-code-toolbox login",
+    "entitlement claude-code-toolbox toolbox",
+    "catalogue e2e"
+  ],
+  "existing": []
+}
+```
+
+The call needs the registrations in [Register the Toolbox in ID](#register-the-toolbox-in-id). Run it again and `created` is empty: it found everything and changed nothing.
+
+## What the call does
+
+**Reads first, then writes.** It reads what ID holds, stops on a row that does not fit, and only then creates what is missing, in this order:
+
+| Step | What it makes | Skipped when |
+| --- | --- | --- |
+| 1. Allowed scopes | Patches the Toolbox resource's `allowedScopes` to the union of what it has, `toolbox`, `offline_access`, `toolbox/approve` and every grant string of the named providers, with `If-Match`. It never removes a scope | Every one is already allowed |
+| 2. Link | For each host client, links it to the Toolbox resource | The resource already lists the client |
+| 3. Capabilities | For each host client and both grant kinds (`authorization_code`, `refresh_token`): the organisation's login capability (`openid offline_access`, no resource) and its `toolbox` capability for the Toolbox resource | An active row for that client, resource and grant kind carries those scopes |
+| 4. Entitlements | For each host client: an organisation-wide login entitlement and `toolbox` entitlement | An active organisation-wide row for that client and resource carries those scopes |
+| 5. Catalogue | Enables each named provider for the organisation. A row that exists keeps its overrides | The provider is already enabled |
+
+**Retries.** A row that exists with another status or too few scopes stops the call with `409 id_row_conflict`, naming the row; fix it in ID and repeat. A failure part-way answers `502 id_failed` with what ID answered. Nothing is rolled back: repeat the call and it creates only what is missing.
+
+**Calls to ID.** For one organisation, one host client and one provider, the first call makes 3 reads and 8 writes (11 calls) and one token request; a repeat makes the 3 reads and no writes. Each write carries its own `Idempotency-Key`. The Toolbox's machine client uses a `platform:read platform:write` token for this call and a `platform:read` token for everything else.
+
+**Grant strings for people are not written.** The call makes the token possible; who may use which capability is the organisation's decision. See [Grant strings for people](#grant-strings-for-people).
+
+## Register the Toolbox in ID
+
+Set `TOKEN` to a [staff token for ID](/docs/id/onboard#get-a-staff-token) and `PLATFORM_ORG` to the platform organisation. The commands that call ID use `TOKEN`; the ones that call the Toolbox use `TOOLBOX_TOKEN`. Each write needs its own `Idempotency-Key`. The Toolbox's resource URL is its audience: it must match `TOOLBOX_RESOURCE_URL` exactly.
+
+```bash
+export TOKEN=...            # ID staff token
+export PLATFORM_ORG=...
+export TOOLBOX_PATH=http%3A%2F%2Flocalhost%3A47400%2Fmcp
+export ADMIN_PATH=http%3A%2F%2Flocalhost%3A47400%2Fadmin
+export ID_ADMIN_PATH=http%3A%2F%2Flocalhost%3A47300%2Fapi%2Fadmin
+
+# The Toolbox resource, and the resource that guards this admin API
+curl "$ID/api/admin/v1/resources" -H "Idempotency-Key: toolbox-resource-v1" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"classification":"platform_shared","organizationId":null,"identifier":"'"$TOOLBOX"'/mcp","name":"Toolbox","allowedScopes":["offline_access","toolbox"],"accessTokenTtl":900}'
+curl "$ID/api/admin/v1/resources" -H "Idempotency-Key: toolbox-admin-resource-v1" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"classification":"platform_shared","organizationId":null,"identifier":"'"$TOOLBOX"'/admin","name":"Toolbox admin","allowedScopes":["toolbox:admin"],"accessTokenTtl":300}'
+```
+
+The Toolbox resource starts with two scopes; the enable call adds the grant strings of the providers you name. The admin resource's identifier is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`; there is no variable for it.
+
+**The Toolbox's machine client**, owned by the platform organisation. It reads grants with `platform:read` and performs the enable call with `platform:write`:
+
+```bash
+curl "$ID/api/admin/v1/clients" -H "Idempotency-Key: toolbox-hub-v1" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"clientId":"toolbox-hub","name":"Toolbox","organizationId":"'"$PLATFORM_ORG"'","tokenEndpointAuthMethod":"client_secret_basic","grantTypes":["client_credentials"],"clientCredentialsScopes":["platform:read","platform:write"]}'
+curl -X PUT "$ID/api/admin/v1/clients/toolbox-hub/resources/$ID_ADMIN_PATH" -H "Idempotency-Key: toolbox-hub-link-v1" -H "Authorization: Bearer $TOKEN"
+curl "$ID/api/admin/v1/organizations/$PLATFORM_ORG/capabilities" -H "Idempotency-Key: toolbox-hub-capability-v1" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"clientId":"toolbox-hub","resource":"'"$ID"'/api/admin","grantKind":"client_credentials","scopes":["platform:read","platform:write"]}'
+```
+
+The first call answers `clientSecret` once: put it in `TOOLBOX_ID_CLIENT_SECRET` in the root `.env`, with `TOOLBOX_ID_CLIENT_ID=toolbox-hub`.
+
+**Registered it before the enable call existed?** With `platform:read` alone the enable call answers `502 id_failed`. `PATCH` the client's `clientCredentialsScopes` and the capability's `scopes` to add `platform:write`, each with its own `Idempotency-Key`, as [Connect Claude Code](/docs/mcp/claude-code#register-the-server) does for a new scope.
+
+**The staff client** that calls the admin API, also owned by the platform organisation:
+
+```bash
+curl "$ID/api/admin/v1/clients" -H "Idempotency-Key: toolbox-staff-v1" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"clientId":"toolbox-staff","name":"Toolbox staff","organizationId":"'"$PLATFORM_ORG"'","tokenEndpointAuthMethod":"client_secret_basic","grantTypes":["client_credentials"],"clientCredentialsScopes":["toolbox:admin"]}'
+curl -X PUT "$ID/api/admin/v1/clients/toolbox-staff/resources/$ADMIN_PATH" -H "Idempotency-Key: toolbox-staff-link-v1" -H "Authorization: Bearer $TOKEN"
+curl "$ID/api/admin/v1/organizations/$PLATFORM_ORG/capabilities" -H "Idempotency-Key: toolbox-staff-capability-v1" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"clientId":"toolbox-staff","resource":"'"$TOOLBOX"'/admin","grantKind":"client_credentials","scopes":["toolbox:admin"]}'
+```
+
+The secret is `STAFF_SECRET` above. Only a token of a machine client that ID issued for the admin resource with `toolbox:admin` opens the API; a person's token is refused.
+
+**Each host client**, registered with `toolbox` among its scopes. It is a public client for a person's app:
+
+```bash
+curl "$ID/api/admin/v1/clients" -H "Idempotency-Key: claude-code-toolbox-v1" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"clientId":"claude-code-toolbox","name":"Claude Code (Toolbox)","tokenEndpointAuthMethod":"none","grantTypes":["authorization_code","refresh_token"],"redirectUris":["http://localhost:47700/callback"],"scopes":["openid","offline_access","toolbox"]}'
+```
+
+Do not link it or add its capabilities and entitlements by hand: the enable call does. Then [start the Toolbox](/docs/mcp/toolbox#run-it-locally) and enable an organisation.
+
+## The catalogue
+
+The catalogue is the ceiling for an organisation: what it may use at all, whatever its entitlements say. List what can be enabled, then set an organisation's entry:
+
+```bash
+curl "$TOOLBOX/admin/v1/providers" -H "Authorization: Bearer $TOOLBOX_TOKEN"
+
+curl -X PUT "$TOOLBOX/admin/v1/organisations/$ORG/catalogue/e2e" \
+  -H "Authorization: Bearer $TOOLBOX_TOKEN" -H "Content-Type: application/json" \
+  -d '{"enabled":true,"overrides":{"disabled":["e2e/records.list"],"policy_class":{"e2e/records.delete":"human"}}}'
+
+curl "$TOOLBOX/admin/v1/organisations/$ORG/catalogue" -H "Authorization: Bearer $TOOLBOX_TOKEN"
+```
+
+- **`GET /providers`** lists each mounted provider with its version and capabilities (`identity`, `version`, `kind`, `risk`, `title`). The Toolbox's own provider, `toolbox`, is always on and not listed.
+- **`PUT` replaces the entry.** Fields you leave out go back to their defaults: no `overrides` means none. Repeating a `PUT` changes nothing.
+- **Disable a capability** by listing its identity in `overrides.disabled`. It disappears from that organisation's `tools/list` on the next request, and a call to it answers the unknown-tool error. In the acceptance, `e2e_records_list` was hidden from a member 4 to 14 ms after the call, in eight runs. A host that keeps `tools/list` for its 30-second hint lists the change up to 30 seconds later.
+- **Set a policy class** with `overrides.policy_class`, mapping a mutation's identity to `agent`, `controlled` or `human`. It replaces the class its `risk` gives. A read is refused with `422 not_a_mutation`.
+- **New capabilities stay off until enabled.** When a provider version adds a capability the provider never had, its identity is appended to `overrides.disabled` of every organisation that has the provider enabled, when the Toolbox boots. `GET` the catalogue to see them; a `PUT` that leaves them out of `disabled` enables them. Organisations that have the provider disabled are not touched, and neither is a capability that only changed version.
+
+## Host clients
+
+```bash
+curl -X PUT "$TOOLBOX/admin/v1/host-clients/claude-code-toolbox" \
+  -H "Authorization: Bearer $TOOLBOX_TOKEN" -H "Content-Type: application/json" \
+  -d '{"projection":"meta","direct_limit":40}'
+curl "$TOOLBOX/admin/v1/host-clients" -H "Authorization: Bearer $TOOLBOX_TOKEN"
+curl -X DELETE "$TOOLBOX/admin/v1/host-clients/claude-code-toolbox" -H "Authorization: Bearer $TOOLBOX_TOKEN"
+```
+
+A row is keyed by the host's OAuth client id (percent-encode one that is a URL). A client without a row gets the defaults.
+
+| Field | Values | Default |
+| --- | --- | --- |
+| `projection` | `direct` (one tool per granted capability), `meta` (search, describe, execute, prepare and commit tools), `auto` (direct until the person's set exceeds `direct_limit`) | `auto` |
+| `direct_limit` | 1 to 128, the most tools a person is given directly under `auto` | 40 |
+
+**Which hosts need `meta`.** A host that caps the tools in a request needs it: VS Code Copilot caps a request at 128. Hosts that govern by tool name, such as Claude Code's approvals and Claude.ai's per-tool controls, need the direct list where it fits, so leave them on `auto`.
+
+**Not yet:** the Toolbox stores these rows and does not read them. The meta projection is Not yet, so every host gets the direct list.
+
+## Grant strings for people
+
+The enable call lets a host client get a token for the organisation. What each person may use is an entitlement to the Toolbox resource whose `scopes` are [grant strings](/docs/mcp/toolbox#grant-strings): a provider (`e2e`), a domain (`e2e/records`) or a capability (`e2e/records.list`). Use [ID's entitlement API](/docs/id/admin-api/entitlements/createEntitlement); the organisation, one group or one member can hold one:
+
+```bash
+export MCP=$TOOLBOX/mcp
+
+# Everyone in the organisation: every capability of the e2e provider
+curl "$ID/api/admin/v1/organizations/$ORG/entitlements" -H "Idempotency-Key: e2e-organisation-v1" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"resource":"'"$MCP"'","scopes":["e2e"]}'
+
+# One group: the records domain
+curl "$ID/api/admin/v1/organizations/$ORG/entitlements" -H "Idempotency-Key: e2e-group-v1" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"groupId":"'"$GROUP"'","resource":"'"$MCP"'","scopes":["e2e/records"]}'
+
+# One member: one capability
+curl "$ID/api/admin/v1/organizations/$ORG/entitlements" -H "Idempotency-Key: e2e-member-v1" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"memberId":"'"$MEMBER"'","resource":"'"$MCP"'","scopes":["e2e/records.list"]}'
+```
+
+Rows are additive and there is no deny. ID refuses a scope the resource does not allow, so a provider you mount later needs one more enable call, which widens `allowedScopes` first. A change reaches the person within 60 seconds. Until organisation administrators can do this themselves, staff do: tenant-tier writes are Not yet.
+
+## Check evidence
+
+```bash
+curl "$TOOLBOX/admin/v1/organisations/$ORG/evidence/verify" -H "Authorization: Bearer $TOOLBOX_TOKEN"
+```
+
+```json
+{ "ok": true, "length": 2 }
+```
+
+It recomputes the organisation's evidence chain, as [The Toolbox](/docs/mcp/toolbox#evidence) describes. A broken chain answers `200` with `"ok": false` and `broken_at`, the first `seq` that fails.
+
+## Routes
+
+Every route lives under `/admin/v1`, takes and answers JSON, and needs `Authorization: Bearer` with a machine client's token for the admin resource carrying `toolbox:admin`. Organisation ids are UUIDs.
+
+| Route | Does | Answers |
+| --- | --- | --- |
+| `GET /providers` | Lists the mounted providers and their capabilities | `200 { items }` |
+| `GET /organisations/{organisationId}/catalogue` | Lists the organisation's entries: per provider `provider_id`, `enabled` and `overrides` | `200 { items }` |
+| `PUT /organisations/{organisationId}/catalogue/{providerId}` | Replaces the entry: `{ enabled, overrides?: { disabled?, policy_class? } }` | `200` the entry |
+| `POST /organisations/{organisationId}/enable` | The enable call: `{ hostClientIds: string[], providers: string[] }`, each with at least one | `200 { organisation_id, created, existing }` |
+| `GET /host-clients` | Lists the host client rows | `200 { items }` |
+| `PUT /host-clients/{clientId}` | Replaces the row: `{ projection?, direct_limit? }` | `200` the row |
+| `DELETE /host-clients/{clientId}` | Removes the row | `204` |
+| `GET /organisations/{organisationId}/evidence/verify` | Checks the chain | `200 { ok, length, broken_at? }` |
+
+A body may carry only the fields listed; an unknown field answers `400`. Responses carry `Cache-Control: no-store`.
+
+## Limits
+
+| Limit | Value |
+| --- | --- |
+| Who may call | Machine clients with `toolbox:admin`. A person's token, another audience or another scope is refused |
+| Self-service purchase, and administration by an organisation's own administrators (tenant-tier writes) | Not yet |
+| OpenAPI description of this API | Not yet; the routes table above is the contract |
+| Evidence of admin calls | Not yet. The calls the enable operation makes are in ID's audit log, as the Toolbox's machine client |
+| Rows the enable call reads | By status and scopes; validity windows are not read |
+| Organisation ids | Catalogue, host client and evidence routes do not check an organisation against ID; the enable call does |
+| Atomicity | The enable call is not atomic: a failure leaves what it made, and a repeat finishes it |
+| ID unavailable | The enable call fails with `502`. The other routes need the Toolbox's database, and ID only once, to fetch its signing keys |
+| Host client settings | Stored; read by the meta projection: Not yet |
+
+## Errors
+
+Every failure answers `{ "error": { "code": "...", "message": "..." } }`; the message says what to change. A `401` carries `WWW-Authenticate: Bearer realm="toolbox-admin"`, and a `403` carries `error="insufficient_scope"`.
+
+| Status and code | Meaning | What to do |
+| --- | --- | --- |
+| `401 unauthorized` | No bearer token, or one that is invalid, expired, for another audience or a person's | Request a token from ID with `resource` set to the admin resource and `scope=toolbox:admin`, as the staff client |
+| `403 forbidden` | The token lacks `toolbox:admin` | Add the scope to the staff client's capability and `clientCredentialsScopes` in ID |
+| `400 invalid_request` | The body is not JSON, has a field of the wrong type, a field the route does not take, an organisation id that is not a UUID, or a path that is not valid percent-encoding | Fix what the message names |
+| `404 not_found` | No such route | Check the method and path against [Routes](#routes) |
+| `404 provider_not_found` | The provider is not mounted in this Toolbox | `GET /providers` lists them |
+| `404 host_client_not_found` | No row for that client id | `GET /host-clients` lists them |
+| `404 organisation_not_found` | ID does not know the organisation (enable call) | Use the organisation's id from ID |
+| `409 resource_not_registered` | ID does not know the Toolbox resource (enable call) | [Register it](#register-the-toolbox-in-id) exactly as `TOOLBOX_RESOURCE_URL` |
+| `409 id_row_conflict` | A capability or entitlement ID already holds is disabled or lacks scopes | Make it active with the scopes the message names in ID, then repeat |
+| `422 unknown_provider` | The enable call names a provider that is not mounted | Use the ids `GET /providers` lists |
+| `422 unknown_capability` | `overrides` names an identity the provider does not have | Use identities from `GET /providers` |
+| `422 not_a_mutation` | `policy_class` names a read | Set a policy class only for mutations |
+| `422 unknown_host_client` | ID has no such client (enable call) | Register the host client in ID first |
+| `502 id_failed` | ID refused the Toolbox's client credentials or a call, or did not answer | Read the message, fix ID, the client's `platform:read platform:write` capability or `TOOLBOX_ID_CLIENT_SECRET`, then repeat the call |
+| `500 internal_error` | Something unexpected, such as the database | The Toolbox's log has `[toolbox] admin API failed` |
+
+The journey that proves the enable call against real ID is in [Test MCPs locally](/docs/mcp/local-testing#what-the-toolbox-journeys-prove).

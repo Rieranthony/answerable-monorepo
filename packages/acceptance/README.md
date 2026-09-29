@@ -19,6 +19,6 @@ Requires Bun 1.3.1 and Docker Compose. It starts PostgreSQL in a Compose project
 | `src/mcp.ts` | `serve`, `connect`, `tool` and `refusal` |
 | `src/cleanup.ts` | What `stop` and Ctrl-C run |
 | `src/journeys/e2e.journeys.test.ts` | The e2e MCP: sign-in, tokens, J4 agent-class mutation, J5 controlled class, isolation, refresh, revocation |
-| `src/journeys/toolbox.journeys.test.ts` | The Toolbox on port `47604`: J1 direct list, J2 partial and denied, J3 grant change, J10 evidence |
+| `src/journeys/toolbox.journeys.test.ts` | The Toolbox on port `47604`: J1 direct list, J2 partial and denied, J3 grant change, J10 evidence, and the admin API (enabling organisations, the catalogue) |
 
 [Test MCPs locally](../../apps/web/content/docs/mcp/local-testing.mdx) lists what each journey proves, the ports, every kit function, how to write a journey, and the errors you can hit.

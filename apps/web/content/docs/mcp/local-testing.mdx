@@ -45,7 +45,39 @@ The company directories are local test issuers. ID, its database role, its pages
 
 ## What the Toolbox journeys prove
 
-`packages/acceptance/src/journeys/toolbox.journeys.test.ts` starts its own ID and runs [the Toolbox](/docs/mcp/toolbox) in the test process on port `47604`, with the e2e provider mounted.
+`packages/acceptance/src/journeys/toolbox.journeys.test.ts` starts its own ID and runs [the Toolbox](/docs/mcp/toolbox) and its [admin API](/docs/mcp/toolbox-admin) in the test process on port `47604`, with the e2e provider mounted.
+
+**Setup.** Through ID's admin API: the Toolbox resource, allowing only `toolbox` and `offline_access` with a 60-second token lifetime; the Toolbox's admin resource; a public client asking for `toolbox`; and two machine clients in the platform organisation, the Toolbox's (`platform:read` and `platform:write` for ID's admin resource) and a staff client (`toolbox:admin` for the Toolbox's admin resource). The journey creates and migrates `answerable_toolbox_acceptance` on the disposable PostgreSQL, starts the Toolbox with the audit-log poller and in-memory spans, and calls its [enable operation](/docs/mcp/toolbox-admin#enable-an-organisation) for each of three organisations: it links the client to the Toolbox resource, widens the resource to the grant strings of `e2e`, and makes the login and `toolbox` rows and the catalogue row. Entitlements to the Toolbox resource then carry grant strings: `toolbox-alpha` gets `e2e`, `toolbox-beta` gets `e2e/records`, `toolbox-gamma` nothing. The catalogue is the ceiling: gamma may use `e2e` but has no entitlement to any of it until J3.
+
+1. Each organisation signs in through ID with the SDK's OAuth client and a real browser. The client follows the MCP's `401` to its metadata, discovers ID and builds the request: PKCE S256, the MCP URL as `resource`, the advertised scopes (`e2e:identity`, `e2e:read`, `e2e:write`) plus `offline_access`. The browser completes ID's pages: email, company sign-in, organisation, and consent listing every entitled scope. The consent of `mcp-gamma` names `e2e:write` as not approved. The callback carries ID's `iss` (RFC 9207), which the client checks.
+2. Each access token is bound to the MCP, lives 60 seconds and carries exactly the entitled scopes.
+3. A 2025 client and a `2026-07-28` client see the entitled tools, the prompt and the resource, and `identity_get` names the selected organisation. The first two organisations see seven tools: `identity_get`, `records_list`, `records_show`, `records_create`, `records_delete`, `e2e_commit` and `e2e_commit_confirmed`. `mcp-gamma` sees the three read tools.
+
+**J4, agent-class mutation.** [Prepared mutations](/docs/mcp/authoring#mutations) of low risk commit with `e2e_commit`. The codes below are in [MCP errors](/docs/mcp/errors).
+
+4. `records_create` returns a preview with a summary and one change, a commit token, `commit_tool: "e2e_commit"` and `policy_class: "agent"`. `e2e_commit` returns a receipt whose `results` is the record, at version 1, in the caller's organisation.
+5. A repeat of the commit with the same token returns the same `receipt_id` with `idempotent_replay: true`, and creates no second record.
+6. `records_delete` is prepared, the record is changed outside the MCP, and the matching commit answers `INTENT_STALE`, with `details.targets` giving the expected version `"1"` and the current version `"2"`.
+7. An intent whose expiry has passed answers `INTENT_EXPIRED`. The journey serves the MCP with an intent store whose clock it controls; token lifetimes stay on real time.
+
+**J5, controlled class.** A delete needs the person's confirmation.
+
+8. `records_delete` returns `commit_tool: "e2e_commit_confirmed"` and `policy_class: "controlled"`, and `e2e_commit` answers `APPROVAL_REQUIRED`.
+9. `e2e_commit_confirmed` with a `preview_summary` that differs by one character answers `APPROVAL_REQUIRED` with a message saying the summary differs. With the exact summary it commits, and the record is gone.
+
+**Isolation, tokens and refresh.**
+
+10. Each of the first two organisations lists only its own record, and preparing to delete another organisation's record answers `NOT_FOUND`.
+11. `mcp-gamma` lists no records, and `records_create`, `records_delete`, `e2e_commit` and `e2e_commit_confirmed` are unknown tools to it.
+12. A second MCP at another URL refuses the token with `401`, after the MCP it was issued for accepted the same token.
+13. The client refreshes an expired access token by itself, ID rotates the refresh token, and the new tokens keep the same scopes.
+14. Disabling the organisation through the admin API makes refresh fail with `invalid_grant`; the access token already issued keeps working until it expires.
+
+The company directories are local test issuers. ID, its database role, its pages, token issuance, the MCP and the MCP client are real.
+
+## What the Toolbox journeys prove
+
+`packages/acceptance/src/journeys/toolbox.journeys.test.ts` starts its own ID and runs [the Toolbox](/docs/mcp/toolbox) and its [admin API](/docs/mcp/toolbox-admin) in the test process on port `47604`, with the e2e provider mounted.
 
 **Setup.** Through ID's admin API: the Toolbox resource, allowing `allowedScopes(providers)` with a 60-second token lifetime; a public client asking for `toolbox`; for each of three organisations the login pair rows and the `toolbox` pair rows; and the Toolbox's machine client in the platform organisation with a `platform:read` capability for the admin resource. Entitlements to the Toolbox resource carry grant strings: `toolbox-alpha` gets `e2e`, `toolbox-beta` gets `e2e/records`, `toolbox-gamma` nothing. The journey creates and migrates `answerable_toolbox_acceptance` on the disposable PostgreSQL, enables `e2e` in each organisation's catalogue by writing the rows (the admin API that does it is Not yet), starts the audit-log poller and keeps spans in memory.
 
@@ -72,7 +104,14 @@ The company directories are local test issuers. ID, its database role, its pages
 9. `toolbox-alpha`'s chain verifies with two events, one per call.
 10. An `UPDATE` and a `DELETE` on `evidence_events` through the journey's superuser connection are refused by the trigger, and the chain still verifies. Payload erasure through the hub: Not yet.
 
-The last test logs what the Toolbox asked ID. In the recorded runs: 11 grant reads answered by 4 access-view calls (a 63.6% cache hit rate), with a median access-view latency of 31 to 34 ms and a maximum of 45 to 67 ms, 2 token requests and 2 audit-log reads.
+The test after J10 logs what the Toolbox asked ID. In two recent runs: 11 grant reads answered by 4 access-view calls each (a 63.6% cache hit rate), a median access-view latency of 30.5 and 34.9 ms and a maximum of 43.5 and 60.3 ms, 3 token requests (the `platform:read` tokens of the poller and the grants reader, and the enable call's `platform:read platform:write` token) and 2 audit-log reads.
+
+**Administration.**
+
+11. The admin API refuses a person's token with `401`, and lists the mounted providers and their capabilities to staff.
+12. The enable calls left the Toolbox resource allowing the grant strings of `e2e` and linked to the host client. Calling it again for `toolbox-alpha` reports all nine steps as existing and changes nothing in ID.
+13. `PUT` catalogue with `e2e/records.list` disabled hides that tool from `toolbox-alpha` and from no one else, 4 to 14 ms later in eight runs; a second `PUT` restores it.
+14. The evidence check runs through the admin API, and a host client row is stored and removed.
 
 ## Ports
 

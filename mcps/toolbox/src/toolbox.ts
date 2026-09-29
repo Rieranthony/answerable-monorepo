@@ -1,6 +1,7 @@
 import type { SQL } from "bun"
 import { createMcpServer, ToolError, type IdVerifierConfig, type Provider, type UserPrincipal } from "@answerable/mcp"
 import type { Tracer } from "@opentelemetry/api"
+import { createAdmin } from "./admin"
 import { ingest, readCatalogue, type Catalogue } from "./catalogue"
 import { createEvidence, type EvidenceEvent } from "./evidence"
 import { createGrantsReader } from "./grants"
@@ -25,11 +26,13 @@ const resultLimit = 100 * 1024
 /**
  * The Toolbox: one MCP endpoint that serves each person the capabilities their organisation granted them. It ingests every provider's manifest
  * (refusing a changed contract under an old version), reads each caller's grant strings from ID and the organisation's catalogue on every
- * request, records evidence and a span for every call, answers `RESULT_TOO_LARGE` for a read above 100 KiB, and answers `GET /health` from the database.
+ * request, records evidence and a span for every call, answers `RESULT_TOO_LARGE` for a read above 100 KiB, answers `GET /health` from the database
+ * and serves the platform-tier admin API under `/admin/v1`.
  */
 export async function createToolbox({ providers, auth, db, id, spans }: ToolboxConfig) {
   const grants = createGrantsReader({ id, resource: auth.resource })
   const evidence = createEvidence(db)
+  const admin = createAdmin({ auth, db, providers, id, evidence })
   const mounted = providers.toSorted((a, b) => (a.id < b.id ? -1 : 1)).map(project)
   const capabilities = mounted.flatMap(provider => provider.tools)
   // One read per request: the SDK verifies the token into a new principal for every request.
@@ -94,7 +97,9 @@ export async function createToolbox({ providers, auth, db, id, spans }: ToolboxC
   })
   return {
     async fetch(request: Request) {
-      if (request.method === "GET" && new URL(request.url).pathname === "/health") {
+      const { pathname } = new URL(request.url)
+      if (/^\/admin\/v1(\/|$)/.test(pathname)) return admin(request)
+      if (request.method === "GET" && pathname === "/health") {
         try {
           await db`select 1`
           return Response.json({ status: "ok" })

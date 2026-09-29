@@ -16,15 +16,19 @@ bun --env-file=.env run --filter @answerable/mcp-toolbox db:migrate   # TOOLBOX_
 bun run toolbox:dev                                    # builds the e2e view, serves http://localhost:47400/mcp
 ```
 
-Register the Toolbox resource, a host client and the Toolbox's machine client in ID first, and write a catalogue row: [The Toolbox](../../apps/web/content/docs/mcp/toolbox.mdx#run-it-locally). The variables are listed in `default.env`.
+Register the Toolbox in ID, then enable an organisation with one call to the admin API: [Administer the Toolbox](../../apps/web/content/docs/mcp/toolbox-admin.mdx). The variables are listed in `default.env`.
 
 | File | Job |
 | --- | --- |
 | `src/toolbox.ts` | `createToolbox({ providers, auth, db, id, spans })`: the endpoint on `@answerable/mcp`, authority per request, evidence and a span per call, `RESULT_TOO_LARGE` above 100 KiB, `/health` |
 | `src/grants.ts` | `createGrantsReader`: grant strings from ID's member access view, cached 60 seconds; `allowedScopes(providers)`, the Toolbox resource's allowed scopes |
 | `src/poller.ts` | `startGrantsPoller`: reads ID's audit log every 15 seconds and invalidates the organisations it names |
-| `src/id.ts` | The machine client's token and GETs on ID's admin API |
-| `src/catalogue.ts` | Manifest ingestion, and each organisation's catalogue (`readCatalogue`, `writeCatalogue`) |
+| `src/id.ts` | The machine client's tokens and calls on ID's admin API: reads with `platform:read`, the enable operation with `platform:read platform:write` |
+| `src/admin.ts` | The platform-tier admin API under `/admin/v1`: authentication (a machine client's token with `toolbox:admin`) and routing; `toolboxAdminResource` |
+| `src/admin-catalogue.ts` | The routes for providers, catalogue entries and host clients |
+| `src/admin-enable.ts`, `src/id-client.ts` | The enable operation: what ID holds, what is missing, and the calls that make it |
+| `src/problem.ts` | `Problem`, the `{ error: { code, message } }` answer, and body parsing |
+| `src/catalogue.ts` | Manifest ingestion (new capabilities stay disabled for organisations that have the provider enabled), and each organisation's catalogue (`readCatalogue`, `writeCatalogue`) |
 | `src/projection.ts` | `allowed`, policy classes and tool order |
 | `src/whoami.ts` | The Toolbox's own provider, `toolbox`, with `toolbox_whoami` |
 | `src/evidence.ts` | `createEvidence(db)`: `record`, `verify` and `erase` |

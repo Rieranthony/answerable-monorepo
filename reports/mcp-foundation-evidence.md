@@ -246,6 +246,34 @@ Tree: branch `claude/toolbox-goal` on `main` 3ac5614, the whole-tree cleanup pas
 
 **Size.** Source across the five workspaces 3,144 to 3,159 lines (`packages/mcp` grew by 47 for `errorOf` and `testPrincipal` with their documentation, in place of the copies deleted elsewhere), tests 4,290 to 4,270.
 
+## 29 September 2026: Toolbox administration (brief B7)
+
+Tree: branch `claude/toolbox-goal` on `main` 3ac5614, brief B7 of the Toolbox goal, built beside B6. Versions as above; `@answerable/auth` 0.3.0, `@answerable/mcp-toolbox` 0.2.0.
+
+| Check | Result |
+| --- | --- |
+| Root typecheck, lint and build | Pass with `--force` (9, 9 and 3 tasks) |
+| `bun --filter web test` | 78 pass |
+| `bun run mcp:test` | auth 52 pass, 100%; mcp 168 pass and 5 todo, 100%; e2e 44 pass and 4 todo; Toolbox 89 pass and 2 todo across 13 files, 100% lines and functions |
+| `bun run mcp:check @answerable/mcp-toolbox` | 4 tasks pass |
+| `bun run mcp:test:e2e` | 46 pass at 100%: 33.8 and 34.3 seconds by the agent, 38 seconds by the coordinator at load average 35; nothing left behind |
+
+**What changed.** The platform-tier admin API under `/admin/v1`, served by the Toolbox's own `fetch`: providers, an organisation's catalogue (`PUT` validates identities against the provider and a policy class against mutations), the enable operation, host clients and evidence verification. It authenticates a machine client's token for the Toolbox's admin resource (`<resource origin>/admin`) carrying `toolbox:admin`; `@answerable/auth` gains `subjectTypes` and `MachinePrincipal` for that, with `UserPrincipal` unchanged. The enable operation reads what ID holds, plans, then writes in order: the Toolbox resource's `allowedScopes` (a union, with `If-Match`), each host client's link, the organisation's login and `toolbox` capabilities and entitlements for both grant kinds, and the catalogue rows; a repeat reports everything as existing and writes nothing. New capabilities in an already enabled pack join `overrides.disabled` at ingest (`Q-TOOLBOX-NEW-CAPABILITIES`, resolved as the design assumed). New page `toolbox-admin.mdx`. The journey now enables alpha and beta through the operation, repeats it, and hides a capability through the catalogue route.
+
+**Measured.** One organisation, one host client, one provider: 11 admin API calls (3 reads, 8 writes) plus one cached token request; a repeat makes the 3 reads only; two hosts and two providers make 4 reads and 15 writes. A capability disabled through the catalogue disappeared from a 2025 client's list 4 to 14 ms after the `PUT` in eight runs.
+
+**Found by testing.**
+
+- ID mints two signing keys when its first two tokens are requested concurrently; a verifier that read the keys between them refuses the second key's tokens for 30 seconds (`jose` waits that long before re-reading). Seen in about 1 of 7 cold runs as a 401 on the second enable call, with the token's `kid` 9 ms newer than the cached one. The journey requests one token before the Toolbox starts; 0 failures in 14 later runs. An ID backlog item.
+- A 2026-07-28 client keeps `tools/list` for the 30-second cache hint, so the catalogue journey observes the change with a 2025 client.
+- ID's writes need an `Idempotency-Key` and accept `If-Match` on the resource patch; `GET /resources/{r}` lists the linked clients; the capabilities list has no client filter and pages at 200; the entitlements list filters by `clientId`; a capability or entitlement whose scopes are outside the resource's `allowedScopes` is refused, so the patch comes first; machine capabilities must sit in the client's owning organisation.
+- Two agents running the acceptance at the same time destroy each other's run: the kit's Compose project name is fixed, so one run's cleanup removes the other's Postgres. Both reruns were clean. A backlog item for the kit.
+- `bun.lock` records workspace versions and stays behind the bumps; `bun install --frozen-lockfile` still accepts it.
+
+**Decisions recorded.** A machine token without `toolbox:admin` answers 403; a failure of ID answers 502 `id_failed` and says a repeat skips what exists. Deterministic idempotency keys were rejected (ID replays its journal, so a recreated row would silently not be recreated). Admin calls are not written to evidence, there is no OpenAPI description of the admin API and no tenant tier; the docs say so.
+
+**Size.** `mcps/toolbox/src` source 1,026 lines in 17 files, tests 1,285 in 13 files, test support 238; migrations 143.
+
 ## Limits
 
 The acceptance uses local test issuers for company directories, a pre-registered public client and loopback HTTP. It does not certify Claude.ai, another host, another company directory or a production deployment.
