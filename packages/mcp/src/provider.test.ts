@@ -3,10 +3,10 @@ import { z } from "zod"
 import { defineMutation, definePrompt, defineProvider, defineResource, defineTool, defineView, type Mutation, type Tool } from "./index"
 
 const description = "A fixture tool that returns nothing, used to test providers."
-const tool = (name: string, extra: Partial<Pick<Tool, "version" | "scopes" | "view" | "deprecated">> = {}) => defineTool({
+const tool = (name: string, extra: Partial<Pick<Tool, "version" | "scopes" | "view" | "deprecated" | "errors">> = {}) => defineTool({
   name, description, input: z.object({}), output: z.object({}), async execute() { return {} }, ...extra,
 })
-const mutation = (name: string, extra: Partial<Pick<Mutation, "version" | "scopes" | "deprecated">> = {}) => defineMutation({
+const mutation = (name: string, extra: Partial<Pick<Mutation, "version" | "scopes" | "deprecated" | "errors">> = {}) => defineMutation({
   name, description, input: z.object({}), output: z.object({}),
   async prepare() { return { targets: [], preview: { summary: "Nothing" } } },
   async commit() { return { results: {}, applied_changes: [], effects_performed: [] } },
@@ -79,4 +79,15 @@ test("mutations join the tools: <id>:write by default, and the same identity, du
   const deprecated = { since: "2026-09-29", sunset: "2027-09-29", replacement: "records.delete" }
   expect(defineProvider({ ...base, tools: [mutation("records.remove", { deprecated }), mutation("records.delete")] }).tools).toHaveLength(2)
   expect(() => defineProvider({ ...base, tools: [mutation("records.remove", { deprecated })] })).toThrow("Provider acme: tool records.remove is deprecated in favour of records.delete, which is not a current tool of this provider")
+})
+
+test("a declared error starts with the provider's id in capitals", () => {
+  const base = { id: "acme", version: "2026-09-29" }
+  const locked = { errors: ["ACME_LOCKED"] }
+  expect(defineProvider({ ...base, tools: [tool("records.list", locked), mutation("records.delete", locked)] }).tools.map(({ errors }) => errors)).toEqual([["ACME_LOCKED"], ["ACME_LOCKED"]])
+  expect(defineProvider({ id: "e2e", version: "2026-09-29", tools: [tool("records.list", { errors: ["E2E_LOCKED"] })] }).tools).toHaveLength(1)
+  for (const code of ["OTHER_LOCKED", "ACMEX_LOCKED"]) {
+    expect(() => defineProvider({ ...base, tools: [tool("records.list", { errors: [code] })] })).toThrow(`Provider acme: records.list declares error "${code}"; a custom code of this provider starts with ACME_`)
+    expect(() => defineProvider({ ...base, tools: [mutation("records.delete", { errors: [code] })] })).toThrow(`Provider acme: records.delete declares error "${code}"; a custom code of this provider starts with ACME_`)
+  }
 })

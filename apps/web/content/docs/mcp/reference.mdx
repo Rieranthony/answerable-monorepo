@@ -1,0 +1,946 @@
+---
+title: API reference
+description: "Every export of @answerable/auth and @answerable/mcp: its declaration, what it is for and, for the functions authors start from, an example."
+---
+
+Generated from the documentation comments in the source by `bun run --filter @answerable/mcp reference`; edit the comments, not this page. [Author an MCP](/docs/mcp/authoring) and [Test an MCP](/docs/mcp/testing) show these exports in use.
+
+## @answerable/auth
+
+Verify Answerable ID access tokens in any service.
+
+### createIdVerifier
+
+```ts
+function createIdVerifier(config: IdVerifierConfig): (token: string) => Promise<UserPrincipal>
+```
+
+Create a function that verifies an Answerable ID access token against the issuer's published keys, offline, and returns its caller.
+The keys are read from the issuer's metadata on first use; every failure throws `AuthenticationError`.
+
+**Example**
+
+```ts
+import { createIdVerifier } from "@answerable/auth"
+
+const verify = createIdVerifier({ issuer: "https://id.answerable.org", resource: "https://example.answerable.org/mcp" })
+const principal = await verify(accessToken)
+```
+
+### IdVerifierConfig
+
+```ts
+type IdVerifierConfig = {
+  /** Trusted Answerable ID issuer, for example https://id.answerable.org. */
+  issuer: string
+  /** This service's canonical resource URL as registered in ID; the token audience must contain it. */
+  resource: string
+  /** HTTP client for discovery and key requests. Default: the global fetch. */
+  fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+}
+```
+
+The issuer and resource a verifier trusts, and the HTTP client it uses for discovery.
+
+### UserPrincipal
+
+```ts
+type UserPrincipal = Readonly<{
+  userId: string
+  organizationId: string
+  /** The person's membership in `organizationId`. */
+  membershipId: string
+  /** The authorisation this token was issued under; a refreshed token keeps it. */
+  grantId: string
+  /** The OAuth client that asked for the token. */
+  clientId: string
+  /** The scopes ID issued: the entitled subset of the ones requested. */
+  scopes: readonly string[]
+  /** Expiry, in seconds since the epoch. */
+  expiresAt: number
+}>
+```
+
+The caller a verified access token names. Constrain every query by `organizationId`.
+
+### AuthenticationError
+
+```ts
+class AuthenticationError extends Error {
+  constructor()
+}
+```
+
+Thrown for every rejected token, always with the same message so that it reveals nothing; answer it with a `401` challenge.
+
+## @answerable/auth/testing
+
+An in-process issuer that signs ID-shaped test tokens.
+
+### createTestIssuer
+
+```ts
+function createTestIssuer(options?: {
+  algorithm?: "EdDSA" | "ES256" | "RS256"
+  issuer?: string
+}): Promise<TestIssuer>
+```
+
+Create a `TestIssuer` that signs tokens the way Answerable ID does, with a fresh key pair (EdDSA unless `algorithm` says otherwise).
+
+**Example**
+
+```ts
+import { createIdVerifier } from "@answerable/auth"
+import { createTestIssuer } from "@answerable/auth/testing"
+
+const issuer = await createTestIssuer()
+const verify = createIdVerifier({ issuer: issuer.issuer, resource: "https://example.test/mcp", fetch: issuer.fetch })
+const principal = await verify(await issuer.sign({ resource: "https://example.test/mcp", scopes: ["example:read"] }))
+```
+
+### TestIssuer
+
+```ts
+type TestIssuer = {
+  /** The issuer URL to trust; default `https://id.test`. */
+  issuer: string
+  /** Sign an access token for `resource`. `claims` replace the token's claims (an `undefined` value removes one) and `header` its header, to make unusual tokens. */
+  sign(options: {
+    resource: string
+    scopes?: readonly string[]
+    organizationId?: string
+    userId?: string
+    /** Lifetime as a duration string such as `"5m"` or as seconds. Default `"5m"`. */
+    expiresIn?: string | number
+    claims?: Record<string, unknown>
+    header?: Record<string, unknown>
+  }): Promise<string>
+  /** Publish a new signing key and sign with it from now on; the old key stays published. */
+  rotate(): Promise<void>
+  /** Make discovery and key requests answer `503` while `unavailable` is true. */
+  outage(unavailable: boolean): void
+  /** How many times the keys were requested. */
+  jwksRequests(): number
+  /** Answers the issuer's discovery and key requests: pass it as the verifier's `fetch`. */
+  fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>
+}
+```
+
+A local Answerable ID issuer for tests: it publishes keys and signs tokens, and listens on no port.
+
+## @answerable/mcp
+
+Define tools, mutations and providers, and serve them as an MCP server.
+
+### createMcpServer
+
+```ts
+function createMcpServer(config: McpServerConfig): {
+  fetch(request: Request): Promise<Response>
+}
+```
+
+Serve a provider over MCP: `/health`, the protected-resource metadata and the MCP endpoint behind Answerable ID sign-in.
+It returns a web-standard `{ fetch }` handler; the caller owns the listener.
+
+**Example**
+
+```ts
+import { createMcpServer, readMcpEnvironment } from "@answerable/mcp"
+import { provider } from "./provider"
+
+const { auth, port } = readMcpEnvironment(process.env)
+const server = createMcpServer({ provider, auth })
+Bun.serve({ hostname: "127.0.0.1", port, fetch: server.fetch })
+```
+
+### McpServerConfig
+
+```ts
+type McpServerConfig = {
+  provider: Provider
+  auth: IdVerifierConfig
+  /** Hostnames accepted in the Host header. Default: the resource URL's hostname. */
+  allowedHosts?: string[]
+  /** Hostnames accepted in a browser Origin header. Default: the resource URL's hostname. */
+  allowedOrigins?: string[]
+  /** Where intents live. Default: a memory store for this server. */
+  intents?: IntentStore
+  /** The policy class of a mutation for one caller, decided for each request. Default: from the mutation's `risk`. */
+  policyClass?: (mutation: Served<Mutation>, principal: UserPrincipal) => PolicyClass
+}
+```
+
+What `createMcpServer` takes: the provider, the ID issuer and resource to trust, and optional overrides.
+
+### defineTool
+
+```ts
+function defineTool<Input extends z.ZodObject, Output extends z.ZodObject>(tool: Omit<Tool<Input, Output>, "kind" | "timeoutMs" | "errors"> & {
+  timeoutMs?: number
+  errors?: readonly string[]
+}): Tool<Input, Output>
+```
+
+Define a read tool from five fields: `name`, `description`, `input`, `output` and `execute`; everything else has a default.
+It refuses a bad name, a description outside 40 to 1,000 characters and a timeout above 55,000 ms, and returns frozen data.
+
+**Example**
+
+```ts
+import { defineTool } from "@answerable/mcp"
+import { z } from "zod"
+
+export const identityGet = defineTool({
+  name: "identity.get",
+  description: "Read your verified identity: your user id and the organisation you signed in to.",
+  input: z.object({}),
+  output: z.object({ userId: z.uuid(), organizationId: z.uuid() }),
+  async execute(_input, { principal }) {
+    return { userId: principal.userId, organizationId: principal.organizationId }
+  },
+})
+```
+
+### Tool
+
+```ts
+type Deprecation = Readonly<{
+  since: string
+  sunset: string
+  replacement?: string
+}>
+
+type Tool<Input extends z.ZodObject = z.ZodObject, Output extends z.ZodObject = z.ZodObject> = Readonly<{
+  kind: "read"
+  /** `<domain>.<operation>`, for example `records.list`; the wire name is `records_list`. */
+  name: string
+  /** What a host may show people in place of the name. */
+  title?: string
+  /** What it does, when to use it and its limits: 40 to 1,000 characters. */
+  description: string
+  /** Closed with `.strict()`: an unknown top-level field answers `INVALID_INPUT`. */
+  input: Input
+  /** The result is checked against it; undeclared fields are dropped. */
+  output: Output
+  /** `YYYY-MM-DD`. Default: the provider's version. */
+  version?: string
+  /** Token scopes needed to see and call it. Default: `<provider>:read`. */
+  scopes?: readonly string[]
+  /** Marks the tool for removal: its wire description ends with the deprecation sentence, and `replacement`, when given, names a current tool of the provider. */
+  deprecated?: Deprecation
+  /** An MCP Apps view that hosts show with the result. */
+  view?: View
+  /** Default 25,000; at most 55,000. The call is aborted and answers `TIMEOUT` after it. */
+  timeoutMs: number
+  /** The custom `<PROVIDER>_<CODE>` codes the handler throws. Default: none; standard codes need no declaration, and an undeclared custom code answers `INTERNAL`. */
+  errors: readonly string[]
+  execute(input: z.output<Input>, context: ToolContext): Promise<z.input<Output>>
+}>
+```
+
+A read tool: frozen data made by `defineTool`. Only `name`, `description`, `input`, `output` and `execute` are required.
+
+### defineMutation
+
+```ts
+function defineMutation<Input extends z.ZodObject, Output extends z.ZodObject, Data = unknown>(mutation: Omit<Mutation<Input, Output, Data>, "kind" | "timeoutMs" | "errors" | "risk" | "effects"> & {
+  timeoutMs?: number
+  errors?: readonly string[]
+  risk?: Risk
+  effects?: readonly Effect[]
+}): Mutation<Input, Output, Data>
+```
+
+Define a mutation from a read tool's fields with `prepare` and `commit` in place of `execute`; `risk`, `effects` and `expiresInMs` are optional.
+`prepare` resolves targets and describes the change without making it; `commit` applies exactly that plan, once the server has checked
+the commit token, the principal, the expiry, the policy class and every target's version.
+
+**Example**
+
+```ts
+import { defineMutation, ToolError } from "@answerable/mcp"
+import { z } from "zod"
+
+export const recordsDelete = defineMutation({
+  name: "records.delete",
+  description: "Prepare deleting one of your organisation's records. Changes nothing: returns a preview; show the person its summary, then commit it with example_commit_confirmed.",
+  input: z.object({ id: z.uuid() }),
+  output: z.object({ deleted: z.literal(true) }),
+  async prepare({ id }, { principal }) {
+    const record = await records.get(principal.organizationId, id)
+    if (!record) throw new ToolError("NOT_FOUND", "No accessible record exists")
+    return {
+      targets: [{ resource_type: "record", resource_id: id, label: record.title, version: { kind: "serial", value: String(record.version) } }],
+      preview: { summary: `Delete record “${record.title}”`, changes: [{ path: `records[${id}]`, from: record, to: null }] },
+      plan: { id },
+    }
+  },
+  async commit({ plan, preview }, { principal }) {
+    await records.remove(principal.organizationId, plan.id)
+    return { results: { deleted: true }, applied_changes: preview.changes, effects_performed: [] }
+  },
+})
+```
+
+### Mutation
+
+```ts
+type Mutation<Input extends z.ZodObject = z.ZodObject, Output extends z.ZodObject = z.ZodObject, Data = unknown> = Readonly<Omit<Tool<Input, Output>, "kind" | "output" | "scopes" | "view" | "execute"> & {
+  kind: "mutate"
+  /** The schema of the receipt's `results`; undeclared fields are dropped. */
+  output: Output
+  /** Token scopes needed to see and call it. Default: `<provider>:write`. */
+  scopes?: readonly string[]
+  /** Sets the default policy class. Default: `normal`. */
+  risk: Risk
+  /** The effects a preview may name. Default: none. */
+  effects: readonly Effect[]
+  /** Shortens the expiry of the mutation's intents; at most the expiry its risk gives. */
+  expiresInMs?: number
+  /** Resolve the targets and describe the change. It must not change anything. */
+  prepare(input: z.output<Input>, context: ToolContext): Promise<{
+    targets: Target[]
+    preview: Pick<Preview, "summary"> & Partial<Preview>
+    plan?: Data
+  }>
+  /** Apply exactly the prepared plan; `results` is checked against `output`. */
+  commit(plan: Plan<Data>, context: ToolContext): Promise<{
+    results: z.input<Output>
+    applied_changes: Change[]
+    effects_performed: Effect[]
+  }>
+}>
+```
+
+A mutation: frozen data made by `defineMutation`. A read tool's fields with `prepare` and `commit` in place of `execute`.
+
+### Plan
+
+```ts
+type Plan<Data = unknown> = {
+  targets: Target[]
+  preview: Preview
+  plan: Data
+}
+```
+
+What `commit` receives: the targets and preview `prepare` returned, and the author's own `plan` data, stored as JSON.
+
+### Target
+
+```ts
+type Target = {
+  resource_type: string
+  resource_id: string
+  label: string
+  version: {
+    kind: "etag" | "version" | "timestamp" | "serial"
+    value: string
+  }
+}
+```
+
+A resource the commit reads or writes, with the version `prepare` saw: `kind` names how the source versions it, and `label` names the resource for people.
+
+### Preview
+
+```ts
+type Preview = {
+  summary: string
+  changes: Change[]
+  effects: Effect[]
+  /** Consequences that are possible, not certain. */
+  warnings: string[]
+  quantities: {
+    name: string
+    value: number
+    unit: string
+  }[]
+}
+```
+
+What would change, in the words the person confirms: a `summary` of 1 to 500 characters, then `changes`, `effects`, `warnings` and `quantities`, each defaulting to empty.
+
+### Change
+
+```ts
+type Change = {
+  path: string
+  from?: unknown
+  to?: unknown
+}
+```
+
+One change: where (`path`), what it was (`from`) and what it becomes (`to`); each of the last two defaults to `null`.
+
+### PolicyClass
+
+```ts
+type PolicyClass = "agent" | "controlled" | "human"
+```
+
+Who may commit an intent: the agent alone (`agent`), the agent once the host has shown the person the summary (`controlled`), or a person's approval (`human`).
+
+### Risk
+
+```ts
+type Risk = "low" | "normal" | "high"
+```
+
+How much harm a mutation can do. It sets the default policy class: `low` gives `agent`, `normal` `controlled`, `high` `human`.
+
+### Effect
+
+```ts
+type Effect = (typeof vocabulary)[number]
+```
+
+A side effect beyond the change itself, named in a preview and in a receipt: `notification`, `external_call`, `money_movement`, `cascade_delete`, `permission_change` or `publication`.
+
+### createMemoryIntentStore
+
+```ts
+function createMemoryIntentStore(options?: {
+  now?: () => number
+}): IntentStore
+```
+
+An `IntentStore` in memory: one per server by default, lost when the process stops. It keeps JSON copies, as a database would.
+A test moves the clock instead of waiting for an intent to expire.
+
+**Example**
+
+```ts
+let clock = Date.now()
+const intents = createMemoryIntentStore({ now: () => clock })
+const server = createMcpServer({ provider, auth, intents })
+clock += 10 * 60_000 // every agent-class intent prepared so far has expired
+```
+
+### Intent
+
+```ts
+type Principal = {
+  user_id: string
+  membership_id: string
+  client_id: string
+}
+
+type Intent = {
+  /** UUIDv7. */
+  intent_id: string
+  organisation_id: string
+  principal: Principal
+  capability_identity: string
+  capability_version: string
+  /** The caller's arguments without `validate_only`; commit runs `prepare` on them again. */
+  input: Record<string, unknown>
+  targets: Target[]
+  preview: Preview
+  /** The author's own data for `commit`. */
+  plan?: unknown
+  policy_class: PolicyClass
+  approval: {
+    required: boolean
+    status: "not_required" | "pending"
+  }
+  /** SHA-256 hex of the commit token; the token itself is never stored. */
+  commit_token_hash: string
+  status: IntentStatus
+  created_at: string
+  expires_at: string
+  committed_at?: string
+  receipt?: Receipt
+}
+```
+
+A prepared mutation as a store keeps it: bound to one principal, one capability version and the target versions `prepare` saw.
+
+### IntentStatus
+
+```ts
+type IntentStatus = "prepared" | "awaiting_approval" | "committing" | "committed" | "failed" | "expired" | "stale"
+```
+
+Where an intent is: `prepared` or `awaiting_approval` until a commit claims it (`committing`), then `committed`, `failed` or `stale`; `expired` once `expires_at` passes unclaimed.
+
+### IntentStore
+
+```ts
+type IntentStore = {
+  /** Milliseconds since the epoch. The store's clock decides every expiry. */
+  now(): number
+  insert(intent: Intent): Promise<void>
+  /** The intent, marked `expired` first if it was `prepared` or `awaiting_approval` and `expires_at` has passed. */
+  get(intentId: string): Promise<Intent | undefined>
+  /** Move an intent from `from` to `to`, applying expiry first; with `receipt`, store it and its `committed_at`. False when the intent is not in `from`. */
+  transition(intentId: string, from: IntentStatus, to: IntentStatus, receipt?: Receipt): Promise<boolean>
+}
+```
+
+Where a server keeps intents. Every write is a compare-and-set on the status, so concurrent commits cannot both claim an intent.
+
+### Receipt
+
+```ts
+type Principal = {
+  user_id: string
+  membership_id: string
+  client_id: string
+}
+
+type Receipt = {
+  receipt_id: string
+  intent_id: string
+  status: "committed"
+  /** Checked against the mutation's `output`. */
+  results: Record<string, unknown>
+  applied_changes: Change[]
+  effects_performed: string[]
+  committed_at: string
+  committed_by: Principal
+  idempotent_replay: boolean
+}
+```
+
+The immutable record of a committed intent. A repeat of the commit returns it with `idempotent_replay: true`.
+
+### defineProvider
+
+```ts
+function defineProvider(provider: {
+  id: string
+  version: string
+  tools: readonly (Tool | Mutation)[]
+  prompts?: readonly Prompt[]
+  resources?: readonly Resource[]
+}): Provider
+```
+
+Define a provider: a named, dated set of tools, mutations, prompts and resources, served alone or mounted in a hub.
+It fills in each definition's identity, version and scopes, and refuses duplicates, conflicting views, a deprecation
+whose replacement is not a current tool, and a declared error that does not start with the provider's id in capitals.
+
+**Example**
+
+```ts
+import { defineProvider } from "@answerable/mcp"
+import { identityGet } from "./tools"
+
+export const provider = defineProvider({ id: "example", version: "2026-09-29", tools: [identityGet] })
+```
+
+### Provider
+
+```ts
+type Scoped = Readonly<{
+  scopes: readonly string[]
+}>
+
+type Provider = Readonly<{
+  id: string
+  version: string
+  /** Read tools (`kind: "read"`) and mutations (`kind: "mutate"`), in definition order. */
+  tools: readonly Served<Tool | Mutation>[]
+  prompts: readonly (Prompt & Scoped)[]
+  resources: readonly (Resource & Scoped)[]
+}>
+```
+
+A validated, frozen provider: its definitions with identity, version and scopes filled in.
+
+### Served
+
+```ts
+type Scoped = Readonly<{
+  scopes: readonly string[]
+}>
+
+type Served<Definition extends Tool | Mutation> = Definition & Scoped & Readonly<{
+  identity: string
+  version: string
+}>
+```
+
+A tool or mutation as its provider serves it: with its `identity` (`<provider id>/<name>`), `version` and `scopes` filled in.
+
+### definePrompt
+
+```ts
+function definePrompt<Input extends z.ZodObject>(prompt: Prompt<Input>): Prompt<Input>
+```
+
+Define a prompt. Prompt retrieval returns instructions; it must not perform mutations.
+
+### defineResource
+
+```ts
+function defineResource(resource: Resource): Resource
+```
+
+Define a fixed-URI text resource. Use `defineView` for interactive HTML.
+
+### defineView
+
+```ts
+function defineView(input: {
+  name: string
+  html: string
+}): View
+```
+
+Define an MCP Apps view from HTML that `buildView` built; its URI is `ui://<name>/index.html`.
+
+### Prompt
+
+```ts
+type Prompt<Input extends z.ZodObject = z.ZodObject> = Readonly<{
+  name: string
+  description: string
+  input: Input
+  /** Token scopes needed to see and get it. Default: `<provider>:read`. */
+  scopes?: readonly string[]
+  execute(input: z.output<Input>, context: ToolContext): Promise<GetPromptResult>
+}>
+```
+
+A prompt: instructions a host can fetch by name. Retrieval must not change data.
+
+### Resource
+
+```ts
+type Resource = Readonly<{
+  name: string
+  uri: string
+  description: string
+  mimeType: string
+  /** Token scopes needed to see and read it. Default: `<provider>:read`. */
+  scopes?: readonly string[]
+  read(context: ToolContext): Promise<string>
+}>
+```
+
+A fixed-URI text resource. Reading it must not change data.
+
+### View
+
+```ts
+type View = Readonly<{
+  name: string
+  uri: string
+  html: string
+}>
+```
+
+An MCP Apps view: bundled HTML served as a `ui://` resource for one or more tools.
+
+### ToolContext
+
+```ts
+type ToolContext = Readonly<{
+  principal: UserPrincipal
+  executionId: string
+  signal: AbortSignal
+}>
+```
+
+What every handler receives: the verified caller, this call's id (a UUIDv7, also the error envelope's `request_id`) and a signal that aborts on cancel or timeout.
+
+### manifest
+
+```ts
+function manifest(provider: Provider): Manifest
+```
+
+Serialise a provider's contract as JSON: commit the result next to the source, and let the conformance kit's `manifest_matches_snapshot` fail when it drifts.
+
+### Manifest
+
+```ts
+type JsonSchema = Record<string, unknown>
+
+type Annotations = Readonly<{
+  readOnlyHint: boolean
+  destructiveHint: boolean
+  idempotentHint: boolean
+  openWorldHint: boolean
+}>
+
+type Definition = {
+  identity: string
+  name: string
+  version: string
+  title?: string
+  description: string
+  deprecated?: Tool["deprecated"]
+  scopes: readonly string[]
+  /** The custom error codes the definition declares; absent when it declares none. */
+  errors?: readonly string[]
+  annotations: Annotations
+  /** The definition's input; a mutation's prepare tool adds `validate_only`. */
+  input: JsonSchema
+  /** A read tool's result; the `results` of a mutation's receipt. */
+  output: JsonSchema
+}
+
+type Manifest = {
+  id: string
+  version: string
+  tools: ((Definition & {
+    kind: "read"
+  }) | (Definition & {
+    kind: "mutate"
+    risk: Risk
+    effects: readonly Effect[]
+  })
+    /** A commit tool: listed when the caller can use at least one mutation; `scopes` is the union of the mutations' scopes. */
+    | {
+      identity: string
+      name: string
+      kind: "commit"
+      description: string
+      scopes: readonly string[]
+      annotations: Annotations
+      input: JsonSchema
+      output: JsonSchema
+    })[]
+  prompts: {
+    name: string
+    description: string
+    scopes: readonly string[]
+    input: JsonSchema
+  }[]
+  resources: {
+    name: string
+    uri: string
+    description: string
+    mime_type: string
+    scopes: readonly string[]
+  }[]
+}
+```
+
+A provider's contract as plain JSON: every definition as the wire carries it, and no code.
+
+### ToolError
+
+```ts
+class ToolError extends Error {
+  readonly code: string
+  readonly retry: Retry
+  readonly details?: Record<string, unknown>
+  constructor(code: ErrorCode | (string & {}), message: string, options?: {
+    retry?: Retry
+    details?: Record<string, unknown>
+  })
+}
+```
+
+Throw from a handler for an expected failure; the caller receives its code, message, retry policy and details in the error envelope.
+A custom `<PROVIDER>_<CODE>` code needs an explicit `retry` and must be listed in the definition's `errors`.
+
+### errorCodes
+
+```ts
+const errorCodes: Readonly<{
+  readonly INVALID_INPUT: "after_fix_input"
+  readonly NOT_FOUND: "never"
+  readonly PERMISSION_DENIED: "never"
+  readonly PRECONDITION_FAILED: "after_state_change"
+  readonly INTENT_STALE: "after_reprepare"
+  readonly INTENT_EXPIRED: "after_reprepare"
+  readonly INTENT_NOT_FOUND: "after_reprepare"
+  readonly INTENT_CANCELLED: "after_reprepare"
+  readonly INTENT_CONSUMED: "after_reprepare"
+  readonly COMMIT_TOKEN_INVALID: "never"
+  readonly PRINCIPAL_MISMATCH: "never"
+  readonly APPROVAL_REQUIRED: "after_approval"
+  readonly APPROVAL_DENIED: "never"
+  readonly COMMIT_IN_PROGRESS: "after_delay"
+  readonly IDEMPOTENCY_KEY_MISMATCH: "never"
+  readonly RATE_LIMITED: "after_delay"
+  readonly BUDGET_EXHAUSTED: "after_delay"
+  readonly UPSTREAM_REJECTED: "never"
+  readonly UPSTREAM_UNAVAILABLE: "after_delay"
+  readonly TIMEOUT: "after_delay"
+  readonly OPERATION_NOT_FOUND: "never"
+  readonly OPERATION_EXPIRED: "never"
+  readonly INTERNAL: "after_delay"
+}>
+```
+
+Every standard error code, with its default retry policy.
+
+### ErrorCode
+
+```ts
+type ErrorCode = keyof typeof errorCodes
+```
+
+A standard error code. Providers may add `<PROVIDER>_<CODE>` codes with an explicit retry policy.
+
+### Retry
+
+```ts
+type Retry = {
+  policy: "never" | "after_delay" | "after_fix_input" | "after_state_change" | "after_reprepare" | "after_approval"
+  /** Milliseconds to wait before retrying; `after_delay` defaults to 1000. */
+  after_ms?: number
+}
+```
+
+What a caller should do after a failure.
+
+### readMcpEnvironment
+
+```ts
+function readMcpEnvironment(env: Record<string, string | undefined>): {
+  auth: {
+    issuer: string
+    resource: string
+  }
+  port: number
+}
+```
+
+Read `MCP_ID_ISSUER`, `MCP_RESOURCE_URL` and `MCP_PORT` (default 47500) into the `auth` option of `createMcpServer` and a port; throws naming the variable that is missing or invalid.
+
+### UserPrincipal
+
+Re-exported from `@answerable/auth`; see [UserPrincipal](#userprincipal).
+
+### IdVerifierConfig
+
+Re-exported from `@answerable/auth`; see [IdVerifierConfig](#idverifierconfig).
+
+## @answerable/mcp/build
+
+Bundle an MCP Apps view into one HTML resource.
+
+### bundleBrowser
+
+```ts
+function bundleBrowser(entry: string): Promise<{
+  path: string
+  text: string
+}[]>
+```
+
+Bundle a browser entry file with Bun's bundler, in a separate process, and return each output file's path and text.
+
+### buildView
+
+```ts
+function buildView(options: {
+  /** Absolute or working-directory-relative path of the browser entry file. */
+  entry: string
+  /** The document's `<title>`. */
+  title: string
+}): Promise<string>
+```
+
+Bundle a browser entry and its CSS into one self-contained HTML document for `defineView`.
+It refuses output that is not one script and optional CSS.
+
+**Example**
+
+```ts
+import { buildView } from "@answerable/mcp/build"
+
+const html = await buildView({ entry: "src/views/records.tsx", title: "Records" })
+```
+
+## @answerable/mcp/testing
+
+Serve a provider in-process and run the conformance kit against it.
+
+### createTestMcp
+
+```ts
+function createTestMcp(provider: Provider, options?: {
+  resource?: string
+} & Pick<McpServerConfig, "intents" | "policyClass">): Promise<TestMcp>
+```
+
+Serve a provider in-process with a local ID issuer and the official MCP client: no port, no network.
+`intents` and `policyClass` pass to `createMcpServer`; `resource` is the MCP's URL, default `https://mcp.test/mcp`.
+
+**Example**
+
+```ts
+import { createTestMcp } from "@answerable/mcp/testing"
+import { provider } from "./provider"
+
+const mcp = await createTestMcp(provider)
+const client = await mcp.connect({ scopes: ["example:read"] })
+const result = await client.callTool({ name: "identity_get", arguments: {} })
+await mcp.close()
+```
+
+### TestMcp
+
+```ts
+type TestMcp = {
+  /** Issue unusual tokens for authentication tests. */
+  readonly issuer: TestIssuer
+  /** Send an HTTP request with the URL's Host header by default. */
+  fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>
+  /** Connect a client, defaulting to all advertised scopes and a fresh person, membership and organisation. Pin `userId`, `organizationId` and `membershipId` to connect as the same principal twice. */
+  connect(options?: {
+    scopes?: readonly string[]
+    organizationId?: string
+    userId?: string
+    membershipId?: string
+    clientId?: string
+    protocol?: "2025" | "2026-07-28"
+  }): Promise<Client>
+  /** Close every client, including clients whose connection failed. */
+  close(): Promise<void>
+}
+```
+
+An in-process MCP and its authenticated protocol clients.
+
+### assertProviderConformance
+
+```ts
+function assertProviderConformance(provider: Provider, fixture: ConformanceFixture): void
+```
+
+Register one test per conformance check for a provider: call it at the top level of a test file, with the provider built on
+test dependencies such as in-memory stores. The provider is served in-process with its own intent store and clock,
+so a failing test names the check and the definition to change.
+
+**Parameters**
+
+- `fixture`: What the kit cannot derive: the committed manifest, one valid input per tool and how to move a target.
+
+**Example**
+
+```ts
+import { assertProviderConformance } from "@answerable/mcp/testing"
+import { createE2eProvider } from "./mcp"
+
+assertProviderConformance(createE2eProvider({ records, viewHtml: "<title>Records</title>" }), {
+  manifest: new URL("../manifest.json", import.meta.url),
+  examples: { "records.list": { limit: 5 }, "records.create": { title: "Example" } },
+  moveTarget: (target, principal) => records.touch(principal, target.resource_id),
+})
+```
+
+### ConformanceFixture
+
+```ts
+type ConformanceFixture = {
+  /** The committed manifest, as a path or a URL such as `new URL("../manifest.json", import.meta.url)`. */
+  manifest: string | URL
+  /** One valid input for every tool and mutation, by name. A function may set up state first and returns the input. */
+  examples: Record<string, Record<string, unknown> | ((principal: UserPrincipal) => Record<string, unknown> | Promise<Record<string, unknown>>)>
+  /** Change a target outside the MCP, as another writer would, so that its version moves; it may return a promise. Needed only by a mutation that prepares targets. */
+  moveTarget?(target: Target, principal: UserPrincipal): unknown
+}
+```
+
+What the conformance kit needs from a provider's test besides the provider.

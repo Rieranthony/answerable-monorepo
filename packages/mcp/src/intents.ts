@@ -1,4 +1,4 @@
-import type { PolicyClass, Preview, Target } from "./mutation"
+import type { Change, PolicyClass, Preview, Target } from "./mutation"
 
 /** Where an intent is: `prepared` or `awaiting_approval` until a commit claims it (`committing`), then `committed`, `failed` or `stale`; `expired` once `expires_at` passes unclaimed. */
 export type IntentStatus = "prepared" | "awaiting_approval" | "committing" | "committed" | "failed" | "expired" | "stale"
@@ -11,7 +11,7 @@ export type Receipt = {
   status: "committed"
   /** Checked against the mutation's `output`. */
   results: Record<string, unknown>
-  applied_changes: { path: string; from: unknown; to: unknown }[]
+  applied_changes: Change[]
   effects_performed: string[]
   committed_at: string
   committed_by: Principal
@@ -56,8 +56,20 @@ export type IntentStore = {
 
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value))
 
-/** An `IntentStore` in memory: one per server by default, lost when the process stops. It keeps JSON copies, as a database would; `now` sets its clock. */
-export function createMemoryIntentStore({ now = Date.now }: { now?: () => number } = {}): IntentStore {
+/**
+ * An `IntentStore` in memory: one per server by default, lost when the process stops. It keeps JSON copies, as a database would.
+ * A test moves the clock instead of waiting for an intent to expire.
+ *
+ * @example
+ * ```ts
+ * let clock = Date.now()
+ * const intents = createMemoryIntentStore({ now: () => clock })
+ * const server = createMcpServer({ provider, auth, intents })
+ * clock += 10 * 60_000 // every agent-class intent prepared so far has expired
+ * ```
+ */
+export function createMemoryIntentStore(options: { now?: () => number } = {}): IntentStore {
+  const { now = Date.now } = options
   const intents = new Map<string, Intent>()
   function current(intentId: string) {
     const intent = intents.get(intentId)

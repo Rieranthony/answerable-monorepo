@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0
+
+The conformance kit, declared errors and documentation comments on every export. Breaking: a handler that throws an undeclared custom error code answers `INTERNAL`.
+
+- `@answerable/mcp/testing` gains `assertProviderConformance(provider, fixture)`, which registers one `bun:test` test per check of the standard's read, mutate and provider checklists, under the standard's names. The fixture is `manifest` (the committed file), `examples` (one valid input per tool and mutation, or a function of the caller's principal that sets up state) and `moveTarget` (for a mutation that prepares targets). The kit serves the provider with `createTestMcp`, its own intent store and clock and one signed-in caller; a high-risk mutation runs as controlled, because human approvals are not built. `approval_bound_to_digest`, `secrets_declared` and `egress_guarded` are `test.todo`. `UPDATE_MANIFEST=1 bun run test` writes the manifest snapshot; the drift failure names it.
+- A tool or mutation takes `errors`: the custom `<PROVIDER>_<CODE>` codes it throws, none by default. Standard codes need no declaration. An entry must be a custom code, and `defineProvider` requires it to start with the provider's id in capitals. A handler that throws an undeclared custom code answers `INTERNAL`, and the server log names the code to add. `manifest(provider)` lists a definition's `errors` when it has any.
+- `Change`, `IntentStatus` and `Served` are exported. `Target` and `Preview` are written out as types rather than aliases of Zod schemas, so the reference shows their shape; `Change` keeps `from` and `to` optional. `createMcpServer` takes one `config` argument and `createMemoryIntentStore` one `options` argument, with the same fields.
+- Every export carries a documentation comment. `bun run --filter @answerable/mcp reference` generates `apps/web/content/docs/mcp/reference.mdx` from them, and a test fails when the page drifts.
+- `createTestMcp` lives in its own module; `@answerable/mcp/testing` still exports it.
+
 ## 0.2.0
 
 Prepared mutations. Breaking: a `Tool` carries `kind: "read"`, and provider tools are a union of `Tool` and `Mutation`.

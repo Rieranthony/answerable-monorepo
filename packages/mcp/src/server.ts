@@ -15,7 +15,7 @@ import { intentView, recordIntent } from "./prepare"
 import type { Provider, Served } from "./provider"
 import { readAnnotations, wireDescription, wireName } from "./tool"
 
-/** Configuration for `createMcpServer`. */
+/** What `createMcpServer` takes: the provider, the ID issuer and resource to trust, and optional overrides. */
 export type McpServerConfig = {
   provider: Provider
   auth: IdVerifierConfig
@@ -31,10 +31,22 @@ export type McpServerConfig = {
 
 const validateOnly = z.boolean().default(false).describe("Return the preview without recording an intent or issuing a commit token; default false")
 
-/** Serve a provider over MCP with Answerable ID sign-in; returns a web-standard `{ fetch }` handler. */
-export function createMcpServer({
-  provider, auth, allowedHosts, allowedOrigins, intents = createMemoryIntentStore(), policyClass = mutation => riskClass[mutation.risk],
-}: McpServerConfig): { fetch(request: Request): Promise<Response> } {
+/**
+ * Serve a provider over MCP: `/health`, the protected-resource metadata and the MCP endpoint behind Answerable ID sign-in.
+ * It returns a web-standard `{ fetch }` handler; the caller owns the listener.
+ *
+ * @example
+ * ```ts
+ * import { createMcpServer, readMcpEnvironment } from "@answerable/mcp"
+ * import { provider } from "./provider"
+ *
+ * const { auth, port } = readMcpEnvironment(process.env)
+ * const server = createMcpServer({ provider, auth })
+ * Bun.serve({ hostname: "127.0.0.1", port, fetch: server.fetch })
+ * ```
+ */
+export function createMcpServer(config: McpServerConfig): { fetch(request: Request): Promise<Response> } {
+  const { provider, auth, allowedHosts, allowedOrigins, intents = createMemoryIntentStore(), policyClass = (mutation: Served<Mutation>) => riskClass[mutation.risk] } = config
   const views = new Set<View>(provider.tools.flatMap(tool => tool.kind === "read" && tool.view ? [tool.view] : []))
   const mutations = provider.tools.filter(tool => tool.kind === "mutate")
   const prepareInputs = new Map(mutations.map(mutation => [mutation, mutation.input.extend({ validate_only: validateOnly })]))
@@ -87,7 +99,7 @@ export function createMcpServer({
           const call = context(sdkContext.mcpReq.signal)
           return answer(tool.name, call.executionId, async () => {
             const input = await parseArguments(tool.input, args)
-            return tool.output.parseAsync(await bounded(tool.timeoutMs, call, bound => tool.execute(input, bound)))
+            return tool.output.parseAsync(await bounded(tool, call, bound => tool.execute(input, bound)))
           })
         })
         if (tool.view) registeredViews.add(tool.view)
@@ -101,7 +113,7 @@ export function createMcpServer({
         const call = context(sdkContext.mcpReq.signal)
         return answer(tool.name, call.executionId, async () => {
           const { validate_only, ...input } = await parseArguments(prepareInputs.get(tool)!, args)
-          const plan = await bounded(tool.timeoutMs, call, bound => preparePlan(tool, input, bound))
+          const plan = await bounded(tool, call, bound => preparePlan(tool, input, bound))
           // The intent keeps the arguments as sent; a commit parses them again to run prepare.
           const sent = Object.fromEntries(Object.entries(args).filter(([key]) => key !== "validate_only"))
           return recordIntent({

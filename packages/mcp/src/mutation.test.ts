@@ -73,3 +73,11 @@ test("the tool rules apply, naming the mutation", () => {
   expect(() => defineMutation({ ...fields, deprecated: { since: "soon", sunset: "2027-09-29" } })).toThrow("Mutation records.delete: deprecated.since and deprecated.sunset must be dates")
   expect(() => defineMutation({ ...fields, scopes: [] })).toThrow("Mutation records.delete: scopes must be non-empty and contain no spaces; omit them for the default <provider>:write")
 })
+
+test("errors declare the custom codes prepare and commit raise, by the same rule as a tool", () => {
+  expect(defineMutation(fields).errors).toEqual([])
+  const mutation = defineMutation({ ...fields, errors: ["ACME_LOCKED"] })
+  expect(mutation.errors).toEqual(["ACME_LOCKED"])
+  expect(Object.isFrozen(mutation.errors)).toBe(true)
+  expect(() => defineMutation({ ...fields, errors: ["INTENT_STALE"] })).toThrow('Mutation records.delete: errors entry "INTENT_STALE" must be a custom code')
+})

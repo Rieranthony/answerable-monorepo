@@ -1,6 +1,6 @@
 import { createMcpServer, defineMutation, defineProvider, defineTool, defineView, definePrompt, defineResource, type IdVerifierConfig, type IntentStore } from "@answerable/mcp"
 import { z } from "zod"
-import { recordSchema, recordsPage, recordsView } from "./contracts"
+import { pageInput, recordSchema, recordsPage, recordsView } from "./contracts"
 import type { RecordStore } from "./records"
 
 const identityGet = defineTool({
@@ -34,10 +34,7 @@ export function createE2eProvider({ records, viewHtml }: { records: RecordStore;
   const recordsList = defineTool({
     name: "records.list",
     description: "List your organisation's test records, oldest first, 20 per page by default and at most 100. When has_more is true, pass next_cursor as cursor to read the next page.",
-    input: z.object({
-      limit: z.number().int().min(1).max(100).default(20).describe("Records per page, 1 to 100"),
-      cursor: z.string().optional().describe("next_cursor from the previous page; omit it for the first page"),
-    }),
+    input: pageInput,
     output: recordsPage,
     async execute(input, { principal }) {
       return records.list(principal, input)
@@ -46,11 +43,11 @@ export function createE2eProvider({ records, viewHtml }: { records: RecordStore;
 
   const recordsShow = defineTool({
     name: "records.show", title: "Test records",
-    description: "Open your organisation's first 20 test records in an interactive view, where you can also create and delete them. Use records.list to read further pages.",
-    input: z.object({}), output: recordsView,
+    description: "Open your organisation's test records in an interactive view, 20 per page by default, where you can also create and delete them. When has_more is true, pass next_cursor as cursor to show the next page.",
+    input: pageInput, output: recordsView,
     view: defineView({ name: "records", html: viewHtml }),
-    async execute(_input, { principal }) {
-      return { items: records.list(principal, { limit: 20 }).items, canWrite: principal.scopes.includes("e2e:write") }
+    async execute(input, { principal }) {
+      return { ...records.list(principal, input), canWrite: principal.scopes.includes("e2e:write") }
     },
   })
 

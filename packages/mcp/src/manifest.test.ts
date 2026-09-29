@@ -8,7 +8,7 @@ const provider = defineProvider({
   id: "acme", version: "2026-09-29",
   tools: [
     defineTool({
-      name: "records.list", title: "Records",
+      name: "records.list", title: "Records", errors: ["ACME_QUOTA_EXCEEDED"],
       description: "List your organisation's records, oldest first, twenty per page.",
       input: z.object({ limit: z.number().int().min(1).max(100).default(20).describe("Records per page"), cursor: z.string().optional() }),
       output: z.object({ items: z.array(z.object({ id: z.string() })), next_cursor: z.string().nullable(), has_more: z.boolean() }),
@@ -42,7 +42,7 @@ test("the manifest is the provider's contract as plain JSON, tools sorted by ide
       {
         identity: "acme/records.list", name: "records_list", version: "2026-09-29", kind: "read", title: "Records",
         description: "List your organisation's records, oldest first, twenty per page.",
-        scopes: ["acme:read"], annotations,
+        scopes: ["acme:read"], errors: ["ACME_QUOTA_EXCEEDED"], annotations,
         input: {
           $schema, type: "object", additionalProperties: false,
           properties: { limit: { default: 20, description: "Records per page", type: "integer", minimum: 1, maximum: 100 }, cursor: { type: "string" } },
@@ -68,7 +68,8 @@ test("the manifest is the provider's contract as plain JSON, tools sorted by ide
 test("the manifest carries no code", () => {
   const document = manifest(provider)
   expect(JSON.parse(JSON.stringify(document))).toEqual(document)
-  expect(Object.keys(document.tools[1]!)).toEqual(["identity", "name", "version", "kind", "title", "description", "scopes", "annotations", "input", "output"])
+  expect(Object.keys(document.tools[1]!)).toEqual(["identity", "name", "version", "kind", "title", "description", "scopes", "errors", "annotations", "input", "output"])
+  expect(Object.keys(document.tools[0]!)).not.toContain("errors")
 })
 
 test("a mutation carries its risk, effects and the schemas of its input and results, and the provider gains the two commit tools", () => {
@@ -83,7 +84,7 @@ test("a mutation carries its risk, effects and the schemas of its input and resu
         input: z.object({ id: z.string() }), output: z.object({ deleted: z.boolean() }),
       }),
       defineMutation({
-        name: "records.create", title: "Create", risk: "low", scopes: ["acme:create"], prepare: plan,
+        name: "records.create", title: "Create", risk: "low", scopes: ["acme:create"], errors: ["ACME_LOCKED"], prepare: plan,
         async commit() { return { results: { id: "r1" }, applied_changes: [], effects_performed: [] } },
         description: "Create a record in your organisation. Commit the intent with acme_commit.",
         input: z.object({ title: z.string() }), output: z.object({ id: z.string() }),
@@ -105,7 +106,7 @@ test("a mutation carries its risk, effects and the schemas of its input and resu
     input: { $schema, type: "object", properties: { id: { type: "string" } }, required: ["id"], additionalProperties: false },
     output: { $schema, type: "object", properties: { deleted: { type: "boolean" } }, required: ["deleted"], additionalProperties: false },
   })
-  expect(Object.keys(document.tools[2]!)).toEqual(["identity", "name", "version", "kind", "title", "description", "scopes", "risk", "effects", "annotations", "input", "output"])
+  expect(Object.keys(document.tools[2]!)).toEqual(["identity", "name", "version", "kind", "title", "description", "scopes", "errors", "risk", "effects", "annotations", "input", "output"])
   const [commitTool, confirmedTool] = document.tools
   expect(Object.keys(commitTool!)).toEqual(["identity", "name", "kind", "description", "scopes", "annotations", "input", "output"])
   expect(commitTool).toMatchObject({

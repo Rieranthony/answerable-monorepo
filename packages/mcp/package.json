@@ -1,6 +1,6 @@
 {
   "name": "@answerable/mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -11,7 +11,8 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src --max-warnings 0"
+    "lint": "eslint src scripts --max-warnings 0",
+    "reference": "bun scripts/reference.ts"
   },
   "dependencies": {
     "@answerable/auth": "workspace:*",

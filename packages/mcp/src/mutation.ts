@@ -7,8 +7,26 @@ export type Risk = "low" | "normal" | "high"
 /** Who may commit an intent: the agent alone (`agent`), the agent once the host has shown the person the summary (`controlled`), or a person's approval (`human`). */
 export type PolicyClass = "agent" | "controlled" | "human"
 const vocabulary = ["notification", "external_call", "money_movement", "cascade_delete", "permission_change", "publication"] as const
-/** A side effect beyond the change itself, named in a preview and in a receipt. */
+/** A side effect beyond the change itself, named in a preview and in a receipt: `notification`, `external_call`, `money_movement`, `cascade_delete`, `permission_change` or `publication`. */
 export type Effect = (typeof vocabulary)[number]
+/** One change: where (`path`), what it was (`from`) and what it becomes (`to`); each of the last two defaults to `null`. */
+export type Change = { path: string; from?: unknown; to?: unknown }
+/** A resource the commit reads or writes, with the version `prepare` saw: `kind` names how the source versions it, and `label` names the resource for people. */
+export type Target = {
+  resource_type: string
+  resource_id: string
+  label: string
+  version: { kind: "etag" | "version" | "timestamp" | "serial"; value: string }
+}
+/** What would change, in the words the person confirms: a `summary` of 1 to 500 characters, then `changes`, `effects`, `warnings` and `quantities`, each defaulting to empty. */
+export type Preview = {
+  summary: string
+  changes: Change[]
+  effects: Effect[]
+  /** Consequences that are possible, not certain. */
+  warnings: string[]
+  quantities: { name: string; value: number; unit: string }[]
+}
 
 export const riskClass: Readonly<Record<Risk, PolicyClass>> = Object.freeze({ low: "agent", normal: "controlled", high: "human" })
 /** How long an intent of each class can be committed, in milliseconds from prepare. */
@@ -19,26 +37,21 @@ export const target = z.object({
   resource_id: z.string().min(1),
   label: z.string(),
   version: z.object({ kind: z.enum(["etag", "version", "timestamp", "serial"]), value: z.string() }),
-})
-export const change = z.object({ path: z.string(), from: z.unknown().default(null), to: z.unknown().default(null) })
+}) satisfies z.ZodType<Target>
+export const change = z.object({ path: z.string(), from: z.unknown().default(null), to: z.unknown().default(null) }) satisfies z.ZodType<Change>
 export const preview = z.object({
   summary: z.string().min(1).max(500),
   changes: z.array(change).default([]),
   effects: z.array(z.enum(vocabulary)).default([]),
   warnings: z.array(z.string()).default([]),
   quantities: z.array(z.object({ name: z.string(), value: z.number(), unit: z.string() })).default([]),
-})
+}) satisfies z.ZodType<Preview>
 const plan = z.object({ targets: z.array(target), preview, plan: z.unknown().optional() })
 /** What `commit` reports besides its results. */
 export const outcome = z.object({ applied_changes: z.array(change), effects_performed: z.array(z.string()) })
 
-/** A resource the commit reads or writes, with the version `prepare` saw. */
-export type Target = z.output<typeof target>
-/** What would change: a summary of 1 to 500 characters, then `changes`, `effects`, `warnings` and `quantities` (each defaults to empty). */
-export type Preview = z.output<typeof preview>
 /** What `commit` receives: the targets and preview `prepare` returned, and the author's own `plan` data, stored as JSON. */
 export type Plan<Data = unknown> = { targets: Target[]; preview: Preview; plan: Data }
-type Change = z.input<typeof change>
 
 /** A mutation: frozen data made by `defineMutation`. A read tool's fields with `prepare` and `commit` in place of `execute`. */
 export type Mutation<Input extends z.ZodObject = z.ZodObject, Output extends z.ZodObject = z.ZodObject, Data = unknown> = Readonly<
@@ -55,15 +68,45 @@ export type Mutation<Input extends z.ZodObject = z.ZodObject, Output extends z.Z
     /** Shortens the expiry of the mutation's intents; at most the expiry its risk gives. */
     expiresInMs?: number
     /** Resolve the targets and describe the change. It must not change anything. */
-    prepare(input: z.output<Input>, context: ToolContext): Promise<{ targets: Target[]; preview: z.input<typeof preview>; plan?: Data }>
+    prepare(input: z.output<Input>, context: ToolContext): Promise<{ targets: Target[]; preview: Pick<Preview, "summary"> & Partial<Preview>; plan?: Data }>
     /** Apply exactly the prepared plan; `results` is checked against `output`. */
     commit(plan: Plan<Data>, context: ToolContext): Promise<{ results: z.input<Output>; applied_changes: Change[]; effects_performed: Effect[] }>
   }
 >
 
-/** Define a mutation: `name`, `description`, `input`, `output`, `prepare` and `commit`, and optionally `risk`, `effects`, `expiresInMs`, `title`, `version`, `scopes`, `deprecated` and `timeoutMs`. */
+/**
+ * Define a mutation from a read tool's fields with `prepare` and `commit` in place of `execute`; `risk`, `effects` and `expiresInMs` are optional.
+ * `prepare` resolves targets and describes the change without making it; `commit` applies exactly that plan, once the server has checked
+ * the commit token, the principal, the expiry, the policy class and every target's version.
+ *
+ * @example
+ * ```ts
+ * import { defineMutation, ToolError } from "@answerable/mcp"
+ * import { z } from "zod"
+ *
+ * export const recordsDelete = defineMutation({
+ *   name: "records.delete",
+ *   description: "Prepare deleting one of your organisation's records. Changes nothing: returns a preview; show the person its summary, then commit it with example_commit_confirmed.",
+ *   input: z.object({ id: z.uuid() }),
+ *   output: z.object({ deleted: z.literal(true) }),
+ *   async prepare({ id }, { principal }) {
+ *     const record = await records.get(principal.organizationId, id)
+ *     if (!record) throw new ToolError("NOT_FOUND", "No accessible record exists")
+ *     return {
+ *       targets: [{ resource_type: "record", resource_id: id, label: record.title, version: { kind: "serial", value: String(record.version) } }],
+ *       preview: { summary: `Delete record “${record.title}”`, changes: [{ path: `records[${id}]`, from: record, to: null }] },
+ *       plan: { id },
+ *     }
+ *   },
+ *   async commit({ plan, preview }, { principal }) {
+ *     await records.remove(principal.organizationId, plan.id)
+ *     return { results: { deleted: true }, applied_changes: preview.changes, effects_performed: [] }
+ *   },
+ * })
+ * ```
+ */
 export function defineMutation<Input extends z.ZodObject, Output extends z.ZodObject, Data = unknown>(
-  mutation: Omit<Mutation<Input, Output, Data>, "kind" | "timeoutMs" | "risk" | "effects"> & { timeoutMs?: number; risk?: Risk; effects?: readonly Effect[] },
+  mutation: Omit<Mutation<Input, Output, Data>, "kind" | "timeoutMs" | "errors" | "risk" | "effects"> & { timeoutMs?: number; errors?: readonly string[]; risk?: Risk; effects?: readonly Effect[] },
 ): Mutation<Input, Output, Data> {
   const checked = checkShared("Mutation", mutation)
   const label = `Mutation ${mutation.name}`

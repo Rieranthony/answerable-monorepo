@@ -1,6 +1,7 @@
 import { createRemoteJWKSet, customFetch, jwtVerify } from "jose"
 import { z } from "zod"
 
+/** The issuer and resource a verifier trusts, and the HTTP client it uses for discovery. */
 export type IdVerifierConfig = {
   /** Trusted Answerable ID issuer, for example https://id.answerable.org. */
   issuer: string
@@ -10,16 +11,23 @@ export type IdVerifierConfig = {
   fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 }
 
+/** The caller a verified access token names. Constrain every query by `organizationId`. */
 export type UserPrincipal = Readonly<{
   userId: string
   organizationId: string
+  /** The person's membership in `organizationId`. */
   membershipId: string
+  /** The authorisation this token was issued under; a refreshed token keeps it. */
   grantId: string
+  /** The OAuth client that asked for the token. */
   clientId: string
+  /** The scopes ID issued: the entitled subset of the ones requested. */
   scopes: readonly string[]
+  /** Expiry, in seconds since the epoch. */
   expiresAt: number
 }>
 
+/** Thrown for every rejected token, always with the same message so that it reveals nothing; answer it with a `401` challenge. */
 export class AuthenticationError extends Error {
   constructor() {
     super("A valid Answerable ID user access token is required")
@@ -53,6 +61,18 @@ function trustedUrl(value: string, name: string) {
   return url
 }
 
+/**
+ * Create a function that verifies an Answerable ID access token against the issuer's published keys, offline, and returns its caller.
+ * The keys are read from the issuer's metadata on first use; every failure throws `AuthenticationError`.
+ *
+ * @example
+ * ```ts
+ * import { createIdVerifier } from "@answerable/auth"
+ *
+ * const verify = createIdVerifier({ issuer: "https://id.answerable.org", resource: "https://example.answerable.org/mcp" })
+ * const principal = await verify(accessToken)
+ * ```
+ */
 export function createIdVerifier(config: IdVerifierConfig): (token: string) => Promise<UserPrincipal> {
   const { issuer, resource } = config
   const fetcher = config.fetch ?? ((input, init) => fetch(input, init))

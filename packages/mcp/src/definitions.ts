@@ -2,7 +2,7 @@ import type { UserPrincipal } from "@answerable/auth"
 import type { GetPromptResult } from "@modelcontextprotocol/server"
 import { z } from "zod"
 
-/** What every handler receives: the verified caller, this call's id and a signal that aborts on cancel or timeout. */
+/** What every handler receives: the verified caller, this call's id (a UUIDv7, also the error envelope's `request_id`) and a signal that aborts on cancel or timeout. */
 export type ToolContext = Readonly<{ principal: UserPrincipal; executionId: string; signal: AbortSignal }>
 /** An MCP Apps view: bundled HTML served as a `ui://` resource for one or more tools. */
 export type View = Readonly<{ name: string; uri: string; html: string }>
@@ -11,6 +11,7 @@ export type Prompt<Input extends z.ZodObject = z.ZodObject> = Readonly<{
   name: string
   description: string
   input: Input
+  /** Token scopes needed to see and get it. Default: `<provider>:read`. */
   scopes?: readonly string[]
   execute(input: z.output<Input>, context: ToolContext): Promise<GetPromptResult>
 }>
@@ -20,6 +21,7 @@ export type Resource = Readonly<{
   uri: string
   description: string
   mimeType: string
+  /** Token scopes needed to see and read it. Default: `<provider>:read`. */
   scopes?: readonly string[]
   read(context: ToolContext): Promise<string>
 }>
@@ -37,7 +39,7 @@ export function checkScopes(label: string, scopes: readonly string[] | undefined
 /** Whether the caller's token carries every scope a definition needs. */
 export const permits = (principal: UserPrincipal, { scopes }: Readonly<{ scopes: readonly string[] }>) => scopes.every(scope => principal.scopes.includes(scope))
 
-/** Define an MCP Apps view from HTML built with `buildView`. */
+/** Define an MCP Apps view from HTML that `buildView` built; its URI is `ui://<name>/index.html`. */
 export function defineView(input: { name: string; html: string }): View {
   if (!/^[a-z][a-z0-9-]*$/.test(input.name)) throw new Error("Invalid view name")
   if (!input.html.trim()) throw new Error("View HTML is empty; build the view first")

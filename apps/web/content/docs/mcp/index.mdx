@@ -11,7 +11,7 @@ Run this from the monorepo after installing [the local test requirements](/docs/
 
 ## Status
 
-**Local foundation:** implemented and tested. `@answerable/mcp` defines read tools, [prepared mutations](/docs/mcp/authoring#mutations) and providers, serves them on the official MCP TypeScript SDK, answers every tool failure with one [error envelope](/docs/mcp/errors), and exports each provider's contract as a manifest. A mutation is prepared first, which records an intent and changes nothing, then committed through a commit tool. `@answerable/auth` verifies Answerable ID access tokens. `mcps/e2e` is the reference server: three read tools, `records.create` and `records.delete`.
+**Local foundation:** implemented and tested. `@answerable/mcp` defines read tools, [prepared mutations](/docs/mcp/authoring#mutations) and providers, serves them on the official MCP TypeScript SDK, answers every tool failure with one [error envelope](/docs/mcp/errors), exports each provider's contract as a manifest, and checks a provider against the standard with [the conformance kit](/docs/mcp/testing). A mutation is prepared first, which records an intent and changes nothing, then committed through a commit tool. `@answerable/auth` verifies Answerable ID access tokens. `mcps/e2e` is the reference server: three read tools, `records.create` and `records.delete`. Every export is in the [API reference](/docs/mcp/reference).
 
 **Not yet:** human approvals, operations for long work, and a Postgres intent store.
 
@@ -35,7 +35,7 @@ The MCP never sees a password, never runs Better Auth and never reads ID's datab
 | `@answerable/auth/testing` | An in-process issuer that signs test tokens |
 | `@answerable/mcp` | `defineTool`, `defineMutation`, `defineProvider`, `definePrompt`, `defineResource`, `defineView`, `createMcpServer`, `createMemoryIntentStore`, `manifest`, `ToolError`, `readMcpEnvironment` |
 | `@answerable/mcp/build` | Bundle an MCP Apps view into one HTML resource |
-| `@answerable/mcp/testing` | `createTestMcp`: serve a provider in-process with the official MCP client |
+| `@answerable/mcp/testing` | `createTestMcp`: serve a provider in-process with the official MCP client. `assertProviderConformance`: the conformance kit |
 
 Views import the official MCP Apps browser API, `@modelcontextprotocol/ext-apps`, directly.
 
@@ -47,4 +47,4 @@ Views import the official MCP Apps browser API, `@modelcontextprotocol/ext-apps`
 
 **Client registration.** Hosts use a client registered in ID ahead of time. Dynamic registration and client ID metadata documents: Not yet.
 
-Continue with [authoring](/docs/mcp/authoring), [errors](/docs/mcp/errors), [local testing](/docs/mcp/local-testing) or [Connect Claude Code](/docs/mcp/claude-code).
+Continue with [authoring](/docs/mcp/authoring), [testing](/docs/mcp/testing), [errors](/docs/mcp/errors), the [API reference](/docs/mcp/reference), [local testing](/docs/mcp/local-testing) or [Connect Claude Code](/docs/mcp/claude-code).

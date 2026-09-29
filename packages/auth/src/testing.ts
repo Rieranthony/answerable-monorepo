@@ -1,22 +1,43 @@
 import { decodeJwt, exportJWK, generateKeyPair, SignJWT, UnsecuredJWT, type JWK } from "jose"
 
+/** A local Answerable ID issuer for tests: it publishes keys and signs tokens, and listens on no port. */
 export type TestIssuer = {
+  /** The issuer URL to trust; default `https://id.test`. */
   issuer: string
+  /** Sign an access token for `resource`. `claims` replace the token's claims (an `undefined` value removes one) and `header` its header, to make unusual tokens. */
   sign(options: {
     resource: string
     scopes?: readonly string[]
     organizationId?: string
     userId?: string
+    /** Lifetime as a duration string such as `"5m"` or as seconds. Default `"5m"`. */
     expiresIn?: string | number
     claims?: Record<string, unknown>
     header?: Record<string, unknown>
   }): Promise<string>
+  /** Publish a new signing key and sign with it from now on; the old key stays published. */
   rotate(): Promise<void>
+  /** Make discovery and key requests answer `503` while `unavailable` is true. */
   outage(unavailable: boolean): void
+  /** How many times the keys were requested. */
   jwksRequests(): number
+  /** Answers the issuer's discovery and key requests: pass it as the verifier's `fetch`. */
   fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>
 }
 
+/**
+ * Create a `TestIssuer` that signs tokens the way Answerable ID does, with a fresh key pair (EdDSA unless `algorithm` says otherwise).
+ *
+ * @example
+ * ```ts
+ * import { createIdVerifier } from "@answerable/auth"
+ * import { createTestIssuer } from "@answerable/auth/testing"
+ *
+ * const issuer = await createTestIssuer()
+ * const verify = createIdVerifier({ issuer: issuer.issuer, resource: "https://example.test/mcp", fetch: issuer.fetch })
+ * const principal = await verify(await issuer.sign({ resource: "https://example.test/mcp", scopes: ["example:read"] }))
+ * ```
+ */
 export async function createTestIssuer(options: { algorithm?: "EdDSA" | "ES256" | "RS256"; issuer?: string } = {}): Promise<TestIssuer> {
   const alg = options.algorithm ?? "EdDSA"
   const keys: JWK[] = []

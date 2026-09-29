@@ -63,9 +63,9 @@ Every tool failure is `{ "isError": true, "content": [{ "type": "text", "text": 
 | `UPSTREAM_UNAVAILABLE` | The source did not answer | `after_delay` | Call again later. A handler that calls a source throws it; no Answerable provider does yet |
 | `TIMEOUT` | The tool ran past its `timeoutMs` | `after_delay` | Call again; a commit may still finish, so call the commit tool again for its receipt |
 | `OPERATION_NOT_FOUND`, `OPERATION_EXPIRED` | The operation handle is unknown or gone | `never` | Not yet: operations do not exist |
-| `INTERNAL` | An unexpected failure | `after_delay` | Call again once; if it persists, the operator reads the server log for the `request_id` |
+| `INTERNAL` | An unexpected failure, or a handler that threw a [custom code](#custom-codes) its definition does not declare | `after_delay` | Call again once; if it persists, the operator reads the server log for the `request_id`, which names an undeclared code |
 
-**Who answers what.** The server answers `INVALID_INPUT` for bad arguments, `TIMEOUT` and `INTERNAL` for every tool. The commit tools answer the `INTENT_*` codes, `COMMIT_TOKEN_INVALID`, `PRINCIPAL_MISMATCH`, `APPROVAL_REQUIRED`, `COMMIT_IN_PROGRESS` and `PERMISSION_DENIED`, in [this order](/docs/mcp/authoring#commit-tools). Your handlers throw the rest with `ToolError`. `errorCodes` in `@answerable/mcp` exports the table as data.
+**Who answers what.** The server answers `INVALID_INPUT` for bad arguments, `TIMEOUT` and `INTERNAL` for every tool. The commit tools answer the `INTENT_*` codes, `COMMIT_TOKEN_INVALID`, `PRINCIPAL_MISMATCH`, `APPROVAL_REQUIRED`, `COMMIT_IN_PROGRESS` and `PERMISSION_DENIED`, in [this order](/docs/mcp/authoring#commit-tools). Your handlers throw the rest with `ToolError`. `errorCodes` in `@answerable/mcp` exports the table as data ([reference](/docs/mcp/reference#errorcodes)).
 
 ## Custom codes
 
@@ -74,6 +74,8 @@ throw new ToolError("ACME_QUOTA_EXCEEDED", "Your plan allows 100 projects", { re
 ```
 
 A provider may add `<PROVIDER>_<CODE>` in capitals, with an explicit retry. Any other code, or a custom code without `retry`, throws when the error is constructed.
+
+List each custom code in the `errors` of the tool or mutation that throws it, starting with the provider's id in capitals: `errors: ["ACME_QUOTA_EXCEEDED"]`. The manifest carries the list, so a reviewer sees every code a provider can answer. A handler that throws a custom code it did not declare is an author's bug, and the caller receives `INTERNAL`. [Declaring errors](/docs/mcp/authoring#tool-errors) has an example; the conformance kit's `errors_use_envelope` checks the envelope ([test an MCP](/docs/mcp/testing)).
 
 ## Field violations
 
@@ -118,6 +120,6 @@ A tool the token cannot use answers the protocol's `Tool <name> not found`, neve
 | --- | --- |
 | Envelopes per failure | One, in the one text block |
 | `after_ms` default | 1,000 |
-| Custom code shape | `^[A-Z][A-Z0-9]*_[A-Z0-9_]+$` |
+| Custom code shape | `^[A-Z][A-Z0-9]*_[A-Z0-9_]+$`, starting with the provider's id in capitals when declared |
 | `INTERNAL` message | Always `The tool could not complete` |
 | `Retry-After` from a source into `after_ms` | Not yet |

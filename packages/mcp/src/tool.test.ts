@@ -76,3 +76,15 @@ test("the wire name swaps the dot, and a deprecated description ends with the de
   expect(wireDescription(defineTool({ ...fields, deprecated: { since: "2026-09-29", sunset: "2027-09-29" } })))
     .toBe(`${description} Deprecated since 2026-09-29; removed on 2027-09-29.`)
 })
+
+test("errors declare the custom codes a tool raises: none by default, frozen, and never a standard code", () => {
+  expect(defineTool(fields).errors).toEqual([])
+  const tool = defineTool({ ...fields, errors: ["ACME_QUOTA_EXCEEDED", "ACME_LOCKED"] })
+  expect(tool.errors).toEqual(["ACME_QUOTA_EXCEEDED", "ACME_LOCKED"])
+  expect(Object.isFrozen(tool.errors)).toBe(true)
+  for (const code of ["NOT_FOUND", "acme_locked", "ACME", "ACME_", "toString"]) {
+    expect(() => defineTool({ ...fields, errors: [code] })).toThrow(
+      `Tool records.list: errors entry "${code}" must be a custom code, <PROVIDER>_<CODE> in capitals, for example ACME_QUOTA_EXCEEDED; standard codes need no declaration`,
+    )
+  }
+})

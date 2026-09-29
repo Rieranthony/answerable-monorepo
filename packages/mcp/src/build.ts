@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-/** Bundle a browser entry in a separate Bun process and return its output files. */
+/** Bundle a browser entry file with Bun's bundler, in a separate process, and return each output file's path and text. */
 export async function bundleBrowser(entry: string) {
   const worker = Bun.spawn([process.execPath, new URL("./build-worker.ts", import.meta.url).pathname, entry], { stdout: "pipe", stderr: "pipe" })
   const [code, stdout, stderr] = await Promise.all([worker.exited, new Response(worker.stdout).text(), new Response(worker.stderr).text()])
@@ -8,8 +8,23 @@ export async function bundleBrowser(entry: string) {
   return z.array(z.object({ path: z.string(), text: z.string() })).parse(JSON.parse(stdout))
 }
 
-/** Build a self-contained MCP Apps browser resource using the repository runtime. */
-export async function buildView(options: { entry: string; title: string }) {
+/**
+ * Bundle a browser entry and its CSS into one self-contained HTML document for `defineView`.
+ * It refuses output that is not one script and optional CSS.
+ *
+ * @example
+ * ```ts
+ * import { buildView } from "@answerable/mcp/build"
+ *
+ * const html = await buildView({ entry: "src/views/records.tsx", title: "Records" })
+ * ```
+ */
+export async function buildView(options: {
+  /** Absolute or working-directory-relative path of the browser entry file. */
+  entry: string
+  /** The document's `<title>`. */
+  title: string
+}) {
   const outputs = await bundleBrowser(options.entry)
   const scripts = outputs.filter(file => file.path.endsWith(".js")).map(file => file.text)
   const styles = outputs.filter(file => file.path.endsWith(".css")).map(file => file.text)

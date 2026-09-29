@@ -144,6 +144,30 @@ Tree: branch `claude/toolbox-goal` on `main` 3ac5614, brief B3 of the Toolbox go
 
 **Size.** `packages/mcp/src` source 1,043 lines (was 549), tests 1,492 (was 767); `mcps/e2e/src` source 310 (was 187), tests 297 (was 187).
 
+## 29 September 2026: the conformance kit and the reference page (brief B2)
+
+Tree: branch `claude/toolbox-goal` on `main` 3ac5614, brief B2 of the Toolbox goal. Versions as above; `@answerable/mcp` 0.3.0, `@answerable/auth` 0.1.0.
+
+| Check | Result |
+| --- | --- |
+| Root typecheck, lint and build | Pass with `--force` (7, 7 and 3 tasks) |
+| `bun --filter web test` | 78 pass |
+| `bun run mcp:test` | auth 37 pass, 100% lines and functions; mcp 157 pass and 5 todo across 15 files, 100% lines and functions; e2e 44 pass and 4 todo across 4 files, the conformance kit included |
+| `bun run mcp:check @answerable/mcp-e2e` | 3 tasks pass |
+| `bun run mcp:test:e2e` | Pass: 9.4 seconds by the agent, 8 seconds by the coordinator |
+
+**What changed.** `assertProviderConformance(provider, fixture)` in `@answerable/mcp/testing` registers one test per check of the standard's three lists; the e2e provider runs it (44 pass, 4 todo: human approvals, secrets and egress are Not yet). Custom error codes are declared per definition (`errors`), prefixed with the provider id in capitals, and listed in the manifest; an undeclared custom code answers `INTERNAL`. `bun run mcp:check <workspace>` runs typecheck, lint and tests. Every export of `@answerable/mcp` and `@answerable/auth` carries a documentation comment, and `reference.mdx` is generated from them with a drift test. `testing.mdx` is new; `authoring.mdx` follows the plan's order. The per-provider manifest script and drift test are gone: `manifest_matches_snapshot` compares, and `UPDATE_MANIFEST=1 bun run test` in the provider's workspace rewrites.
+
+**Found by testing.**
+
+- `list_paginates` found a real R10 defect: `records.show` returned an `items` array cut to 20 without `next_cursor` or `has_more`. It now takes `limit` and `cursor` and paginates like `records.list`.
+- Six mutate checks (`commit_requires_token`, `commit_rejects_expired`, `commit_is_idempotent`, `commit_rejects_other_principal`, `receipt_is_structured`, the envelope checks) are enforced by the SDK itself, so a provider cannot fail them; their failure tests stub the calls, and the docs say a failure there is an SDK defect.
+- A read that returns a different result on a second call also fails every mutation's `prepare_has_no_side_effect`; a target with an empty version also fails `commit_rejects_stale`. Every other fault fails exactly one check, pinned in tests.
+- The kit runs a `risk: "high"` mutation as `controlled`, because a human-class commit cannot succeed until approvals exist.
+- Turbo's strict environment strips `UPDATE_MANIFEST`, so the manifest is regenerated from the workspace, not through `mcp:check`. The R13 lint does not follow `$ref` or `$defs`; Zod inlines schemas today.
+
+**Size.** `packages/mcp/src` source 1,558 lines (was 1,043), tests 2,048 (was 1,492); the reference generator 104 lines; `reference.mdx` 946 lines for 49 exports.
+
 ## Limits
 
 The acceptance uses local test issuers for company directories, a pre-registered public client and loopback HTTP. It does not certify Claude.ai, another host, another company directory or a production deployment.

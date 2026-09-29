@@ -40,7 +40,7 @@ function moved(expected: Target[], current: Target[]) {
 /** Claimed intents run here: `prepare` again to compare the targets, then `commit`; the intent ends `committed`, `stale` or `failed`. */
 function apply(intent: Intent, mutation: Served<Mutation>, context: ToolContext, store: IntentStore): Promise<Receipt> {
   const { intent_id } = intent
-  return bounded(mutation.timeoutMs, context, async context => {
+  return bounded(mutation, context, async context => {
     try {
       const plan = await preparePlan(mutation, await mutation.input.parseAsync(intent.input), context)
       const changed = moved(intent.targets, plan.targets)

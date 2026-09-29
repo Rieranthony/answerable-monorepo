@@ -35,7 +35,12 @@ export const errorCodes = Object.freeze({
 /** A standard error code. Providers may add `<PROVIDER>_<CODE>` codes with an explicit retry policy. */
 export type ErrorCode = keyof typeof errorCodes
 
-/** Throw from a handler for an expected failure; the caller receives its code, message, retry policy and details. */
+export const customCode = /^[A-Z][A-Z0-9]*_[A-Z0-9_]+$/
+
+/**
+ * Throw from a handler for an expected failure; the caller receives its code, message, retry policy and details in the error envelope.
+ * A custom `<PROVIDER>_<CODE>` code needs an explicit `retry` and must be listed in the definition's `errors`.
+ */
 export class ToolError extends Error {
   readonly code: string
   readonly retry: Retry
@@ -45,7 +50,7 @@ export class ToolError extends Error {
     super(message)
     this.name = "ToolError"
     const policy = Object.hasOwn(errorCodes, code) ? errorCodes[code as ErrorCode] : undefined
-    if (!policy && !/^[A-Z][A-Z0-9]*_[A-Z0-9_]+$/.test(code)) {
+    if (!policy && !customCode.test(code)) {
       throw new Error(`ToolError code "${code}" must be a standard code or <PROVIDER>_<CODE> in capitals, for example ACME_QUOTA_EXCEEDED`)
     }
     const retry = options.retry ?? (policy ? { policy } : undefined)

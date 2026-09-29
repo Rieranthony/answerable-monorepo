@@ -65,7 +65,9 @@ test("records_list pages 20 at a time through next_cursor, and refuses an unknow
     details: { field_violations: [{ field: "cursor", message: "Unknown cursor; list again without one" }] }, request_id: expect.any(String),
   })
   expect(await refused(client, "records_list", { limit: 101 })).toMatchObject({ code: "INVALID_INPUT", details: { field_violations: [{ field: "limit" }] } })
-  expect(await ok(client, "records_show")).toEqual({ items: created.slice(0, 20), canWrite: true })
+  const shown = await ok(client, "records_show")
+  expect(shown).toEqual({ items: created.slice(0, 20), next_cursor: expect.any(String), has_more: true, canWrite: true })
+  expect(await ok(client, "records_show", { cursor: shown.next_cursor, limit: 10 })).toEqual({ items: created.slice(20), next_cursor: null, has_more: false, canWrite: true })
 })
 
 test("records_create prepares an agent-class intent that e2e_commit applies once; a repeat replays the receipt", async () => {
@@ -142,9 +144,9 @@ test("scopes filter the tools, and organisations never share records", async () 
   }
   await expect(partial.callTool({ name: "e2e_commit_confirmed", arguments: {} })).rejects.toThrow("Tool e2e_commit_confirmed not found")
   expect(await ok(reader, "records_list")).toEqual({ items: [record], next_cursor: null, has_more: false })
-  expect(await ok(reader, "records_show")).toEqual({ items: [record], canWrite: false })
+  expect(await ok(reader, "records_show")).toEqual({ items: [record], next_cursor: null, has_more: false, canWrite: false })
   expect(await ok(bob, "records_list")).toEqual({ items: [], next_cursor: null, has_more: false })
-  expect(await ok(bob, "records_show")).toEqual({ items: [], canWrite: true })
+  expect(await ok(bob, "records_show")).toEqual({ items: [], next_cursor: null, has_more: false, canWrite: true })
   expect(await refused(bob, "records_delete", { id: record.id })).toMatchObject({ code: "NOT_FOUND", message: "No accessible record exists", retry: { policy: "never" } })
   expect(await ok(reader, "records_list")).toEqual({ items: [record], next_cursor: null, has_more: false })
 })

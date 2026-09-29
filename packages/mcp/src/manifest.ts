@@ -14,6 +14,8 @@ type Definition = {
   description: string
   deprecated?: Tool["deprecated"]
   scopes: readonly string[]
+  /** The custom error codes the definition declares; absent when it declares none. */
+  errors?: readonly string[]
   annotations: Annotations
   /** The definition's input; a mutation's prepare tool adds `validate_only`. */
   input: JsonSchema
@@ -37,7 +39,7 @@ export type Manifest = {
 // The same conversion the MCP SDK applies for tools/list.
 const jsonSchema = (schema: z.ZodType, io: "input" | "output") => schema["~standard"].jsonSchema[io]({ target: "draft-2020-12" })
 
-/** Serialise a provider for review and for the hub; commit it and test it for drift. */
+/** Serialise a provider's contract as JSON: commit the result next to the source, and let the conformance kit's `manifest_matches_snapshot` fail when it drifts. */
 export function manifest(provider: Provider): Manifest {
   const mutations = provider.tools.filter(tool => tool.kind === "mutate")
   const writes = [...new Set(mutations.flatMap(mutation => mutation.scopes))].sort()
@@ -50,6 +52,7 @@ export function manifest(provider: Provider): Manifest {
     description: wireDescription(tool),
     ...(tool.deprecated ? { deprecated: tool.deprecated } : {}),
     scopes: tool.scopes,
+    ...(tool.errors.length ? { errors: tool.errors } : {}),
     ...(tool.kind === "mutate" ? { risk: tool.risk, effects: tool.effects } : {}),
     annotations: readAnnotations,
     input: jsonSchema(tool.input, "input"),

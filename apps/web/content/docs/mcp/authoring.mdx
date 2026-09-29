@@ -1,6 +1,6 @@
 ---
 title: Author an MCP
-description: "Define read tools, mutations, a provider and an MCP server on Answerable ID: names, versions, errors, pagination, prepare and commit, the manifest and in-process tests."
+description: "Define a read tool, a mutation, a provider and an MCP server on Answerable ID: names, descriptions, pagination, errors, prepare and commit, and the manifest."
 ---
 
 ```ts
@@ -28,77 +28,11 @@ Save this as `mcps/example/src/tools.ts`. A read tool is these five fields; ever
 | `deprecated` | None |
 | `view` | None |
 | `timeoutMs` | `25000` |
+| `errors` | None. The custom [error codes](#tool-errors) the handler throws |
 
 **Field descriptions.** Describe each input field with `.describe()`; the text reaches the model in the tool's `inputSchema`. Recommended, not enforced.
 
-A tool that changes data is a [mutation](#mutations): prepared first, committed second.
-
-## The provider
-
-```ts
-import { defineProvider } from "@answerable/mcp"
-import { identityGet } from "./tools"
-
-export const provider = defineProvider({ id: "example", version: "2026-09-29", tools: [identityGet] })
-```
-
-Save this as `mcps/example/src/provider.ts`. A provider is a named, dated set of tools, prompts and resources. `defineProvider` fills each definition's identity, version and scopes, refuses a duplicate tool name, prompt name or resource URI, and returns frozen data.
-
-| Field | Rule |
-| --- | --- |
-| `id` | A lowercase letter, then up to 11 lowercase letters or digits |
-| `version` | A date, `YYYY-MM-DD`. Change it when the provider's contract changes |
-| `tools` | Definitions from `defineTool` and `defineMutation` |
-| `prompts`, `resources` | Optional; see [prompts and resources](#prompts-and-resources) |
-
-## The server
-
-```ts
-import { createMcpServer, readMcpEnvironment } from "@answerable/mcp"
-import { provider } from "./provider"
-
-const { auth, port } = readMcpEnvironment(process.env)
-const server = createMcpServer({ provider, auth })
-Bun.serve({ hostname: "127.0.0.1", port, fetch: server.fetch })
-```
-
-Save this as `mcps/example/src/server.ts`. `createMcpServer` returns a web-standard `{ fetch }` handler; the entry point owns the listener.
-
-**What it serves.** `GET /health`, the protected-resource metadata, and the MCP endpoint at the resource URL's path behind the bearer gate. It answers both the 2026 and the 2025 protocol revisions, builds a fresh MCP server per request and sends `Cache-Control: no-store`. The server's name and version are the provider's id and version.
-
-**Hosts and origins.** It refuses a `Host` header or browser `Origin` other than the resource URL's host name. Pass `allowedHosts` or `allowedOrigins` (host names) to widen either list.
-
-## Create a workspace
-
-```json
-{
-  "name": "@answerable/mcp-example",
-  "private": true,
-  "type": "module",
-  "scripts": { "dev": "bun --hot src/server.ts", "start": "bun src/server.ts", "test": "bun test" },
-  "dependencies": { "@answerable/mcp": "workspace:*", "zod": "4.6.5" }
-}
-```
-
-Save this as `mcps/example/package.json`, then run `bun install` from the repository root. The `mcps/*` workspace pattern includes it.
-
-## Configure
-
-```dotenv
-MCP_ID_ISSUER=http://localhost:47300
-MCP_RESOURCE_URL=http://localhost:47500/mcp
-MCP_PORT=47500
-```
-
-`readMcpEnvironment(process.env)` reads these three variables and returns `{ auth, port }`.
-
-**Issuer.** The Answerable ID origin. The verifier reads ID's signing keys from the issuer's metadata; never take an issuer from a token.
-
-**Resource.** The MCP's canonical URL, exactly as registered in ID. It is the token audience, and its path is the MCP endpoint.
-
-**HTTP.** Both URLs must use HTTPS, except on `localhost`, `127.0.0.1` or `[::1]`.
-
-Register the resource, a client and its access in ID before the first sign-in; see [Connect Claude Code](/docs/mcp/claude-code#register-the-server). Each MCP running at the same time needs its own port.
+A tool that changes data is a [mutation](#mutations): prepared first, committed second. Check either with [the conformance kit](/docs/mcp/testing); every export is in the [API reference](/docs/mcp/reference).
 
 ## Names and identity
 
@@ -196,75 +130,6 @@ function audited(tool: Tool, log: (line: string) => void): Tool {
 }
 ```
 
-## Pagination
-
-```ts
-input: z.object({
-  limit: z.number().int().min(1).max(100).default(20).describe("Records per page, 1 to 100"),
-  cursor: z.string().optional().describe("next_cursor from the previous page; omit it for the first page"),
-}),
-output: z.object({ items: z.array(record), next_cursor: z.string().nullable(), has_more: z.boolean() }),
-```
-
-Every tool that can return an unbounded list takes these two fields and returns these three. Never truncate silently.
-
-| Field | Rule |
-| --- | --- |
-| `limit` | Integer; default at most 20; the schema enforces the maximum |
-| `cursor` | Optional; opaque to callers |
-| `items` | The page |
-| `next_cursor` | The cursor for the next page, or `null` on the last |
-| `has_more` | `true` when another page exists |
-
-`@answerable/mcp` exports nothing for pagination: declare the fields in your schemas. `records.list` in `mcps/e2e` is the working example; a cursor it did not issue answers `INVALID_INPUT` with a field violation on `cursor`.
-
-## Tool errors
-
-```ts
-import { ToolError } from "@answerable/mcp"
-
-throw new ToolError("NOT_FOUND", "No accessible record exists")
-throw new ToolError("RATE_LIMITED", "Try again shortly", { retry: { policy: "after_delay", after_ms: 30000 } })
-throw new ToolError("PRECONDITION_FAILED", "The record is locked", { details: { preconditions: ["unlocked"] } })
-```
-
-Throw `ToolError(code, message, options?)` for an expected failure. The caller receives `{ "isError": true, "content": [{ "type": "text", "text": "…" }] }`, with no `structuredContent`; the one text block is the envelope as JSON:
-
-```json
-{
-  "error": {
-    "code": "NOT_FOUND",
-    "message": "No accessible record exists",
-    "retry": { "policy": "never" },
-    "request_id": "0199a4e2-7b06-7000-87bd-91723fe45f93"
-  }
-}
-```
-
-**Why text only.** The MCP TypeScript SDK 1.x client checks any `structuredContent` against the tool's `outputSchema`, even on an error result, so an envelope there made `callTool` throw `Structured content does not match the tool's output schema` instead of returning it. It leaves a result without structured content untouched. Measured with SDK 1.30.0, which LibreChat uses; SDK 2.x clients return both shapes. Claude Code shows the model the text of a result that has no structured content. As text, the envelope reaches the model through every one of these clients.
-
-`details` appears only when given. `retry.policy` tells the model what to do next without reading the message. `after_delay` without `after_ms` gets `after_ms: 1000`.
-
-| Code | When a handler throws it | Retry |
-| --- | --- | --- |
-| `INVALID_INPUT` | A business rule refuses the input; pass `details.field_violations` | `after_fix_input` |
-| `NOT_FOUND` | A named resource does not exist for this caller | `never` |
-| `PERMISSION_DENIED` | The caller may not perform this operation on this target | `never` |
-| `PRECONDITION_FAILED` | The current state does not allow the operation; `details.preconditions` says what | `after_state_change` |
-| `UPSTREAM_REJECTED`, `UPSTREAM_UNAVAILABLE` | The source refused, or did not answer | `never`, `after_delay` |
-
-[MCP errors](/docs/mcp/errors) lists every code, including those the server and the commit tools answer, with what the caller does for each. `errorCodes` exports the full table as data, and `ErrorCode` as a type.
-
-**Custom codes.** A provider may add `<PROVIDER>_<CODE>` in capitals, for example `ACME_QUOTA_EXCEEDED`, with an explicit retry: `new ToolError("ACME_QUOTA_EXCEEDED", "…", { retry: { policy: "after_delay" } })`. Any other code, or a custom code without `retry`, throws when the error is constructed.
-
-**What the server answers for you.**
-
-| Case | Answer |
-| --- | --- |
-| The input fails `input` | `INVALID_INPUT`, one field violation per issue (`{ field: "a.b", message }`); the message lists them; `execute` does not run |
-| `execute` runs past `timeoutMs` | `TIMEOUT`; `context.signal` aborts and the answer does not wait for `execute` |
-| Any other exception, or an output that fails `output` | `INTERNAL` with the message `The tool could not complete`, and `[mcp] tool <name> failed` with the execution id in the server log |
-
 ## Mutations
 
 ```ts
@@ -301,11 +166,11 @@ Add it to the provider's `tools`. A mutation is a read tool's fields with `prepa
 | `effects` | `[]`. The effects a preview may name, from `notification`, `external_call`, `money_movement`, `cascade_delete`, `permission_change`, `publication` |
 | `expiresInMs` | The class's expiry. It may shorten it, never lengthen it |
 | `scopes` | `["<provider id>:write"]` |
-| `title`, `version`, `deprecated`, `timeoutMs` | As for a read tool |
+| `title`, `version`, `deprecated`, `timeoutMs`, `errors` | As for a read tool. `errors` covers both `prepare` and `commit` |
 
 ### Prepare and commit
 
-**`prepare(input, context)`** resolves the targets, reads their current state and returns `{ targets, preview, plan }`. It must not change anything. Nothing enforces that yet: the conformance check is Not yet.
+**`prepare(input, context)`** resolves the targets, reads their current state and returns `{ targets, preview, plan }`. It must not change anything; the conformance kit checks it with `prepare_has_no_side_effect`.
 
 **`plan`** is your own data for `commit`, optional. It is stored as JSON, so keep it plain data. Its type flows from `prepare` to `commit`.
 
@@ -443,33 +308,190 @@ By default each server keeps intents in memory, lost when the process stops. The
 
 A view prepares, shows `preview.summary`, then calls the tool in `commit_tool` with `intent_id`, `commit_token` and, for a controlled intent, `preview_summary`. The view in `mcps/e2e` creates a record with `records_create` then `e2e_commit`, and deletes one with `records_delete`, a confirmation that shows the summary, then `e2e_commit_confirmed`.
 
-## Manifest
+## The provider
 
 ```ts
-import { manifest } from "@answerable/mcp"
-import { provider } from "../src/provider"
+import { defineProvider } from "@answerable/mcp"
+import { identityGet } from "./tools"
 
-await Bun.write(new URL("../manifest.json", import.meta.url), `${JSON.stringify(manifest(provider), null, 2)}\n`)
+export const provider = defineProvider({ id: "example", version: "2026-09-29", tools: [identityGet] })
 ```
 
-Save this as `mcps/example/scripts/manifest.ts` and add `"manifest": "bun scripts/manifest.ts"` to the workspace's scripts. `manifest(provider)` returns the provider's contract as plain JSON: `id`, `version`, every tool (sorted by identity) with its identity, wire name, version, kind, title, description, deprecation, scopes, annotations and the JSON Schema of its input and output, then the prompts and resources. It carries no code.
+Save this as `mcps/example/src/provider.ts`. A provider is a named, dated set of tools, prompts and resources. `defineProvider` fills each definition's identity, version and scopes, refuses a duplicate tool name, prompt name or resource URI, and returns frozen data.
 
-**Mutations.** A mutation's entry adds `risk` and `effects`; its `input` is the definition's input, without `validate_only`, and its `output` is the schema of the receipt's `results`. A provider with mutations also lists the two commit tools, `kind: "commit"`, whose `scopes` are the union of the mutations' scopes.
+| Field | Rule |
+| --- | --- |
+| `id` | A lowercase letter, then up to 11 lowercase letters or digits |
+| `version` | A date, `YYYY-MM-DD`. Change it when the provider's contract changes |
+| `tools` | Definitions from `defineTool` and `defineMutation`. A declared [error code](#tool-errors) starts with the provider id in capitals |
+| `prompts`, `resources` | Optional; see [prompts and resources](#prompts-and-resources) |
 
-Commit `manifest.json` next to the source and test it for drift:
+## The server
 
 ```ts
-import { expect, test } from "bun:test"
-import { manifest } from "@answerable/mcp"
+import { createMcpServer, readMcpEnvironment } from "@answerable/mcp"
 import { provider } from "./provider"
 
-test("manifest.json matches the provider", async () => {
-  const committed = await Bun.file(new URL("../manifest.json", import.meta.url)).json()
-  expect(committed, "manifest.json is out of date; run bun run --filter @answerable/mcp-example manifest").toEqual(manifest(provider))
+const { auth, port } = readMcpEnvironment(process.env)
+const server = createMcpServer({ provider, auth })
+Bun.serve({ hostname: "127.0.0.1", port, fetch: server.fetch })
+```
+
+Save this as `mcps/example/src/server.ts`. `createMcpServer` returns a web-standard `{ fetch }` handler; the entry point owns the listener.
+
+**What it serves.** `GET /health`, the protected-resource metadata, and the MCP endpoint at the resource URL's path behind the bearer gate. It answers both the 2026 and the 2025 protocol revisions, builds a fresh MCP server per request and sends `Cache-Control: no-store`. The server's name and version are the provider's id and version.
+
+**Hosts and origins.** It refuses a `Host` header or browser `Origin` other than the resource URL's host name. Pass `allowedHosts` or `allowedOrigins` (host names) to widen either list.
+
+## Create a workspace
+
+```json
+{
+  "name": "@answerable/mcp-example",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "bun --hot src/server.ts", "start": "bun src/server.ts", "test": "bun test" },
+  "dependencies": { "@answerable/mcp": "workspace:*", "zod": "4.6.5" }
+}
+```
+
+Save this as `mcps/example/package.json`, then run `bun install` from the repository root. The `mcps/*` workspace pattern includes it.
+
+## Configure
+
+```dotenv
+MCP_ID_ISSUER=http://localhost:47300
+MCP_RESOURCE_URL=http://localhost:47500/mcp
+MCP_PORT=47500
+```
+
+`readMcpEnvironment(process.env)` reads these three variables and returns `{ auth, port }`.
+
+**Issuer.** The Answerable ID origin. The verifier reads ID's signing keys from the issuer's metadata; never take an issuer from a token.
+
+**Resource.** The MCP's canonical URL, exactly as registered in ID. It is the token audience, and its path is the MCP endpoint.
+
+**HTTP.** Both URLs must use HTTPS, except on `localhost`, `127.0.0.1` or `[::1]`.
+
+Register the resource, a client and its access in ID before the first sign-in; see [Connect Claude Code](/docs/mcp/claude-code#register-the-server). Each MCP running at the same time needs its own port.
+
+## Health
+
+`GET /health` returns `{ "status": "ok" }` without authentication, whatever the `Host` header, so load balancers and container probes can call it by address.
+
+## Descriptions
+
+The description is what a model reads to choose a tool. Write operational documentation, not a title:
+
+| Say | Example |
+| --- | --- |
+| What it does | `List the RFIs of a project, newest first.` |
+| When to use it and what to call first | `Use projects.search first to find the project id.` |
+| Its limits | `20 per page by default and at most 100.` |
+| Whether it changes state | A mutation: `Prepare deleting a record. Changes nothing: returns a preview; commit it with example_commit_confirmed.` |
+| What identifiers mean | `id is the record's id from records.list.` |
+
+`defineTool` refuses fewer than 40 or more than 1,000 characters. The conformance kit adds two checks, `descriptions_operational` (a mutation's description says `prepare` or `intent`) and `deprecations_mirrored` (a deprecated tool's description ends with the deprecation sentence).
+
+## Pagination
+
+```ts
+input: z.object({
+  limit: z.number().int().min(1).max(100).default(20).describe("Records per page, 1 to 100"),
+  cursor: z.string().optional().describe("next_cursor from the previous page; omit it for the first page"),
+}),
+output: z.object({ items: z.array(record), next_cursor: z.string().nullable(), has_more: z.boolean() }),
+```
+
+Every tool that can return an unbounded list takes these two fields and returns these three. Never truncate silently.
+
+| Field | Rule |
+| --- | --- |
+| `limit` | Integer; default at most 20; the schema enforces the maximum |
+| `cursor` | Optional; opaque to callers |
+| `items` | The page |
+| `next_cursor` | The cursor for the next page, or `null` on the last |
+| `has_more` | `true` when another page exists |
+
+`@answerable/mcp` exports nothing for pagination: declare the fields in your schemas, and the conformance kit's `list_paginates` fails a tool whose output has an `items` array without them. `records.list` in `mcps/e2e` is the working example; a cursor it did not issue answers `INVALID_INPUT` with a field violation on `cursor`.
+
+## Tool errors
+
+```ts
+import { ToolError } from "@answerable/mcp"
+
+throw new ToolError("NOT_FOUND", "No accessible record exists")
+throw new ToolError("RATE_LIMITED", "Try again shortly", { retry: { policy: "after_delay", after_ms: 30000 } })
+throw new ToolError("PRECONDITION_FAILED", "The record is locked", { details: { preconditions: ["unlocked"] } })
+```
+
+Throw `ToolError(code, message, options?)` for an expected failure. The caller receives `{ "isError": true, "content": [{ "type": "text", "text": "…" }] }`, with no `structuredContent`; the one text block is the envelope as JSON:
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No accessible record exists",
+    "retry": { "policy": "never" },
+    "request_id": "0199a4e2-7b06-7000-87bd-91723fe45f93"
+  }
+}
+```
+
+**Why text only.** The MCP TypeScript SDK 1.x client checks any `structuredContent` against the tool's `outputSchema`, even on an error result, so an envelope there made `callTool` throw `Structured content does not match the tool's output schema` instead of returning it. It leaves a result without structured content untouched. Measured with SDK 1.30.0, which LibreChat uses; SDK 2.x clients return both shapes. Claude Code shows the model the text of a result that has no structured content. As text, the envelope reaches the model through every one of these clients.
+
+`details` appears only when given. `retry.policy` tells the model what to do next without reading the message. `after_delay` without `after_ms` gets `after_ms: 1000`.
+
+| Code | When a handler throws it | Retry |
+| --- | --- | --- |
+| `INVALID_INPUT` | A business rule refuses the input; pass `details.field_violations` | `after_fix_input` |
+| `NOT_FOUND` | A named resource does not exist for this caller | `never` |
+| `PERMISSION_DENIED` | The caller may not perform this operation on this target | `never` |
+| `PRECONDITION_FAILED` | The current state does not allow the operation; `details.preconditions` says what | `after_state_change` |
+| `UPSTREAM_REJECTED`, `UPSTREAM_UNAVAILABLE` | The source refused, or did not answer | `never`, `after_delay` |
+
+[MCP errors](/docs/mcp/errors) lists every code, including those the server and the commit tools answer, with what the caller does for each. `errorCodes` exports the full table as data, and `ErrorCode` as a type.
+
+**Custom codes.** A provider may add `<PROVIDER>_<CODE>` in capitals, for example `ACME_QUOTA_EXCEEDED`, with an explicit retry: `new ToolError("ACME_QUOTA_EXCEEDED", "…", { retry: { policy: "after_delay" } })`. Any other code, or a custom code without `retry`, throws when the error is constructed.
+
+**Declare them.** A tool or mutation lists the custom codes it throws in `errors`; standard codes need no declaration. The list reaches the [manifest](#manifest), so a reviewer sees every code a provider can answer.
+
+```ts
+export const projectsCreate = defineMutation({
+  // ...the mutation's fields
+  errors: ["ACME_QUOTA_EXCEEDED"],
+  async prepare(input, { principal }) {
+    if (await quotaUsed(principal.organizationId)) {
+      throw new ToolError("ACME_QUOTA_EXCEEDED", "Your plan allows 100 projects", { retry: { policy: "after_state_change" } })
+    }
+    // ...
+  },
 })
 ```
 
-A change to any definition fails the test until you run the script and commit the new file, so every contract change shows in review. `mcps/e2e` does exactly this.
+Each entry must be a custom code that starts with the provider's id in capitals: `defineProvider` refuses `OTHER_QUOTA` in provider `acme`. A handler that throws a custom code its definition does not list is an author's bug: the caller receives `INTERNAL`, and the server log says which code to add.
+
+**What the server answers for you.**
+
+| Case | Answer |
+| --- | --- |
+| The input fails `input` | `INVALID_INPUT`, one field violation per issue (`{ field: "a.b", message }`); the message lists them; `execute` does not run |
+| `execute` runs past `timeoutMs` | `TIMEOUT`; `context.signal` aborts and the answer does not wait for `execute` |
+| Any other exception, an undeclared custom code, or an output that fails `output` | `INTERNAL` with the message `The tool could not complete`, and `[mcp] tool <name> failed` with the execution id in the server log |
+
+## Manifest
+
+`manifest(provider)` returns the provider's contract as plain JSON: `id`, `version`, every tool (sorted by identity) with its identity, wire name, version, kind, title, description, deprecation, scopes, declared `errors`, annotations and the JSON Schema of its input and output, then the prompts and resources. It carries no code.
+
+**Mutations.** A mutation's entry adds `risk` and `effects`; its `input` is the definition's input, without `validate_only`, and its `output` is the schema of the receipt's `results`. A provider with mutations also lists the two commit tools, `kind: "commit"`, whose `scopes` are the union of the mutations' scopes.
+
+Commit the file next to the source and let the conformance kit's `manifest_matches_snapshot` fail on drift. A change to any definition fails the test until you regenerate the file and commit it, so every contract change shows in review:
+
+```sh
+UPDATE_MANIFEST=1 bun run test
+```
+
+Run it in the provider's workspace. [Test an MCP](/docs/mcp/testing#the-manifest-snapshot) has the details; `mcps/e2e/manifest.json` is the working example.
 
 ## Prompts and resources
 
@@ -488,39 +510,10 @@ Build each view before starting the server, pass the HTML to `defineView({ name,
 ## Test
 
 ```ts
-import { expect, test } from "bun:test"
-import { createTestMcp } from "@answerable/mcp/testing"
-import { provider } from "./provider"
-
-test("returns the caller's organisation", async () => {
-  const mcp = await createTestMcp(provider)
-  try {
-    const organizationId = crypto.randomUUID()
-    const client = await mcp.connect({ organizationId })
-    const result = await client.callTool({ name: "identity_get", arguments: {} })
-    expect(result.structuredContent).toMatchObject({ organizationId })
-  } finally {
-    await mcp.close()
-  }
-})
+import { assertProviderConformance, createTestMcp } from "@answerable/mcp/testing"
 ```
 
-`createTestMcp(provider)` serves the provider with `createMcpServer` and a local ID issuer inside the test process: no port and no network. `connect` signs a token for the MCP and connects the official MCP client.
-
-| Option | Default |
-| --- | --- |
-| `createTestMcp(provider, { resource })` | `https://mcp.test/mcp` |
-| `createTestMcp(provider, { intents, policyClass })` | Passed to `createMcpServer`: a memory store per server, the class from `risk` |
-| `connect({ scopes })` | Every scope the MCP advertises |
-| `connect({ organizationId, userId, membershipId })` | Random UUIDs |
-| `connect({ clientId })` | `test-client` |
-| `connect({ protocol })` | The client's default; `"2026-07-28"` pins the new revision |
-
-Pin `userId`, `organizationId` and `membershipId` to connect as the same principal twice, for example to replay a commit from a second connection. `mcp.fetch` sends a raw HTTP request, for example to check a `401`. `mcp.issuer.sign` makes an unusual token, such as an expired one. `mcp.close()` closes every client. `mcps/e2e/src/mcp.test.ts` is the working example; [Test MCPs locally](/docs/mcp/local-testing) covers the real sign-in through ID.
-
-## Health
-
-`GET /health` returns `{ "status": "ok" }` without authentication, whatever the `Host` header, so load balancers and container probes can call it by address.
+`createTestMcp(provider)` serves a provider in-process, with no port and no network, for tests of your own logic. `assertProviderConformance(provider, fixture)` runs the standard's checks against it. [Test an MCP](/docs/mcp/testing) covers both, the manifest snapshot and `bun run mcp:check`; [Test MCPs locally](/docs/mcp/local-testing) covers the real sign-in through ID. `mcps/e2e/src/mcp.test.ts` and `mcps/e2e/src/conformance.test.ts` are the working examples.
 
 ## Limits
 
@@ -530,6 +523,7 @@ Pin `userId`, `organizationId` and `membershipId` to connect as the same princip
 | Provider id | 12 characters |
 | Description | 40 to 1,000 characters |
 | `timeoutMs` | 1 to 55,000; default 25,000. Longer work: Not yet |
+| Declared errors | Custom `<PROVIDER>_<CODE>` codes only, starting with the provider id in capitals |
 | Tool kinds | Read and mutate. Start and subscribe: Not yet |
 | Versions per tool name in a provider | One |
 | Preview summary | 1 to 500 characters |
@@ -555,6 +549,8 @@ Pin `userId`, `organizationId` and `membershipId` to connect as the same princip
 | `Provider …: tool … is deprecated in favour of …, which is not a current tool of this provider` | The replacement is missing or itself deprecated | Name a current tool of the provider |
 | `ToolError code "…" must be a standard code or <PROVIDER>_<CODE>…` | The code is not in the table and has the wrong shape | Use a standard code, or `ACME_SOMETHING` |
 | `ToolError code "…" is not in the standard table; pass { retry }…` | A custom code without a retry policy | Pass `{ retry: { policy } }` |
+| `Tool …: errors entry "…" must be a custom code…` | An entry in `errors` is a standard code, or not `<PROVIDER>_<CODE>` in capitals; a mutation says `Mutation …` | Remove standard codes; write custom ones as `ACME_QUOTA_EXCEEDED` |
+| `Provider …: … declares error "…"; a custom code of this provider starts with …_` | A declared code does not start with the provider id in capitals | Rename it, for example `ACME_QUOTA_EXCEEDED` in provider `acme` |
 | `401 invalid_token` | Missing, expired or foreign token, or a token for another MCP | Sign in through ID for this MCP's resource URL |
 | `403` on the MCP endpoint | The `Host` or browser `Origin` is not allowed | Call the MCP by its registered host name, or set `allowedHosts` / `allowedOrigins` |
 | Unknown tool, prompt or resource | Not defined, or the token lacks its scopes | Check the token's scopes against the definition |
@@ -564,5 +560,7 @@ Pin `userId`, `organizationId` and `membershipId` to connect as the same princip
 | `INTERNAL` from a prepare tool, logged with `Mutation …: the preview names effects it does not declare…` | The preview names an effect missing from `effects` | Declare it in `effects`, or leave it out of the preview |
 | `INTERNAL` from a prepare tool, logged with a Zod error | The plan breaks its shape: no summary, a summary over 500 characters, a target without a version | Return the shape in [the preview](#the-preview) and [targets](#targets-and-versions) |
 | A commit tool's result code | The intent cannot be committed as it is | See [MCP errors](/docs/mcp/errors) |
+| A conformance test fails | A definition breaks a rule of the standard | See [Test an MCP](/docs/mcp/testing#errors) |
+| Tool result `INTERNAL`, logged as `… threw ACME_…, which its definition does not declare; add it to errors` | The handler threw a custom code missing from `errors` | Add the code to the definition's `errors` |
 | Tool result with your code | A `ToolError` you threw | Handle the code |
 | `Invalid MCP configuration: …` at start | A missing or invalid variable | Set the named variable |

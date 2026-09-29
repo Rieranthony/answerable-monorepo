@@ -29,4 +29,4 @@ const principal = await verify(accessToken)
 bun run --filter @answerable/auth test
 ```
 
-MCP servers use this package through [`@answerable/mcp`](../mcp/README.md).
+MCP servers use this package through [`@answerable/mcp`](../mcp/README.md). Every export is in the [API reference](../../apps/web/content/docs/mcp/reference.mdx), generated from the documentation comments.

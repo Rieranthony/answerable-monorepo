@@ -30,7 +30,8 @@ Bun.serve({ hostname: "127.0.0.1", port, fetch: server.fetch })
 - `defineMutation` adds `prepare` and `commit` in place of `execute` (example below). Its prepare tool records an intent and changes nothing; the server's `<id>_commit` and `<id>_commit_confirmed` tools apply it, checking the principal, the single-use token, the expiry, the policy class from `risk` and every target's version, and return a receipt, the same one on a repeat. Intents live in an `IntentStore`; `createMemoryIntentStore()` is the default.
 - `manifest(provider)` is the provider's contract as JSON; commit it and test it for drift.
 - `@answerable/mcp/build` bundles an MCP Apps view into one HTML resource, in a separate Bun process (an in-process build breaks this repository's test suite on Bun 1.3.1).
-- `@answerable/mcp/testing` serves a provider in-process with a local ID issuer and the official MCP client: no port, no network.
+- A tool or mutation lists the custom `<PROVIDER>_<CODE>` codes it throws in `errors`; a handler that throws an undeclared custom code answers `INTERNAL`. The manifest carries the list.
+- `@answerable/mcp/testing` serves a provider in-process with a local ID issuer and the official MCP client: no port, no network. `assertProviderConformance(provider, fixture)` registers one test per check of [the standard](../../docs/09-mcp-design-standard.md), so a failure names the check and the tool to change.
 
 ```ts
 import { defineMutation } from "@answerable/mcp"
@@ -65,10 +66,22 @@ await client.callTool({ name: "identity_get", arguments: {} })
 await mcp.close()
 ```
 
-Guides: [authoring](../../apps/web/content/docs/mcp/authoring.mdx), [errors](../../apps/web/content/docs/mcp/errors.mdx), [local testing](../../apps/web/content/docs/mcp/local-testing.mdx). Reference server: [`mcps/e2e`](../../mcps/e2e/README.md). Changes: [CHANGELOG](CHANGELOG.md).
+Call the conformance kit once per provider, at the top level of a test file, with a valid input for every tool and mutation. `UPDATE_MANIFEST=1 bun run test` writes the manifest snapshot the first time and after a change. A mutation that prepares targets also needs `moveTarget(target, principal)` in the fixture, which changes the target outside the MCP so that its version moves.
+
+```ts
+import { assertProviderConformance } from "@answerable/mcp/testing"
+
+assertProviderConformance(provider, {
+  manifest: new URL("../manifest.json", import.meta.url),
+  examples: { "identity.get": {}, "notes.create": { title: "Example" } },
+})
+```
+
+Guides: [authoring](../../apps/web/content/docs/mcp/authoring.mdx), [testing](../../apps/web/content/docs/mcp/testing.mdx), [errors](../../apps/web/content/docs/mcp/errors.mdx), [local testing](../../apps/web/content/docs/mcp/local-testing.mdx). API reference, generated from the documentation comments by `bun run --filter @answerable/mcp reference`: [reference.mdx](../../apps/web/content/docs/mcp/reference.mdx). Reference server: [`mcps/e2e`](../../mcps/e2e/README.md). Changes: [CHANGELOG](CHANGELOG.md).
 
 ```sh
 bun run --filter @answerable/mcp test
+bun run mcp:check @answerable/mcp-e2e
 ```
 
-The suite enforces 100% line and function coverage.
+The suite enforces 100% line and function coverage. `bun run mcp:check <workspace>` runs a workspace's typecheck, lint and tests, which include its conformance checks and manifest drift test.
