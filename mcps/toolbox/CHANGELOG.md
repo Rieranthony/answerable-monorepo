@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0
+
+One machine client, and one place for each thing the merge of 0.2.0 left twice. Breaking for code that builds the Toolbox.
+
+- `createToolbox`, `createGrantsReader` and `startGrantsPoller` take `id: IdAdmin`, made once with `createIdAdmin(config)` and shared, in place of `IdConfig`: the grants reader and the poller share one `platform:read` token, and the Toolbox asks ID for two tokens in all where it asked for three. `@answerable/mcp-toolbox/id` exports `createIdAdmin`.
+- `IdAdmin.get` fails on ID's 404 like every other call; `found(answer)` turns a 404 into `undefined` where it is an answer, for the grants reader and the enable operation alike.
+- Host client settings live in `catalogue.ts` alone: `hostClientSettings` holds the defaults (`auto`, 40) and bounds (1 to 128) the admin API and `writeHostClient` both apply, and `listHostClients` and `removeHostClient` join `readHostClient` and `writeHostClient`. The admin API reuses the catalogue's `overridesSchema`, now strict.
+- The `./catalogue` export is gone: the acceptance sets a policy class through the admin API.
+- `admin-catalogue.ts`, `id-client.ts` and `whoami.ts` are merged into `admin.ts`, `admin-enable.ts` and `meta.ts`, their only callers; the two test hubs are one.
+- The admin API verifies its tokens with `@answerable/auth` 0.4.0's `subjectType: "client"`. `host_client_not_found` and `organisation_not_found` say where the ids that exist are listed.
+
 ## 0.2.0
 
 A person's whole capability surface and its administration: mutations through the hub on Postgres, the meta projection, host client settings, `tools/list_changed`, the platform-tier admin API and the operation that enables an organisation.

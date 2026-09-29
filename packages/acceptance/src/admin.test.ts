@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from "bun:test"
-import { createAdmin, entitle, registerResource, type Admin } from "./admin"
+import { createAdmin, registerResource, type Admin } from "./admin"
 
 const requests: Request[] = []
 const server = Bun.serve({
@@ -27,16 +27,6 @@ test("admin calls ID's admin API as root with a fresh idempotency key each time,
 
 test("a status outside 2xx throws with the method, path, status and body", async () => {
   await expect(admin("DELETE", "/refused")).rejects.toThrow("DELETE /refused returned 403: Not allowed here")
-})
-
-test("entitle entitles the organisation to a resource's scopes, for every client", async () => {
-  const calls: unknown[][] = []
-  const fake: Admin = async (...call) => {
-    calls.push(call)
-    return {}
-  }
-  await entitle(fake, "org-1", { resource: "https://toolbox.test/mcp", scopes: ["e2e/records"] })
-  expect(calls).toEqual([["POST", "/organizations/org-1/entitlements", { resource: "https://toolbox.test/mcp", scopes: ["e2e/records"] }]])
 })
 
 test("registerResource adds offline_access to the allowed scopes once", async () => {

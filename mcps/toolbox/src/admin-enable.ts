@@ -3,11 +3,18 @@ import type { Provider } from "@answerable/mcp"
 import { z } from "zod"
 import { readCatalogue, writeCatalogue } from "./catalogue"
 import { allowedScopes } from "./grants"
-import { createIdAdmin, IdError, type IdConfig } from "./id"
-import { createIdClient, type Row } from "./id-client"
+import { found, IdError, type IdAdmin } from "./id"
 import { parse, Problem } from "./problem"
 
 const request = z.object({ hostClientIds: z.array(z.string().min(1)).min(1), providers: z.array(z.string().min(1)).min(1) }).strict()
+const resourceView = z.object({ allowedScopes: z.array(z.string()).nullable(), clients: z.array(z.string()) })
+// A capability or an entitlement of ID, as far as the operation reads it.
+const row = z.object({
+  id: z.string(), clientId: z.string().nullable(), resource: z.string().nullable(), scopes: z.array(z.string()), status: z.string(),
+  grantKind: z.string().optional(), memberId: z.string().nullish(), groupId: z.string().nullish(),
+})
+type Row = z.output<typeof row>
+const page = z.object({ items: z.array(row), nextCursor: z.string().nullable() })
 // What ID needs to issue a person's token for a host client: the login, and `toolbox` for the Toolbox, each for both grant kinds.
 const grantKinds = ["authorization_code", "refresh_token"] as const
 // Something to do, in order; `run` is absent when it already exists.
@@ -27,35 +34,58 @@ function exists(row: Row | undefined, needed: readonly string[], label: string, 
  * It reads what ID holds first, stops on a row that does not fit, then creates what is missing in order: the Toolbox resource's allowed scopes, then for each
  * host client its link and the organisation's login and `toolbox` capabilities and entitlements, then the catalogue rows. Repeating it changes nothing.
  */
-export function createEnable({ db, providers, id, resource }: { db: SQL; providers: readonly Provider[]; id: IdConfig; resource: string }) {
-  const ids = createIdClient(createIdAdmin(id), resource)
+export function createEnable({ db, providers, id, resource }: { db: SQL; providers: readonly Provider[]; id: IdAdmin; resource: string }) {
+  const at = `/resources/${encodeURIComponent(resource)}`
   const mounted = new Map(providers.map(provider => [provider.id, provider]))
+  // Every row of one of ID's paged lists.
+  async function list(path: string) {
+    const rows: Row[] = []
+    let cursor: string | null = null
+    do {
+      const next = page.parse((await id.manage("GET", `${path}${path.includes("?") ? "&" : "?"}limit=200${cursor ? `&cursor=${cursor}` : ""}`)).body)
+      rows.push(...next.items)
+      cursor = next.nextCursor
+    } while (cursor)
+    return rows
+  }
   async function plan(organisationId: string, hostClientIds: string[], named: Provider[]) {
-    const held = await ids.resource()
+    const held = await found(id.manage("GET", at))
     if (!held) throw new Problem(409, "resource_not_registered", `Answerable ID does not know the resource ${resource}; register it first, as the Toolbox administration page shows`)
-    const capabilities = await ids.capabilities(organisationId)
-    if (!capabilities) throw new Problem(404, "organisation_not_found", `Answerable ID does not know the organisation ${organisationId}`)
-    const current = new Set(held.allowedScopes)
+    const { allowedScopes: allowed, clients } = resourceView.parse(held.body)
+    const capabilities = await found(list(`/organizations/${organisationId}/capabilities`))
+    if (!capabilities) throw new Problem(404, "organisation_not_found", `Answerable ID does not know the organisation ${organisationId}; GET /api/admin/v1/organizations lists the ones it does`)
+    const current = new Set(allowed)
     const added = allowedScopes(named).filter(scope => !current.has(scope))
-    const steps: Step[] = [{ what: `allowed scopes of ${resource}`, run: added.length ? () => ids.allowScopes([...current, ...added].sort(), held.etag) : undefined }]
+    const steps: Step[] = [{
+      what: `allowed scopes of ${resource}`,
+      run: added.length ? () => id.manage("PATCH", at, { body: { allowedScopes: [...current, ...added].sort() }, ifMatch: held.etag! }) : undefined,
+    }]
     const targets = [{ name: "login", target: null, scopes: ["openid", "offline_access"] }, { name: "toolbox", target: resource, scopes: ["toolbox"] }]
     for (const clientId of hostClientIds) {
-      const entitlements = await ids.entitlements(organisationId, clientId)
+      const entitlements = await list(`/organizations/${organisationId}/entitlements?clientId=${encodeURIComponent(clientId)}`)
       steps.push({
         what: `link ${clientId}`,
-        run: held.clients.includes(clientId) ? undefined : async () => {
-          if (!await ids.link(clientId)) throw new Problem(422, "unknown_host_client", `Answerable ID has no client ${clientId}; register it first`)
+        run: clients.includes(clientId) ? undefined : async () => {
+          if (!await found(id.manage("PUT", `/clients/${encodeURIComponent(clientId)}${at}`))) throw new Problem(422, "unknown_host_client", `Answerable ID has no client ${clientId}; register it first`)
         },
       })
       for (const { name, target, scopes } of targets) {
         for (const grantKind of grantKinds) {
           const row = capabilities.find(row => row.clientId === clientId && row.resource === target && row.grantKind === grantKind)
-          steps.push({ what: `capability ${clientId} ${name} ${grantKind}`, run: exists(row, scopes, `${name} ${grantKind} capability`, clientId) ? undefined : () => ids.createCapability(organisationId, { clientId, resource: target, grantKind, scopes }) })
+          steps.push({
+            what: `capability ${clientId} ${name} ${grantKind}`,
+            run: exists(row, scopes, `${name} ${grantKind} capability`, clientId) ? undefined
+              : () => id.manage("POST", `/organizations/${organisationId}/capabilities`, { body: { clientId, resource: target, grantKind, scopes } }),
+          })
         }
       }
       for (const { name, target, scopes } of targets) {
         const row = entitlements.find(row => row.resource === target && !row.memberId && !row.groupId)
-        steps.push({ what: `entitlement ${clientId} ${name}`, run: exists(row, scopes, `${name} entitlement`, clientId) ? undefined : () => ids.createEntitlement(organisationId, { clientId, ...(target === null ? {} : { resource: target }), scopes }) })
+        steps.push({
+          what: `entitlement ${clientId} ${name}`,
+          run: exists(row, scopes, `${name} entitlement`, clientId) ? undefined
+            : () => id.manage("POST", `/organizations/${organisationId}/entitlements`, { body: { clientId, ...(target === null ? {} : { resource: target }), scopes } }),
+        })
       }
     }
     const catalogue = await readCatalogue(db, organisationId)

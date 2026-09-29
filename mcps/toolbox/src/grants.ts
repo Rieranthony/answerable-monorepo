@@ -1,6 +1,6 @@
 import { ToolError, type Provider, type UserPrincipal } from "@answerable/mcp"
 import { z } from "zod"
-import { createIdAdmin, type IdConfig } from "./id"
+import { found, type IdAdmin } from "./id"
 
 const grantForm = /^([a-z][a-z0-9]{0,11})(\/[a-z][a-z0-9]{0,15}(\.[a-z][a-z0-9]{0,15})?)?$/
 
@@ -34,12 +34,11 @@ export type GrantsReader = {
  * a cached entry answers until it expires; without one the read throws `UPSTREAM_UNAVAILABLE`. `changed` runs after an invalidation that names an
  * organisation, cached or not, since a member who is listening may not have been read for a while.
  */
-export function createGrantsReader({ id, resource, changed = () => {} }: { id: IdConfig; resource: string; changed?: () => void }): GrantsReader {
-  const admin = createIdAdmin(id)
+export function createGrantsReader({ id, resource, changed = () => {} }: { id: IdAdmin; resource: string; changed?: () => void }): GrantsReader {
   const cache = new Map<string, Map<string, Entry>>()
   const pending = new Map<string, Promise<readonly string[]>>()
   async function fetchGrants(organisationId: string, memberId: string) {
-    const view = await admin.get(`/organizations/${organisationId}/members/${memberId}/access`)
+    const view = await found(id.get(`/organizations/${organisationId}/members/${memberId}/access`))
     const targets = view === undefined ? [] : accessView.parse(view).targets
     const scopes = targets.filter(target => (target.kind === "resource" ? target.id : target.resource) === resource).flatMap(target => target.scopes)
     return [...new Set(scopes.filter(isGrant))].sort()
@@ -66,8 +65,8 @@ export function createGrantsReader({ id, resource, changed = () => {} }: { id: I
   return {
     async read(principal) {
       const { organizationId, membershipId, organizationAuthorizationVersion: version } = principal
-      const found = cache.get(organizationId)?.get(membershipId)
-      const kept = found?.version === version ? found : undefined
+      const cached = cache.get(organizationId)?.get(membershipId)
+      const kept = cached?.version === version ? cached : undefined
       if (kept && !kept.stale && Date.now() < kept.expiresAt) return kept.grants
       const key = `${organizationId}/${membershipId}/${version}`
       let read = pending.get(key)

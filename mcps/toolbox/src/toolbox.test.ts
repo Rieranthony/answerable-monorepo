@@ -6,6 +6,7 @@ import { z } from "zod"
 import { writeCatalogue } from "./catalogue"
 import { migrate } from "./db/migrate"
 import { createEvidence } from "./evidence"
+import { createIdAdmin } from "./id"
 import { createMemoryTracer } from "./spans"
 import { testDatabase, testDatabaseUrl } from "./test/database"
 import { createFakeId } from "./test/fake-id"
@@ -241,7 +242,7 @@ test("when ID cannot say what a member may use, a call answers UPSTREAM_UNAVAILA
 
 test("health answers ok only while the database answers", async () => {
   const own = new SQL({ url: testDatabaseUrl, max: 1 })
-  const toolbox = await createToolbox({ providers: [], auth: { issuer: "https://id.test", resource }, db: own, id: createFakeId().config, spans: createMemoryTracer().tracer })
+  const toolbox = await createToolbox({ providers: [], auth: { issuer: "https://id.test", resource }, db: own, id: createIdAdmin(createFakeId().config), spans: createMemoryTracer().tracer })
   expect(await (await toolbox.fetch(new Request("https://mcp.test/health"))).json()).toEqual({ status: "ok" })
   await own.close()
   const down = await toolbox.fetch(new Request("https://mcp.test/health"))

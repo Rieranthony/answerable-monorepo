@@ -30,12 +30,7 @@ Run this once the Toolbox is running and your organisation is enabled for it ([b
 
 Set `ID` to the ID origin, `TOKEN` to a [staff token](/docs/id/onboard#get-a-staff-token) and `TOOLBOX` to `http://localhost:47400`. Every write needs its own `Idempotency-Key`.
 
-1. **Register the Toolbox in ID**: its resource, its machine client and a staff client, as [Register the Toolbox in ID](/docs/mcp/toolbox-admin#register-the-toolbox-in-id) shows. Put the machine client's ID and secret in the root `.env` as `TOOLBOX_ID_CLIENT_ID` and `TOOLBOX_ID_CLIENT_SECRET`, then start the Toolbox:
-
-   ```bash
-   bun --env-file=.env run --filter @answerable/mcp-toolbox db:migrate
-   bun run toolbox:dev
-   ```
+1. **Register and start the Toolbox**, as [Run it locally](/docs/mcp/toolbox#run-it-locally) shows: its resource, its machine client and a staff client in ID, the machine client's ID and secret in the root `.env`, then `bun run toolbox:dev`.
 
 2. **Register Claude Code as a host client.** It is a public client, so PKCE protects the code; the redirect URI must match `--callback-port` exactly.
 

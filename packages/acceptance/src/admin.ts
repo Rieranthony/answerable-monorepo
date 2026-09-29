@@ -55,8 +55,3 @@ export async function grantOrganisation(
   await admin("POST", `${path}/entitlements`, { clientId, scopes: signIn })
   await admin("POST", `${path}/entitlements`, { clientId, resource, scopes: entitledScopes })
 }
-
-/** Entitle an organisation to a resource's scopes, for every client. */
-export function entitle(admin: Admin, organizationId: string, { resource, scopes }: { resource: string; scopes: readonly string[] }) {
-  return admin("POST", `/organizations/${organizationId}/entitlements`, { resource, scopes })
-}

@@ -1,5 +1,5 @@
 import { afterEach, expect, setSystemTime, test } from "bun:test"
-import { createIdAdmin, IdError } from "./id"
+import { createIdAdmin, found, IdError } from "./id"
 import { createFakeId } from "./test/fake-id"
 
 afterEach(() => setSystemTime())
@@ -19,16 +19,26 @@ test("reads the admin API with a client-credentials token for the admin resource
   expect(id.requests.filter(request => request.startsWith("POST"))).toHaveLength(2)
 })
 
-test("a refused token is renewed once, 404 is undefined and any other failure throws with the status", async () => {
+test("a refused token is renewed once, and any failure throws an IdError with the status", async () => {
   const id = createFakeId()
   const admin = createIdAdmin(id.config)
   id.grant("org", "member", [])
   await admin.get("/organizations/org/members/member/access")
   id.revoke()
   expect(await admin.get("/organizations/org/members/member/access")).toEqual({ effective: true, targets: [] })
-  expect(await admin.get("/organizations/org/members/other/access")).toBeUndefined()
+  await expect(admin.get("/organizations/org/members/other/access")).rejects.toMatchObject({ status: 404 })
   id.outage(true)
   await expect(admin.get("/organizations/org/members/member/access")).rejects.toThrow("Answerable ID answered GET /api/admin/v1/organizations/org/members/member/access with 503")
+})
+
+test("found makes ID's 404 an answer, undefined, and passes every other result and failure on", async () => {
+  const id = createFakeId()
+  const admin = createIdAdmin(id.config)
+  id.grant("org", "member", [])
+  expect(await found(admin.get("/organizations/org/members/member/access"))).toEqual({ effective: true, targets: [] })
+  expect(await found(admin.get("/organizations/org/members/other/access"))).toBeUndefined()
+  id.outage(true)
+  await expect(found(admin.get("/organizations/org/members/member/access"))).rejects.toMatchObject({ status: 503 })
 })
 
 test("wrong client credentials name the variables to check", async () => {

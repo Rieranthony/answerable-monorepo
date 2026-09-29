@@ -9,7 +9,7 @@ bun install
 bun run mcp:test:e2e
 ```
 
-Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It runs `bun test` in `packages/acceptance`: the journeys below and the kit's own tests. It exits non-zero when a test fails, and it removes its database and processes either way, including after Ctrl-C (exit 130) or SIGTERM (exit 143). Measured: the 52 tests took 33.3, 34.6 and 36 seconds, at one-minute load averages of 16.2, 21.8 and 57.
+Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It runs `bun test` in `packages/acceptance`: the journeys below and the kit's own tests. It exits non-zero when a test fails, and it removes its database and processes either way, including after Ctrl-C (exit 130) or SIGTERM (exit 143). Measured: the 50 tests took 31.7 and 33.9 seconds, at one-minute load averages of 9.3 and 7.8.
 
 ## What the e2e journeys prove
 
@@ -64,7 +64,7 @@ The company directories are local test issuers. ID, its database role, its pages
 
 **J6, human class.**
 
-7. With `policy_class` set to `human` for `e2e/records.delete` in `toolbox-beta`'s catalogue, beta creates a record through `e2e_records_create` and `toolbox_commit`, then `e2e_records_delete` returns `policy_class: "human"`, `commit_tool: "toolbox_commit_confirmed"` and `approval: { required: true, status: "pending" }`. `toolbox_commit` and `toolbox_commit_confirmed`, with the right summary, both answer `APPROVAL_REQUIRED` with `details.approval` `{ class: "human", commit_tool: "toolbox_commit_confirmed", status: "pending" }` and no URL. The intent is stored `awaiting_approval`, and its evidence is `intent.prepared`, `intent.approval_requested` and the prepare call's `capability.completed`. The approval page is Not yet.
+7. With `policy_class` set to `human` for `e2e/records.delete` in `toolbox-beta`'s catalogue, through the admin API, beta creates a record through `e2e_records_create` and `toolbox_commit`, then `e2e_records_delete` returns `policy_class: "human"`, `commit_tool: "toolbox_commit_confirmed"` and `approval: { required: true, status: "pending" }`. `toolbox_commit` and `toolbox_commit_confirmed`, with the right summary, both answer `APPROVAL_REQUIRED` with `details.approval` `{ class: "human", commit_tool: "toolbox_commit_confirmed", status: "pending" }` and no URL. The intent is stored `awaiting_approval`, and its evidence is `intent.prepared`, `intent.approval_requested` and the prepare call's `capability.completed`. The approval page is Not yet.
 
 **J7, meta projection.**
 
@@ -74,7 +74,7 @@ The company directories are local test issuers. ID, its database role, its pages
 
 **J3, a grant change without re-authorisation.**
 
-11. An entitlement to `e2e/identity` is added to `toolbox-gamma` in ID. Polling `tools/list` every 5 seconds with the same access token lists `e2e_identity_get` within 60 seconds, and a `2026-07-28` client that listens (the kit's `onToolsChanged`) hears `tools/list_changed` and lists the new tool. In three runs: listed after 15.0 seconds each time, heard after 10.8, 11.8 and 11.6 seconds.
+11. An entitlement to `e2e/identity` is added to `toolbox-gamma` in ID. Polling `tools/list` every 5 seconds with the same access token lists `e2e_identity_get` within 60 seconds, and a `2026-07-28` client that listens (the MCP client's `listen`) hears `tools/list_changed` and lists the new tool. In two runs: listed after 10.0 and 15.0 seconds, heard after 10.0 and 10.4 seconds.
 12. Disabling `toolbox-gamma` through the admin API makes refresh fail with `invalid_grant`.
 
 **J10, evidence.**
@@ -83,7 +83,7 @@ The company directories are local test issuers. ID, its database role, its pages
 14. An `UPDATE` and a `DELETE` on `evidence_events` through the journey's superuser connection are refused by the trigger, and the chain still verifies.
 15. Erasing the preview of alpha's first `intent.prepared` removes the payload's body, keeps the event's `payload_hash`, and the chain still verifies.
 
-The last test logs what the Toolbox asked ID. In each of three runs: 45 grant reads answered by 4 access-view calls (a 91.1% cache hit rate), 2 token requests and 2 audit-log reads; the median access-view latency was 34.5 to 63.1 ms and the maximum 35.0 to 65.9 ms.
+The last test logs what the Toolbox asked ID, and requires exactly 2 token requests: the Toolbox and its poller share one machine client, with a `platform:read` token for grants and the audit log and a `platform:read platform:write` token for the enable calls. In two runs: 44 and 45 grant reads answered by 4 access-view calls (90.9% and 91.1% cache hits) and 2 audit-log reads; the median access-view latency was 35.3 and 32.2 ms and the maximum 40.7 and 45.7 ms.
 
 **Administration.**
 
@@ -118,11 +118,10 @@ Keep these free. PostgreSQL belongs to the Compose project `answerable-mcp-e2e` 
 | `registerClient(admin, { clientId, redirectUri, scopes })` | Registers a public client for the authorisation code and refresh token grants. |
 | `linkClient(admin, clientId, resource)` | Lets the client ask for the resource. |
 | `grantOrganisation(admin, organizationId, { clientId, resource, scopes, entitledScopes? })` | Approves the client and the resource for an organisation and entitles its members to `entitledScopes`, all of `scopes` by default. |
-| `entitle(admin, organizationId, { resource, scopes })` | Entitles the organisation to a resource's scopes, for every client. |
 | `serve(port, fetch)` | Serves a fetch handler on a loopback port until the kit stops. |
 | `launchBrowser()` | Starts headless Chromium with Playwright's signal handlers off, so cleanup runs on Ctrl-C. |
 | `signIn(browser, { idOrigin, resource, clientId, callback, scopes }, { slug, email, scopes })` | Signs one person in as a host does: the SDK follows the MCP's `401`, a real browser completes ID's pages, the SDK exchanges the code. Returns an `OAuthSession`, `{ provider, state }`: the SDK's `OAuthClientProvider` for a client registered in ID ahead of time, and the tokens, authorisation URL and discovery result it saved. The first `scopes` are what the MCP advertises; the second are what the organisation is entitled to, and the consent page must list exactly those and name the rest as not approved. |
-| `connect(resource, provider, protocol, onToolsChanged?)` | Connects the official MCP client, as a `"2025"` client or pinned to `"2026-07-28"`. With `onToolsChanged(error, tools)`, a `"2026-07-28"` client listens for `tools/list_changed` and, on each, lists the tools again and passes them, or the error. |
+| `connect(resource, provider, protocol)` | Connects the official MCP client, as a `"2025"` client or pinned to `"2026-07-28"`. A `"2026-07-28"` client hears `tools/list_changed` once it calls `listen({ toolsListChanged: true })` with a handler set by `setNotificationHandler`, as J3 does. |
 | `tool(client, name, args?)` | Calls a tool and returns its `structuredContent`. A failed call throws with the envelope's code and message. |
 | `refusal(client, name, args?)` | Calls a tool that must fail and returns the `error` of its envelope, read with [`errorOf`](/docs/mcp/testing#serve-a-provider-in-process). |
 | `step(message)` | Prints `[acceptance] message`. |
@@ -199,7 +198,7 @@ bun run mcp:dev
 | `Command failed: docker compose -p answerable-mcp-e2e`, often with `ports are not available` | Compose could not start PostgreSQL: port `47532` is taken (often by another run), or the Docker daemon is not running | Wait for the other run, or free the port; start Docker |
 | `Failed to start server. Is port 47602 in use?` (or `47603`, `47605`) | A journey could not listen | Find the holder with `lsof -nP -iTCP:47602 -sTCP:LISTEN` and stop it |
 | `ID fixture stopped (1)`, after `Failed to start server. Is port 47600 in use?` | ID could not listen on `47600` | Free the port and run again |
-| `Timed out waiting for the ID fixture` | ID was not ready within 90 seconds. Seen at a load average of 132 | Run again on a quieter machine, or pass `timeoutMs` to `startId` |
+| `Timed out after 90000 ms waiting for the ID fixture` | ID was not ready within 90 seconds. Seen at a load average of 132 | Run again on a quieter machine, or pass a larger `timeoutMs` to `startId` |
 | `launch: Executable doesn't exist at …` | Playwright's Chromium is not installed | Run `(cd packages/acceptance && bun x playwright install chromium)` |
 | `[acceptance] ID page: /path text` before a Playwright timeout | A step on ID's pages did not appear within 30 seconds; the text is what ID showed instead | Read the page text: an error page names the cause, such as a scope the organisation is not entitled to |
 | `POST /… returned 400: {…}` | ID's admin API refused a provisioning call | Read the `errors` in the body, for example `Scopes are not allowed for this resource` |

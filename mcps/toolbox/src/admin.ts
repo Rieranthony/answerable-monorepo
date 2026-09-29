@@ -1,17 +1,18 @@
 import type { SQL } from "bun"
 import { createIdVerifier } from "@answerable/auth"
-import type { IdVerifierConfig, Provider } from "@answerable/mcp"
+import { manifest, type IdVerifierConfig, type Provider } from "@answerable/mcp"
 import { z } from "zod"
-import { createCatalogueAdmin } from "./admin-catalogue"
 import { createEnable } from "./admin-enable"
+import { hostClientSettings, listHostClients, overridesSchema, readCatalogue, removeHostClient, writeCatalogue, writeHostClient } from "./catalogue"
 import type { createEvidence } from "./evidence"
-import type { IdConfig } from "./id"
-import { Problem } from "./problem"
+import type { IdAdmin } from "./id"
+import { parse, Problem } from "./problem"
 
 /** The Toolbox's admin resource: the audience of its admin API's tokens, the origin of the Toolbox's resource URL and `/admin`. */
 export const toolboxAdminResource = (resource: string) => new URL("/admin", resource).href
 
 const challenges: Record<number, string> = { 401: 'Bearer realm="toolbox-admin"', 403: 'Bearer error="insufficient_scope", scope="toolbox:admin"' }
+const catalogueEntry = z.object({ enabled: z.boolean(), overrides: overridesSchema.optional() }).strict()
 type Route = [method: string, path: RegExp, run: (params: string[], body: () => Promise<unknown>) => Promise<unknown>]
 
 function organisation(value: string) {
@@ -33,23 +34,48 @@ function decode(part: string) {
 export function createAdmin({ auth, db, providers, id, evidence }: {
   auth: IdVerifierConfig
   db: SQL
+  /** The mounted providers, in the order `GET /providers` lists them. */
   providers: readonly Provider[]
-  id: IdConfig
+  id: IdAdmin
   evidence: ReturnType<typeof createEvidence>
 }) {
   const audience = toolboxAdminResource(auth.resource)
-  const verify = createIdVerifier({ ...auth, resource: audience, subjectTypes: ["client"] })
-  const admin = createCatalogueAdmin(db, providers)
+  const verify = createIdVerifier({ ...auth, resource: audience, subjectType: "client" })
   const enable = createEnable({ db, providers, id, resource: auth.resource })
+  // Each mounted provider as its manifest says: its reads and mutations, without the commit tools.
+  const offered = new Map(providers.map(provider => [provider.id, {
+    id: provider.id,
+    version: provider.version,
+    capabilities: manifest(provider).tools.flatMap(tool => tool.kind === "commit" ? [] : [{
+      identity: tool.identity, version: tool.version, kind: tool.kind, risk: tool.kind === "mutate" ? tool.risk : null, title: tool.title ?? null,
+    }]),
+  }]))
+  // Replace an organisation's entry for a provider: overrides name capabilities the provider has, and a policy class only for its mutations.
+  async function putCatalogue(organisationId: string, providerId: string, body: unknown) {
+    const provider = offered.get(providerId)
+    if (!provider) throw new Problem(404, "provider_not_found", `${providerId} is not mounted in this Toolbox; GET /admin/v1/providers lists what is`)
+    const { enabled, overrides } = parse(catalogueEntry, body)
+    const kinds = new Map(provider.capabilities.map(capability => [capability.identity, capability.kind]))
+    const classes = Object.keys(overrides?.policy_class ?? {})
+    const unknown = [...(overrides?.disabled ?? []), ...classes].filter(identity => !kinds.has(identity))
+    if (unknown.length) throw new Problem(422, "unknown_capability", `${providerId} has no capability ${unknown.join(", ")}; GET /admin/v1/providers lists them`)
+    const read = classes.find(identity => kinds.get(identity) === "read")
+    if (read) throw new Problem(422, "not_a_mutation", `${read} is a read; a policy class applies to mutations`)
+    return { provider_id: providerId, ...await writeCatalogue(db, organisationId, providerId, { enabled, overrides }) }
+  }
   const routes: Route[] = [
-    ["GET", /^\/providers$/, async () => admin.providers()],
-    ["GET", /^\/organisations\/([^/]+)\/catalogue$/, async ([organisationId]) => admin.catalogue(organisation(organisationId!))],
-    ["PUT", /^\/organisations\/([^/]+)\/catalogue\/([^/]+)$/, async ([organisationId, provider], body) => admin.putCatalogue(organisation(organisationId!), provider!, await body())],
+    ["GET", /^\/providers$/, async () => ({ items: [...offered.values()] })],
+    ["GET", /^\/organisations\/([^/]+)\/catalogue$/, async ([organisationId]) => ({
+      items: [...await readCatalogue(db, organisation(organisationId!))].map(([provider_id, entry]) => ({ provider_id, ...entry })),
+    })],
+    ["PUT", /^\/organisations\/([^/]+)\/catalogue\/([^/]+)$/, async ([organisationId, provider], body) => putCatalogue(organisation(organisationId!), provider!, await body())],
     ["POST", /^\/organisations\/([^/]+)\/enable$/, async ([organisationId], body) => enable(organisation(organisationId!), await body())],
     ["GET", /^\/organisations\/([^/]+)\/evidence\/verify$/, async ([organisationId]) => evidence.verify(organisation(organisationId!))],
-    ["GET", /^\/host-clients$/, async () => admin.hostClients()],
-    ["PUT", /^\/host-clients\/([^/]+)$/, async ([client], body) => admin.putHostClient(client!, await body())],
-    ["DELETE", /^\/host-clients\/([^/]+)$/, async ([client]) => admin.removeHostClient(client!)],
+    ["GET", /^\/host-clients$/, async () => ({ items: await listHostClients(db) })],
+    ["PUT", /^\/host-clients\/([^/]+)$/, async ([client], body) => writeHostClient(db, client!, parse(hostClientSettings, await body()))],
+    ["DELETE", /^\/host-clients\/([^/]+)$/, async ([client]) => {
+      if (!await removeHostClient(db, client!)) throw new Problem(404, "host_client_not_found", `There is no host client ${client}; GET /admin/v1/host-clients lists them`)
+    }],
   ]
   async function respond(request: Request) {
     const token = /^Bearer +(\S+)$/i.exec(request.headers.get("Authorization") ?? "")?.[1]

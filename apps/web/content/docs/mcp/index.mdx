@@ -6,10 +6,11 @@ description: "The Answerable MCP kit: define tools, serve them with Answerable I
 ```sh
 bun run mcp:new acme
 bun install
+UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-acme test
 bun run mcp:check @answerable/mcp-acme
 ```
 
-Run these from the monorepo. They write `mcps/acme`, a server with one tool, its conformance test and its manifest, then typecheck, lint and test it. [Author an MCP](/docs/mcp/authoring) shows what to change next.
+Run these from the monorepo. They write `mcps/acme`, a server with one tool and its conformance test, install it, write its manifest with the first test run, then typecheck, lint and test it. [Author an MCP](/docs/mcp/authoring#create-a-workspace) shows what to change next.
 
 The Answerable MCP kit builds servers that sign people in with Answerable ID. A tool is five fields (`name`, `description`, `input`, `output`, `execute`), a mutation adds `prepare` and `commit`, and everything else has a default. A server runs alone, or its provider is mounted in the Toolbox, one endpoint that serves each person exactly the capabilities their organisation granted them.
 

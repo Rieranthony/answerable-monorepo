@@ -33,9 +33,20 @@ async function reach(what: string, request: () => Promise<Response>) {
   }
 }
 
+/** ID's 404 for something a caller names is an answer, not a failure: `undefined`, so that the caller can say what was missing. */
+export async function found<T>(answer: Promise<T>): Promise<T | undefined> {
+  try {
+    return await answer
+  } catch (error) {
+    if (error instanceof IdError && error.status === 404) return undefined
+    throw error
+  }
+}
+
 /**
- * ID's admin API as the Toolbox's machine client. Reads (`get`) use a `platform:read` token; the enable operation (`manage`) uses a
- * `platform:read platform:write` token of its own. Each is reused until 30 seconds before it expires and renewed once when ID refuses it.
+ * ID's admin API as the Toolbox's machine client, one per Toolbox, for the grants reader, the poller and the enable operation. Reads (`get`) use a
+ * `platform:read` token; the enable operation (`manage`) uses a `platform:read platform:write` token of its own. Each is reused until 30 seconds
+ * before it expires and renewed once when ID refuses it. A status outside 2xx throws `IdError`.
  */
 export function createIdAdmin({ issuer, adminResource, clientId, clientSecret, fetch = globalThis.fetch }: IdConfig) {
   const tokens = new Map<string, { value: string; expiresAt: number }>()
@@ -93,19 +104,11 @@ export function createIdAdmin({ issuer, adminResource, clientId, clientSecret, f
     throw new IdError(response.status, found.data?.code, `Answerable ID answered ${method} ${url} with ${response.status}${said}`)
   }
   return {
-    /** GET a path of the admin API, such as `/audit-events?limit=200`: its JSON, or undefined for 404. A refused token is renewed once. */
+    /** GET a path of the admin API, such as `/audit-events?limit=200`, and return its JSON. */
     async get(path: string): Promise<unknown> {
-      try {
-        return await (await call(read, "GET", path)).json()
-      } catch (error) {
-        if (error instanceof IdError && error.status === 404) return undefined
-        throw error
-      }
+      return (await call(read, "GET", path)).json()
     },
-    /**
-     * Call the admin API with `platform:read` and `platform:write`, as the enable operation does: a JSON `body`, an `If-Match` tag, a fresh `Idempotency-Key`
-     * on every write. Returns the JSON and the response's `ETag`; a status outside 2xx throws `IdError`.
-     */
+    /** Call the admin API with `platform:read` and `platform:write`, as the enable operation does: a JSON `body`, an `If-Match` tag, a fresh `Idempotency-Key` on every write. Returns the JSON and the response's `ETag`. */
     async manage(method: "GET" | "POST" | "PATCH" | "PUT", path: string, options?: { body?: unknown; ifMatch?: string }): Promise<{ body: unknown; etag: string | null }> {
       const response = await call(write, method, path, options)
       return { body: await response.json(), etag: response.headers.get("ETag") }

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+One kind of token per verifier, the smallest form the Toolbox's admin API needs. Breaking for a verifier that accepts machine tokens; a person's verifier is unchanged.
+
+- `createIdVerifier({ subjectType })` takes `user` (the default) or `client`, and returns `UserPrincipal` or `MachinePrincipal` to match. It replaces `subjectTypes`: a verifier that accepted both kinds, and the union it returned, are gone, and so are the `SubjectType` export and `MachinePrincipal.subjectType`, which only told the union apart.
+- `AuthenticationError`'s message is `A valid Answerable ID access token is required`, without `user`, since a verifier may take a machine client's token.
+
 ## 0.3.0
 
 Machine tokens, for a service that authenticates ID's machine clients, such as the Toolbox's admin API. Nothing changes for a verifier that does not ask.

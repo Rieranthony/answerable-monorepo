@@ -16,12 +16,8 @@ const manifestSchema = z.object({
   tenants: z.array(z.object({ slug: z.string(), email: z.string(), organizationId: z.uuid() })),
 })
 
-type Child = { readonly exitCode: number | null; readonly exited: Promise<number>; kill(signal: "SIGKILL"): void }
-/** `Bun.spawn`, or a fake in tests. */
-export type Spawn = (command: string[], options: { cwd: string; stdout: "ignore" | "inherit"; stderr: "ignore" | "inherit" }) => Child
-
-async function run(spawn: Spawn, command: string[], stderr: "ignore" | "inherit" = "inherit") {
-  if ((await spawn(command, { cwd, stdout: "ignore", stderr }).exited) !== 0) throw new Error(`Command failed: ${command.slice(0, 4).join(" ")}`)
+async function run(command: string[], stderr: "ignore" | "inherit" = "inherit") {
+  if ((await Bun.spawn(command, { cwd, stdout: "ignore", stderr }).exited) !== 0) throw new Error(`Command failed: ${command.slice(0, 4).join(" ")}; check that Docker is running and port 47532 is free`)
 }
 
 /**
@@ -30,29 +26,29 @@ async function run(spawn: Spawn, command: string[], stderr: "ignore" | "inherit"
  * and waits up to `timeoutMs` (90 seconds) for its manifest. The fixture creates one organisation per tenant, with its domain and a local test company directory that accepts `signIns` sign-ins.
  * Everything else is provisioned through `admin`.
  * `stop()` ends ID, brings PostgreSQL down with its volume, removes the temporary directory and closes everything else the kit opened. It is safe to call twice, and it runs on Ctrl-C and SIGTERM.
- * A start that throws has already stopped. `spawn` replaces `Bun.spawn`, for the kit's own tests.
+ * A start that throws has already stopped.
  */
-export async function startId({ tenants, spawn = Bun.spawn, timeoutMs = 90_000 }: { tenants: readonly { slug: string; signIns: number }[]; spawn?: Spawn; timeoutMs?: number }) {
+export async function startId({ tenants, timeoutMs = 90_000 }: { tenants: readonly { slug: string; signIns: number }[]; timeoutMs?: number }) {
   const directory = await mkdtemp(join(tmpdir(), "answerable-mcp-acceptance-"))
-  let fixture: Child | undefined
+  let fixture: ReturnType<typeof Bun.spawn> | undefined
   onCleanup(async () => {
     fixture?.kill("SIGKILL")
     await fixture?.exited
     // On Ctrl-C the terminal's pipes may already be closed, and Compose dies writing to them.
-    await run(spawn, [...compose, "down", "--volumes"], "ignore").catch(() => {})
+    await run([...compose, "down", "--volumes"], "ignore").catch(() => {})
     await rm(directory, { recursive: true, force: true })
   })
   try {
     step("Starting isolated PostgreSQL")
-    await run(spawn, [...compose, "up", "-d", "--wait"])
+    await run([...compose, "up", "-d", "--wait"])
     const plan = join(directory, "plan.json")
     const manifestPath = join(directory, "manifest.json")
     await Bun.write(plan, JSON.stringify({ tenants }))
-    fixture = spawn([process.execPath, "scripts/mcp-e2e-fixture.ts", plan, manifestPath, "--isolated-mcp-fixture"], { cwd, stdout: "inherit", stderr: "inherit" })
+    fixture = Bun.spawn([process.execPath, "scripts/mcp-e2e-fixture.ts", plan, manifestPath, "--isolated-mcp-fixture"], { cwd, stdout: "inherit", stderr: "inherit" })
     const deadline = Date.now() + timeoutMs
     while (!(await Bun.file(manifestPath).exists())) {
-      if (fixture.exitCode !== null) throw new Error(`ID fixture stopped (${fixture.exitCode})`)
-      if (Date.now() > deadline) throw new Error("Timed out waiting for the ID fixture")
+      if (fixture.exitCode !== null) throw new Error(`ID fixture stopped (${fixture.exitCode}); its output above says why`)
+      if (Date.now() > deadline) throw new Error(`Timed out after ${timeoutMs} ms waiting for the ID fixture; run again on a quieter machine, or pass a larger timeoutMs to startId`)
       await Bun.sleep(200)
     }
     const manifest = manifestSchema.parse(await Bun.file(manifestPath).json())

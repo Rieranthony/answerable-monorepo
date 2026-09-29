@@ -4,9 +4,9 @@ import { SQL } from "bun"
 import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
 import { createRecordStore } from "@answerable/mcp-e2e/records"
 import { toolboxAdminResource } from "@answerable/mcp-toolbox/admin"
-import { writeCatalogue } from "@answerable/mcp-toolbox/catalogue"
 import { createEvidence } from "@answerable/mcp-toolbox/evidence"
 import { allowedScopes } from "@answerable/mcp-toolbox/grants"
+import { createIdAdmin } from "@answerable/mcp-toolbox/id"
 import { migrate } from "@answerable/mcp-toolbox/migrate"
 import { startGrantsPoller } from "@answerable/mcp-toolbox/poller"
 import { createMemoryTracer } from "@answerable/mcp-toolbox/spans"
@@ -16,7 +16,6 @@ import { decodeJwt } from "jose"
 import { z } from "zod"
 import {
   connect,
-  entitle,
   launchBrowser,
   linkClient,
   refusal,
@@ -137,14 +136,14 @@ beforeAll(async () => {
   await server.close()
   db = new SQL({ url: `postgres://answerable:answerable@127.0.0.1:47532/${database}`, max: 4 })
   await migrate(db)
-  const hubId = { issuer: manifest.idOrigin, adminResource: manifest.adminResource, clientId: hubClientId, clientSecret: hubSecret, fetch: counted }
-  const toolbox = await createToolbox({ providers, auth: { issuer: manifest.idOrigin, resource }, db, id: hubId, spans: tracer })
+  const machine = createIdAdmin({ issuer: manifest.idOrigin, adminResource: manifest.adminResource, clientId: hubClientId, clientSecret: hubSecret, fetch: counted })
+  const toolbox = await createToolbox({ providers, auth: { issuer: manifest.idOrigin, resource }, db, id: machine, spans: tracer })
   const read = toolbox.grants.read
   toolbox.grants.read = principal => {
     reads++
     return read(principal)
   }
-  poller = startGrantsPoller({ id: hubId, grants: toolbox.grants })
+  poller = startGrantsPoller({ id: machine, grants: toolbox.grants })
   serve(47_604, toolbox.fetch)
   serve(Number(new URL(callback).port), () => new Response("Signed in. You can close this page."))
   // The catalogue is the ceiling: gamma may use e2e but has no entitlement to any of it until J3. Alpha also signs in through the meta host client.
@@ -154,7 +153,7 @@ beforeAll(async () => {
     const hostClientIds = slug === "toolbox-alpha" ? [clientId, metaClientId] : [clientId]
     const enabled = await toolboxAdminCall("POST", `/organisations/${organizationId}/enable`, { hostClientIds, providers: providers.map(provider => provider.id) })
     if (enabled.status !== 200) throw new Error(`Enabling ${slug} answered ${enabled.status}: ${JSON.stringify(enabled.body)}`)
-    if (grants.length) await entitle(admin, organizationId, { resource, scopes: grants })
+    if (grants.length) await admin("POST", `/organizations/${organizationId}/entitlements`, { resource, scopes: grants })
   }
   const host = await toolboxAdminCall("PUT", `/host-clients/${metaClientId}`, { projection: "meta" })
   if (host.status !== 200) throw new Error(`Setting ${metaClientId} to meta answered ${host.status}: ${JSON.stringify(host.body)}`)
@@ -243,7 +242,8 @@ describe("J2 partial and denied", () => {
 describe("J6 human class", () => {
   test("with e2e/records.delete set to human for beta, its prepare waits for an approval: both commit tools answer APPROVAL_REQUIRED, pending", async () => {
     const { organizationId } = session("toolbox-beta")
-    await writeCatalogue(db, organizationId, "e2e", { enabled: true, overrides: { policy_class: { "e2e/records.delete": "human" } } })
+    const human = await toolboxAdminCall("PUT", `/organisations/${organizationId}/catalogue/e2e`, { enabled: true, overrides: { policy_class: { "e2e/records.delete": "human" } } })
+    expect(human.status).toBe(200)
     const client = await clientFor("toolbox-beta")
     const created = intentSchema.parse(await tool(client, "e2e_records_create", { title: "Beta's record" }))
     const record = z.object({ results: z.object({ id: z.uuid() }) }).parse(await tool(client, "toolbox_commit", commitArgs(created))).results
@@ -313,14 +313,13 @@ describe("J3 grant change without re-authorisation", () => {
     expect(await names(client)).toEqual(["toolbox_whoami"])
     const token = oauth.state.tokens!.access_token
     // A 2026-07-28 client that listens: on each tools/list_changed it lists again; it resolves once the list holds the new tool.
-    let heard!: (at: number) => void
-    const changed = new Promise<number>(resolve => { heard = resolve })
-    await connect(resource, oauth.provider, "2026-07-28", (error, tools) => {
-      if (error) throw error
-      if (tools?.some(item => item.name === "e2e_identity_get")) heard(performance.now())
-    })
+    const listener = await connect(resource, oauth.provider, "2026-07-28")
+    const changed = new Promise<number>(resolve => listener.setNotificationHandler("notifications/tools/list_changed", async () => {
+      if ((await names(listener)).includes("e2e_identity_get")) resolve(performance.now())
+    }))
+    await listener.listen({ toolsListChanged: true })
     step("toolbox-gamma: adding an entitlement to e2e/identity in ID")
-    await entitle(id.admin, organizationId, { resource, scopes: ["e2e/identity"] })
+    await id.admin("POST", `/organizations/${organizationId}/entitlements`, { resource, scopes: ["e2e/identity"] })
     const started = performance.now()
     let listed = await names(client)
     while (!listed.includes("e2e_identity_get") && performance.now() - started < 60_000) {
@@ -385,6 +384,8 @@ test("the grant cache answered most reads; what the Toolbox asked ID is logged f
   step(`access view latency: median ${latencies[Math.floor(latencies.length / 2)]!.toFixed(1)} ms, max ${latencies.at(-1)!.toFixed(1)} ms`)
   step(`other ID calls: ${asked.tokens} token requests, ${asked.polls} audit-log reads; evidence: ${chains.events} events in ${chains.organisations} chains`)
   expect(latencies.length).toBeLessThan(reads)
+  // One machine client: a platform:read token for the grants reader and the poller, and a platform:read platform:write token for the enable calls.
+  expect(asked.tokens).toBe(2)
 })
 
 describe("administration", () => {

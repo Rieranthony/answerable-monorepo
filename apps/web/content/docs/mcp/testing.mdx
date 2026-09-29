@@ -156,7 +156,7 @@ The file holds the tools sorted by identity, with their wire names, schemas, sco
 bun run mcp:check @answerable/mcp-e2e
 ```
 
-Run this from the repository root with a workspace name. It runs the workspace's typecheck, lint and tests with Turborepo (`turbo run typecheck lint test --filter <workspace>`); the conformance checks and the manifest drift test are tests, so they run too. The `@answerable/auth`, `@answerable/mcp`, `@answerable/acceptance` and Toolbox suites, and every server that `bun run mcp:new` writes, enforce 100% line and function coverage. `bun run mcp:test` runs the auth, SDK, e2e, Toolbox, scaffolded servers and scaffold suites together.
+Run this from the repository root with a workspace name. It runs the workspace's typecheck, lint and tests with Turborepo (`turbo run typecheck lint test --filter <workspace>`); the conformance checks and the manifest drift test are tests, so they run too. The `@answerable/auth`, `@answerable/mcp`, `@answerable/acceptance`, e2e and Toolbox suites, and every server that `bun run mcp:new` writes, enforce 100% line and function coverage. `bun run mcp:test` runs the auth, SDK, e2e, Toolbox, scaffolded servers and scaffold suites together.
 
 ## Not yet
 

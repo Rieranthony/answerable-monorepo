@@ -5,7 +5,7 @@ import { createAdmin } from "./admin"
 import { ingest, readCatalogue, readHostClient, type Catalogue, type HostClient } from "./catalogue"
 import { createEvidence, type EvidenceEvent } from "./evidence"
 import { createGrantsReader } from "./grants"
-import type { IdConfig } from "./id"
+import type { IdAdmin } from "./id"
 import { withEvidence } from "./intent-evidence"
 import { createPostgresIntentStore } from "./intents"
 import { createToolboxProvider } from "./meta"
@@ -18,7 +18,8 @@ export type ToolboxConfig = {
   providers: readonly Provider[]
   auth: IdVerifierConfig
   db: SQL
-  id: IdConfig
+  /** ID's admin API as the Toolbox's machine client: `createIdAdmin(config)`, shared with `startGrantsPoller`. */
+  id: IdAdmin
   /** Where spans go: `createTracer(endpoint).tracer`, or `createMemoryTracer().tracer` in tests. */
   spans: Tracer
 }
@@ -37,8 +38,8 @@ const text = (value: unknown) => (typeof value === "string" ? value : undefined)
 export async function createToolbox({ providers, auth, db, id, spans }: ToolboxConfig) {
   const grants = createGrantsReader({ id, resource: auth.resource, changed: () => server.toolsChanged() })
   const evidence = createEvidence(db)
-  const admin = createAdmin({ auth, db, providers, id, evidence })
   const mounted = providers.toSorted((a, b) => (a.id < b.id ? -1 : 1)).map(ordered)
+  const admin = createAdmin({ auth, db, providers: mounted, id, evidence })
   const capabilities = mounted.flatMap(provider => provider.tools)
   // One read per request: the SDK verifies the token into a new principal for every request.
   const authorities = new WeakMap<UserPrincipal, Promise<{ grants: readonly string[]; catalogue: Catalogue; host: HostClient }>>()

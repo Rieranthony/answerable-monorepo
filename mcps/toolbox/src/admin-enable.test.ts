@@ -3,7 +3,7 @@ import { readCatalogue, writeCatalogue } from "./catalogue"
 import { migrate } from "./db/migrate"
 import { allowedScopes } from "./grants"
 import { testDatabase } from "./test/database"
-import { adminHub, providerId, records, resource } from "./test/admin-hub"
+import { createHub, providerId, records, resource } from "./test/hub"
 
 const db = testDatabase()
 beforeAll(() => migrate(db))
@@ -15,12 +15,12 @@ const api = "/api/admin/v1"
 // A hub over a fake ID that knows the Toolbox resource, some host clients and one organisation.
 async function setup({ providers = 1, hosts = ["host-a"], scopes = ["offline_access", "toolbox"], pageSize }: { providers?: number; hosts?: string[]; scopes?: string[]; pageSize?: number } = {}) {
   const mounted = Array.from({ length: providers }, () => records(providerId()))
-  const hub = await adminHub(db, mounted, { pageSize })
+  const hub = await createHub(db, mounted, { pageSize })
   const organisation = crypto.randomUUID()
   hub.id.resource(resource, scopes)
   for (const host of hosts) hub.id.client(host)
   hub.id.organisation(organisation)
-  const enable = (body: unknown) => hub.call("POST", `/organisations/${organisation}/enable`, { body })
+  const enable = (body: unknown) => hub.admin("POST", `/organisations/${organisation}/enable`, { body })
   // Every call to ID's admin API so far, in order, without the token requests.
   const calls = () => hub.id.requests.filter(request => !request.includes("/auth/oauth2/token")).map(request => request.replace(api, ""))
   return { ...hub, mounted, organisation, enable, calls }
@@ -181,21 +181,21 @@ test("a body that is not an enable request, or names a provider that is not moun
   expect(await hub.enable({ hostClientIds: ["host-a"], providers: [hub.mounted[0]!.id, "nothing", "toolbox"] })).toMatchObject({
     status: 422, body: { error: { code: "unknown_provider", message: `nothing, toolbox are not mounted in this Toolbox; mounted: ${hub.mounted[0]!.id}` } },
   })
-  expect(await hub.call("POST", "/organisations/not-a-uuid/enable", { body: { hostClientIds: ["host-a"], providers: [hub.mounted[0]!.id] } })).toMatchObject({ status: 400, body: { error: { code: "invalid_request" } } })
+  expect(await hub.admin("POST", "/organisations/not-a-uuid/enable", { body: { hostClientIds: ["host-a"], providers: [hub.mounted[0]!.id] } })).toMatchObject({ status: 400, body: { error: { code: "invalid_request" } } })
   expect(hub.id.requests).toEqual([])
 })
 
 test("what ID lacks is named: the Toolbox resource, the organisation and the host client", async () => {
   const hub = await setup({ hosts: ["host-a"] })
   const body = { hostClientIds: ["host-a"], providers: [hub.mounted[0]!.id] }
-  const unregistered = await adminHub(db, hub.mounted)
+  const unregistered = await createHub(db, hub.mounted)
   unregistered.id.organisation(hub.organisation)
-  expect(await unregistered.call("POST", `/organisations/${hub.organisation}/enable`, { body })).toMatchObject({
+  expect(await unregistered.admin("POST", `/organisations/${hub.organisation}/enable`, { body })).toMatchObject({
     status: 409, body: { error: { code: "resource_not_registered", message: `Answerable ID does not know the resource ${resource}; register it first, as the Toolbox administration page shows` } },
   })
   const stranger = crypto.randomUUID()
-  expect(await hub.call("POST", `/organisations/${stranger}/enable`, { body })).toMatchObject({
-    status: 404, body: { error: { code: "organisation_not_found", message: `Answerable ID does not know the organisation ${stranger}` } },
+  expect(await hub.admin("POST", `/organisations/${stranger}/enable`, { body })).toMatchObject({
+    status: 404, body: { error: { code: "organisation_not_found", message: `Answerable ID does not know the organisation ${stranger}; GET /api/admin/v1/organizations lists the ones it does` } },
   })
   expect(hub.calls().filter(call => !call.startsWith("GET"))).toEqual([])
   expect(await hub.enable({ ...body, hostClientIds: ["host-a", "host-z"] })).toMatchObject({
@@ -212,8 +212,8 @@ test("when ID cannot be reached, refuses the Toolbox's credentials or times out,
     message: "Answerable ID refused the Toolbox's client credentials (503); check TOOLBOX_ID_CLIENT_ID, TOOLBOX_ID_CLIENT_SECRET and the client's platform:read and platform:write capability for the admin resource. Nothing is rolled back: repeat the call, which skips what already exists",
   })
   const wrong = await setup()
-  const strangers = await adminHub(db, wrong.mounted, { secret: "wrong" })
-  expect((await strangers.call("POST", `/organisations/${wrong.organisation}/enable`, { body: body(wrong) })).body.error.message).toContain("(401); check TOOLBOX_ID_CLIENT_ID")
+  const strangers = await createHub(db, wrong.mounted, { secret: "wrong" })
+  expect((await strangers.admin("POST", `/organisations/${wrong.organisation}/enable`, { body: body(wrong) })).body.error.message).toContain("(401); check TOOLBOX_ID_CLIENT_ID")
   const gone = await setup()
   gone.id.unreachable(true)
   expect((await gone.enable(body(gone))).body.error.message).toBe("Answerable ID did not answer the token request: Unable to connect. Nothing is rolled back: repeat the call, which skips what already exists")

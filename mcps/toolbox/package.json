@@ -1,13 +1,13 @@
 {
   "name": "@answerable/mcp-toolbox",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "exports": {
     "./admin": "./src/admin.ts",
-    "./catalogue": "./src/catalogue.ts",
     "./evidence": "./src/evidence.ts",
     "./grants": "./src/grants.ts",
+    "./id": "./src/id.ts",
     "./migrate": "./src/db/migrate.ts",
     "./poller": "./src/poller.ts",
     "./spans": "./src/spans.ts",

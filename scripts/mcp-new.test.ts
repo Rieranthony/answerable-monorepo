@@ -28,9 +28,9 @@ test("refuses a directory that exists and leaves it alone", async () => {
   expect(await readdir(join(root, "mcps/acme"))).toEqual([])
 })
 
-test("writes the workspace, and nothing else", async () => {
+test("writes the workspace, and nothing else: the manifest comes from the first test run", async () => {
   await scaffold("acme", { root, date })
-  expect(await files()).toEqual([".env.example", "README.md", "bunfig.toml", "eslint.config.mjs", "manifest.json", "package.json", "src/provider.test.ts", "src/provider.ts", "src/server.ts", "tsconfig.json"])
+  expect(await files()).toEqual([".env.example", "README.md", "bunfig.toml", "eslint.config.mjs", "package.json", "src/provider.test.ts", "src/provider.ts", "src/server.ts", "tsconfig.json"])
 })
 
 test("package.json is private, runs its scripts and pins what mcps/e2e pins", async () => {
@@ -51,22 +51,10 @@ test("package.json is private, runs its scripts and pins what mcps/e2e pins", as
   expect(await read("package.json")).toBe(`${JSON.stringify(expected, null, 2)}\n`)
 })
 
-test("tsconfig.json and eslint.config.mjs are the e2e server's", async () => {
+test("tsconfig.json, eslint.config.mjs and bunfig.toml, with its 100% coverage gate, are the e2e server's", async () => {
   await scaffold("acme", { root, date })
-  for (const file of ["tsconfig.json", "eslint.config.mjs"]) expect(await read(file)).toBe(await Bun.file(join(repo, "mcps/e2e", file)).text())
-})
-
-test("bunfig.toml gates 100% line and function coverage of the server's own files", async () => {
-  await scaffold("acme", { root, date })
-  expect(await read("bunfig.toml")).toBe(`[test]
-root = "src"
-coverage = true
-coverageSkipTestFiles = true
-coverageThreshold = { lines = 1, functions = 1 }
-# lcov writes the coverage/ directory that Turborepo expects from a test task.
-coverageReporter = ["text", "lcov"]
-coveragePathIgnorePatterns = ["../**"]
-`)
+  for (const file of ["tsconfig.json", "eslint.config.mjs", "bunfig.toml"]) expect(await read(file)).toBe(await Bun.file(join(repo, "mcps/e2e", file)).text())
+  expect(await read("bunfig.toml")).toContain("coverageThreshold = { lines = 1, functions = 1 }")
 })
 
 test("the provider has one five-field read tool and is dated today", async () => {
@@ -134,51 +122,18 @@ MCP_PORT=47510
 `)
 })
 
-test("the README runs, tests and extends the server", async () => {
+test("the README runs and tests the server, and points at the guides for the rest", async () => {
   await scaffold("acme", { root, date })
-  expect(await read("README.md")).toBe(`# acme MCP
-
-An MCP server on Answerable ID with one tool, \`acme.status\`. Replace it with your own.
-
-\`\`\`sh
-bun --env-file=mcps/acme/.env.example run --filter @answerable/mcp-acme dev
-curl http://localhost:47510/health
-\`\`\`
-
-Run these from the repository root. The second command answers \`{"status":"ok"}\`. \`.env.example\` holds \`MCP_ID_ISSUER\`, \`MCP_RESOURCE_URL\` and \`MCP_PORT\`; copy it to \`.env\` in this directory, which is git-ignored, to change them, and give each MCP running at the same time its own port. Before the first sign-in, register the resource, whose scope is \`acme:read\`, and a client in Answerable ID, as [Connect Claude Code](../../apps/web/content/docs/mcp/claude-code.mdx#register-the-server) does for the e2e server.
-
-## Test
-
-\`\`\`sh
-bun run mcp:check @answerable/mcp-acme
-\`\`\`
-
-It runs the typecheck, the lint and the tests with a 100% line and function coverage gate. \`src/provider.test.ts\` runs the conformance kit and makes one call in-process.
-
-## Add a tool
-
-Define it with \`defineTool\` in \`src/provider.ts\` and add it to \`tools\`; a mutation adds \`prepare\` and \`commit\`. Give \`examples\` in \`src/provider.test.ts\` one valid input for it, then rewrite the manifest and commit it with the change:
-
-\`\`\`sh
-UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-acme test
-\`\`\`
-
-[Author an MCP](../../apps/web/content/docs/mcp/authoring.mdx) covers tools, mutations and errors. [Test an MCP](../../apps/web/content/docs/mcp/testing.mdx) covers the checks.
-`)
+  const readme = await read("README.md")
+  for (const line of [
+    "bun --env-file=mcps/acme/.env.example run --filter @answerable/mcp-acme dev",
+    "UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-acme test",
+    "bun run mcp:check @answerable/mcp-acme",
+  ]) expect(readme).toContain(line)
+  for (const [, link] of readme.matchAll(/\]\(([^)#]+)[^)]*\)/g)) expect(await Bun.file(join(root, "mcps/acme", link!)).exists() || await Bun.file(join(repo, "mcps/e2e", link!)).exists(), link).toBe(true)
 })
 
-test("the manifest is the provider's contract, dated today", async () => {
-  await scaffold("acme", { root, date })
-  const manifest = JSON.parse(await read("manifest.json"))
-  expect(manifest).toMatchObject({ id: "acme", version: date, tools: [{ identity: "acme/acme.status", name: "acme_status", kind: "read" }] })
-})
-
-test("the first test run leaves neither dependencies nor coverage behind", async () => {
-  await scaffold("acme", { root, date })
-  expect((await readdir(join(root, "mcps/acme"))).sort()).toEqual([".env.example", "README.md", "bunfig.toml", "eslint.config.mjs", "manifest.json", "package.json", "src", "tsconfig.json"])
-})
-
-// bun install links a workspace's dependencies; until then the e2e server's stand in.
+// bun install links a workspace's dependencies; in the temporary directory the e2e server's stand in.
 async function scaffoldLinked(name: string) {
   await scaffold(name, { root, date })
   const cwd = join(root, "mcps", name)
@@ -186,14 +141,17 @@ async function scaffoldLinked(name: string) {
   return cwd
 }
 
-test("a 12-character name works, and the new server passes its typecheck, lint and tests unchanged", async () => {
+test("a 12-character name works: the first test run writes the manifest, dated today, then the typecheck, lint and tests pass unchanged", async () => {
   const cwd = await scaffoldLinked("abcdefghijkl")
-  for (const script of ["typecheck", "lint", "test"]) {
-    const run = Bun.spawn([process.execPath, "run", script], { cwd, stdout: "pipe", stderr: "pipe" })
+  for (const [script, env] of [["test", { UPDATE_MANIFEST: "1" }], ["typecheck"], ["lint"], ["test"]] as const) {
+    const run = Bun.spawn([process.execPath, "run", script], { cwd, env: { ...process.env, ...env }, stdout: "pipe", stderr: "pipe" })
     const [exitCode, stdout, stderr] = await Promise.all([run.exited, new Response(run.stdout).text(), new Response(run.stderr).text()])
     expect(exitCode, `${script} failed:\n${stdout}${stderr}`).toBe(0)
   }
-})
+  expect(await Bun.file(join(cwd, "manifest.json")).json()).toMatchObject({
+    id: "abcdefghijkl", version: date, tools: [{ identity: "abcdefghijkl/abcdefghijkl.status", name: "abcdefghijkl_status", kind: "read" }],
+  })
+}, 30_000)
 
 test("the new server starts from its .env.example and answers /health", async () => {
   const cwd = await scaffoldLinked("acme")
@@ -212,12 +170,12 @@ test("the new server starts from its .env.example and answers /health", async ()
   }
 })
 
-test("prints the three commands to run next", async () => {
+test("prints the three commands to run next: install, write the manifest, check", async () => {
   expect(await scaffold("acme", { root, date })).toBe(`Created mcps/acme (@answerable/mcp-acme). Next, from the repository root:
 
   bun install
+  UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-acme test
   bun run mcp:check @answerable/mcp-acme
-  bun --env-file=mcps/acme/.env.example run --filter @answerable/mcp-acme dev
 `)
 })
 

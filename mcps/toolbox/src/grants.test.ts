@@ -3,6 +3,7 @@ import { defineProvider, defineTool, ToolError } from "@answerable/mcp"
 import { testPrincipal as principal } from "@answerable/mcp/testing"
 import { z } from "zod"
 import { allowedScopes, createGrantsReader, isGrant } from "./grants"
+import { createIdAdmin } from "./id"
 import { createFakeId } from "./test/fake-id"
 
 const toolbox = "https://toolbox.test/mcp"
@@ -10,7 +11,7 @@ afterEach(() => setSystemTime())
 
 function setup() {
   const id = createFakeId()
-  const grants = createGrantsReader({ id: id.config, resource: toolbox })
+  const grants = createGrantsReader({ id: createIdAdmin(id.config), resource: toolbox })
   const caller = principal()
   const reads = () => id.requests.filter(request => request.endsWith("/access")).length
   return { id, grants, caller, reads }
@@ -87,7 +88,7 @@ test("invalidating an organisation reads its members again and keeps other organ
 test("an invalidation that names an organisation calls changed once, whether or not any of its members is cached; naming none does not", () => {
   const id = createFakeId()
   let changes = 0
-  const grants = createGrantsReader({ id: id.config, resource: toolbox, changed: () => { changes++ } })
+  const grants = createGrantsReader({ id: createIdAdmin(id.config), resource: toolbox, changed: () => { changes++ } })
   grants.invalidate([])
   expect(changes).toBe(0)
   grants.invalidate(new Set([crypto.randomUUID(), crypto.randomUUID()]))

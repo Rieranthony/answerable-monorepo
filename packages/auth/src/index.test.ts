@@ -56,29 +56,26 @@ const machine = (claims: Record<string, unknown> = {}) => ({
   subject_type: "client", sub: "staff-client", client_id: "staff-client", client_instance: crypto.randomUUID(), authorization_version: 3,
   membership_id: undefined, grant_id: undefined, ...claims,
 })
-const clientOnly = (issuer: Awaited<ReturnType<typeof fixture>>) => createIdVerifier({ issuer: issuer.issuer, resource, fetch: issuer.fetch, subjectTypes: ["client"] })
+const clientOnly = (issuer: Awaited<ReturnType<typeof fixture>>) => createIdVerifier({ issuer: issuer.issuer, resource, fetch: issuer.fetch, subjectType: "client" })
 
-test("a client token is refused unless the verifier lists client, and then returns a frozen machine principal", async () => {
+test("a client token is refused by a user verifier, the default, and a client verifier returns a frozen machine principal", async () => {
   const issuer = await fixture()
   const organizationId = crypto.randomUUID()
   const token = await issuer.sign({ resource, organizationId, scopes: ["toolbox:admin", "toolbox:admin"], claims: machine({ organization_authorization_version: 4 }) })
   await expect(issuer.verify(token)).rejects.toThrow(new AuthenticationError())
-  await expect(createIdVerifier({ issuer: issuer.issuer, resource, fetch: issuer.fetch, subjectTypes: ["user"] })(token)).rejects.toThrow(new AuthenticationError())
+  await expect(createIdVerifier({ issuer: issuer.issuer, resource, fetch: issuer.fetch, subjectType: "user" })(token)).rejects.toThrow(new AuthenticationError())
   const principal: MachinePrincipal = await clientOnly(issuer)(token)
   expect(principal).toEqual({
-    subjectType: "client", clientId: "staff-client", organizationId, scopes: ["toolbox:admin"], expiresAt: expect.any(Number),
-    authorizationVersion: 3, organizationAuthorizationVersion: 4,
+    clientId: "staff-client", organizationId, scopes: ["toolbox:admin"], expiresAt: expect.any(Number), authorizationVersion: 3, organizationAuthorizationVersion: 4,
   })
   expect(Object.isFrozen(principal)).toBe(true)
   expect(Object.isFrozen(principal.scopes)).toBe(true)
 })
-test("a verifier that lists only client refuses a user token; one that lists both returns each token's own principal, and a machine principal narrows on subjectType", async () => {
+test("a client verifier refuses a user token", async () => {
   const issuer = await fixture()
-  const user = await issuer.sign({ resource })
-  await expect(clientOnly(issuer)(user)).rejects.toThrow(new AuthenticationError())
-  const both = createIdVerifier({ issuer: issuer.issuer, resource, fetch: issuer.fetch, subjectTypes: ["user", "client"] })
-  const principals: (UserPrincipal | MachinePrincipal)[] = [await both(user), await both(await issuer.sign({ resource, claims: machine() }))]
-  expect(principals.map(principal => "subjectType" in principal ? principal.authorizationVersion : principal.userId)).toEqual([expect.any(String), 3])
+  const user: UserPrincipal = await issuer.verify(await issuer.sign({ resource }))
+  expect(user.clientId).toBe("test-client")
+  await expect(clientOnly(issuer)(await issuer.sign({ resource }))).rejects.toThrow(new AuthenticationError())
 })
 const invalidMachine: [string, Record<string, unknown>][] = [
   ["a subject that is not the client", { sub: "another-client" }], ["a different azp", { azp: "another-client" }],
@@ -92,9 +89,8 @@ for (const [name, claims] of invalidMachine) {
     await expect(clientOnly(issuer)(await issuer.sign({ resource, claims: machine(claims) }))).rejects.toThrow(new AuthenticationError())
   })
 }
-test("a verifier that lists no subject type is refused at construction", async () => {
-  const issuer = await fixture()
-  expect(() => createIdVerifier({ issuer: issuer.issuer, resource, fetch: issuer.fetch, subjectTypes: [] })).toThrow("subjectTypes must list user, client or both")
+test("a rejection says only that a valid Answerable ID access token is required, for a person's token or a machine's", () => {
+  expect(new AuthenticationError().message).toBe("A valid Answerable ID access token is required")
 })
 test("does not require resource pins or cap the token lifetime", async () => {
   const issuer = await fixture()

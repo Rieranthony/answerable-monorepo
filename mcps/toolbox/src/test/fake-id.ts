@@ -133,7 +133,6 @@ export function createFakeId({ expiresIn = 3600, pageSize = 200 } = {}) {
     return path === url.pathname ? new Response("Not found", { status: 404 }) : admin(request, url, path)
   }
   return {
-    fetch,
     config: { ...hubClient, fetch },
     /** Every request, as `METHOD /path?query`. */
     requests,

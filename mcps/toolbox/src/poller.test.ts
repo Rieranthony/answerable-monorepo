@@ -1,5 +1,6 @@
 import { expect, spyOn, test } from "bun:test"
 import type { GrantsReader } from "./grants"
+import { createIdAdmin } from "./id"
 import { startGrantsPoller } from "./poller"
 import { createFakeId } from "./test/fake-id"
 
@@ -7,7 +8,7 @@ function setup(intervalMs = 60_000) {
   const id = createFakeId()
   const invalidated: string[][] = []
   const grants: GrantsReader = { read: async () => [], invalidate: organisations => { invalidated.push([...organisations].sort()) } }
-  return { id, invalidated, start: () => startGrantsPoller({ id: id.config, grants, intervalMs }) }
+  return { id, invalidated, start: () => startGrantsPoller({ id: createIdAdmin(id.config), grants, intervalMs }) }
 }
 
 test("the first poll only records the newest event; later polls invalidate the organisations whose grants may have changed", async () => {

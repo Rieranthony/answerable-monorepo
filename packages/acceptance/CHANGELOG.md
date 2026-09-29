@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.0
+
+A smaller kit: what a journey can say as plainly with ID's admin API or the MCP client goes. Breaking for journeys that used them.
+
+- `entitle` is gone: call ``id.admin("POST", `/organizations/${organizationId}/entitlements`, { resource, scopes })``.
+- `connect` takes no `onToolsChanged`: a `2026-07-28` client listens with the MCP client's own `setNotificationHandler` and `listen({ toolsListChanged: true })`, as the Toolbox's J3 does.
+- `startId` takes no `spawn`, and the `Spawn` type is gone: the kit's tests replace `Bun.spawn` with `spyOn`.
+- `startId`'s failures say what to do: check Docker and port 47532, read the fixture's output, or pass a larger `timeoutMs`.
+- The Toolbox journey shares one machine client between the Toolbox and its poller, asserts that the Toolbox asks ID for exactly two tokens, and sets J6's policy class through the admin API.
+
 ## 0.1.0
 
 The acceptance kit, extracted from `mcps/e2e`, and the journeys that use it.

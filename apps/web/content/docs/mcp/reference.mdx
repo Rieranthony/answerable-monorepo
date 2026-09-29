@@ -12,14 +12,12 @@ Verify Answerable ID access tokens in any service.
 ### createIdVerifier
 
 ```ts
-type Verified<S extends SubjectType> = ("user" extends S ? UserPrincipal : never) | ("client" extends S ? MachinePrincipal : never)
-
-function createIdVerifier<S extends SubjectType = "user">(config: IdVerifierConfig<S>): (token: string) => Promise<Verified<S>>
+function createIdVerifier<Kind extends "user" | "client" = "user">(config: IdVerifierConfig<Kind>): (token: string) => Promise<Kind extends "client" ? MachinePrincipal : UserPrincipal>
 ```
 
 Create a function that verifies an Answerable ID access token against the issuer's published keys, offline, and returns its caller.
 The keys are read from the issuer's metadata on first use; every failure throws `AuthenticationError`.
-It accepts a person's token only, unless `subjectTypes` lists `client` for machine tokens (`MachinePrincipal`).
+It accepts a person's token, or with `subjectType: "client"` a machine client's instead.
 
 **Example**
 
@@ -30,30 +28,22 @@ const verify = createIdVerifier({ issuer: "https://id.answerable.org", resource:
 const principal = await verify(accessToken)
 ```
 
-### SubjectType
-
-```ts
-type SubjectType = "user" | "client"
-```
-
-The kinds of token a verifier may accept: `user` for a person's token, `client` for a machine client's `client_credentials` token.
-
 ### IdVerifierConfig
 
 ```ts
-type IdVerifierConfig<S extends SubjectType = "user"> = {
+type IdVerifierConfig<Kind extends "user" | "client" = "user"> = {
   /** Trusted Answerable ID issuer, for example https://id.answerable.org. */
   issuer: string
   /** This service's canonical resource URL as registered in ID; the token audience must contain it. */
   resource: string
   /** HTTP client for discovery and key requests. Default: the global fetch. */
   fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>
-  /** The token kinds to accept; a verifier returns `UserPrincipal` for `user` and `MachinePrincipal` for `client`. Default: `["user"]`. */
-  subjectTypes?: readonly S[]
+  /** The kind of token to accept: `user`, a person's, which gives a `UserPrincipal`, or `client`, a machine client's `client_credentials` token, which gives a `MachinePrincipal`. Default: `user`. */
+  subjectType?: Kind
 }
 ```
 
-The issuer and resource a verifier trusts, the token kinds it accepts and the HTTP client it uses for discovery.
+The issuer and resource a verifier trusts, the kind of token it accepts and the HTTP client it uses for discovery.
 
 ### UserPrincipal
 
@@ -82,8 +72,6 @@ The caller a verified access token names. Constrain every query by `organization
 
 ```ts
 type MachinePrincipal = Readonly<{
-  /** Always `client`: a verifier that accepts both kinds returns `UserPrincipal | MachinePrincipal`, and `"subjectType" in principal` narrows it. */
-  subjectType: "client"
   /** The OAuth client that asked for the token, which is also the token's subject. */
   clientId: string
   /** The organisation that owns the client. */

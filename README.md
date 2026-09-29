@@ -74,7 +74,7 @@ The development-only [OAuth test](apps/web/README.md#local-oauth-test) lets the 
 
 | Command | Does |
 | --- | --- |
-| `bun run mcp:new <name>` | Scaffold `mcps/<name>`: a server with one tool, its conformance test and its manifest; then `bun install` |
+| `bun run mcp:new <name>` | Scaffold `mcps/<name>`: a server with one tool and its conformance test; it prints the commands that install it, write its manifest and check it |
 | `bun run mcp:check <workspace>` | Typecheck, lint and test one workspace, such as `@answerable/mcp-e2e` |
 | `bun run mcp:test` | The suites of `packages/auth`, `packages/mcp`, every server under `mcps/` and the scaffold; the Toolbox needs the development Postgres |
 | `bun run mcp:test:e2e` | The journeys against real ID, a browser and the official MCP OAuth client (Docker) |

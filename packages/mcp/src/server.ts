@@ -187,7 +187,6 @@ export function createMcpServer(config: McpServerConfig): McpServerHandle {
     const decisions = await Promise.all(served.map(tool => allow(principal, tool, method === "tools/call" && names.get(tool) === name)))
     return served.filter((_, index) => decisions[index])
   }
-  // The usable tools served to the caller as tools.
   async function projected(principal: UserPrincipal, tools: Served<Tool | Mutation>[]) {
     if (!project || !tools.length) return tools
     const chosen = new Set(await project(principal, tools))
