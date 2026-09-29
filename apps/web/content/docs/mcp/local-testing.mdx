@@ -1,32 +1,47 @@
 ---
 title: Test MCPs locally
-description: "Sign organisations into the e2e MCP through real Answerable ID, a browser and the official MCP OAuth client."
+description: "Run the acceptance against real Answerable ID with a browser and the official MCP OAuth client, and write a new journey with the kit."
 ---
 
 ```sh
 bun install
-(cd mcps/e2e && bun x playwright install chromium)
+(cd packages/acceptance && bun x playwright install chromium)
 bun run mcp:test:e2e
 ```
 
-Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It takes about ten seconds, exits non-zero on the first failure and removes its database and processes either way, including after Ctrl-C.
+Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It runs `bun test` in `packages/acceptance`: the journeys below and the kit's own tests. It exits non-zero when a test fails, and it removes its database and processes either way, including after Ctrl-C (exit 130) or SIGTERM (exit 143). Three runs took 9.2, 7.9 and 7.8 seconds.
 
-## What the acceptance proves
+## What the e2e journeys prove
 
-1. ID starts from production migrations, served through the restricted runtime role, and is provisioned only through its admin API: the MCP resource, a public client, three organisations with company sign-in, capabilities and entitlements. The third organisation is entitled to `e2e:identity` and `e2e:read` only.
-2. The official MCP client follows the MCP's `401` to its metadata, discovers ID and builds the sign-in: PKCE S256, the MCP URL as `resource`, the advertised scopes (`e2e:identity`, `e2e:read`, `e2e:write`) plus `offline_access`.
-3. A real browser completes ID's pages: email, company sign-in, organisation, consent listing every entitled scope. The third organisation's consent names `e2e:write` as not approved. The callback carries ID's `iss` (RFC 9207), which the client checks.
-4. The access token's audience is the MCP, its lifetime is the resource's 60 seconds, and it carries exactly the entitled scopes.
-5. For each organisation, a 2025 client and a `2026-07-28` client both see the prompt and the resource, and `identity_get` returns the selected organisation. The first two see seven tools: `identity_get`, `records_list`, `records_show`, `records_create`, `records_delete`, `e2e_commit` and `e2e_commit_confirmed`; the third sees the three read tools.
-6. The first two organisations each create two records through `records_create` and `e2e_commit`, then delete one: `records_delete` returns the summary, `e2e_commit` answers `APPROVAL_REQUIRED`, and `e2e_commit_confirmed` with the summary deletes it.
-7. Each lists only its own remaining record, and preparing to delete another organisation's record answers `NOT_FOUND`. The third lists no records, and `records_create` and `e2e_commit` are unknown tools to it.
-8. A second MCP at another URL refuses the token with `401`.
-9. The client refreshes an expired access token by itself, ID rotates the refresh token, and the new tokens keep the same scopes.
-10. Disabling the organisation through the admin API makes refresh fail with `invalid_grant`; the issued access token keeps working until it expires.
+`packages/acceptance/src/journeys/e2e.journeys.test.ts` starts ID once and runs the tests below in order.
 
-Replays, stale targets and expired intents run in the in-process tests (`bun run mcp:test`); against real ID: Not yet.
+**Setup.** ID starts from production migrations, served through the restricted runtime role, and is provisioned only through its admin API: the MCP resource with a 60-second token lifetime, a public client, and three organisations with company sign-in, capabilities and entitlements. The third organisation, `mcp-gamma`, is entitled to `e2e:identity` and `e2e:read` only. The e2e MCP runs in the test process on port `47602`, so the journeys control its record store and its intent clock.
 
-The company directories are local test issuers. ID, its database role, its pages, token issuance, the MCP and the MCP client are real.
+1. Each organisation signs in through ID with the SDK's OAuth client and a real browser. The client follows the MCP's `401` to its metadata, discovers ID and builds the request: PKCE S256, the MCP URL as `resource`, the advertised scopes (`e2e:identity`, `e2e:read`, `e2e:write`) plus `offline_access`. The browser completes ID's pages: email, company sign-in, organisation, and consent listing every entitled scope. The consent of `mcp-gamma` names `e2e:write` as not approved. The callback carries ID's `iss` (RFC 9207), which the client checks.
+2. Each access token is bound to the MCP, lives 60 seconds and carries exactly the entitled scopes.
+3. A 2025 client and a `2026-07-28` client see the entitled tools, the prompt and the resource, and `identity_get` names the selected organisation. The first two organisations see seven tools: `identity_get`, `records_list`, `records_show`, `records_create`, `records_delete`, `e2e_commit` and `e2e_commit_confirmed`. `mcp-gamma` sees the three read tools.
+
+**J4, agent-class mutation.** [Prepared mutations](/docs/mcp/authoring#mutations) of low risk commit with `e2e_commit`. The codes below are in [MCP errors](/docs/mcp/errors).
+
+4. `records_create` returns a preview with a summary and one change, a commit token, `commit_tool: "e2e_commit"` and `policy_class: "agent"`. `e2e_commit` returns a receipt whose `results` is the record, at version 1, in the caller's organisation.
+5. A repeat of the commit with the same token returns the same `receipt_id` with `idempotent_replay: true`, and creates no second record.
+6. `records_delete` is prepared, the record is changed outside the MCP, and the matching commit answers `INTENT_STALE`, with `details.targets` giving the expected version `"1"` and the current version `"2"`.
+7. An intent whose expiry has passed answers `INTENT_EXPIRED`. The journey serves the MCP with an intent store whose clock it controls; token lifetimes stay on real time.
+
+**J5, controlled class.** A delete needs the person's confirmation.
+
+8. `records_delete` returns `commit_tool: "e2e_commit_confirmed"` and `policy_class: "controlled"`, and `e2e_commit` answers `APPROVAL_REQUIRED`.
+9. `e2e_commit_confirmed` with a `preview_summary` that differs by one character answers `APPROVAL_REQUIRED` with a message saying the summary differs. With the exact summary it commits, and the record is gone.
+
+**Isolation, tokens and refresh.**
+
+10. Each of the first two organisations lists only its own record, and preparing to delete another organisation's record answers `NOT_FOUND`.
+11. `mcp-gamma` lists no records, and `records_create`, `records_delete`, `e2e_commit` and `e2e_commit_confirmed` are unknown tools to it.
+12. A second MCP at another URL refuses the token with `401`, after the MCP it was issued for accepted the same token.
+13. The client refreshes an expired access token by itself, ID rotates the refresh token, and the new tokens keep the same scopes.
+14. Disabling the organisation through the admin API makes refresh fail with `invalid_grant`; the access token already issued keeps working until it expires.
+
+The company directories are local test issuers. ID, its database role, its pages, token issuance, the MCP and the MCP client are real. Journeys against the Toolbox: Not yet.
 
 ## Ports
 
@@ -38,7 +53,75 @@ The company directories are local test issuers. ID, its database role, its pages
 | OAuth callback | `47603` |
 | Second MCP | `47605` |
 
-Keep these free. PostgreSQL belongs to the Compose project `answerable-mcp-e2e`; the run never reads your `DATABASE_URL`.
+Keep these free. PostgreSQL belongs to the Compose project `answerable-mcp-e2e`; the run never reads your `DATABASE_URL`. Journey files run one after another, each starting and stopping its own ID, so they share these ports and cannot run in parallel.
+
+## The kit
+
+`@answerable/acceptance` (`packages/acceptance`) exports these functions. Everything that a journey varies is provisioned by the kit through ID's admin API with the root secret; only each tenant's organisation, domain and company directory come from the fixture.
+
+| Function | What it does |
+| --- | --- |
+| `startId({ tenants })` | Starts PostgreSQL and ID, and returns `{ manifest, admin, stop }`. `tenants` is `[{ slug, signIns }]`: one organisation each, with a company directory that accepts `signIns` sign-ins. `manifest` holds `idOrigin`, `adminResource`, `rootSecret` and each tenant's `slug`, `email` and `organizationId`. |
+| `id.admin(method, path, body?, headers?)` | Calls ID's admin API as root with a fresh `Idempotency-Key`. A status outside 2xx throws with the body. |
+| `id.stop()` | Ends ID, brings PostgreSQL down with its volume, removes the temporary directory and closes everything else the kit opened. Safe to call twice; also runs on Ctrl-C and SIGTERM. |
+| `registerResource(admin, { identifier, scopes, accessTokenTtl })` | Registers the MCP's resource; `offline_access` is added to `scopes`. |
+| `registerClient(admin, { clientId, redirectUri, scopes })` | Registers a public client for the authorisation code and refresh token grants. |
+| `linkClient(admin, clientId, resource)` | Lets the client ask for the resource. |
+| `grantOrganisation(admin, organizationId, { clientId, resource, scopes, entitledScopes? })` | Approves the client and the resource for an organisation and entitles its members to `entitledScopes`, all of `scopes` by default. |
+| `entitle(admin, organizationId, { resource, scopes, memberId?, groupId? })` | Adds an entitlement to a resource, for every client, for the organisation, one member or one group. |
+| `serve(port, fetch)` | Serves a fetch handler on a loopback port until the kit stops. |
+| `oauthProvider({ clientId, callback })` | The SDK's `OAuthClientProvider` in memory, for a client registered in ID ahead of time. Returns `{ provider, state }`; `state` holds the tokens, the authorisation URL and the discovery result. |
+| `launchBrowser()` | Starts headless Chromium with Playwright's signal handlers off, so cleanup runs on Ctrl-C. |
+| `signIn(browser, { idOrigin, resource, clientId, callback, scopes }, { slug, email, scopes })` | Signs one person in as a host does: the SDK follows the MCP's `401`, a real browser completes ID's pages, the SDK exchanges the code. Returns `{ provider, state }`. The first `scopes` are what the MCP advertises; the second are what the organisation is entitled to, and the consent page must list exactly those and name the rest as not approved. |
+| `connect(resource, provider, protocol)` | Connects the official MCP client, as a `"2025"` client or pinned to `"2026-07-28"`. |
+| `tool(client, name, args?)` | Calls a tool and returns its `structuredContent`. A failed call throws with the error envelope's text. |
+| `refusal(client, name, args?)` | Calls a tool that must fail and returns the envelope's `code`, `message` and `details`. |
+| `step(message)` | Prints `[acceptance] message`. |
+
+## Write a journey
+
+Save this as `packages/acceptance/src/journeys/records.journeys.test.ts` and run `bun run mcp:test:e2e`. It signs one organisation in and reads its records.
+
+```ts
+import { afterAll, beforeAll, expect, test } from "bun:test"
+import { createE2eMcp } from "@answerable/mcp-e2e/mcp"
+import { createRecordStore } from "@answerable/mcp-e2e/records"
+import { connect, grantOrganisation, launchBrowser, linkClient, registerClient, registerResource, serve, signIn, startId, tool, type Id, type OAuthSession } from "../index"
+
+const resource = "http://127.0.0.1:47602/mcp"
+const callback = "http://127.0.0.1:47603/callback"
+const clientId = "my-journey"
+const scopes = ["e2e:identity", "e2e:read", "e2e:write"]
+let id: Id
+let oauth: OAuthSession
+
+beforeAll(async () => {
+  id = await startId({ tenants: [{ slug: "acme", signIns: 1 }] })
+  const { admin, manifest } = id
+  const acme = manifest.tenants[0]!
+  await registerResource(admin, { identifier: resource, scopes, accessTokenTtl: 60 })
+  await registerClient(admin, { clientId, redirectUri: callback, scopes })
+  await linkClient(admin, clientId, resource)
+  await grantOrganisation(admin, acme.organizationId, { clientId, resource, scopes })
+  serve(47_602, createE2eMcp({ auth: { issuer: manifest.idOrigin, resource }, viewHtml: "<!doctype html>", records: createRecordStore() }).fetch)
+  serve(47_603, () => new Response("Signed in"))
+  oauth = await signIn(await launchBrowser(), { idOrigin: manifest.idOrigin, resource, clientId, callback, scopes }, { slug: acme.slug, email: acme.email, scopes })
+})
+afterAll(() => id?.stop())
+
+test("a new organisation has no records", async () => {
+  const client = await connect(resource, oauth.provider, "2026-07-28")
+  expect(await tool(client, "records_list")).toEqual({ items: [], next_cursor: null, has_more: false })
+})
+```
+
+**Serve your MCP in the test process** with your own resource URL and port (the ports above are the reserved ones), so the journey controls its stores and clocks. Serve the second MCP the same way when a journey needs a token refused elsewhere.
+
+**`signIns`** counts the company sign-ins a tenant may perform: one per `signIn`. A tenant that signs in more often than queued fails at its company directory.
+
+**Every file gets its own ID.** Start it in `beforeAll` and call `stop()` in `afterAll`, as above. A `startId` that throws has already stopped.
+
+Copy `e2e.journeys.test.ts` for a fuller one: several organisations, a partial entitlement, refresh and revocation.
 
 ## Faster checks
 
@@ -46,7 +129,7 @@ Keep these free. PostgreSQL belongs to the Compose project `answerable-mcp-e2e`;
 bun run mcp:test
 ```
 
-This runs the verifier, base and e2e suites with a local test issuer, including Chromium rendering the real MCP Apps view through the official host bridge. No Docker.
+This runs the verifier, base and e2e suites with a local test issuer, including Chromium rendering the real MCP Apps view through the official host bridge. No Docker, and it does not include the acceptance.
 
 ## Run the e2e MCP by hand
 
@@ -57,6 +140,28 @@ bun run mcp:dev
 
 `mcp:dev` reads `MCP_ID_ISSUER`, `MCP_RESOURCE_URL` and `MCP_PORT` from the root `.env`. The resource and a client must already be registered in your local ID; [Connect Claude Code](/docs/mcp/claude-code) shows how.
 
+## Errors
+
+| You see | Meaning | What to do |
+| --- | --- | --- |
+| `Executable not found in $PATH: "docker"` | Docker is not installed, or not on `PATH` | Install Docker with Compose v2 and start it |
+| `Command failed: docker compose -p answerable-mcp-e2e`, often with `ports are not available` | Compose could not start PostgreSQL: port `47532` is taken (often by another run), or the Docker daemon is not running | Wait for the other run, or free the port; start Docker |
+| `Failed to start server. Is port 47602 in use?` (or `47603`, `47605`) | A journey could not listen | Find the holder with `lsof -nP -iTCP:47602 -sTCP:LISTEN` and stop it |
+| `ID fixture stopped (1)`, after `Failed to start server. Is port 47600 in use?` | ID could not listen on `47600` | Free the port and run again |
+| `Timed out waiting for the ID fixture` | ID was not ready within 90 seconds. Seen at a load average of 132 | Run again on a quieter machine, or pass `timeoutMs` to `startId` |
+| `launch: Executable doesn't exist at …` | Playwright's Chromium is not installed | Run `(cd packages/acceptance && bun x playwright install chromium)` |
+| `[acceptance] ID page: /path text` before a Playwright timeout | A step on ID's pages did not appear within 30 seconds; the text is what ID showed instead | Read the page text: an error page names the cause, such as a scope the organisation is not entitled to |
+| `POST /… returned 400: {…}` | ID's admin API refused a provisioning call | Read the `errors` in the body, for example `Scopes are not allowed for this resource` |
+| `mcp-alpha never signed in; the first test shows why` | The first journey test failed, so the later ones have no session | Fix the first failure |
+
 ## Limits
 
-The acceptance does not certify an external host, a real company directory or a production deployment. [Connect Claude Code](/docs/mcp/claude-code) covers the first two by hand.
+**What it certifies.** The acceptance does not certify an external host, a real company directory or a production deployment. [Connect Claude Code](/docs/mcp/claude-code) covers the first two by hand.
+
+**The MCP under test** runs inside the test process on a real port, not as a separate deployed process.
+
+**Time.** Token lifetimes use real time. Only an intent store's clock is controlled, and only where a journey passes one.
+
+**Browser.** Chromium only.
+
+**Shutdown.** ID ends with `SIGKILL`, not a graceful shutdown; its database is removed with the container. After Ctrl-C the command can return up to about a second before Compose finishes bringing PostgreSQL down.

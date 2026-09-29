@@ -1,6 +1,9 @@
-// Real Answerable ID for MCP acceptance, provisioned only through the admin API.
+// Real Answerable ID for the MCP acceptance (packages/acceptance), booted on its own database.
+// It provisions each tenant's organisation, domain and company directory and leaves everything else to the admin API.
 // Test-only: never imported by a production service.
+import { rename } from "node:fs/promises";
 import { sql } from "drizzle-orm";
+import { z } from "zod";
 import { createApp } from "../src/app.ts";
 import { createAuth } from "../src/auth.ts";
 import { bootstrap, systemActor } from "../src/bootstrap.ts";
@@ -10,24 +13,26 @@ import { configureRuntimeRole } from "../src/db/runtime-role.ts";
 import { startOidcIssuer } from "../src/__tests__/oidc-issuer.ts";
 import { testEnvironment } from "../src/__tests__/support.ts";
 
-const manifestPath = process.argv[2];
-if (!manifestPath || !process.argv.includes("--isolated-mcp-fixture"))
+const [planPath, manifestPath] = process.argv.slice(2);
+if (!planPath || !manifestPath || !process.argv.includes("--isolated-mcp-fixture"))
   throw new Error("Use the isolated MCP acceptance runner");
+
+// { tenants: [{ slug, signIns }] }: one organisation and one company directory per tenant.
+const plan = z
+  .object({
+    tenants: z.array(
+      z.object({ slug: z.string().min(1), signIns: z.number().int().min(0) }),
+    ),
+  })
+  .parse(await Bun.file(planPath).json());
 
 // A separate container and port, never DATABASE_URL or the normal test database.
 const databaseUrl =
   "postgres://answerable:answerable@127.0.0.1:47532/answerable_id_test";
 const idOrigin = "http://127.0.0.1:47600";
-const resource = "http://127.0.0.1:47602/mcp";
 const callback = "http://127.0.0.1:47603/callback";
-const clientId = "mcp-e2e-browser";
-const scopes = ["e2e:identity", "e2e:read", "e2e:write"];
 const rootSecret = `${crypto.randomUUID()}${crypto.randomUUID()}`;
-const upstreams = await Promise.all([
-  startOidcIssuer(),
-  startOidcIssuer(),
-  startOidcIssuer(),
-]);
+const upstreams = await Promise.all(plan.tenants.map(() => startOidcIssuer()));
 const environment = testEnvironment({
   databaseUrl,
   betterAuthUrl: idOrigin,
@@ -61,11 +66,7 @@ const runtime = createDatabase({
 });
 const auth = createAuth(runtime.db, environment);
 const app = createApp({ auth, db: runtime.db, environment });
-const server = Bun.serve({
-  hostname: "127.0.0.1",
-  port: 47_600,
-  fetch: app.fetch,
-});
+Bun.serve({ hostname: "127.0.0.1", port: 47_600, fetch: app.fetch });
 
 async function admin(
   method: string,
@@ -90,30 +91,8 @@ async function admin(
   return (await response.json()) as Record<string, unknown>;
 }
 
-// The same registration an operator performs for a new MCP server.
-await admin("POST", "/resources", {
-  classification: "platform_shared",
-  organizationId: null,
-  identifier: resource,
-  name: "E2E MCP",
-  allowedScopes: [...scopes, "offline_access"],
-  accessTokenTtl: 60,
-});
-await admin("POST", "/clients", {
-  clientId,
-  name: "MCP acceptance",
-  tokenEndpointAuthMethod: "none",
-  grantTypes: ["authorization_code", "refresh_token"],
-  redirectUris: [callback],
-  scopes: ["openid", "offline_access", ...scopes],
-});
-await admin(
-  "PUT",
-  `/clients/${clientId}/resources/${encodeURIComponent(resource)}`,
-);
-
 const tenants = [];
-for (const [index, slug] of ["mcp-alpha", "mcp-beta", "mcp-gamma"].entries()) {
+for (const [index, { slug, signIns }] of plan.tenants.entries()) {
   const upstream = upstreams[index]!;
   const domain = `${slug}.example.test`;
   const organization = await admin("POST", "/organizations", {
@@ -140,35 +119,9 @@ for (const [index, slug] of ["mcp-alpha", "mcp-beta", "mcp-gamma"].entries()) {
     },
     { "If-None-Match": "*" },
   );
-  for (const grantKind of ["authorization_code", "refresh_token"]) {
-    await admin("POST", `${path}/capabilities`, {
-      clientId,
-      resource: null,
-      grantKind,
-      scopes: ["openid", "offline_access"],
-    });
-    await admin("POST", `${path}/capabilities`, {
-      clientId,
-      resource,
-      grantKind,
-      scopes,
-    });
-  }
-  await admin("POST", `${path}/entitlements`, {
-    clientId,
-    scopes: ["openid", "offline_access"],
-  });
-  // The third organisation is entitled to reads only.
-  const entitledScopes =
-    slug === "mcp-gamma" ? ["e2e:identity", "e2e:read"] : scopes;
-  await admin("POST", `${path}/entitlements`, {
-    clientId,
-    resource,
-    scopes: entitledScopes,
-  });
   const email = `tester@${domain}`;
   // Each company sign-in consumes one queued identity.
-  for (let signIn = 0; signIn < 3; signIn++)
+  for (let signIn = 0; signIn < signIns; signIn++)
     upstream.enqueue({
       sub: `${slug}-tester`,
       email,
@@ -176,32 +129,19 @@ for (const [index, slug] of ["mcp-alpha", "mcp-beta", "mcp-gamma"].entries()) {
       name: "MCP tester",
       auth_time: Math.floor(Date.now() / 1000),
     });
-  tenants.push({ slug, email, organizationId, scopes: entitledScopes });
+  tenants.push({ slug, email, organizationId });
 }
 
+// The runner polls for this file, so it appears whole or not at all.
 await Bun.write(
-  manifestPath,
+  `${manifestPath}.partial`,
   JSON.stringify({
     idOrigin,
-    resource,
-    callback,
-    clientId,
-    scopes,
+    adminResource: environment.adminResourceIdentifier,
     rootSecret,
     tenants,
   }),
 );
+await rename(`${manifestPath}.partial`, manifestPath);
 console.log("Isolated ID fixture ready");
-
-let closing = false;
-async function close() {
-  if (closing) return;
-  closing = true;
-  server.stop(true);
-  for (const upstream of upstreams) upstream.stop();
-  await runtime.close();
-  await setup.close();
-  process.exit(0);
-}
-process.once("SIGINT", close);
-process.once("SIGTERM", close);
+// The runner ends this process with SIGKILL, then removes the database.

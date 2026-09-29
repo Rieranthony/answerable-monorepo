@@ -3,11 +3,11 @@
 The reference MCP server, and the proof that Answerable ID signs people into MCP servers. Development and test only.
 
 ```sh
-(cd mcps/e2e && bun x playwright install chromium)
+(cd packages/acceptance && bun x playwright install chromium)
 bun run mcp:test:e2e
 ```
 
-The acceptance provisions a real ID through its admin API, then signs three organisations in with the official MCP SDK's OAuth client and a real browser. [What it proves](../../apps/web/content/docs/mcp/local-testing.mdx#what-the-acceptance-proves).
+The acceptance lives in [`packages/acceptance`](../../packages/acceptance/README.md): it provisions a real ID through its admin API, serves this MCP in process, and signs three organisations in with the official MCP SDK's OAuth client and a real browser. [What it proves](../../apps/web/content/docs/mcp/local-testing.mdx#what-the-e2e-journeys-prove). It imports `createE2eMcp` and `createRecordStore` through this package's `exports`: `@answerable/mcp-e2e/mcp` and `@answerable/mcp-e2e/records`.
 
 ## Tools
 
@@ -51,5 +51,7 @@ Register the resource and a client in ID first: [Connect Claude Code](../../apps
 bun run mcp:test
 bun run mcp:check @answerable/mcp-e2e
 ```
+
+The journeys against real ID (`bun run mcp:test:e2e`) are in `packages/acceptance`.
 
 `src/conformance.test.ts` runs the conformance kit on the provider: the standard's read, mutate and provider checks, with one example input per tool and `touch` as `moveTarget`. [Test an MCP](../../apps/web/content/docs/mcp/testing.mdx) explains each check. `src/mcp.test.ts` checks every tool in-process with `createTestMcp`: pagination, both mutations prepared and committed, a stale delete after `touch`, another organisation's record, a replay, and fully entitled, partial and read-only callers; copy it when you write an MCP. `src/apps.test.ts` renders the real view in Chromium through the official MCP Apps host bridge (`src/testing/host.ts`): it creates a record, shows the summary before deleting it, and hides writes from a reader; the view never receives a token.

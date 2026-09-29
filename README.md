@@ -14,7 +14,8 @@ The [enterprise foundation](docs/05-id-enterprise-foundation.md) implementation 
 | `packages/countries` | ISO country list, priority order and flag URL helper; framework-free                                                                                                | Live                                                                                                                                                     |
 | `packages/auth` | Verify Answerable ID access tokens in any service; an in-process test issuer | Locally tested |
 | `packages/mcp` | MCP servers on the official SDK: scope-aware tools, prompts, resources and MCP Apps views; in-process tests | Locally tested |
-| `mcps/e2e` | Reference MCP and real-ID acceptance: the official MCP OAuth client, a browser and ID's pages | Local acceptance passes |
+| `mcps/e2e` | Reference MCP: the tools, prompt, resource and MCP Apps view every new MCP is compared with | Local acceptance passes |
+| `packages/acceptance` | The acceptance kit and journeys: real ID, the official MCP OAuth client, a browser and ID's pages | Locally tested |
 | `apps/community-mcp` | The tutor MCP (the Omni Accelerator community inside OmniChat)                                                                                                      | **Parked** until Answerable ID ships — its docs and Circle mocks stay in that folder, out of the plan                                                    |
 
 ## Reading order
@@ -63,9 +64,10 @@ The development-only [OAuth test](apps/web/README.md#local-oauth-test) lets the 
 
 - [`packages/auth`](packages/auth/README.md) verifies Answerable ID access tokens.
 - [`packages/mcp`](packages/mcp/README.md) builds MCP servers on the official MCP TypeScript SDK.
-- [`mcps/e2e`](mcps/e2e/README.md) is the reference server and the real-ID acceptance.
+- [`mcps/e2e`](mcps/e2e/README.md) is the reference server.
+- [`packages/acceptance`](packages/acceptance/README.md) holds the real-ID acceptance kit and journeys.
 
-Create an MCP with the [authoring guide](apps/web/content/docs/mcp/authoring.mdx). Run `bun run mcp:test` for the package and browser suites, and `bun run mcp:test:e2e` for real ID, a browser and the official MCP OAuth client (Docker). [Connect Claude Code](apps/web/content/docs/mcp/claude-code.mdx) covers a real host. Design: [MCP foundation](docs/07-mcp-platform-draft.md); results: [evidence](reports/mcp-foundation-evidence.md). Normal `bun dev` starts apps only.
+Create an MCP with the [authoring guide](apps/web/content/docs/mcp/authoring.mdx). Run `bun run mcp:test` for the package and browser suites, and `bun run mcp:test:e2e` for the `packages/acceptance` journeys against real ID, a browser and the official MCP OAuth client (Docker). [Connect Claude Code](apps/web/content/docs/mcp/claude-code.mdx) covers a real host. Design: [MCP foundation](docs/07-mcp-platform-draft.md); results: [evidence](reports/mcp-foundation-evidence.md). Normal `bun dev` starts apps only.
 
 ### Repository principles
 

@@ -34,6 +34,9 @@
     "@answerable/auth#test": {
       "cache": false
     },
+    "@answerable/acceptance#test": {
+      "cache": false
+    },
     "@answerable/mcp-e2e#dev": {
       "cache": false,
       "persistent": true,

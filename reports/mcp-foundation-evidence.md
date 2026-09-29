@@ -168,6 +168,35 @@ Tree: branch `claude/toolbox-goal` on `main` 3ac5614, brief B2 of the Toolbox go
 
 **Size.** `packages/mcp/src` source 1,558 lines (was 1,043), tests 2,048 (was 1,492); the reference generator 104 lines; `reference.mdx` 946 lines for 49 exports.
 
+## 29 September 2026: the acceptance kit (brief B4)
+
+Tree: branch `claude/toolbox-goal` on `main` 3ac5614, brief B4 of the Toolbox goal. Versions as above.
+
+| Check | Result |
+| --- | --- |
+| Root typecheck, lint and build | Pass with `--force` (8, 8 and 3 tasks; `packages/acceptance` is the eighth workspace) |
+| `bun --filter web test` | 78 pass |
+| `bun run mcp:test` | Unchanged: auth 37, mcp 85, e2e 14 on the B3 tree the brief started from; no Docker |
+| `bun run mcp:test:e2e` | 30 pass (14 journeys, 16 unit tests), 100% lines and functions over `packages/acceptance/src`; 9.20, 7.90 and 7.75 seconds at one-minute load averages 18, 17 and 15, and 9.46 seconds on the final tree; Docker, ports and the temporary directory clean after each |
+| Interrupted runs | SIGINT to the runner during sign-in: exit 130, nothing left; SIGINT to the whole process group and SIGTERM to the runner: the outer process dies and the cleanup finishes in the background, nothing left |
+| `bun --filter @answerable/id test:coverage` | 2,040 pass, 0 fail, 100% line and function coverage in 529 seconds; load average 10.15 at the start and 21.07 at the end (the fixture script changed) |
+| Coordinator, after merging B2 and B4 | Typecheck, lint and build pass with `--force` (8, 8 and 3 tasks); web 78 pass; `mcp:test` auth 37, mcp 162 across 15 files at 100%, e2e 48; `mcp:check @answerable/mcp-e2e` 3 tasks; `mcp:test:e2e` 30 pass at 100% in 10 seconds, nothing left behind |
+
+**What changed.** `packages/acceptance` holds the kit: `startId({ tenants })` boots ID on the Compose Postgres through the generic fixture and returns the manifest, an `admin` caller and `stop`; `registerResource`, `registerClient`, `linkClient`, `grantOrganisation` and `entitle` provision through the admin API; `serve`, `oauthProvider`, `launchBrowser`, `signIn`, `connect`, `tool`, `refusal` and `step` drive a journey. The journeys are `bun test` files; `bun run mcp:test:e2e` runs the package with its 100% gate. `e2e.journeys.test.ts` keeps every earlier check and adds J4 and J5. The fixture takes a plan file and writes its manifest atomically.
+
+**What the journeys proved.** J4: prepare returns a preview and a commit token; commit returns a receipt whose `results` is the record; a repeat returns the same `receipt_id` with `idempotent_replay: true` and creates nothing; a record changed after prepare makes the delete `INTENT_STALE` with `expected "1"` and `current "2"`; an intent past its expiry answers `INTENT_EXPIRED`. J5: a delete names `e2e_commit_confirmed`; `e2e_commit` answers `APPROVAL_REQUIRED`; a summary one character short is refused with a message containing "differs"; the exact summary commits and the record is gone. The read-only organisation lists no records and every write is an unknown tool to it.
+
+**Found by testing.**
+
+- A real Ctrl-C (SIGINT to the process group) through `bun run mcp:test:e2e` killed the outer runner at once; `docker compose down` then died writing to the closed stderr and left the container. Cleanup now runs `down` with stderr ignored.
+- `[test] timeout` in `bunfig.toml` is ignored on Bun 1.3.1; `--timeout 120000` on the script works.
+- A failing `beforeAll` still runs `afterAll` with the handle unassigned, so `startId` cleans up its own failure.
+- `signIn` must request exactly the scopes the MCP advertises; narrowing belongs in `entitledScopes`.
+- Against real ID, a resource-only entitlement with no client and a group entitlement are both accepted; a scope outside the resource's allowed scopes is refused with a 400 naming it.
+- The second-MCP check was weaker than it looked: the token could have been refused for expiry alone. The journey now first proves the issuing MCP accepts the same token.
+
+**Size.** `packages/acceptance/src` source 330 lines, tests 485; the deleted `mcps/e2e/scripts/acceptance.ts` was 267.
+
 ## Limits
 
 The acceptance uses local test issuers for company directories, a pre-registered public client and loopback HTTP. It does not certify Claude.ai, another host, another company directory or a production deployment.
