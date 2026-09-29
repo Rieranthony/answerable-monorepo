@@ -2,7 +2,7 @@ import { defineTool, type Mutation, type PolicyClass, type Served, type Tool, ty
 import { z } from "zod"
 
 /** A capability the caller may use, with its policy class in their organisation (null for a read). */
-export type Usable = { tool: Served<Tool | Mutation>; policy_class: PolicyClass | null }
+type Usable = { tool: Served<Tool | Mutation>; policy_class: PolicyClass | null }
 /** The caller's grant strings and the capabilities they may use. */
 export type Caller = { grants: readonly string[]; capabilities: readonly Usable[] }
 

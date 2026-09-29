@@ -5,7 +5,7 @@
 > - **Rule:** a capability is data with a stable identity; every use crosses one authority boundary; state changes are prepared before they are committed.
 > - **Not here:** the rules an author follows ([`09-mcp-design-standard.md`](09-mcp-design-standard.md)), the build order ([`10-capability-platform-plan.md`](10-capability-platform-plan.md)), the evidence ([research](../reports/mcp-platform-research-2026-09-28.md)), the MCP foundation already built ([`07-mcp-platform-draft.md`](07-mcp-platform-draft.md)).
 
-This is a design awaiting the owners' approval. Present tense describes the intended shape; "Not yet." marks what is deliberately left out of the first deliveries. Nothing in it is implemented.
+This design is implemented as far as the goal of [`10-capability-platform-plan.md`](10-capability-platform-plan.md) goes; "Not yet." marks the rest.
 
 ## Purpose
 

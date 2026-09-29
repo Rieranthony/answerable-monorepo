@@ -9,14 +9,15 @@ The [enterprise foundation](docs/05-id-enterprise-foundation.md) implementation 
 | Workspace            | What it is                                                                                                                                                          | Status                                                                                                                                                   |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `apps/web`           | Public site (Next.js 16): the waitlist one-pager and the docs at `/docs` (Fumadocs, Markdown for agents at `.md` and `/llms.txt`)                                   | Live                                                                                                                                                     |
-| `apps/id`            | **Answerable ID** — identity broker for client orgs, OIDC login provider for our apps, OAuth 2.1 authorization server for hosted MCP servers; serves the sign-in pages | User/machine OAuth, own-tenant SSO, linking, administration and soft deletion implemented; not deployed — [acceptance](reports/id-release-acceptance.md) |
+| `apps/id`            | **Answerable ID** — identity broker for client orgs, OIDC login provider for our apps, OAuth 2.1 authorisation server for hosted MCP servers; serves the sign-in pages | User/machine OAuth, own-tenant SSO, linking, administration and soft deletion implemented; not deployed — [acceptance](reports/id-release-acceptance.md) |
 | `packages/ui`        | Shared React UI: shadcn base-nova components on Base UI and the Tailwind theme, consumed as source by apps/web                                                      | Live                                                                                                                                                     |
 | `packages/countries` | ISO country list, priority order and flag URL helper; framework-free                                                                                                | Live                                                                                                                                                     |
-| `packages/auth` | Verify Answerable ID access tokens in any service; an in-process test issuer | Locally tested |
-| `packages/mcp` | MCP servers on the official SDK: scope-aware tools, prompts, resources and MCP Apps views; in-process tests | Locally tested |
-| `mcps/e2e` | Reference MCP: the tools, prompt, resource and MCP Apps view every new MCP is compared with | Local acceptance passes |
-| `mcps/toolbox` | The Toolbox: one MCP endpoint serving each person the capabilities their organisation granted, with evidence and spans | Local acceptance passes |
+| `packages/auth` | Verify Answerable ID access tokens, for a person or a machine client, in any service; an in-process test issuer | Locally tested |
+| `packages/mcp` | The SDK for MCP servers, on the official MCP TypeScript SDK: `defineTool`, `defineMutation`, `defineProvider`, `createMcpServer`, the error envelope, the manifest, the conformance kit and the in-process test client | Locally tested |
+| `mcps/e2e` | Reference MCP: five tools (one a prepared mutation), a prompt, a resource and an MCP Apps view; every new MCP is compared with it | Local acceptance passes |
+| `mcps/toolbox` | The Toolbox: one MCP endpoint serving each person the capabilities their organisation granted, with intents, evidence, spans and an admin API | Local acceptance passes |
 | `packages/acceptance` | The acceptance kit and journeys: real ID, the official MCP OAuth client, a browser and ID's pages | Locally tested |
+| `scripts` | Repository scripts: `bun run mcp:new <name>` scaffolds an MCP server | Locally tested |
 | `apps/community-mcp` | The tutor MCP (the Omni Accelerator community inside OmniChat)                                                                                                      | **Parked** until Answerable ID ships — its docs and Circle mocks stay in that folder, out of the plan                                                    |
 
 ## Reading order
@@ -53,28 +54,38 @@ bun dev
 | `web`      | 47100     | Public site                                                   |
 | `id`       | 47300     | Answerable ID API and browser pages                           |
 | `toolbox`  | 47400     | The Toolbox MCP (`bun run toolbox:dev`)                       |
+| `e2e MCP`  | 47500     | The reference MCP (`bun run mcp:dev`); a scaffolded MCP uses 47510 |
 | `postgres` | 47432     | `answerable_id`, plus `answerable_id_test` for the test suite; `answerable_toolbox` and `answerable_toolbox_test` for the Toolbox |
 | `redis`    | 47379     | Session read-cache — later; unused by v1 code                 |
 
-Uncommon host ports so nothing clashes with other local projects. Answerable ID itself runs on the host at `http://localhost:47300`. Other commands: `bun run env:down` · `bun run env:reset` (wipes data) · `bun run test` (Answerable ID against Postgres, plus the web unit tests) · `bun run build` · `bun run lint`.
+The MCP acceptance (`bun run mcp:test:e2e`) owns 47532 (its own disposable PostgreSQL), 47600, 47602, 47603, 47604 and 47605, and never touches the normal ID database; run one acceptance at a time. Uncommon host ports so nothing clashes with other local projects. Answerable ID itself runs on the host at `http://localhost:47300`. Other commands: `bun run env:down` · `bun run env:reset` (wipes data) · `bun run test` (Answerable ID against Postgres, plus the web unit tests) · `bun run build` · `bun run lint`.
 
 The development-only [OAuth test](apps/web/README.md#local-oauth-test) lets the web app exercise ID as an independent OAuth client at `http://localhost:47100/oauth-test`. ID owns every authentication page at `http://localhost:47300`.
 
 ## How we build
 
-### MCP foundation
+### MCP kit
 
 - [`packages/auth`](packages/auth/README.md) verifies Answerable ID access tokens.
-- [`packages/mcp`](packages/mcp/README.md) builds MCP servers on the official MCP TypeScript SDK.
+- [`packages/mcp`](packages/mcp/README.md) is the SDK: define tools, mutations and providers, serve them on the official MCP TypeScript SDK, check them with the conformance kit and test them in-process.
 - [`mcps/e2e`](mcps/e2e/README.md) is the reference server.
+- [`mcps/toolbox`](mcps/toolbox/README.md) is the Toolbox, with its own Postgres databases `answerable_toolbox` and `answerable_toolbox_test`.
 - [`packages/acceptance`](packages/acceptance/README.md) holds the real-ID acceptance kit and journeys.
 
-Create an MCP with the [authoring guide](apps/web/content/docs/mcp/authoring.mdx). Run `bun run mcp:test` for the package and browser suites, and `bun run mcp:test:e2e` for the `packages/acceptance` journeys against real ID, a browser and the official MCP OAuth client (Docker). [Connect Claude Code](apps/web/content/docs/mcp/claude-code.mdx) covers a real host. Design: [MCP foundation](docs/07-mcp-platform-draft.md); results: [evidence](reports/mcp-foundation-evidence.md). Normal `bun dev` starts apps only.
+| Command | Does |
+| --- | --- |
+| `bun run mcp:new <name>` | Scaffold `mcps/<name>`: a server with one tool, its conformance test and its manifest; then `bun install` |
+| `bun run mcp:check <workspace>` | Typecheck, lint and test one workspace, such as `@answerable/mcp-e2e` |
+| `bun run mcp:test` | The suites of `packages/auth`, `packages/mcp`, every server under `mcps/` and the scaffold; the Toolbox needs the development Postgres |
+| `bun run mcp:test:e2e` | The journeys against real ID, a browser and the official MCP OAuth client (Docker) |
+| `bun run toolbox:dev` | Serve the Toolbox on 47400; `bun run mcp:dev` serves the reference server on 47500 |
+
+Create an MCP with `mcp:new` and the [authoring guide](apps/web/content/docs/mcp/authoring.mdx); the [standard](apps/web/content/docs/mcp/standard.mdx) says which rules the SDK, the conformance kit and the Toolbox enforce. [Connect Claude Code](apps/web/content/docs/mcp/claude-code.mdx) covers a real host. Decisions: [MCP foundation](docs/07-mcp-platform-draft.md) and [the capability platform](docs/08-capability-platform.md); results: [evidence](reports/mcp-foundation-evidence.md). Normal `bun dev` starts apps only.
 
 ### Repository principles
 
 - **Bun everywhere**, including production. Hono for HTTP. Postgres for all state, including sessions; Redis as a read cache later.
 - **Test-driven.** Every change starts with a failing test. CI enforces full line/function coverage for ID and runs the shared-package, browser and real-ID MCP checks.
-- **Admin API first.** Organization, domain, group, client, resource, entitlement, and user changes go through typed Hono routes under `/api/admin`, documented with OpenAPI; routes call services and grouped query modules.
+- **Admin API first.** Organisation, domain, group, client, resource, entitlement, and user changes go through typed Hono routes under `/api/admin`, documented with OpenAPI; routes call services and grouped query modules.
 - **No CDN or WAF** in front of our services for now; TLS terminates at the ingress.
-- **Better Auth is the base**, pinned per milestone; house-specific behavior ships as custom plugins, never forks.
+- **Better Auth is the base**, pinned per milestone; house-specific behaviour ships as custom plugins, never forks.

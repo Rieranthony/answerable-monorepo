@@ -305,6 +305,29 @@ Tree: branch `claude/toolbox-goal` on `main` 3ac5614, brief B6 of the Toolbox go
 
 **Size.** `mcps/toolbox/src` source 942 lines in 16 files, tests 1,298 in 15 files, test support 110; migrations 166.
 
+## 29 September 2026: the scaffold, the polish and the sweep (brief B8)
+
+Tree: branch `claude/toolbox-goal` on `main` 3ac5614, brief B8 of the Toolbox goal. Versions as above; `@answerable/acceptance` 0.1.0, `@answerable/mcp-e2e` 0.1.0, the new workspace `@answerable/scripts`.
+
+| Check | Result |
+| --- | --- |
+| Root typecheck, lint and build | Pass with `--force` (10, 10 and 3 tasks; `scripts` is the tenth workspace) |
+| `bun --filter web test` | 78 pass |
+| `bun run mcp:test` | auth 52 pass, 100%; mcp 171 pass and 5 todo, 100%; e2e 45 pass and 4 todo, 100% (now gated); Toolbox 116 pass and 2 todo, 100%; scripts 22 pass |
+| `bun run mcp:check` | e2e 3 tasks, Toolbox 4 tasks |
+| `bun run mcp:test:e2e` | 52 pass at 100%: 34.6 and 33.3 seconds by the agent, 33 seconds by the coordinator; nothing left behind |
+| Scaffold proof | `bun run mcp:new acme`, `bun install` (no changes), `bun run mcp:check @answerable/mcp-acme`: 3 tasks, 12 pass and 2 todo, 100%; the scaffolded server served `/health` on port 47510 from its `.env.example`; removed afterwards with `bun.lock` and `git status` byte-identical |
+
+**What changed.** `bun run mcp:new <name>` (`scripts/mcp-new.ts`, a workspace so the gates cover it) writes a server with one five-field tool, its conformance test, manifest, environment file and README, and prints the three commands to run next; its test generates into a temporary directory, checks every file, and typechecks, lints and tests the result. `standard.mdx` puts the 42 rules in docs form with what enforces each and the check names as `bun test` prints them. `index.mdx` says what the kit is; `claude-code.mdx` connects Claude Code to the Toolbox first; `local-testing.mdx` lists every journey as run. `README.md`, `AGENTS.md` and `docs/07` describe the kit's workspaces, commands, gates, ports and databases; `docs/02` receives the register rows and the "Do not re-propose" lines of `docs/10`; `docs/08` says the design is implemented as far as the goal goes. `mcps/e2e` gains its 100% gate and a changelog; both servers gain an entry-point smoke test; CI installs Playwright from `packages/acceptance`.
+
+**What the sweep found.** Two exports of `mcps/e2e` lacked documentation comments; every other export of the sixteen entry points carried one. The two `server.ts` entry points were never loaded by a test. The scaffold's first typecheck caught a `z.literal("ok")` output whose return literal widens; the tool's output is a string and the generated server's typecheck and lint now run in the scaffold's test. A scaffolded workspace made Turbo warn about missing outputs until its `bunfig.toml` wrote coverage. Bun's isolated installs give a new workspace no `node_modules` before `bun install`, so the scaffold symlinks the e2e server's for its one first test run. Three US spellings in `README.md` and one date in `docs/02` prose were the only style misses. Every "Not yet." holds; every page is in `meta.json` and `/llms.txt`.
+
+**Decisions recorded.** `Q-OTEL-BUN` and `Q-TOOLBOX-NEW-CAPABILITIES` are resolved by the goal (the spike; off until enabled) and recorded as resolved rather than moved; `Q-RESOURCE-PARAM` and `Q-MCP-CLIENT-REGISTRATION` are resolved as `docs/10` said and their rows deleted. Not confirmed on this machine: Claude Code against the Toolbox by hand, and LibreChat (B9).
+
+**Found by the coordinator.** Two of the agent's proof commands used `pkill -f` on `src/server.ts`; afterwards no process from the owner's checkout was listening on ports 47100, 47300, 47400 or 47500. Whether a dev server of the owner's was running before is not known; the owner was told.
+
+**Size.** `scripts/` 420 lines (`mcp-new.ts` 148, its test 229).
+
 ## Limits
 
 The acceptance uses local test issuers for company directories, a pre-registered public client and loopback HTTP. It does not certify Claude.ai, another host, another company directory or a production deployment.

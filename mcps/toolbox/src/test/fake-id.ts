@@ -169,4 +169,3 @@ export function createFakeId({ expiresIn = 3600, pageSize = 200 } = {}) {
     failWrite(after: number, status = 503) { failing = { remaining: after, status } },
   }
 }
-export type FakeId = ReturnType<typeof createFakeId>

@@ -50,7 +50,7 @@ jobs:
         run: bun --filter @answerable/countries test
 
       - name: Install MCP browser test runtime
-        working-directory: mcps/e2e
+        working-directory: packages/acceptance
         run: bun x playwright install --with-deps chromium
 
       - name: Test MCP foundation and Apps interaction

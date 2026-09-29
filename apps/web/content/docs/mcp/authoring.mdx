@@ -32,7 +32,7 @@ Save this as `mcps/example/src/tools.ts`. A read tool is these five fields; ever
 
 **Field descriptions.** Describe each input field with `.describe()`; the text reaches the model in the tool's `inputSchema`. Recommended, not enforced.
 
-A tool that changes data is a [mutation](#mutations): prepared first, committed second. Check either with [the conformance kit](/docs/mcp/testing); every export is in the [API reference](/docs/mcp/reference).
+A tool that changes data is a [mutation](#mutations): prepared first, committed second. Check either with [the conformance kit](/docs/mcp/testing); the rules a definition follows are on [the design standard](/docs/mcp/standard) page, and every export is in the [API reference](/docs/mcp/reference).
 
 ## Names and identity
 
@@ -372,17 +372,26 @@ Four options, off by default, serve several providers at one endpoint, as [the T
 
 ## Create a workspace
 
-```json
-{
-  "name": "@answerable/mcp-example",
-  "private": true,
-  "type": "module",
-  "scripts": { "dev": "bun --hot src/server.ts", "start": "bun src/server.ts", "test": "bun test" },
-  "dependencies": { "@answerable/mcp": "workspace:*", "zod": "4.6.5" }
-}
+```sh
+bun run mcp:new example
+bun install
+bun run mcp:check @answerable/mcp-example
 ```
 
-Save this as `mcps/example/package.json`, then run `bun install` from the repository root. The `mcps/*` workspace pattern includes it.
+Run these from the repository root. `mcp:new <name>` writes `mcps/<name>`, refuses a name that is not a [provider id](#the-provider) and a directory that exists, and prints the commands to run next. The scaffolded server passes `mcp:check` unchanged; [Test an MCP](/docs/mcp/testing#check-a-workspace) says what that runs.
+
+| File | Holds |
+| --- | --- |
+| `package.json`, `tsconfig.json`, `eslint.config.mjs` | The workspace `@answerable/mcp-<name>`, with the dependency versions and the compiler and lint settings of `mcps/e2e` |
+| `bunfig.toml` | The gate: 100% line and function coverage over `src` |
+| `src/provider.ts` | One five-field read tool, `<name>.status`, and `defineProvider` |
+| `src/server.ts` | `readMcpEnvironment` and `createMcpServer` |
+| `src/provider.test.ts` | The conformance kit and one `createTestMcp` test |
+| `manifest.json` | The provider's contract, written by running the test once with `UPDATE_MANIFEST=1` |
+| `.env.example` | `MCP_ID_ISSUER`, `MCP_RESOURCE_URL` and `MCP_PORT` (`47510`; each MCP running at the same time needs its own) |
+| `README.md` | How to run, test and extend it |
+
+The examples above keep tools in `src/tools.ts` and the provider in `src/provider.ts`; the scaffold keeps its one tool in `src/provider.ts` until you add more. Not scaffolded: an `exports` map, views and mutations; add them when you need them. `bun run mcp:test` runs every server under `mcps/`.
 
 ## Configure
 
@@ -596,3 +605,6 @@ import { assertProviderConformance, createTestMcp } from "@answerable/mcp/testin
 | Tool result `INTERNAL`, logged as `… threw ACME_…, which its definition does not declare; add it to errors` | The handler threw a custom code missing from `errors` | Add the code to the definition's `errors` |
 | Tool result with your code | A `ToolError` you threw | Handle the code |
 | `Invalid MCP configuration: …` at start | A missing or invalid variable | Set the named variable |
+| `Server name "…" must be a lowercase letter then up to 11 lowercase letters or digits…` from `mcp:new` | The name is not a provider id | Use a name such as `acme` |
+| `mcps/<name> already exists; choose another name or remove it` from `mcp:new` | The directory exists | Choose another name, or remove the directory |
+| `The new server's first test run failed:` from `mcp:new` | The run that writes the manifest failed; on a fresh clone the packages it needs are not installed | Run `bun install` at the root, remove `mcps/<name>` and run `mcp:new` again |

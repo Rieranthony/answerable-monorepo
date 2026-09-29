@@ -96,7 +96,7 @@ The principal is the caller the kit signed in as. Its `userId`, `organizationId`
 
 ## The checks
 
-Read checks run once for the provider, mutate checks once for each mutation, and provider checks once. The rules are in the design standard, `docs/09-mcp-design-standard.md` in the repository; the R numbers are its rules. A page for the standard: Not yet.
+Read checks run once for the provider, mutate checks once for each mutation, and provider checks once. The rules are on [the design standard](/docs/mcp/standard) page, which says what enforces each; the R numbers are its rules.
 
 Some checks repeat what `defineTool`, `defineMutation` and the server already enforce. They guard providers built by other means, such as the hub's adapters, and the SDK itself against a change that breaks a rule.
 
@@ -156,7 +156,7 @@ The file holds the tools sorted by identity, with their wire names, schemas, sco
 bun run mcp:check @answerable/mcp-e2e
 ```
 
-Run this from the repository root with a workspace name. It runs the workspace's typecheck, lint and tests with Turborepo (`turbo run typecheck lint test --filter <workspace>`); the conformance checks and the manifest drift test are tests, so they run too. The `@answerable/auth`, `@answerable/mcp` and Toolbox suites enforce 100% line and function coverage. `bun run mcp:test` runs the auth, SDK, e2e and Toolbox suites together.
+Run this from the repository root with a workspace name. It runs the workspace's typecheck, lint and tests with Turborepo (`turbo run typecheck lint test --filter <workspace>`); the conformance checks and the manifest drift test are tests, so they run too. The `@answerable/auth`, `@answerable/mcp`, `@answerable/acceptance` and Toolbox suites, and every server that `bun run mcp:new` writes, enforce 100% line and function coverage. `bun run mcp:test` runs the auth, SDK, e2e, Toolbox, scaffolded servers and scaffold suites together.
 
 ## Not yet
 

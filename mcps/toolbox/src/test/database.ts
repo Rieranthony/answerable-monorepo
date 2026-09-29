@@ -1,6 +1,6 @@
 import { SQL } from "bun"
 
-export const testDatabaseName = "answerable_toolbox_test"
+const testDatabaseName = "answerable_toolbox_test"
 export const testDatabaseUrl = process.env.TOOLBOX_TEST_DATABASE_URL ?? `postgres://answerable:answerable@localhost:47432/${testDatabaseName}`
 
 /** Refuse to reset or migrate anything but the disposable test database. */

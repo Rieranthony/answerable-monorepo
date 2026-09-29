@@ -37,6 +37,9 @@
     "@answerable/acceptance#test": {
       "cache": false
     },
+    "@answerable/scripts#test": {
+      "cache": false
+    },
     "@answerable/mcp-e2e#dev": {
       "cache": false,
       "persistent": true,

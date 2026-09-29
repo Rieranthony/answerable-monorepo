@@ -1,10 +1,12 @@
 import { ToolError, type UserPrincipal } from "@answerable/mcp"
 import type { FixtureRecord } from "./contracts"
 
+/** The record store `createE2eProvider` reads and writes: `get`, `list`, `create`, `remove` and `touch`, each for one organisation. */
 export type RecordStore = ReturnType<typeof createRecordStore>
 
 const unknownCursor = "Unknown cursor; list again without one"
 
+/** An in-memory store of test records, kept per organisation until the process stops. */
 export function createRecordStore() {
   const organisations = new Map<string, Map<string, FixtureRecord>>()
   const records = (principal: UserPrincipal) => organisations.get(principal.organizationId) ?? new Map<string, FixtureRecord>()

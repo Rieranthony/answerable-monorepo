@@ -15,7 +15,7 @@ description: "Every error a tool call on an Answerable MCP can answer: the envel
 }
 ```
 
-Every tool failure is `{ "isError": true, "content": [{ "type": "text", "text": "…" }] }` with no `structuredContent`, and the one text block is this envelope as JSON. A model picks its next step from `retry.policy` without reading the message. Handlers throw it with [`ToolError`](/docs/mcp/authoring#tool-errors).
+Every tool failure is `{ "isError": true, "content": [{ "type": "text", "text": "…" }] }` with no `structuredContent`, and the one text block is this envelope as JSON. A model picks its next step from `retry.policy` without reading the message. Handlers throw it with [`ToolError`](/docs/mcp/authoring#tool-errors). The rules it follows are in [the design standard](/docs/mcp/standard#errors).
 
 **Why text only.** The MCP TypeScript SDK 1.x client checks any `structuredContent` against the tool's `outputSchema`, even on an error result, so an envelope there made `callTool` throw `Structured content does not match the tool's output schema` instead of returning it. It leaves a result without structured content untouched. Measured with SDK 1.30.0, which LibreChat uses; SDK 2.x clients return both shapes. Claude Code shows the model the text of a result that has no structured content. As text, the envelope reaches the model through every one of these clients.
 

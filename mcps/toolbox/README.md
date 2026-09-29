@@ -39,6 +39,6 @@ Register the Toolbox in ID, then enable an organisation with one call to the adm
 | `src/spans.ts` | One server span per call; OTLP/HTTP export when `OTEL_EXPORTER_OTLP_ENDPOINT` is set |
 | `src/environment.ts` | `readToolboxEnvironment` |
 | `src/db/migrate.ts`, `migrations/` | Numbered SQL files and `schema_migrations` |
-| `src/server.ts` | The entry point |
+| `src/server.ts` | The entry point; `src/server.test.ts` starts it against the test database |
 
 `manifest.json` is the `toolbox` provider's contract; `UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-toolbox test` rewrites it. The journeys against real ID are `packages/acceptance/src/journeys/toolbox.journeys.test.ts`, run by `bun run mcp:test:e2e`. The acceptance imports this package through its `exports`.

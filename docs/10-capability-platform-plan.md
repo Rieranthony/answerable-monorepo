@@ -5,7 +5,7 @@
 > - **Rule:** order, not time. A new tool is five fields and one test. Nothing lands without documentation and automated tests.
 > - **Not here:** the design ([`08-capability-platform.md`](08-capability-platform.md)), the rules ([`09-mcp-design-standard.md`](09-mcp-design-standard.md)), the evidence ([research](../reports/mcp-platform-research-2026-09-28.md)).
 
-This plan is proposed, not approved. On approval its register rows move into [`02-plan.md`](02-plan.md) and its "Do not re-propose" lines join that list. The goal below starts only when the owners say so, with the prompt in [`goals/toolbox-goal.md`](goals/toolbox-goal.md).
+The goal below has been delivered, with the prompt in [`goals/toolbox-goal.md`](goals/toolbox-goal.md). Its register rows moved into [`02-plan.md`](02-plan.md#open-register) and its "Do not re-propose" lines joined that list. "After the goal" stays here.
 
 ## The goal
 
@@ -111,35 +111,6 @@ In order, each with the exit evidence the design names.
 5. Remote providers and upstream identity: RFC 8693 token exchange in ID, the credential vault and per-person connect flows, the upstream-MCP adapter.
 6. Public SDK release and third-party providers.
 7. Query surface, only when its trigger in the design fires.
-
-## Open register (proposed rows)
-
-| ID | Question | Gates | Resolve by |
-| --- | --- | --- | --- |
-| `Q-TOOLBOX-APPROVERS` | Who approves human-class intents by default: organisation administrators, a per-pack approver group, or the group manager | After the goal, item 1 | Owners; the design assumes `toolbox/approve` grants with a per-pack override |
-| `Q-TOOLBOX-NEW-CAPABILITIES` | Whether a capability added to an enabled pack is granted automatically to existing entitlements or stays off until enabled | B7 | Owners; the design assumes off until enabled |
-| `Q-TOOLBOX-PAGES` | Whether the hub's approval and connect pages may live in `mcps/toolbox` as an OIDC client of ID | After the goal, item 1 | Owners; the design assumes yes, since they are product pages |
-| `Q-BETTER-AUTH-CIMD` | Which Better Auth version to pin for `@better-auth/cimd` (needs 1.7.6; ID pins 1.7.2) and what its full suite shows | After the goal, item 3 | Upgrade spike with ID's suite |
-| `Q-OTEL-BUN` | Which OpenTelemetry exporter and context propagation work on Bun 1.3.x | B5 | Spike before the span code lands |
-| `Q-PGBOSS-BUN` | pg-boss on Bun with the `pg` driver (Drizzle's Bun.SQL driver double-encodes JSON, issue 880) | After the goal, item 1 | Spike in CI |
-| `Q-EVIDENCE-RETENTION` | Retention per organisation, anchoring cadence for chain heads, and legal hold | B5 | Owners with the first client |
-| `Q-TOOLBOX-QUERY` | Numbers for the query surface (depth, cost, page caps) and which capability types project first | After the goal, item 7 | Measured on the query set |
-| `Q-HOST-MATRIX` | ChatGPT, Copilot Studio and Claude.ai behaviour not documented by the vendors: `list_changed`, elicitation, tool ceilings | After the goal, item 3 | Recorded when each host is tried |
-
-`Q-RESOURCE-PARAM` resolves: LibreChat sends RFC 8707 `resource` by default. `Q-MCP-CLIENT-REGISTRATION` resolves as the registration policy in the design, built after the goal.
-
-## Do not re-propose
-
-- Tool-level permissions inside the access token: scopes never grow within a grant, so an administrator's change would wait for re-authorisation.
-- A second permission store in the hub for who may use what: Answerable ID's entitlements carry the grant strings; the hub only interprets them and holds the catalogue.
-- Forwarding a host's token to a provider, or minting a person's token from their id: providers run in process until ID offers token exchange.
-- Elicitation as the approval of record for human-class mutations.
-- Dotted tool names on the wire: the dotted identity lives in `_meta`, the tool name is host-safe.
-- Embedding Executor's SDK or adopting ToolHive, Temporal or a separate Control service before their triggers fire.
-- Trusting annotations for authorisation.
-- Meta-tools as the only projection: hosts govern by tool name and need the direct list where it fits.
-- A second definition API beside `defineTool`: capabilities are tools with defaults, not a new vocabulary for authors.
-- Replacing the e2e MCP: it stays the reference server, the first mounted provider and the acceptance.
 
 ## Backlog
 

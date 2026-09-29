@@ -325,4 +325,4 @@ The admin API's audience is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`, s
 | `evidence_events is append-only: UPDATE is refused` | Something tried to change evidence | Evidence is never changed; erase a payload with `erase` instead |
 | `Refusing to reset <database>; expected answerable_toolbox_test` | `db:test:migrate` points elsewhere | Point `TOOLBOX_TEST_DATABASE_URL` at `answerable_toolbox_test` |
 
-Administration errors are in [Administer the Toolbox](/docs/mcp/toolbox-admin#errors). The journeys that prove this against real ID are in [Test MCPs locally](/docs/mcp/local-testing#what-the-toolbox-journeys-prove). The SDK options the Toolbox is built on are in [the server section](/docs/mcp/authoring#the-server).
+Administration errors are in [Administer the Toolbox](/docs/mcp/toolbox-admin#errors). The journeys that prove this against real ID are in [Test MCPs locally](/docs/mcp/local-testing#what-the-toolbox-journeys-prove). The SDK options the Toolbox is built on are in [the server section](/docs/mcp/authoring#the-server). The rules it enforces at run time are the Hub rows of [the design standard](/docs/mcp/standard).
