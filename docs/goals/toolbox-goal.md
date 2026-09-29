@@ -1,6 +1,6 @@
 # Goal: build the Answerable MCP kit and the Toolbox
 
-You are Claude (Fable 5.1), coordinating this goal in the Answerable monorepo at `/Users/anthonyriera/code/answerable`. You write the briefs, dispatch them to sub agents, review every diff, run every gate yourself, and land the work on `main`. You do not implement the briefs yourself except for small fixes found in review.
+You are Claude (Fable 5.1), coordinating this goal in the Answerable monorepo at `/Users/anthonyriera/code/answerable`. You write the briefs, dispatch them to sub agents, review every diff, run every gate yourself, and commit the work on the goal's branch. You do not implement the briefs yourself except for small fixes found in review. The short form the owner pastes into the goal tool is `toolbox-goal-condition.md` next to this file; this file is the full brief.
 
 ## Mission
 
@@ -39,7 +39,7 @@ Out, and not to be started even if convenient: approval pages, operations and th
 ## How you work
 
 1. **One brief at a time per agent, in the plan's order.** B0 first. B1 and B3 may run in parallel with B4; B5 waits for B1 and B4; B6 waits for B3 and B5; B8 waits for B2, B6 and B7; B9 last.
-2. **Dispatch each brief with the Agent tool** and the model the plan names: `model: "opus"` for B1, B3, B5, B6; `model: "sonnet"` for B0, B2, B4, B7, B8, B9. Give each agent an isolated worktree.
+2. **Dispatch each brief with the Agent tool** and the model the plan names: Opus 5.5 (`model: "opus"`) for B1, B3, B5, B6; Sonnet 5.5 (`model: "sonnet"`) for B0, B2, B4, B7, B8, B9; maximum reasoning effort for both. Give each agent an isolated worktree.
 3. **A brief contains**: the goal of the brief and where it lives; the current state; the exact tests to write first; the design and standard sections it implements, by heading; the docs page it must leave complete; the gate commands; what it must not touch; the cleanup pass below as its last step; a report contract (what changed, what the cleanup removed, files touched, gate counts, measured numbers, anything left open). The agent never commits.
 4. **Every brief ends with a cleanup pass by the same agent, before it reports.** The brief quotes this verbatim as its last step, and the agent makes the changes it finds, then re-runs the gates:
 
@@ -54,7 +54,7 @@ Out, and not to be started even if convenient: approval pages, operations and th
    You run the same pass yourself over the whole tree after B5 and after B8, as a brief of its own on Opus 5.5, so the kit is judged as one thing and not brief by brief.
 5. **You review every diff** against `docs/08` and `docs/09` before running anything: remove what the standard does not require and the goal does not need; check names, defaults, docs and tests. Then run the gates yourself. A brief that fails review goes back to the same agent with the delta.
 6. **Gates**, from the root: `bun run typecheck`, `bun run lint`, `bun run build`, `bun --filter web test`, `bun run mcp:test`, `bun run mcp:test:e2e` (Docker), and `bun --filter @answerable/id test:coverage` when anything under `apps/id` changed (needs Postgres: `bun run env:up`, then `bun --filter @answerable/id db:test:migrate`; wait for a quiet machine, the suite is load-sensitive).
-7. **Land on `main`**: rebase the worktree branch on `origin/main`, gates green, `git push origin HEAD:main`, reset the main checkout to `origin/main`, `bun install`, check the Vercel deployment of the pushed commit. No pull requests. Commit messages imperative, sentence case, no prefix, no trailing period, with the attribution line from the session reminder.
+7. **Branch and pull request**: for this goal the owner wants one branch and one pull request. Commit every brief (and every cleanup pass) as its own commit on that branch so the history stays clean; keep the branch rebased on `origin/main` with the gates green; open the pull request after B0 and keep it updated; the owner merges. Commit messages imperative, sentence case, no prefix, no trailing period, with the attribution line from the session reminder.
 8. **After each brief**: add its section to `reports/mcp-foundation-evidence.md` (commands, counts, measured numbers, what testing found), update your memory notes, and give the owner a short plain-English status.
 9. **Environment**: new variables go in `default.env` and `.env.example`; the Toolbox gets its own Postgres databases (`answerable_toolbox`, `answerable_toolbox_test`) through `infra/postgres/init` and its own port (47400; the acceptance owns 47532, 47600, 47602, 47603 and 47605 and never touches the normal ID database).
 10. **Never** use the Firecrawl CLI; use WebFetch, WebSearch, the repository and installed sources, or delegate real browsing to Codex in Chrome when a page refuses plain fetches. Verify claims about libraries against the installed sources under `node_modules/.bun`.
@@ -62,7 +62,7 @@ Out, and not to be started even if convenient: approval pages, operations and th
 
 ## Definition of done
 
-- Every brief B0 to B9 is landed on `main` and every gate is green.
+- Every brief B0 to B9 is on the pull request branch as its own commit, the pull request is open against `main`, and every gate is green.
 - Journeys J1, J2, J3, J4, J5, J6, J7 and J10 pass in `bun run mcp:test:e2e`; J8 and J9 are recorded in the evidence report.
 - The docs pages in the plan exist, are linked in `meta.json`, appear in `/llms.txt`, and describe only what is built.
 - `README.md`, `AGENTS.md` and `docs/07-mcp-platform-draft.md` reflect the new workspaces, commands and gates.
