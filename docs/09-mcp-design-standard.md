@@ -30,7 +30,7 @@ Version 2 of [Stephen's draft](drafts/2026-09-27-stephen-mcp-design-standard.md)
 - **R12** Identifiers are stable system identifiers, with `source` and `external_id` preserved where reconciliation or links back to the source matter. Display names are never identifiers. [review]
 - **R13** Timestamps are ISO 8601 with offsets; quantities carry units (`{ value, unit }`); money carries a currency. [conformance: schema lint on field names `*_at`, `amount`, `area`, `duration`]
 - **R14** Descriptions are operational documentation: what, when, limits, whether it changes state, whether it prepares an intent, what identifiers mean; 40 to 1,000 characters. [SDK]
-- **R15** Results above 100 KiB are truncated with `truncated: true` and guidance; large data goes through pagination, projection, aggregation or a handle, never straight into the model. [hub]
+- **R15** Results above 100 KiB answer `RESULT_TOO_LARGE` with guidance; large data goes through pagination, projection, aggregation or a handle, never straight into the model. [hub]
 
 ## 3. Prepared mutations
 
@@ -78,6 +78,7 @@ Every failure is an `isError` result whose single text block is this envelope as
 | `NOT_FOUND` | A named resource does not exist for this caller (permission is checked first, so existence never leaks) | `never` |
 | `PERMISSION_DENIED` | The principal may not perform this operation on this target | `never` |
 | `PRECONDITION_FAILED` | The system state does not allow the operation; `details.preconditions` says what | `after_state_change` |
+| `RESULT_TOO_LARGE` | The result exceeded 100 KiB; narrow the request | `after_fix_input` |
 | `INTENT_STALE` | A target version moved since prepare | `after_reprepare` |
 | `INTENT_EXPIRED`, `INTENT_NOT_FOUND`, `INTENT_CANCELLED`, `INTENT_CONSUMED` | The intent cannot be committed as it is | `after_reprepare` |
 | `COMMIT_TOKEN_INVALID`, `PRINCIPAL_MISMATCH` | The token or the caller does not match the intent | `never` |

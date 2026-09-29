@@ -207,11 +207,13 @@ Every array defaults to empty. Echoing the arguments is not a preview: say what 
 `<id>` is the provider id. A human-class intent is recorded as `awaiting_approval`; both commit tools answer `APPROVAL_REQUIRED` until it expires, because approval pages are Not yet.
 
 ```ts
+import { createMcpServer, riskClass } from "@answerable/mcp"
+
 // People confirm low-risk mutations too.
-createMcpServer({ provider, auth, policyClass: mutation => ({ low: "controlled", normal: "controlled", high: "human" } as const)[mutation.risk] })
+createMcpServer({ provider, auth, policyClass: mutation => (mutation.risk === "low" ? "controlled" : riskClass[mutation.risk]) })
 ```
 
-`policyClass` decides the class for each caller and request; the default follows `risk`. The prepare tool's `_meta` and the intent carry the result, and the class's expiry caps `expiresInMs`.
+`policyClass` decides the class for each caller and request; the default is `riskClass`, the table above as data. The prepare tool's `_meta` and the intent carry the result, and the class's expiry caps `expiresInMs`.
 
 ### The prepare tool
 
@@ -341,16 +343,17 @@ Save this as `mcps/example/src/server.ts`. `createMcpServer` returns a web-stand
 
 **What it serves.** `GET /health`, the protected-resource metadata, and the MCP endpoint at the resource URL's path behind the bearer gate. It answers both the 2026 and the 2025 protocol revisions, builds a fresh MCP server per request and sends `Cache-Control: no-store`. The server's name and version are the provider's id and version.
 
-**Hosts and origins.** It refuses a `Host` header or browser `Origin` other than the resource URL's host name. Pass `allowedHosts` or `allowedOrigins` (host names) to widen either list.
+**Hosts and origins.** It refuses a `Host` header or browser `Origin` other than the resource URL's host name.
 
-**Hubs.** Four options, off by default, serve several providers at one endpoint, as [the Toolbox](/docs/mcp/toolbox) does:
+**Cache hint.** `tools/list` tells `2026-07-28` hosts they may keep the list for 30 seconds, for that caller alone (`ttlMs: 30000`, `cacheScope: "private"`): a token's scopes never change during its life.
+
+**Hubs.** Three options, off by default, serve several providers at one endpoint, as [the Toolbox](/docs/mcp/toolbox) does:
 
 | Option | Effect |
 | --- | --- |
 | `mount` | Providers served beside `provider`. Their tools are named `<provider id>_<wire name>` after `provider`'s own, their mutations commit through `provider`'s commit tools, and their views keep their URIs. Their prompts and resources are not served; `scopes_supported` lists `provider`'s scopes only |
 | `allow(principal, tool, called)` | Decides which tools the caller sees and may call, in place of scopes, for each request that lists or calls tools or reads views; `called` is true for the tool a call names. A `ToolError` it throws answers any call with that envelope, and a list fails |
-| `wrapCall(call, run)` | Runs around every tool and prepare call with the tool, wire name, principal, execution id, JSON-RPC id and `_meta`; returns `run()`'s content or a replacement the output schema accepts |
-| `cacheHints` | Cache hints for `2026-07-28` list results, such as `{ "tools/list": { ttlMs: 30000, cacheScope: "private" } }` |
+| `wrapCall(call, run)` | Runs around every tool and prepare call with the tool, wire name, principal, execution id, JSON-RPC id and `_meta`. Return what `run()` returns, or throw a `ToolError` to answer with it instead |
 
 ## Create a workspace
 
@@ -424,6 +427,8 @@ Every tool that can return an unbounded list takes these two fields and returns 
 
 `@answerable/mcp` exports nothing for pagination: declare the fields in your schemas, and the conformance kit's `list_paginates` fails a tool whose output has an `items` array without them. `records.list` in `mcps/e2e` is the working example; a cursor it did not issue answers `INVALID_INPUT` with a field violation on `cursor`.
 
+**Size.** Through [the Toolbox](/docs/mcp/toolbox#limits), a read whose result is above 100 KiB of JSON answers `RESULT_TOO_LARGE`, so keep the default page well below that.
+
 ## Tool errors
 
 ```ts
@@ -434,7 +439,7 @@ throw new ToolError("RATE_LIMITED", "Try again shortly", { retry: { policy: "aft
 throw new ToolError("PRECONDITION_FAILED", "The record is locked", { details: { preconditions: ["unlocked"] } })
 ```
 
-Throw `ToolError(code, message, options?)` for an expected failure. The caller receives `{ "isError": true, "content": [{ "type": "text", "text": "…" }] }`, with no `structuredContent`; the one text block is the envelope as JSON:
+Throw `ToolError(code, message, options?)` for an expected failure. The caller receives `{ "isError": true, "content": [{ "type": "text", "text": "…" }] }`, with no `structuredContent` ([why](/docs/mcp/errors)); the one text block is the envelope as JSON:
 
 ```json
 {
@@ -446,8 +451,6 @@ Throw `ToolError(code, message, options?)` for an expected failure. The caller r
   }
 }
 ```
-
-**Why text only.** The MCP TypeScript SDK 1.x client checks any `structuredContent` against the tool's `outputSchema`, even on an error result, so an envelope there made `callTool` throw `Structured content does not match the tool's output schema` instead of returning it. It leaves a result without structured content untouched. Measured with SDK 1.30.0, which LibreChat uses; SDK 2.x clients return both shapes. Claude Code shows the model the text of a result that has no structured content. As text, the envelope reaches the model through every one of these clients.
 
 `details` appears only when given. `retry.policy` tells the model what to do next without reading the message. `after_delay` without `after_ms` gets `after_ms: 1000`.
 
@@ -522,7 +525,7 @@ Build each view before starting the server, pass the HTML to `defineView({ name,
 import { assertProviderConformance, createTestMcp } from "@answerable/mcp/testing"
 ```
 
-`createTestMcp(provider)` serves a provider in-process, with no port and no network, for tests of your own logic. `assertProviderConformance(provider, fixture)` runs the standard's checks against it. [Test an MCP](/docs/mcp/testing) covers both, the manifest snapshot and `bun run mcp:check`; [Test MCPs locally](/docs/mcp/local-testing) covers the real sign-in through ID. `mcps/e2e/src/mcp.test.ts` and `mcps/e2e/src/conformance.test.ts` are the working examples.
+`createTestMcp(provider)` serves a provider in-process, with no port and no network, for tests of your own logic. `assertProviderConformance(provider, fixture)` runs the standard's checks against it. [Test an MCP](/docs/mcp/testing) covers both, the helpers beside them, the manifest snapshot and `bun run mcp:check`; [Test MCPs locally](/docs/mcp/local-testing) covers the real sign-in through ID. `mcps/e2e/src/mcp.test.ts` and `mcps/e2e/src/conformance.test.ts` are the working examples.
 
 ## Limits
 
@@ -556,12 +559,17 @@ import { assertProviderConformance, createTestMcp } from "@answerable/mcp/testin
 | `Provider … defines tool … twice` | Two definitions share a tool name, prompt name or resource URI | Rename one |
 | `Provider … defines two different views at …` | Two views share a name | Share one `defineView` result, or rename a view |
 | `Provider …: tool … is deprecated in favour of …, which is not a current tool of this provider` | The replacement is missing or itself deprecated | Name a current tool of the provider |
+| `View name "…" must be…`, `Prompt name "…" must be…`, `Resource name "…" must be…` | The name breaks its rule | Rename it as the message shows |
+| `View …: the HTML is empty…` | The view was not built | Build it with `buildView` before `defineView` |
+| `Resource …: uri "…" must be an absolute URI…`, `Resource …: … is a ui:// view…` | The URI is relative, or it is a view's | Use an absolute URI such as `fixture://guide`; define a view with `defineView` |
+| `Views must bundle to one script and optional CSS…` | The view imports a file that the bundler emits on its own | Embed it in the script or the CSS |
+| `Provider … is mounted twice…` | A hub mounts one provider twice, or mounts its own provider | Mount each provider once |
 | `ToolError code "…" must be a standard code or <PROVIDER>_<CODE>…` | The code is not in the table and has the wrong shape | Use a standard code, or `ACME_SOMETHING` |
 | `ToolError code "…" is not in the standard table; pass { retry }…` | A custom code without a retry policy | Pass `{ retry: { policy } }` |
 | `Tool …: errors entry "…" must be a custom code…` | An entry in `errors` is a standard code, or not `<PROVIDER>_<CODE>` in capitals; a mutation says `Mutation …` | Remove standard codes; write custom ones as `ACME_QUOTA_EXCEEDED` |
 | `Provider …: … declares error "…"; a custom code of this provider starts with …_` | A declared code does not start with the provider id in capitals | Rename it, for example `ACME_QUOTA_EXCEEDED` in provider `acme` |
 | `401 invalid_token` | Missing, expired or foreign token, or a token for another MCP | Sign in through ID for this MCP's resource URL |
-| `403` on the MCP endpoint | The `Host` or browser `Origin` is not allowed | Call the MCP by its registered host name, or set `allowedHosts` / `allowedOrigins` |
+| `403` on the MCP endpoint | The `Host` or browser `Origin` is not the resource URL's host name | Call the MCP by its registered host name |
 | Unknown tool, prompt or resource | Not defined, or the token lacks its scopes | Check the token's scopes against the definition |
 | Tool result `INVALID_INPUT` | The arguments failed the schema or a business rule | Fix the fields in `details.field_violations` |
 | Tool result `TIMEOUT` | The handler ran past `timeoutMs` | Make it faster, or raise `timeoutMs` up to 55,000 |

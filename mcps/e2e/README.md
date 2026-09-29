@@ -7,7 +7,7 @@ The reference MCP server, and the proof that Answerable ID signs people into MCP
 bun run mcp:test:e2e
 ```
 
-The acceptance lives in [`packages/acceptance`](../../packages/acceptance/README.md): it provisions a real ID through its admin API, serves this MCP in process, and signs three organisations in with the official MCP SDK's OAuth client and a real browser. [What it proves](../../apps/web/content/docs/mcp/local-testing.mdx#what-the-e2e-journeys-prove). It imports `createE2eMcp` and `createRecordStore` through this package's `exports`: `@answerable/mcp-e2e/mcp` and `@answerable/mcp-e2e/records`.
+The acceptance lives in [`packages/acceptance`](../../packages/acceptance/README.md): it provisions a real ID through its admin API, serves this MCP in process, and signs three organisations in with the official MCP SDK's OAuth client and a real browser. [What it proves](../../apps/web/content/docs/mcp/local-testing.mdx#what-the-e2e-journeys-prove). It imports `createE2eProvider` and `createRecordStore` through this package's `exports`, `@answerable/mcp-e2e/mcp` and `@answerable/mcp-e2e/records`, and serves the provider with `createMcpServer`.
 
 ## Tools
 
@@ -23,7 +23,7 @@ The provider is `e2e`, version `2026-09-29` (`src/mcp.ts`).
 | `e2e_commit` | `e2e/commit` | any mutation's | Commits an agent-class intent; returns the receipt |
 | `e2e_commit_confirmed` | `e2e/commit_confirmed` | any mutation's | Commits a controlled-class intent with `preview_summary`; destructive, and asks hosts to confirm with the person |
 
-Records carry a `version` starting at 1. The record store's `touch(principal, id)` moves it, as another writer would, which is how tests make a prepared delete stale. `createE2eMcp({ auth, records, viewHtml, intents? })` takes an intent store, for example one with a controlled clock.
+Records carry a `version` starting at 1. The record store's `touch(principal, id)` moves it, as another writer would, which is how tests make a prepared delete stale. `createE2eProvider({ records, viewHtml })` returns the provider; give `createMcpServer` an intent store with a controlled clock to move expiry.
 
 The prompt `fixture_walkthrough` and the resource `fixture://guide` need `e2e:read`. Records and intents live in memory, per organisation, until the process stops. Errors: `INVALID_INPUT` (bad arguments, or a cursor this list did not issue: list again without one), `NOT_FOUND` (no such record in your organisation), the commit codes in [MCP errors](../../apps/web/content/docs/mcp/errors.mdx) and `INTERNAL` (unexpected; see the server log).
 

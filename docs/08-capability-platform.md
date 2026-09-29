@@ -142,7 +142,7 @@ Search is Postgres full text over identity, title, description and argument name
 
 Change: when a grant, catalogue or manifest changes, the hub publishes `tools/list_changed` (`subscriptions/listen` for 2026-07-28 callers, the stream for 2025 callers) for the organisations concerned. Hosts that do not listen re-list on reconnect within the cache hint.
 
-Every result mirrors `structuredContent` as text. A result above 100 KiB is truncated with `truncated: true` and the caller is told to narrow the request; list capabilities paginate before that point.
+Every result mirrors `structuredContent` as text. A result above 100 KiB answers `RESULT_TOO_LARGE` and the caller narrows the request; list capabilities paginate before that point.
 
 ## Prepared mutations
 

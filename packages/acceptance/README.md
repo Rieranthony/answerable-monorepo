@@ -14,7 +14,7 @@ Requires Bun 1.3.1 and Docker Compose. It starts PostgreSQL in a Compose project
 | --- | --- |
 | `src/id.ts` | `startId`: Compose, the ID fixture (`apps/id/scripts/mcp-e2e-fixture.ts`), the manifest, `stop` |
 | `src/admin.ts` | `createAdmin` and the provisioning functions over ID's admin API |
-| `src/oauth.ts` | `oauthProvider`: the SDK's OAuth client provider in memory |
+| `src/oauth.ts` | The SDK's OAuth client provider in memory, which `signIn` fills |
 | `src/browser.ts` | `launchBrowser` and `signIn`: the SDK challenge and ID's pages in Chromium |
 | `src/mcp.ts` | `serve`, `connect`, `tool` and `refusal` |
 | `src/cleanup.ts` | What `stop` and Ctrl-C run |

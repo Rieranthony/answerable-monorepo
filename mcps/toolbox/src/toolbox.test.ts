@@ -1,9 +1,9 @@
 import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test"
 import { SQL } from "bun"
-import { defineProvider, defineTool, type Provider } from "@answerable/mcp"
+import { defineMutation, defineProvider, defineTool, type Provider } from "@answerable/mcp"
 import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
 import { createRecordStore } from "@answerable/mcp-e2e/records"
-import { createTestMcp, type TestMcp } from "@answerable/mcp/testing"
+import { createTestMcp, errorOf, type TestMcp } from "@answerable/mcp/testing"
 import { z } from "zod"
 import { writeCatalogue } from "./catalogue"
 import { migrate } from "./db/migrate"
@@ -22,21 +22,26 @@ afterAll(() => db.close())
 const mcps: TestMcp[] = []
 afterEach(async () => { await Promise.all(mcps.splice(0).map(mcp => mcp.close())) })
 
-const bulk = defineProvider({ id: "bulk", version: "2026-09-29", tools: [defineTool({
-  name: "items.dump", description: "Return every item at once, which can exceed the Toolbox's result limit; a fixture.",
-  input: z.object({ size: z.number().int() }), output: z.object({ text: z.string() }),
-  async execute({ size }) { return { text: "x".repeat(size) } },
-})] })
+// Results of any size: {"text":"…"} is 11 bytes of JSON around its text.
+const bulk = defineProvider({ id: "bulk", version: "2026-09-29", tools: [
+  defineTool({
+    name: "items.dump", description: "Return every item at once, which can exceed the Toolbox's result limit; a fixture.",
+    input: z.object({ size: z.number().int() }), output: z.object({ text: z.string() }),
+    async execute({ size }) { return { text: "x".repeat(size) } },
+  }),
+  defineMutation({
+    name: "items.load", risk: "low", description: "Prepare loading items whose preview can exceed the Toolbox's result limit; a fixture.",
+    input: z.object({ size: z.number().int() }), output: z.object({}),
+    async prepare({ size }) { return { targets: [], preview: { summary: "Load items", changes: [{ path: "items", to: "x".repeat(size) }] } } },
+    async commit() { return { results: {}, applied_changes: [], effects_performed: [] } },
+  }),
+] })
 
 async function hub(providers: Provider[] = [createE2eProvider({ records: createRecordStore(), viewHtml: view })]) {
   const id = createFakeId()
   const { tracer, spans } = createMemoryTracer()
-  let posts = 0
   let toolbox!: Awaited<ReturnType<typeof createToolbox>>
-  const mcp = await createTestMcp(async auth => {
-    toolbox = await createToolbox({ providers, auth, db, id: id.config, spans: tracer })
-    return { fetch: (request: Request) => (request.method === "POST" && posts++, toolbox.fetch(request)) }
-  })
+  const mcp = await createTestMcp(async auth => (toolbox = await createToolbox({ providers, auth, db, id: id.config, spans: tracer })))
   mcps.push(mcp)
   async function member(grants: string[], { enable = providers.map(provider => provider.id), scopes = ["toolbox"] }: { enable?: string[]; scopes?: string[] } = {}) {
     const organizationId = crypto.randomUUID()
@@ -47,7 +52,7 @@ async function hub(providers: Provider[] = [createE2eProvider({ records: createR
     const connect = (protocol?: "2025" | "2026-07-28") => mcp.connect({ organizationId, membershipId, userId, scopes, protocol })
     return { organizationId, membershipId, userId, connect }
   }
-  return { id, spans, mcp, member, toolbox: () => toolbox, posts: () => posts }
+  return { id, spans, mcp, member, toolbox: () => toolbox }
 }
 type Client = Awaited<ReturnType<TestMcp["connect"]>>
 const names = async (client: Client) => (await client.listTools()).tools.map(tool => tool.name)
@@ -63,23 +68,14 @@ test("a member granted a provider sees toolbox_whoami, then its capabilities by 
   expect(tools[4]).toMatchObject({ annotations: { readOnlyHint: true, destructiveHint: false }, _meta: { "com.answerable/capability": { identity: "e2e/records.list", kind: "read" } } })
   expect(tools[3]!._meta).toEqual({ "com.answerable/capability": { identity: "e2e/records.delete", version: "2026-09-29", kind: "mutate", risk: "normal", policy_class: "controlled" } })
   expect(tools[5]!._meta).toMatchObject({ ui: { resourceUri: "ui://records/index.html" } })
-  expect(tools[4]!.outputSchema).toMatchObject({ anyOf: [{ properties: { truncated: { const: true } } }, { required: ["items", "next_cursor", "has_more"] }] })
+  expect(tools[4]!.outputSchema).toMatchObject({ type: "object", required: ["items", "next_cursor", "has_more"] })
   expect((await client.readResource({ uri: "ui://records/index.html" })).contents[0]).toMatchObject({ text: view })
   expect(await (await mcp.fetch("https://mcp.test/.well-known/oauth-protected-resource/mcp")).json()).toMatchObject({ scopes_supported: ["toolbox"], resource_name: "toolbox" })
 })
 
 test("providers are listed in order of their ids, whatever order they are mounted in", async () => {
   const { member } = await hub([createE2eProvider({ records: createRecordStore(), viewHtml: view }), bulk])
-  expect(await names(await (await member(["e2e/identity", "bulk"])).connect())).toEqual(["toolbox_whoami", "bulk_items_dump", "e2e_identity_get"])
-})
-
-test("tools/list carries a 30-second private cache hint to 2026-07-28 hosts", async () => {
-  const { member, posts } = await hub()
-  const client = await (await member(["e2e"])).connect("2026-07-28")
-  await client.listTools()
-  const listed = posts()
-  await client.listTools()
-  expect(posts()).toBe(listed)
+  expect(await names(await (await member(["e2e/identity", "bulk/items.dump"])).connect())).toEqual(["toolbox_whoami", "bulk_items_dump", "e2e_identity_get"])
 })
 
 test("toolbox_whoami names the person, organisation, membership, client and grants, and each usable capability with its policy class", async () => {
@@ -154,17 +150,20 @@ test("every call leaves one evidence row and one span: a success with its size, 
   expect(await evidence.verify(alpha.organizationId)).toEqual({ ok: true, length: 3 })
 })
 
-test("a result above 100 KiB answers the truncation notice, as structured content and text, and the evidence keeps its size", async () => {
-  const { member } = await hub([bulk])
+test("a read's result above 100 KiB answers RESULT_TOO_LARGE, a failure in the evidence and the span; a prepare's result is not limited", async () => {
+  const { member, spans } = await hub([bulk])
   const reader = await member(["bulk"])
   const client = await reader.connect()
-  const small = await client.callTool({ name: "bulk_items_dump", arguments: { size: 10 } })
-  expect(small.structuredContent).toEqual({ text: "xxxxxxxxxx" })
-  const large = await client.callTool({ name: "bulk_items_dump", arguments: { size: 110_000 } })
-  const notice = { truncated: true, message: "Narrow the request with limit, cursor or filters." }
-  expect(large.structuredContent).toEqual(notice)
-  expect(large.content).toEqual([{ type: "text", text: JSON.stringify(notice) }])
-  expect((await events(reader.organizationId)).map((row: { data: unknown }) => row.data)).toEqual([{ result_bytes: 21 }, { result_bytes: 110_011, truncated: true }])
+  expect((await client.callTool({ name: "bulk_items_dump", arguments: { size: 102_389 } })).structuredContent).toEqual({ text: "x".repeat(102_389) })
+  expect(errorOf(await client.callTool({ name: "bulk_items_dump", arguments: { size: 102_390 } }))).toEqual({
+    code: "RESULT_TOO_LARGE", retry: { policy: "after_fix_input" }, details: { bytes: 102_401, limit: 102_400 }, request_id: expect.any(String),
+    message: "The result of bulk/items.dump is 102401 bytes, above the 100 KiB limit (102400 bytes); narrow the request with limit, cursor or filters",
+  })
+  expect((await client.callTool({ name: "bulk_items_load", arguments: { size: 110_000 } })).structuredContent).toMatchObject({ commit_tool: "toolbox_commit" })
+  expect((await events(reader.organizationId)).map((row: { outcome: string; error_code: string | null; data: unknown }) => [row.outcome, row.error_code, row.data])).toEqual([
+    ["success", null, { result_bytes: 102_400 }], ["failure", "RESULT_TOO_LARGE", {}], ["success", null, { result_bytes: expect.any(Number) }],
+  ])
+  expect(spans().filter(span => span.attributes["answerable.organisation.id"] === reader.organizationId).map(span => span.attributes["error.type"])).toEqual([undefined, "RESULT_TOO_LARGE", undefined])
 })
 
 test("a mutation through the hub prepares and commits with toolbox_commit", async () => {
@@ -193,15 +192,14 @@ test("when ID cannot say what a member may use, a call answers UPSTREAM_UNAVAILA
   id.outage(true)
   const log = spyOn(console, "error").mockImplementation(() => {})
   try {
-    const result = await client.callTool({ name: "e2e_records_list", arguments: {} })
-    expect(JSON.parse((result.content as { text: string }[])[0]!.text).error).toMatchObject({ code: "UPSTREAM_UNAVAILABLE", retry: { policy: "after_delay" } })
+    expect(errorOf(await client.callTool({ name: "e2e_records_list", arguments: {} }))).toMatchObject({ code: "UPSTREAM_UNAVAILABLE", retry: { policy: "after_delay" } })
     await expect(client.listTools()).rejects.toThrow()
   } finally { log.mockRestore() }
 })
 
 test("health answers ok only while the database answers", async () => {
   const own = new SQL({ url: testDatabaseUrl, max: 1 })
-  const toolbox = await createToolbox({ providers: [], auth: { issuer: "https://id.test", resource }, db: own, id: createFakeId().config })
+  const toolbox = await createToolbox({ providers: [], auth: { issuer: "https://id.test", resource }, db: own, id: createFakeId().config, spans: createMemoryTracer().tracer })
   expect(await (await toolbox.fetch(new Request("https://mcp.test/health"))).json()).toEqual({ status: "ok" })
   await own.close()
   const down = await toolbox.fetch(new Request("https://mcp.test/health"))

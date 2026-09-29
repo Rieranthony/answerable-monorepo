@@ -13,5 +13,5 @@ test("browser entry bundles into standalone HTML with no external scripts", asyn
 })
 
 test("views reject separately emitted assets", async () => {
-  await expect(buildView({ entry: new URL("./testing-asset.fixture.ts", import.meta.url).pathname, title: "Asset" })).rejects.toThrow("Views must bundle to one script and optional CSS")
+  await expect(buildView({ entry: new URL("./testing-asset.fixture.ts", import.meta.url).pathname, title: "Asset" })).rejects.toThrow(/^Views must bundle to one script and optional CSS; \S*testing-asset\.fixture\.ts bundled to .*\.svg.*; embed the other files in the script or the CSS$/)
 })

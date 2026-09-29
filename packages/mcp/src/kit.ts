@@ -4,7 +4,8 @@ import { createMemoryIntentStore, type Intent, type IntentStore } from "./intent
 import { manifest as manifestOf, type Manifest } from "./manifest"
 import { riskClass, type Target } from "./mutation"
 import type { Provider } from "./provider"
-import { createTestMcp } from "./test-mcp"
+import { createMcpServer } from "./server"
+import { createTestMcp, testPrincipal } from "./test-mcp"
 
 /** What the conformance kit needs from a provider's test besides the provider. */
 export type ConformanceFixture = {
@@ -37,14 +38,13 @@ export async function createKit(provider: Provider, fixture: ConformanceFixture)
   const stored: Intent[] = []
   const memory = createMemoryIntentStore({ now: () => clock.now })
   const intents: IntentStore = { ...memory, async insert(intent) { stored.push(intent); await memory.insert(intent) } }
-  const mcp = await createTestMcp(provider, { intents, policyClass: ({ risk }) => riskClass[risk] === "human" ? "controlled" : riskClass[risk] })
+  const mcp = await createTestMcp(auth => createMcpServer({ provider, auth, intents, policyClass: ({ risk }) => riskClass[risk] === "human" ? "controlled" : riskClass[risk] }))
   const contract = manifestOf(provider)
   const scopes = [...new Set([...contract.tools, ...contract.prompts, ...contract.resources].flatMap(entry => entry.scopes))].sort()
-  const caller = { userId: crypto.randomUUID(), organizationId: crypto.randomUUID(), membershipId: crypto.randomUUID(), clientId: "conformance-kit" }
-  const clients = { owner: await mcp.connect({ ...caller, scopes }), other: await mcp.connect({ scopes }) }
+  const principal = testPrincipal({ clientId: "conformance-kit", scopes })
+  const clients = { owner: await mcp.connect(principal), other: await mcp.connect({ scopes }) }
   return {
-    provider, manifest: contract, fixture, stored,
-    principal: { ...caller, grantId: crypto.randomUUID(), scopes, expiresAt: Math.floor(Date.now() / 1000) + 300, organizationAuthorizationVersion: 1 },
+    provider, manifest: contract, fixture, stored, principal,
     async call(name, args, as = "owner") { return await clients[as].callTool({ name, arguments: args }) as CallToolResult },
     advanceTo(epochMs) { clock.now = Math.max(clock.now, epochMs) },
     close: () => mcp.close(),

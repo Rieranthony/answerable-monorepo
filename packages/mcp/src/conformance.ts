@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import type { CallToolResult } from "@modelcontextprotocol/server"
-import { z } from "zod"
+import type { z } from "zod"
+import { errorOf } from "./call"
 import { receipt } from "./commit-tools"
 import { errorCodes } from "./errors"
 import { createKit, type Kit, type Subject, type ConformanceFixture } from "./kit"
-import type { Mutation, Preview, Target } from "./mutation"
+import type { Mutation } from "./mutation"
+import type { intentView } from "./prepare"
 import type { Provider, Served } from "./provider"
 import { lintOutput, type Schema } from "./schema-lint"
 import { deprecationSentence, wireName, type Tool } from "./tool"
@@ -16,34 +18,16 @@ function assert(condition: unknown, message: string): asserts condition {
 const reads = (provider: Provider) => provider.tools.filter((tool): tool is Served<Tool> => tool.kind === "read")
 const wire = (tool: { name: string }) => wireName(tool.name)
 
-const envelope = z.strictObject({
-  error: z.strictObject({
-    code: z.string(),
-    message: z.string(),
-    retry: z.strictObject({ policy: z.enum([...new Set(Object.values(errorCodes))]), after_ms: z.number().optional() }),
-    details: z.record(z.string(), z.unknown()).optional(),
-    request_id: z.string(),
-  }),
-})
-
-/** The envelope of an error result, or a failure saying what is wrong with it. */
+/** The envelope of an error result, or a failure naming the tool and saying what is wrong with it. */
 function readEnvelope(result: CallToolResult, provider: Provider, tool: string) {
-  assert(result.structuredContent === undefined, `${tool}: an error result must not carry structuredContent; the envelope is one text block`)
-  const [block, ...rest] = result.content
-  assert(block?.type === "text" && !rest.length, `${tool}: an error result must be one text block holding the envelope as JSON`)
-  let json: unknown
+  let error: ReturnType<typeof errorOf>
   try {
-    json = JSON.parse(block.text)
-  } catch {
-    throw new Error(`${tool}: the error text is not JSON: ${block.text}`)
+    error = errorOf(result)
+  } catch (problem) {
+    throw new Error(`${tool}: ${(problem as Error).message}`)
   }
-  const parsed = envelope.safeParse(json)
-  if (!parsed.success) {
-    throw new Error(`${tool}: the error is not { error: { code, message, retry: { policy }, request_id } }: ${parsed.error.issues.map(issue => `${issue.path.join(".")}: ${issue.message}`).join("; ")}`)
-  }
-  const { code } = parsed.data.error
-  assert(Object.hasOwn(errorCodes, code) || provider.tools.some(definition => definition.errors.includes(code)), `${tool}: error code ${code} is neither a standard code nor declared in errors; add it to the definition's errors`)
-  return parsed.data.error
+  assert(Object.hasOwn(errorCodes, error.code) || provider.tools.some(definition => definition.errors.includes(error.code)), `${tool}: error code ${error.code} is neither a standard code nor declared in errors; add it to the definition's errors`)
+  return error
 }
 
 async function example(kit: Kit, name: string) {
@@ -69,7 +53,8 @@ async function refused(kit: Kit, name: string, args: Record<string, unknown>, co
   assert(error.code === code, `${name} answered ${error.code} where ${code} was expected: ${error.message}${advice}`)
 }
 
-type PreparedIntent = { intent_id: string; commit_token: string; commit_tool: string; expires_at: string; targets: Target[]; preview: Preview }
+// The kit never validates only, so every intent it prepares has an id and a token.
+type PreparedIntent = z.output<typeof intentView> & { intent_id: string; commit_token: string }
 async function prepare(kit: Kit, mutation: Served<Mutation>, args?: Record<string, unknown>) {
   return await ok(kit, wire(mutation), args ?? await example(kit, mutation.name)) as unknown as PreparedIntent
 }

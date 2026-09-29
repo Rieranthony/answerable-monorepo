@@ -1,15 +1,14 @@
 /** Call ID's admin API as root: `admin("POST", "/organizations", { slug, name })`. Every call carries a fresh `Idempotency-Key`; a status outside 2xx throws with the body. */
-export type Admin = (method: string, path: string, body?: unknown, headers?: Record<string, string>) => Promise<Record<string, unknown>>
+export type Admin = (method: string, path: string, body?: unknown) => Promise<Record<string, unknown>>
 
 export function createAdmin({ idOrigin, rootSecret }: { idOrigin: string; rootSecret: string }): Admin {
-  return async (method, path, body, headers = {}) => {
+  return async (method, path, body) => {
     const response = await fetch(`${idOrigin}/api/admin/v1${path}`, {
       method,
       headers: {
         Authorization: `Bearer ${rootSecret}`,
         "Idempotency-Key": crypto.randomUUID(),
         ...(body === undefined ? {} : { "Content-Type": "application/json" }),
-        ...headers,
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     })
@@ -57,7 +56,7 @@ export async function grantOrganisation(
   await admin("POST", `${path}/entitlements`, { clientId, resource, scopes: entitledScopes })
 }
 
-/** Entitle an organisation, one member (`memberId`) or one group (`groupId`) to a resource's scopes, for every client. */
-export function entitle(admin: Admin, organizationId: string, { resource, scopes, memberId, groupId }: { resource: string; scopes: readonly string[]; memberId?: string; groupId?: string }) {
-  return admin("POST", `/organizations/${organizationId}/entitlements`, { resource, scopes, memberId, groupId })
+/** Entitle an organisation to a resource's scopes, for every client. */
+export function entitle(admin: Admin, organizationId: string, { resource, scopes }: { resource: string; scopes: readonly string[] }) {
+  return admin("POST", `/organizations/${organizationId}/entitlements`, { resource, scopes })
 }

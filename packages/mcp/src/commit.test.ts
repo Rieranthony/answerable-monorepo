@@ -1,7 +1,7 @@
 import { afterEach, expect, spyOn, test } from "bun:test"
 import { z } from "zod"
-import { createMemoryIntentStore, defineMutation, defineProvider, defineTool, manifest, ToolError, type IntentStore, type McpServerConfig, type Mutation, type Tool } from "./index"
-import { createTestMcp, type TestMcp } from "./testing"
+import { createMcpServer, createMemoryIntentStore, defineMutation, defineProvider, defineTool, manifest, ToolError, type IntentStore, type McpServerConfig, type Mutation, type Tool } from "./index"
+import { createTestMcp, errorOf, type TestMcp } from "./testing"
 
 const uuidV7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 const commitToken = /^act_[A-Za-z0-9_-]{43}$/
@@ -87,7 +87,7 @@ async function serve(options: Options = {}) {
   const intents = options.intents ?? createMemoryIntentStore({ now: () => clock })
   const tools = options.tools?.(lib) ?? [lib.list, lib.rename, lib.remove, lib.publish, lib.purge]
   const provider = defineProvider({ id: "test", version: options.version ?? "2026-09-29", tools })
-  const mcp = await createTestMcp(provider, { intents, policyClass: options.policyClass })
+  const mcp = await createTestMcp(auth => createMcpServer({ provider, auth, intents, policyClass: options.policyClass }))
   mcps.push(mcp)
   const person = { userId: crypto.randomUUID(), organizationId: crypto.randomUUID(), membershipId: crypto.randomUUID(), clientId: "test-client" }
   type Connect = Parameters<TestMcp["connect"]>[0]
@@ -105,13 +105,7 @@ async function ok(client: Client, name: string, args: Record<string, unknown> = 
   expect(result.content).toEqual([{ type: "text", text: JSON.stringify(result.structuredContent) }])
   return JSON.parse(text)
 }
-async function refused(client: Client, name: string, args: Record<string, unknown> = {}) {
-  const result = await client.callTool({ name, arguments: args })
-  expect(result.isError).toBe(true)
-  expect(result.structuredContent).toBeUndefined()
-  expect(result.content).toEqual([{ type: "text", text: expect.any(String) }])
-  return JSON.parse((result.content as { text: string }[])[0]!.text).error
-}
+const refused = async (client: Client, name: string, args: Record<string, unknown> = {}): Promise<Record<string, unknown>> => errorOf(await client.callTool({ name, arguments: args }))
 const commitArgs = (intent: Prepared) => ({ intent_id: intent.intent_id, commit_token: intent.commit_token })
 const confirmedArgs = (intent: Prepared) => ({ ...commitArgs(intent), preview_summary: intent.preview.summary })
 const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }

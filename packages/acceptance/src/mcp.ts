@@ -1,6 +1,5 @@
-import assert from "node:assert/strict"
+import { errorOf } from "@answerable/mcp/testing"
 import { Client, StreamableHTTPClientTransport, type OAuthClientProvider } from "@modelcontextprotocol/client"
-import { z } from "zod"
 import { onCleanup } from "./cleanup"
 
 /** Serve a fetch handler on a loopback port until the kit stops. Throws when the port is busy. */
@@ -21,19 +20,21 @@ export async function connect(resource: string, provider: OAuthClientProvider, p
   return client
 }
 
-const textBlocks = z.array(z.object({ text: z.string() }))
-
-/** Call a tool and return its `structuredContent`. A failed call throws with the error envelope's text. */
+/** Call a tool and return its `structuredContent`. A failed call throws with the envelope's code and message. */
 export async function tool(client: Client, name: string, args: Record<string, unknown> = {}) {
   const result = await client.callTool({ name, arguments: args })
-  if (result.isError) throw new Error(`${name}: ${textBlocks.parse(result.content)[0]?.text}`)
+  if (result.isError) {
+    const { code, message } = errorOf(result)
+    throw new Error(`${name} answered ${code}: ${message}`)
+  }
   return result.structuredContent as Record<string, unknown>
 }
 
-/** Call a tool that must fail and return the `error` of its envelope: `code`, `message` and `details`. */
+/** Call a tool that must fail and return the `error` of its envelope: `code`, `message`, `retry`, `details` and `request_id`. */
 export async function refusal(client: Client, name: string, args: Record<string, unknown> = {}) {
-  const result = await client.callTool({ name, arguments: args })
-  assert.equal(result.isError, true, `${name} must refuse`)
-  const envelope = z.object({ error: z.object({ code: z.string(), message: z.string(), details: z.unknown().optional() }) })
-  return envelope.parse(JSON.parse(textBlocks.parse(result.content)[0]!.text)).error
+  try {
+    return errorOf(await client.callTool({ name, arguments: args }))
+  } catch (problem) {
+    throw new Error(`${name}: ${(problem as Error).message}`)
+  }
 }

@@ -26,7 +26,7 @@ The **direct projection**: one tool per capability the person may use, a prepare
 
 **`_meta` and annotations** are those of [`@answerable/mcp`](/docs/mcp/authoring#what-the-wire-carries): `_meta["com.answerable/capability"]` carries the identity (`e2e/records.list`), version and kind, and for a mutation its risk and the caller's policy class. They describe; they never authorise.
 
-**Cache hint.** `tools/list` tells `2026-07-28` hosts it may be cached privately for 30 seconds (`ttlMs: 30000`, `cacheScope: "private"`).
+**Cache hint.** `tools/list` tells `2026-07-28` hosts they may keep it for 30 seconds, for that caller alone, as [every `@answerable/mcp` server](/docs/mcp/authoring#the-server) does.
 
 **Views** keep their URIs: `e2e_records_show` opens `ui://records/index.html`, served while the tool is listed.
 
@@ -119,7 +119,7 @@ Every call of a tool or a prepare tool appends one event to its organisation's c
 
 | Kind | When | Outcome |
 | --- | --- | --- |
-| `capability.completed` | The call ran | `success`, with `data.result_bytes` (and `truncated: true` when it was truncated), or `failure` with `error_code` |
+| `capability.completed` | The call ran | `success`, with `data.result_bytes`, or `failure` with `error_code`, such as `RESULT_TOO_LARGE` |
 | `capability.denied` | A call named a capability that exists but the caller may not use | `denied`, with `reason` `not granted` or `no toolbox scope` |
 
 A call to a name that does not exist records nothing. The other kinds of the design (`intent.*`, `receipt.issued`, `operation.*`, `run.*`, `limit.refused`) are accepted by the table and not yet written.
@@ -227,8 +227,8 @@ Read from the root `.env` by `bun run toolbox:dev`; every variable is listed in 
 
 | Limit | Value |
 | --- | --- |
-| Result size | A read's result above 100 KiB of JSON answers `{ "truncated": true, "message": "Narrow the request with limit, cursor or filters." }` as structured content and text; each read's output schema admits it. Prepare results are not truncated |
-| Grant freshness | At most 60 seconds, usually one 15-second poll |
+| Result size | A read's result above 100 KiB of JSON (102,400 bytes) answers [`RESULT_TOO_LARGE`](/docs/mcp/errors#codes) with `details.bytes` and `details.limit`. Prepare results are not limited |
+| Grant freshness | At most 60 seconds, usually one 15-second poll; a `2026-07-28` host that keeps `tools/list` for its 30 seconds lists a change up to 30 seconds later, while every call is checked against current grants |
 | Providers | Mounted in process; each provider id once. Their prompts and resources are not served through the Toolbox; their views are |
 | Scope checks inside a provider | A Toolbox token carries only `toolbox`, so a handler that reads `principal.scopes` sees no provider scopes: the e2e view's `canWrite` is false through the Toolbox, and its create and delete buttons stay hidden |
 | Meta projection (`toolbox_search`, `toolbox_describe`, `toolbox_execute`, `toolbox_prepare`), `tools/list_changed`, host client settings, pins | Not yet |
@@ -243,6 +243,7 @@ Read from the root `.env` by `bun run toolbox:dev`; every variable is listed in 
 | `Tool <name> not found` | No such tool, or you may not use it: no grant string covers it, its provider is not enabled for your organisation, the organisation disabled it, or the token lacks `toolbox` | Call `toolbox_whoami` to see your grants; ask an administrator for an entitlement |
 | Tool result `UPSTREAM_UNAVAILABLE` | ID did not answer with your access and none is cached | Retry after `retry.after_ms`; check ID and the `TOOLBOX_ID_*` settings |
 | `tools/list` fails with an internal error | The same, for a list | Retry; the server log shows `[toolbox] reading access failed` |
+| Tool result `RESULT_TOO_LARGE` | A read answered more than 100 KiB of JSON | Call it again with a smaller `limit`, a `cursor` or narrower filters |
 | Log `Answerable ID refused the Toolbox's client credentials (401)…` | The machine client's ID, secret or `platform:read` capability is wrong | Fix `TOOLBOX_ID_CLIENT_ID`, `TOOLBOX_ID_CLIENT_SECRET` or the capability |
 | Log `[toolbox] reading ID's audit log failed` | The poller could not read the audit log | Changes still arrive within 60 seconds; fix ID or the machine client |
 | Commit answers `PERMISSION_DENIED` | Your grant no longer covers the prepared mutation | Ask for access, then prepare again |

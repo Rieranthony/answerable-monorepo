@@ -14,7 +14,6 @@ create table capabilities (
   version text not null,
   kind text not null check (kind in ('read', 'mutate')),
   risk text check (risk in ('low', 'normal', 'high')),
-  policy_class_default text check (policy_class_default in ('agent', 'controlled', 'human')),
   title text,
   description text not null,
   input jsonb not null,
@@ -28,7 +27,7 @@ create table capabilities (
   ) stored,
   status text not null default 'active' check (status in ('active', 'retired')),
   primary key (identity, version),
-  check ((kind = 'mutate') = (risk is not null and policy_class_default is not null))
+  check ((kind = 'mutate') = (risk is not null))
 );
 
 create index capabilities_search on capabilities using gin (search);

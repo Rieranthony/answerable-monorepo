@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test"
 import { defineTool, ToolError, type ToolCall } from "@answerable/mcp"
+import { testPrincipal } from "@answerable/mcp/testing"
 import { SpanKind, SpanStatusCode } from "@opentelemetry/api"
 import { z } from "zod"
 import { createMemoryTracer, createTracer, traced } from "./spans"
-import { principal } from "./test/principal"
 
 const tool = { ...defineTool({ name: "records.list", description: "A fixture read that lists nothing and changes nothing.", input: z.object({}), output: z.object({}), async execute() { return {} } }), identity: "e2e/records.list", version: "2026-09-29", scopes: [] }
-const call = (meta: Record<string, unknown> = {}): ToolCall => ({ tool, name: "e2e_records_list", principal: principal(), executionId: Bun.randomUUIDv7(), requestId: 7, meta })
+const call = (meta: Record<string, unknown> = {}): ToolCall => ({ tool, name: "e2e_records_list", principal: testPrincipal(), executionId: Bun.randomUUIDv7(), requestId: 7, meta })
 const sha256 = (text: string) => new Bun.CryptoHasher("sha256").update(text).digest("hex")
 
 test("one server span per call, named after the capability, with the MCP, GenAI and Answerable attributes", async () => {
@@ -27,7 +27,7 @@ test("one server span per call, named after the capability, with the MCP, GenAI 
     "jsonrpc.request.id": "7",
     "answerable.organisation.id": one.principal.organizationId,
     "answerable.user.hash": sha256(`https://toolbox.test/mcp:${one.principal.userId}`),
-    "answerable.client.name": "claude-code",
+    "answerable.client.name": "test-client",
     "answerable.capability.identity": "e2e/records.list",
     "answerable.capability.version": "2026-09-29",
     "answerable.outcome": "success",

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.0
+
+The kit judged as one: fewer options, one definition of each helper. Breaking: three server options and the options of `createTestMcp` are gone.
+
+- `RESULT_TOO_LARGE` joins the standard codes, retry `after_fix_input`: a result above 100 KiB; the caller narrows the request. The Toolbox answers it for a read, in place of the truncation notice.
+- `riskClass` is exported: the policy class each risk gives a mutation by default.
+- `@answerable/mcp/testing` gains `errorOf(result)`, which reads the error envelope of a failed call and says what is wrong with one that is not, and `testPrincipal(overrides?)`, a verified caller for unit tests. The conformance kit reads envelopes with `errorOf`.
+- `tools/list` always tells 2026-07-28 hosts they may keep it for 30 seconds, for that caller alone. The `cacheHints` option is gone.
+- `allowedHosts` and `allowedOrigins` are gone: the Host header and a browser Origin must name the resource URL's host.
+- `createTestMcp` takes only a provider or a function that builds the server; pass `intents`, `policyClass` or another resource through `createMcpServer` in that function. The MCP's URL is `https://mcp.test/mcp`.
+- `wrapCall` returns what `run` returns or throws; it no longer promises that a replacement is sent.
+- `Intent` no longer carries `committed_at`; its `receipt` has it.
+- Definition errors name the definition and say what to change: a bad view, prompt or resource name, an empty view, a `ui://` or invalid resource URI, a provider mounted twice, two views at one URI, and a view that bundles to extra files.
+
 ## 0.4.0
 
 What a hub such as the Toolbox needs from `createMcpServer`, each option off by default, and `createTestMcp` for a hub.

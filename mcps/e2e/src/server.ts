@@ -1,14 +1,13 @@
-import { createE2eMcp } from "./mcp"
-import { readMcpEnvironment } from "@answerable/mcp"
+import { createMcpServer, readMcpEnvironment } from "@answerable/mcp"
+import { createE2eProvider } from "./mcp"
 import { createRecordStore } from "./records"
 
-const config = readMcpEnvironment(process.env)
+const { auth, port } = readMcpEnvironment(process.env)
 const view = Bun.file(new URL("../dist/records.html", import.meta.url))
 if (!await view.exists()) throw new Error("Missing records view. Run bun run --filter @answerable/mcp-e2e build first.")
-const records = createRecordStore()
-const app = createE2eMcp({ auth: config.auth, records, viewHtml: await view.text() })
-const server = Bun.serve({ hostname: "127.0.0.1", port: config.port, fetch: app.fetch })
-console.log(`E2E MCP serving ${config.auth.resource}`)
+const mcp = createMcpServer({ provider: createE2eProvider({ records: createRecordStore(), viewHtml: await view.text() }), auth })
+const server = Bun.serve({ hostname: "127.0.0.1", port, fetch: mcp.fetch })
+console.log(`E2E MCP serving ${auth.resource}`)
 let closing = false
 async function close() {
   if (closing) return

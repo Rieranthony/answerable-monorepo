@@ -1,7 +1,7 @@
 import { afterEach, expect, spyOn, test } from "bun:test"
 import { z } from "zod"
 import { defineMutation, defineProvider, defineTool, ToolError } from "./index"
-import { createTestMcp, type TestMcp } from "./testing"
+import { createTestMcp, errorOf, type TestMcp } from "./testing"
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const close of cleanups.splice(0)) await close() })
@@ -30,11 +30,7 @@ async function connect() {
   cleanups.push(() => mcp.close())
   return mcp.connect()
 }
-async function envelope(client: Awaited<ReturnType<typeof connect>>, name: string, args: Record<string, unknown>) {
-  const result = await client.callTool({ name, arguments: args })
-  expect(result.isError).toBe(true)
-  return JSON.parse((result.content as { text: string }[])[0]!.text).error
-}
+const envelope = async (client: Awaited<ReturnType<typeof connect>>, name: string, args: Record<string, unknown>) => errorOf(await client.callTool({ name, arguments: args }))
 
 test("a read tool's declared custom code and any standard code reach the caller; an undeclared custom code answers INTERNAL and is logged", async () => {
   const client = await connect()

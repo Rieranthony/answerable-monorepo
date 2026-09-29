@@ -39,7 +39,7 @@ export type Intent = {
   status: IntentStatus
   created_at: string
   expires_at: string
-  committed_at?: string
+  /** Stored by the commit that ends `committed`. */
   receipt?: Receipt
 }
 
@@ -50,7 +50,7 @@ export type IntentStore = {
   insert(intent: Intent): Promise<void>
   /** The intent, marked `expired` first if it was `prepared` or `awaiting_approval` and `expires_at` has passed. */
   get(intentId: string): Promise<Intent | undefined>
-  /** Move an intent from `from` to `to`, applying expiry first; with `receipt`, store it and its `committed_at`. False when the intent is not in `from`. */
+  /** Move an intent from `from` to `to`, applying expiry first; with `receipt`, store it too. False when the intent is not in `from`. */
   transition(intentId: string, from: IntentStatus, to: IntentStatus, receipt?: Receipt): Promise<boolean>
 }
 
@@ -87,7 +87,7 @@ export function createMemoryIntentStore(options: { now?: () => number } = {}): I
       const intent = current(intentId)
       if (intent?.status !== from) return false
       intent.status = to
-      if (receipt) Object.assign(intent, { committed_at: receipt.committed_at, receipt: copy(receipt) })
+      if (receipt) intent.receipt = copy(receipt)
       return true
     },
   }

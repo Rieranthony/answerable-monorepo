@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { z } from "zod"
-import { defineMutation, defineTool } from "./index"
+import { defineMutation, defineTool, riskClass } from "./index"
 
 const description = "Delete one of your organisation's records. Prepare it, then commit the intent it returns."
 const fields = {
@@ -39,7 +39,9 @@ test("optional fields are kept and frozen", () => {
   for (const value of [mutation.scopes, mutation.effects, mutation.deprecated]) expect(Object.isFrozen(value)).toBe(true)
 })
 
-test("risk is low, normal or high", () => {
+test("risk is low, normal or high, and gives the agent, controlled or human class", () => {
+  expect(riskClass).toEqual({ low: "agent", normal: "controlled", high: "human" })
+  expect(Object.isFrozen(riskClass)).toBe(true)
   for (const risk of ["low", "normal", "high"] as const) expect(defineMutation({ ...fields, risk }).risk).toBe(risk)
   for (const risk of ["medium", "", "HIGH"]) {
     expect(() => defineMutation({ ...fields, risk } as never)).toThrow(`Mutation records.delete: risk "${risk}" must be low, normal or high`)

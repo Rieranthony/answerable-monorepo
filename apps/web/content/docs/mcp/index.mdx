@@ -35,9 +35,9 @@ The MCP never sees a password, never runs Better Auth and never reads ID's datab
 | --- | --- |
 | `@answerable/auth` | Verify an Answerable ID access token for any service |
 | `@answerable/auth/testing` | An in-process issuer that signs test tokens |
-| `@answerable/mcp` | `defineTool`, `defineMutation`, `defineProvider`, `definePrompt`, `defineResource`, `defineView`, `createMcpServer`, `createMemoryIntentStore`, `manifest`, `ToolError`, `readMcpEnvironment` |
+| `@answerable/mcp` | `defineTool`, `defineMutation`, `defineProvider`, `definePrompt`, `defineResource`, `defineView`, `createMcpServer`, `createMemoryIntentStore`, `manifest`, `ToolError`, `errorCodes`, `riskClass`, `readMcpEnvironment` |
 | `@answerable/mcp/build` | Bundle an MCP Apps view into one HTML resource |
-| `@answerable/mcp/testing` | `createTestMcp`: serve a provider, or a hub, in-process with the official MCP client. `assertProviderConformance`: the conformance kit |
+| `@answerable/mcp/testing` | `createTestMcp`: serve a provider, or a hub, in-process with the official MCP client. `assertProviderConformance`: the conformance kit. `errorOf` and `testPrincipal`: read a refusal, make a caller |
 | `@answerable/mcp-toolbox` | The Toolbox: `createToolbox`, the grants reader and poller, the catalogue, evidence and spans (`mcps/toolbox`) |
 
 Views import the official MCP Apps browser API, `@modelcontextprotocol/ext-apps`, directly.

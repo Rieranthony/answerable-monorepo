@@ -1,7 +1,7 @@
 import { createIdVerifier, type IdVerifierConfig, type UserPrincipal } from "@answerable/auth"
 import {
   INTERNAL_ERROR, ProtocolError, createMcpHandler, McpServer, requireBearerAuth, OAuthError, OAuthErrorCode,
-  hostHeaderValidationResponse, originValidationResponse, getOAuthProtectedResourceMetadataUrl, readRequestBody, type ServerOptions,
+  hostHeaderValidationResponse, originValidationResponse, getOAuthProtectedResourceMetadataUrl, readRequestBody,
 } from "@modelcontextprotocol/server"
 import { registerAppTool, registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server"
 import { z } from "zod"
@@ -34,13 +34,9 @@ export type ToolCall = Readonly<{
 export type McpServerConfig = {
   provider: Provider
   auth: IdVerifierConfig
-  /** Hostnames accepted in the Host header. Default: the resource URL's hostname. */
-  allowedHosts?: string[]
-  /** Hostnames accepted in a browser Origin header. Default: the resource URL's hostname. */
-  allowedOrigins?: string[]
   /** Where intents live. Default: a memory store for this server. */
   intents?: IntentStore
-  /** The policy class of a mutation for one caller, decided for each request. Default: from the mutation's `risk`. */
+  /** The policy class of a mutation for one caller, decided for each request. Default: `riskClass[mutation.risk]`. */
   policyClass?: (mutation: Served<Mutation>, principal: UserPrincipal) => PolicyClass | Promise<PolicyClass>
   /**
    * Providers served beside `provider` at the same endpoint, as a hub mounts them. Their tools are named `<provider id>_<wire name>` after
@@ -56,12 +52,10 @@ export type McpServerConfig = {
   allow?: (principal: UserPrincipal, tool: Served<Tool | Mutation>, called: boolean) => boolean | Promise<boolean>
   /**
    * Runs around every call of a tool or a prepare tool. `run` parses the arguments, runs the handler within its timeout and checks the output;
-   * it returns the structured content or throws what the call answers. Return that content, or a replacement the tool's output schema accepts.
+   * it returns the structured content or throws what the call answers. Return what `run` returns, or throw a `ToolError` to answer with it instead.
    * Default: `run()`.
    */
   wrapCall?: (call: ToolCall, run: () => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>
-  /** Cache hints for the 2026-07-28 revision's list results, for example `{ "tools/list": { ttlMs: 30_000, cacheScope: "private" } }`. Default: none, so hosts may not cache them. */
-  cacheHints?: ServerOptions["cacheHints"]
 }
 
 const validateOnly = z.boolean().default(false).describe("Return the preview without recording an intent or issuing a commit token; default false")
@@ -69,6 +63,8 @@ const message = z.object({ method: z.string(), params: z.object({ name: z.string
 type Peeked = { method?: string; name?: string }
 // Requests whose answer depends on which tools, and so which views, the caller may use.
 const decided = new Set(["tools/list", "tools/call", "resources/list", "resources/read"])
+// A caller's tool list changes only with its scopes, fixed for a token's life, or with a hub's grants.
+const cacheHints = { "tools/list": { ttlMs: 30_000, cacheScope: "private" as const } }
 
 // The method and tool name of a request, read from a copy of its body, so that `allow` runs only when tools matter and can tell a call from a list.
 async function peek(request: Request): Promise<Peeked> {
@@ -85,7 +81,7 @@ async function peek(request: Request): Promise<Peeked> {
 function wireNames(provider: Provider, mount: readonly Provider[]) {
   const ids = new Set([provider.id])
   for (const { id } of mount) {
-    if (ids.has(id)) throw new Error(`Provider ${id} is mounted twice`)
+    if (ids.has(id)) throw new Error(`Provider ${id} is mounted twice; mount each provider once, and never the server's own provider`)
     ids.add(id)
   }
   const owner = new Map<string, string>()
@@ -109,7 +105,7 @@ function wireNames(provider: Provider, mount: readonly Provider[]) {
 
 /**
  * Serve a provider over MCP: `/health`, the protected-resource metadata and the MCP endpoint behind Answerable ID sign-in.
- * It returns a web-standard `{ fetch }` handler; the caller owns the listener.
+ * It returns a web-standard `{ fetch }` handler; the caller owns the listener. `tools/list` tells 2026-07-28 hosts they may keep it for 30 seconds, for that caller alone.
  *
  * @example
  * ```ts
@@ -122,7 +118,7 @@ function wireNames(provider: Provider, mount: readonly Provider[]) {
  * ```
  */
 export function createMcpServer(config: McpServerConfig): { fetch(request: Request): Promise<Response> } {
-  const { provider, auth, allowedHosts, allowedOrigins, mount = [], allow, cacheHints } = config
+  const { provider, auth, mount = [], allow } = config
   const { intents = createMemoryIntentStore(), policyClass = (mutation: Served<Mutation>) => riskClass[mutation.risk], wrapCall = (_call, run) => run() } = config
   const names = wireNames(provider, mount)
   const served = [...names.keys()]
@@ -135,8 +131,7 @@ export function createMcpServer(config: McpServerConfig): { fetch(request: Reque
   // The resource URL is the endpoint; the SDK's 401 challenge names this metadata URL.
   const metadataUrl = getOAuthProtectedResourceMetadataUrl(resourceUrl)
   const metadataPath = new URL(metadataUrl).pathname
-  const hosts = allowedHosts ?? [resourceUrl.hostname]
-  const origins = allowedOrigins ?? [resourceUrl.hostname]
+  const hosts = [resourceUrl.hostname]
   const definitions = [...provider.tools, ...provider.prompts, ...provider.resources]
   const scopes = [...new Set(definitions.flatMap(item => [...item.scopes]))].sort()
   const capabilities = {
@@ -272,7 +267,7 @@ export function createMcpServer(config: McpServerConfig): { fetch(request: Reque
         bearer_methods_supported: ["header"], resource_name: provider.id,
       })
       if (pathname !== resourceUrl.pathname) return new Response("Not found", { status: 404 })
-      let response = originValidationResponse(request, origins)
+      let response = originValidationResponse(request, hosts)
       if (!response) {
         const authInfo = await gate(request)
         if (!(authInfo instanceof Response) && allow && request.method === "POST") authInfo.extra = { ...authInfo.extra, request: await peek(request) }

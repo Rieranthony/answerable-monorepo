@@ -28,6 +28,7 @@ export type Preview = {
   quantities: { name: string; value: number; unit: string }[]
 }
 
+/** The policy class each risk gives a mutation unless `createMcpServer`'s `policyClass` decides otherwise: `low` agent, `normal` controlled, `high` human. */
 export const riskClass: Readonly<Record<Risk, PolicyClass>> = Object.freeze({ low: "agent", normal: "controlled", high: "human" })
 /** How long an intent of each class can be committed, in milliseconds from prepare. */
 export const classExpiry: Readonly<Record<PolicyClass, number>> = Object.freeze({ agent: 600_000, controlled: 1_800_000, human: 86_400_000 })

@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test"
 import { z } from "zod"
 import { createMcpServer, defineMutation, definePrompt, defineProvider, defineResource, defineTool, defineView, ToolError, type McpServerConfig, type Provider, type ToolCall } from "./index"
-import { createTestMcp, type TestMcp } from "./testing"
+import { createTestMcp, errorOf, type TestMcp } from "./testing"
 
 // A hub serves its own provider and mounts others: the Toolbox's shape, built on createMcpServer.
 const uuidV7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
@@ -38,7 +38,7 @@ function mounted(id: string, view = board) {
 const mcps: TestMcp[] = []
 afterEach(async () => { await Promise.all(mcps.splice(0).map(mcp => mcp.close())) })
 type Decision = { user: string; identity: string; called: boolean }
-async function hub(options: Partial<Pick<McpServerConfig, "allow" | "wrapCall" | "policyClass" | "cacheHints">> & { mount?: Provider[] } = {}) {
+async function hub(options: Partial<Pick<McpServerConfig, "allow" | "wrapCall" | "policyClass">> & { mount?: Provider[] } = {}) {
   // Identities each user may use; the hub's own tools follow the scope rule.
   const grants = new Map<string, string[]>()
   const decisions: Decision[] = []
@@ -57,7 +57,6 @@ async function hub(options: Partial<Pick<McpServerConfig, "allow" | "wrapCall" |
 }
 const everything = ["alpha/notes.list", "alpha/notes.create", "beta/notes.list", "beta/notes.create"]
 const names = async (client: Awaited<ReturnType<TestMcp["connect"]>>) => (await client.listTools()).tools.map(tool => tool.name)
-const envelopeOf = (result: { content: unknown }) => JSON.parse((result.content as { text: string }[])[0]!.text).error
 
 test("mounted tools are named after their provider and follow the hub's own; the hub's id names the server, its scopes and its commit tools", async () => {
   const { mcp, person } = await hub()
@@ -88,7 +87,7 @@ test("a mounted mutation is prepared under its prefixed name and committed with 
 
 test("a hub refuses a provider mounted twice and two different views at one URI", async () => {
   const auth = { issuer: "https://id.test", resource: "https://mcp.test/mcp" }
-  expect(() => createMcpServer({ provider: own, mount: [mounted("alpha"), mounted("alpha")], auth })).toThrow("Provider alpha is mounted twice")
+  expect(() => createMcpServer({ provider: own, mount: [mounted("alpha"), mounted("alpha")], auth })).toThrow("Provider alpha is mounted twice; mount each provider once, and never the server's own provider")
   expect(() => createMcpServer({ provider: own, mount: [own], auth })).toThrow("Provider hub is mounted twice")
   const other = defineView({ name: "board", html: "<!doctype html><title>Other</title>" })
   expect(() => createMcpServer({ provider: own, mount: [mounted("alpha"), mounted("gamma", other)], auth })).toThrow("Providers alpha and gamma define two different views at ui://board/index.html; share one defineView result, or rename one view")
@@ -134,7 +133,7 @@ test("a ToolError from allow answers any call with its envelope and fails a list
   for (const name of ["alpha_notes_list", "no_such_tool"]) {
     const result = await client.callTool({ name, arguments: {} })
     expect(result.isError).toBe(true)
-    expect(envelopeOf(result)).toMatchObject({ code: "UPSTREAM_UNAVAILABLE", message: "Answerable ID did not answer", retry: { policy: "after_delay", after_ms: 1000 }, request_id: expect.stringMatching(uuidV7) })
+    expect(errorOf(result)).toMatchObject({ code: "UPSTREAM_UNAVAILABLE", message: "Answerable ID did not answer", retry: { policy: "after_delay", after_ms: 1000 }, request_id: expect.stringMatching(uuidV7) })
   }
   await expect(client.listTools()).rejects.toThrow()
   failure = new Error("unexpected")
@@ -154,10 +153,10 @@ test("a commit rechecks allow: a mutation the caller may no longer use answers P
   const intent = (await client.callTool({ name: "alpha_notes_create", arguments: { text: "late" } })).structuredContent as { intent_id: string; commit_token: string; preview: { summary: string } }
   grants.set(writer.userId, ["beta/notes.create"])
   const refused = await client.callTool({ name: "hub_commit_confirmed", arguments: { intent_id: intent.intent_id, commit_token: intent.commit_token, preview_summary: intent.preview.summary } })
-  expect(envelopeOf(refused)).toMatchObject({ code: "PERMISSION_DENIED", message: "Your access no longer covers alpha/notes.create" })
+  expect(errorOf(refused)).toMatchObject({ code: "PERMISSION_DENIED", message: "Your access no longer covers alpha/notes.create" })
 })
 
-test("wrapCall runs around every tool and prepare call, sees what it answers and may replace it; commit calls pass by", async () => {
+test("wrapCall runs around every tool and prepare call, sees what it answers and may refuse it; commit calls pass by", async () => {
   const calls: ToolCall[] = []
   const seen: unknown[] = []
   const frozen: boolean[] = []
@@ -168,7 +167,7 @@ test("wrapCall runs around every tool and prepare call, sees what it answers and
     try {
       const data = await run()
       seen.push(data)
-      return call.tool.identity === "beta/notes.list" ? { notes: ["replaced"] } : data
+      return data
     } catch (error) {
       seen.push((error as ToolError).code)
       throw error
@@ -179,9 +178,9 @@ test("wrapCall runs around every tool and prepare call, sees what it answers and
   const client = await caller.connect("2026-07-28")
   const traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
   expect((await client.callTool({ name: "alpha_notes_list", arguments: {}, _meta: { traceparent } })).structuredContent).toEqual({ notes: [] })
-  expect((await client.callTool({ name: "beta_notes_list", arguments: {} })).structuredContent).toEqual({ notes: ["replaced"] })
-  expect(envelopeOf(await client.callTool({ name: "alpha_notes_list", arguments: { limit: 9 } })).code).toBe("INVALID_INPUT")
-  expect(envelopeOf(await client.callTool({ name: "alpha_notes_list", arguments: {}, _meta: { refuse: true, traceparent } })).code).toBe("RATE_LIMITED")
+  expect((await client.callTool({ name: "beta_notes_list", arguments: {} })).structuredContent).toEqual({ notes: [] })
+  expect(errorOf(await client.callTool({ name: "alpha_notes_list", arguments: { limit: 9 } })).code).toBe("INVALID_INPUT")
+  expect(errorOf(await client.callTool({ name: "alpha_notes_list", arguments: {}, _meta: { refuse: true, traceparent } })).code).toBe("RATE_LIMITED")
   const intent = (await client.callTool({ name: "alpha_notes_create", arguments: { text: "a" } })).structuredContent as { intent_id: string; commit_token: string; preview: { summary: string } }
   await client.callTool({ name: "hub_commit_confirmed", arguments: { intent_id: intent.intent_id, commit_token: intent.commit_token, preview_summary: intent.preview.summary } })
   expect(calls.map(call => [call.tool.identity, call.name])).toEqual([
@@ -199,24 +198,4 @@ test("policyClass may answer asynchronously", async () => {
   const tool = (await client.listTools()).tools.find(item => item.name === "alpha_notes_create")!
   expect(tool._meta!["com.answerable/capability"]).toMatchObject({ policy_class: "agent" })
   expect((await client.callTool({ name: "alpha_notes_create", arguments: { text: "a" } })).structuredContent).toMatchObject({ commit_tool: "hub_commit", policy_class: "agent" })
-})
-
-test("cacheHints reach 2026-07-28 list results, so a client lists once while the hint lasts", async () => {
-  let requests = 0
-  const counted: McpServerConfig["allow"] = (_principal, tool) => {
-    if (tool.identity === "hub/hub.whoami") requests++
-    return true
-  }
-  const cached = await hub({ allow: counted, cacheHints: { "tools/list": { ttlMs: 30_000, cacheScope: "private" } } })
-  const client = await cached.person([]).connect("2026-07-28")
-  await client.listTools()
-  const after = requests
-  await client.listTools()
-  expect(requests).toBe(after)
-  const uncached = await hub({ allow: counted })
-  const other = await uncached.person([]).connect("2026-07-28")
-  await other.listTools()
-  const before = requests
-  await other.listTools()
-  expect(requests).toBe(before + 1)
 })

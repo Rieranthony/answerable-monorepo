@@ -228,6 +228,24 @@ Tree: branch `claude/toolbox-goal` on `main` 3ac5614, brief B5 of the Toolbox go
 
 **Size.** `mcps/toolbox/src` source 663 lines in 12 files, tests 814 in 11 files, test support 83; migrations 137.
 
+## 29 September 2026: the cleanup pass after B5
+
+Tree: branch `claude/toolbox-goal` on `main` 3ac5614, the whole-tree cleanup pass the goal prescribes after B5, run as its own brief on Opus 5.5 over `packages/auth`, `packages/mcp`, `packages/acceptance`, `mcps/e2e`, `mcps/toolbox` and the docs pages. `@answerable/mcp` 0.5.0.
+
+| Check | Result |
+| --- | --- |
+| Root typecheck, lint and build | Pass with `--force` (9, 9 and 3 tasks) |
+| `bun --filter web test` | 78 pass |
+| `bun run mcp:test` | auth 41 pass, 100%; mcp 168 pass and 5 todo, 100%; e2e 44 pass and 4 todo; Toolbox 62 pass and 2 todo, 100% |
+| `bun run mcp:check` | e2e 3 tasks, Toolbox 4 tasks |
+| `bun run mcp:test:e2e` | 42 pass at 100%: 37.1 and 45.4 seconds by the agent at load average 22 to 24 (32.5 and 32.3 seconds earlier at load 10 to 11), 48 seconds by the coordinator; nothing left behind |
+
+**What the pass removed or simplified.** One envelope parser (`errorOf` in `@answerable/mcp/testing`) replaces the conformance kit's, the acceptance kit's and seven hand-written ones; one `testPrincipal` replaces principals built by hand in five places; `riskClass` is exported once and the Toolbox's copy is gone. `createMcpServer` loses `allowedHosts`, `allowedOrigins` and `cacheHints` (every server now sends `tools/list` a 30-second private hint, tested at 29 and 31 seconds); `createTestMcp` loses its options (the function form covers them); `createGrantsReader` loses `ttlMs`; `createToolbox` requires `spans`; the acceptance kit loses `admin`'s headers, `entitle`'s member and group forms, the `oauthProvider` export and an unreachable PKCE branch; `createE2eMcp` is gone (one-line wrapper); `Intent.committed_at` is gone (the receipt carries it); the unread `policy_class_default` column is gone. The truncation of results above 100 KiB is now the error `RESULT_TOO_LARGE` (`after_fix_input`, `details: { bytes, limit }`, pinned at 102,400 accepted and 102,401 refused) in place of a union on every read's output schema; `docs/08` and `docs/09` say so. Error messages for views, prompts, resources, duplicates and mounted providers now name the definition and say what to change. Docs say each thing once: the envelope's "why text only" lives on the errors page, the custom-code rules on the authoring page; the `@answerable/mcp` README went from 88 to 51 lines.
+
+**Kept after consideration.** `mount`, `allow` with `called` and the request peek (the Toolbox needs each; `called` records the denial row J2 checks; the peek keeps `initialize` from reading grants); `wrapCall` (spans must wrap the run); `startId`'s `spawn` and `timeoutMs`; the poller's `intervalMs` (Bun 1.3.1's fake timers do not mock `setInterval`); the written-out `Target`, `Preview`, `Change` and `Receipt` types (the reference page); `expiresInMs`; the auth test issuer's `outage` and `jwksRequests`.
+
+**Size.** Source across the five workspaces 3,144 to 3,159 lines (`packages/mcp` grew by 47 for `errorOf` and `testPrincipal` with their documentation, in place of the copies deleted elsewhere), tests 4,290 to 4,270.
+
 ## Limits
 
 The acceptance uses local test issuers for company directories, a pre-registered public client and loopback HTTP. It does not certify Claude.ai, another host, another company directory or a production deployment.

@@ -1,10 +1,7 @@
 import { expect, test } from "bun:test"
-import { ToolError, type UserPrincipal } from "@answerable/mcp"
+import { ToolError } from "@answerable/mcp"
+import { testPrincipal as principal } from "@answerable/mcp/testing"
 import { createRecordStore } from "./records"
-
-function principal(): UserPrincipal {
-  return { userId: crypto.randomUUID(), organizationId: crypto.randomUUID(), membershipId: crypto.randomUUID(), grantId: crypto.randomUUID(), clientId: "test", scopes: [], expiresAt: 1, organizationAuthorizationVersion: 1 }
-}
 const firstPage = { limit: 20 }
 
 test("records stay within the caller's organisation", () => {

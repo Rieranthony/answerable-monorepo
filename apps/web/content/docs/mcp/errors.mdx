@@ -15,7 +15,9 @@ description: "Every error a tool call on an Answerable MCP can answer: the envel
 }
 ```
 
-Every tool failure is `{ "isError": true, "content": [{ "type": "text", "text": "…" }] }` with no `structuredContent`, and the one text block is this envelope as JSON. [Why text only](/docs/mcp/authoring#tool-errors). A model picks its next step from `retry.policy` without reading the message.
+Every tool failure is `{ "isError": true, "content": [{ "type": "text", "text": "…" }] }` with no `structuredContent`, and the one text block is this envelope as JSON. A model picks its next step from `retry.policy` without reading the message. Handlers throw it with [`ToolError`](/docs/mcp/authoring#tool-errors).
+
+**Why text only.** The MCP TypeScript SDK 1.x client checks any `structuredContent` against the tool's `outputSchema`, even on an error result, so an envelope there made `callTool` throw `Structured content does not match the tool's output schema` instead of returning it. It leaves a result without structured content untouched. Measured with SDK 1.30.0, which LibreChat uses; SDK 2.x clients return both shapes. Claude Code shows the model the text of a result that has no structured content. As text, the envelope reaches the model through every one of these clients.
 
 ## The envelope
 
@@ -34,7 +36,7 @@ Every tool failure is `{ "isError": true, "content": [{ "type": "text", "text": 
 | --- | --- |
 | `never` | Stop, and tell the person why |
 | `after_delay` | Wait `after_ms`, then call again with the same arguments |
-| `after_fix_input` | Correct the fields in `details.field_violations`, then call again |
+| `after_fix_input` | Change the input, then call again: correct the fields in `details.field_violations`, or narrow a request that answered `RESULT_TOO_LARGE` |
 | `after_state_change` | Wait until what `details.preconditions` names has changed, then call again |
 | `after_reprepare` | Call the mutation's prepare tool again, then commit the new intent |
 | `after_approval` | Commit with the tool in `details.approval.commit_tool`. Human approvals: Not yet |
@@ -47,6 +49,7 @@ Every tool failure is `{ "isError": true, "content": [{ "type": "text", "text": 
 | `NOT_FOUND` | A named resource does not exist for this caller; another organisation's resource is not found either | `never` | Check the identifier, for example with a list tool |
 | `PERMISSION_DENIED` | The caller may not perform the operation; a commit answers it too when the caller can no longer use the mutation (its token lacks the scopes, or a hub's grants no longer cover it) | `never` | Ask for access, then prepare again |
 | `PRECONDITION_FAILED` | The current state does not allow the operation; `details.preconditions` says what | `after_state_change` | Change that state first |
+| `RESULT_TOO_LARGE` | A read's result exceeded 100 KiB of JSON; `details.bytes` is its size and `details.limit` the limit, 102,400 bytes | `after_fix_input` | Narrow the request with `limit`, `cursor` or filters |
 | `INTENT_STALE` | A target's version moved, or a target disappeared or appeared, since prepare; `details.targets` says which | `after_reprepare` | Prepare again and show the new preview |
 | `INTENT_EXPIRED` | The intent passed `expires_at` before it was committed | `after_reprepare` | Prepare again |
 | `INTENT_NOT_FOUND` | No intent has that id, or it is for a capability version this server does not serve | `after_reprepare` | Prepare again |
@@ -60,22 +63,16 @@ Every tool failure is `{ "isError": true, "content": [{ "type": "text", "text": 
 | `IDEMPOTENCY_KEY_MISMATCH` | The same idempotency key came with different input | `never` | Not yet: prepare takes no idempotency key |
 | `RATE_LIMITED`, `BUDGET_EXHAUSTED` | A limit refused the call | `after_delay` | Wait `after_ms`. Not yet: the SDK enforces no limits; a handler may throw them |
 | `UPSTREAM_REJECTED` | The source refused; `details.upstream` carries its code | `never` | Read `details.upstream`. A handler that calls a source throws it; no Answerable provider does yet |
-| `UPSTREAM_UNAVAILABLE` | The source did not answer | `after_delay` | Call again later. A handler that calls a source throws it; no Answerable provider does yet |
+| `UPSTREAM_UNAVAILABLE` | The source did not answer | `after_delay` | Call again later. The Toolbox answers it when Answerable ID does not say what you may use; a handler that calls a source throws it, and no Answerable provider does yet |
 | `TIMEOUT` | The tool ran past its `timeoutMs` | `after_delay` | Call again; a commit may still finish, so call the commit tool again for its receipt |
 | `OPERATION_NOT_FOUND`, `OPERATION_EXPIRED` | The operation handle is unknown or gone | `never` | Not yet: operations do not exist |
 | `INTERNAL` | An unexpected failure, or a handler that threw a [custom code](#custom-codes) its definition does not declare | `after_delay` | Call again once; if it persists, the operator reads the server log for the `request_id`, which names an undeclared code |
 
-**Who answers what.** The server answers `INVALID_INPUT` for bad arguments, `TIMEOUT` and `INTERNAL` for every tool. The commit tools answer the `INTENT_*` codes, `COMMIT_TOKEN_INVALID`, `PRINCIPAL_MISMATCH`, `APPROVAL_REQUIRED`, `COMMIT_IN_PROGRESS` and `PERMISSION_DENIED`, in [this order](/docs/mcp/authoring#commit-tools). Your handlers throw the rest with `ToolError`. `errorCodes` in `@answerable/mcp` exports the table as data ([reference](/docs/mcp/reference#errorcodes)).
+**Who answers what.** The server answers `INVALID_INPUT` for bad arguments, `TIMEOUT` and `INTERNAL` for every tool. The commit tools answer the `INTENT_*` codes, `COMMIT_TOKEN_INVALID`, `PRINCIPAL_MISMATCH`, `APPROVAL_REQUIRED`, `COMMIT_IN_PROGRESS` and `PERMISSION_DENIED`, in [this order](/docs/mcp/authoring#commit-tools). [The Toolbox](/docs/mcp/toolbox#limits) answers `RESULT_TOO_LARGE` and `UPSTREAM_UNAVAILABLE`. Your handlers throw the rest with `ToolError`. `errorCodes` in `@answerable/mcp` exports the table as data ([reference](/docs/mcp/reference#errorcodes)).
 
 ## Custom codes
 
-```ts
-throw new ToolError("ACME_QUOTA_EXCEEDED", "Your plan allows 100 projects", { retry: { policy: "after_state_change" } })
-```
-
-A provider may add `<PROVIDER>_<CODE>` in capitals, with an explicit retry. Any other code, or a custom code without `retry`, throws when the error is constructed.
-
-List each custom code in the `errors` of the tool or mutation that throws it, starting with the provider's id in capitals: `errors: ["ACME_QUOTA_EXCEEDED"]`. The manifest carries the list, so a reviewer sees every code a provider can answer. A handler that throws a custom code it did not declare is an author's bug, and the caller receives `INTERNAL`. [Declaring errors](/docs/mcp/authoring#tool-errors) has an example; the conformance kit's `errors_use_envelope` checks the envelope ([test an MCP](/docs/mcp/testing)).
+A provider may add its own codes, `<PROVIDER>_<CODE>` in capitals such as `ACME_QUOTA_EXCEEDED`, each with its own retry policy and listed in the `errors` of the tool that throws it; the manifest carries the list. [Tool errors](/docs/mcp/authoring#tool-errors) shows how to throw and declare one. An undeclared custom code answers `INTERNAL`.
 
 ## Field violations
 

@@ -49,10 +49,10 @@ test("returns the caller's organisation", async () => {
 })
 ```
 
+The MCP's URL is `https://mcp.test/mcp`.
+
 | Option | Default |
 | --- | --- |
-| `createTestMcp(provider, { resource })` | `https://mcp.test/mcp` |
-| `createTestMcp(provider, { intents, policyClass })` | Passed to `createMcpServer`: a memory store per server, the class from `risk` |
 | `connect({ scopes })` | Every scope the MCP advertises |
 | `connect({ organizationId, userId, membershipId })` | Random UUIDs |
 | `connect({ clientId })` | `test-client` |
@@ -60,17 +60,29 @@ test("returns the caller's organisation", async () => {
 
 Pin `userId`, `organizationId` and `membershipId` to connect as the same principal twice, for example to replay a commit from a second connection. `mcp.fetch` sends a raw HTTP request, for example to check a `401`. `mcp.issuer.sign` makes an unusual token, such as an expired one. `mcp.close()` closes every client.
 
-To move time, pass a store whose clock you control; the store decides every expiry:
+**Server options.** In place of a provider, pass a function that builds the server from the local issuer's `auth`. To move time, give the server a store whose clock you control; the store decides every expiry:
 
 ```ts
-import { createMemoryIntentStore } from "@answerable/mcp"
+import { createMcpServer, createMemoryIntentStore } from "@answerable/mcp"
 
 let clock = Date.now()
-const mcp = await createTestMcp(provider, { intents: createMemoryIntentStore({ now: () => clock }) })
+const intents = createMemoryIntentStore({ now: () => clock })
+const mcp = await createTestMcp(auth => createMcpServer({ provider, auth, intents }))
 clock += 10 * 60_000 // every agent-class intent prepared so far has expired
 ```
 
-`mcps/e2e/src/mcp.test.ts` is the working example. Reference: [`createTestMcp`](/docs/mcp/reference#createtestmcp).
+**A refusal.** `errorOf(result)` returns the `error` of a failed call's [envelope](/docs/mcp/errors), and throws, saying what is wrong, when the call succeeded or the result is not the envelope:
+
+```ts
+import { errorOf } from "@answerable/mcp/testing"
+
+const result = await client.callTool({ name: "records_delete", arguments: { id: crypto.randomUUID() } })
+expect(errorOf(result)).toMatchObject({ code: "NOT_FOUND", retry: { policy: "never" } })
+```
+
+**A caller without a server.** `testPrincipal(overrides?)` returns a verified caller for code that takes a principal, such as a store: fresh ids, the client `test-client` and no scopes, each replaced by `overrides`. `records.create(testPrincipal({ organizationId }), "Title")` seeds a record for a connection with that `organizationId`.
+
+`mcps/e2e/src/mcp.test.ts` is the working example. Reference: [`createTestMcp`](/docs/mcp/reference#createtestmcp), [`errorOf`](/docs/mcp/reference#errorof), [`testPrincipal`](/docs/mcp/reference#testprincipal).
 
 ## The fixture
 
@@ -144,7 +156,7 @@ The file holds the tools sorted by identity, with their wire names, schemas, sco
 bun run mcp:check @answerable/mcp-e2e
 ```
 
-Run this from the repository root with a workspace name. It runs the workspace's typecheck, lint and tests with Turborepo (`turbo run typecheck lint test --filter <workspace>`); the conformance checks and the manifest drift test are tests, so they run too. The `@answerable/mcp` and `@answerable/auth` suites enforce 100% line and function coverage. `bun run mcp:test` runs the package and e2e suites together.
+Run this from the repository root with a workspace name. It runs the workspace's typecheck, lint and tests with Turborepo (`turbo run typecheck lint test --filter <workspace>`); the conformance checks and the manifest drift test are tests, so they run too. The `@answerable/auth`, `@answerable/mcp` and Toolbox suites enforce 100% line and function coverage. `bun run mcp:test` runs the auth, SDK, e2e and Toolbox suites together.
 
 ## Not yet
 

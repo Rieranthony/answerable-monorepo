@@ -1,8 +1,8 @@
 import { expect, spyOn, test } from "bun:test"
 import { Client } from "@modelcontextprotocol/client"
 import { z } from "zod"
-import { defineProvider, defineTool } from "./index"
-import { createTestMcp } from "./testing"
+import { defineProvider, defineTool, ToolError } from "./index"
+import { createTestMcp, errorOf, testPrincipal } from "./testing"
 
 const tools = ["read", "write"].map(scope => defineTool({
   name: `records.${scope}`, description: `A fixture tool that needs the ${scope} scope and returns nothing.`, scopes: [scope],
@@ -45,6 +45,33 @@ test("close also closes a client whose connection failed", async () => {
     connect.mockRestore()
     close.mockRestore()
   }
+})
+
+test("errorOf reads the envelope of a failed call, and throws for a call that succeeded or a result that is not the envelope", async () => {
+  const failing = defineTool({
+    name: "records.fail", description: "A fixture tool that always answers NOT_FOUND with details.",
+    input: z.object({}), output: z.object({}), async execute() { throw new ToolError("NOT_FOUND", "No accessible record exists", { details: { id: "r1" } }) },
+  })
+  const mcp = await createTestMcp(defineProvider({ id: "test", version: "2026-09-29", tools: [...tools, failing] }))
+  try {
+    const client = await mcp.connect()
+    expect(errorOf(await client.callTool({ name: "records_fail", arguments: {} }))).toEqual({
+      code: "NOT_FOUND", message: "No accessible record exists", retry: { policy: "never" }, details: { id: "r1" }, request_id: expect.any(String),
+    })
+    expect(() => errorOf({ content: [{ type: "text", text: "{}" }], structuredContent: {} })).toThrow("the call succeeded where an error was expected")
+    expect(() => errorOf({ isError: true, content: [{ type: "text", text: "Tool failed" }] })).toThrow("the error text is not JSON: Tool failed")
+  } finally { await mcp.close() }
+})
+
+test("testPrincipal is a verified caller for unit tests: fresh ids, the test client, no scopes, and any field replaced", () => {
+  const [first, second] = [testPrincipal(), testPrincipal()]
+  expect(first).toEqual({
+    userId: expect.any(String), organizationId: expect.any(String), membershipId: expect.any(String), grantId: expect.any(String),
+    clientId: "test-client", scopes: [], expiresAt: expect.any(Number), organizationAuthorizationVersion: 1,
+  })
+  expect(first.expiresAt).toBeGreaterThan(Date.now() / 1000)
+  for (const field of ["userId", "organizationId", "membershipId", "grantId"] as const) expect(first[field]).not.toBe(second[field])
+  expect(testPrincipal({ organizationId: "o1", scopes: ["e2e:read"] })).toMatchObject({ organizationId: "o1", scopes: ["e2e:read"], clientId: "test-client" })
 })
 
 test("connect can pin the membership and client, so that two connections are one principal", async () => {

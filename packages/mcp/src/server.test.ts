@@ -1,14 +1,16 @@
-import { afterEach, expect, spyOn, test } from "bun:test"
+import { afterEach, expect, setSystemTime, spyOn, test } from "bun:test"
 import { z } from "zod"
 import { createMcpServer, defineProvider, defineTool, defineView, definePrompt, defineResource, manifest, ToolError, type Tool, type ToolContext, type Prompt } from "./index"
-import { createTestIssuer } from "@answerable/auth/testing"
-import { createTestMcp, type TestMcp } from "./testing"
+import { createTestMcp, errorOf, type TestMcp } from "./testing"
 
 const resource = "https://mcp.test/mcp"
 const uuidV7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
 const cleanups: (() => void | Promise<void>)[] = []
-afterEach(async () => { for (const close of cleanups.splice(0).reverse()) await close() })
+afterEach(async () => {
+  setSystemTime()
+  for (const close of cleanups.splice(0).reverse()) await close()
+})
 const about = (text: string) => `${text}. A fixture for the server tests.`
 const view = defineView({ name: "example", html: "<!doctype html><title>Example</title>" })
 let executions = 0
@@ -69,8 +71,8 @@ const tools = [read, write, invalid, failed, known, old]
 function provider(definitions: readonly Tool[] = tools, prompts: readonly Prompt[] = [prompt, brokenPrompt]) {
   return defineProvider({ id: "test", version: "2026-09-29", tools: definitions, prompts, resources: [document, broken] })
 }
-async function fixture(definitions?: readonly Tool[], prompts?: readonly Prompt[], options?: { resource?: string }) {
-  const mcp = await createTestMcp(provider(definitions, prompts), options)
+async function fixture(definitions?: readonly Tool[], prompts?: readonly Prompt[]) {
+  const mcp = await createTestMcp(provider(definitions, prompts))
   cleanups.push(() => mcp.close())
   return mcp
 }
@@ -78,16 +80,10 @@ async function clientFor(mcp: TestMcp, scopes: string[], protocol?: "2025" | "20
   const client = await mcp.connect({ scopes, protocol, organizationId })
   return { client, organizationId }
 }
-// An error result is one text block holding the envelope as JSON, and no structuredContent.
-const errorOf = async (client: Awaited<ReturnType<TestMcp["connect"]>>, name: string, args: Record<string, unknown> = {}) => {
-  const result = await client.callTool({ name, arguments: args })
-  expect(result.isError).toBe(true)
-  expect(result.structuredContent).toBeUndefined()
-  expect(result.content).toEqual([{ type: "text", text: expect.any(String) }])
-  return JSON.parse((result.content as { text: string }[])[0]!.text)
-}
+// errorOf checks that an error result is one text block holding the envelope as JSON, and no structuredContent.
+const refused = async (client: Awaited<ReturnType<TestMcp["connect"]>>, name: string, args: Record<string, unknown> = {}): Promise<Record<string, unknown>> => errorOf(await client.callTool({ name, arguments: args }))
 function envelope(code: string, message: string, retry: object, details?: object) {
-  return { error: { code, message, retry, ...(details ? { details } : {}), request_id: expect.stringMatching(uuidV7) } }
+  return { code, message, retry, ...(details ? { details } : {}), request_id: expect.stringMatching(uuidV7) }
 }
 
 test("HTTP routes expose health, discovery and a bearer challenge", async () => {
@@ -113,17 +109,29 @@ test("rejects untrusted hosts, origins and a token for another audience", async 
   const other = await mcp.issuer.sign({ resource: "https://other.test/mcp" })
   expect((await mcp.fetch(resource, { method: "POST", headers: { Authorization: `Bearer ${other}` } })).status).toBe(401)
 })
-test("allowed hosts and origins can be widened", async () => {
-  const issuer = await createTestIssuer()
-  const server = createMcpServer({ provider: provider(), auth: { issuer: issuer.issuer, resource, fetch: issuer.fetch }, allowedHosts: ["internal.test"], allowedOrigins: ["app.test"] })
-  const token = await issuer.sign({ resource, scopes: ["read"] })
-  const post = (headers: Record<string, string>) => server.fetch(new Request(resource, {
-    method: "POST", body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream", "MCP-Protocol-Version": "2025-11-25", ...headers },
-  }))
-  expect((await post({ Host: "internal.test", Origin: "https://app.test" })).status).toBe(200)
-  expect((await post({ Host: "mcp.test", Origin: "https://mcp.test" })).status).toBe(403)
-  expect((await post({ Host: "evil.test" })).status).toBe(403)
+test("a 2026-07-28 client may keep tools/list for 30 seconds, for itself alone; a 2025 client asks every time", async () => {
+  let posts = 0
+  const mcp = await createTestMcp(auth => {
+    const server = createMcpServer({ provider: provider(), auth })
+    return { fetch: request => (posts++, server.fetch(request)) }
+  })
+  cleanups.push(() => mcp.close())
+  const start = Date.now()
+  setSystemTime(start)
+  const client = await mcp.connect({ scopes: ["read"], protocol: "2026-07-28" })
+  await client.listTools()
+  const listed = posts
+  setSystemTime(start + 29_000)
+  await client.listTools()
+  expect(posts).toBe(listed)
+  setSystemTime(start + 31_000)
+  await client.listTools()
+  expect(posts).toBe(listed + 1)
+  const older = await mcp.connect({ scopes: ["read"] })
+  await older.listTools()
+  const before = posts
+  await older.listTools()
+  expect(posts).toBe(before + 1)
 })
 
 for (const protocol of [undefined, "2026-07-28"] as const) {
@@ -179,11 +187,11 @@ for (const protocol of [undefined, "2026-07-28"] as const) {
     const { client } = await clientFor(mcp, ["read"], protocol)
     const before = executions
     const retry = { policy: "after_fix_input" }
-    expect(await errorOf(client, "org_read", { label: "x", extra: true, other: 1 })).toEqual(envelope(
+    expect(await refused(client, "org_read", { label: "x", extra: true, other: 1 })).toEqual(envelope(
       "INVALID_INPUT", "extra: Unknown field; other: Unknown field", retry,
       { field_violations: [{ field: "extra", message: "Unknown field" }, { field: "other", message: "Unknown field" }] },
     ))
-    expect(await errorOf(client, "org_read", { label: 123, nested: { count: "3" } })).toEqual(envelope(
+    expect(await refused(client, "org_read", { label: 123, nested: { count: "3" } })).toEqual(envelope(
       "INVALID_INPUT", "label: Invalid input: expected string, received number; nested.count: Invalid input: expected number, received string", retry,
       { field_violations: [{ field: "label", message: "Invalid input: expected string, received number" }, { field: "nested.count", message: "Invalid input: expected number, received string" }] },
     ))
@@ -192,11 +200,11 @@ for (const protocol of [undefined, "2026-07-28"] as const) {
   test(`${era}: tool errors answer the envelope and unexpected failures answer INTERNAL without detail`, async () => {
     const mcp = await fixture()
     const { client } = await clientFor(mcp, ["read"], protocol)
-    expect(await errorOf(client, "org_known")).toEqual(envelope("NOT_FOUND", "No accessible record exists", { policy: "never" }, { record_id: "r1" }))
+    expect(await refused(client, "org_known")).toEqual(envelope("NOT_FOUND", "No accessible record exists", { policy: "never" }, { record_id: "r1" }))
     const log = spyOn(console, "error").mockImplementation(() => {})
     try {
       for (const name of ["org_invalid", "org_failed"]) {
-        const result = await errorOf(client, name)
+        const result = await refused(client, name)
         expect(result).toEqual(envelope("INTERNAL", "The tool could not complete", { policy: "after_delay", after_ms: 1000 }))
         expect(JSON.stringify(result)).not.toContain("private-")
       }
@@ -237,7 +245,7 @@ for (const protocol of [undefined, "2026-07-28"] as const) {
     const mcp = await fixture([slow])
     const client = await mcp.connect({ protocol })
     const started = performance.now()
-    expect(await errorOf(client, "org_slow")).toEqual(envelope("TIMEOUT", "The tool did not finish within 50 ms", { policy: "after_delay", after_ms: 1000 }))
+    expect(await refused(client, "org_slow")).toEqual(envelope("TIMEOUT", "The tool did not finish within 50 ms", { policy: "after_delay", after_ms: 1000 }))
     expect(performance.now() - started).toBeLessThan(900)
     expect(signals[0]!.aborted).toBe(true)
   })
@@ -276,7 +284,8 @@ test("the resource URL is the endpoint and the challenge names the metadata rout
     ["https://mcp.test/nested/tools", "/nested/tools", "/.well-known/oauth-protected-resource/nested/tools"],
     ["https://mcp.test/mcp/", "/mcp/", "/.well-known/oauth-protected-resource/mcp"],
   ] as const) {
-    const app = await fixture([], [], { resource })
+    const app = await createTestMcp(auth => createMcpServer({ provider: provider([], []), auth: { ...auth, resource } }))
+    cleanups.push(() => app.close())
     const request = (path: string) => new Request(`https://mcp.test${path}`, { headers: { Host: "mcp.test" } })
     const challenge = await app.fetch(request(endpoint))
     expect(challenge.status).toBe(401)

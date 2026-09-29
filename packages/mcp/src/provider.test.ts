@@ -46,13 +46,13 @@ test("ids are a lowercase letter then up to 11 letters or digits, and the versio
 
 test("refuses duplicate tools, prompts and resource URIs, and conflicting views", () => {
   const base = { id: "acme", version: "2026-09-29" }
-  expect(() => defineProvider({ ...base, tools: [tool("records.list"), tool("records.list", { version: "2026-01-01" })] })).toThrow("Provider acme defines tool records.list twice")
+  expect(() => defineProvider({ ...base, tools: [tool("records.list"), tool("records.list", { version: "2026-01-01" })] })).toThrow("Provider acme defines tool records.list twice; rename one")
   expect(() => defineProvider({ ...base, tools: [], prompts: [prompt, prompt] })).toThrow("Provider acme defines prompt guide twice")
   expect(() => defineProvider({ ...base, tools: [], resources: [resource, resource] })).toThrow("Provider acme defines resource fixture://notes twice")
   const view = defineView({ name: "records", html: "<title>Records</title>" })
   const other = defineView({ name: "records", html: "<title>Other</title>" })
   expect(() => defineProvider({ ...base, tools: [tool("records.show", { view })], resources: [{ ...resource, uri: view.uri }] })).toThrow(`Provider acme defines resource ${view.uri} twice`)
-  expect(() => defineProvider({ ...base, tools: [tool("records.show", { view }), tool("records.open", { view: other })] })).toThrow(`Provider acme defines two different views at ${view.uri}`)
+  expect(() => defineProvider({ ...base, tools: [tool("records.show", { view }), tool("records.open", { view: other })] })).toThrow(`Provider acme defines two different views at ${view.uri}; share one defineView result, or rename one view`)
   expect(defineProvider({ ...base, tools: [tool("records.show", { view }), tool("records.open", { view })] }).tools).toHaveLength(2)
 })
 

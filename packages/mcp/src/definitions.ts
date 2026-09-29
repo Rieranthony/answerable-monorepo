@@ -39,22 +39,26 @@ export function checkScopes(label: string, scopes: readonly string[] | undefined
 /** Whether the caller's token carries every scope a definition needs. */
 export const permits = (principal: UserPrincipal, { scopes }: Readonly<{ scopes: readonly string[] }>) => scopes.every(scope => principal.scopes.includes(scope))
 
+const snake = "a lowercase letter then lowercase letters, digits or underscores"
+
 /** Define an MCP Apps view from HTML that `buildView` built; its URI is `ui://<name>/index.html`. */
 export function defineView(input: { name: string; html: string }): View {
-  if (!/^[a-z][a-z0-9-]*$/.test(input.name)) throw new Error("Invalid view name")
-  if (!input.html.trim()) throw new Error("View HTML is empty; build the view first")
+  if (!/^[a-z][a-z0-9-]*$/.test(input.name)) throw new Error(`View name "${input.name}" must be a lowercase letter then lowercase letters, digits or hyphens, for example records`)
+  if (!input.html.trim()) throw new Error(`View ${input.name}: the HTML is empty; build it with buildView first`)
   return Object.freeze({ ...input, uri: `ui://${input.name}/index.html` })
 }
 
 /** Define a prompt. Prompt retrieval returns instructions; it must not perform mutations. */
 export function definePrompt<Input extends z.ZodObject>(prompt: Prompt<Input>): Prompt<Input> {
-  if (!/^[a-z][a-z0-9_]*$/.test(prompt.name)) throw new Error(`Invalid prompt name: ${prompt.name}`)
+  if (!/^[a-z][a-z0-9_]*$/.test(prompt.name)) throw new Error(`Prompt name "${prompt.name}" must be ${snake}, for example walkthrough`)
   return Object.freeze({ ...prompt, scopes: checkScopes(`Prompt ${prompt.name}`, prompt.scopes) })
 }
 
 /** Define a fixed-URI text resource. Use `defineView` for interactive HTML. */
 export function defineResource(resource: Resource): Resource {
-  if (!/^[a-z][a-z0-9_]*$/.test(resource.name)) throw new Error(`Invalid resource name: ${resource.name}`)
-  if (new URL(resource.uri).protocol === "ui:") throw new Error("Use defineView for ui:// resources")
-  return Object.freeze({ ...resource, scopes: checkScopes(`Resource ${resource.name}`, resource.scopes) })
+  const { name, uri } = resource
+  if (!/^[a-z][a-z0-9_]*$/.test(name)) throw new Error(`Resource name "${name}" must be ${snake}, for example guide`)
+  if (!URL.canParse(uri)) throw new Error(`Resource ${name}: uri "${uri}" must be an absolute URI, for example fixture://guide`)
+  if (new URL(uri).protocol === "ui:") throw new Error(`Resource ${name}: ${uri} is a ui:// view; define it with defineView and set it on a tool`)
+  return Object.freeze({ ...resource, scopes: checkScopes(`Resource ${name}`, resource.scopes) })
 }

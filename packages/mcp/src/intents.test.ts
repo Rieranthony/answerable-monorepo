@@ -63,5 +63,5 @@ test("transition moves only from the expected status, and the receipt is stored 
   const first = receipt(stored.intent_id)
   expect(await store.transition(stored.intent_id, "committing", "committed", first)).toBe(true)
   expect(await store.transition(stored.intent_id, "committing", "committed", receipt(stored.intent_id))).toBe(false)
-  expect(await store.get(stored.intent_id)).toEqual({ ...stored, status: "committed", committed_at: first.committed_at, receipt: first })
+  expect(await store.get(stored.intent_id)).toEqual({ ...stored, status: "committed", receipt: first })
 })

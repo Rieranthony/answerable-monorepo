@@ -144,7 +144,7 @@ function createMcpServer(config: McpServerConfig): {
 ```
 
 Serve a provider over MCP: `/health`, the protected-resource metadata and the MCP endpoint behind Answerable ID sign-in.
-It returns a web-standard `{ fetch }` handler; the caller owns the listener.
+It returns a web-standard `{ fetch }` handler; the caller owns the listener. `tools/list` tells 2026-07-28 hosts they may keep it for 30 seconds, for that caller alone.
 
 **Example**
 
@@ -163,13 +163,9 @@ Bun.serve({ hostname: "127.0.0.1", port, fetch: server.fetch })
 type McpServerConfig = {
   provider: Provider
   auth: IdVerifierConfig
-  /** Hostnames accepted in the Host header. Default: the resource URL's hostname. */
-  allowedHosts?: string[]
-  /** Hostnames accepted in a browser Origin header. Default: the resource URL's hostname. */
-  allowedOrigins?: string[]
   /** Where intents live. Default: a memory store for this server. */
   intents?: IntentStore
-  /** The policy class of a mutation for one caller, decided for each request. Default: from the mutation's `risk`. */
+  /** The policy class of a mutation for one caller, decided for each request. Default: `riskClass[mutation.risk]`. */
   policyClass?: (mutation: Served<Mutation>, principal: UserPrincipal) => PolicyClass | Promise<PolicyClass>
   /**
    * Providers served beside `provider` at the same endpoint, as a hub mounts them. Their tools are named `<provider id>_<wire name>` after
@@ -185,12 +181,10 @@ type McpServerConfig = {
   allow?: (principal: UserPrincipal, tool: Served<Tool | Mutation>, called: boolean) => boolean | Promise<boolean>
   /**
    * Runs around every call of a tool or a prepare tool. `run` parses the arguments, runs the handler within its timeout and checks the output;
-   * it returns the structured content or throws what the call answers. Return that content, or a replacement the tool's output schema accepts.
+   * it returns the structured content or throws what the call answers. Return what `run` returns, or throw a `ToolError` to answer with it instead.
    * Default: `run()`.
    */
   wrapCall?: (call: ToolCall, run: () => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>
-  /** Cache hints for the 2026-07-28 revision's list results, for example `{ "tools/list": { ttlMs: 30_000, cacheScope: "private" } }`. Default: none, so hosts may not cache them. */
-  cacheHints?: ServerOptions["cacheHints"]
 }
 ```
 
@@ -324,6 +318,14 @@ export const recordsDelete = defineMutation({
   },
 })
 ```
+
+### riskClass
+
+```ts
+const riskClass: Readonly<Record<Risk, PolicyClass>>
+```
+
+The policy class each risk gives a mutation unless `createMcpServer`'s `policyClass` decides otherwise: `low` agent, `normal` controlled, `high` human.
 
 ### Mutation
 
@@ -492,7 +494,7 @@ type Intent = {
   status: IntentStatus
   created_at: string
   expires_at: string
-  committed_at?: string
+  /** Stored by the commit that ends `committed`. */
   receipt?: Receipt
 }
 ```
@@ -516,7 +518,7 @@ type IntentStore = {
   insert(intent: Intent): Promise<void>
   /** The intent, marked `expired` first if it was `prepared` or `awaiting_approval` and `expires_at` has passed. */
   get(intentId: string): Promise<Intent | undefined>
-  /** Move an intent from `from` to `to`, applying expiry first; with `receipt`, store it and its `committed_at`. False when the intent is not in `from`. */
+  /** Move an intent from `from` to `to`, applying expiry first; with `receipt`, store it too. False when the intent is not in `from`. */
   transition(intentId: string, from: IntentStatus, to: IntentStatus, receipt?: Receipt): Promise<boolean>
 }
 ```
@@ -790,6 +792,7 @@ const errorCodes: Readonly<{
   readonly NOT_FOUND: "never"
   readonly PERMISSION_DENIED: "never"
   readonly PRECONDITION_FAILED: "after_state_change"
+  readonly RESULT_TOO_LARGE: "after_fix_input"
   readonly INTENT_STALE: "after_reprepare"
   readonly INTENT_EXPIRED: "after_reprepare"
   readonly INTENT_NOT_FOUND: "after_reprepare"
@@ -904,14 +907,12 @@ function createTestMcp(served: Provider | ((auth: IdVerifierConfig) => {
   fetch(request: Request): Promise<Response>
 } | Promise<{
   fetch(request: Request): Promise<Response>
-}>), options?: {
-  resource?: string
-} & Pick<McpServerConfig, "intents" | "policyClass">): Promise<TestMcp>
+}>)): Promise<TestMcp>
 ```
 
-Serve a provider in-process with a local ID issuer and the official MCP client: no port, no network.
-`intents` and `policyClass` pass to `createMcpServer`; `resource` is the MCP's URL, default `https://mcp.test/mcp`.
-In place of a provider, pass a function that builds a server, such as a hub, from the local issuer's `auth`; `intents` and `policyClass` are then its own.
+Serve a provider in-process at `https://mcp.test/mcp`, with a local ID issuer and the official MCP client: no port, no network.
+In place of a provider, pass a function that builds a server from the local issuer's `auth`: a server with `createMcpServer` options such as
+`intents` or `policyClass`, or a hub.
 
 **Example**
 
@@ -923,6 +924,24 @@ const mcp = await createTestMcp(provider)
 const client = await mcp.connect({ scopes: ["example:read"] })
 const result = await client.callTool({ name: "identity_get", arguments: {} })
 await mcp.close()
+```
+
+### testPrincipal
+
+```ts
+function testPrincipal(overrides?: Partial<UserPrincipal>): UserPrincipal
+```
+
+A verified caller for unit tests of code that takes a principal, such as a store: a fresh person, membership, organisation and grant,
+the client `test-client`, no scopes and organisation authorisation version 1, each field replaced by `overrides`.
+
+**Example**
+
+```ts
+import { testPrincipal } from "@answerable/mcp/testing"
+
+const alice = testPrincipal()
+const colleague = testPrincipal({ organizationId: alice.organizationId })
 ```
 
 ### TestMcp
@@ -948,6 +967,30 @@ type TestMcp = {
 ```
 
 An in-process MCP and its authenticated protocol clients.
+
+### errorOf
+
+```ts
+function errorOf(result: CallToolResult): {
+  code: string
+  message: string
+  retry: Retry
+  details?: Record<string, unknown>
+  request_id: string
+}
+```
+
+The `error` of a failed tool call's envelope: its code, message, retry policy, details and request id.
+It throws, saying what is wrong, when the call succeeded or its result is not the envelope as one text block without structured content.
+
+**Example**
+
+```ts
+import { errorOf } from "@answerable/mcp/testing"
+
+const result = await client.callTool({ name: "records_delete", arguments: { id } })
+expect(errorOf(result).code).toBe("NOT_FOUND")
+```
 
 ### assertProviderConformance
 

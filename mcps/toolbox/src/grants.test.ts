@@ -1,9 +1,9 @@
 import { afterEach, expect, setSystemTime, spyOn, test } from "bun:test"
 import { defineProvider, defineTool, ToolError } from "@answerable/mcp"
+import { testPrincipal as principal } from "@answerable/mcp/testing"
 import { z } from "zod"
 import { allowedScopes, createGrantsReader, isGrant } from "./grants"
 import { createFakeId } from "./test/fake-id"
-import { principal } from "./test/principal"
 
 const toolbox = "https://toolbox.test/mcp"
 afterEach(() => setSystemTime())

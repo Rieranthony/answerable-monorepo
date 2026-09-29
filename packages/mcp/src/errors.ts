@@ -11,6 +11,7 @@ export const errorCodes = Object.freeze({
   NOT_FOUND: "never",
   PERMISSION_DENIED: "never",
   PRECONDITION_FAILED: "after_state_change",
+  RESULT_TOO_LARGE: "after_fix_input",
   INTENT_STALE: "after_reprepare",
   INTENT_EXPIRED: "after_reprepare",
   INTENT_NOT_FOUND: "after_reprepare",

@@ -18,7 +18,7 @@ export type Provider = Readonly<{
 function once(provider: string, kind: string, keys: readonly string[]) {
   const seen = new Set<string>()
   for (const key of keys) {
-    if (seen.has(key)) throw new Error(`Provider ${provider} defines ${kind} ${key} twice`)
+    if (seen.has(key)) throw new Error(`Provider ${provider} defines ${kind} ${key} twice; rename one`)
     seen.add(key)
   }
 }
@@ -57,7 +57,7 @@ export function defineProvider(provider: { id: string; version: string; tools: r
   const views = new Map<string, View>()
   for (const tool of tools) {
     if (tool.kind !== "read" || !tool.view) continue
-    if ((views.get(tool.view.uri) ?? tool.view) !== tool.view) throw new Error(`Provider ${id} defines two different views at ${tool.view.uri}`)
+    if ((views.get(tool.view.uri) ?? tool.view) !== tool.view) throw new Error(`Provider ${id} defines two different views at ${tool.view.uri}; share one defineView result, or rename one view`)
     views.set(tool.view.uri, tool.view)
   }
   once(id, "resource", [...views.keys(), ...resources.map(resource => resource.uri)])

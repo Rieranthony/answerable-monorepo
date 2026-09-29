@@ -1,7 +1,8 @@
 // Real Answerable ID, a real browser and the official MCP OAuth client against the e2e MCP.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { createMemoryIntentStore, type UserPrincipal } from "@answerable/mcp"
-import { createE2eMcp } from "@answerable/mcp-e2e/mcp"
+import { createMcpServer, createMemoryIntentStore } from "@answerable/mcp"
+import { testPrincipal } from "@answerable/mcp/testing"
+import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
 import { createRecordStore } from "@answerable/mcp-e2e/records"
 import type { Client } from "@modelcontextprotocol/client"
 import { decodeJwt } from "jose"
@@ -68,7 +69,6 @@ function session(slug: string) {
 }
 const clientFor = (slug: string, protocol: (typeof protocols)[number] = "2026-07-28") => connect(resource, session(slug).oauth.provider, protocol)
 const prepare = async (client: Client, name: string, args: Record<string, unknown>) => intentSchema.parse(await tool(client, name, args))
-const owner = (organizationId: string): UserPrincipal => ({ userId: crypto.randomUUID(), organizationId, membershipId: crypto.randomUUID(), grantId: crypto.randomUUID(), clientId, scopes: [], expiresAt: 0, organizationAuthorizationVersion: 1 })
 const listed = async (client: Client) => z.object({ items: z.array(recordSchema) }).parse(await tool(client, "records_list")).items
 
 beforeAll(async () => {
@@ -81,9 +81,9 @@ beforeAll(async () => {
     const { organizationId } = manifest.tenants.find(({ slug }) => slug === tenant.slug)!
     await grantOrganisation(admin, organizationId, { clientId, resource, scopes, entitledScopes: tenant.scopes })
   }
-  const view = "<!doctype html><title>Records</title>"
-  serve(47_602, createE2eMcp({ auth: { issuer: manifest.idOrigin, resource }, viewHtml: view, records, intents }).fetch)
-  serve(47_605, createE2eMcp({ auth: { issuer: manifest.idOrigin, resource: otherResource }, viewHtml: view, records }).fetch)
+  const provider = createE2eProvider({ records, viewHtml: "<!doctype html><title>Records</title>" })
+  serve(47_602, createMcpServer({ provider, auth: { issuer: manifest.idOrigin, resource }, intents }).fetch)
+  serve(47_605, createMcpServer({ provider, auth: { issuer: manifest.idOrigin, resource: otherResource } }).fetch)
   serve(Number(new URL(callback).port), () => new Response("Signed in. You can close this page."))
   browser = await launchBrowser()
 })
@@ -167,7 +167,7 @@ describe("J4 agent-class mutation", () => {
     const { record } = kept.get("mcp-alpha")!
     const intent = await prepare(client, "records_delete", { id: record.id })
     step("mcp-alpha: changing the record after prepare, as another writer would")
-    records.touch(owner(session("mcp-alpha").organizationId), record.id)
+    records.touch(testPrincipal({ organizationId: session("mcp-alpha").organizationId }), record.id)
     const error = await refusal(client, "e2e_commit_confirmed", { ...commitArgs(intent), preview_summary: intent.preview.summary })
     expect(error.code).toBe("INTENT_STALE")
     expect(error.details).toEqual({ targets: [{ resource_id: record.id, expected: "1", current: "2" }] })

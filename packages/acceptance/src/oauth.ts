@@ -9,17 +9,13 @@ export function oauthProvider({ clientId, callback }: { clientId: string; callba
     discovery?: OAuthDiscoveryState
   } = {}
   const provider: OAuthClientProvider = {
-    get redirectUrl() {
-      return callback
-    },
-    get clientMetadata() {
-      return {
-        client_name: "MCP acceptance",
-        redirect_uris: [callback],
-        grant_types: ["authorization_code", "refresh_token"],
-        response_types: ["code"],
-        token_endpoint_auth_method: "none",
-      }
+    redirectUrl: callback,
+    clientMetadata: {
+      client_name: "MCP acceptance",
+      redirect_uris: [callback],
+      grant_types: ["authorization_code", "refresh_token"],
+      response_types: ["code"],
+      token_endpoint_auth_method: "none",
     },
     clientInformation: () => ({ client_id: clientId }),
     tokens: () => state.tokens,
@@ -32,10 +28,8 @@ export function oauthProvider({ clientId, callback }: { clientId: string; callba
     saveCodeVerifier: verifier => {
       state.verifier = verifier
     },
-    codeVerifier: () => {
-      if (!state.verifier) throw new Error("No PKCE verifier saved")
-      return state.verifier
-    },
+    // The SDK saves the verifier before it redirects, so it exists by the code exchange.
+    codeVerifier: () => state.verifier!,
     saveDiscoveryState: discovery => {
       state.discovery = discovery
     },

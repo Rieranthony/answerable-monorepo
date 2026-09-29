@@ -24,17 +24,19 @@ function provider(id: string, { version = "2026-09-29", title = "Search tickets"
   })
   return defineProvider({ id, version, tools: [search, close] })
 }
-const rows = (id: string) => db`select identity, version, kind, risk, policy_class_default, title, input -> 'required' as required from capabilities where provider_id = ${id} order by identity, version`
+const rows = (id: string) => db`select identity, version, kind, risk, title, input -> 'required' as required from capabilities where provider_id = ${id} order by identity, version`
 
-test("ingest stores a provider's manifest and each capability, without the commit tools", async () => {
+test("ingest stores a provider's manifest and each capability, without the commit tools; a mutation's class is not stored, since its risk gives it", async () => {
   const id = providerId()
   await ingest(db, [provider(id)])
   const [stored] = await db`select version, status, manifest -> 'id' as manifest_id from providers where id = ${id}`
   expect(stored).toEqual({ version: "2026-09-29", status: "active", manifest_id: id })
   expect(await rows(id)).toEqual([
-    { identity: `${id}/tickets.close`, version: "2026-09-29", kind: "mutate", risk: "high", policy_class_default: "human", title: null, required: ["id"] },
-    { identity: `${id}/tickets.search`, version: "2026-09-29", kind: "read", risk: null, policy_class_default: null, title: "Search tickets", required: ["query"] },
+    { identity: `${id}/tickets.close`, version: "2026-09-29", kind: "mutate", risk: "high", title: null, required: ["id"] },
+    { identity: `${id}/tickets.search`, version: "2026-09-29", kind: "read", risk: null, title: "Search tickets", required: ["query"] },
   ])
+  const columns = await db`select column_name from information_schema.columns where table_schema = current_schema() and table_name = 'capabilities' order by ordinal_position`
+  expect(columns.map((row: { column_name: string }) => row.column_name)).toEqual(["provider_id", "identity", "version", "kind", "risk", "title", "description", "input", "output", "search", "status"])
 })
 
 test("ingesting again changes nothing, and a new title or description updates in place", async () => {

@@ -1,6 +1,5 @@
 import { afterEach, expect, test } from "bun:test"
-import { createTestMcp, type TestMcp } from "@answerable/mcp/testing"
-import type { UserPrincipal } from "@answerable/mcp"
+import { createTestMcp, errorOf, testPrincipal, type TestMcp } from "@answerable/mcp/testing"
 import { createE2eProvider } from "./mcp"
 import { createRecordStore } from "./records"
 
@@ -12,7 +11,6 @@ async function fixture() {
   mcps.push(mcp)
   return { mcp, records }
 }
-const member = (organizationId: string): UserPrincipal => ({ userId: crypto.randomUUID(), organizationId, membershipId: crypto.randomUUID(), grantId: crypto.randomUUID(), clientId: "test", scopes: [], expiresAt: 1, organizationAuthorizationVersion: 1 })
 type Client = Awaited<ReturnType<TestMcp["connect"]>>
 // Returns the text mirror, parsed, after checking that it equals the structured content.
 async function ok(client: Client, name: string, args: Record<string, unknown> = {}) {
@@ -21,12 +19,7 @@ async function ok(client: Client, name: string, args: Record<string, unknown> = 
   expect(result.content).toEqual([{ type: "text", text: JSON.stringify(result.structuredContent) }])
   return JSON.parse((result.content as { text: string }[])[0]!.text)
 }
-async function refused(client: Client, name: string, args: Record<string, unknown> = {}) {
-  const result = await client.callTool({ name, arguments: args })
-  expect(result).toMatchObject({ isError: true, content: [{ type: "text" }] })
-  expect(result.structuredContent).toBeUndefined()
-  return JSON.parse((result.content as { text: string }[])[0]!.text).error
-}
+const refused = async (client: Client, name: string, args: Record<string, unknown> = {}): Promise<Record<string, unknown>> => errorOf(await client.callTool({ name, arguments: args }))
 const version = "2026-09-29"
 
 for (const protocol of ["2025", "2026-07-28"] as const) {
@@ -54,7 +47,7 @@ for (const protocol of ["2025", "2026-07-28"] as const) {
 test("records_list pages 20 at a time through next_cursor, and refuses an unknown cursor or an oversized page", async () => {
   const { mcp, records } = await fixture()
   const organizationId = crypto.randomUUID()
-  const created = Array.from({ length: 25 }, (_, index) => records.create(member(organizationId), `Record ${index}`))
+  const created = Array.from({ length: 25 }, (_, index) => records.create(testPrincipal({ organizationId }), `Record ${index}`))
   const client = await mcp.connect({ organizationId })
   const first = await ok(client, "records_list")
   expect(first).toEqual({ items: created.slice(0, 20), next_cursor: expect.any(String), has_more: true })
@@ -92,7 +85,7 @@ test("records_create prepares an agent-class intent that e2e_commit applies once
 test("records_delete names the record and its version; e2e_commit_confirmed with the summary deletes it", async () => {
   const { mcp, records } = await fixture()
   const organizationId = crypto.randomUUID()
-  const record = records.create(member(organizationId), "Doomed")
+  const record = records.create(testPrincipal({ organizationId }), "Doomed")
   const client = await mcp.connect({ organizationId })
   const intent = await ok(client, "records_delete", { id: record.id })
   expect(intent).toMatchObject({
@@ -112,7 +105,7 @@ test("records_delete names the record and its version; e2e_commit_confirmed with
 test("a record touched between prepare and commit makes the delete stale", async () => {
   const { mcp, records } = await fixture()
   const organizationId = crypto.randomUUID()
-  const owner = member(organizationId)
+  const owner = testPrincipal({ organizationId })
   const record = records.create(owner, "Moving")
   const client = await mcp.connect({ organizationId })
   const intent = await ok(client, "records_delete", { id: record.id })
@@ -133,7 +126,7 @@ test("the prompt and the resource describe the tools", async () => {
 test("scopes filter the tools, and organisations never share records", async () => {
   const { mcp, records } = await fixture()
   const organizationId = crypto.randomUUID()
-  const record = records.create(member(organizationId), "Alice's record")
+  const record = records.create(testPrincipal({ organizationId }), "Alice's record")
   const reader = await mcp.connect({ organizationId, scopes: ["e2e:read"] })
   const partial = await mcp.connect({ organizationId, scopes: ["e2e:identity", "e2e:read"] })
   const bob = await mcp.connect()

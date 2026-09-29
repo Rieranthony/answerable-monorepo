@@ -29,7 +29,8 @@ export async function buildView(options: {
   const scripts = outputs.filter(file => file.path.endsWith(".js")).map(file => file.text)
   const styles = outputs.filter(file => file.path.endsWith(".css")).map(file => file.text)
   if (scripts.length !== 1 || outputs.some(file => !/\.(js|css)$/.test(file.path))) {
-    throw new Error("Views must bundle to one script and optional CSS; embed assets or declare a supported resource policy")
+    const files = outputs.map(file => file.path.split("/").at(-1)).join(", ")
+    throw new Error(`Views must bundle to one script and optional CSS; ${options.entry} bundled to ${files}; embed the other files in the script or the CSS`)
   }
   const title = options.title.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title><style>${styles.join("\n").replace(/<\/style/gi, "<\\/style")}</style></head><body><div id="root"></div><script type="module">${scripts[0].replace(/<\/script/gi, "<\\/script")}</script></body></html>`

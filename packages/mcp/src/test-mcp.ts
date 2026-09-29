@@ -1,9 +1,9 @@
-import type { IdVerifierConfig } from "@answerable/auth"
+import type { IdVerifierConfig, UserPrincipal } from "@answerable/auth"
 import { createTestIssuer, type TestIssuer } from "@answerable/auth/testing"
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client"
 import { getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/server"
 import type { Provider } from "./provider"
-import { createMcpServer, type McpServerConfig } from "./server"
+import { createMcpServer } from "./server"
 
 /** An in-process MCP and its authenticated protocol clients. */
 export type TestMcp = {
@@ -17,10 +17,12 @@ export type TestMcp = {
   close(): Promise<void>
 }
 
+const resource = "https://mcp.test/mcp"
+
 /**
- * Serve a provider in-process with a local ID issuer and the official MCP client: no port, no network.
- * `intents` and `policyClass` pass to `createMcpServer`; `resource` is the MCP's URL, default `https://mcp.test/mcp`.
- * In place of a provider, pass a function that builds a server, such as a hub, from the local issuer's `auth`; `intents` and `policyClass` are then its own.
+ * Serve a provider in-process at `https://mcp.test/mcp`, with a local ID issuer and the official MCP client: no port, no network.
+ * In place of a provider, pass a function that builds a server from the local issuer's `auth`: a server with `createMcpServer` options such as
+ * `intents` or `policyClass`, or a hub.
  *
  * @example
  * ```ts
@@ -35,12 +37,10 @@ export type TestMcp = {
  */
 export async function createTestMcp(
   served: Provider | ((auth: IdVerifierConfig) => { fetch(request: Request): Promise<Response> } | Promise<{ fetch(request: Request): Promise<Response> }>),
-  options: { resource?: string } & Pick<McpServerConfig, "intents" | "policyClass"> = {},
 ): Promise<TestMcp> {
   const issuer = await createTestIssuer()
-  const resource = options.resource ?? "https://mcp.test/mcp"
   const auth = { issuer: issuer.issuer, resource, fetch: issuer.fetch }
-  const server = typeof served === "function" ? await served(auth) : createMcpServer({ provider: served, auth, intents: options.intents, policyClass: options.policyClass })
+  const server = typeof served === "function" ? await served(auth) : createMcpServer({ provider: served, auth })
   const clients: Client[] = []
   const fetch = async (input: string | URL | Request, init?: RequestInit) => {
     const request = new Request(input, init)
@@ -61,5 +61,24 @@ export async function createTestMcp(
       return client
     },
     async close() { await Promise.all(clients.splice(0).map(client => client.close())) },
+  }
+}
+
+/**
+ * A verified caller for unit tests of code that takes a principal, such as a store: a fresh person, membership, organisation and grant,
+ * the client `test-client`, no scopes and organisation authorisation version 1, each field replaced by `overrides`.
+ *
+ * @example
+ * ```ts
+ * import { testPrincipal } from "@answerable/mcp/testing"
+ *
+ * const alice = testPrincipal()
+ * const colleague = testPrincipal({ organizationId: alice.organizationId })
+ * ```
+ */
+export function testPrincipal(overrides: Partial<UserPrincipal> = {}): UserPrincipal {
+  return {
+    userId: crypto.randomUUID(), organizationId: crypto.randomUUID(), membershipId: crypto.randomUUID(), grantId: crypto.randomUUID(),
+    clientId: "test-client", scopes: [], expiresAt: Math.floor(Date.now() / 1000) + 300, organizationAuthorizationVersion: 1, ...overrides,
   }
 }

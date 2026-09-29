@@ -20,12 +20,12 @@ Register the Toolbox resource, a host client and the Toolbox's machine client in
 
 | File | Job |
 | --- | --- |
-| `src/toolbox.ts` | `createToolbox({ providers, auth, db, id, spans? })`: the endpoint on `@answerable/mcp`, authority per request, evidence and a span per call, `/health` |
+| `src/toolbox.ts` | `createToolbox({ providers, auth, db, id, spans })`: the endpoint on `@answerable/mcp`, authority per request, evidence and a span per call, `RESULT_TOO_LARGE` above 100 KiB, `/health` |
 | `src/grants.ts` | `createGrantsReader`: grant strings from ID's member access view, cached 60 seconds; `allowedScopes(providers)`, the Toolbox resource's allowed scopes |
 | `src/poller.ts` | `startGrantsPoller`: reads ID's audit log every 15 seconds and invalidates the organisations it names |
 | `src/id.ts` | The machine client's token and GETs on ID's admin API |
 | `src/catalogue.ts` | Manifest ingestion, and each organisation's catalogue (`readCatalogue`, `writeCatalogue`) |
-| `src/projection.ts` | `allowed`, policy classes, tool order and result truncation |
+| `src/projection.ts` | `allowed`, policy classes and tool order |
 | `src/whoami.ts` | The Toolbox's own provider, `toolbox`, with `toolbox_whoami` |
 | `src/evidence.ts` | `createEvidence(db)`: `record`, `verify` and `erase` |
 | `src/spans.ts` | One server span per call; OTLP/HTTP export when `OTEL_EXPORTER_OTLP_ENDPOINT` is set |

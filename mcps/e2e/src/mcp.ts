@@ -1,4 +1,4 @@
-import { createMcpServer, defineMutation, defineProvider, defineTool, defineView, definePrompt, defineResource, type IdVerifierConfig, type IntentStore } from "@answerable/mcp"
+import { defineMutation, defineProvider, defineTool, defineView, definePrompt, defineResource } from "@answerable/mcp"
 import { z } from "zod"
 import { pageInput, recordSchema, recordsPage, recordsView } from "./contracts"
 import type { RecordStore } from "./records"
@@ -89,9 +89,4 @@ export function createE2eProvider({ records, viewHtml }: { records: RecordStore;
     tools: [identityGet, recordsList, recordsShow, recordsCreate, recordsDelete],
     prompts: [fixtureWalkthrough], resources: [fixtureGuide],
   })
-}
-
-/** The e2e MCP server. Pass `intents` to control the intent store, for example its clock. */
-export function createE2eMcp({ auth, intents, ...dependencies }: { auth: IdVerifierConfig; records: RecordStore; viewHtml: string; intents?: IntentStore }) {
-  return createMcpServer({ provider: createE2eProvider(dependencies), auth, intents })
 }

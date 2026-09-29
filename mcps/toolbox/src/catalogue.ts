@@ -1,9 +1,6 @@
 import type { SQL } from "bun"
-import { manifest, type PolicyClass, type Provider, type Risk } from "@answerable/mcp"
+import { manifest, type Provider } from "@answerable/mcp"
 import { z } from "zod"
-
-/** The class a mutation's `risk` gives it, as `@answerable/mcp` decides by default. */
-export const riskClass: Readonly<Record<Risk, PolicyClass>> = Object.freeze({ low: "agent", normal: "controlled", high: "human" })
 
 const overridesSchema = z.object({
   /** Identities the organisation may not use even when granted. */
@@ -38,8 +35,8 @@ export async function ingest(db: SQL, providers: readonly Provider[]) {
         if (changed.length) {
           throw new Error(`Capability ${tool.identity} version ${tool.version} changed its ${changed.join(" and ")} without a new version; give the tool a new version (YYYY-MM-DD) in its definition or its provider`)
         }
-        await tx`insert into capabilities (provider_id, identity, version, kind, risk, policy_class_default, title, description, input, output)
-          values (${provider.id}, ${tool.identity}, ${tool.version}, ${tool.kind}, ${risk}, ${risk && riskClass[risk]}, ${tool.title ?? null}, ${tool.description}, ${tool.input}, ${tool.output})
+        await tx`insert into capabilities (provider_id, identity, version, kind, risk, title, description, input, output)
+          values (${provider.id}, ${tool.identity}, ${tool.version}, ${tool.kind}, ${risk}, ${tool.title ?? null}, ${tool.description}, ${tool.input}, ${tool.output})
           on conflict (identity, version) do update set title = excluded.title, description = excluded.description`
       }
     }

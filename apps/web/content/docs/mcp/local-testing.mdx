@@ -72,7 +72,7 @@ The company directories are local test issuers. ID, its database role, its pages
 9. `toolbox-alpha`'s chain verifies with two events, one per call.
 10. An `UPDATE` and a `DELETE` on `evidence_events` through the journey's superuser connection are refused by the trigger, and the chain still verifies. Payload erasure through the hub: Not yet.
 
-The last test logs what the Toolbox asked ID. In the recorded runs: 11 grant reads answered by 4 access-view calls (a 63.6% cache hit rate), with a median access-view latency of 31 to 34 ms and at most 55 ms, 2 token requests and 2 audit-log reads.
+The last test logs what the Toolbox asked ID. In the recorded runs: 11 grant reads answered by 4 access-view calls (a 63.6% cache hit rate), with a median access-view latency of 31 to 34 ms and a maximum of 45 to 67 ms, 2 token requests and 2 audit-log reads.
 
 ## Ports
 
@@ -94,20 +94,19 @@ Keep these free. PostgreSQL belongs to the Compose project `answerable-mcp-e2e`;
 | Function | What it does |
 | --- | --- |
 | `startId({ tenants })` | Starts PostgreSQL and ID, and returns `{ manifest, admin, stop }`. `tenants` is `[{ slug, signIns }]`: one organisation each, with a company directory that accepts `signIns` sign-ins. `manifest` holds `idOrigin`, `adminResource`, `rootSecret` and each tenant's `slug`, `email` and `organizationId`. |
-| `id.admin(method, path, body?, headers?)` | Calls ID's admin API as root with a fresh `Idempotency-Key`. A status outside 2xx throws with the body. |
+| `id.admin(method, path, body?)` | Calls ID's admin API as root with a fresh `Idempotency-Key`. A status outside 2xx throws with the body. |
 | `id.stop()` | Ends ID, brings PostgreSQL down with its volume, removes the temporary directory and closes everything else the kit opened. Safe to call twice; also runs on Ctrl-C and SIGTERM. |
 | `registerResource(admin, { identifier, scopes, accessTokenTtl })` | Registers the MCP's resource; `offline_access` is added to `scopes` unless listed. |
 | `registerClient(admin, { clientId, redirectUri, scopes })` | Registers a public client for the authorisation code and refresh token grants. |
 | `linkClient(admin, clientId, resource)` | Lets the client ask for the resource. |
 | `grantOrganisation(admin, organizationId, { clientId, resource, scopes, entitledScopes? })` | Approves the client and the resource for an organisation and entitles its members to `entitledScopes`, all of `scopes` by default. |
-| `entitle(admin, organizationId, { resource, scopes, memberId?, groupId? })` | Adds an entitlement to a resource, for every client, for the organisation, one member or one group. |
+| `entitle(admin, organizationId, { resource, scopes })` | Entitles the organisation to a resource's scopes, for every client. |
 | `serve(port, fetch)` | Serves a fetch handler on a loopback port until the kit stops. |
-| `oauthProvider({ clientId, callback })` | The SDK's `OAuthClientProvider` in memory, for a client registered in ID ahead of time. Returns `{ provider, state }`; `state` holds the tokens, the authorisation URL and the discovery result. |
 | `launchBrowser()` | Starts headless Chromium with Playwright's signal handlers off, so cleanup runs on Ctrl-C. |
-| `signIn(browser, { idOrigin, resource, clientId, callback, scopes }, { slug, email, scopes })` | Signs one person in as a host does: the SDK follows the MCP's `401`, a real browser completes ID's pages, the SDK exchanges the code. Returns `{ provider, state }`. The first `scopes` are what the MCP advertises; the second are what the organisation is entitled to, and the consent page must list exactly those and name the rest as not approved. |
+| `signIn(browser, { idOrigin, resource, clientId, callback, scopes }, { slug, email, scopes })` | Signs one person in as a host does: the SDK follows the MCP's `401`, a real browser completes ID's pages, the SDK exchanges the code. Returns an `OAuthSession`, `{ provider, state }`: the SDK's `OAuthClientProvider` for a client registered in ID ahead of time, and the tokens, authorisation URL and discovery result it saved. The first `scopes` are what the MCP advertises; the second are what the organisation is entitled to, and the consent page must list exactly those and name the rest as not approved. |
 | `connect(resource, provider, protocol)` | Connects the official MCP client, as a `"2025"` client or pinned to `"2026-07-28"`. |
-| `tool(client, name, args?)` | Calls a tool and returns its `structuredContent`. A failed call throws with the error envelope's text. |
-| `refusal(client, name, args?)` | Calls a tool that must fail and returns the envelope's `code`, `message` and `details`. |
+| `tool(client, name, args?)` | Calls a tool and returns its `structuredContent`. A failed call throws with the envelope's code and message. |
+| `refusal(client, name, args?)` | Calls a tool that must fail and returns the `error` of its envelope, read with [`errorOf`](/docs/mcp/testing#serve-a-provider-in-process). |
 | `step(message)` | Prints `[acceptance] message`. |
 
 ## Write a journey
@@ -116,7 +115,8 @@ Save this as `packages/acceptance/src/journeys/records.journeys.test.ts` and run
 
 ```ts
 import { afterAll, beforeAll, expect, test } from "bun:test"
-import { createE2eMcp } from "@answerable/mcp-e2e/mcp"
+import { createMcpServer } from "@answerable/mcp"
+import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
 import { createRecordStore } from "@answerable/mcp-e2e/records"
 import { connect, grantOrganisation, launchBrowser, linkClient, registerClient, registerResource, serve, signIn, startId, tool, type Id, type OAuthSession } from "../index"
 
@@ -135,7 +135,8 @@ beforeAll(async () => {
   await registerClient(admin, { clientId, redirectUri: callback, scopes })
   await linkClient(admin, clientId, resource)
   await grantOrganisation(admin, acme.organizationId, { clientId, resource, scopes })
-  serve(47_602, createE2eMcp({ auth: { issuer: manifest.idOrigin, resource }, viewHtml: "<!doctype html>", records: createRecordStore() }).fetch)
+  const provider = createE2eProvider({ records: createRecordStore(), viewHtml: "<!doctype html>" })
+  serve(47_602, createMcpServer({ provider, auth: { issuer: manifest.idOrigin, resource } }).fetch)
   serve(47_603, () => new Response("Signed in"))
   oauth = await signIn(await launchBrowser(), { idOrigin: manifest.idOrigin, resource, clientId, callback, scopes }, { slug: acme.slug, email: acme.email, scopes })
 })

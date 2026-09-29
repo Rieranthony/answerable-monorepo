@@ -1,26 +1,26 @@
 import { expect, test } from "bun:test"
 import { z } from "zod"
 import { defineProvider, defineTool, definePrompt, defineResource, defineView, type Tool } from "./index"
-import { createTestMcp } from "./testing"
+import { createTestMcp, testPrincipal } from "./testing"
 
 const view = defineView({ name: "example", html: "<title>Example</title>" })
 test("prompts, resources and views validate names, scopes and URIs", () => {
   expect(Object.isFrozen(view)).toBe(true)
   expect(view.uri).toBe("ui://example/index.html")
-  expect(() => defineView({ name: "Bad", html: "x" })).toThrow("Invalid view name")
-  expect(() => defineView({ name: "empty", html: " " })).toThrow("View HTML is empty; build the view first")
+  expect(() => defineView({ name: "Bad", html: "x" })).toThrow('View name "Bad" must be a lowercase letter then lowercase letters, digits or hyphens, for example records')
+  expect(() => defineView({ name: "empty", html: " " })).toThrow("View empty: the HTML is empty; build it with buildView first")
   for (const scopes of [[], [""], ["has space"]]) {
     expect(() => definePrompt({ name: "test", description: "", scopes, input: z.object({}), async execute() { return { messages: [] } } })).toThrow("Prompt test: scopes must be non-empty and contain no spaces; omit them for the default <provider>:read")
     expect(() => defineResource({ name: "test", uri: "fixture://test", description: "", mimeType: "text/plain", scopes, async read() { return "" } })).toThrow("Resource test: scopes must be non-empty and contain no spaces; omit them for the default <provider>:read")
   }
-  expect(() => defineResource({ name: "test", uri: view.uri, description: "", mimeType: "text/html", async read() { return "" } })).toThrow("Use defineView for ui:// resources")
-  expect(() => defineResource({ name: "test", uri: "invalid", description: "", mimeType: "text/plain", async read() { return "" } })).toThrow()
-  expect(() => definePrompt({ name: "Bad", description: "", input: z.object({}), async execute() { return { messages: [] } } })).toThrow("Invalid prompt name: Bad")
-  expect(() => defineResource({ name: "Bad", uri: "fixture://bad", description: "", mimeType: "text/plain", async read() { return "" } })).toThrow("Invalid resource name: Bad")
+  expect(() => defineResource({ name: "test", uri: view.uri, description: "", mimeType: "text/html", async read() { return "" } })).toThrow(`Resource test: ${view.uri} is a ui:// view; define it with defineView and set it on a tool`)
+  expect(() => defineResource({ name: "test", uri: "invalid", description: "", mimeType: "text/plain", async read() { return "" } })).toThrow('Resource test: uri "invalid" must be an absolute URI, for example fixture://guide')
+  expect(() => definePrompt({ name: "Bad", description: "", input: z.object({}), async execute() { return { messages: [] } } })).toThrow('Prompt name "Bad" must be a lowercase letter then lowercase letters, digits or underscores, for example walkthrough')
+  expect(() => defineResource({ name: "Bad", uri: "fixture://bad", description: "", mimeType: "text/plain", async read() { return "" } })).toThrow('Resource name "Bad" must be a lowercase letter then lowercase letters, digits or underscores, for example guide')
 })
 
 const context = {
-  principal: { userId: crypto.randomUUID(), organizationId: crypto.randomUUID(), membershipId: crypto.randomUUID(), grantId: crypto.randomUUID(), clientId: "test", expiresAt: 123, organizationAuthorizationVersion: 1, scopes: [] },
+  principal: testPrincipal(),
   executionId: Bun.randomUUIDv7(),
   signal: new AbortController().signal,
 }

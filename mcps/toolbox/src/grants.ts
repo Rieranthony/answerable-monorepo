@@ -22,7 +22,7 @@ type Entry = { version: number; grants: readonly string[]; expiresAt: number; st
 
 /** A member's grant strings, read from ID and cached. */
 export type GrantsReader = {
-  /** The caller's grant strings, sorted: from the cache for `ttlMs` after a read, else from ID's member access view. */
+  /** The caller's grant strings, sorted: from the cache for 60 seconds after a read, else from ID's member access view. */
   read(principal: UserPrincipal): Promise<readonly string[]>
   /** Read these organisations' members from ID again on their next call. */
   invalidate(organisationIds: Iterable<string>): void
@@ -30,10 +30,10 @@ export type GrantsReader = {
 
 /**
  * Read each caller's grant strings from ID's member access view: the scopes of every target whose resource is the Toolbox, keeping only
- * grant strings. Cached per organisation, member and the token's organisation authorisation version for `ttlMs` (60 seconds). When ID fails,
+ * grant strings. Cached per organisation, member and the token's organisation authorisation version for 60 seconds. When ID fails,
  * a cached entry answers until it expires; without one the read throws `UPSTREAM_UNAVAILABLE`.
  */
-export function createGrantsReader({ id, resource, ttlMs = 60_000 }: { id: IdConfig; resource: string; ttlMs?: number }): GrantsReader {
+export function createGrantsReader({ id, resource }: { id: IdConfig; resource: string }): GrantsReader {
   const admin = createIdAdmin(id)
   const cache = new Map<string, Map<string, Entry>>()
   const pending = new Map<string, Promise<readonly string[]>>()
@@ -54,7 +54,7 @@ export function createGrantsReader({ id, resource, ttlMs = 60_000 }: { id: IdCon
   async function refresh({ organizationId, membershipId, organizationAuthorizationVersion: version }: UserPrincipal, kept: Entry | undefined) {
     try {
       const grants = await fetchGrants(organizationId, membershipId)
-      remember(organizationId, membershipId, { version, grants, expiresAt: Date.now() + ttlMs, stale: false })
+      remember(organizationId, membershipId, { version, grants, expiresAt: Date.now() + 60_000, stale: false })
       return grants
     } catch (error) {
       console.error("[toolbox] reading access failed", error)
