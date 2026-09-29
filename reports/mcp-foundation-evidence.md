@@ -90,6 +90,34 @@ Tree: branch `claude/toolbox-goal` on `main` 3ac5614, carrying pull request 11 (
 
 - `bun run env:up` from a worktree recreates the main checkout's running Postgres: the Compose project name is the same and the init directory's bind mount path differs (`docker compose --dry-run up -d --wait` printed `Container answerable-postgres-1  Recreate`). The ID suite ran against the Postgres already on port 47432, in its disposable `answerable_id_test` database, without `env:up`.
 
+## 29 September 2026: the SDK tool model (brief B1)
+
+Tree: branch `claude/toolbox-goal` on `main` 3ac5614, brief B1 of the Toolbox goal. Versions as above; `@answerable/mcp` 0.1.0.
+
+| Check | Result |
+| --- | --- |
+| Root typecheck, lint and build | Pass with `--force` (7, 7 and 3 tasks) |
+| `bun --filter web test` | 78 pass |
+| `bun run mcp:test` | auth 37 pass, 100% lines and functions; mcp 53 pass across 9 files, 100% lines and functions in every file; e2e 10 pass across 4 files, including Chromium Apps |
+| `bun run mcp:test:e2e` | Pass on five runs: 9.6, 8.8 and 7.4 seconds by the agent, 7.7 seconds after the review delta, and 9 seconds by the coordinator; three organisations, all fully entitled for now; nothing left behind |
+| `bun --filter @answerable/id test:coverage` | 2,040 pass, 0 fail, 100% line and function coverage in 526 seconds; one-minute load average 6.09 at the start and 7.92 at the end (the fixture script lost `e2e:write`) |
+
+**What changed.** `defineTool` takes five fields and defaults the rest; `defineProvider` fills identity, version and scopes; `createMcpServer({ provider, auth })`; wire names with `_`, derived annotations and `_meta["com.answerable/capability"]`; the error envelope with `retry.policy` and a `request_id`; the pagination contract on `records.list`; `manifest(provider)` with a committed `mcps/e2e/manifest.json` and a drift test; `createTestMcp(provider)`. The e2e MCP serves three read tools until prepared mutations bring the writes back.
+
+**Found by testing.**
+
+- The MCP TypeScript SDK 1.30.0 client (the version LibreChat uses) checks `structuredContent` against the tool's output schema even when `isError` is true: with the envelope in `structuredContent`, `callTool` threw `Structured content does not match the tool's output schema` for a `NOT_FOUND` and for an `INVALID_INPUT`, while the raw `tools/call` result was correct and the 2.1.0 client skipped the check. Error results now carry the envelope as JSON in their one text block and no `structuredContent`; probed again, both clients return the envelope for both errors.
+- The SDK validates tool input before the handler and turns a failure into a plain-text `isError` result (`validateToolInput`, `dist/mcp-*.mjs` lines 1768 to 1774). `tools/list` and registration read `schema["~standard"].jsonSchema[io]()`, and validation reads only `schema["~standard"].validate`, so the server registers a Standard Schema that keeps Zod's JSON form and accepts every value, then validates with Zod in the handler and answers `INVALID_INPUT` with one field violation per issue. Transforms run once; the previous pass's regression tests still pass in both protocol eras.
+- Zod 4.6.5 emits no `additionalProperties` for a plain `z.object`; `.strict()` emits `false` and `.passthrough()` emits `{}`. `defineTool` closes the top level only; `.strict()` also drops a top-level `.describe()`, while field descriptions survive.
+- `Bun.randomUUIDv7()` is not strictly monotonic: 10,000 values generated in a loop did not come out sorted. Record ids stay UUIDv4 and the list cursor is the last returned id in insertion order; an unissued cursor answers `INVALID_INPUT`.
+- In Bun, `AbortSignal.timeout` does not keep the process alive while `setTimeout` held it for 3.0 seconds, so the per-call deadline uses `AbortSignal.timeout`; after it fires the answer is `TIMEOUT` whatever the handler throws.
+- The 2026-07-28 era adds `_meta["io.modelcontextprotocol/serverInfo"]` to every result, and the MCP Apps helper writes the legacy `_meta["ui/resourceUri"]` beside `_meta.ui.resourceUri` on a view tool.
+- `bun.lock` records `@answerable/mcp` at 0.0.0 after the bump to 0.1.0, and `bun install` reports no change, so the lockfile is untouched.
+
+**Decisions recorded.** A deprecated tool names a current replacement in the same provider and ships with the deprecation sentence; two versions of one name served side by side are Not yet (the design's "at most one deprecated version beside the current one" cannot hold with one wire name per identity). The error envelope travels as text only, and `docs/08` and `docs/09` now say so.
+
+**Size.** `packages/mcp/src` source 541 lines (was 318), tests 768 (was 402); `mcps/e2e/src` source 198 (was 250), tests 183 (was 146).
+
 ## Limits
 
 The acceptance uses local test issuers for company directories, a pre-registered public client and loopback HTTP. It does not certify Claude.ai, another host, another company directory or a production deployment.

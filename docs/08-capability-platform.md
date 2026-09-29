@@ -68,7 +68,7 @@ A capability is frozen data produced by `defineTool` (a mutation by `defineMutat
 | Field | Rule |
 | --- | --- |
 | `name` | `<domain>.<operation>`, each part `^[a-z][a-z0-9]{0,15}$`, unique within its provider. The fully qualified identity is `<provider>/<domain>.<operation>` and never changes for the life of the capability. |
-| `version` | A date, `YYYY-MM-DD`; defaults to the provider's version. Behaviour of one `(identity, version)` never changes. At most one deprecated version ships beside the current one. |
+| `version` | A date, `YYYY-MM-DD`; defaults to the provider's version. Behaviour of one `(identity, version)` never changes. A deprecated tool names its current replacement in the same provider. Two versions of one name served side by side: Not yet, until the hub can pin a version per organisation. |
 | `kind` | `read`, `mutate`, `start` or `subscribe`; defaults to `read`, and to `mutate` when the definition carries `prepare` and `commit`. `subscribe`: Not yet. |
 | `title`, `description` | Operational documentation: what it does, when to use it, limits, what changes, what identifiers mean. Description length 40 to 1,000 characters. |
 | `input`, `output` | Zod object schemas, converted to JSON Schema 2020-12. `additionalProperties: false` on the input. Every list-shaped read takes `limit` (default at most 20, maximum enforced) and `cursor`, and returns `items`, `next_cursor` and `has_more`. |
@@ -85,7 +85,7 @@ The MCP tool a capability becomes:
 - `_meta["com.answerable/capability"]` = `{ identity, version, kind, risk, policy_class, deprecated }`. `policy_class` is the class the caller would get for that capability in that organisation, so a host or the model can see it before calling.
 - `_meta["anthropic/requiresUserInteraction"]: true` on the confirmed commit tool (below), and on no other tool.
 - Output: `structuredContent` validated against `output`, undeclared fields dropped, the same JSON mirrored as text (LibreChat and Claude Code need it).
-- Errors: an `isError` result whose `structuredContent` is the error envelope in [`09-mcp-design-standard.md`](09-mcp-design-standard.md#errors). Input validation failures are tool errors, not protocol errors, so the model can repair the call.
+- Errors: an `isError` result whose single text block is the error envelope in [`09-mcp-design-standard.md`](09-mcp-design-standard.md#errors) as JSON, with no `structuredContent`: MCP TypeScript SDK 1.x clients (LibreChat) validate `structuredContent` against the output schema even on errors and refuse the result, while every host reads the text of an error result. Input validation failures are tool errors, not protocol errors, so the model can repair the call.
 
 The manifest is `manifest(provider)`: a JSON document with the provider's id, version, owner, every capability's metadata and schemas, and no code. Each provider commits its manifest next to its source and a test fails on drift, as `apps/id/openapi.json` does today. The hub ingests manifests; a future public catalogue reads the same file.
 

@@ -1,5 +1,6 @@
 import { z } from "zod"
 
+/** Bundle a browser entry in a separate Bun process and return its output files. */
 export async function bundleBrowser(entry: string) {
   const worker = Bun.spawn([process.execPath, new URL("./build-worker.ts", import.meta.url).pathname, entry], { stdout: "pipe", stderr: "pipe" })
   const [code, stdout, stderr] = await Promise.all([worker.exited, new Response(worker.stdout).text(), new Response(worker.stderr).text()])

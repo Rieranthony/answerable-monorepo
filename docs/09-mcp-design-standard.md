@@ -56,7 +56,7 @@ Version 2 of [Stephen's draft](drafts/2026-09-27-stephen-mcp-design-standard.md)
 
 ## 5. Errors
 
-Every failure is an `isError` result whose `structuredContent` is this envelope and whose text mirrors `code` and `message`:
+Every failure is an `isError` result whose single text block is this envelope as JSON and which carries no `structuredContent` (MCP TypeScript SDK 1.x clients validate `structuredContent` against the output schema even on errors, so the envelope travels where every host reads it):
 
 ```json
 {

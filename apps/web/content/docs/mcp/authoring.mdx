@@ -1,30 +1,72 @@
 ---
 title: Author an MCP
-description: "Create an MCP server on Answerable ID: tools, prompts, resources, MCP Apps views and in-process tests."
+description: "Define read tools, a provider and an MCP server on Answerable ID: names, versions, errors, pagination, the manifest and in-process tests."
 ---
 
 ```ts
-import { createMcpServer, defineTool, readMcpEnvironment } from "@answerable/mcp"
+import { defineTool } from "@answerable/mcp"
 import { z } from "zod"
 
-const identityGet = defineTool({
-  name: "identity_get",
-  description: "Read your authenticated organisation",
-  input: z.object({}).strict(),
-  output: z.object({ organizationId: z.uuid() }),
-  scopes: ["example:read"],
-  annotations: { readOnlyHint: true, openWorldHint: false },
+export const identityGet = defineTool({
+  name: "identity.get",
+  description: "Read your verified identity: your user id and the organisation you signed in to.",
+  input: z.object({}),
+  output: z.object({ userId: z.uuid(), organizationId: z.uuid() }),
   async execute(_input, { principal }) {
-    return { organizationId: principal.organizationId }
+    return { userId: principal.userId, organizationId: principal.organizationId }
   },
 })
+```
+
+Save this as `mcps/example/src/tools.ts`. A read tool is these five fields; everything else has a default. `defineTool` checks the definition and returns it as frozen data.
+
+| Field | Default |
+| --- | --- |
+| `title` | None |
+| `version` | The provider's version |
+| `scopes` | `["<provider id>:read"]` |
+| `deprecated` | None |
+| `view` | None |
+| `timeoutMs` | `25000` |
+
+**Field descriptions.** Describe each input field with `.describe()`; the text reaches the model in the tool's `inputSchema`. Recommended, not enforced.
+
+Mutations: Not yet. They return as prepared mutations with their own definition.
+
+## The provider
+
+```ts
+import { defineProvider } from "@answerable/mcp"
+import { identityGet } from "./tools"
+
+export const provider = defineProvider({ id: "example", version: "2026-09-29", tools: [identityGet] })
+```
+
+Save this as `mcps/example/src/provider.ts`. A provider is a named, dated set of tools, prompts and resources. `defineProvider` fills each definition's identity, version and scopes, refuses a duplicate tool name, prompt name or resource URI, and returns frozen data.
+
+| Field | Rule |
+| --- | --- |
+| `id` | A lowercase letter, then up to 11 lowercase letters or digits |
+| `version` | A date, `YYYY-MM-DD`. Change it when the provider's contract changes |
+| `tools` | Definitions from `defineTool` |
+| `prompts`, `resources` | Optional; see [prompts and resources](#prompts-and-resources) |
+
+## The server
+
+```ts
+import { createMcpServer, readMcpEnvironment } from "@answerable/mcp"
+import { provider } from "./provider"
 
 const { auth, port } = readMcpEnvironment(process.env)
-const server = createMcpServer({ name: "example", version: "0.1.0", auth, tools: [identityGet] })
+const server = createMcpServer({ provider, auth })
 Bun.serve({ hostname: "127.0.0.1", port, fetch: server.fetch })
 ```
 
 Save this as `mcps/example/src/server.ts`. `createMcpServer` returns a web-standard `{ fetch }` handler; the entry point owns the listener.
+
+**What it serves.** `GET /health`, the protected-resource metadata, and the MCP endpoint at the resource URL's path behind the bearer gate. It answers both the 2026 and the 2025 protocol revisions, builds a fresh MCP server per request and sends `Cache-Control: no-store`. The server's name and version are the provider's id and version.
+
+**Hosts and origins.** It refuses a `Host` header or browser `Origin` other than the resource URL's host name. Pass `allowedHosts` or `allowedOrigins` (host names) to widen either list.
 
 ## Create a workspace
 
@@ -58,35 +100,85 @@ MCP_PORT=47500
 
 Register the resource, a client and its access in ID before the first sign-in; see [Connect Claude Code](/docs/mcp/claude-code#register-the-server). Each MCP running at the same time needs its own port.
 
-## Tools
+## Names and identity
 
-`defineTool` takes `name`, `description`, Zod `input` and `output` objects, `scopes`, optional `title`, `annotations` and `view`, and `execute(input, context)`. It returns the tool as frozen data.
+| Form | Example | Rule |
+| --- | --- | --- |
+| Tool name | `records.list` | `<domain>.<operation>`; each part a lowercase letter, then up to 15 lowercase letters or digits |
+| Identity | `example/records.list` | `<provider id>/<name>`; never changes for the life of the tool |
+| Wire name | `records_list` | The name with `_` for `.`; what hosts list and call |
 
-**Output.** `execute` returns the output. The server checks it against `output`, drops every field the schema does not declare, and sends the result as `structuredContent` and as the same JSON in a text block. Claude Code shows the model only the structured content, so put everything the model needs in the output.
+Hosts add their own prefixes and suffixes to tool names, and some limit names to 64 characters, so the wire name uses only `[a-z0-9_]`. The dotted identity travels in `_meta`.
 
-**Scopes decide visibility.** A token lists only the tools whose every scope it carries. A tool it cannot use is absent from `tools/list`, and calling it returns the protocol's unknown-tool error.
-
-**Context.** `context.principal` holds `userId`, `organizationId`, `membershipId`, `grantId`, `clientId`, `scopes` and `expiresAt`. `context.signal` aborts when the host cancels or disconnects. Constrain every query by `principal.organizationId`.
-
-**Dependencies.** Pass them by closure: define the tools inside a function that receives them.
+## Versions and deprecation
 
 ```ts
-import { createMcpServer, defineTool, type IdVerifierConfig } from "@answerable/mcp"
+export const recordsFind = defineTool({
+  // ...the five fields
+  deprecated: { since: "2026-09-29", sunset: "2027-09-29", replacement: "records.search" },
+})
+```
 
-export function createExampleMcp({ auth, records }: { auth: IdVerifierConfig; records: RecordStore }) {
-  const recordsList = defineTool({
-    name: "records_list",
-    description: "List your organisation's records",
-    input: z.object({}).strict(),
-    output: z.object({ records: z.array(recordSchema) }),
-    scopes: ["example:read"],
+**Version.** A date, `YYYY-MM-DD`; it defaults to the provider's version. The behaviour of one identity at one version never changes.
+
+**Deprecation.** `since` and `sunset` are dates; `replacement` is optional and names another tool of the same provider that is not deprecated. The description sent to hosts ends with a sentence naming all three, for example `Deprecated since 2026-09-29; removed on 2027-09-29; use records.search instead.`, and `_meta` carries the `deprecated` object.
+
+Two versions of one tool name in one provider: Not yet. `defineProvider` refuses a duplicate name.
+
+## What the wire carries
+
+| `tools/list` field | Value |
+| --- | --- |
+| `name` | The wire name |
+| `title` | `title`, when set |
+| `description` | `description`, plus the deprecation sentence |
+| `inputSchema` | The JSON Schema of `input`, with `additionalProperties: false` |
+| `outputSchema` | The JSON Schema of `output` |
+| `annotations` | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
+| `_meta["com.answerable/capability"]` | `{ identity, version, kind: "read" }`, plus `deprecated` when set |
+| `_meta.ui.resourceUri` | The view's URI, when the tool has a view. The MCP Apps helper also writes the older `_meta["ui/resourceUri"]` |
+
+**Results.** The server checks the value `execute` returns against `output`, drops every field `output` does not declare, and sends it as `structuredContent` and as the same JSON in one text block. Claude Code shows the model only the structured content, so put everything the model needs in the output. A failure carries no structured content; see [tool errors](#tool-errors).
+
+**Scopes decide visibility.** A token lists only the tools, prompts and resources whose every scope it carries. A tool it cannot use is absent from `tools/list`, and calling it returns the protocol's unknown-tool error.
+
+**Closed input.** `defineTool` applies `.strict()` to `input`, so an unknown top-level field answers `INVALID_INPUT`. Nested objects keep Zod's default of dropping unknown fields; use `z.strictObject` to close them too.
+
+Annotations describe the tool for hosts; they never authorise anything.
+
+## Context
+
+`execute(input, context)` receives the parsed input and a frozen context.
+
+| Field | Meaning |
+| --- | --- |
+| `principal` | `userId`, `organizationId`, `membershipId`, `grantId`, `clientId`, `scopes` and `expiresAt` from the verified token |
+| `executionId` | A UUIDv7 minted for this call; it is the error envelope's `request_id` and appears in the server log |
+| `signal` | Aborts when the host cancels, disconnects or the tool's timeout passes |
+
+Constrain every query by `principal.organizationId`. Prompts and resources receive the same context.
+
+## Dependencies
+
+```ts
+import { defineProvider, defineTool } from "@answerable/mcp"
+import { z } from "zod"
+
+export function createExampleProvider({ records }: { records: RecordStore }) {
+  const recordsCount = defineTool({
+    name: "records.count",
+    description: "Count the records of your organisation. Use records.list to read them.",
+    input: z.object({}),
+    output: z.object({ count: z.number().int() }),
     async execute(_input, { principal }) {
-      return { records: await records.list(principal.organizationId) }
+      return { count: await records.count(principal.organizationId) }
     },
   })
-  return createMcpServer({ name: "example", version: "0.1.0", auth, tools: [recordsList] })
+  return defineProvider({ id: "example", version: "2026-09-29", tools: [recordsCount] })
 }
 ```
+
+Pass dependencies by closure: define the tools inside a function that receives them. The server takes the provider that function returns; a test passes an in-memory store.
 
 **Composition.** A tool is plain data, so ordinary code composes it: collect tools from several modules into one array, wrap `execute` to audit every call, or call `execute` directly in a unit test.
 
@@ -97,20 +189,119 @@ function audited(tool: Tool, log: (line: string) => void): Tool {
   return defineTool({
     ...tool,
     async execute(input, context) {
-      log(`${context.principal.userId} ${tool.name}`)
+      log(`${context.principal.userId} ${tool.name} ${context.executionId}`)
       return tool.execute(input, context)
     },
   })
 }
-
-const tools = [recordsList, recordsCreate].map(tool => audited(tool, console.info))
 ```
 
-**Errors.** Throw `new ToolError(code, message)` for a safe, expected failure. Any other exception, or an output that does not match `output`, returns `tool_failed` without its message and logs `[mcp] tool <name> failed`.
+## Pagination
+
+```ts
+input: z.object({
+  limit: z.number().int().min(1).max(100).default(20).describe("Records per page, 1 to 100"),
+  cursor: z.string().optional().describe("next_cursor from the previous page; omit it for the first page"),
+}),
+output: z.object({ items: z.array(record), next_cursor: z.string().nullable(), has_more: z.boolean() }),
+```
+
+Every tool that can return an unbounded list takes these two fields and returns these three. Never truncate silently.
+
+| Field | Rule |
+| --- | --- |
+| `limit` | Integer; default at most 20; the schema enforces the maximum |
+| `cursor` | Optional; opaque to callers |
+| `items` | The page |
+| `next_cursor` | The cursor for the next page, or `null` on the last |
+| `has_more` | `true` when another page exists |
+
+`@answerable/mcp` exports nothing for pagination: declare the fields in your schemas. `records.list` in `mcps/e2e` is the working example; a cursor it did not issue answers `INVALID_INPUT` with a field violation on `cursor`.
+
+## Tool errors
+
+```ts
+import { ToolError } from "@answerable/mcp"
+
+throw new ToolError("NOT_FOUND", "No accessible record exists")
+throw new ToolError("RATE_LIMITED", "Try again shortly", { retry: { policy: "after_delay", after_ms: 30000 } })
+throw new ToolError("PRECONDITION_FAILED", "The record is locked", { details: { preconditions: ["unlocked"] } })
+```
+
+Throw `ToolError(code, message, options?)` for an expected failure. The caller receives `{ "isError": true, "content": [{ "type": "text", "text": "…" }] }`, with no `structuredContent`; the one text block is the envelope as JSON:
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No accessible record exists",
+    "retry": { "policy": "never" },
+    "request_id": "0199a4e2-7b06-7000-87bd-91723fe45f93"
+  }
+}
+```
+
+**Why text only.** The MCP TypeScript SDK 1.x client checks any `structuredContent` against the tool's `outputSchema`, even on an error result, so an envelope there made `callTool` throw `Structured content does not match the tool's output schema` instead of returning it. It leaves a result without structured content untouched. Measured with SDK 1.30.0, which LibreChat uses; SDK 2.x clients return both shapes. Claude Code shows the model the text of a result that has no structured content. As text, the envelope reaches the model through every one of these clients.
+
+`details` appears only when given. `retry.policy` tells the model what to do next without reading the message. `after_delay` without `after_ms` gets `after_ms: 1000`.
+
+| Code | Meaning | Retry |
+| --- | --- | --- |
+| `INVALID_INPUT` | The input failed the schema or a business rule; `details.field_violations` names the fields | `after_fix_input` |
+| `NOT_FOUND` | A named resource does not exist for this caller | `never` |
+| `PERMISSION_DENIED` | The caller may not perform this operation on this target | `never` |
+| `PRECONDITION_FAILED` | The current state does not allow the operation; `details.preconditions` says what | `after_state_change` |
+| `RATE_LIMITED`, `BUDGET_EXHAUSTED` | A limit refused the call | `after_delay` |
+| `UPSTREAM_REJECTED` | The source refused; `details.upstream` carries its code | `never` |
+| `UPSTREAM_UNAVAILABLE`, `TIMEOUT` | The source or the tool did not answer in time | `after_delay` |
+| `INTERNAL` | Unexpected failure; the message carries no detail | `after_delay` |
+| `INTENT_STALE`, `INTENT_EXPIRED`, `INTENT_NOT_FOUND`, `INTENT_CANCELLED`, `INTENT_CONSUMED` | Prepared mutations: Not yet | `after_reprepare` |
+| `COMMIT_TOKEN_INVALID`, `PRINCIPAL_MISMATCH`, `APPROVAL_DENIED`, `IDEMPOTENCY_KEY_MISMATCH` | Prepared mutations: Not yet | `never` |
+| `APPROVAL_REQUIRED` | Prepared mutations: Not yet | `after_approval` |
+| `COMMIT_IN_PROGRESS` | Prepared mutations: Not yet | `after_delay` |
+| `OPERATION_NOT_FOUND`, `OPERATION_EXPIRED` | Operations: Not yet | `never` |
+
+`errorCodes` exports this table as data, and `ErrorCode` as a type.
+
+**Custom codes.** A provider may add `<PROVIDER>_<CODE>` in capitals, for example `ACME_QUOTA_EXCEEDED`, with an explicit retry: `new ToolError("ACME_QUOTA_EXCEEDED", "…", { retry: { policy: "after_delay" } })`. Any other code, or a custom code without `retry`, throws when the error is constructed.
+
+**What the server answers for you.**
+
+| Case | Answer |
+| --- | --- |
+| The input fails `input` | `INVALID_INPUT`, one field violation per issue (`{ field: "a.b", message }`); the message lists them; `execute` does not run |
+| `execute` runs past `timeoutMs` | `TIMEOUT`; `context.signal` aborts and the answer does not wait for `execute` |
+| Any other exception, or an output that fails `output` | `INTERNAL` with the message `The tool could not complete`, and `[mcp] tool <name> failed` with the execution id in the server log |
+
+## Manifest
+
+```ts
+import { manifest } from "@answerable/mcp"
+import { provider } from "../src/provider"
+
+await Bun.write(new URL("../manifest.json", import.meta.url), `${JSON.stringify(manifest(provider), null, 2)}\n`)
+```
+
+Save this as `mcps/example/scripts/manifest.ts` and add `"manifest": "bun scripts/manifest.ts"` to the workspace's scripts. `manifest(provider)` returns the provider's contract as plain JSON: `id`, `version`, every tool (sorted by identity) with its identity, wire name, version, kind, title, description, deprecation, scopes, annotations and the JSON Schema of its input and output, then the prompts and resources. It carries no code.
+
+Commit `manifest.json` next to the source and test it for drift:
+
+```ts
+import { expect, test } from "bun:test"
+import { manifest } from "@answerable/mcp"
+import { provider } from "./provider"
+
+test("manifest.json matches the provider", async () => {
+  const committed = await Bun.file(new URL("../manifest.json", import.meta.url)).json()
+  expect(committed, "manifest.json is out of date; run bun run --filter @answerable/mcp-example manifest").toEqual(manifest(provider))
+})
+```
+
+A change to any definition fails the test until you run the script and commit the new file, so every contract change shows in review. `mcps/e2e` does exactly this.
 
 ## Prompts and resources
 
-`definePrompt` takes `name`, `description`, a Zod `input`, `scopes` and `execute(input, context)`, which returns an MCP prompt result. `defineResource` takes `name`, a fixed `uri`, `description`, `mimeType`, `scopes` and `read(context)`, which returns text. Both follow the same scope rule as tools. Reading a prompt or resource must not change data.
+`definePrompt` takes `name`, `description`, a Zod `input` and `execute(input, context)`, which returns an MCP prompt result. `defineResource` takes `name`, a fixed `uri`, `description`, `mimeType` and `read(context)`, which returns text. Both take optional `scopes`, defaulting to `<provider id>:read`, and follow the same visibility rule as tools. Names are lowercase letters, digits and underscores. Reading a prompt or resource must not change data; a failure answers the protocol error `Content could not be read`.
 
 ## Views
 
@@ -127,27 +318,29 @@ Build each view before starting the server, pass the HTML to `defineView({ name,
 ```ts
 import { expect, test } from "bun:test"
 import { createTestMcp } from "@answerable/mcp/testing"
-import { createExampleMcp } from "./mcp"
+import { provider } from "./provider"
 
-test("lists the caller's records", async () => {
-  const mcp = await createTestMcp(auth => createExampleMcp({ auth, records: createRecordStore() }))
+test("returns the caller's organisation", async () => {
+  const mcp = await createTestMcp(provider)
   try {
-    const client = await mcp.connect({ scopes: ["example:read"] })
-    const result = await client.callTool({ name: "records_list", arguments: {} })
-    expect(result.structuredContent).toEqual({ records: [] })
+    const organizationId = crypto.randomUUID()
+    const client = await mcp.connect({ organizationId })
+    const result = await client.callTool({ name: "identity_get", arguments: {} })
+    expect(result.structuredContent).toMatchObject({ organizationId })
   } finally {
     await mcp.close()
   }
 })
 ```
 
-`createTestMcp` runs the MCP and a local ID issuer inside the test process: no port and no network. `connect` signs a token for the MCP and connects the official MCP client.
+`createTestMcp(provider)` serves the provider with `createMcpServer` and a local ID issuer inside the test process: no port and no network. `connect` signs a token for the MCP and connects the official MCP client.
 
 | Option | Default |
 | --- | --- |
-| `scopes` | Every scope the MCP advertises |
-| `organizationId`, `userId` | Random UUIDs |
-| `protocol` | The client's default; `"2026-07-28"` pins the new revision |
+| `createTestMcp(provider, { resource })` | `https://mcp.test/mcp` |
+| `connect({ scopes })` | Every scope the MCP advertises |
+| `connect({ organizationId, userId })` | Random UUIDs |
+| `connect({ protocol })` | The client's default; `"2026-07-28"` pins the new revision |
 
 `mcp.fetch` sends a raw HTTP request, for example to check a `401`. `mcp.issuer.sign` makes an unusual token, such as an expired one. `mcp.close()` closes every client. `mcps/e2e/src/mcp.test.ts` is the working example; [Test MCPs locally](/docs/mcp/local-testing) covers the real sign-in through ID.
 
@@ -155,13 +348,37 @@ test("lists the caller's records", async () => {
 
 `GET /health` returns `{ "status": "ok" }` without authentication, whatever the `Host` header, so load balancers and container probes can call it by address.
 
+## Limits
+
+| Limit | Value |
+| --- | --- |
+| Tool name part | 16 characters |
+| Provider id | 12 characters |
+| Description | 40 to 1,000 characters |
+| `timeoutMs` | 1 to 55,000; default 25,000. Longer work: Not yet |
+| Tool kinds | Read only. Mutations: Not yet |
+| Versions per tool name in a provider | One |
+
 ## Errors
 
 | Error | Meaning | What to do |
 | --- | --- | --- |
+| `Tool name "…" must be <domain>.<operation>…` at start | The name breaks the naming rule | Rename it, for example `records.list` |
+| `Tool …: the description is N characters…` | Shorter than 40 or longer than 1,000 | Say what it does, when to use it and its limits |
+| `Tool …: timeoutMs … must be a whole number of milliseconds from 1 to 55,000` | The timeout is out of range | Use at most 55,000 |
+| `…must be a date, YYYY-MM-DD` | A version or deprecation date is not a calendar date | Write the date as `YYYY-MM-DD` |
+| `…scopes must be non-empty and contain no spaces…` | An empty scope list or a scope with a space | Omit `scopes` for the default, or fix the list |
+| `Provider id "…" must be a lowercase letter…` | The id breaks the rule | Use up to 12 lowercase letters or digits, starting with a letter |
+| `Provider … defines tool … twice` | Two definitions share a tool name, prompt name or resource URI | Rename one |
+| `Provider … defines two different views at …` | Two views share a name | Share one `defineView` result, or rename a view |
+| `Provider …: tool … is deprecated in favour of …, which is not a current tool of this provider` | The replacement is missing or itself deprecated | Name a current tool of the provider |
+| `ToolError code "…" must be a standard code or <PROVIDER>_<CODE>…` | The code is not in the table and has the wrong shape | Use a standard code, or `ACME_SOMETHING` |
+| `ToolError code "…" is not in the standard table; pass { retry }…` | A custom code without a retry policy | Pass `{ retry: { policy } }` |
 | `401 invalid_token` | Missing, expired or foreign token, or a token for another MCP | Sign in through ID for this MCP's resource URL |
 | `403` on the MCP endpoint | The `Host` or browser `Origin` is not allowed | Call the MCP by its registered host name, or set `allowedHosts` / `allowedOrigins` |
 | Unknown tool, prompt or resource | Not defined, or the token lacks its scopes | Check the token's scopes against the definition |
-| Tool result `tool_failed` | Unexpected handler failure, or output that does not match `output` | Read the server logs |
+| Tool result `INVALID_INPUT` | The arguments failed the schema or a business rule | Fix the fields in `details.field_violations` |
+| Tool result `TIMEOUT` | The handler ran past `timeoutMs` | Make it faster, or raise `timeoutMs` up to 55,000 |
+| Tool result `INTERNAL` | Unexpected handler failure, or output that does not match `output` | Read the server log for `[mcp] tool <name> failed` and the `request_id` |
 | Tool result with your code | A `ToolError` you threw | Handle the code |
 | `Invalid MCP configuration: …` at start | A missing or invalid variable | Set the named variable |

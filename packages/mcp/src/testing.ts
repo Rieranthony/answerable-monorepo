@@ -1,7 +1,8 @@
-import type { IdVerifierConfig } from "@answerable/auth"
 import { createTestIssuer, type TestIssuer } from "@answerable/auth/testing"
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client"
 import { getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/server"
+import type { Provider } from "./provider"
+import { createMcpServer } from "./server"
 
 /** An in-process MCP and its authenticated protocol clients. */
 export type TestMcp = {
@@ -15,14 +16,11 @@ export type TestMcp = {
   close(): Promise<void>
 }
 
-/** Run the real MCP protocol without listening on a port. */
-export async function createTestMcp(
-  create: (auth: IdVerifierConfig) => { fetch(request: Request): Promise<Response> },
-  options: { resource?: string } = {},
-): Promise<TestMcp> {
+/** Serve a provider in-process with a local ID issuer and the official MCP client: no port, no network. */
+export async function createTestMcp(provider: Provider, options: { resource?: string } = {}): Promise<TestMcp> {
   const issuer = await createTestIssuer()
   const resource = options.resource ?? "https://mcp.test/mcp"
-  const server = create({ issuer: issuer.issuer, resource, fetch: issuer.fetch })
+  const server = createMcpServer({ provider, auth: { issuer: issuer.issuer, resource, fetch: issuer.fetch } })
   const clients: Client[] = []
   const fetch = async (input: string | URL | Request, init?: RequestInit) => {
     const request = new Request(input, init)

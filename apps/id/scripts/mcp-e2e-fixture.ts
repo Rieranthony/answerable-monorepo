@@ -21,7 +21,7 @@ const idOrigin = "http://127.0.0.1:47600";
 const resource = "http://127.0.0.1:47602/mcp";
 const callback = "http://127.0.0.1:47603/callback";
 const clientId = "mcp-e2e-browser";
-const scopes = ["e2e:identity", "e2e:read", "e2e:write"];
+const scopes = ["e2e:identity", "e2e:read"];
 const rootSecret = `${crypto.randomUUID()}${crypto.randomUUID()}`;
 const upstreams = await Promise.all([
   startOidcIssuer(),
@@ -158,12 +158,10 @@ for (const [index, slug] of ["mcp-alpha", "mcp-beta", "mcp-gamma"].entries()) {
     clientId,
     scopes: ["openid", "offline_access"],
   });
-  const entitledScopes =
-    slug === "mcp-gamma" ? ["e2e:identity", "e2e:read"] : scopes;
   await admin("POST", `${path}/entitlements`, {
     clientId,
     resource,
-    scopes: entitledScopes,
+    scopes,
   });
   const email = `tester@${domain}`;
   // Each company sign-in consumes one queued identity.
@@ -175,7 +173,7 @@ for (const [index, slug] of ["mcp-alpha", "mcp-beta", "mcp-gamma"].entries()) {
       name: "MCP tester",
       auth_time: Math.floor(Date.now() / 1000),
     });
-  tenants.push({ slug, email, organizationId, scopes: entitledScopes });
+  tenants.push({ slug, email, organizationId });
 }
 
 await Bun.write(

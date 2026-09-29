@@ -7,11 +7,11 @@ description: "Build MCP servers that sign people in with Answerable ID, and test
 bun run mcp:test:e2e
 ```
 
-Run this from the monorepo after installing [the local test requirements](/docs/mcp/local-testing). It signs two organisations into the e2e MCP through real Answerable ID, with the official MCP SDK's OAuth client and a real browser.
+Run this from the monorepo after installing [the local test requirements](/docs/mcp/local-testing). It signs three organisations into the e2e MCP through real Answerable ID, with the official MCP SDK's OAuth client and a real browser.
 
 ## Status
 
-**Local foundation:** implemented and tested. `@answerable/mcp` builds an MCP server on the official MCP TypeScript SDK. `@answerable/auth` verifies Answerable ID access tokens. `mcps/e2e` is the reference server.
+**Local foundation:** implemented and tested. `@answerable/mcp` defines read tools and providers, serves them on the official MCP TypeScript SDK, answers every tool failure with one error envelope, and exports each provider's contract as a manifest. `@answerable/auth` verifies Answerable ID access tokens. `mcps/e2e` is the reference server, with three read tools. Writes in the e2e MCP: Not yet; they return with prepared mutations.
 
 **External hosts:** Claude Code connects with a pre-registered client; see [Connect Claude Code](/docs/mcp/claude-code). Claude.ai and hosted deployment: Not yet.
 
@@ -20,7 +20,7 @@ Run this from the monorepo after installing [the local test requirements](/docs/
 1. The host posts to the MCP endpoint. The server refuses a foreign `Host` or browser `Origin`.
 2. Without a valid token, the server answers `401` with `WWW-Authenticate: Bearer resource_metadata="…"`. The host reads the [protected-resource metadata](https://datatracker.ietf.org/doc/html/rfc9728), discovers Answerable ID and signs the person in with PKCE and the MCP's URL as `resource`.
 3. The server verifies the token against ID's published keys: issuer, audience (the MCP's URL), type `at+jwt`, expiry and the user and organisation claims.
-4. The server registers only the tools, prompts and resources whose scopes the token carries, then answers in the host's protocol version (2026-07-28, or 2025 for older hosts).
+4. The server registers only the tools, prompts and resources whose scopes the token carries, then answers in the host's protocol version (`2026-07-28`, or 2025 for older hosts). A tool failure is a result carrying the [error envelope](/docs/mcp/authoring#tool-errors), not a protocol error.
 
 The MCP never sees a password, never runs Better Auth and never reads ID's database.
 
@@ -30,9 +30,9 @@ The MCP never sees a password, never runs Better Auth and never reads ID's datab
 | --- | --- |
 | `@answerable/auth` | Verify an Answerable ID access token for any service |
 | `@answerable/auth/testing` | An in-process issuer that signs test tokens |
-| `@answerable/mcp` | `createMcpServer`, `defineTool`, `definePrompt`, `defineResource`, `defineView` |
+| `@answerable/mcp` | `defineTool`, `defineProvider`, `definePrompt`, `defineResource`, `defineView`, `createMcpServer`, `manifest`, `ToolError`, `readMcpEnvironment` |
 | `@answerable/mcp/build` | Bundle an MCP Apps view into one HTML resource |
-| `@answerable/mcp/testing` | `createTestMcp`: run an MCP in-process with the official MCP client |
+| `@answerable/mcp/testing` | `createTestMcp`: serve a provider in-process with the official MCP client |
 
 Views import the official MCP Apps browser API, `@modelcontextprotocol/ext-apps`, directly.
 

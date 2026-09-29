@@ -7,10 +7,6 @@ export const recordSchema = z.object({
   title: z.string().trim().min(1).max(200),
   createdAt: z.iso.datetime(),
 })
-export const createInput = z.object({
-  title: z.string().trim().min(1).max(200),
-}).strict()
-export const deleteInput = z.object({ recordId: z.uuid() }).strict()
-export const recordsOutput = z.object({ records: z.array(recordSchema) })
-export const recordsViewOutput = recordsOutput.extend({ canWrite: z.boolean() })
+export const recordsPage = z.object({ items: z.array(recordSchema), next_cursor: z.string().nullable(), has_more: z.boolean() })
+export const recordsView = z.object({ items: z.array(recordSchema) })
 export type FixtureRecord = z.infer<typeof recordSchema>

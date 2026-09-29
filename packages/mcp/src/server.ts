@@ -2,54 +2,63 @@ import { createIdVerifier, type IdVerifierConfig, type UserPrincipal } from "@an
 import {
   INTERNAL_ERROR, ProtocolError, createMcpHandler, McpServer, requireBearerAuth, OAuthError, OAuthErrorCode,
   hostHeaderValidationResponse, originValidationResponse, getOAuthProtectedResourceMetadataUrl,
+  type CallToolResult, type StandardSchemaWithJSON,
 } from "@modelcontextprotocol/server"
 import { registerAppTool, registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server"
-import { ToolError, type Tool, type Prompt, type Resource, type View } from "./definitions"
+import type { z } from "zod"
+import type { ToolContext, View } from "./definitions"
+import { ToolError } from "./errors"
+import type { Provider } from "./provider"
+import { readAnnotations, wireDescription, wireName } from "./tool"
 
+/** Configuration for `createMcpServer`. */
 export type McpServerConfig = {
-  name: string
-  version: string
+  provider: Provider
   auth: IdVerifierConfig
-  tools: readonly Tool[]
-  prompts?: readonly Prompt[]
-  resources?: readonly Resource[]
   /** Hostnames accepted in the Host header. Default: the resource URL's hostname. */
   allowedHosts?: string[]
   /** Hostnames accepted in a browser Origin header. Default: the resource URL's hostname. */
   allowedOrigins?: string[]
 }
 
-export function createMcpServer(config: McpServerConfig): { fetch(request: Request): Promise<Response> } {
-  const views = new Map<string, View>()
-  function unique(values: readonly string[], kind: string) {
-    const seen = new Set<string>()
-    for (const value of values) {
-      if (seen.has(value)) throw new Error(`Duplicate ${kind}: ${value}`)
-      seen.add(value)
-    }
-  }
-  unique(config.tools.map(tool => tool.name), "tool")
-  unique((config.prompts ?? []).map(prompt => prompt.name), "prompt")
-  for (const tool of config.tools) {
-    if (!tool.view) continue
-    const existing = views.get(tool.view.uri)
-    if (existing && existing !== tool.view) throw new Error(`Conflicting view: ${tool.view.uri}`)
-    views.set(tool.view.uri, tool.view)
-  }
-  unique([...views.keys(), ...(config.resources ?? []).map(resource => resource.uri)], "resource")
-  const verify = createIdVerifier(config.auth)
-  const resourceUrl = new URL(config.auth.resource)
+// tools/list advertises the real schema, but the SDK's own validation would answer a plain-text error,
+// so it accepts every argument and the handler validates, answering INVALID_INPUT.
+function advertised(input: z.ZodObject): StandardSchemaWithJSON<Record<string, unknown>> {
+  return { "~standard": { version: 1, vendor: "zod", jsonSchema: input["~standard"].jsonSchema, validate: value => ({ value: value as Record<string, unknown> }) } }
+}
+
+function invalidInput(issues: readonly z.core.$ZodIssue[]) {
+  const field = (path: readonly PropertyKey[]) => path.map(String).join(".")
+  const violations = issues.flatMap(issue => issue.code === "unrecognized_keys"
+    ? issue.keys.map(key => ({ field: field([...issue.path, key]), message: "Unknown field" }))
+    : [{ field: field(issue.path), message: issue.message }])
+  const message = violations.map(violation => violation.field ? `${violation.field}: ${violation.message}` : violation.message).join("; ")
+  return new ToolError("INVALID_INPUT", message, { details: { field_violations: violations } })
+}
+
+// The envelope travels as JSON text only: MCP SDK 1.x clients check any structuredContent
+// against the tool's output schema even on an error result, and would reject the envelope.
+function failure({ code, message, retry, details }: ToolError, requestId: string): CallToolResult {
+  const envelope = { error: { code, message, retry, ...(details ? { details } : {}), request_id: requestId } }
+  return { isError: true, content: [{ type: "text", text: JSON.stringify(envelope) }] }
+}
+
+/** Serve a provider over MCP with Answerable ID sign-in; returns a web-standard `{ fetch }` handler. */
+export function createMcpServer({ provider, auth, allowedHosts, allowedOrigins }: McpServerConfig): { fetch(request: Request): Promise<Response> } {
+  const views = new Set<View>(provider.tools.flatMap(tool => tool.view ? [tool.view] : []))
+  const verify = createIdVerifier(auth)
+  const resourceUrl = new URL(auth.resource)
   // The resource URL is the endpoint; the SDK's 401 challenge names this metadata URL.
   const metadataUrl = getOAuthProtectedResourceMetadataUrl(resourceUrl)
   const metadataPath = new URL(metadataUrl).pathname
-  const allowedHosts = config.allowedHosts ?? [resourceUrl.hostname]
-  const allowedOrigins = config.allowedOrigins ?? [resourceUrl.hostname]
-  const definitions = [...config.tools, ...(config.prompts ?? []), ...(config.resources ?? [])]
+  const hosts = allowedHosts ?? [resourceUrl.hostname]
+  const origins = allowedOrigins ?? [resourceUrl.hostname]
+  const definitions = [...provider.tools, ...provider.prompts, ...provider.resources]
   const scopes = [...new Set(definitions.flatMap(item => [...item.scopes]))].sort()
   const capabilities = {
-    ...(config.tools.length ? { tools: {} } : {}),
-    ...(config.prompts?.length ? { prompts: {} } : {}),
-    ...(views.size || config.resources?.length ? { resources: {} } : {}),
+    ...(provider.tools.length ? { tools: {} } : {}),
+    ...(provider.prompts.length ? { prompts: {} } : {}),
+    ...(views.size || provider.resources.length ? { resources: {} } : {}),
   }
   const gate = requireBearerAuth({
     resourceMetadataUrl: metadataUrl,
@@ -67,43 +76,49 @@ export function createMcpServer(config: McpServerConfig): { fetch(request: Reque
   const handler = createMcpHandler(({ authInfo, requestInfo }) => {
     const principal = authInfo!.extra!.principal as UserPrincipal
     // Capabilities follow the definitions, not the caller's scopes, so every caller sees the same server.
-    const server = new McpServer({ name: config.name, version: config.version }, { capabilities })
-    const context = (sdkSignal: AbortSignal) => Object.freeze({ principal, signal: requestInfo?.signal ? AbortSignal.any([sdkSignal, requestInfo.signal]) : sdkSignal })
+    const server = new McpServer({ name: provider.id, version: provider.version }, { capabilities })
+    const context = (signals: AbortSignal[]): ToolContext => Object.freeze({
+      principal, executionId: Bun.randomUUIDv7(), signal: AbortSignal.any(requestInfo?.signal ? [...signals, requestInfo.signal] : signals),
+    })
     const permitted = (definition: { scopes: readonly string[] }) => definition.scopes.every(scope => principal.scopes.includes(scope))
     const registeredViews = new Set<View>()
-    for (const tool of config.tools.filter(permitted)) {
-      registerAppTool(server, tool.name, {
-        title: tool.title, description: tool.description, inputSchema: tool.input, outputSchema: tool.output,
-        annotations: tool.annotations, _meta: tool.view ? { ui: { resourceUri: tool.view.uri } } : {},
-      }, async (input, sdkContext) => {
-        const call = context(sdkContext.mcpReq.signal)
+    for (const tool of provider.tools.filter(permitted)) {
+      const capability = { identity: tool.identity, version: tool.version, kind: "read", ...(tool.deprecated ? { deprecated: tool.deprecated } : {}) }
+      registerAppTool(server, wireName(tool.name), {
+        title: tool.title, description: wireDescription(tool), inputSchema: advertised(tool.input), outputSchema: tool.output, annotations: readAnnotations,
+        _meta: { "com.answerable/capability": capability, ...(tool.view ? { ui: { resourceUri: tool.view.uri } } : {}) },
+      }, async (args, sdkContext) => {
+        const deadline = AbortSignal.timeout(tool.timeoutMs)
+        const call = context([sdkContext.mcpReq.signal, deadline])
+        const timedOut = new Promise<never>((_, reject) => deadline.addEventListener("abort", reject, { once: true }))
         try {
-          call.signal.throwIfAborted()
-          const data = tool.output.parse(await tool.execute(input, call))
+          const input = await tool.input.safeParseAsync(args)
+          if (!input.success) throw invalidInput(input.error.issues)
+          const data = await tool.output.parseAsync(await Promise.race([tool.execute(input.data, call), timedOut]))
           return { structuredContent: data, content: [{ type: "text", text: JSON.stringify(data) }] }
         } catch (error) {
-          if (!(error instanceof ToolError)) console.error(`[mcp] tool ${tool.name} failed`, error)
-          const code = error instanceof ToolError ? error.code : "tool_failed"
-          const message = error instanceof ToolError ? error.message : "The tool could not complete"
-          return { isError: true, content: [{ type: "text", text: `${code}: ${message}` }], _meta: { code } }
+          if (deadline.aborted) return failure(new ToolError("TIMEOUT", `The tool did not finish within ${tool.timeoutMs} ms`), call.executionId)
+          if (error instanceof ToolError) return failure(error, call.executionId)
+          console.error(`[mcp] tool ${tool.name} failed`, call.executionId, error)
+          return failure(new ToolError("INTERNAL", "The tool could not complete"), call.executionId)
         }
       })
       if (tool.view) registeredViews.add(tool.view)
     }
-    for (const prompt of (config.prompts ?? []).filter(permitted)) {
+    for (const prompt of provider.prompts.filter(permitted)) {
       server.registerPrompt(prompt.name, { description: prompt.description, argsSchema: prompt.input }, async (input, sdkContext) => {
         try {
-          return await prompt.execute(input, context(sdkContext.mcpReq.signal))
+          return await prompt.execute(input, context([sdkContext.mcpReq.signal]))
         } catch (error) {
           console.error(`[mcp] prompt ${prompt.name} failed`, error)
           throw new ProtocolError(INTERNAL_ERROR, "Content could not be read")
         }
       })
     }
-    for (const resource of (config.resources ?? []).filter(permitted)) {
+    for (const resource of provider.resources.filter(permitted)) {
       server.registerResource(resource.name, resource.uri, { description: resource.description, mimeType: resource.mimeType }, async (_uri, sdkContext) => {
         try {
-          return { contents: [{ uri: resource.uri, mimeType: resource.mimeType, text: await resource.read(context(sdkContext.mcpReq.signal)) }] }
+          return { contents: [{ uri: resource.uri, mimeType: resource.mimeType, text: await resource.read(context([sdkContext.mcpReq.signal])) }] }
         } catch (error) {
           console.error(`[mcp] resource ${resource.name} failed`, error)
           throw new ProtocolError(INTERNAL_ERROR, "Content could not be read")
@@ -121,14 +136,14 @@ export function createMcpServer(config: McpServerConfig): { fetch(request: Reque
     async fetch(request) {
       const pathname = new URL(request.url).pathname
       if (request.method === "GET" && pathname === "/health") return Response.json({ status: "ok" })
-      const hostRejection = hostHeaderValidationResponse(request, allowedHosts)
+      const hostRejection = hostHeaderValidationResponse(request, hosts)
       if (hostRejection) return hostRejection
       if (request.method === "GET" && pathname === metadataPath) return Response.json({
-        resource: config.auth.resource, authorization_servers: [config.auth.issuer], scopes_supported: scopes,
-        bearer_methods_supported: ["header"], resource_name: config.name,
+        resource: auth.resource, authorization_servers: [auth.issuer], scopes_supported: scopes,
+        bearer_methods_supported: ["header"], resource_name: provider.id,
       })
       if (pathname !== resourceUrl.pathname) return new Response("Not found", { status: 404 })
-      let response = originValidationResponse(request, allowedOrigins)
+      let response = originValidationResponse(request, origins)
       if (!response) {
         const authInfo = await gate(request)
         response = authInfo instanceof Response ? authInfo : await handler.fetch(request, { authInfo })

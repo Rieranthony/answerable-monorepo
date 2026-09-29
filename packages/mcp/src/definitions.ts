@@ -1,70 +1,55 @@
 import type { UserPrincipal } from "@answerable/auth"
 import type { GetPromptResult } from "@modelcontextprotocol/server"
-import type { z } from "zod"
+import { z } from "zod"
 
-export type ToolContext = Readonly<{ principal: UserPrincipal; signal: AbortSignal }>
-export type ToolAnnotations = Readonly<{ readOnlyHint?: boolean; destructiveHint?: boolean; idempotentHint?: boolean; openWorldHint?: boolean }>
+/** What every handler receives: the verified caller, this call's id and a signal that aborts on cancel or timeout. */
+export type ToolContext = Readonly<{ principal: UserPrincipal; executionId: string; signal: AbortSignal }>
+/** An MCP Apps view: bundled HTML served as a `ui://` resource for one or more tools. */
 export type View = Readonly<{ name: string; uri: string; html: string }>
-export type Tool<Input extends z.ZodObject = z.ZodObject, Output extends z.ZodObject = z.ZodObject> = Readonly<{
-  name: string
-  title?: string
-  description: string
-  input: Input
-  output: Output
-  scopes: readonly string[]
-  annotations?: ToolAnnotations
-  view?: View
-  execute(input: z.output<Input>, context: ToolContext): Promise<z.input<Output>>
-}>
+/** A prompt: instructions a host can fetch by name. Retrieval must not change data. */
 export type Prompt<Input extends z.ZodObject = z.ZodObject> = Readonly<{
   name: string
   description: string
   input: Input
-  scopes: readonly string[]
+  scopes?: readonly string[]
   execute(input: z.output<Input>, context: ToolContext): Promise<GetPromptResult>
 }>
+/** A fixed-URI text resource. Reading it must not change data. */
 export type Resource = Readonly<{
   name: string
   uri: string
   description: string
   mimeType: string
-  scopes: readonly string[]
+  scopes?: readonly string[]
   read(context: ToolContext): Promise<string>
 }>
 
+const date = z.iso.date()
+export const isDate = (value: string) => date.safeParse(value).success
+
+export function checkScopes(label: string, scopes: readonly string[] | undefined) {
+  if (scopes && (!scopes.length || scopes.some(scope => !scope || /\s/.test(scope)))) {
+    throw new Error(`${label}: scopes must be non-empty and contain no spaces; omit them for the default <provider>:read`)
+  }
+  return scopes && Object.freeze([...scopes])
+}
+
+/** Define an MCP Apps view from HTML built with `buildView`. */
 export function defineView(input: { name: string; html: string }): View {
   if (!/^[a-z][a-z0-9-]*$/.test(input.name)) throw new Error("Invalid view name")
   if (!input.html.trim()) throw new Error("View HTML is empty; build the view first")
   return Object.freeze({ ...input, uri: `ui://${input.name}/index.html` })
 }
 
-export class ToolError extends Error {
-  constructor(readonly code: string, message: string) {
-    super(message)
-    this.name = "ToolError"
-  }
-}
-
-function validate(kind: "Tool" | "Prompt" | "Resource", name: string, scopes: readonly string[]) {
-  if (!/^[a-z][a-z0-9_]*$/.test(name)) throw new Error(`Invalid ${kind.toLowerCase()} name: ${name}`)
-  if (!scopes.length || scopes.some(scope => !scope || /\s/.test(scope))) throw new Error(`${kind} ${name} must declare scopes`)
-}
-
-export function defineTool<Input extends z.ZodObject, Output extends z.ZodObject>(tool: Tool<Input, Output>): Tool<Input, Output> {
-  validate("Tool", tool.name, tool.scopes)
-  return Object.freeze({ ...tool, scopes: Object.freeze([...tool.scopes]) })
-}
-
-/** Prompt retrieval returns instructions; authors must not perform mutations here. */
+/** Define a prompt. Prompt retrieval returns instructions; it must not perform mutations. */
 export function definePrompt<Input extends z.ZodObject>(prompt: Prompt<Input>): Prompt<Input> {
-  validate("Prompt", prompt.name, prompt.scopes)
-  return Object.freeze({ ...prompt, scopes: Object.freeze([...prompt.scopes]) })
+  if (!/^[a-z][a-z0-9_]*$/.test(prompt.name)) throw new Error(`Invalid prompt name: ${prompt.name}`)
+  return Object.freeze({ ...prompt, scopes: checkScopes(`Prompt ${prompt.name}`, prompt.scopes) })
 }
 
-/** A fixed-URI text resource. Use Apps views for interactive HTML. */
+/** Define a fixed-URI text resource. Use `defineView` for interactive HTML. */
 export function defineResource(resource: Resource): Resource {
-  validate("Resource", resource.name, resource.scopes)
-  const uri = new URL(resource.uri)
-  if (uri.protocol === "ui:") throw new Error("Use defineView for ui:// resources")
-  return Object.freeze({ ...resource, scopes: Object.freeze([...resource.scopes]) })
+  if (!/^[a-z][a-z0-9_]*$/.test(resource.name)) throw new Error(`Invalid resource name: ${resource.name}`)
+  if (new URL(resource.uri).protocol === "ui:") throw new Error("Use defineView for ui:// resources")
+  return Object.freeze({ ...resource, scopes: checkScopes(`Resource ${resource.name}`, resource.scopes) })
 }

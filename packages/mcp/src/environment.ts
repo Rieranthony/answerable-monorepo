@@ -7,6 +7,7 @@ const schema = z.object({
   MCP_PORT: z.coerce.number().int().min(1).max(65535).default(47500),
 })
 
+/** Read `MCP_ID_ISSUER`, `MCP_RESOURCE_URL` and `MCP_PORT` (default 47500); throws naming the variable that is missing or invalid. */
 export function readMcpEnvironment(env: Record<string, string | undefined>) {
   const result = schema.safeParse(env)
   if (!result.success) throw new Error(`Invalid MCP configuration: ${result.error.issues.map(issue => `${issue.path.join(".")}: ${issue.message}`).join("; ")}`)
