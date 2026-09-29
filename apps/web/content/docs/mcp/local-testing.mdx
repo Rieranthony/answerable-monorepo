@@ -190,6 +190,34 @@ bun run mcp:dev
 
 `mcp:dev` reads `MCP_ID_ISSUER`, `MCP_RESOURCE_URL` and `MCP_PORT` from the root `.env`. The resource and a client must already be registered in your local ID; [Connect Claude Code](/docs/mcp/claude-code) shows how.
 
+## Host lane
+
+```sh
+bun packages/acceptance/scripts/host-lane.ts
+```
+
+Tries the Toolbox from two real hosts. It starts real ID and the Toolbox on ports `47600` and `47604`, with one organisation entitled to `e2e/records` only, and keeps them up until Ctrl-C. It prints the email to type at ID's sign-in and the commands below, and logs each request the Toolbox answers and each OAuth event ID records. It is not part of `mcp:test:e2e` and cannot run beside it: the ports and the Compose project are the same. `--check` signs in once as Claude Code's client, prints the seven tools with their `_meta` and exits; it took 10.2 and 6.8 seconds.
+
+**Claude Code.**
+
+```sh
+claude mcp add --transport http toolbox-lane http://127.0.0.1:47604/mcp --client-id claude-code-lane --callback-port 47700
+```
+
+Then `/mcp`, choose `toolbox-lane` and **Authenticate**. The Toolbox lists that client seven tools and no `e2e_identity_get`; `--check` prints them. To see the prompt for `toolbox_commit_confirmed` under an allow rule, allow `mcp__toolbox-lane` in `/permissions` and ask Claude to create a record and delete it.
+
+**LibreChat.**
+
+```sh
+docker compose -p answerable-host-lane -f packages/acceptance/host-lane/compose.yaml up -d
+```
+
+Open `http://localhost:3080`, register an account, open **MCP Settings**, choose **Connect** on `toolbox` and **Continue with OAuth**. `docker compose -p answerable-host-lane -f packages/acceptance/host-lane/compose.yaml down --volumes` removes it. The images take 2.6 GB (LibreChat) and 940 MB (MongoDB) on disk.
+
+**Why the extra service.** ID's fixture names itself `http://127.0.0.1:47600`, and the Toolbox is `http://127.0.0.1:47604`, so the token's issuer and audience are loopback addresses that inside a container mean the container. The `bridge` service shares LibreChat's network and forwards those two ports to the host, and `librechat.yaml` lists them in `mcpSettings.allowedAddresses`, which LibreChat needs for any private address. Its `oauth.scope` adds `offline_access`; without it LibreChat gets no refresh token ([The Toolbox](/docs/mcp/toolbox#limits)).
+
+Ports beyond the acceptance's: `3080` (LibreChat) and `47700` (Claude Code's callback).
+
 ## Errors
 
 | You see | Meaning | What to do |
@@ -206,7 +234,7 @@ bun run mcp:dev
 
 ## Limits
 
-**What it certifies.** The acceptance does not certify an external host, a real company directory or a production deployment. [Connect Claude Code](/docs/mcp/claude-code) covers the first two by hand.
+**What it certifies.** The acceptance does not certify an external host, a real company directory or a production deployment. The [host lane](#host-lane) and [Connect Claude Code](/docs/mcp/claude-code) try two hosts by hand.
 
 **The MCP under test** runs inside the test process on a real port, not as a separate deployed process.
 

@@ -39,7 +39,7 @@ Each caller gets one of two **projections** of the same granted set, chosen on e
 
 **Views** keep their URIs: `e2e_records_show` opens `ui://records/index.html`, served while the tool is listed.
 
-A token without the `toolbox` scope lists nothing, and every call is the unknown-tool error. The Toolbox's protected-resource metadata lists `scopes_supported: ["toolbox"]`, so hosts ask for `toolbox` and `offline_access` only.
+A token without the `toolbox` scope lists nothing, and every call is the unknown-tool error. The Toolbox's protected-resource metadata lists `scopes_supported: ["toolbox"]`. Claude Code and the SDK's client add `offline_access` themselves; LibreChat asks for the listed scopes only, so it needs `offline_access` in its own settings (see [Limits](#limits)).
 
 ### The meta projection
 
@@ -281,6 +281,7 @@ The admin API's audience is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`, s
 | Describe | Up to 5 identities a call |
 | `tools/list_changed` | Every listening `2026-07-28` caller, whichever organisation changed; 2025 callers: Not yet. Catalogue, host client and manifest changes: Not yet |
 | Mutations | Intents in Postgres; human approvals and cancelling an intent: Not yet |
+| LibreChat v0.8.8-rc4 | Sends `resource` and PKCE, and speaks the 2025 revision: no `tools/list_changed` stream, so it lists again on each reconnect. It asks for the metadata's scopes, `toolbox`, only: ID then issues no refresh token and the person signs in again after each access token; `oauth.scope: toolbox offline_access` in its `librechat.yaml` fixes that. It removes a leading `<server>_` from a tool's name, so with the server named `toolbox`, `toolbox_commit` is `commit_mcp_toolbox`. It ignores `structuredContent` and shows the text mirror, and it commits `toolbox_commit_confirmed` without asking the person |
 | Pins | Not yet |
 | Rate limits and budgets | Not yet |
 | Administration | The [admin API](/docs/mcp/toolbox-admin) is platform tier: machine clients with `toolbox:admin`. Self-service purchase, and administration by an organisation's own administrators: Not yet |

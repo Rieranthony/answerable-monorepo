@@ -1,0 +1,57 @@
+# LibreChat, pinned, for the host lane. Start `bun packages/acceptance/scripts/host-lane.ts` first.
+# Every secret below is a local, disposable value for a container that listens on loopback only.
+name: answerable-host-lane
+services:
+  api:
+    image: ghcr.io/danny-avila/librechat:v0.8.8-rc4@sha256:929f4491cb9a87d6beb02e9e9ce9a54d4ee05bc56b65b1debe5b1f28a327a4fb
+    ports:
+      - "127.0.0.1:3080:3080"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      HOST: 0.0.0.0
+      MONGO_URI: mongodb://mongodb:27017/LibreChat
+      DOMAIN_CLIENT: http://localhost:3080
+      DOMAIN_SERVER: http://localhost:3080
+      ALLOW_REGISTRATION: "true"
+      ALLOW_EMAIL_LOGIN: "true"
+      ALLOW_UNVERIFIED_EMAIL_LOGIN: "true"
+      CREDS_KEY: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+      CREDS_IV: "00112233445566778899aabbccddeeff"
+      JWT_SECRET: host-lane-jwt-secret-local-only
+      JWT_REFRESH_SECRET: host-lane-refresh-secret-local-only
+    volumes:
+      - ./librechat.yaml:/app/librechat.yaml:ro
+  # The Toolbox's token names ID as http://127.0.0.1:47600, so the container must reach the host's ID and Toolbox at 127.0.0.1 too.
+  # This shares the LibreChat container's network and forwards those two loopback ports to the host.
+  bridge:
+    image: ghcr.io/danny-avila/librechat:v0.8.8-rc4@sha256:929f4491cb9a87d6beb02e9e9ce9a54d4ee05bc56b65b1debe5b1f28a327a4fb
+    network_mode: service:api
+    depends_on:
+      - api
+    command:
+      - node
+      - -e
+      - |
+        const net = require("node:net")
+        for (const port of [47600, 47604]) {
+          net.createServer(client => {
+            const host = net.connect(port, "host.docker.internal")
+            client.pipe(host).pipe(client)
+            client.on("error", () => host.destroy())
+            host.on("error", () => client.destroy())
+          }).listen(port, "127.0.0.1")
+        }
+  mongodb:
+    image: mongo:8.0.20
+    command: mongod --noauth
+    tmpfs:
+      - /data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 2s
+      timeout: 5s
+      retries: 30

@@ -1,0 +1,14 @@
+version: 1.3.17
+# The container reaches ID and the Toolbox through the bridge service at these two loopback addresses; LibreChat blocks private addresses unless they are listed.
+mcpSettings:
+  allowedAddresses:
+    - "127.0.0.1:47600"
+    - "127.0.0.1:47604"
+mcpServers:
+  toolbox:
+    type: streamable-http
+    url: http://127.0.0.1:47604/mcp
+    oauth:
+      client_id: librechat-lane
+      # LibreChat asks for the protected-resource metadata's scopes only; ID issues a refresh token only with offline_access.
+      scope: toolbox offline_access

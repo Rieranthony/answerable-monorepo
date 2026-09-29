@@ -8,7 +8,7 @@ claude mcp add --transport http answerable-toolbox http://localhost:47400/mcp \
   --client-id claude-code-toolbox --callback-port 47700
 ```
 
-Run this once the Toolbox is running and your organisation is enabled for it ([below](#the-toolbox)). Then open Claude Code, run `/mcp`, select `answerable-toolbox` and choose **Authenticate**. Your browser opens Answerable ID: sign in with your work account, choose the organisation and accept. Ask Claude to call `toolbox_whoami`; it returns you, your organisation and the grants you hold. To connect the e2e server instead, see [the e2e server](#the-e2e-server).
+Run this once the Toolbox is running and your organisation is enabled for it ([below](#the-toolbox)). Then open Claude Code, run `/mcp`, select `answerable-toolbox` and choose **Authenticate**. Your browser opens Answerable ID: sign in with your work account, choose the organisation and accept. Without a browser on that machine, run `claude mcp login answerable-toolbox --no-browser` in a terminal: it prints the address to open on another machine and asks you to paste back the address you are sent to. Ask Claude to call `toolbox_whoami`; it returns you, your organisation and the grants you hold. To connect the e2e server instead, see [the e2e server](#the-e2e-server).
 
 ## The Toolbox
 
@@ -22,7 +22,7 @@ Run this once the Toolbox is running and your organisation is enabled for it ([b
 | `e2e/records` | `toolbox_whoami`, the four `e2e_records_*` tools, `toolbox_commit` and `toolbox_commit_confirmed` |
 | `e2e` | The above and `e2e_identity_get` |
 
-**Writes.** Ask Claude to create a test record: it calls `e2e_records_create`, which prepares an intent and changes nothing, then `toolbox_commit`. Deleting calls `e2e_records_delete`, then `toolbox_commit_confirmed` with the preview's summary. The confirmed tool carries `anthropic/requiresUserInteraction`; whether Claude Code then asks you even under an allow rule: not yet tested.
+**Writes.** Ask Claude to create a test record: it calls `e2e_records_create`, which prepares an intent and changes nothing, then `toolbox_commit`. Deleting calls `e2e_records_delete`, then `toolbox_commit_confirmed` with the preview's summary. The confirmed tool carries `anthropic/requiresUserInteraction: true`, and Claude Code 2.1.282's source asks whenever a tool has it, whatever the allow rules say. Seeing that prompt in a session: Not yet tested; [Host lane](/docs/mcp/local-testing#host-lane) has the steps.
 
 **Changes.** An entitlement changed in ID reaches your token within 60 seconds, without signing in again. The tool list follows when Claude Code lists tools again.
 
@@ -151,8 +151,8 @@ MCP_ID_ISSUER=http://localhost:47300 MCP_RESOURCE_URL=http://localhost:47500/mcp
 
 | Limit | Value |
 | --- | --- |
-| Claude Code against the Toolbox by hand, with a partial entitlement | Not yet tested. The journeys in [Test MCPs locally](/docs/mcp/local-testing#what-the-toolbox-journeys-prove) sign in with the official MCP client |
-| Whether Claude Code asks before a confirmed commit under an allow rule | Not yet tested |
+| Claude Code against the Toolbox, with a partial entitlement (`e2e/records`) | Signing in (`claude mcp login`) and connecting were run, and the seven tools and their `_meta` were read with the same public client through the kit ([Host lane](/docs/mcp/local-testing#host-lane)). A session with a model: Not yet tested |
+| Whether Claude Code asks before a confirmed commit under an allow rule | Not yet tested in a session. The Toolbox sets `anthropic/requiresUserInteraction: true` on `toolbox_commit_confirmed` and on no other tool |
 | A partial entitlement to the e2e server in Claude Code by hand | Not yet tested |
 | Client registration | A client registered in ID ahead of time; registration by the host itself: Not yet |
 
@@ -164,6 +164,7 @@ MCP_ID_ISSUER=http://localhost:47300 MCP_RESOURCE_URL=http://localhost:47500/mcp
 | `invalid_redirect` | The callback port differs from the registered redirect URI | Use `--callback-port 47700`, or register the port you use |
 | `invalid_target` | The resource is unknown, not linked to the client, or written differently | Use the exact registered URL and link it; the enable call links the Toolbox's host client |
 | `invalid_client` | The client ID is unknown or disabled | Check `claude mcp get answerable-toolbox` (or `answerable-e2e`) against the registration |
+| `claude mcp login`: `stdin isn't a terminal, so authentication can't be completed here` | It needs a terminal to read the redirect | Run it in an interactive terminal (`ssh -t` for a remote machine) |
 | `401` after signing in | The server's issuer or resource differs from ID's | Set `TOOLBOX_ID_ISSUER` and `TOOLBOX_RESOURCE_URL`, or `MCP_ID_ISSUER` and `MCP_RESOURCE_URL`, to ID's origin and the registered URL |
 | `Tool <name> not found`, and `toolbox_whoami` lists no grants or too few | The Toolbox: no grant string covers the tool, its provider is not enabled for your organisation, or the token lacks `toolbox`. The e2e server: the token lacks the scope, for example `e2e:write` for `records_create` | The Toolbox: ask for an entitlement, [entitle people](#the-toolbox). The e2e server: add the scope as above, then choose **Authenticate** again |
 | A commit tool answers an error | The intent cannot be committed as it is | See [MCP errors](/docs/mcp/errors) |
