@@ -7,15 +7,19 @@ import { Card as UiCard, Cards as UiCards } from "fumadocs-ui/components/card"
 import { Step as UiStep, Steps as UiSteps } from "fumadocs-ui/components/steps"
 import { Tab as UiTab, Tabs as UiTabs } from "fumadocs-ui/components/tabs"
 import { createGenerator } from "fumadocs-typescript"
-import { AutoTypeTable as UiAutoTypeTable } from "fumadocs-typescript/ui"
 import type { ReactNode } from "react"
 
-import { typeTableMarkdown } from "@/lib/docs/markdown"
+import { dataTable } from "@/components/docs/table"
+import {
+  numberSteps,
+  typeTableHeaders,
+  typeTableRows,
+} from "@/lib/docs/markdown"
 
 type Children = { children?: ReactNode }
 
-export function Steps({ children }: Children) {
-  if (asMarkdown()) return md`${children}`
+export async function Steps({ children }: Children) {
+  if (asMarkdown()) return numberSteps(await md`${children}`)
 
   return <UiSteps>{children}</UiSteps>
 }
@@ -84,8 +88,10 @@ export function Tab({ value, children }: Children & { value: string }) {
 const generator = createGenerator()
 
 /**
- * A table of a TypeScript type's fields, read from the source and its doc comments when the page builds. `path` is
- * relative to apps/web; `type` is a type expression evaluated in that file, named `name`.
+ * A table of a TypeScript type's fields, read from the source and its doc comments by fumadocs-typescript when the page
+ * builds. `path` is relative to apps/web; `type` is a type expression evaluated in that file, named `name`. The page and
+ * its `.md` twin render the same rows, every description visible: Fumadocs' own type table hides descriptions until a
+ * row is opened, so the two forms would differ.
  */
 export async function AutoTypeTable({
   path,
@@ -96,18 +102,10 @@ export async function AutoTypeTable({
   name: string
   type?: string
 }) {
-  if (asMarkdown()) {
-    const docs = await generator.generateTypeTable({ path, name, type })
+  const docs = await generator.generateTypeTable({ path, name, type })
 
-    return `${docs.map((doc) => typeTableMarkdown(doc.entries)).join("\n\n")}\n\n`
-  }
-
-  return (
-    <UiAutoTypeTable
-      generator={generator}
-      path={path}
-      name={name}
-      type={type}
-    />
-  )
+  return dataTable({
+    headers: typeTableHeaders,
+    rows: typeTableRows(docs.flatMap((doc) => doc.entries)),
+  })
 }

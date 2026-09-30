@@ -43,15 +43,32 @@ export function displayType({
     : simplifiedType
 }
 
-/** A type table as a Markdown table: field (with `?` when optional), type and description. */
+export const typeTableHeaders = ["Field", "Type", "Description"]
+
+/**
+ * The rows of a type table, in inline Markdown: field (with `?` when optional), type and description. The HTML and the
+ * Markdown form of a page render these same rows, so both carry the same words.
+ */
+export function typeTableRows(fields: TypeField[]) {
+  return fields.map((field) => [
+    `\`${field.name}${field.required ? "" : "?"}\``,
+    `\`${displayType(field)}\``,
+    field.description,
+  ])
+}
+
+/** A type table as a Markdown table. */
 export function typeTableMarkdown(fields: TypeField[]) {
-  return markdownTable(
-    ["Field", "Type", "Description"],
-    fields.map((field) => [
-      `\`${field.name}${field.required ? "" : "?"}\``,
-      `\`${displayType(field)}\``,
-      field.description,
-    ]),
+  return markdownTable(typeTableHeaders, typeTableRows(fields))
+}
+
+/** Number the `###` headings of a Steps block, `### 1. Scaffold a server`, as the page numbers its steps. */
+export function numberSteps(markdown: string) {
+  let step = 0
+
+  return markdown.replace(
+    /^### (.+)$/gm,
+    (_, heading) => `### ${++step}. ${heading}`,
   )
 }
 

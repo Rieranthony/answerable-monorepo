@@ -4,9 +4,9 @@ import { asMarkdown } from "fumadocs-core/server"
 import { ServerCodeBlock } from "fumadocs-ui/components/codeblock.rsc"
 import type { ReactNode } from "react"
 
-import { Inline } from "@/components/docs/inline"
+import { dataTable } from "@/components/docs/table"
 import { errorRows } from "@/lib/docs/error-codes"
-import { codeFence, markdownTable } from "@/lib/docs/markdown"
+import { codeFence } from "@/lib/docs/markdown"
 
 import {
   classExpiry,
@@ -35,43 +35,6 @@ function codeBlock({
   if (asMarkdown()) return `${codeFence(code, lang, title)}\n\n`
 
   return <ServerCodeBlock code={code} lang={lang} codeblock={{ title }} />
-}
-
-function dataTable({
-  headers,
-  rows,
-}: {
-  headers: string[]
-  rows: string[][]
-}): ReactNode {
-  if (asMarkdown()) return `${markdownTable(headers, rows)}\n\n`
-
-  return (
-    <div className="prose-no-margin relative my-6 overflow-auto">
-      <table>
-        <thead>
-          <tr>
-            {headers.map((header) => (
-              <th key={header}>
-                <Inline text={header} />
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row[0]}>
-              {row.map((text, index) => (
-                <td key={index}>
-                  <Inline text={text} />
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
 }
 
 const today = new Date().toISOString().slice(0, 10)

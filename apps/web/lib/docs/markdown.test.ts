@@ -1,7 +1,12 @@
 import { expect, test } from "bun:test"
 
 import { errorRows } from "./error-codes"
-import { codeFence, markdownTable, typeTableMarkdown } from "./markdown"
+import {
+  codeFence,
+  markdownTable,
+  numberSteps,
+  typeTableMarkdown,
+} from "./markdown"
 
 const field = {
   name: "risk",
@@ -36,6 +41,12 @@ test("a code fence carries its title and outgrows a fence inside the code", () =
     '```ts title="src/a.ts"\na\n```',
   )
   expect(codeFence("```sh\nx\n```", "md")).toBe("````md\n```sh\nx\n```\n````")
+})
+
+test("steps are numbered in order, as the page numbers them", () => {
+  expect(numberSteps("### Scaffold\n\nRun it.\n\n### Test\n\nCheck it.")).toBe(
+    "### 1. Scaffold\n\nRun it.\n\n### 2. Test\n\nCheck it.",
+  )
 })
 
 test("a table has one row per entry", () => {

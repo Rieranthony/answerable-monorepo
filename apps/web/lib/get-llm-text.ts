@@ -1,11 +1,23 @@
 import type { InferPageType } from "fumadocs-core/source"
 
 import { getMDXComponents } from "@/components/mdx"
+import { SITE } from "@/lib/metadata"
 
 import type { docs, source } from "@/lib/source"
 
-export async function getLLMText(page: InferPageType<typeof source>) {
-  const heading = `# ${page.data.title} (${page.url})`
+/**
+ * A page as Markdown: its title and description, as the page shows them, then its body. `source: true` adds the page's
+ * URL under the title, for llms-full.txt, where pages follow one another.
+ */
+export async function getLLMText(
+  page: InferPageType<typeof source>,
+  { source: withSource = false }: { source?: boolean } = {},
+) {
+  const head = [
+    `# ${page.data.title}`,
+    withSource ? `Source: ${SITE.origin}${page.url}` : "",
+    page.data.description ?? "",
+  ]
 
   if (page.type === "openapi") {
     const contractUrl =
@@ -21,8 +33,7 @@ export async function getLLMText(page: InferPageType<typeof source>) {
     })
 
     return [
-      heading,
-      page.data.description,
+      ...head,
       ...sections,
       `Schemas referenced by \`$ref\` are in the full contract: ${contractUrl}`,
     ]
@@ -37,5 +48,5 @@ export async function getLLMText(page: InferPageType<typeof source>) {
     components: getMDXComponents(),
   })
 
-  return `${heading}\n\n${body}`
+  return [...head, body].filter(Boolean).join("\n\n")
 }
