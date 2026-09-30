@@ -4,7 +4,7 @@ import sharp from "sharp"
 
 // Run against a production build: bun scripts/check-metadata.ts http://localhost:47101
 const base = process.argv[2] ?? "http://localhost:47101"
-const origin = "https://answerable.org"
+const origin = "https://www.answerable.org"
 const manifest = JSON.parse(
   await readFile(".next/prerender-manifest.json", "utf8"),
 )

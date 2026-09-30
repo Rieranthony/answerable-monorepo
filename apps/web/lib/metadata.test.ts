@@ -11,9 +11,12 @@ describe("page metadata", () => {
       siteName: SITE.name,
       type: "website",
       locale: "en_GB",
-      url: "https://answerable.org/docs",
+      url: "https://www.answerable.org/docs",
       images: [
-        { ...DEFAULT_OG_IMAGE, url: "https://answerable.org/og/default.png" },
+        {
+          ...DEFAULT_OG_IMAGE,
+          url: "https://www.answerable.org/og/default.png",
+        },
       ],
     })
     expect(metadata.twitter).toMatchObject({
@@ -28,10 +31,12 @@ describe("page metadata", () => {
       pathname: "/docs?login_hint=private@example.org&client_id=secret#form",
     })
     expect(metadata.title).toEqual({ absolute: "Sign in · Answerable" })
-    expect(metadata.alternates?.canonical).toBe("https://answerable.org/docs")
+    expect(metadata.alternates?.canonical).toBe(
+      "https://www.answerable.org/docs",
+    )
     expect(metadata.openGraph).toMatchObject({
       title: "Sign in · Answerable",
-      url: "https://answerable.org/docs",
+      url: "https://www.answerable.org/docs",
     })
     expect(JSON.stringify(metadata)).not.toContain("private@example.org")
   })
@@ -65,7 +70,7 @@ describe("page metadata", () => {
       siteName: SITE.name,
       images: [
         {
-          url: "https://answerable.org/og/docs/id/image.png",
+          url: "https://www.answerable.org/og/docs/id/image.png",
           width: 1200,
           height: 630,
           alt: "Answerable ID",
@@ -77,7 +82,7 @@ describe("page metadata", () => {
       description: "Identity docs",
       images: [
         {
-          url: "https://answerable.org/og/docs/id/image.png",
+          url: "https://www.answerable.org/og/docs/id/image.png",
           width: 1200,
           height: 630,
           alt: "Answerable ID",

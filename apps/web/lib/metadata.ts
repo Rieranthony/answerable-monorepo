@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 
 export const SITE = {
   name: "Answerable",
-  origin: "https://answerable.org",
+  origin: "https://www.answerable.org",
   description:
     "Answerable trains and accredits the professionals leading their practice’s approach to AI, built on six core values.",
 } as const
