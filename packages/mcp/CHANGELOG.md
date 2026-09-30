@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.1
+
+Documentation only: the docs now render their type tables from these types, so every field says what it is. No behaviour changes.
+
+- Every field of what `defineTool`, `defineMutation` and `defineProvider` take, of `ToolContext`, `Target`, `Preview` and `McpServerConfig` has a doc comment; the inline options of the three `define*` functions (`timeoutMs`, `errors`, `risk`, `effects`, `id`, `version`, `tools`, `prompts`, `resources`) are written out one per line with theirs.
+- `input` and `output` carry `@remarks \`ZodObject\``, the short type a docs table shows.
+- `execute` says what it receives and returns.
+
 ## 0.6.0
 
 What the Toolbox's meta projection, its intents in Postgres and `tools/list_changed` need from `createMcpServer`. Breaking: `createMcpServer` returns `McpServerHandle`, and `wrapCall` runs around commit calls too.

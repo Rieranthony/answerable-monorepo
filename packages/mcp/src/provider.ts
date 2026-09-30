@@ -36,7 +36,18 @@ function once(provider: string, kind: string, keys: readonly string[]) {
  * export const provider = defineProvider({ id: "example", version: "2026-09-29", tools: [identityGet] })
  * ```
  */
-export function defineProvider(provider: { id: string; version: string; tools: readonly (Tool | Mutation)[]; prompts?: readonly Prompt[]; resources?: readonly Resource[] }): Provider {
+export function defineProvider(provider: {
+  /** A lowercase letter, then up to 11 lowercase letters or digits, for example `acme`. It prefixes identities, scopes, commit tools and custom error codes. */
+  id: string
+  /** A date, `YYYY-MM-DD`: the default version of every definition. Change it when the provider's contract changes. */
+  version: string
+  /** Read tools from `defineTool` and mutations from `defineMutation`. */
+  tools: readonly (Tool | Mutation)[]
+  /** Prompts from `definePrompt`. Default: none. */
+  prompts?: readonly Prompt[]
+  /** Fixed-URI resources from `defineResource`. Default: none. */
+  resources?: readonly Resource[]
+}): Provider {
   const { id, version } = provider
   if (!/^[a-z][a-z0-9]{0,11}$/.test(id)) throw new Error(`Provider id "${id}" must be a lowercase letter then up to 11 lowercase letters or digits, for example acme`)
   if (!isDate(version)) throw new Error(`Provider ${id}: version "${version}" must be a date, YYYY-MM-DD`)

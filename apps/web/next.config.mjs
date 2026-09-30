@@ -22,6 +22,21 @@ const config = {
       headers: [{ key: "X-Robots-Tag", value: "noindex, follow" }],
     }))
   },
+  // Pages that moved when the docs were split into Answerable ID, the MCP kit and the Toolbox.
+  async redirects() {
+    return [
+      ["/docs/mcp/authoring", "/docs/mcp/tools"],
+      ["/docs/mcp/toolbox", "/docs/toolbox"],
+      ["/docs/mcp/toolbox-admin", "/docs/toolbox/admin"],
+    ].flatMap(([source, destination]) => [
+      { source, destination, permanent: true },
+      {
+        source: `${source}.md`,
+        destination: `${destination}.md`,
+        permanent: true,
+      },
+    ])
+  },
   async rewrites() {
     return [
       {

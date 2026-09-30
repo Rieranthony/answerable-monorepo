@@ -13,18 +13,26 @@ export type Effect = (typeof vocabulary)[number]
 export type Change = { path: string; from?: unknown; to?: unknown }
 /** A resource the commit reads or writes, with the version `prepare` saw: `kind` names how the source versions it, and `label` names the resource for people. */
 export type Target = {
+  /** What kind of thing it is, for example `record`. */
   resource_type: string
+  /** Its id in the source. */
   resource_id: string
+  /** Its name for people, for example the record's title. */
   label: string
+  /** The version `prepare` read: how the source versions it (`kind`) and the value, as a string. A commit compares it with the current one. */
   version: { kind: "etag" | "version" | "timestamp" | "serial"; value: string }
 }
 /** What would change, in the words the person confirms: a `summary` of 1 to 500 characters, then `changes`, `effects`, `warnings` and `quantities`, each defaulting to empty. */
 export type Preview = {
+  /** The words the person confirms, 1 to 500 characters. */
   summary: string
+  /** What changes, each `{ path, from, to }`. */
   changes: Change[]
+  /** Side effects beyond the change, from the mutation's `effects`. */
   effects: Effect[]
   /** Consequences that are possible, not certain. */
   warnings: string[]
+  /** Amounts involved, each with its unit. */
   quantities: { name: string; value: number; unit: string }[]
 }
 
@@ -58,7 +66,10 @@ export type Plan<Data = unknown> = { targets: Target[]; preview: Preview; plan: 
 export type Mutation<Input extends z.ZodObject = z.ZodObject, Output extends z.ZodObject = z.ZodObject, Data = unknown> = Readonly<
   Omit<Tool<Input, Output>, "kind" | "output" | "scopes" | "view" | "execute"> & {
     kind: "mutate"
-    /** The schema of the receipt's `results`; undeclared fields are dropped. */
+    /**
+     * A Zod object: the schema of the receipt's `results`; undeclared fields are dropped.
+     * @remarks `ZodObject`
+     */
     output: Output
     /** Token scopes needed to see and call it. Default: `<provider>:write`. */
     scopes?: readonly string[]
@@ -107,7 +118,16 @@ export type Mutation<Input extends z.ZodObject = z.ZodObject, Output extends z.Z
  * ```
  */
 export function defineMutation<Input extends z.ZodObject, Output extends z.ZodObject, Data = unknown>(
-  mutation: Omit<Mutation<Input, Output, Data>, "kind" | "timeoutMs" | "errors" | "risk" | "effects"> & { timeoutMs?: number; errors?: readonly string[]; risk?: Risk; effects?: readonly Effect[] },
+  mutation: Omit<Mutation<Input, Output, Data>, "kind" | "timeoutMs" | "errors" | "risk" | "effects"> & {
+    /** Default 25,000; at most 55,000. Bounds `prepare` in the prepare tool, and `prepare` plus `commit` in a commit tool. */
+    timeoutMs?: number
+    /** The custom `<PROVIDER>_<CODE>` codes `prepare` and `commit` throw. Default: none; standard codes need no declaration. */
+    errors?: readonly string[]
+    /** How much harm it can do: `low`, `normal` or `high`. Sets the default policy class. Default: `normal`. */
+    risk?: Risk
+    /** The side effects a preview may name, from `notification`, `external_call`, `money_movement`, `cascade_delete`, `permission_change` and `publication`. Default: none. */
+    effects?: readonly Effect[]
+  },
 ): Mutation<Input, Output, Data> {
   const checked = checkShared("Mutation", mutation)
   const label = `Mutation ${mutation.name}`

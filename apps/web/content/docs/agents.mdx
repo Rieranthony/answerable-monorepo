@@ -1,0 +1,74 @@
+---
+title: Build with an AI agent
+description: "Prompts to paste into a coding agent working in the Answerable monorepo: build an MCP server, add it to the Toolbox, review it against the standard. And how agents read these docs."
+---
+
+```sh
+curl -H "Accept: text/markdown" https://answerable.org/docs/mcp/quickstart
+```
+
+Every page of these docs is Markdown for agents, with the type tables and the code from the repository written out. The prompts below give a coding agent, such as Claude Code, a job, the pages to read and the commands that prove it is done. Replace the words in angle brackets.
+
+## Build an MCP server
+
+```text
+In the Answerable monorepo, build an MCP server named <name> that <what it does>, with @answerable/mcp.
+
+Read first: AGENTS.md, then https://answerable.org/docs/mcp/quickstart.md, https://answerable.org/docs/mcp/tools.md and https://answerable.org/docs/mcp/mutations.md. mcps/example is a finished server to copy from.
+
+1. Run `bun run mcp:new <name>`, then `bun install`.
+2. Keep the data behind a store whose every read and write takes the organisation id, and pass principal.organizationId.
+3. Define reads with defineTool and changes with defineMutation: prepare returns a preview and changes nothing, commit applies exactly that. Each description says what the tool does, when to use it and its limits. A list takes limit and cursor and returns items, next_cursor and has_more.
+4. Throw ToolError for expected failures, and list any custom code in the definition's errors.
+5. Test with assertProviderConformance and createTestMcp. Commit a mutation with the tool its intent's commit_tool names.
+6. Run `UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-<name> test`, then `bun run mcp:check @answerable/mcp-<name>`, until it passes with 100% coverage.
+
+Do not add a Better Auth instance and do not read Answerable ID's database. Report the tools you made, the risk of each mutation, and the output of mcp:check.
+```
+
+The guide it follows: [Build your first MCP](/docs/mcp/quickstart).
+
+## Add tools to the Toolbox
+
+```text
+In the Answerable monorepo, mount the provider of mcps/<name> in the Toolbox, mcps/toolbox.
+
+Read first: AGENTS.md and https://answerable.org/docs/toolbox/add-tools.md.
+
+1. Check that `bun run mcp:check @answerable/mcp-<name>` passes.
+2. Add "exports": { "./provider": "./src/provider.ts" } to mcps/<name>/package.json.
+3. Add "@answerable/mcp-<name>": "workspace:*" to the dependencies of mcps/toolbox/package.json, import the provider in mcps/toolbox/src/server.ts and add it to the providers passed to createToolbox.
+4. Run `bun install`, then `bun run mcp:check @answerable/mcp-toolbox`. Its suite needs the development PostgreSQL on port 47432; never run `bun run env:up` from a worktree.
+5. Write out, for staff, the enable call and the entitlement from the guide, filled in with the provider id.
+
+Change nothing else in the Toolbox. Report the diff and the output of both checks.
+```
+
+The guide it follows: [Add tools to the Toolbox](/docs/toolbox/add-tools).
+
+## Review a server against the standard
+
+```text
+Review mcps/<name> against the Answerable MCP design standard.
+
+Read first: https://answerable.org/docs/mcp/standard.md and https://answerable.org/docs/mcp/tools.md.
+
+Run `bun run mcp:check @answerable/mcp-<name>`: the conformance kit checks the rules marked Kit and SDK. Then, for each rule marked Review, say whether the server meets it, with the file and line that shows it, and what to change if it does not. Change no code.
+```
+
+The rules it checks: [MCP design standard](/docs/mcp/standard).
+
+## How agents read these docs
+
+| Ask for | You get |
+| --- | --- |
+| `https://answerable.org/docs/<page>.md` | One page as Markdown |
+| Any docs URL with `Accept: text/markdown` | The same, at the page's own URL |
+| `https://answerable.org/llms.txt` | Where to start, then an index of every page with its description |
+| `https://answerable.org/llms-full.txt` | Every page in one file: 1.9 MB, most of it the API reference's operations |
+
+**Give an agent the page for its job**, not the whole set: the pages above link to the ones they need. Each page on the site has **Copy Markdown** and **View as Markdown** buttons under its title.
+
+**The repository has its own rules.** `AGENTS.md` at the root holds the commands, the ports, the gates and what never to do, and `CLAUDE.md` loads it for Claude Code. An agent working in the repository reads it first.
+
+**The Markdown is generated from the source.** Type tables come from the TypeScript types and their doc comments, and code comes from files that are typechecked and tested, so an agent reads what the code does today.

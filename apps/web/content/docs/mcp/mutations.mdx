@@ -1,0 +1,166 @@
+---
+title: Mutations
+description: "Change data safely with @answerable/mcp: prepare a preview, commit it with a one-time token, targets and versions, policy classes, the intent and the receipt."
+---
+
+<include lang="ts" meta='title="mcps/example/src/provider.ts"'>../../../../../mcps/example/src/provider.ts#add</include>
+
+A mutation is a tool that changes data. It never does so in one call. It is **prepared** first, which changes nothing and returns a preview of the change, then **committed**, which applies exactly what was prepared. Between the two, the host can show the person what will happen, and the person can say no.
+
+**Why two steps.** A model can misread a request, and a person should see a deletion before it happens. The preview says what will change in plain words; the commit applies that preview and nothing else. If the data changed in the meantime, the commit refuses and the model prepares again.
+
+## How a call runs
+
+1. The host calls the mutation's tool, here `notes_add`. `prepare` runs and returns targets, a preview and your own plan data. Nothing changes.
+2. The server records an **intent** and returns it: the preview, a one-time `commit_token`, an expiry and `commit_tool`, the tool that applies it.
+3. Depending on the [policy class](#policy-classes), the agent commits on its own, or the host first shows the person the preview's summary.
+4. The host calls `commit_tool` with `intent_id` and `commit_token`. The server checks the caller, the token, the expiry and every target's version, runs `prepare` again, and only then runs `commit`.
+5. The caller receives a **receipt**: the results, the changes applied and who committed.
+
+Add a mutation to the provider's `tools` like any tool. `defineMutation` turns it into a prepare tool, `notes_add`, and the server adds two commit tools, `example_commit` and `example_commit_confirmed`.
+
+## Fields
+
+A read tool's fields, with `prepare` and `commit` in place of `execute`:
+
+<AutoTypeTable path="../../packages/mcp/src/mutation.ts" name="MutationFields" type="Parameters<typeof defineMutation>[0]" />
+
+## Prepare and commit
+
+**`prepare(input, context)`** resolves the targets, reads their current state and returns `{ targets, preview, plan }`. It must not change anything; the conformance kit checks it with `prepare_has_no_side_effect`.
+
+**`plan`** is your own data for `commit`, optional. It is stored as JSON, so keep it plain data. Its type flows from `prepare` to `commit`.
+
+**`commit(plan, context)`** receives exactly what `prepare` returned, as stored: `{ targets, preview, plan }`. It applies the change and returns `{ results, applied_changes, effects_performed }`. The server checks `results` against `output` and drops undeclared fields. When no target moved, the prepared `preview.changes` are the applied changes.
+
+Both throw `ToolError` for expected failures, as `execute` does. `context` is the same as a read tool's: [the caller](/docs/mcp/tools#the-caller).
+
+## Targets and versions
+
+<include lang="ts" meta='title="mcps/e2e/src/mcp.ts"'>../../../../../mcps/e2e/src/mcp.ts#delete</include>
+
+Every resource `commit` reads or writes is a target, with the version `prepare` saw. A mutation that creates something has no target yet: `targets: []`, as `notes.add` does.
+
+<AutoTypeTable path="../../packages/mcp/src/mutation.ts" name="Target" />
+
+**Staleness.** At commit the server runs `prepare` again with the stored input and compares the targets by type and id. A version that moved, a target that disappeared or one that appeared answers `INTENT_STALE` with `details.targets`; the intent becomes `stale` and `commit` does not run. Nothing is locked while the person reviews the preview.
+
+## The preview
+
+<AutoTypeTable path="../../packages/mcp/src/mutation.ts" name="Preview" />
+
+`summary` is required; every array defaults to empty. A change is `{ path, from, to }`, where `from` and `to` default to `null`. An effect the preview names must be in the mutation's `effects`, or the prepare tool answers `INTERNAL` and logs the definition to fix. Echoing the arguments is not a preview: say what will change, from what, to what.
+
+## Policy classes
+
+<PolicyClasses />
+
+`<id>` is the provider id. The class decides who may commit: the agent alone, the agent once the person has seen the summary, or a person's approval. A human-class intent is recorded as `awaiting_approval`; both commit tools answer `APPROVAL_REQUIRED` with `details.approval.status: "pending"` until it expires, because approval pages are Not yet.
+
+`risk` sets the default. `createMcpServer`'s `policyClass` decides the class for each caller and request instead, as [the Toolbox](/docs/toolbox#mutations-through-the-toolbox) does from each organisation's settings:
+
+<include lang="ts" meta='title="mcps/example/src/intents.test.ts"'>../../../../../mcps/example/src/intents.test.ts#policy-class</include>
+
+The prepare tool's `_meta` and the intent carry the class, and the class's expiry caps `expiresInMs`.
+
+## The prepare tool
+
+| `tools/list` field | Value |
+| --- | --- |
+| `name` | The wire name, as for a read tool: `notes_add` |
+| `inputSchema` | `input` plus `validate_only`, a boolean, default `false` |
+| `outputSchema` | The intent, below |
+| `annotations` | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false`: preparing changes nothing |
+| `_meta["com.answerable/capability"]` | `{ identity, version, kind: "mutate", risk, policy_class }`, plus `deprecated` when set |
+
+It returns the intent as structured content and as the same JSON in text. For `records.delete` in the e2e server:
+
+```json
+{
+  "intent_id": "0199a4e2-7b06-7000-87bd-91723fe45f93",
+  "capability": "e2e/records.delete",
+  "version": "2026-09-29",
+  "policy_class": "controlled",
+  "commit_tool": "e2e_commit_confirmed",
+  "commit_token": "act_Yc1…",
+  "expires_at": "2026-09-29T12:30:00.000Z",
+  "targets": [{ "resource_type": "record", "resource_id": "5b0e…", "label": "Q3 plan", "version": { "kind": "serial", "value": "1" } }],
+  "preview": { "summary": "Delete record “Q3 plan”", "changes": [{ "path": "records[5b0e…]", "from": { "title": "Q3 plan" }, "to": null }], "effects": [], "warnings": [], "quantities": [] },
+  "approval": { "required": false, "status": "not_required" }
+}
+```
+
+**Commit token.** `act_` and 32 random bytes in base64url. It is returned once; the store keeps only its SHA-256.
+
+**`validate_only: true`** runs the same path and records nothing: `intent_id` and `commit_token` are `null`.
+
+**Human class.** `approval` is `{ "required": true, "status": "pending" }`; `approval.url` is Not yet.
+
+## Commit tools
+
+| Tool | Input | Annotations | `_meta` |
+| --- | --- | --- | --- |
+| `<id>_commit` | `{ intent_id, commit_token }` | `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` | `com.answerable/capability`: `{ identity: "<id>/commit", kind: "commit" }` |
+| `<id>_commit_confirmed` | `{ intent_id, commit_token, preview_summary }` | The same, with `destructiveHint: true` | `{ identity: "<id>/commit_confirmed", kind: "commit" }` and `anthropic/requiresUserInteraction: true` |
+
+A server with mutations serves both. A caller sees them when their token can use at least one mutation; otherwise they are unknown tools. The intent's `commit_tool` names the one to call. `preview_summary` must equal the intent's `preview.summary` word for word, so the host confirms the server's words:
+
+<include lang="ts" meta='title="mcps/example/src/intents.test.ts"'>../../../../../mcps/example/src/intents.test.ts#confirmed</include>
+
+Whether each host honours `anthropic/requiresUserInteraction`: not yet tested.
+
+They return the receipt:
+
+```json
+{
+  "receipt_id": "0199a4e3-1f20-7000-8c55-0e7d2b9a4f10",
+  "intent_id": "0199a4e2-7b06-7000-87bd-91723fe45f93",
+  "status": "committed",
+  "results": { "deleted": true, "id": "5b0e…" },
+  "applied_changes": [{ "path": "records[5b0e…]", "from": { "title": "Q3 plan" }, "to": null }],
+  "effects_performed": [],
+  "committed_at": "2026-09-29T12:04:11.000Z",
+  "committed_by": { "user_id": "…", "membership_id": "…", "client_id": "claude-code-local" },
+  "idempotent_replay": false
+}
+```
+
+**What a commit checks, in order.**
+
+1. The intent exists: else `INTENT_NOT_FOUND`.
+2. The caller's user, membership and client are the preparer's: else `PRINCIPAL_MISMATCH`, before anything about the intent is revealed.
+3. Its status: `committed` returns the stored receipt with `idempotent_replay: true`; `committing` answers `COMMIT_IN_PROGRESS`; `expired`, `stale` and `failed` answer `INTENT_EXPIRED`, `INTENT_STALE` and `INTENT_CONSUMED`; `awaiting_approval` answers `APPROVAL_REQUIRED`.
+4. This server serves the intent's capability version, else `INTENT_NOT_FOUND`; the caller can still use the mutation (the token carries its scopes, or a hub's `allow` still admits it), else `PERMISSION_DENIED`.
+5. The SHA-256 of `commit_token` matches: else `COMMIT_TOKEN_INVALID`.
+6. The tool matches the class, and a controlled intent's `preview_summary` matches: else `APPROVAL_REQUIRED` with `details.approval`.
+7. The intent moves to `committing`: the token is spent.
+8. `prepare` runs again and the targets are compared: a change answers `INTENT_STALE`.
+9. `commit` runs. The receipt is stored and the intent is `committed`. A `ToolError` marks it `failed` and is returned; any other exception marks it `failed` and answers `INTERNAL`. A later commit answers `INTENT_CONSUMED`.
+
+A refusal in steps 1 to 6 leaves the intent committable. [MCP errors](/docs/mcp/errors) has every code.
+
+**Replay.** A repeat by the same principal returns the same receipt with `idempotent_replay: true`; `commit` runs once.
+
+**Concurrency.** A commit while another runs answers `COMMIT_IN_PROGRESS`. The store claims an intent by compare-and-set, so two commits never both run.
+
+**Timeouts.** `timeoutMs` bounds `prepare` in the prepare tool, and bounds `prepare` plus `commit` in a commit tool. Past it the caller gets `TIMEOUT` while the commit carries on to `committed` or `failed`; calling again answers `COMMIT_IN_PROGRESS`, then the receipt.
+
+## The intent store
+
+<include lang="ts" meta='title="mcps/example/src/intents.test.ts"'>../../../../../mcps/example/src/intents.test.ts#expiry</include>
+
+By default each server keeps intents in memory, lost when the process stops. The store owns the clock and decides expiry, so a test moves `now` instead of waiting. `IntentStore` is four members: `now()`, `insert(intent)`, `get(intentId)`, which marks an intent `expired` once `expires_at` has passed, and `transition(intentId, from, to, receipt?)`, a compare-and-set on the status. [The Toolbox](/docs/toolbox#mutations-through-the-toolbox) keeps its intents in Postgres with a store of its own.
+
+## Views and mutations
+
+A view prepares, shows `preview.summary`, then calls the tool in `commit_tool` with `intent_id`, `commit_token` and, for a controlled intent, `preview_summary`. The view in `mcps/e2e` creates a record with `records_create` then `e2e_commit`, and deletes one with `records_delete`, a confirmation that shows the summary, then `e2e_commit_confirmed`. [Views](/docs/mcp/servers#views) covers building one.
+
+## Limits
+
+| Limit | Value |
+| --- | --- |
+| Preview summary | 1 to 500 characters |
+| Intent expiry | 10 minutes, 30 minutes or 24 hours by class; `expiresInMs` only shortens it |
+| Intents in the memory store | Kept until the process stops. For a long-lived server, pass your own `IntentStore` |
+| Effects | `notification`, `external_call`, `money_movement`, `cascade_delete`, `permission_change`, `publication` |
+| Human approvals, operations, idempotency keys, batches of intents | Not yet |

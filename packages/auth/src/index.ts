@@ -15,7 +15,9 @@ export type IdVerifierConfig<Kind extends "user" | "client" = "user"> = {
 
 /** The caller a verified access token names. Constrain every query by `organizationId`. */
 export type UserPrincipal = Readonly<{
+  /** The person's global Answerable ID user id, the token's `sub`: the only id to join on. */
   userId: string
+  /** The organisation the person signed in to and chose for this token. */
   organizationId: string
   /** The person's membership in `organizationId`. */
   membershipId: string

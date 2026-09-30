@@ -33,7 +33,9 @@ export type ToolCall = Readonly<{
 
 /** What `createMcpServer` takes: the provider, the ID issuer and resource to trust, and optional overrides. */
 export type McpServerConfig = {
+  /** The provider it serves, from `defineProvider`: its tools, prompts and resources, named after it. */
   provider: Provider
+  /** The Answerable ID issuer to trust and this server's resource URL, the token audience: `readMcpEnvironment(process.env).auth`. */
   auth: IdVerifierConfig
   /** Where intents live. Default: a memory store for this server. */
   intents?: IntentStore

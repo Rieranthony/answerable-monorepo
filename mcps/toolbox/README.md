@@ -16,7 +16,7 @@ bun --env-file=.env run --filter @answerable/mcp-toolbox db:migrate   # TOOLBOX_
 bun run toolbox:dev                                    # builds the e2e view, serves http://localhost:47400/mcp
 ```
 
-Register the Toolbox in ID, then enable an organisation with one call to the admin API: [Administer the Toolbox](../../apps/web/content/docs/mcp/toolbox-admin.mdx). The variables are listed in `default.env`. Changes: [CHANGELOG](CHANGELOG.md).
+Register the Toolbox in ID, then enable an organisation with one call to the admin API: [Administer the Toolbox](../../apps/web/content/docs/toolbox/admin.mdx). To mount another provider: [Add tools to the Toolbox](../../apps/web/content/docs/toolbox/add-tools.mdx). The variables are listed in `default.env`. Changes: [CHANGELOG](CHANGELOG.md).
 
 | File | Job |
 | --- | --- |

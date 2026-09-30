@@ -10,9 +10,32 @@
       "inputs": [
         "$TURBO_DEFAULT$",
         "../id/openapi.json",
-        "../id/openapi.admin.json"
+        "../id/openapi.admin.json",
+        "../../packages/auth/src/**",
+        "../../packages/mcp/src/**",
+        "../../mcps/*/src/**",
+        "../../mcps/*/scripts/**",
+        "../../mcps/*/manifest.json",
+        "../../mcps/*/package.json",
+        "../../scripts/mcp-templates.ts"
       ],
       "outputs": [".next/**", "!.next/cache/**"]
+    },
+    "web#test": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "../id/openapi.json",
+        "../id/openapi.admin.json",
+        "../../packages/mcp/src/errors.ts",
+        "../../*.md",
+        "../../docs/**/*.md",
+        "../../reports/**/*.md",
+        "../../apps/*/*.md",
+        "../../packages/*/*.md",
+        "../../mcps/*/*.md"
+      ],
+      "outputs": ["coverage/**"]
     },
     "dev": {
       "cache": false,

@@ -13,7 +13,9 @@ if (!await view.exists()) throw new Error("Missing the e2e records view. Run bun
 const db = new SQL(databaseUrl)
 const telemetry = createTracer(otlpEndpoint)
 const id = createIdAdmin(idConfig)
+//#region providers
 const toolbox = await createToolbox({ providers: [createE2eProvider({ records: createRecordStore(), viewHtml: await view.text() })], auth, db, id, spans: telemetry.tracer })
+//#endregion
 const poller = startGrantsPoller({ id, grants: toolbox.grants })
 const server = Bun.serve({ hostname: "127.0.0.1", port, fetch: toolbox.fetch })
 console.log(`Toolbox serving ${auth.resource}`)

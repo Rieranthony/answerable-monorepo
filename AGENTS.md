@@ -1,12 +1,20 @@
 # AGENTS.md
 
-Answerable monorepo. Bun 1.3.1, Turborepo. Two apps: `apps/web` (Next.js 16: the site, the docs at `/docs`) and `apps/id` (Answerable ID: Bun, Hono, Better Auth, Postgres, and its browser pages). Shared packages: `packages/ui` (React components and Tailwind theme), `packages/countries` (ISO country data), `packages/auth` (Answerable ID access-token verification), `packages/mcp` (the SDK for MCP servers, on the official MCP SDK), `packages/acceptance` (the real-ID acceptance kit and journeys) and `scripts` (`bun run mcp:new`). Runnable MCPs live in `mcps/*`; `mcps/e2e` is the reference server and the permanent local acceptance consumer; `mcps/toolbox` is the Toolbox hub, with its own Postgres databases `answerable_toolbox` and `answerable_toolbox_test`. Read `README.md`, then `docs/00-orientation.md`. Decisions live in `docs/`; `docs/02-plan.md` lists what not to re-propose.
+Answerable monorepo. Bun 1.3.1, Turborepo. Two apps: `apps/web` (Next.js 16: the site, the docs at `/docs`) and `apps/id` (Answerable ID: Bun, Hono, Better Auth, Postgres, and its browser pages). Shared packages: `packages/ui` (React components and Tailwind theme), `packages/countries` (ISO country data), `packages/auth` (Answerable ID access-token verification), `packages/mcp` (the SDK for MCP servers, on the official MCP SDK), `packages/acceptance` (the real-ID acceptance kit and journeys) and `scripts` (`bun run mcp:new`). Runnable MCPs live in `mcps/*`; `mcps/e2e` is the reference server and the permanent local acceptance consumer; `mcps/example` is the finished quickstart, whose files the docs include; `mcps/toolbox` is the Toolbox hub, with its own Postgres databases `answerable_toolbox` and `answerable_toolbox_test`. Read `README.md`, then `docs/00-orientation.md`. Decisions live in `docs/`; `docs/02-plan.md` lists what not to re-propose.
 
 ## Documentation
 
 Docs are MDX in `apps/web/content/docs`, rendered with Fumadocs at `/docs`. The API reference is generated from `apps/id/openapi.json` and `apps/id/openapi.admin.json`. Never edit those files by hand; run `bun run openapi:export` in `apps/id`.
 
-Here's how we write documentation. These are Lee Robinson's ten principles (https://leerob.com/docs), adapted to this repo; read that page before writing a docs page, and keep the numbering below in step with it. Not adopted yet: a feedback widget, a broken-link check on push, an Ask AI sidebar, and shipping the docs as an MCP server.
+**Keep code and types in sync.** Never paste code or a type into a page; the build renders them from the repository:
+
+- Code: `<include lang="ts" meta='title="…"'>../relative/path.ts#region</include>`, from a file the repo typechecks and tests, with `//#region name` … `//#endregion` around the part to show. Snippets that no server runs live in `mcps/example/src/docs/`.
+- A type's fields: `<AutoTypeTable path="../../packages/…" name="…" type="…" />` (path relative to `apps/web`), from the type and its doc comments. A field without a comment shows a blank: write the comment in the source.
+- What the repository computes: `<ScaffoldFile>` (what `mcp:new` writes), `<ManifestEntry>`, `<GrantStrings>`, `<ErrorCodes>` (typed by the SDK's `ErrorCode`, so a new code fails the web typecheck until described) and `<PolicyClasses>`, in `apps/web/components/docs/generated.tsx`.
+- Every component has a Markdown form (`asMarkdown()`, `apps/web/components/docs`), so `.md` pages carry the same tables and code. Use no Fumadocs component without one.
+- `bun --filter web test` fails on a link to a missing page, heading or docs source file. Add every repository path the docs read at build to `web#build`'s inputs in `turbo.json`.
+
+Here's how we write documentation. These are Lee Robinson's ten principles (https://leerob.com/docs), adapted to this repo; read that page before writing a docs page, and keep the numbering below in step with it. Not adopted yet: a feedback widget, an Ask AI sidebar, and shipping the docs as an MCP server.
 
 1. Fast
    - Every docs page is static. No client-side data fetching, no runtime calls to Answerable ID.
@@ -28,7 +36,7 @@ Here's how we write documentation. These are Lee Robinson's ten principles (http
    - `/llms.txt` indexes the docs; `/llms-full.txt` carries all of them. Keep both working when you add pages or routes.
 6. Polished
    - Every page has a `title` and a `description`. The build fails without them; they become the canonical tag and the OG image.
-   - Headings are anchors. Do not rename one without checking inbound links.
+   - Headings are anchors. Do not rename one without checking inbound links; the link check test fails on a broken one. A moved page gets a redirect in `apps/web/next.config.mjs`.
    - Cross-link related guides and API pages in both directions.
 7. Localized
    - English only for now. No `/en` in URLs; no locale hardcoded in paths.
@@ -52,9 +60,9 @@ Here's how we write documentation. These are Lee Robinson's ten principles (http
 
 ## MCP kit and Toolbox
 
-Read `docs/07-mcp-platform-draft.md` (the foundation decisions that still hold) and `docs/08-capability-platform.md` (the platform) before extending the kit; `docs/09-mcp-design-standard.md` holds the rules and `apps/web/content/docs/mcp/authoring.mdx` shows how to create an MCP. Build on the official MCP SDK's primitives rather than re-implementing transport or OAuth. Do not add a Better Auth instance to an MCP.
+Read `docs/07-mcp-platform-draft.md` (the foundation decisions that still hold) and `docs/08-capability-platform.md` (the platform) before extending the kit; `docs/09-mcp-design-standard.md` holds the rules, `apps/web/content/docs/mcp/quickstart.mdx` shows how to create an MCP and `apps/web/content/docs/toolbox/add-tools.mdx` how to mount one in the Toolbox. Build on the official MCP SDK's primitives rather than re-implementing transport or OAuth. Do not add a Better Auth instance to an MCP.
 
-- **Workspaces.** `packages/auth` verifies tokens. `packages/mcp` is the SDK: `defineTool`, `defineMutation`, `defineProvider`, `createMcpServer`, the conformance kit and the in-process client in `@answerable/mcp/testing`. `packages/acceptance` is the real-ID kit and its journeys. `mcps/e2e` is the reference server. `mcps/toolbox` is the hub. `scripts` holds `mcp:new`.
+- **Workspaces.** `packages/auth` verifies tokens. `packages/mcp` is the SDK: `defineTool`, `defineMutation`, `defineProvider`, `createMcpServer`, the conformance kit and the in-process client in `@answerable/mcp/testing`. `packages/acceptance` is the real-ID kit and its journeys. `mcps/e2e` is the reference server. `mcps/example` is the finished quickstart. `mcps/toolbox` is the hub. `scripts` holds `mcp:new` and its templates, `scripts/mcp-templates.ts`, which the docs render.
 - **Commands.** `bun run mcp:new <name>` scaffolds `mcps/<name>`; then `bun install`, `UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-<name> test` to write its manifest, and `bun run mcp:check @answerable/mcp-<name>`. `bun run mcp:check <workspace>` typechecks, lints and tests one workspace. `bun run mcp:test` runs the package, server and scaffold suites, and picks up every server under `mcps/`. `bun run mcp:test:e2e` runs the journeys against real ID. Root `bun dev` starts apps only; `bun run mcp:dev` and `bun run toolbox:dev` serve the e2e server and the Toolbox.
 - **Gates.** `packages/auth`, `packages/mcp`, `packages/acceptance`, `mcps/e2e` and `mcps/toolbox` enforce 100% line and function coverage, and so does every scaffolded server. Every provider runs `assertProviderConformance` and commits its `manifest.json`: after changing a definition, run `UPDATE_MANIFEST=1 bun run --filter <workspace> test` in the workspace and commit the file (Turborepo's strict environment strips the variable, so `mcp:check` cannot write it). `apps/web/content/docs/mcp/reference.mdx` is generated from the documentation comments by `bun run --filter @answerable/mcp reference`, a test fails when it drifts, and every export of `@answerable/auth` and `@answerable/mcp` needs a comment. MCP unit tests run in-process and open no port; the Toolbox's suite also needs the development Postgres.
 - **Ports and databases.** The Toolbox runs on 47400 with `answerable_toolbox` and `answerable_toolbox_test` (created by `infra/postgres/init`). The acceptance owns ports 47532 (its own disposable Postgres, which also holds `answerable_toolbox_acceptance`), 47600, 47602, 47603, 47604 and 47605, and never touches the normal ID database.

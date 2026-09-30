@@ -1,6 +1,6 @@
 ---
 title: MCP errors
-description: "Every error a tool call on an Answerable MCP can answer: the envelope, the retry policies, each code, its meaning and what to do."
+description: "Every error an Answerable MCP can answer: the envelope, the retry policies, each code with its meaning and what to do, and the messages a definition or a server refuses with."
 ---
 
 ```json
@@ -15,7 +15,7 @@ description: "Every error a tool call on an Answerable MCP can answer: the envel
 }
 ```
 
-Every tool failure is `{ "isError": true, "content": [{ "type": "text", "text": "…" }] }` with no `structuredContent`, and the one text block is this envelope as JSON. A model picks its next step from `retry.policy` without reading the message. Handlers throw it with [`ToolError`](/docs/mcp/authoring#tool-errors). The rules it follows are in [the design standard](/docs/mcp/standard#errors).
+Every tool failure is `{ "isError": true, "content": [{ "type": "text", "text": "…" }] }` with no `structuredContent`, and the one text block is this envelope as JSON. A model picks its next step from `retry.policy` without reading the message. Handlers throw it with [`ToolError`](/docs/mcp/tools#tool-errors). The rules it follows are in [the design standard](/docs/mcp/standard#errors).
 
 **Why text only.** The MCP TypeScript SDK 1.x client checks any `structuredContent` against the tool's `outputSchema`, even on an error result, so an envelope there made `callTool` throw `Structured content does not match the tool's output schema` instead of returning it. It leaves a result without structured content untouched. Measured with SDK 1.30.0, which LibreChat uses; SDK 2.x clients return both shapes. Claude Code shows the model the text of a result that has no structured content. As text, the envelope reaches the model through every one of these clients.
 
@@ -43,36 +43,15 @@ Every tool failure is `{ "isError": true, "content": [{ "type": "text", "text": 
 
 ## Codes
 
-| Code | Meaning | Retry | What to do |
-| --- | --- | --- | --- |
-| `INVALID_INPUT` | The input failed the schema or a business rule | `after_fix_input` | Fix the fields in `details.field_violations` |
-| `NOT_FOUND` | A named resource does not exist for this caller; another organisation's resource is not found either. The Toolbox's meta tools answer it for a capability you may not use, as for one that does not exist | `never` | Check the identifier, for example with a list tool or `toolbox_search` |
-| `PERMISSION_DENIED` | The caller may not perform the operation; a commit answers it too when the caller can no longer use the mutation (its token lacks the scopes, or a hub's grants no longer cover it) | `never` | Ask for access, then prepare again |
-| `PRECONDITION_FAILED` | The current state does not allow the operation; `details.preconditions` says what | `after_state_change` | Change that state first |
-| `RESULT_TOO_LARGE` | A read's result exceeded 100 KiB of JSON; `details.bytes` is its size and `details.limit` the limit, 102,400 bytes | `after_fix_input` | Narrow the request with `limit`, `cursor` or filters |
-| `INTENT_STALE` | A target's version moved, or a target disappeared or appeared, since prepare; `details.targets` says which | `after_reprepare` | Prepare again and show the new preview |
-| `INTENT_EXPIRED` | The intent passed `expires_at` before it was committed | `after_reprepare` | Prepare again |
-| `INTENT_NOT_FOUND` | No intent has that id, or it is for a capability version this server does not serve | `after_reprepare` | Prepare again |
-| `INTENT_CONSUMED` | The intent was committed once and that commit failed | `after_reprepare` | Prepare again |
-| `INTENT_CANCELLED` | The intent was cancelled | `after_reprepare` | Not yet: intents cannot be cancelled |
-| `COMMIT_TOKEN_INVALID` | The commit token does not match the intent | `never` | Pass the `commit_token` the prepare tool returned for this intent |
-| `PRINCIPAL_MISMATCH` | Another person, membership or client prepared the intent | `never` | Prepare your own intent |
-| `APPROVAL_REQUIRED` | The intent's class needs the other commit tool, the person's confirmed summary, or a human approval | `after_approval` | See [approval](#approval) |
-| `APPROVAL_DENIED` | A person refused the approval | `never` | Not yet: approvals do not exist |
-| `COMMIT_IN_PROGRESS` | Another commit of this intent is running | `after_delay` | Call again; a finished commit answers with its receipt |
-| `IDEMPOTENCY_KEY_MISMATCH` | The same idempotency key came with different input | `never` | Not yet: prepare takes no idempotency key |
-| `RATE_LIMITED`, `BUDGET_EXHAUSTED` | A limit refused the call | `after_delay` | Wait `after_ms`. Not yet: the SDK enforces no limits; a handler may throw them |
-| `UPSTREAM_REJECTED` | The source refused; `details.upstream` carries its code | `never` | Read `details.upstream`. A handler that calls a source throws it; no Answerable provider does yet |
-| `UPSTREAM_UNAVAILABLE` | The source did not answer | `after_delay` | Call again later. The Toolbox answers it when Answerable ID does not say what you may use; a handler that calls a source throws it, and no Answerable provider does yet |
-| `TIMEOUT` | The tool ran past its `timeoutMs` | `after_delay` | Call again; a commit may still finish, so call the commit tool again for its receipt |
-| `OPERATION_NOT_FOUND`, `OPERATION_EXPIRED` | The operation handle is unknown or gone | `never` | Not yet: operations do not exist |
-| `INTERNAL` | An unexpected failure, or a handler that threw a [custom code](#custom-codes) its definition does not declare | `after_delay` | Call again once; if it persists, the operator reads the server log for the `request_id`, which names an undeclared code |
+<ErrorCodes />
 
-**Who answers what.** The server answers `INVALID_INPUT` for bad arguments, `TIMEOUT` and `INTERNAL` for every tool. The commit tools answer the `INTENT_*` codes, `COMMIT_TOKEN_INVALID`, `PRINCIPAL_MISMATCH`, `APPROVAL_REQUIRED`, `COMMIT_IN_PROGRESS` and `PERMISSION_DENIED`, in [this order](/docs/mcp/authoring#commit-tools). [The Toolbox](/docs/mcp/toolbox#errors) answers `RESULT_TOO_LARGE` and `UPSTREAM_UNAVAILABLE`; its meta tools answer `NOT_FOUND` for a capability you may not use and `INVALID_INPUT` for a capability sent to the wrong one of `toolbox_execute` and `toolbox_prepare`. Your handlers throw the rest with `ToolError`. `errorCodes` in `@answerable/mcp` exports the table as data ([reference](/docs/mcp/reference#errorcodes)).
+The codes and their retry policies are read from `errorCodes` in `@answerable/mcp` when these docs build ([reference](/docs/mcp/reference#errorcodes)); a `ToolError` without `retry` gets the policy shown.
+
+**Who answers what.** The server answers `INVALID_INPUT` for bad arguments, `TIMEOUT` and `INTERNAL` for every tool. The commit tools answer the `INTENT_*` codes, `COMMIT_TOKEN_INVALID`, `PRINCIPAL_MISMATCH`, `APPROVAL_REQUIRED`, `COMMIT_IN_PROGRESS` and `PERMISSION_DENIED`, in [this order](/docs/mcp/mutations#commit-tools). [The Toolbox](/docs/toolbox#errors) answers `RESULT_TOO_LARGE` and `UPSTREAM_UNAVAILABLE`; its meta tools answer `NOT_FOUND` for a capability you may not use and `INVALID_INPUT` for a capability sent to the wrong one of `toolbox_execute` and `toolbox_prepare`. Your handlers throw the rest with `ToolError`.
 
 ## Custom codes
 
-A provider may add its own codes, `<PROVIDER>_<CODE>` in capitals such as `ACME_QUOTA_EXCEEDED`, each with its own retry policy and listed in the `errors` of the tool that throws it; the manifest carries the list. [Tool errors](/docs/mcp/authoring#tool-errors) shows how to throw and declare one. An undeclared custom code answers `INTERNAL`.
+A provider may add its own codes, `<PROVIDER>_<CODE>` in capitals such as `ACME_QUOTA_EXCEEDED`, each with its own retry policy and listed in the `errors` of the tool that throws it; the manifest carries the list. [Tool errors](/docs/mcp/tools#tool-errors) shows how to throw and declare one. An undeclared custom code answers `INTERNAL`.
 
 ## Field violations
 
@@ -109,7 +88,48 @@ A refused commit leaves the intent committable.
 
 ## Not tool errors
 
-A tool the token cannot use answers the protocol's `Tool <name> not found`, never an envelope, so the tools of other scopes cannot be enumerated. Authentication answers HTTP `401`, a foreign `Host` or `Origin` HTTP `403`. See [the authoring errors](/docs/mcp/authoring#errors).
+| You see | Meaning | What to do |
+| --- | --- | --- |
+| `Tool <name> not found` | Not defined, or the token lacks its scopes. It is a protocol error, never an envelope, so the tools of other scopes cannot be enumerated | Check the token's scopes against the definition |
+| HTTP `401` with `invalid_token` | Missing, expired or foreign token, or a token for another MCP | Sign in through ID for this MCP's resource URL |
+| HTTP `403` on the MCP endpoint | The `Host` or browser `Origin` is not the resource URL's host name | Call the MCP by its registered host name |
+| `INTERNAL`, logged as `[mcp] tool <name> failed` | Unexpected handler failure, or output that does not match `output` | Read the server log for the `request_id`; a commit tool logs under its wire name |
+| `INTERNAL` from a prepare tool, logged with `Mutation …: the preview names effects it does not declare…` | The preview names an effect missing from `effects` | Declare it in `effects`, or leave it out of the preview |
+| `INTERNAL` from a prepare tool, logged with a Zod error | The plan breaks its shape: no summary, a summary over 500 characters, a target without a version | Return the shape in [the preview](/docs/mcp/mutations#the-preview) and [targets](/docs/mcp/mutations#targets-and-versions) |
+| `INTERNAL`, logged as `… threw ACME_…, which its definition does not declare; add it to errors` | The handler threw a custom code missing from `errors` | Add the code to the definition's `errors` |
+| A conformance test fails | A definition breaks a rule of the standard | See [Test an MCP](/docs/mcp/testing#errors) |
+
+## When a definition is refused
+
+These throw when the module loads, so the server never starts with a broken definition.
+
+| Message | Meaning | What to do |
+| --- | --- | --- |
+| `Tool name "…" must be <domain>.<operation>…` | The name breaks the naming rule; a mutation says `Mutation name` | Rename it, for example `notes.list` |
+| `Tool …: the description is N characters…` | Shorter than 40 or longer than 1,000; a mutation says `Mutation …` | Say what it does, when to use it and its limits |
+| `Tool …: timeoutMs … must be a whole number of milliseconds from 1 to 55,000` | The timeout is out of range | Use at most 55,000 |
+| `Mutation …: risk "…" must be low, normal or high` | Another value | Use one of the three, or omit it for `normal` |
+| `Mutation …: effect "…" is not in the vocabulary…` | An effect outside the six | Use a name from the vocabulary |
+| `Mutation …: expiresInMs … must be a whole number…; a mutation may shorten its expiry, not lengthen it` | Longer than the expiry its `risk` gives, or not a whole number | Shorten it, or omit it |
+| `…must be a date, YYYY-MM-DD` | A version or deprecation date is not a calendar date | Write the date as `YYYY-MM-DD` |
+| `…scopes must be non-empty and contain no spaces…` | An empty scope list or a scope with a space | Omit `scopes` for the default, or fix the list |
+| `Provider id "…" must be a lowercase letter…` | The id breaks the rule | Use up to 12 lowercase letters or digits, starting with a letter |
+| `Provider … defines tool … twice` | Two definitions share a tool name, prompt name or resource URI | Rename one |
+| `Provider … defines two different views at …` | Two views share a name | Share one `defineView` result, or rename a view |
+| `Provider …: tool … is deprecated in favour of …, which is not a current tool of this provider` | The replacement is missing or itself deprecated | Name a current tool of the provider |
+| `View name "…" must be…`, `Prompt name "…" must be…`, `Resource name "…" must be…` | The name breaks its rule | Rename it as the message shows |
+| `View …: the HTML is empty…` | The view was not built | Build it with `buildView` before `defineView` |
+| `Resource …: uri "…" must be an absolute URI…`, `Resource …: … is a ui:// view…` | The URI is relative, or it is a view's | Use an absolute URI such as `fixture://guide`; define a view with `defineView` |
+| `Views must bundle to one script and optional CSS…` | The view imports a file that the bundler emits on its own | Embed it in the script or the CSS |
+| `Provider … is mounted twice…` | A hub mounts one provider twice, or mounts its own provider | Mount each provider once |
+| `ToolError code "…" must be a standard code or <PROVIDER>_<CODE>…` | The code is not in the table and has the wrong shape | Use a standard code, or `ACME_SOMETHING` |
+| `ToolError code "…" is not in the standard table; pass { retry }…` | A custom code without a retry policy | Pass `{ retry: { policy } }` |
+| `Tool …: errors entry "…" must be a custom code…` | An entry in `errors` is a standard code, or not `<PROVIDER>_<CODE>` in capitals; a mutation says `Mutation …` | Remove standard codes; write custom ones as `ACME_QUOTA_EXCEEDED` |
+| `Provider …: … declares error "…"; a custom code of this provider starts with …_` | A declared code does not start with the provider id in capitals | Rename it, for example `ACME_QUOTA_EXCEEDED` in provider `acme` |
+| `Invalid MCP configuration: …` at start | A missing or invalid variable | Set the named variable; see [Configure](/docs/mcp/servers#configure) |
+| `Server name "…" must be a lowercase letter then up to 11 lowercase letters or digits…` from `mcp:new` | The name is not a provider id | Use a name such as `acme` |
+| `mcps/<name> already exists; choose another name or remove it` from `mcp:new` | The directory exists | Choose another name, or remove the directory |
+| `…/manifest.json is out of date; regenerate it with UPDATE_MANIFEST=1…` | The manifest differs from the code, or has not been written yet | Run `UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-<name> test`, review the diff and commit |
 
 ## Limits
 

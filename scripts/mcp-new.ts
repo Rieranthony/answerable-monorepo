@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs"
 import { join } from "node:path"
+import { scaffoldSources } from "./mcp-templates"
 
 const repo = new URL("../", import.meta.url).pathname
 const e2e = join(repo, "mcps/e2e")
@@ -25,73 +26,7 @@ export async function scaffold(name: string, { root = repo, date = new Date().to
     "tsconfig.json": await Bun.file(join(e2e, "tsconfig.json")).text(),
     "eslint.config.mjs": await Bun.file(join(e2e, "eslint.config.mjs")).text(),
     "bunfig.toml": await Bun.file(join(e2e, "bunfig.toml")).text(),
-    "src/provider.ts": `import { defineProvider, defineTool } from "@answerable/mcp"
-import { z } from "zod"
-
-const status = defineTool({
-  name: "${name}.status",
-  description: "Report that the ${name} server is running and which organisation the caller signed in to. Replace it with your first real tool.",
-  input: z.object({}),
-  output: z.object({ status: z.string(), organizationId: z.uuid() }),
-  async execute(_input, { principal }) {
-    return { status: "ok", organizationId: principal.organizationId }
-  },
-})
-
-export const provider = defineProvider({ id: "${name}", version: "${date}", tools: [status] })
-`,
-    "src/server.ts": `import { createMcpServer, readMcpEnvironment } from "@answerable/mcp"
-import { provider } from "./provider"
-
-const { auth, port } = readMcpEnvironment(process.env)
-const server = createMcpServer({ provider, auth })
-Bun.serve({ hostname: "127.0.0.1", port, fetch: server.fetch })
-console.log(\`${name} MCP serving \${auth.resource}\`)
-`,
-    "src/provider.test.ts": `import { expect, test } from "bun:test"
-import { assertProviderConformance, createTestMcp } from "@answerable/mcp/testing"
-import { provider } from "./provider"
-
-assertProviderConformance(provider, {
-  manifest: new URL("../manifest.json", import.meta.url),
-  examples: { "${name}.status": {} },
-})
-
-test("${name}_status names the caller's organisation", async () => {
-  const mcp = await createTestMcp(provider)
-  try {
-    const organizationId = crypto.randomUUID()
-    const client = await mcp.connect({ organizationId })
-    const result = await client.callTool({ name: "${name}_status", arguments: {} })
-    expect(result.structuredContent).toEqual({ status: "ok", organizationId })
-  } finally {
-    await mcp.close()
-  }
-})
-`,
-    ".env.example": `# Copy to .env (git-ignored) to change a value; an MCP running beside another needs its own port.
-MCP_ID_ISSUER=http://localhost:47300
-MCP_RESOURCE_URL=http://localhost:47510/mcp
-MCP_PORT=47510
-`,
-    "README.md": `# ${name} MCP
-
-An MCP server on Answerable ID with one tool, \`${name}.status\`. Replace it with your own: [Author an MCP](../../apps/web/content/docs/mcp/authoring.mdx).
-
-\`\`\`sh
-bun --env-file=mcps/${name}/.env.example run --filter @answerable/mcp-${name} dev
-curl http://localhost:47510/health
-\`\`\`
-
-Run these from the repository root; the second answers \`{"status":"ok"}\`. \`.env.example\` holds \`MCP_ID_ISSUER\`, \`MCP_RESOURCE_URL\` and \`MCP_PORT\`; copy it to \`.env\` in this directory, which is git-ignored, to change them. Before the first sign-in, register the resource, whose scope is \`${name}:read\`, and a client in Answerable ID, as [Connect Claude Code](../../apps/web/content/docs/mcp/claude-code.mdx#register-the-server) does for the e2e server.
-
-\`\`\`sh
-UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-${name} test
-bun run mcp:check @answerable/mcp-${name}
-\`\`\`
-
-The first writes \`manifest.json\`, the provider's contract: run it again after changing a tool, and commit the file with the change. The second runs the typecheck, the lint and the tests, with the conformance kit and a 100% coverage gate: [Test an MCP](../../apps/web/content/docs/mcp/testing.mdx).
-`,
+    ...scaffoldSources(name, date),
   }
   for (const [path, content] of Object.entries(files)) await Bun.write(join(dir, path), content)
   return `Created mcps/${name} (@answerable/mcp-${name}). Next, from the repository root:

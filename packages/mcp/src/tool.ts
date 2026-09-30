@@ -13,9 +13,15 @@ export type Tool<Input extends z.ZodObject = z.ZodObject, Output extends z.ZodOb
   title?: string
   /** What it does, when to use it and its limits: 40 to 1,000 characters. */
   description: string
-  /** Closed with `.strict()`: an unknown top-level field answers `INVALID_INPUT`. */
+  /**
+   * A Zod object, closed with `.strict()`: an unknown top-level field answers `INVALID_INPUT`.
+   * @remarks `ZodObject`
+   */
   input: Input
-  /** The result is checked against it; undeclared fields are dropped. */
+  /**
+   * A Zod object; the result is checked against it and undeclared fields are dropped.
+   * @remarks `ZodObject`
+   */
   output: Output
   /** `YYYY-MM-DD`. Default: the provider's version. */
   version?: string
@@ -29,6 +35,7 @@ export type Tool<Input extends z.ZodObject = z.ZodObject, Output extends z.ZodOb
   timeoutMs: number
   /** The custom `<PROVIDER>_<CODE>` codes the handler throws. Default: none; standard codes need no declaration, and an undeclared custom code answers `INTERNAL`. */
   errors: readonly string[]
+  /** Do the work: receives the parsed input and the caller, returns an object that matches `output`, and throws `ToolError` for an expected failure. */
   execute(input: z.output<Input>, context: ToolContext): Promise<z.input<Output>>
 }>
 
@@ -88,7 +95,12 @@ export function checkShared<Definition extends Shared>(noun: "Tool" | "Mutation"
  * ```
  */
 export function defineTool<Input extends z.ZodObject, Output extends z.ZodObject>(
-  tool: Omit<Tool<Input, Output>, "kind" | "timeoutMs" | "errors"> & { timeoutMs?: number; errors?: readonly string[] },
+  tool: Omit<Tool<Input, Output>, "kind" | "timeoutMs" | "errors"> & {
+    /** Default 25,000; at most 55,000. The call is aborted and answers `TIMEOUT` after it. */
+    timeoutMs?: number
+    /** The custom `<PROVIDER>_<CODE>` codes the handler throws. Default: none; standard codes need no declaration. */
+    errors?: readonly string[]
+  },
 ): Tool<Input, Output> {
   return Object.freeze({ ...checkShared("Tool", tool), kind: "read" })
 }

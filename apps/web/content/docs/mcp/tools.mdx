@@ -1,0 +1,159 @@
+---
+title: Read tools
+description: "Define a read tool with @answerable/mcp: its fields, names, descriptions, the caller, pagination, errors, deprecation, and what hosts receive."
+---
+
+<include lang="ts" meta='title="mcps/example/src/provider.ts"'>../../../../../mcps/example/src/provider.ts#list</include>
+
+A read tool answers a question and changes nothing. Define it with `defineTool`: five fields are required and everything else has a default. `defineTool` checks the definition when the module loads, and returns it as frozen data. A tool that changes data is a [mutation](/docs/mcp/mutations). New here? [Build your first MCP](/docs/mcp/quickstart) first.
+
+## Fields
+
+<AutoTypeTable path="../../packages/mcp/src/tool.ts" name="ToolFields" type="Parameters<typeof defineTool>[0]" />
+
+**Field descriptions.** Describe each input field with `.describe()`: the text reaches the model in the tool's `inputSchema`. Recommended, not enforced.
+
+## Names and identity
+
+| Form | Example | Rule |
+| --- | --- | --- |
+| Tool name | `notes.list` | `<domain>.<operation>`; each part a lowercase letter, then up to 15 lowercase letters or digits |
+| Identity | `example/notes.list` | `<provider id>/<name>`; never changes for the life of the tool |
+| Wire name | `notes_list` | The name with `_` for `.`; what hosts list and call |
+
+Hosts add their own prefixes and suffixes to tool names, and some limit names to 64 characters, so the wire name uses only `[a-z0-9_]`. The dotted identity travels in `_meta`. Through [the Toolbox](/docs/toolbox) the wire name gains the provider id: `example_notes_list`.
+
+## Descriptions
+
+The description is what a model reads to choose a tool. Write operational documentation, not a title:
+
+| Say | Example |
+| --- | --- |
+| What it does | `List your organisation's notes, oldest first.` |
+| When to use it and what to call first | `Use projects.search first to find the project id.` |
+| Its limits | `20 per page by default and at most 100.` |
+| Whether it changes state | A mutation: `Prepare adding a note. Changes nothing: returns a preview; commit the intent with the tool its commit_tool names.` Name no commit tool: a hub serves the mutation under its own commit tools, and the intent's `commit_tool` says which |
+| What identifiers mean | `id is the note's id from notes.list.` |
+
+`defineTool` refuses fewer than 40 or more than 1,000 characters. The conformance kit adds two checks: `descriptions_operational` (a mutation's description says `prepare` or `intent`) and `deprecations_mirrored` (a deprecated tool's description ends with the deprecation sentence).
+
+## The caller
+
+`execute(input, context)` receives the parsed input and a frozen context:
+
+<AutoTypeTable path="../../packages/mcp/src/definitions.ts" name="ToolContext" />
+
+`principal` is the verified caller:
+
+<AutoTypeTable path="../../packages/auth/src/index.ts" name="UserPrincipal" />
+
+**Constrain every query by `principal.organizationId`.** Another organisation's data must be not found, never forbidden. Join on `userId`, never on an email address. Prompts and resources receive the same context. [How Answerable ID works](/docs/id) explains where these values come from.
+
+## Pagination
+
+<include lang="ts" meta='title="mcps/example/src/notes.ts"'>../../../../../mcps/example/src/notes.ts#store</include>
+
+Every tool that can return an unbounded list takes `limit` and `cursor`, and returns `items`, `next_cursor` and `has_more`, as `notes.list` above does. Never truncate silently.
+
+| Field | Rule |
+| --- | --- |
+| `limit` | Integer; default at most 20; the schema enforces the maximum |
+| `cursor` | Optional; opaque to callers |
+| `items` | The page |
+| `next_cursor` | The cursor for the next page, or `null` on the last |
+| `has_more` | `true` when another page exists |
+
+`@answerable/mcp` exports nothing for pagination: declare the fields in your schemas. The conformance kit's `list_paginates` fails a tool whose output has an `items` array without them. A cursor the server did not issue answers `INVALID_INPUT`.
+
+**Size.** Through [the Toolbox](/docs/toolbox#limits), a read whose result is above 100 KiB of JSON answers `RESULT_TOO_LARGE`, so keep the default page well below that.
+
+## Tool errors
+
+<include lang="ts" meta='title="mcps/example/src/docs/tool-errors.ts"'>../../../../../mcps/example/src/docs/tool-errors.ts</include>
+
+Throw `ToolError(code, message, options?)` for a failure you expect. The caller receives an error result whose one text block is the [error envelope](/docs/mcp/errors) as JSON:
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No accessible note exists",
+    "retry": { "policy": "never" },
+    "request_id": "0199a4e2-7b06-7000-87bd-91723fe45f93"
+  }
+}
+```
+
+`retry.policy` tells the model what to do next without reading the message. Each standard code has a default policy; [MCP errors](/docs/mcp/errors#codes) lists them all. `details` appears only when given.
+
+**Custom codes.** A provider may add its own codes, `<PROVIDER>_<CODE>` in capitals, each with an explicit retry policy. List them in the definition's `errors`; the manifest carries the list, so a reviewer sees every code a provider can answer:
+
+<include lang="ts" meta='title="mcps/example/src/docs/custom-error.ts"'>../../../../../mcps/example/src/docs/custom-error.ts</include>
+
+A custom code must start with the provider's id in capitals: `defineProvider` refuses `OTHER_QUOTA` in provider `example`. A handler that throws a custom code its definition does not list answers `INTERNAL`, and the server log names the code to add.
+
+**What the server answers for you.**
+
+| Case | Answer |
+| --- | --- |
+| The input fails `input` | `INVALID_INPUT`, one field violation per issue (`{ field: "a.b", message }`); `execute` does not run |
+| `execute` runs past `timeoutMs` | `TIMEOUT`; `context.signal` aborts and the answer does not wait for `execute` |
+| Any other exception, an undeclared custom code, or an output that fails `output` | `INTERNAL` with the message `The tool could not complete`, and `[mcp] tool <name> failed` with the execution id in the server log |
+
+## Dependencies
+
+<include lang="ts" meta='title="mcps/example/src/docs/dependencies.ts"'>../../../../../mcps/example/src/docs/dependencies.ts</include>
+
+Pass a database or an API client by closure: define the tools inside a function that receives them, and return the provider. The server passes the real one; a test passes a stand-in. `mcps/e2e/src/mcp.ts` builds its provider this way.
+
+**Composition.** A tool is plain data, so ordinary code composes it: collect tools from several modules into one array, wrap `execute` to audit every call, or call `execute` directly in a unit test.
+
+<include lang="ts" meta='title="mcps/example/src/docs/composition.ts"'>../../../../../mcps/example/src/docs/composition.ts</include>
+
+## Versions and deprecation
+
+<include lang="ts" meta='title="mcps/example/src/docs/deprecation.ts"'>../../../../../mcps/example/src/docs/deprecation.ts</include>
+
+**Version.** A date, `YYYY-MM-DD`; it defaults to the provider's version. The behaviour of one identity at one version never changes.
+
+**Deprecation.** `since` and `sunset` are dates; `replacement` is optional and names another tool of the same provider that is not deprecated. The description sent to hosts ends with a sentence naming all three, for example `Deprecated since 2026-09-30; removed on 2027-09-30; use notes.list instead.`, and `_meta` carries the `deprecated` object.
+
+Two versions of one tool name in one provider: Not yet. `defineProvider` refuses a duplicate name.
+
+## What hosts receive
+
+| `tools/list` field | Value |
+| --- | --- |
+| `name` | The wire name |
+| `title` | `title`, when set |
+| `description` | `description`, plus the deprecation sentence |
+| `inputSchema` | The JSON Schema of `input`, with `additionalProperties: false` |
+| `outputSchema` | The JSON Schema of `output` |
+| `annotations` | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
+| `_meta["com.answerable/capability"]` | `{ identity, version, kind: "read" }`, plus `deprecated` when set. A mutation's prepare tool: [see Mutations](/docs/mcp/mutations#the-prepare-tool) |
+| `_meta.ui.resourceUri` | The view's URI, when the tool has a [view](/docs/mcp/servers#views). The MCP Apps helper also writes the older `_meta["ui/resourceUri"]` |
+
+The manifest holds the same contract. This is `notes.list`'s entry:
+
+<ManifestEntry workspace="example" identity="example/notes.list" />
+
+**Results.** The server checks the value `execute` returns against `output`, drops every field `output` does not declare, and sends it as `structuredContent` and as the same JSON in one text block. Claude Code shows the model only the structured content, so put everything the model needs in the output. A failure carries no structured content; see [tool errors](#tool-errors).
+
+**Scopes decide visibility.** A token lists only the tools, prompts and resources whose every scope it carries. A tool it cannot use is absent from `tools/list`, and calling it returns the protocol's unknown-tool error.
+
+**Closed input.** `defineTool` applies `.strict()` to `input`, so an unknown top-level field answers `INVALID_INPUT`. Nested objects keep Zod's default of dropping unknown fields; use `z.strictObject` to close them too.
+
+Annotations describe the tool for hosts; they never authorise anything.
+
+## Limits
+
+| Limit | Value |
+| --- | --- |
+| Tool name part | 16 characters |
+| Description | 40 to 1,000 characters |
+| `timeoutMs` | 1 to 55,000; default 25,000. Longer work: Not yet |
+| Declared errors | Custom `<PROVIDER>_<CODE>` codes only, starting with the provider id in capitals |
+| Tool kinds | Read and mutate. Start and subscribe: Not yet |
+| Versions per tool name in a provider | One |
+
+A definition that breaks a rule throws when the module loads: [When a definition is refused](/docs/mcp/errors#when-a-definition-is-refused) lists every message.

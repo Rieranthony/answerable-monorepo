@@ -15,7 +15,7 @@ This runs the typecheck, the lint and the tests of a server, and the tests inclu
 | --- | --- | --- |
 | **SDK** | `defineTool`, `defineMutation`, `defineProvider` or the server | An error when the module loads, or an [error envelope](/docs/mcp/errors) in a result |
 | **Kit** | `assertProviderConformance` from `@answerable/mcp/testing`, [the conformance kit](/docs/mcp/testing#the-checks) | A failing `bun test` named after the check |
-| **Hub** | [The Toolbox](/docs/mcp/toolbox), at run time | A refusal, and an evidence row |
+| **Hub** | [The Toolbox](/docs/toolbox), at run time | A refusal, and an evidence row |
 | **Review** | A person reading the diff | Nothing automatic |
 
 A rule may have two enforcers: the SDK refuses the definition, and the kit guards a provider built by other means. **Not yet.** marks a part that nothing enforces because it is not built; [Not yet](#not-yet) lists them. The rule numbers are those of the design standard, `docs/09-mcp-design-standard.md` in the repository.
@@ -25,9 +25,9 @@ A rule may have two enforcers: the SDK refuses the definition, and the kit guard
 | Rule | Says | Enforced by |
 | --- | --- | --- |
 | R1 | A tool is one useful operation named for what the caller can do, never for the vendor or the transport: `documents.search`, not `sharepoint_graph_search` | Review |
-| R2 | The identity is `<domain>.<operation>`, each part `^[a-z][a-z0-9]{0,15}$`, unique in its provider; `<provider>/<domain>.<operation>` never changes | **SDK**, [names and identity](/docs/mcp/authoring#names-and-identity). **Kit** `identity_is_stable` |
-| R3 | The wire name is the identity with `_` for `.`, and `<provider>_<wire name>` is at most 46 characters of `[a-z0-9_]` | **SDK**, [names and identity](/docs/mcp/authoring#names-and-identity). **Kit** `name_is_host_safe` |
-| R4 | Every capability is classified `read` or `mutate` in `_meta` and in derived annotations, never by its name. `start` and `subscribe`: Not yet | **SDK**, [what the wire carries](/docs/mcp/authoring#what-the-wire-carries) |
+| R2 | The identity is `<domain>.<operation>`, each part `^[a-z][a-z0-9]{0,15}$`, unique in its provider; `<provider>/<domain>.<operation>` never changes | **SDK**, [names and identity](/docs/mcp/tools#names-and-identity). **Kit** `identity_is_stable` |
+| R3 | The wire name is the identity with `_` for `.`, and `<provider>_<wire name>` is at most 46 characters of `[a-z0-9_]` | **SDK**, [names and identity](/docs/mcp/tools#names-and-identity). **Kit** `name_is_host_safe` |
+| R4 | Every capability is classified `read` or `mutate` in `_meta` and in derived annotations, never by its name. `start` and `subscribe`: Not yet | **SDK**, [what the wire carries](/docs/mcp/tools#what-hosts-receive) |
 | R5 | A read has no business side effect | **Kit** `read_has_no_side_effect` |
 | R6 | Capabilities are small enough to compose and large enough to be useful: no `manage_project` with modes | Review |
 | R7 | Search takes relevance criteria and list enumerates a known collection; both return stable identifiers | Review |
@@ -36,26 +36,26 @@ A rule may have two enforcers: the SDK refuses the definition, and the kit guard
 
 | Rule | Says | Enforced by |
 | --- | --- | --- |
-| R8 | Inputs are closed objects with explicit types, enums for fixed choices and a description on every field | **SDK** closes the input, [what the wire carries](/docs/mcp/authoring#what-the-wire-carries). **Kit** `input_schema_is_closed`. Review for the rest |
-| R9 | Outputs are objects; the server checks the result, drops undeclared fields and sends `structuredContent` and the same JSON as text | **SDK**, [what the wire carries](/docs/mcp/authoring#what-the-wire-carries). **Kit** `output_schema_declared` |
-| R10 | A list takes `limit` (default at most 20, maximum enforced) and `cursor` and returns `items`, `next_cursor` and `has_more`; it never truncates silently | **Kit** `list_paginates`, [pagination](/docs/mcp/authoring#pagination) |
+| R8 | Inputs are closed objects with explicit types, enums for fixed choices and a description on every field | **SDK** closes the input, [what the wire carries](/docs/mcp/tools#what-hosts-receive). **Kit** `input_schema_is_closed`. Review for the rest |
+| R9 | Outputs are objects; the server checks the result, drops undeclared fields and sends `structuredContent` and the same JSON as text | **SDK**, [what the wire carries](/docs/mcp/tools#what-hosts-receive). **Kit** `output_schema_declared` |
+| R10 | A list takes `limit` (default at most 20, maximum enforced) and `cursor` and returns `items`, `next_cursor` and `has_more`; it never truncates silently | **Kit** `list_paginates`, [pagination](/docs/mcp/tools#pagination) |
 | R11 | Lists and retrievals push the source's filters, projection and sorting down, and return what a caller needs to act, not whole objects | Review |
 | R12 | Identifiers are stable system identifiers; a display name is never an identifier | Review |
 | R13 | Timestamps are ISO 8601, and quantities carry units | **Kit** `output_schema_declared`, for fields named `*_at`, `amount`, `area` and `duration` |
-| R14 | A description is operational documentation of 40 to 1,000 characters: what, when, limits, whether it changes state | **SDK** refuses the length, [descriptions](/docs/mcp/authoring#descriptions). **Kit** `descriptions_operational` |
-| R15 | A result above 100 KiB answers `RESULT_TOO_LARGE`; large data is paginated, projected or aggregated | **Hub**, [limits](/docs/mcp/toolbox#limits). A server served alone: Not yet |
+| R14 | A description is operational documentation of 40 to 1,000 characters: what, when, limits, whether it changes state | **SDK** refuses the length, [descriptions](/docs/mcp/tools#descriptions). **Kit** `descriptions_operational` |
+| R15 | A result above 100 KiB answers `RESULT_TOO_LARGE`; large data is paginated, projected or aggregated | **Hub**, [limits](/docs/toolbox#limits). A server served alone: Not yet |
 
 ## Prepared mutations
 
 | Rule | Says | Enforced by |
 | --- | --- | --- |
-| R16 | A mutation has `prepare` and `commit`; prepare validates, resolves the targets, computes the change and changes nothing | **SDK**, [mutations](/docs/mcp/authoring#mutations). **Kit** `prepare_has_no_side_effect`, `targets_have_versions` |
-| R17 | The preview is semantic: a summary, changes from and to, effects, warnings and quantities; echoing the arguments is not a preview | **SDK** checks the shape, [the preview](/docs/mcp/authoring#the-preview). **Kit** `preview_is_semantic` |
+| R16 | A mutation has `prepare` and `commit`; prepare validates, resolves the targets, computes the change and changes nothing | **SDK**, [mutations](/docs/mcp/mutations). **Kit** `prepare_has_no_side_effect`, `targets_have_versions` |
+| R17 | The preview is semantic: a summary, changes from and to, effects, warnings and quantities; echoing the arguments is not a preview | **SDK** checks the shape, [the preview](/docs/mcp/mutations#the-preview). **Kit** `preview_is_semantic` |
 | R18 | Uncertain consequences are warnings, never stated as facts | Review |
-| R19 | Commit applies exactly the prepared intent, for the person who prepared it, after rechecking authority, expiry, policy and every target's version; a moved version answers `INTENT_STALE` | **SDK**, [commit tools](/docs/mcp/authoring#commit-tools). **Kit** `commit_rejects_stale`, `commit_rejects_expired`, `commit_rejects_other_principal` |
-| R20 | A repeat commit by the same person returns the stored receipt with `idempotent_replay: true`; a concurrent one answers `COMMIT_IN_PROGRESS` | **SDK**, [commit tools](/docs/mcp/authoring#commit-tools). **Kit** `commit_is_idempotent` |
-| R21 | A commit token is opaque, random, stored hashed, single use and bound to one intent and person | **SDK**, [the prepare tool](/docs/mcp/authoring#the-prepare-tool). **Kit** `commit_requires_token` |
-| R22 | The policy class (`agent`, `controlled`, `human`) comes from the platform, not the capability: `risk` sets the default and an organisation may override it | **SDK**, [policy classes](/docs/mcp/authoring#policy-classes). **Hub**, [mutations through the Toolbox](/docs/mcp/toolbox#mutations-through-the-toolbox) |
+| R19 | Commit applies exactly the prepared intent, for the person who prepared it, after rechecking authority, expiry, policy and every target's version; a moved version answers `INTENT_STALE` | **SDK**, [commit tools](/docs/mcp/mutations#commit-tools). **Kit** `commit_rejects_stale`, `commit_rejects_expired`, `commit_rejects_other_principal` |
+| R20 | A repeat commit by the same person returns the stored receipt with `idempotent_replay: true`; a concurrent one answers `COMMIT_IN_PROGRESS` | **SDK**, [commit tools](/docs/mcp/mutations#commit-tools). **Kit** `commit_is_idempotent` |
+| R21 | A commit token is opaque, random, stored hashed, single use and bound to one intent and person | **SDK**, [the prepare tool](/docs/mcp/mutations#the-prepare-tool). **Kit** `commit_requires_token` |
+| R22 | The policy class (`agent`, `controlled`, `human`) comes from the platform, not the capability: `risk` sets the default and an organisation may override it | **SDK**, [policy classes](/docs/mcp/mutations#policy-classes). **Hub**, [mutations through the Toolbox](/docs/toolbox#mutations-through-the-toolbox) |
 | R23 | A human approval binds to one intent digest and to a signed-in approver who holds `toolbox/approve` | Not yet |
 | R24 | A long-running commit returns an operation handle that can be read and cancelled | Not yet |
 | R25 | Upstream calls keep their own retry semantics, the intent id is their idempotency key where they offer one, and a commit whose upstream answer is lost says so | Review. The `indeterminate` receipt: Not yet |
@@ -65,7 +65,7 @@ A rule may have two enforcers: the SDK refuses the definition, and the kit guard
 
 | Rule | Says | Enforced by |
 | --- | --- | --- |
-| R27 | Every call runs with a principal and is authorised from current grants; a hidden tool is also a refused one | **SDK** checks the token's scopes on every request. **Hub**, [how authority is read](/docs/mcp/toolbox#how-authority-is-read) |
+| R27 | Every call runs with a principal and is authorised from current grants; a hidden tool is also a refused one | **SDK** checks the token's scopes on every request. **Hub**, [how authority is read](/docs/toolbox#how-authority-is-read) |
 | R28 | Where a service credential is unavoidable, Answerable-side authority is enforced before it is used | Review |
 | R29 | No capability takes a secret as input, and no handler receives a raw secret | Review for a secret as input. Declared secrets and the egress-guarded client: Not yet |
 | R30 | Generated code gets capability handles, never ambient network or credentials | Not yet |
@@ -73,7 +73,7 @@ A rule may have two enforcers: the SDK refuses the definition, and the kit guard
 
 ## Errors
 
-Every failure is an `isError` result whose one text block is the [error envelope](/docs/mcp/errors) as JSON, with a code, a message and a retry policy the model can act on. **SDK**: `ToolError`, [tool errors](/docs/mcp/authoring#tool-errors). **Kit** `errors_use_envelope`: every read and every mutation answers an unknown field, and the commit tool an unknown intent, with the envelope, and its code must be standard or declared in the definition's `errors`, which the manifest lists.
+Every failure is an `isError` result whose one text block is the [error envelope](/docs/mcp/errors) as JSON, with a code, a message and a retry policy the model can act on. **SDK**: `ToolError`, [tool errors](/docs/mcp/tools#tool-errors). **Kit** `errors_use_envelope`: every read and every mutation answers an unknown field, and the commit tool an unknown intent, with the envelope, and its code must be standard or declared in the definition's `errors`, which the manifest lists.
 
 | Rule | Says | Enforced by |
 | --- | --- | --- |
@@ -84,15 +84,15 @@ Every failure is an `isError` result whose one text block is the [error envelope
 
 | Rule | Says | Enforced by |
 | --- | --- | --- |
-| R34 | Every call has a span and, for a read, an evidence row; every mutation transition is evidence; inputs, results and secrets are not recorded | **Hub**, [evidence](/docs/mcp/toolbox#evidence) and [spans](/docs/mcp/toolbox#spans). Refusals by a limit: Not yet |
+| R34 | Every call has a span and, for a read, an evidence row; every mutation transition is evidence; inputs, results and secrets are not recorded | **Hub**, [evidence](/docs/toolbox#evidence) and [spans](/docs/toolbox#spans). Refusals by a limit: Not yet |
 | R35 | Every execution has an id, and an intent id survives into the receipt | **SDK**, `executionId`, `request_id` and the receipt. **Kit** `receipt_is_structured`. The id as a header to an upstream: Not yet |
-| R36 | Evidence is append-only, chained per organisation and verifiable | **Hub**, [evidence](/docs/mcp/toolbox#evidence). Nightly verification and publishing chain heads: Not yet |
+| R36 | Evidence is append-only, chained per organisation and verifiable | **Hub**, [evidence](/docs/toolbox#evidence). Nightly verification and publishing chain heads: Not yet |
 
 ## Versioning and deprecation
 
 | Rule | Says | Enforced by |
 | --- | --- | --- |
-| R37 | Only backwards-compatible changes; anything else is a new dated version, and the old one stays with `deprecated` metadata | **Kit** `manifest_matches_snapshot` shows every change in review, and `deprecations_mirrored`. Review for what counts as breaking. Two versions of one name side by side: Not yet ([versions and deprecation](/docs/mcp/authoring#versions-and-deprecation)) |
+| R37 | Only backwards-compatible changes; anything else is a new dated version, and the old one stays with `deprecated` metadata | **Kit** `manifest_matches_snapshot` shows every change in review, and `deprecations_mirrored`. Review for what counts as breaking. Two versions of one name side by side: Not yet ([versions and deprecation](/docs/mcp/tools#versions-and-deprecation)) |
 | R38 | Every provider commits its manifest, and a test fails when it drifts | **Kit** `manifest_matches_snapshot`, [the manifest snapshot](/docs/mcp/testing#the-manifest-snapshot) |
 
 ## Security
@@ -127,4 +127,4 @@ In `bun test` output a read check is `e2e conformance > read > identity_is_stabl
 | R34, R36 | Refusals by rate limit and budget as evidence, nightly chain verification, publishing chain heads |
 | R42 | Events and subscriptions |
 
-The order in which these will be built is in `docs/10-capability-platform-plan.md` in the repository. See also [Author an MCP](/docs/mcp/authoring), [Test an MCP](/docs/mcp/testing), [MCP errors](/docs/mcp/errors) and [the Toolbox](/docs/mcp/toolbox).
+The order in which these will be built is in `docs/10-capability-platform-plan.md` in the repository. See also [Author an MCP](/docs/mcp/tools), [Test an MCP](/docs/mcp/testing), [MCP errors](/docs/mcp/errors) and [the Toolbox](/docs/toolbox).

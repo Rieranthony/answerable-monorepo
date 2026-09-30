@@ -3,27 +3,9 @@ title: Test an MCP
 description: "Test a provider in-process with createTestMcp and check it against the Answerable MCP standard with the conformance kit, the manifest snapshot and bun run mcp:check."
 ---
 
-```ts
-import { assertProviderConformance } from "@answerable/mcp/testing"
-import { createE2eProvider } from "./mcp"
-import { createRecordStore } from "./records"
+<include lang="ts" meta='title="mcps/e2e/src/conformance.test.ts"'>../../../../../mcps/e2e/src/conformance.test.ts</include>
 
-const records = createRecordStore()
-
-assertProviderConformance(createE2eProvider({ records, viewHtml: "<!doctype html><title>Records</title>" }), {
-  manifest: new URL("../manifest.json", import.meta.url),
-  examples: {
-    "identity.get": {},
-    "records.list": { limit: 5 },
-    "records.show": {},
-    "records.create": { title: "Example" },
-    "records.delete": principal => ({ id: records.create(principal, "Doomed").id }),
-  },
-  moveTarget: (target, principal) => records.touch(principal, target.resource_id),
-})
-```
-
-Save this as `src/conformance.test.ts` in the provider's workspace (this one is `mcps/e2e/src/conformance.test.ts`) and run `bun run test`. It registers one test per check from [the standard's checklists](#the-checks), so a failing test names the check and the tool to change. Call it at the top level of a test file, once for each provider.
+This is the e2e server's; `mcps/example/src/provider.test.ts` has a smaller one. Put it in a test file of the provider's workspace and run `bun run test`. It registers one test per check from [the standard's checklists](#the-checks), so a failing test names the check and the tool to change. Call it at the top level of a test file, once for each provider.
 
 ## Serve a provider in-process
 
@@ -31,23 +13,7 @@ Save this as `src/conformance.test.ts` in the provider's workspace (this one is 
 
 Use `createTestMcp` directly to test your own logic. It serves a provider inside the test process with a local ID issuer and the official MCP client: no port, no network.
 
-```ts
-import { expect, test } from "bun:test"
-import { createTestMcp } from "@answerable/mcp/testing"
-import { provider } from "./provider"
-
-test("returns the caller's organisation", async () => {
-  const mcp = await createTestMcp(provider)
-  try {
-    const organizationId = crypto.randomUUID()
-    const client = await mcp.connect({ organizationId })
-    const result = await client.callTool({ name: "identity_get", arguments: {} })
-    expect(result.structuredContent).toMatchObject({ organizationId })
-  } finally {
-    await mcp.close()
-  }
-})
-```
+<include lang="ts" meta='title="mcps/example/src/provider.test.ts"'>../../../../../mcps/example/src/provider.test.ts#add-then-list</include>
 
 The MCP's URL is `https://mcp.test/mcp`.
 
@@ -62,35 +28,23 @@ Pin `userId`, `organizationId` and `membershipId` to connect as the same princip
 
 **Server options.** In place of a provider, pass a function that builds the server from the local issuer's `auth`. To move time, give the server a store whose clock you control; the store decides every expiry:
 
-```ts
-import { createMcpServer, createMemoryIntentStore } from "@answerable/mcp"
-
-let clock = Date.now()
-const intents = createMemoryIntentStore({ now: () => clock })
-const mcp = await createTestMcp(auth => createMcpServer({ provider, auth, intents }))
-clock += 10 * 60_000 // every agent-class intent prepared so far has expired
-```
+<include lang="ts" meta='title="mcps/example/src/intents.test.ts"'>../../../../../mcps/example/src/intents.test.ts#expiry</include>
 
 **A refusal.** `errorOf(result)` returns the `error` of a failed call's [envelope](/docs/mcp/errors), and throws, saying what is wrong, when the call succeeded or the result is not the envelope:
 
-```ts
-import { errorOf } from "@answerable/mcp/testing"
-
-const result = await client.callTool({ name: "records_delete", arguments: { id: crypto.randomUUID() } })
-expect(errorOf(result)).toMatchObject({ code: "NOT_FOUND", retry: { policy: "never" } })
-```
+<include lang="ts" meta='title="mcps/example/src/errors.test.ts"'>../../../../../mcps/example/src/errors.test.ts#refusal</include>
 
 **A caller without a server.** `testPrincipal(overrides?)` returns a verified caller for code that takes a principal, such as a store: fresh ids, the client `test-client` and no scopes, each replaced by `overrides`. `records.create(testPrincipal({ organizationId }), "Title")` seeds a record for a connection with that `organizationId`.
 
-`mcps/e2e/src/mcp.test.ts` is the working example. Reference: [`createTestMcp`](/docs/mcp/reference#createtestmcp), [`errorOf`](/docs/mcp/reference#errorof), [`testPrincipal`](/docs/mcp/reference#testprincipal).
+`mcps/example/src/*.test.ts` and `mcps/e2e/src/mcp.test.ts` are working examples. Reference: [`createTestMcp`](/docs/mcp/reference#createtestmcp), [`errorOf`](/docs/mcp/reference#errorof), [`testPrincipal`](/docs/mcp/reference#testprincipal).
 
 ## The fixture
 
-| Field | What you give | Why the kit needs it |
-| --- | --- | --- |
-| `manifest` | The path or URL of the committed `manifest.json` | `manifest_matches_snapshot` compares it with `manifest(provider)` |
-| `examples` | One valid input for every tool and mutation, by name such as `"records.list"`. A function receives the principal, may set up state, and returns the input | `read_has_no_side_effect` and the mutate checks call each definition. A function runs each time the kit needs an input, so a delete gets a fresh record every time |
-| `moveTarget(target, principal)` | Optional. Change the target outside the MCP, as another writer would, so that its version moves | `commit_rejects_stale`. Needed only when a mutation prepares targets; the check fails without it |
+<AutoTypeTable path="../../packages/mcp/src/kit.ts" name="ConformanceFixture" />
+
+- **`manifest`**: `manifest_matches_snapshot` compares the file with `manifest(provider)`.
+- **`examples`**: `read_has_no_side_effect` and the mutate checks call each definition with its example. A function runs each time the kit needs an input, so a delete gets a fresh record every time.
+- **`moveTarget`**: `commit_rejects_stale` moves a target, then commits. Needed only when a mutation prepares targets; the check fails without it.
 
 The principal is the caller the kit signed in as. Its `userId`, `organizationId`, `membershipId`, `clientId` and `scopes` are the token's; `grantId` and `expiresAt` are placeholders. Store data under `principal.organizationId`, as the provider does. Reference: [`ConformanceFixture`](/docs/mcp/reference#conformancefixture).
 
@@ -136,7 +90,7 @@ Some checks repeat what `defineTool`, `defineMutation` and the server already en
 | `descriptions_operational` | Every description is 40 to 1,000 characters, and a mutation's says `prepare` or `intent` | R14 |
 | `deprecations_mirrored` | A deprecated tool's description ends with the deprecation sentence | R37 |
 
-An `errors` entry that is not a custom code is refused when the tool is defined, and a handler that throws an undeclared custom code answers `INTERNAL`; see [tool errors](/docs/mcp/authoring#tool-errors).
+An `errors` entry that is not a custom code is refused when the tool is defined, and a handler that throws an undeclared custom code answers `INTERNAL`; see [tool errors](/docs/mcp/tools#tool-errors).
 
 **Human class.** A `high` risk mutation has the `human` class, which cannot be committed yet. The kit runs it as `controlled`, so every commit check still runs; the commit tool for the class it really has answers `APPROVAL_REQUIRED`.
 
@@ -196,7 +150,7 @@ A failed check names the check in its test and the tool or mutation in its messa
 | `… the output schema must be an object with properties` | An output is not an object schema | Use `z.object` |
 | `… output property "…" is named like a timestamp…` | A `*_at` property is not a `date-time` string | Use `z.iso.datetime()` |
 | `… output property "…" is named like a quantity…` | `amount`, `area` or `duration` is not `{ value, unit }` | Use `z.object({ value: z.number(), unit: z.string() })` |
-| `… returns an items array but does not declare …` | A list lacks part of the pagination contract | Add `limit`, `cursor`, `next_cursor` and `has_more`; see [pagination](/docs/mcp/authoring#pagination) |
+| `… returns an items array but does not declare …` | A list lacks part of the pagination contract | Add `limit`, `cursor`, `next_cursor` and `has_more`; see [pagination](/docs/mcp/tools#pagination) |
 | `… returned different results for the same input twice…` | A read changed state, or returned something that varies | Remove the side effect, or the varying field |
 | `… recorded an intent; only a mutation's prepare tool does that` | A read created an intent | Make it a mutation |
 | `… is out of date; regenerate it with UPDATE_MANIFEST=1…` | The manifest differs from the code | Run the command in the message, review the diff and commit |

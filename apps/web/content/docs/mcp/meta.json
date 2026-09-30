@@ -1,15 +1,16 @@
 {
-  "title": "MCP servers",
+  "title": "MCP kit",
   "pages": [
     "index",
-    "authoring",
+    "quickstart",
+    "tools",
+    "mutations",
+    "servers",
     "testing",
     "errors",
     "standard",
-    "reference",
     "local-testing",
-    "toolbox",
-    "toolbox-admin",
-    "claude-code"
+    "claude-code",
+    "reference"
   ]
 }

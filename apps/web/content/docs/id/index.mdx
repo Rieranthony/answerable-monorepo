@@ -1,49 +1,115 @@
 ---
-title: Answerable ID
-description: "Organisation SSO, application login and resource access through Answerable ID."
+title: How Answerable ID works
+description: "Answerable ID in plain English: organisations, members, clients, resources, scopes, capabilities and entitlements, how a person reaches an app or an MCP server, and what a token says."
 ---
 
-## What it does
+```bash
+curl http://localhost:47300/.well-known/openid-configuration
+```
 
-1. **Identity broker.** Connect your organisation's Microsoft Entra ID or Google Workspace directory once.
-2. **Login provider for applications.** Apps use [OpenID Connect](/docs/id/oauth) with a stable global user ID and selected organisation.
-3. **Authorisation server for services.** [OAuth grants](/docs/id/oauth) bind one approved client/resource pair to a current membership.
+That is Answerable ID running locally, describing itself: where to sign in, where to get tokens and the keys that sign them. Answerable ID is the front door to every Answerable product. People sign in with the work account their organisation already has, in Microsoft Entra ID or Google Workspace. Apps and MCP servers never see a password: they receive a token from ID that says who the person is, which organisation they act for, and what they may do.
 
-## Who it is for
+## The words
 
-**IT admins.** Give admin consent once. You do not need a registration for each app or client secrets to rotate.
+| Word | Meaning |
+| --- | --- |
+| **Organisation** | A company that uses Answerable. Its people sign in through its own directory. Answerable itself is one, the platform organisation |
+| **User** | A person, with one global id, `sub`, across every organisation |
+| **Member** | A user's place in one organisation, made the first time they sign in to it. A person in two organisations signs in to each separately |
+| **Group** | A named set of members of one organisation |
+| **Client** | An app that asks for tokens: Claude Code, LibreChat, a web app, a script. Registered in ID ahead of time. A client on a person's machine is public and has no secret |
+| **Resource** | What a token is for, named by its URL: an MCP server, the Toolbox, ID's admin API. A token works at one resource only |
+| **Scope** | One permission, written as a word such as `acme:read` or `toolbox` |
+| **Capability** | The organisation's ceiling, set by Answerable staff: this client may be used with this resource and these scopes, in this organisation |
+| **Entitlement** | Who inside the organisation gets which scopes: everyone, one group or one member |
+| **Access token** | What a client sends to a resource: a signed JWT for that one resource, valid for the lifetime the resource sets, such as 15 minutes |
+| **Refresh token** | Lets the client get a new access token without a new sign-in, for as long as the person may still have it |
 
-**Organisation admins.** Read your organisation's members, groups, access and audit log through the [admin API](/docs/id/manage); changes beyond members: [Not yet.](/docs/id#today-and-next)
+**Two layers decide access.** A capability says a client may reach a resource in an organisation at all. An entitlement says which people there get which scopes. ID issues the scopes that were asked for, that the capability allows and that the person is entitled to, and drops the rest: the **entitled subset**. The consent page names what was dropped.
 
-**Answerable staff.** Administer organisations, users and access through the same API with platform scopes: [Onboard an organisation](/docs/id/onboard).
+## How a person reaches an MCP server
 
-**People at client organisations.** Sign in with the work account you already have. Guest and personal accounts are refused.
+```text
+person ── host (Claude Code) ── 1. call ────────────▶ MCP server
+                 ▲   ◀────────── 401: sign in at ID ───┘
+                 │
+          2–4. browser: Answerable ID ──▶ company directory (Entra ID, Google)
+                 │         access token: who, which organisation, which scopes
+                 ▼
+               host ── 5. call with the token ──▶ MCP server checks it offline
+```
 
-**Developers.** [Connect an application](/docs/id/oauth) using discovery, PKCE, code exchange and refresh. Each external application and resource server needs its own integration acceptance.
+1. **The host calls the server.** Without a token the server answers `401` and names Answerable ID as the place to sign in.
+2. **ID signs the person in.** The host opens ID in the browser. The person gives their work email, and ID sends them to their company's directory, which checks the password and any second factor. ID then checks the account: a member, not a guest or a personal account, with a verified email on a domain the organisation has enabled.
+3. **The person chooses and approves.** They choose the organisation to act for, and approve the client's access on a consent page that lists the scopes.
+4. **ID issues the tokens.** An access token for that one server, carrying the entitled subset of scopes, and a refresh token.
+5. **The server checks the token itself.** It verifies the signature with ID's published keys, the issuer, the audience (its own URL) and the expiry. It never calls ID on each request.
+6. **Renewal.** When the access token expires, the host refreshes it. ID checks again that the person, membership, client and organisation are still allowed; a disabled organisation gets no new token.
 
-## The one rule
+An app that is not an MCP host follows the same OAuth flow with its own code: [Connect an application](/docs/id/oauth). [Sign in](/docs/id/sign-in) covers the directory step and every reason it can refuse.
 
-`sub` is the only identifier to join on. Email is display data.
+## What a token says
+
+An MCP server built with the kit receives the verified token as `principal`, in every handler:
+
+| Claim | `principal` field | Meaning |
+| --- | --- | --- |
+| `sub` | `userId` | The person's global id |
+| `organization_id` | `organizationId` | The organisation they chose for this token |
+| `membership_id` | `membershipId` | Their membership in that organisation |
+| `grant_id` | `grantId` | The authorisation; a refreshed token keeps it |
+| `client_id` | `clientId` | The client that asked for the token |
+| `scope` | `scopes` | The entitled subset of the scopes asked for |
+| `exp` | `expiresAt` | Expiry, in seconds since the epoch |
+| `organization_authorization_version` | `organizationAuthorizationVersion` | Advances when ID changes the organisation's authority, such as disabling it |
+| `aud` | | The resource URL. A server refuses a token for any other |
+| `subject_type` | | `user` for a person; a machine client's own token says `client` |
+
+[Connect an application](/docs/id/oauth#exchange-the-code) lists every claim; [Read tools](/docs/mcp/tools#the-caller) shows `principal` in a handler.
+
+## Rules to build on
+
+- **`sub` is the only identifier to join on.** Email is display data: it can change, and a matching email proves nothing.
+- **Scope every query by organisation.** A token is for one organisation. Another organisation's data is not found, never forbidden.
+- **Tokens are checked offline**, so taking access away takes effect when the access token expires, while refresh stops at once. Keep resource token lifetimes short.
+- **Hidden means refused.** A server lists only what the token allows, and answers anything else as if it did not exist.
+
+## Machines
+
+A script or a service can get a token for itself, with its client's id and secret and no person involved: the OAuth `client_credentials` grant. Its token says `subject_type: "client"`, and its scopes are the ones the client is allowed. The Toolbox reads grants from ID this way. See [machine access](/docs/id/sign-in#machine-access).
+
+## Who does what
+
+| You are | Start here |
+| --- | --- |
+| A developer building an MCP server | [Build your first MCP](/docs/mcp/quickstart) |
+| A developer connecting an app | [Connect an application](/docs/id/oauth) |
+| An organisation administrator | [Manage your organisation](/docs/id/manage) |
+| Answerable staff | [Onboard an organisation](/docs/id/onboard) |
+| A person signing in | [Sign in](/docs/id/sign-in) |
+
+**IT admins** give admin consent in their directory once; they need no registration per app and no client secrets to rotate. **Organisation admins** read their organisation's members, groups, access and audit log through the [admin API](/docs/id/manage); changes beyond members: [Not yet](#today-and-next).
 
 ## Today and next
 
-| Order | Capability                                                                                                                                                                                                                                          |
-| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Order | Capability |
+| --- | --- |
 | Today | Organisation sign-in through your identity provider, sessions, health endpoints, the admin API (platform and tenant reads, member management, summaries and sign-in diagnosis), machine access with client credentials, and tenant-bound user OAuth |
-| Next  | Real consumer and first-deployment acceptance; broader self-service and remote lifecycle work remain planned                                                                                                                                        |
+| Next | Real consumer and first-deployment acceptance; broader self-service and remote lifecycle work remain planned |
 
 **Not yet:** dynamic client registration, upstream directory polling and downstream logout delivery. Local tests do not certify real tenant, consumer or deployment behaviour.
 
 ## Endpoints
 
-Examples use `https://id.answerable.org`; replace it with your installation's issuer. Answerable ID has not yet been deployed to production.
+Answerable ID has not yet been deployed to production. Locally it runs at `http://localhost:47300`; the other pages' examples use `https://id.answerable.org`, the address it will have.
 
-| Endpoint             | Purpose                                       |
-| -------------------- | --------------------------------------------- |
-| `/auth`              | Better Auth sign-in and session routes        |
-| `/auth/oauth2/token` | Code exchange, refresh and client credentials |
-| `/api/admin/v1`      | [Admin API](/docs/id/admin-api)               |
-| `/healthz`           | Liveness                                      |
-| `/readyz`            | Readiness                                     |
+| Endpoint | Purpose |
+| --- | --- |
+| `/.well-known/openid-configuration` | Discovery: endpoints, supported flows and the key set |
+| `/auth` | Sign-in and session routes |
+| `/auth/oauth2/authorize`, `/auth/oauth2/token` | Authorisation, code exchange, refresh and client credentials |
+| `/auth/jwks` | The public keys that sign tokens |
+| `/api/admin/v1` | [Admin API](/docs/id/admin-api) |
+| `/healthz`, `/readyz` | Liveness and readiness |
 
-Start an organisation sign-in from the [sign-in page](https://id.answerable.org/login), or read [how sign-in works](/docs/id/sign-in).
+Every public route is in the [API reference](/docs/id/api).

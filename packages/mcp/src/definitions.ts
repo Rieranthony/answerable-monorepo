@@ -3,7 +3,14 @@ import type { GetPromptResult } from "@modelcontextprotocol/server"
 import { z } from "zod"
 
 /** What every handler receives: the verified caller, this call's id (a UUIDv7, also the error envelope's `request_id`) and a signal that aborts on cancel or timeout. */
-export type ToolContext = Readonly<{ principal: UserPrincipal; executionId: string; signal: AbortSignal }>
+export type ToolContext = Readonly<{
+  /** The verified caller: person, organisation, membership, client and scopes, from the access token. */
+  principal: UserPrincipal
+  /** A UUIDv7 minted for this call: the error envelope's `request_id`, and the id the server log names. */
+  executionId: string
+  /** Aborts when the host cancels or disconnects, or the tool's timeout passes. */
+  signal: AbortSignal
+}>
 /** An MCP Apps view: bundled HTML served as a `ui://` resource for one or more tools. */
 export type View = Readonly<{ name: string; uri: string; html: string }>
 /** A prompt: instructions a host can fetch by name. Retrieval must not change data. */

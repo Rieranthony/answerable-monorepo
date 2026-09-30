@@ -12,7 +12,7 @@ Run this once the Toolbox is running and your organisation is enabled for it ([b
 
 ## The Toolbox
 
-[The Toolbox](/docs/mcp/toolbox) serves the tools your organisation granted you, and no others.
+[The Toolbox](/docs/toolbox) serves the tools your organisation granted you, and no others.
 
 ### What you see
 
@@ -30,7 +30,7 @@ Run this once the Toolbox is running and your organisation is enabled for it ([b
 
 Set `ID` to the ID origin, `TOKEN` to a [staff token](/docs/id/onboard#get-a-staff-token) and `TOOLBOX` to `http://localhost:47400`. Every write needs its own `Idempotency-Key`.
 
-1. **Register and start the Toolbox**, as [Run it locally](/docs/mcp/toolbox#run-it-locally) shows: its resource, its machine client and a staff client in ID, the machine client's ID and secret in the root `.env`, then `bun run toolbox:dev`.
+1. **Register and start the Toolbox**, as [Run it locally](/docs/toolbox#run-it-locally) shows: its resource, its machine client and a staff client in ID, the machine client's ID and secret in the root `.env`, then `bun run toolbox:dev`.
 
 2. **Register Claude Code as a host client.** It is a public client, so PKCE protects the code; the redirect URI must match `--callback-port` exactly.
 
@@ -41,7 +41,7 @@ Set `ID` to the ID origin, `TOKEN` to a [staff token](/docs/id/onboard#get-a-sta
      -d '{"clientId":"claude-code-toolbox","name":"Claude Code (Toolbox)","tokenEndpointAuthMethod":"none","grantTypes":["authorization_code","refresh_token"],"redirectUris":["http://localhost:47700/callback"],"scopes":["openid","offline_access","toolbox"]}'
    ```
 
-3. **Enable your organisation.** One call links the client to the Toolbox and makes the capabilities and entitlements ID needs to issue its token to the organisation. Get `TOOLBOX_TOKEN` and `ORG` as [Enable an organisation](/docs/mcp/toolbox-admin#enable-an-organisation) does.
+3. **Enable your organisation.** One call links the client to the Toolbox and makes the capabilities and entitlements ID needs to issue its token to the organisation. Get `TOOLBOX_TOKEN` and `ORG` as [Enable an organisation](/docs/toolbox/admin#enable-an-organisation) does.
 
    ```bash
    curl "$TOOLBOX/admin/v1/organisations/$ORG/enable" \
@@ -58,7 +58,7 @@ Set `ID` to the ID origin, `TOKEN` to a [staff token](/docs/id/onboard#get-a-sta
      -d '{"resource":"'"$TOOLBOX"'/mcp","scopes":["e2e"]}'
    ```
 
-[Grant strings for people](/docs/mcp/toolbox-admin#grant-strings-for-people) covers a group or one member, and [Grant strings](/docs/mcp/toolbox#grant-strings) what each covers. Then run the `claude mcp add` line at the top of this page.
+[Grant strings for people](/docs/toolbox/admin#grant-strings-for-people) covers a group or one member, and [Grant strings](/docs/toolbox#grant-strings) what each covers. Then run the `claude mcp add` line at the top of this page.
 
 ## The e2e server
 
@@ -69,7 +69,7 @@ claude mcp add --transport http answerable-e2e http://localhost:47500/mcp \
 
 Run this once the server and client below are registered. Then open Claude Code, run `/mcp`, select `answerable-e2e` and choose **Authenticate**. Ask Claude to call `identity_get`; it returns your organisation.
 
-**Writes.** Ask Claude to create a test record: it calls `records_create`, which prepares an intent and changes nothing, then `e2e_commit`. Deleting calls `records_delete`, then `e2e_commit_confirmed` with the preview's summary. See [mutations](/docs/mcp/authoring#mutations).
+**Writes.** Ask Claude to create a test record: it calls `records_create`, which prepares an intent and changes nothing, then `e2e_commit`. Deleting calls `records_delete`, then `e2e_commit_confirmed` with the preview's summary. See [mutations](/docs/mcp/mutations).
 
 ### Register the server
 
@@ -169,4 +169,4 @@ MCP_ID_ISSUER=http://localhost:47300 MCP_RESOURCE_URL=http://localhost:47500/mcp
 | `Tool <name> not found`, and `toolbox_whoami` lists no grants or too few | The Toolbox: no grant string covers the tool, its provider is not enabled for your organisation, or the token lacks `toolbox`. The e2e server: the token lacks the scope, for example `e2e:write` for `records_create` | The Toolbox: ask for an entitlement, [entitle people](#the-toolbox). The e2e server: add the scope as above, then choose **Authenticate** again |
 | A commit tool answers an error | The intent cannot be committed as it is | See [MCP errors](/docs/mcp/errors) |
 
-Toolbox errors are in [The Toolbox](/docs/mcp/toolbox#errors) and [Administer the Toolbox](/docs/mcp/toolbox-admin#errors).
+Toolbox errors are in [The Toolbox](/docs/toolbox#errors) and [Administer the Toolbox](/docs/toolbox/admin#errors).

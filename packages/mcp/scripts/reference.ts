@@ -72,7 +72,7 @@ export function renderReference() {
     'description: "Every export of @answerable/auth and @answerable/mcp: its declaration, what it is for and, for the functions authors start from, an example."',
     "---",
     "",
-    "Generated from the documentation comments in the source by `bun run --filter @answerable/mcp reference`; edit the comments, not this page. [Author an MCP](/docs/mcp/authoring) and [Test an MCP](/docs/mcp/testing) show these exports in use.",
+    "Generated from the documentation comments in the source by `bun run --filter @answerable/mcp reference`; edit the comments, not this page. [Read tools](/docs/mcp/tools), [Mutations](/docs/mcp/mutations), [Providers and servers](/docs/mcp/servers) and [Test an MCP](/docs/mcp/testing) show these exports in use.",
   ]
   for (const entry of entries) {
     const file = program.getSourceFile(root + entry.file)!

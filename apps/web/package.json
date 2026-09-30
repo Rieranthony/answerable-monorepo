@@ -19,10 +19,11 @@
     "@base-ui/react": "^1.7.0",
     "@paper-design/shaders-react": "0.0.80",
     "clsx": "^2.1.1",
-    "fumadocs-core": "16.15.6",
-    "fumadocs-mdx": "15.4.0",
-    "fumadocs-openapi": "11.4.1",
-    "fumadocs-ui": "16.15.6",
+    "fumadocs-core": "16.15.17",
+    "fumadocs-mdx": "15.4.5",
+    "fumadocs-openapi": "12.1.0",
+    "fumadocs-typescript": "5.4.1",
+    "fumadocs-ui": "16.15.17",
     "google-auth-library": "11.0.2",
     "google-spreadsheet": "5.3.0",
     "jose": "6.2.10",
@@ -35,7 +36,7 @@
     "shiki": "^4.4.3",
     "tailwind-merge": "^3.6.0",
     "takumi-js": "2.13.5",
-    "zod": "^4.5.4"
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -46,6 +47,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
+    "github-slugger": "2.0.0",
     "prettier": "^3.8.3",
     "prettier-plugin-tailwindcss": "^0.8.0",
     "shadcn": "^4.19.0",

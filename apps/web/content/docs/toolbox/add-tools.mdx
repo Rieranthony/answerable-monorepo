@@ -1,0 +1,165 @@
+---
+title: Add tools to the Toolbox
+description: "Mount a provider built with the MCP kit in the Toolbox, enable it for an organisation and grant it to people, so their hosts list its tools."
+---
+
+```ts
+import { provider as acme } from "@answerable/mcp-acme/provider"
+```
+
+The Toolbox serves tools from **providers** mounted inside it. To add tools, build a provider with [the MCP kit](/docs/mcp), mount it in `mcps/toolbox`, then let organisations use it: staff enable it in an organisation's catalogue, and the organisation grants its capabilities to people. The steps below were run end to end against real Answerable ID with `mcps/example` in place of `acme`.
+
+**Before you start.** A provider that passes `bun run mcp:check`, such as the one [Build your first MCP](/docs/mcp/quickstart) ends with, and the Toolbox [running locally](/docs/toolbox#run-it-locally) with its registrations in ID. Handing this to a coding agent? Use the [prompt](/docs/agents#add-tools-to-the-toolbox).
+
+<Steps>
+<Step>
+
+### Check the names fit
+
+Through the Toolbox each tool is named `<provider id>_<wire name>`, such as `acme_notes_list`, at most 46 characters. The conformance kit's `name_is_host_safe` check enforces it, so `mcp:check` has already passed it. The provider's id must differ from every provider the Toolbox mounts, and from `toolbox`.
+
+</Step>
+<Step>
+
+### Export the provider
+
+The Toolbox imports the provider from its workspace, so the workspace needs an `exports` map. In `mcps/acme/package.json`:
+
+```json title="mcps/acme/package.json"
+"exports": {
+  "./provider": "./src/provider.ts"
+},
+```
+
+`mcps/example/package.json` has the same entry.
+
+</Step>
+<Step>
+
+### Mount it
+
+Add the workspace to the Toolbox's dependencies in `mcps/toolbox/package.json`:
+
+```json title="mcps/toolbox/package.json"
+"@answerable/mcp-acme": "workspace:*",
+```
+
+Then pass the provider to `createToolbox` in `mcps/toolbox/src/server.ts`. Today it mounts the e2e provider alone:
+
+<include lang="ts" meta='title="mcps/toolbox/src/server.ts"'>../../../../../mcps/toolbox/src/server.ts#providers</include>
+
+Import yours at the top of the file, as the line at the top of this page does, and add it to `providers`: `providers: [createE2eProvider(…), acme]`. Then:
+
+```sh
+bun install
+bun run mcp:check @answerable/mcp-toolbox
+```
+
+The Toolbox's suite needs the development PostgreSQL on port `47432`.
+
+</Step>
+<Step>
+
+### Restart the Toolbox
+
+```sh
+bun run toolbox:dev
+```
+
+At boot the Toolbox reads every provider's manifest into its catalogue. Staff see the new provider and its capabilities in the admin API:
+
+```sh
+curl "$TOOLBOX/admin/v1/providers" -H "Authorization: Bearer $TOOLBOX_TOKEN"
+```
+
+`TOOLBOX_TOKEN` is a staff token for the Toolbox's admin API: [Enable an organisation](/docs/toolbox/admin#enable-an-organisation) shows how to get one.
+
+</Step>
+<Step>
+
+### Enable it for an organisation
+
+```sh
+curl "$TOOLBOX/admin/v1/organisations/$ORG/enable" \
+  -H "Authorization: Bearer $TOOLBOX_TOKEN" -H "Content-Type: application/json" \
+  -d '{"hostClientIds":["claude-code-toolbox"],"providers":["acme"]}'
+```
+
+The catalogue is the ceiling: an organisation uses only the providers enabled for it. This call enables `acme` for the organisation, and widens the Toolbox's resource in Answerable ID to accept `acme`'s grant strings. Run it again for every organisation that should have the provider, including those enabled before it existed. [What the call does](/docs/toolbox/admin#what-the-call-does) lists every step.
+
+</Step>
+<Step>
+
+### Grant it to people
+
+What each person may use is an entitlement in Answerable ID whose scopes are **grant strings**: the provider, a domain or one capability. For `mcps/example`, read from its manifest:
+
+<GrantStrings workspace="example" />
+
+Everyone in the organisation, every capability of the provider:
+
+```sh
+curl "$ID/api/admin/v1/organizations/$ORG/entitlements" \
+  -H "Idempotency-Key: acme-organisation-v1" -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"resource":"'"$TOOLBOX"'/mcp","scopes":["acme"]}'
+```
+
+`TOKEN` is a [staff token for ID](/docs/id/onboard#get-a-staff-token). A group or one member takes `groupId` or `memberId`: [Grant strings for people](/docs/toolbox/admin#grant-strings-for-people). A change reaches the person within 60 seconds, without signing in again.
+
+</Step>
+<Step>
+
+### Try it
+
+In Claude Code, connected to the Toolbox as [Connect Claude Code](/docs/mcp/claude-code#the-toolbox) shows, ask Claude to call `toolbox_whoami`: its `capabilities` now include `acme/notes.add` and `acme/notes.list`. With `mcps/example` mounted and the grant string `example`, the Toolbox listed exactly:
+
+```text
+toolbox_whoami, example_notes_add, example_notes_list, toolbox_commit, toolbox_commit_confirmed
+```
+
+Ask Claude to add a note: it calls `acme_notes_add`, which returns an intent whose `commit_tool` is `toolbox_commit`, then commits it.
+
+</Step>
+</Steps>
+
+## What changes inside the Toolbox
+
+The provider's code is the same; how hosts reach it changes.
+
+| | Served alone | In the Toolbox |
+| --- | --- | --- |
+| Tool name | `notes_list` | `acme_notes_list` |
+| Commit tools | `acme_commit`, `acme_commit_confirmed` | `toolbox_commit`, `toolbox_commit_confirmed` |
+| Who sees a tool | A token carrying its scopes, `acme:read` or `acme:write` | A person whose grant strings cover it, in an organisation that enabled the provider. The token carries only `toolbox` |
+| `principal.scopes` in a handler | The provider's scopes | `toolbox` and `offline_access`: never decide access from provider scopes in a handler |
+| Policy class of a mutation | From its `risk` | The organisation's override in the catalogue, else its `risk` |
+| Prompts and resources | Served | Not served. Views are |
+| Result size | Unbounded | A read above 100 KiB of JSON answers `RESULT_TOO_LARGE` |
+| Finding a tool | By name | Also by `toolbox_search` in the meta projection, which searches identities, titles, descriptions and argument names: write [operational descriptions](/docs/mcp/tools#descriptions) |
+| Every call | Logged by your server | Also an evidence row and a span |
+
+## Changing a provider later
+
+**A new tool** is off for every organisation that already has the provider enabled, until staff enable it: it is added to their catalogue entry's `disabled` list when the Toolbox boots. [The catalogue](/docs/toolbox/admin#the-catalogue) shows how to turn it on.
+
+**A changed contract** needs a new version. A capability stored at the same version with another kind, risk, input or output refuses the boot, naming it. Give the tool a new `version`, or change the provider's, and regenerate its manifest. Titles and descriptions update in place.
+
+**Removing a provider** from `providers` stops serving its tools at the next boot. Entitlements in ID that name its grant strings stay, and cover nothing.
+
+## Not yet
+
+Remote providers: the Toolbox mounts providers in its own process, so adding one is a code change and a restart. Administration by an organisation's own administrators: staff enable providers and write entitlements. See [the Toolbox's limits](/docs/toolbox#limits).
+
+## Errors
+
+| You see | Meaning | What to do |
+| --- | --- | --- |
+| `Cannot find module '@answerable/mcp-acme/provider'` | The workspace has no `exports` entry, or the Toolbox does not depend on it | Add both, then `bun install` |
+| `Provider … is mounted twice…` at start | Two providers share an id, or a provider is the Toolbox's own | Rename the provider's id |
+| `Capability <identity> version <date> changed its input without a new version…` at start | A contract changed under an old version | Give the tool or the provider a new version |
+| `422 unknown_provider` from the enable call | The Toolbox does not mount that provider | Mount it and restart; `GET /providers` lists what is mounted |
+| `Tool acme_notes_list not found` | The organisation has not enabled `acme`, no grant string covers the tool, or the tool is disabled in the catalogue | Run the enable call; add an entitlement; check `GET /organisations/{id}/catalogue` |
+| The entitlement is refused with `Scopes are not allowed for this resource` | The Toolbox's resource does not accept `acme`'s grant strings yet | Run the enable call for `acme` first; it widens the resource |
+
+The Toolbox's other errors are in [The Toolbox](/docs/toolbox#errors) and [Administer the Toolbox](/docs/toolbox/admin#errors).

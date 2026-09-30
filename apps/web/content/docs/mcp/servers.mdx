@@ -1,0 +1,132 @@
+---
+title: Providers and servers
+description: "Group tools in a provider and serve it with createMcpServer: the workspace, configuration, what the server answers, change notices, hubs, the manifest, prompts, resources and views."
+---
+
+<ScaffoldFile file="src/server.ts" />
+
+A **provider** is a named, dated set of tools, prompts and resources. A **server** serves one provider over HTTP: it signs callers in through Answerable ID, lists what their token allows and runs their calls. Every server in `mcps/` has these two parts; `bun run mcp:new` writes both.
+
+## The provider
+
+<include lang="ts" meta='title="mcps/example/src/provider.ts"'>../../../../../mcps/example/src/provider.ts#provider</include>
+
+`defineProvider` fills in each definition's identity (`example/notes.list`), version and scopes, refuses a duplicate tool name, prompt name or resource URI, and returns frozen data.
+
+<AutoTypeTable path="../../packages/mcp/src/provider.ts" name="ProviderFields" type="Parameters<typeof defineProvider>[0]" />
+
+**Scopes.** Each read tool needs `<id>:read` and each mutation `<id>:write`, unless its definition sets `scopes`. A person's token carries the scopes their organisation entitles them to, and they see only the tools those scopes cover. Through [the Toolbox](/docs/toolbox), grant strings take the place of scopes.
+
+## The server
+
+`createMcpServer` takes the provider and the ID settings, and returns a web-standard `fetch` handler that `Bun.serve` serves.
+
+<AutoTypeTable path="../../packages/mcp/src/server.ts" name="McpServerConfig" />
+
+It returns:
+
+<AutoTypeTable path="../../packages/mcp/src/server.ts" name="McpServerHandle" />
+
+**What it serves.** `GET /health`, the protected-resource metadata, and the MCP endpoint at the resource URL's path behind the bearer gate. It answers both the 2026 and the 2025 protocol revisions, builds a fresh MCP server per request and sends `Cache-Control: no-store`. The server's name and version are the provider's id and version.
+
+**Sign-in.** Without a valid token the endpoint answers `401` with `WWW-Authenticate: Bearer resource_metadata="…"`. The host reads that [protected-resource metadata](https://datatracker.ietf.org/doc/html/rfc9728), finds Answerable ID and signs the person in. The server then verifies every token against ID's published keys: issuer, audience (its own URL), type `at+jwt`, expiry, and the user and organisation claims. It never sees a password and never calls ID per request. [How Answerable ID works](/docs/id#how-a-person-reaches-an-mcp-server) walks through it.
+
+**Hosts and origins.** It refuses a `Host` header or browser `Origin` other than the resource URL's host name.
+
+**Cache hint.** `tools/list` tells `2026-07-28` hosts they may keep the list for 30 seconds, for that caller alone (`ttlMs: 30000`, `cacheScope: "private"`): a token's scopes never change during its life.
+
+### Changes
+
+```ts
+server.toolsChanged() // every caller listening for changes lists its tools again
+```
+
+Every server advertises `tools.listChanged: true`. `toolsChanged()` sends `notifications/tools/list_changed` to every caller that listens: a `2026-07-28` host that opened `subscriptions/listen` with `toolsListChanged`, as the official client does when given `listChanged` options. It reaches every listener of the server, whoever they are. A listen stream sends a keep-alive comment every 5 seconds, inside `Bun.serve`'s default 10-second idle timeout, which would otherwise close it.
+
+**2025 hosts: Not yet.** The SDK serves the 2025 revision statelessly, so `GET` answers `405` and no stream can carry a notification; a 2025 host sees a change when it lists again.
+
+### Hubs
+
+`mount`, `allow`, `project` and `wrapCall`, off by default, serve several providers at one endpoint, as [the Toolbox](/docs/toolbox) does. The table above says what each does.
+
+**`call(tool, args, context)`** runs a tool the server serves exactly as its direct call runs it, for the caller in `context`: the arguments are checked (`INVALID_INPUT` names the tool's own fields), the handler runs within its own timeout, the output is checked, and a mutation is prepared and its intent recorded, with the commit tool of its class. The codes the tool declares pass through the calling tool unchanged. It is for a hub's own tools, such as the Toolbox's `toolbox_execute`: it does not decide whether the caller may use the tool, and it runs inside the calling tool's `wrapCall`.
+
+## Create a workspace
+
+```sh
+bun run mcp:new acme
+bun install
+UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-acme test
+bun run mcp:check @answerable/mcp-acme
+```
+
+Run these from the repository root. `mcp:new <name>` writes `mcps/<name>`, refuses a name that is not a [provider id](#the-provider) and a directory that exists, and prints the three commands that follow it here. `bun install` links the new workspace; the first test run writes `manifest.json`, the provider's contract, and the scaffolded server then passes `mcp:check` unchanged. [Test an MCP](/docs/mcp/testing#check-a-workspace) says what that runs.
+
+| File | Holds |
+| --- | --- |
+| `package.json` | The workspace `@answerable/mcp-<name>`, with the dependency versions of `mcps/e2e` |
+| `tsconfig.json`, `eslint.config.mjs`, `bunfig.toml` | Copies of `mcps/e2e`'s: the compiler and lint settings, and the gate of 100% line and function coverage over `src` |
+| `src/provider.ts` | One five-field read tool, `<name>.status`, and `defineProvider` |
+| `src/server.ts` | `readMcpEnvironment` and `createMcpServer` |
+| `src/provider.test.ts` | The conformance kit and one `createTestMcp` test |
+| `.env.example` | `MCP_ID_ISSUER`, `MCP_RESOURCE_URL` and `MCP_PORT` (`47510`; each MCP running at the same time needs its own) |
+| `README.md` | How to run and test it, with links to these guides |
+
+Not scaffolded: an `exports` map, views and mutations; add them when you need them. An `exports` map is what [the Toolbox](/docs/toolbox/add-tools) needs to mount the provider. `bun run mcp:test` runs every server under `mcps/`.
+
+## Configure
+
+<ScaffoldFile file=".env.example" />
+
+`readMcpEnvironment(process.env)` reads these three variables and returns `{ auth, port }`.
+
+**Issuer.** The Answerable ID origin. The verifier reads ID's signing keys from the issuer's metadata; never take an issuer from a token.
+
+**Resource.** The MCP's canonical URL, exactly as registered in ID. It is the token audience, and its path is the MCP endpoint.
+
+**HTTP.** Both URLs must use HTTPS, except on `localhost`, `127.0.0.1` or `[::1]`.
+
+Register the resource, a client and its access in ID before the first sign-in; see [Connect Claude Code](/docs/mcp/claude-code#register-the-server). Each MCP running at the same time needs its own port.
+
+## Health
+
+`GET /health` returns `{ "status": "ok" }` without authentication, whatever the `Host` header, so load balancers and container probes can call it by address.
+
+## Manifest
+
+`manifest(provider)` returns the provider's contract as plain JSON: `id`, `version`, every tool (sorted by identity) with its identity, wire name, version, kind, title, description, deprecation, scopes, declared `errors`, annotations and the JSON Schema of its input and output, then the prompts and resources. It carries no code.
+
+<ManifestEntry workspace="example" identity="example/notes.add" />
+
+**Mutations.** A mutation's entry adds `risk` and `effects`; its `input` is the definition's input, without `validate_only`, and its `output` is the schema of the receipt's `results`. A provider with mutations also lists the two commit tools, `kind: "commit"`, whose `scopes` are the union of the mutations' scopes.
+
+Commit the file next to the source and let the conformance kit's `manifest_matches_snapshot` fail on drift. A change to any definition fails the test until you regenerate the file and commit it, so every contract change shows in review:
+
+```sh
+UPDATE_MANIFEST=1 bun run test
+```
+
+Run it in the provider's workspace. [Test an MCP](/docs/mcp/testing#the-manifest-snapshot) has the details.
+
+## Prompts and resources
+
+<include lang="ts" meta='title="mcps/e2e/src/mcp.ts"'>../../../../../mcps/e2e/src/mcp.ts#prompt</include>
+
+<include lang="ts" meta='title="mcps/e2e/src/mcp.ts"'>../../../../../mcps/e2e/src/mcp.ts#resource</include>
+
+`definePrompt` takes `name`, `description`, a Zod `input` and `execute(input, context)`, which returns an MCP prompt result. `defineResource` takes `name`, a fixed `uri`, `description`, `mimeType` and `read(context)`, which returns text. Both take optional `scopes`, defaulting to `<provider id>:read`, and follow the same visibility rule as tools. Names are lowercase letters, digits and underscores. Reading a prompt or resource must not change data; a failure answers the protocol error `Content could not be read`. Pass them to `defineProvider` as `prompts` and `resources`.
+
+## Views
+
+<include lang="ts" meta='title="mcps/e2e/scripts/build.ts"'>../../../../../mcps/e2e/scripts/build.ts</include>
+
+A view is an interactive page a host shows with a tool's result (MCP Apps). Build each view before starting the server, pass the HTML to `defineView({ name, html })`, and set the view on a tool. The server registers it as a `ui://` resource with the MCP Apps MIME type. Browser code imports `useApp` from `@modelcontextprotocol/ext-apps/react` or `App` from `@modelcontextprotocol/ext-apps`. A view calls tools through the host, with the same scope and organisation checks; it never receives a token. `mcps/e2e` (`records.show`) is the working example.
+
+## Limits
+
+| Limit | Value |
+| --- | --- |
+| Provider id | 12 characters: a lowercase letter, then lowercase letters or digits |
+| Tools, prompts, resources | Unique names and URIs per provider |
+| Protocol revisions | `2026-07-28` and 2025; change notices reach `2026-07-28` listeners only |
+| Hubs | Mounted providers' prompts and resources are not served |

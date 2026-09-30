@@ -14,6 +14,7 @@ const identityGet = defineTool({
   },
 })
 
+//#region prompt
 const fixtureWalkthrough = definePrompt({
   name: "fixture_walkthrough", description: "Walk through the test records",
   input: z.object({}),
@@ -21,13 +22,16 @@ const fixtureWalkthrough = definePrompt({
     return { messages: [{ role: "user", content: { type: "text", text: "Read fixture://guide. List my test records with records_list, following next_cursor until has_more is false, then open them with records_show. Create or delete a record only when I ask." } }] }
   },
 })
+//#endregion
 
+//#region resource
 const fixtureGuide = defineResource({
   name: "fixture_guide", uri: "fixture://guide", description: "How to use the test MCP", mimeType: "text/markdown",
   async read() {
     return "# Test records\n\nRecords belong to your authenticated organisation. records_list returns 20 per page; pass next_cursor as cursor for the next. records_show opens the Apps view. records_create and records_delete prepare an intent and change nothing; commit it with the tool its commit_tool names (records_delete needs the person to confirm the preview's summary first). This fixture uses synthetic data only."
   },
 })
+//#endregion
 
 /** The e2e provider. Tools that need the record store are defined here and reach it by closure. */
 export function createE2eProvider({ records, viewHtml }: { records: RecordStore; viewHtml: string }) {
@@ -65,6 +69,7 @@ export function createE2eProvider({ records, viewHtml }: { records: RecordStore;
     },
   })
 
+  //#region delete
   const recordsDelete = defineMutation({
     name: "records.delete",
     description: "Prepare deleting one of your organisation's test records by id. Changes nothing: returns a preview naming the record; show the person its summary, then commit the intent with the tool its commit_tool names.",
@@ -83,6 +88,7 @@ export function createE2eProvider({ records, viewHtml }: { records: RecordStore;
       return { results: records.remove(principal, plan.id), applied_changes: preview.changes, effects_performed: [] }
     },
   })
+  //#endregion
 
   return defineProvider({
     id: "e2e", version: "2026-09-29",

@@ -8,13 +8,26 @@ claude mcp add --transport http answerable-toolbox http://localhost:47400/mcp \
   --client-id claude-code-toolbox --callback-port 47700
 ```
 
-The Toolbox (`mcps/toolbox`) is one MCP server for every organisation. It signs people in with Answerable ID, reads what their organisation granted them from ID, and serves exactly those capabilities: as one tool each, or through a few tools that find and run them. Every call is checked again, recorded in a hash-chained evidence log and traced as a span.
+The Toolbox (`mcps/toolbox`) is one MCP server for every organisation. A person connects their host to it once, signs in with Answerable ID, and sees exactly the tools their organisation granted them, and no others. Every call is checked again, recorded in a hash-chained evidence log and traced as a span.
 
 Run the line above once the Toolbox runs locally with its registrations ([below](#run-it-locally)), then choose **Authenticate** in Claude Code's `/mcp` and ask Claude to call `toolbox_whoami`.
 
+## How it works
+
+The tools come from **providers**, built with [the MCP kit](/docs/mcp) and mounted inside the Toolbox; each tool of a provider is a **capability**, such as `e2e/records.list`. Four questions decide what a person gets:
+
+| Question | Who decides | Where |
+| --- | --- | --- |
+| Which providers may this organisation use at all? | Answerable staff | [The catalogue](#the-catalogue), through [the admin API](/docs/toolbox/admin#the-catalogue) |
+| Which capabilities may this person use? | The organisation | [Grant strings](#grant-strings) on entitlements in Answerable ID |
+| Must the person confirm a change first? | The mutation's risk, or the organisation's override | [Policy classes](#mutations-through-the-toolbox) |
+| Does the host list every tool, or search for them? | Answerable staff, per host | [Host clients](/docs/toolbox/admin#host-clients): the direct or meta projection |
+
+The Toolbox asks Answerable ID on every request that lists or calls tools, so a change in ID reaches the person within a minute, without signing in again. [Add tools to the Toolbox](/docs/toolbox/add-tools) mounts a provider of your own.
+
 ## What a person sees
 
-Each caller gets one of two **projections** of the same granted set, chosen on every request from their host client's settings, which staff set through [the admin API](/docs/mcp/toolbox-admin#host-clients); a host client without settings gets `auto`:
+Each caller gets one of two **projections** of the same granted set, chosen on every request from their host client's settings, which staff set through [the admin API](/docs/toolbox/admin#host-clients); a host client without settings gets `auto`:
 
 | Projection | When | Tools |
 | --- | --- | --- |
@@ -33,9 +46,9 @@ Each caller gets one of two **projections** of the same granted set, chosen on e
 
 **Hidden means refused.** A capability the person may not use is absent from `tools/list`, and calling it answers the protocol's unknown-tool error, as a name that does not exist does. Authority is checked on every request, never taken from an earlier list.
 
-**`_meta` and annotations** are those of [`@answerable/mcp`](/docs/mcp/authoring#what-the-wire-carries): `_meta["com.answerable/capability"]` carries the identity (`e2e/records.list`), version and kind, and for a mutation its risk and the caller's policy class. They describe; they never authorise.
+**`_meta` and annotations** are those of [`@answerable/mcp`](/docs/mcp/tools#what-hosts-receive): `_meta["com.answerable/capability"]` carries the identity (`e2e/records.list`), version and kind, and for a mutation its risk and the caller's policy class. They describe; they never authorise.
 
-**Cache hint.** `tools/list` tells `2026-07-28` hosts they may keep it for 30 seconds, for that caller alone, as [every `@answerable/mcp` server](/docs/mcp/authoring#the-server) does.
+**Cache hint.** `tools/list` tells `2026-07-28` hosts they may keep it for 30 seconds, for that caller alone, as [every `@answerable/mcp` server](/docs/mcp/servers#the-server) does.
 
 **Views** keep their URIs: `e2e_records_show` opens `ui://records/index.html`, served while the tool is listed.
 
@@ -66,7 +79,7 @@ Then `toolbox_execute` with `{ "identity": "e2e/records.list", "arguments": { "l
 | `toolbox_describe` | `identities`: 1 to 5 | `capabilities` of `{ identity, kind, policy_class, description, input, output }`: the full description and the JSON Schemas of the manifest, where `input` is what `arguments` takes and a mutation's `output` is its receipt's `results` |
 | `toolbox_execute` | `identity`, `arguments` | The read's own result |
 | `toolbox_prepare` | `identity`, `arguments`, `validate_only` | The intent, as the mutation's own prepare tool returns it |
-| `toolbox_commit`, `toolbox_commit_confirmed` | As in any [`@answerable/mcp` server](/docs/mcp/authoring#commit-tools) | The receipt. Listed when the caller may use at least one mutation |
+| `toolbox_commit`, `toolbox_commit_confirmed` | As in any [`@answerable/mcp` server](/docs/mcp/mutations#commit-tools) | The receipt. Listed when the caller may use at least one mutation |
 
 **Search.** Postgres full text over each capability's identity, title, description and argument names. A word in the identity weighs most, then the title, then the description, then an argument name. Any word of the query may match, and titles and descriptions also match other English forms of a word: `summary` finds "Quarterly summaries". Only the capabilities the caller may use are searched. Embeddings: Not yet.
 
@@ -116,7 +129,7 @@ The prepare tool, or `toolbox_prepare` in the meta projection, returns the inten
 
 **Policy class.** A mutation's class for a caller is the organisation's `policy_class` override in [the catalogue](#the-catalogue), else the class its `risk` gives. It shows in the prepare tool's `_meta`, in `toolbox_whoami` and in `toolbox_search`.
 
-**The intent store.** Intents live in the Toolbox's `intents` table, one row per intent, with the commit token kept only as its SHA-256. Each status change is one compare-and-set on the status, so two commits never both run. An intent past `expires_at` is marked `expired` when a commit or a read finds it, judged by the database's clock. Every step of the commit is the one [every `@answerable/mcp` server](/docs/mcp/authoring#commit-tools) takes, and a commit checks again that the caller may still use the mutation.
+**The intent store.** Intents live in the Toolbox's `intents` table, one row per intent, with the commit token kept only as its SHA-256. Each status change is one compare-and-set on the status, so two commits never both run. An intent past `expires_at` is marked `expired` when a commit or a read finds it, judged by the database's clock. Every step of the commit is the one [every `@answerable/mcp` server](/docs/mcp/mutations#commit-tools) takes, and a commit checks again that the caller may still use the mutation.
 
 ## Grant strings
 
@@ -132,7 +145,7 @@ An entitlement whose resource is the Toolbox carries grant strings in its `scope
 
 Rows are additive; there is no deny. Principals are the organisation, a group or a member, as for any entitlement. The pair rows `(host client, Toolbox)` carry `toolbox` and let ID issue the token; they stay separate from grant rows, so a person's capabilities do not depend on the host. `toolbox`, `offline_access` and anything that is not a grant string are ignored.
 
-ID refuses an entitlement scope that is not in the resource's `allowedScopes`, so the Toolbox resource must allow every grant string it accepts. `allowedScopes(providers)` from `@answerable/mcp-toolbox/grants` returns the list: `offline_access`, `toolbox`, `toolbox/approve` and each mounted provider's id, domains and capabilities. The [enable call](/docs/mcp/toolbox-admin#what-the-call-does) widens the resource to the providers it names.
+ID refuses an entitlement scope that is not in the resource's `allowedScopes`, so the Toolbox resource must allow every grant string it accepts. `allowedScopes(providers)` from `@answerable/mcp-toolbox/grants` returns the list: `offline_access`, `toolbox`, `toolbox/approve` and each mounted provider's id, domains and capabilities. The [enable call](/docs/toolbox/admin#what-the-call-does) widens the resource to the providers it names.
 
 ## How authority is read
 
@@ -178,7 +191,7 @@ The catalogue is the ceiling: an organisation uses only providers enabled for it
 
 **At boot** the Toolbox ingests every provider's manifest. A capability already stored at the same version with another kind, risk, input or output refuses the boot, naming it: give the tool a new version. Titles and descriptions update in place, and a capability the provider never had stays off for the organisations that have the provider enabled until their entry enables it.
 
-**Enable an organisation** with one call to the [admin API](/docs/mcp/toolbox-admin#enable-an-organisation): it makes the rows Answerable ID needs to issue a host client's token to the organisation and enables the named providers in the catalogue. Staff then disable capabilities, set policy classes and turn new capabilities on through [the catalogue routes](/docs/mcp/toolbox-admin#the-catalogue), and set each host client's projection through [the host client routes](/docs/mcp/toolbox-admin#host-clients).
+**Enable an organisation** with one call to the [admin API](/docs/toolbox/admin#enable-an-organisation): it makes the rows Answerable ID needs to issue a host client's token to the organisation and enables the named providers in the catalogue. Staff then disable capabilities, set policy classes and turn new capabilities on through [the catalogue routes](/docs/toolbox/admin#the-catalogue), and set each host client's projection through [the host client routes](/docs/toolbox/admin#host-clients).
 
 ## Evidence
 
@@ -243,14 +256,14 @@ A W3C `traceparent` in the request's `_meta` becomes the span's parent. Set `OTE
 
 ## Run it locally
 
-[Register the Toolbox in ID](/docs/mcp/toolbox-admin#register-the-toolbox-in-id), put the machine client's secret in `TOOLBOX_ID_CLIENT_SECRET` in the root `.env`, with `TOOLBOX_ID_CLIENT_ID=toolbox-hub`, and start the Toolbox:
+[Register the Toolbox in ID](/docs/toolbox/admin#register-the-toolbox-in-id), put the machine client's secret in `TOOLBOX_ID_CLIENT_SECRET` in the root `.env`, with `TOOLBOX_ID_CLIENT_ID=toolbox-hub`, and start the Toolbox:
 
 ```bash
 bun --env-file=.env run --filter @answerable/mcp-toolbox db:migrate
 bun run toolbox:dev
 ```
 
-Then [enable your organisation](/docs/mcp/toolbox-admin#enable-an-organisation), [entitle its members](/docs/mcp/toolbox-admin#grant-strings-for-people) and connect Claude Code with the line at the top of this page.
+Then [enable your organisation](/docs/toolbox/admin#enable-an-organisation), [entitle its members](/docs/toolbox/admin#grant-strings-for-people) and connect Claude Code with the line at the top of this page.
 
 ## Environment
 
@@ -284,7 +297,7 @@ The admin API's audience is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`, s
 | LibreChat v0.8.8-rc4 | Sends `resource` and PKCE, and speaks the 2025 revision: no `tools/list_changed` stream, so it lists again on each reconnect. It asks for the metadata's scopes, `toolbox`, only: ID then issues no refresh token and the person signs in again after each access token; `oauth.scope: toolbox offline_access` in its `librechat.yaml` fixes that. It removes a leading `<server>_` from a tool's name, so with the server named `toolbox`, `toolbox_commit` is `commit_mcp_toolbox`. It ignores `structuredContent` and shows the text mirror, and it commits `toolbox_commit_confirmed` without asking the person |
 | Pins | Not yet |
 | Rate limits and budgets | Not yet |
-| Administration | The [admin API](/docs/mcp/toolbox-admin) is platform tier: machine clients with `toolbox:admin`. Self-service purchase, and administration by an organisation's own administrators: Not yet |
+| Administration | The [admin API](/docs/toolbox/admin) is platform tier: machine clients with `toolbox:admin`. Self-service purchase, and administration by an organisation's own administrators: Not yet |
 
 ## Errors
 
@@ -294,7 +307,7 @@ The admin API's audience is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`, s
 | Tool result `UPSTREAM_UNAVAILABLE` | ID did not answer with your access and none is cached | Retry after `retry.after_ms`; check ID and the `TOOLBOX_ID_*` settings |
 | `tools/list` fails with an internal error | The same, for a list | Retry; the server log shows `[toolbox] reading access failed` |
 | Tool result `RESULT_TOO_LARGE` | A read answered more than 100 KiB of JSON | Call it again with a smaller `limit`, a `cursor` or narrower filters |
-| `tools/list` holds only `toolbox_whoami`, the meta tools and the commit tools | The host client is set to `meta`, or to `auto` and the caller has more granted tools than its `direct_limit` | Find capabilities with `toolbox_search`; to list them directly, set the host client to `direct` or raise its limit ([host clients](/docs/mcp/toolbox-admin#host-clients)) |
+| `tools/list` holds only `toolbox_whoami`, the meta tools and the commit tools | The host client is set to `meta`, or to `auto` and the caller has more granted tools than its `direct_limit` | Find capabilities with `toolbox_search`; to list them directly, set the host client to `direct` or raise its limit ([host clients](/docs/toolbox/admin#host-clients)) |
 | Tool result `NOT_FOUND`: `You may use no capability <identity>; find one with toolbox_search` | The identity does not exist, or you may not use it | Search for it; ask an administrator for an entitlement |
 | Tool result `INVALID_INPUT`: `<identity> is a mutation; prepare it with toolbox_prepare` | `toolbox_execute` runs reads only | Call `toolbox_prepare`, then the commit tool it names |
 | Tool result `INVALID_INPUT`: `<identity> is a read; run it with toolbox_execute` | `toolbox_prepare` prepares mutations only | Call `toolbox_execute` |
@@ -312,4 +325,4 @@ The admin API's audience is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`, s
 | `evidence_events is append-only: UPDATE is refused` | Something tried to change evidence | Evidence is never changed; erase a payload with `erase` instead |
 | `Refusing to reset <database>; expected answerable_toolbox_test` | `db:test:migrate` points elsewhere | Point `TOOLBOX_TEST_DATABASE_URL` at `answerable_toolbox_test` |
 
-Administration errors are in [Administer the Toolbox](/docs/mcp/toolbox-admin#errors). The journeys that prove this against real ID are in [Test MCPs locally](/docs/mcp/local-testing#what-the-toolbox-journeys-prove). The SDK options the Toolbox is built on are in [the server section](/docs/mcp/authoring#the-server). The rules it enforces at run time are the Hub rows of [the design standard](/docs/mcp/standard).
+Administration errors are in [Administer the Toolbox](/docs/toolbox/admin#errors). The journeys that prove this against real ID are in [Test MCPs locally](/docs/mcp/local-testing#what-the-toolbox-journeys-prove). The SDK options the Toolbox is built on are in [the server section](/docs/mcp/servers#the-server). The rules it enforces at run time are the Hub rows of [the design standard](/docs/mcp/standard).

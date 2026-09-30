@@ -3,7 +3,7 @@ title: Administer the Toolbox
 description: "Enable the Toolbox for an organisation in one call, then manage its catalogue, host clients and grant strings through the platform-tier admin API, with cURL."
 ---
 
-**Answerable staff.** This page is for us. Every step is a `curl` command. The Toolbox itself is described in [The Toolbox](/docs/mcp/toolbox).
+**Answerable staff.** This page is for us. Every step is a `curl` command. The Toolbox itself is described in [The Toolbox](/docs/toolbox).
 
 ## Enable an organisation
 
@@ -114,7 +114,7 @@ curl "$ID/api/admin/v1/clients" -H "Idempotency-Key: claude-code-toolbox-v1" -H 
   -d '{"clientId":"claude-code-toolbox","name":"Claude Code (Toolbox)","tokenEndpointAuthMethod":"none","grantTypes":["authorization_code","refresh_token"],"redirectUris":["http://localhost:47700/callback"],"scopes":["openid","offline_access","toolbox"]}'
 ```
 
-Do not link it or add its capabilities and entitlements by hand: the enable call does. Then [start the Toolbox](/docs/mcp/toolbox#run-it-locally) and enable an organisation.
+Do not link it or add its capabilities and entitlements by hand: the enable call does. Then [start the Toolbox](/docs/toolbox#run-it-locally) and enable an organisation.
 
 ## The catalogue
 
@@ -155,11 +155,11 @@ A row is keyed by the host's OAuth client id (percent-encode one that is a URL).
 
 **Which hosts need `meta`.** A host that caps the tools in a request needs it: VS Code Copilot caps a request at 128. Hosts that govern by tool name, such as Claude Code's approvals and Claude.ai's per-tool controls, need the direct list where it fits, so leave them on `auto`.
 
-The Toolbox reads the row on every request that lists or calls tools: `auto` serves the direct list while the caller's granted tools number at most `direct_limit`, else the [meta projection](/docs/mcp/toolbox#the-meta-projection). A change applies to the host's next request. Pins: Not yet.
+The Toolbox reads the row on every request that lists or calls tools: `auto` serves the direct list while the caller's granted tools number at most `direct_limit`, else the [meta projection](/docs/toolbox#the-meta-projection). A change applies to the host's next request. Pins: Not yet.
 
 ## Grant strings for people
 
-The enable call lets a host client get a token for the organisation. What each person may use is an entitlement to the Toolbox resource whose `scopes` are [grant strings](/docs/mcp/toolbox#grant-strings): a provider (`e2e`), a domain (`e2e/records`) or a capability (`e2e/records.list`). Use [ID's entitlement API](/docs/id/admin-api/entitlements/createEntitlement); the organisation, one group or one member can hold one:
+The enable call lets a host client get a token for the organisation. What each person may use is an entitlement to the Toolbox resource whose `scopes` are [grant strings](/docs/toolbox#grant-strings): a provider (`e2e`), a domain (`e2e/records`) or a capability (`e2e/records.list`). Use [ID's entitlement API](/docs/id/admin-api/entitlements/createEntitlement); the organisation, one group or one member can hold one:
 
 ```bash
 export MCP=$TOOLBOX/mcp
@@ -189,7 +189,7 @@ curl "$TOOLBOX/admin/v1/organisations/$ORG/evidence/verify" -H "Authorization: B
 { "ok": true, "length": 2 }
 ```
 
-It recomputes the organisation's evidence chain, as [The Toolbox](/docs/mcp/toolbox#evidence) describes. A broken chain answers `200` with `"ok": false` and `broken_at`, the first `seq` that fails.
+It recomputes the organisation's evidence chain, as [The Toolbox](/docs/toolbox#evidence) describes. A broken chain answers `200` with `"ok": false` and `broken_at`, the first `seq` that fails.
 
 ## Routes
 

@@ -1,43 +1,35 @@
 ---
-title: MCP servers
-description: "The Answerable MCP kit: define tools, serve them with Answerable ID sign-in alone or through the Toolbox, and check them against the standard and against real ID."
+title: MCP kit
+description: "Build MCP servers on Answerable ID with @answerable/mcp: what an MCP server is, the building blocks, how a request is authorised, and what is built and not yet."
 ---
 
 ```sh
 bun run mcp:new acme
-bun install
-UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-acme test
-bun run mcp:check @answerable/mcp-acme
 ```
 
-Run these from the monorepo. They write `mcps/acme`, a server with one tool and its conformance test, install it, write its manifest with the first test run, then typecheck, lint and test it. [Author an MCP](/docs/mcp/authoring#create-a-workspace) shows what to change next.
+That writes a working MCP server in `mcps/acme`. [Build your first MCP](/docs/mcp/quickstart) takes it from there: a read tool, a mutation, their tests, and Claude Code signed in to it.
 
-The Answerable MCP kit builds servers that sign people in with Answerable ID. A tool is five fields (`name`, `description`, `input`, `output`, `execute`), a mutation adds `prepare` and `commit`, and everything else has a default. A server runs alone, or its provider is mounted in the Toolbox, one endpoint that serves each person exactly the capabilities their organisation granted them.
+## What an MCP server is
 
-## Status
+An AI host, such as Claude Code, Claude.ai or LibreChat, connects to MCP servers to get tools it can call. The Model Context Protocol (MCP) is how it lists them and calls them. Servers built with the Answerable MCP kit:
 
-**Built.** `@answerable/mcp` defines read tools, [prepared mutations](/docs/mcp/authoring#mutations) and providers, serves them on the official MCP TypeScript SDK, answers every tool failure with one [error envelope](/docs/mcp/errors), exports each provider's contract as a manifest, and checks a provider against [the standard](/docs/mcp/standard) with [the conformance kit](/docs/mcp/testing). `@answerable/auth` verifies Answerable ID access tokens. `mcps/e2e` is the reference server. `bun run mcp:new` scaffolds a server, and [the acceptance](/docs/mcp/local-testing) signs organisations into the reference server and the Toolbox through real ID with a browser and the official MCP OAuth client.
+- **sign people in with [Answerable ID](/docs/id)**, so every call knows the person and the organisation they act for;
+- **show each person only the tools their organisation allows**, and refuse the rest as if they did not exist;
+- **never change data in one step**: a change is prepared as a preview the person can read, then committed.
 
-[The Toolbox](/docs/mcp/toolbox) (`mcps/toolbox`) reads a person's grant strings from ID with a 60-second cache and an audit-log poller, holds the catalogue, and serves the granted tools directly or through its meta tools. It keeps intents in Postgres, sends `tools/list_changed` when a grant changes, records every call and intent transition in a hash-chained evidence log and every call as a span, and mounts the e2e provider. Its [admin API](/docs/mcp/toolbox-admin) enables an organisation in one call.
+## The building blocks
 
-**Not yet.** Human approvals (a human-class intent waits and answers `APPROVAL_REQUIRED`), operations for long work, `toolbox_run`, the OpenAPI adapter and the admin MCP, administration by an organisation's own administrators, remote providers, hosted deployment and a public npm release. [The standard](/docs/mcp/standard#not-yet) lists the rules nothing enforces yet.
+| Block | What it is | Made with |
+| --- | --- | --- |
+| [Read tool](/docs/mcp/tools) | Answers a question; changes nothing | `defineTool` |
+| [Mutation](/docs/mcp/mutations) | Changes data in two steps: prepare a preview, then commit it with a one-time token | `defineMutation` |
+| [Provider](/docs/mcp/servers#the-provider) | A named, dated set of tools, prompts and resources | `defineProvider` |
+| [Server](/docs/mcp/servers#the-server) | Serves one provider over HTTP, behind Answerable ID sign-in | `createMcpServer` |
+| [Manifest](/docs/mcp/servers#manifest) | The provider's contract as JSON, committed and checked on every test run | `manifest` |
 
-**External hosts.** [Connect Claude Code](/docs/mcp/claude-code) registers a client for the Toolbox or the e2e server. Claude Code against the Toolbox by hand, Claude.ai and LibreChat: Not yet tested.
+Each definition is plain data, checked when the module loads. A tool is five fields: `name`, `description`, `input`, `output` and `execute`. Everything else has a default.
 
-## Packages
-
-| Package | Responsibility |
-| --- | --- |
-| `@answerable/auth` | Verify an Answerable ID access token, for a person or a machine client |
-| `@answerable/auth/testing` | An in-process issuer that signs test tokens |
-| `@answerable/mcp` | `defineTool`, `defineMutation`, `defineProvider`, `definePrompt`, `defineResource`, `defineView`, `createMcpServer`, `createMemoryIntentStore`, `manifest`, `ToolError`, `errorCodes`, `riskClass`, `readMcpEnvironment` |
-| `@answerable/mcp/build` | Bundle an MCP Apps view into one HTML resource |
-| `@answerable/mcp/testing` | `createTestMcp`, `assertProviderConformance`, `errorOf` and `testPrincipal` |
-| `@answerable/acceptance` | The kit that starts real ID, provisions it and signs a person in, and the journeys (`packages/acceptance`) |
-| `@answerable/mcp-e2e` | The reference server: five tools, a prompt, a resource and a view (`mcps/e2e`) |
-| `@answerable/mcp-toolbox` | The Toolbox: `createToolbox`, the grants reader and poller, the catalogue, evidence, spans and the admin API (`mcps/toolbox`) |
-
-Views import the official MCP Apps browser API, `@modelcontextprotocol/ext-apps`, directly. Every export of `@answerable/auth` and `@answerable/mcp` is in the [API reference](/docs/mcp/reference).
+**Alone or in the Toolbox.** A server runs alone at its own URL. Or its provider is mounted in [the Toolbox](/docs/toolbox), one endpoint for every organisation, where staff decide who may use each tool: [Add tools to the Toolbox](/docs/toolbox/add-tools).
 
 ## How a request is authorised
 
@@ -56,7 +48,31 @@ Views import the official MCP Apps browser API, `@modelcontextprotocol/ext-apps`
 3. A capability the person may not use is not listed, and calling it is the unknown-tool error. What is listed is one tool each (direct) or a few tools that search and run capabilities (meta), by the host client's settings.
 4. A mutation is prepared, then committed with the tool its policy class names. Every call is an evidence row and a span.
 
-The server never sees a password, never runs Better Auth and never reads ID's database.
+The server never sees a password, never runs Better Auth and never reads ID's database. [How Answerable ID works](/docs/id) explains the sign-in and the token.
+
+## Status
+
+**Built.** `@answerable/mcp` defines read tools, [prepared mutations](/docs/mcp/mutations) and providers, serves them on the official MCP TypeScript SDK, answers every tool failure with one [error envelope](/docs/mcp/errors), exports each provider's contract as a manifest, and checks a provider against [the standard](/docs/mcp/standard) with [the conformance kit](/docs/mcp/testing). `@answerable/auth` verifies Answerable ID access tokens. `mcps/e2e` is the reference server and `mcps/example` the finished quickstart. `bun run mcp:new` scaffolds a server, and [the acceptance](/docs/mcp/local-testing) signs organisations into the reference server and the Toolbox through real ID with a browser and the official MCP OAuth client.
+
+**Not yet.** Human approvals (a human-class intent waits and answers `APPROVAL_REQUIRED`), operations for long work, `toolbox_run`, the OpenAPI adapter and the admin MCP, administration by an organisation's own administrators, remote providers, hosted deployment and a public npm release. [The standard](/docs/mcp/standard#not-yet) lists the rules nothing enforces yet.
+
+**External hosts.** [Connect Claude Code](/docs/mcp/claude-code) registers a client for the Toolbox or the e2e server. Claude Code against the Toolbox by hand, Claude.ai and LibreChat: Not yet tested.
+
+## Packages
+
+| Package | Responsibility |
+| --- | --- |
+| `@answerable/auth` | Verify an Answerable ID access token, for a person or a machine client |
+| `@answerable/auth/testing` | An in-process issuer that signs test tokens |
+| `@answerable/mcp` | `defineTool`, `defineMutation`, `defineProvider`, `definePrompt`, `defineResource`, `defineView`, `createMcpServer`, `createMemoryIntentStore`, `manifest`, `ToolError`, `errorCodes`, `riskClass`, `readMcpEnvironment` |
+| `@answerable/mcp/build` | Bundle an MCP Apps view into one HTML resource |
+| `@answerable/mcp/testing` | `createTestMcp`, `assertProviderConformance`, `errorOf` and `testPrincipal` |
+| `@answerable/acceptance` | The kit that starts real ID, provisions it and signs a person in, and the journeys (`packages/acceptance`) |
+| `@answerable/mcp-e2e` | The reference server: five tools, a prompt, a resource and a view (`mcps/e2e`) |
+| `@answerable/mcp-example` | The finished quickstart: `notes.list` and `notes.add` (`mcps/example`) |
+| `@answerable/mcp-toolbox` | The Toolbox: `createToolbox`, the grants reader and poller, the catalogue, evidence, spans and the admin API (`mcps/toolbox`) |
+
+The packages are private to the monorepo: a public npm release is Not yet. Views import the official MCP Apps browser API, `@modelcontextprotocol/ext-apps`, directly. Every export of `@answerable/auth` and `@answerable/mcp` is in the [API reference](/docs/mcp/reference).
 
 ## Limits
 
@@ -68,11 +84,11 @@ The server never sees a password, never runs Better Auth and never reads ID's da
 
 ## Reading order
 
-1. [Author an MCP](/docs/mcp/authoring): the tool, the mutation, the provider and the server.
-2. [Test an MCP](/docs/mcp/testing): `createTestMcp`, the conformance kit and the manifest snapshot.
-3. [MCP errors](/docs/mcp/errors): every code and what to do.
-4. [MCP design standard](/docs/mcp/standard): the rules and what enforces each.
-5. [API reference](/docs/mcp/reference): every export.
+1. [Build your first MCP](/docs/mcp/quickstart): a working server in seven steps.
+2. [Read tools](/docs/mcp/tools), [Mutations](/docs/mcp/mutations) and [Providers and servers](/docs/mcp/servers): every field and rule.
+3. [Test an MCP](/docs/mcp/testing): `createTestMcp`, the conformance kit and the manifest snapshot.
+4. [MCP errors](/docs/mcp/errors): every code and what to do.
+5. [MCP design standard](/docs/mcp/standard): the rules and what enforces each.
 6. [Test MCPs locally](/docs/mcp/local-testing): the journeys against real ID.
-7. [The Toolbox](/docs/mcp/toolbox) and [Administer the Toolbox](/docs/mcp/toolbox-admin).
-8. [Connect Claude Code](/docs/mcp/claude-code).
+7. [Connect Claude Code](/docs/mcp/claude-code).
+8. [API reference](/docs/mcp/reference): every export.

@@ -8,7 +8,8 @@ import { adminOpenapi, openapi } from "@/lib/openapi"
 export const docs = defineDocs({
   dir: "content/docs",
   docs: {
-    postprocess: { includeProcessedMarkdown: true },
+    // Each page's Markdown twin is a component, so the MDX components can render their own Markdown forms.
+    postprocess: { includeProcessedMarkdown: { output: "function" } },
     schema: pageSchema.extend({ description: z.string().min(1) }),
   },
 })

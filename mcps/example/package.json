@@ -1,0 +1,27 @@
+{
+  "name": "@answerable/mcp-example",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./provider": "./src/provider.ts"
+  },
+  "scripts": {
+    "dev": "bun --hot src/server.ts",
+    "start": "bun src/server.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --max-warnings 0"
+  },
+  "dependencies": {
+    "@answerable/mcp": "workspace:*",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/bun": "1.3.1",
+    "eslint": "9.39.5",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.48.1"
+  }
+}

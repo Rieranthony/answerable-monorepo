@@ -1,5 +1,7 @@
 import type { InferPageType } from "fumadocs-core/source"
 
+import { getMDXComponents } from "@/components/mdx"
+
 import type { docs, source } from "@/lib/source"
 
 export async function getLLMText(page: InferPageType<typeof source>) {
@@ -29,6 +31,11 @@ export async function getLLMText(page: InferPageType<typeof source>) {
   }
 
   const data = page.data as (typeof docs.docs)[number]
+  // The processed Markdown is a component (`output: "function"`): its text was stringified when the page compiled, and
+  // its components render their own Markdown forms here.
+  const body = await data.getText("processed", {
+    components: getMDXComponents(),
+  })
 
-  return `${heading}\n\n${await data.getText("processed")}`
+  return `${heading}\n\n${body}`
 }

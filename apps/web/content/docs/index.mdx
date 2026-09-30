@@ -1,22 +1,53 @@
 ---
 title: Answerable docs
-description: "Answerable ID and the MCP servers that will sit behind it: what exists today, how to use it, and what comes next."
+description: "Build MCP servers on Answerable ID, understand how Answerable ID signs people in, and add tools to the Toolbox. Written for people and for AI agents."
 ---
 
-Answerable ID connects your organisation's directory to one sign-in for Answerable products.
+Answerable ID signs people in with their organisation's own directory. The MCP kit builds servers that trust it. The Toolbox is one MCP endpoint that serves each person the tools their organisation granted them.
 
-| Product       | Status                                                                                          | Start here                |
-| ------------- | ----------------------------------------------------------------------------------------------- | ------------------------- |
-| Answerable ID | Available: sign in through Microsoft Entra ID or Google Workspace; admin API and machine access | [Answerable ID](/docs/id) |
-| MCP servers   | The MCP kit and the Toolbox are built and locally accepted against real ID; hosted deployment and Claude.ai: Not yet.                                | [MCP servers](/docs/mcp)  |
+<Cards>
+<Card title="Build an MCP server" href="/docs/mcp/quickstart" description="Scaffold a server, add a read tool and a mutation, test them and connect Claude Code." />
+<Card title="Understand Answerable ID" href="/docs/id" description="Organisations, members, clients, resources, scopes and tokens, in plain English." />
+<Card title="Add tools to the Toolbox" href="/docs/toolbox/add-tools" description="Mount a provider, enable it for an organisation and grant it to people." />
+<Card title="Build with an AI agent" href="/docs/agents" description="Prompts to paste into a coding agent working in this repository." />
+</Cards>
+
+## How the pieces fit
+
+```text
+person ── host (Claude Code, Claude.ai, LibreChat)
+             │ signs in once, through
+             ▼
+       Answerable ID ── the organisation's directory (Entra ID, Google Workspace)
+             │ token: who, which organisation, which scopes
+             ▼
+   an MCP server built with @answerable/mcp, alone, or mounted in the Toolbox
+```
+
+| Piece | What it is | In the repository |
+| --- | --- | --- |
+| [Answerable ID](/docs/id) | Sign-in and access for organisations: an identity broker and an OAuth authorisation server | `apps/id` |
+| [MCP kit](/docs/mcp) | `@answerable/mcp` defines tools and serves them; `@answerable/auth` verifies ID's tokens | `packages/mcp`, `packages/auth` |
+| [Toolbox](/docs/toolbox) | One MCP endpoint for every organisation, serving the providers mounted in it | `mcps/toolbox` |
+| Examples | The finished quickstart and the reference server | `mcps/example`, `mcps/e2e` |
+
+## Status
+
+| Product | Status | Start here |
+| --- | --- | --- |
+| Answerable ID | Built and tested locally: sign-in through Microsoft Entra ID or Google Workspace, OAuth for apps and MCP servers, admin API and machine access. Production deployment: Not yet | [How Answerable ID works](/docs/id) |
+| MCP kit | Built, private to the monorepo, and accepted against real ID with a browser. A public npm release: Not yet | [Build your first MCP](/docs/mcp/quickstart) |
+| Toolbox | Built and accepted against real ID. Hosted deployment, human approvals and remote providers: Not yet | [The Toolbox](/docs/toolbox) |
+
+## For AI agents
+
+```sh
+curl https://answerable.org/llms.txt
+```
+
+Every page is also Markdown: append `.md` to its URL, or send `Accept: text/markdown`. `/llms.txt` is the index and `/llms-full.txt` the whole set, type tables and code included. Working in the repository, read `AGENTS.md` first: it holds the rules, the commands and the gates. [Build with an AI agent](/docs/agents) has prompts for the jobs above.
 
 ## Base URLs
 
-- `https://id.answerable.org` for Answerable ID
+- `https://id.answerable.org` for Answerable ID, once deployed; `http://localhost:47300` locally
 - `https://id.answerable.org/login` for the sign-in page
-
-## For agents
-
-Append `.md` to any docs URL or send `Accept: text/markdown`.
-
-`/llms.txt` is the index. `/llms-full.txt` is the whole set.

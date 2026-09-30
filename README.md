@@ -80,7 +80,7 @@ The development-only [OAuth test](apps/web/README.md#local-oauth-test) lets the 
 | `bun run mcp:test:e2e` | The journeys against real ID, a browser and the official MCP OAuth client (Docker) |
 | `bun run toolbox:dev` | Serve the Toolbox on 47400; `bun run mcp:dev` serves the reference server on 47500 |
 
-Create an MCP with `mcp:new` and the [authoring guide](apps/web/content/docs/mcp/authoring.mdx); the [standard](apps/web/content/docs/mcp/standard.mdx) says which rules the SDK, the conformance kit and the Toolbox enforce. [Connect Claude Code](apps/web/content/docs/mcp/claude-code.mdx) covers a real host. Decisions: [MCP foundation](docs/07-mcp-platform-draft.md) and [the capability platform](docs/08-capability-platform.md); results: [evidence](reports/mcp-foundation-evidence.md). Normal `bun dev` starts apps only.
+Create an MCP with `mcp:new` and [Build your first MCP](apps/web/content/docs/mcp/quickstart.mdx), and mount it in the Toolbox with [Add tools to the Toolbox](apps/web/content/docs/toolbox/add-tools.mdx); the [standard](apps/web/content/docs/mcp/standard.mdx) says which rules the SDK, the conformance kit and the Toolbox enforce. [Connect Claude Code](apps/web/content/docs/mcp/claude-code.mdx) covers a real host. Decisions: [MCP foundation](docs/07-mcp-platform-draft.md) and [the capability platform](docs/08-capability-platform.md); results: [evidence](reports/mcp-foundation-evidence.md). Normal `bun dev` starts apps only.
 
 ### Repository principles
 

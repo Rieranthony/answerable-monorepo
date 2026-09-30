@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1
+
+Documentation only: `UserPrincipal.userId` and `organizationId` have doc comments, which the docs' type tables show. No behaviour changes.
+
 ## 0.4.0
 
 One kind of token per verifier, the smallest form the Toolbox's admin API needs. Breaking for a verifier that accepts machine tokens; a person's verifier is unchanged.
