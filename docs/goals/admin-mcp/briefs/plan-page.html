@@ -77,7 +77,7 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 5px; max-width: 72
         <tr><td><span class="chip none">no role</span></td><td>Any platform member</td><td>Only <code>admin_whoami</code>, which says they hold no role</td></tr>
         <tr><td><span class="chip team">team</span></td><td><code>answerable-team</code></td><td>Every read: organisations, members, groups, access, audit, staff</td></tr>
         <tr><td><span class="chip admin">admin</span></td><td><code>answerable-admin</code></td><td>Reads, plus create and update organisations, domains, SSO, groups, grant and revoke access, enable the Toolbox</td></tr>
-        <tr><td><span class="chip owner">owner</span></td><td><code>answerable-owner</code></td><td>Everything, plus disable or enable an organisation and grant or revoke staff roles. These need a sign-in from the last 30 minutes.</td></tr>
+        <tr><td><span class="chip owner">owner</span></td><td><code>answerable-owner</code></td><td>Everything, plus disable or enable an organisation, grant or revoke staff roles, and any change to Answerable's own organisation. These need a sign-in from the last 30 minutes.</td></tr>
       </tbody>
     </table></div>
     <p>Roles are entitlements of three groups in Answerable's own organisation, stored in ID. The MCP reads the person's role from ID on every request, so adding or removing someone takes effect on their next call, with no sign-in again. The MCP keeps no permission table of its own, and nothing is cached: if ID is unreachable, nothing is served.</p>
@@ -95,7 +95,7 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 5px; max-width: 72
         <tr><td><code>organisations.create</code>, <code>organisations.update</code>, <code>domains.add</code></td><td>write</td><td><span class="chip admin">admin</span></td><td>Onboard and edit an organisation</td></tr>
         <tr><td><code>sso.set</code></td><td>write</td><td><span class="chip admin">admin</span></td><td>Connect the directory with Answerable's Microsoft or Google application (no secrets ever pass through a tool)</td></tr>
         <tr><td><code>groups.create</code>, <code>groups.addmember</code>, <code>groups.dropmember</code></td><td>write</td><td><span class="chip admin">admin</span></td><td>Shape who belongs where</td></tr>
-        <tr><td><code>access.grant</code>, <code>access.revoke</code>, <code>toolbox.enable</code></td><td>write</td><td><span class="chip admin">admin</span></td><td>Grant and revoke access; turn on the Toolbox for an organisation</td></tr>
+        <tr><td><code>access.grant</code>, <code>access.revoke</code>, <code>access.enable</code>, <code>toolbox.enable</code></td><td>write</td><td><span class="chip admin">admin</span></td><td>Grant, revoke and restore access; turn on the Toolbox for an organisation</td></tr>
         <tr><td><code>organisations.disable</code>, <code>organisations.enable</code>, <code>staff.grant</code>, <code>staff.revoke</code></td><td>write</td><td><span class="chip owner">owner</span></td><td>The critical operations</td></tr>
       </tbody>
     </table></div>
@@ -108,7 +108,7 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 5px; max-width: 72
       <div class="panel"><h3>Who acts on ID</h3><p>ID's admin API does not accept a person's token, so the MCP calls ID with its own machine credential. It does so only after the person's role allowed the tool. This is the same model the Toolbox uses.</p></div>
       <div class="panel"><h3>Who did what</h3><p>ID's audit log names the MCP's machine client. The MCP records the person in its own append-only, hash-chained evidence. Both sides share the request id and ID's operation id, so a change can be traced from either side.</p></div>
       <div class="panel"><h3>Retries are safe</h3><p>Each write is sent to ID with the intent id as its idempotency key. A lost answer can be retried without applying the change twice.</p></div>
-      <div class="panel"><h3>Fresh sign-in for critical changes</h3><p>ID asks people for a sign-in from the last 5 minutes before sensitive changes, but not machines. The MCP adds its own rule: critical tools need a sign-in from the last 30 minutes. Refreshing a token does not count as a new sign-in.</p></div>
+      <div class="panel"><h3>Fresh sign-in for critical changes</h3><p>ID asks people for a sign-in from the last 5 minutes before sensitive changes, but not machines. The MCP adds its own rule: critical tools need a sign-in from the last 30 minutes. Refreshing a token does not count as a new sign-in. To sign in again: ID's security page, Verify sign-in, then re-authenticate the server in the host.</p></div>
     </div>
   </section>
 
@@ -132,8 +132,8 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 5px; max-width: 72
         <tr><td>B0</td><td>Sonnet 5.5</td><td>Move the ID client and the Postgres intents and evidence out of the Toolbox into shared packages</td><td><span class="status done">done</span></td></tr>
         <tr><td>B1</td><td>Opus 5.5</td><td>The admin MCP's read side: platform check, live roles, whoami, ten reads, evidence, docs page</td><td><span class="status done">done</span></td></tr>
         <tr><td>B3a</td><td>Sonnet 5.5</td><td>Test kit: staff and spare company directories in the real-ID fixture (runs beside B1)</td><td><span class="status done">done</span></td></tr>
-        <tr><td>B2</td><td>Opus 5.5</td><td>The writes: 14 prepared changes against ID and the Toolbox, the fresh sign-in rule</td><td><span class="status running">running</span></td></tr>
-        <tr><td>B3b</td><td>Sonnet 5.5</td><td>Journeys against real ID, the demo lane, setup docs, measured numbers</td><td><span class="status queued">queued</span></td></tr>
+        <tr><td>B2</td><td>Opus 5.5</td><td>The writes: 14 prepared changes against ID and the Toolbox, the fresh sign-in rule</td><td><span class="status done">done</span></td></tr>
+        <tr><td>B3b</td><td>Sonnet 5.5</td><td>Journeys against real ID, the demo lane, setup docs, measured numbers</td><td><span class="status running">running</span></td></tr>
         <tr><td>B4</td><td>Opus 5.5</td><td>Whole-tree cleanup, the design record, final gates, land on main</td><td><span class="status queued">queued</span></td></tr>
       </tbody>
     </table></div>
