@@ -18,7 +18,7 @@ The [enterprise foundation](docs/05-id-enterprise-foundation.md) implementation 
 | `packages/mcp-postgres` | Postgres storage for MCP servers: the intent store, the hash-chained evidence and the migrator, shared by the Toolbox | Locally tested |
 | `mcps/e2e` | Reference MCP: five tools (one a prepared mutation), a prompt, a resource and an MCP Apps view; every new MCP is compared with it | Local acceptance passes |
 | `mcps/toolbox` | The Toolbox: one MCP endpoint serving each person the capabilities their organisation granted, with intents, evidence, spans and an admin API | Local acceptance passes |
-| `mcps/admin` | The admin MCP: a staff-only server that reads organisations, members, access and the audit log in ID, each tool behind a role read live from ID; writes are next | Locally tested |
+| `mcps/admin` | The admin MCP: a staff-only server that reads and changes organisations, domains, SSO providers, groups, access and staff roles in ID, and enables the Toolbox, each tool behind a role read live from ID and each change a prepared intent the person confirms | Locally tested |
 | `packages/acceptance` | The acceptance kit and journeys: real ID, the official MCP OAuth client, a browser and ID's pages | Locally tested |
 | `scripts` | Repository scripts: `bun run mcp:new <name>` scaffolds an MCP server | Locally tested |
 | `apps/community-mcp` | The tutor MCP (the Omni Accelerator community inside OmniChat)                                                                                                      | **Parked** until Answerable ID ships — its docs and Circle mocks stay in that folder, out of the plan                                                    |

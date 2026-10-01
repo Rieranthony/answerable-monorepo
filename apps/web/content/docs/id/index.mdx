@@ -62,6 +62,7 @@ An MCP server built with the kit receives the verified token as `principal`, in 
 | `scope` | `scopes` | The entitled subset of the scopes asked for |
 | `exp` | `expiresAt` | Expiry, in seconds since the epoch |
 | `organization_authorization_version` | `organizationAuthorizationVersion` | Advances when ID changes the organisation's authority, such as disabling it |
+| `upstream_auth_time` | `upstreamAuthTime` | When the person last signed in at their company's directory, in seconds, or `null` when it reported no time. Fixed when the authorisation is made: a refreshed token keeps it |
 | `aud` | | The resource URL. A server refuses a token for any other |
 | `subject_type` | | `user` for a person; a machine client's own token says `client` |
 

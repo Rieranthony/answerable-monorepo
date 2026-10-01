@@ -11,7 +11,7 @@ const verify = createIdVerifier({
 })
 
 const principal = await verify(accessToken)
-// { userId, organizationId, membershipId, grantId, clientId, scopes, expiresAt, organizationAuthorizationVersion }
+// { userId, organizationId, membershipId, grantId, clientId, scopes, expiresAt, organizationAuthorizationVersion, upstreamAuthTime }
 ```
 
 A service that takes a machine client's token instead, such as the Toolbox's admin API, says so:
@@ -28,6 +28,7 @@ const machine = await verifyMachine(accessToken)
 - **Token.** `at+jwt`, signed with EdDSA, ES256 or RS256, from the configured issuer, with the resource URL in its audience, unexpired, with ID's user and organisation claims and no `cnf`.
 - **Subject type.** `subjectType` (default `user`) is the one token kind a verifier accepts: `user` returns a `UserPrincipal`, `client` a `MachinePrincipal` from a `client_credentials` token whose subject is its client. A token of the other kind is refused.
 - **Authorisation version.** `organizationAuthorizationVersion` is the token's `organization_authorization_version`, a positive integer ID advances when it disables the organisation; a cache of what the person may use keys on it.
+- **Directory sign-in time.** `upstreamAuthTime` is the token's `upstream_auth_time`, in seconds, or `null` when the directory reported none. ID fixes it when it creates the authorisation: a refreshed token keeps it, so only a new authorisation after a new sign-in at the directory makes it recent.
 - **URLs.** HTTPS, or HTTP on `localhost`, `127.0.0.1` or `[::1]`. No credentials, query or fragment.
 - **Failures.** Every rejection throws `AuthenticationError` with no detail. Answer it with a `401` challenge.
 - **Revocation.** Verification is offline: an issued token stays valid until it expires. Constrain every query by `organizationId`.

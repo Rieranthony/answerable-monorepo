@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0
+
+What the admin MCP's writes need: a precondition for creating, `DELETE`, ID's replayed answers, ETags on reads and tokens for a second audience. The Toolbox's calls are unchanged.
+
+- `read(path, options?)` returns a read's JSON with ID's `ETag`, with the `platform:read` token; `get` still returns the JSON alone.
+- `manage` takes `DELETE` and `ifNoneMatch: "*"`, answers `body: null` for a `204`, and reports `replayed`: true when ID answered `Idempotency-Replayed: true`, whose body is then ID's operation receipt (`operationId`, `outcome`, `statusCode`, `resultReference`) rather than the resource.
+- `withToken(resource, scope, send)` runs `send` with a `client_credentials` token for another audience that trusts the same machine client, such as the Toolbox's admin API, and once more with a renewed token when it answers `401`. Tokens are kept per audience and scope. Refused credentials name that audience.
+- The fake ID adds ID's write routes for organisations (create, update with `If-Match`, disable, enable), domains, the SSO provider (`PUT` with `If-Match` or `If-None-Match: *`, platform credentials only for Google and Entra issuers), groups, group assignments (`GET`, `PUT`, `DELETE`, each with its own revision), an entitlement (`GET`, disable, enable) and a client (`GET`). Every write is a command: an `Idempotency-Key` is required, the same key with the same input replays (`Idempotency-Replayed: true`, ID's receipt body, no `ETag`), a different input answers `409 idempotency_key_reused`, and a stale `If-Match` `412 revision_mismatch`. A slug, domain or principal-and-target that exists answers `409 conflict`.
+- The fake's `received` also records `If-Match` and `If-None-Match`; `issued(token)` says what a token was issued for, so that a fake of another service can check a bearer; `revise(id)` advances a row's revision as another writer would; `join` returns the assignment and `joined` reads it.
+
 ## 0.2.0
 
 The fake ID serves a second consumer, the admin MCP. `createIdAdmin` is unchanged.

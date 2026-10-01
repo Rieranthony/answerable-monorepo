@@ -1,19 +1,23 @@
-import { found, IdError, type IdAdmin } from "@answerable/id-admin"
-import { defineProvider, defineTool, ToolError, type Tool, type ToolContext } from "@answerable/mcp"
+import type { IdAdmin } from "@answerable/id-admin"
+import { defineProvider, defineTool, type Mutation, type Tool, type UserPrincipal } from "@answerable/mcp"
 import { z } from "zod"
+import { accessWrites } from "./access"
+import { createCalls } from "./calls"
+import { requireFresh } from "./fresh"
+import { organisationWrites } from "./organisations"
 import { roleOf, roles, type Role, type Roles } from "./roles"
+import { staffWrites } from "./staff"
+import { toolboxWrites, type ToolboxAdmin } from "./toolbox"
+import { createOrganisations, organizationId, scopes, type Writes } from "./writes"
 
-// Every tool needs the admin scope, which ID issues to staff for the admin MCP's resource. The role is read from ID on each request, never from the token.
-const scopes = ["admin"]
+// The role is read from ID on each request, never from the token.
 const time = z.iso.datetime()
-const organizationId = z.uuid().describe("The organisation's id in Answerable ID, from organisations_list")
 const status = z.enum(["active", "disabled"])
 const page = {
   limit: z.number().int().min(1).max(100).default(20).describe("Items per page, 1 to 100; default 20"),
   cursor: z.uuid().optional().describe("next_cursor from the previous page; omit it for the first page"),
 }
 const paged = <Item extends z.ZodObject>(item: Item) => z.object({ items: z.array(item), next_cursor: z.uuid().nullable(), has_more: z.boolean() })
-const query = (params: Record<string, unknown>) => new URLSearchParams(Object.entries(params).flatMap(([key, value]) => (value === undefined ? [] : [[key, String(value)]])))
 
 // What each tool returns is ID's own answer, with ID's field names; the output schemas keep the fields named here and drop the rest.
 const organisation = z.object({
@@ -31,36 +35,31 @@ const target = z.object({
   via: z.array(via).describe("The entitlements that grant it: organisation-wide, a group's or the member's own"),
 })
 
-/** The tools of the admin MCP and the least role each needs, reading ID's admin API as the admin MCP's machine client. */
-export function createAdminProvider({ id, authority, platform, resource }: { id: IdAdmin; authority: Roles; platform: string; resource: string }) {
+/** What `createAdminProvider` needs: ID's admin API, the roles, the platform organisation, the admin MCP's resource and the critical operations' rule. */
+export type AdminProviderConfig = {
+  id: IdAdmin
+  authority: Roles
+  platform: string
+  /** The admin MCP's resource URL, which role entitlements name. */
+  resource: string
+  /** ID's origin, whose `/security` page the freshness refusal names. */
+  issuer: string
+  /** How recent a directory sign-in a critical operation needs, in seconds: `ADMIN_FRESH_SECONDS`. */
+  freshSeconds: number
+  /** The Toolbox's admin API; without it `toolbox_enable` answers `PRECONDITION_FAILED`. */
+  toolbox?: ToolboxAdmin
+}
+
+/** The tools of the admin MCP and the least role each needs, reading and writing ID's admin API as the admin MCP's machine client. */
+export function createAdminProvider({ id, authority, platform, resource, issuer, freshSeconds, toolbox }: AdminProviderConfig) {
   // Each tool with the least role that may use it; null: any member of the platform organisation.
   const minimums = new Map<string, Role | null>()
-  const role = <Definition extends Tool>(minimum: Role | null, tool: Definition) => {
+  const role = <Definition extends Tool | Mutation>(minimum: Role | null, tool: Definition) => {
     minimums.set(tool.name, minimum)
     return tool
   }
-  // A read of ID's admin API, carrying the call's execution id as x-request-id. ID's 404 is undefined; any other failure is the error a model acts on.
-  async function read<T>(path: string, { executionId }: ToolContext): Promise<T | undefined> {
-    try {
-      return await found(id.get(path, { requestId: executionId })) as T | undefined
-    } catch (error) {
-      if (!(error instanceof IdError)) throw error
-      console.error("[admin] Answerable ID failed", error)
-      if (error.status === 0 || error.status >= 500) throw new ToolError("UPSTREAM_UNAVAILABLE", "Answerable ID did not answer; try again shortly")
-      throw new ToolError("UPSTREAM_REJECTED", error.message, { details: { upstream: { status: error.status, code: error.code ?? null } } })
-    }
-  }
-  // The same for what must exist: ID's 404 answers NOT_FOUND, saying what is missing.
-  async function need<T>(path: string, context: ToolContext, missing = `Answerable ID answered 404 for ${path}`) {
-    const answer = await read<T>(path, context)
-    if (answer === undefined) throw new ToolError("NOT_FOUND", missing)
-    return answer
-  }
-  // One page of an ID list, in the pagination every list answers.
-  async function list<Item>(path: string, params: Record<string, unknown>, context: ToolContext, missing?: string) {
-    const { items, nextCursor } = await need<{ items: Item[]; nextCursor: string | null }>(`${path}?${query(params)}`, context, missing)
-    return { items, next_cursor: nextCursor, has_more: nextCursor !== null }
-  }
+  const calls = createCalls(id)
+  const { read, need, list, all } = calls
   const noOrganisation = (organizationId: string) => `Answerable ID has no organisation ${organizationId}; organisations_list lists them`
 
   const whoami = role(null, defineTool({
@@ -76,10 +75,12 @@ export function createAdminProvider({ id, authority, platform, resource }: { id:
     async execute(_input, { principal }) {
       const held = await authority.role(principal)
       const refusals = await Promise.all(provider.tools.map(tool => authority.refusal(principal, tool.scopes, minimum(tool))))
+      const usable = provider.tools.filter((_, index) => !refusals[index])
       return {
         userId: principal.userId, membershipId: principal.membershipId, organizationId: principal.organizationId, clientId: principal.clientId, role: held,
         nextStep: held ? null : "Ask an owner to add you to a group that holds answerable-team, answerable-admin or answerable-owner on the admin MCP's resource; your next call then has the role.",
-        tools: provider.tools.filter((_, index) => !refusals[index]).map(tool => tool.name.replace(".", "_")),
+        // The commit tools come with the first mutation a role may prepare.
+        tools: [...usable.map(tool => tool.name.replace(".", "_")), ...(usable.some(tool => tool.kind === "mutate") ? ["admin_commit", "admin_commit_confirmed"] : [])],
       }
     },
   }))
@@ -108,13 +109,7 @@ export function createAdminProvider({ id, authority, platform, resource }: { id:
     async execute({ organizationId }, context) {
       const path = `/organizations/${organizationId}`
       const row = await need<z.input<typeof organisation>>(path, context, noOrganisation(organizationId))
-      const domains: { id: string; domain: string; status: "active" | "disabled" }[] = []
-      let cursor: string | undefined
-      do {
-        const next = await list<(typeof domains)[number]>(`${path}/domains`, { limit: 200, cursor }, context, noOrganisation(organizationId))
-        domains.push(...next.items)
-        cursor = next.next_cursor ?? undefined
-      } while (cursor)
+      const domains = await all<{ id: string; domain: string; status: "active" | "disabled" }>(`${path}/domains`, context, noOrganisation(organizationId))
       const sso = await read<{ issuer: string; domain: string; oidc: { credentials: "platform" | "own"; hasClientSecret: boolean } }>(`${path}/sso-provider`, context)
       return { ...row, domains, sso: sso ?? null }
     },
@@ -227,9 +222,14 @@ export function createAdminProvider({ id, authority, platform, resource }: { id:
     },
   }))
 
+  const fresh = (principal: UserPrincipal) => requireFresh(principal, { maxAge: freshSeconds, issuer })
+  const writes: Writes = { calls, role, platform, resource, fresh, ...createOrganisations({ calls, authority, platform, fresh }) }
   const provider = defineProvider({
     id: "admin", version: "2026-10-01",
-    tools: [whoami, organisationsList, organisationsGet, membersList, membersGet, groupsList, accessList, auditList, ssoTest, staffList],
+    tools: [
+      whoami, organisationsList, organisationsGet, membersList, membersGet, groupsList, accessList, auditList, ssoTest, staffList,
+      ...organisationWrites(writes), ...accessWrites(writes), ...toolboxWrites(writes, toolbox), ...staffWrites(writes),
+    ],
   })
   /** The least role a tool needs; null: any member of the platform organisation. */
   const minimum = (tool: { name: string }) => minimums.get(tool.name)!

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.0
+
+The writes, each a prepared intent of the controlled class: the host shows the preview and commits with `admin_commit_confirmed` and its summary.
+
+- Eleven ordinary writes for `admin` and above: `organisations_create`, `organisations_update`, `domains_add`, `sso_set` (Answerable's Microsoft or Google application only), `groups_create`, `groups_addmember`, `groups_dropmember`, `access_grant`, `access_revoke` (disables), `access_enable` (enables again; `access_grant` names it for a disabled entitlement) and `toolbox_enable` (the Toolbox's enable call, with a `toolbox:admin` token from the same machine client).
+- Four critical operations for `owner` with a directory sign-in within `ADMIN_FRESH_SECONDS`: `organisations_disable`, `organisations_enable`, `staff_grant` and `staff_revoke`. Older or unknown answers `ADMIN_REAUTHENTICATION_REQUIRED`, at prepare and again at commit, recorded as `capability.denied` with reason `stale_authentication`.
+- Every write to the platform organisation is critical too, whatever the tool: an admin could otherwise add themselves to the owner group.
+- Targets bind ID's ETags; commit sends them as `If-Match`, or `If-None-Match: *` for a first SSO provider or membership, where ID takes one, and the preview says when ID takes none. Every write sends the intent's key, minted at prepare, as `Idempotency-Key` (`<key>.<step>` for several), and the execution id as `x-request-id`; a write ID does not answer is sent once more with the same key. Receipts carry ID's `Operation-Id`.
+- `admin_whoami` lists the commit tools with the writes.
+
 ## 0.1.0
 
 The read side of the admin MCP, for Answerable staff.

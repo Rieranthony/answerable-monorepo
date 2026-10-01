@@ -63,13 +63,16 @@ test("errorOf reads the envelope of a failed call, and throws for a call that su
   } finally { await mcp.close() }
 })
 
-test("testPrincipal is a verified caller for unit tests: fresh ids, the test client, no scopes, and any field replaced", () => {
+test("testPrincipal is a verified caller for unit tests: fresh ids, the test client, no scopes, a directory sign-in now, and any field replaced", () => {
+  const now = Math.floor(Date.now() / 1000)
   const [first, second] = [testPrincipal(), testPrincipal()]
   expect(first).toEqual({
     userId: expect.any(String), organizationId: expect.any(String), membershipId: expect.any(String), grantId: expect.any(String),
-    clientId: "test-client", scopes: [], expiresAt: expect.any(Number), organizationAuthorizationVersion: 1,
+    clientId: "test-client", scopes: [], expiresAt: expect.any(Number), organizationAuthorizationVersion: 1, upstreamAuthTime: expect.any(Number),
   })
   expect(first.expiresAt).toBeGreaterThan(Date.now() / 1000)
+  expect(first.upstreamAuthTime).toBeWithin(now, now + 2)
+  expect(testPrincipal({ upstreamAuthTime: null }).upstreamAuthTime).toBeNull()
   for (const field of ["userId", "organizationId", "membershipId", "grantId"] as const) expect(first[field]).not.toBe(second[field])
   expect(testPrincipal({ organizationId: "o1", scopes: ["e2e:read"] })).toMatchObject({ organizationId: "o1", scopes: ["e2e:read"], clientId: "test-client" })
 })

@@ -1,22 +1,25 @@
 import { afterEach, expect, spyOn, test } from "bun:test"
 import { createIdAdmin } from "@answerable/id-admin"
-import { createFakeId } from "@answerable/id-admin/testing"
 import { assertProviderConformance, createTestMcp, errorOf, type TestMcp } from "@answerable/mcp/testing"
 import { createAdminProvider } from "./provider"
 import { createRoles } from "./roles"
-import { resource } from "./test/admin"
+import { createIdFake, createFakeToolbox, entraIssuer, resource, toolboxResource } from "./test/admin"
+import { createToolboxAdmin } from "./toolbox"
 
 const toolbox = "https://toolbox.test/mcp"
 
 // ID holding one client organisation, Newco, with a domain, a Microsoft SSO provider, a member in a group and an entitlement; and platform staff.
 function fixture(config: { clientSecret?: string } = {}) {
-  const id = createFakeId({ clientId: "admin-mcp" })
+  const id = createIdFake()
   const platform = id.organizationId
   const admin = createIdAdmin({ ...id.config, ...config })
-  const { provider } = createAdminProvider({ id: admin, authority: createRoles({ id: admin, platform, resource }), platform, resource })
+  const { provider } = createAdminProvider({
+    id: admin, authority: createRoles({ id: admin, platform, resource }), platform, resource, issuer: "https://id.test", freshSeconds: 1800,
+    toolbox: createToolboxAdmin({ id: admin, resource: toolboxResource, fetch: createFakeToolbox(id).fetch }),
+  })
   const newco = id.organisation(crypto.randomUUID(), { name: "Newco", slug: "newco", metadata: "{\"plan\":\"pilot\"}" })
   const domain = id.domain(newco.id, "newco.example")
-  id.ssoProvider(newco.id, { issuer: "https://login.microsoftonline.com/00000000-0000-0000-0000-00000000000a/v2.0", domain: "newco.example" })
+  id.ssoProvider(newco.id, { issuer: entraIssuer, domain: "newco.example" })
   const ada = id.member(newco.id, { email: "ada@newco.example", name: "Ada Lovelace" })
   const engineers = id.group(newco.id, { slug: "engineers", name: "Engineers" })
   id.join(engineers.id, ada.id)
@@ -28,21 +31,56 @@ function fixture(config: { clientSecret?: string } = {}) {
   return { id, platform, provider, newco, domain, ada, engineers, via, everyone, grouped, created }
 }
 
+// Every mutation's example makes what it acts on, so that each check prepares on a state of its own; moveTarget changes a target as another writer would.
 const world = fixture()
+const { id: ids, newco, engineers, platform } = world
+ids.resource(toolbox, ["e2e", "toolbox"])
+ids.client("claude-code-toolbox")
+const team = ids.group(platform, { slug: "support", name: "Support" })
+const teamRole = ids.entitlement(platform, { groupId: team.id, resource, scopes: ["answerable-team"] })
+const unique = () => crypto.randomUUID().slice(0, 8)
+const organisation = (fields: Record<string, unknown> = {}) => ids.organisation(Bun.randomUUIDv7(), { name: "Spare", slug: `spare-${unique()}`, ...fields }).id
+const person = () => ids.member(newco.id, { email: `${unique()}@newco.example` }).id
+function staffer(joined: boolean) {
+  const member = ids.member(platform, { email: `${unique()}@answerable.test` })
+  if (joined) ids.join(team.id, member.id)
+  ids.grant(platform, member.id, joined ? [{ kind: "resource", id: resource, scopes: ["answerable-team"], via: [{ entitlementId: teamRole.id, principal: "group", groupId: team.id }] }] : [])
+  return member.id
+}
 assertProviderConformance(world.provider, {
   manifest: new URL("../manifest.json", import.meta.url),
   examples: {
     "admin.whoami": {},
     "organisations.list": { q: "newco" },
-    "organisations.get": { organizationId: world.newco.id },
-    "members.list": { organizationId: world.newco.id },
-    "members.get": { organizationId: world.newco.id, memberId: world.ada.id },
-    "groups.list": { organizationId: world.newco.id },
-    "access.list": { organizationId: world.newco.id },
-    "audit.list": { organizationId: world.newco.id },
-    "sso.test": { organizationId: world.newco.id },
+    "organisations.get": { organizationId: newco.id },
+    "members.list": { organizationId: newco.id },
+    "members.get": { organizationId: newco.id, memberId: world.ada.id },
+    "groups.list": { organizationId: newco.id },
+    "access.list": { organizationId: newco.id },
+    "audit.list": { organizationId: newco.id },
+    "sso.test": { organizationId: newco.id },
     "staff.list": {},
+    "organisations.create": () => ({ slug: `created-${unique()}`, name: "Created" }),
+    "organisations.update": () => ({ organizationId: organisation(), name: "Renamed" }),
+    "organisations.disable": () => ({ organizationId: organisation() }),
+    "organisations.enable": () => ({ organizationId: organisation({ status: "disabled" }) }),
+    "domains.add": () => ({ organizationId: newco.id, domain: `${unique()}.newco.example` }),
+    "sso.set": () => ({ organizationId: organisation(), issuer: entraIssuer, domain: "spare.example" }),
+    "groups.create": () => ({ organizationId: newco.id, slug: `group-${unique()}`, name: "Group" }),
+    "groups.addmember": () => ({ organizationId: newco.id, groupId: engineers.id, memberId: person() }),
+    "groups.dropmember": () => {
+      const memberId = person()
+      ids.join(engineers.id, memberId)
+      return { organizationId: newco.id, groupId: engineers.id, memberId }
+    },
+    "access.grant": () => ({ organizationId: newco.id, principal: { kind: "member", id: person() }, resource: toolbox, scopes: ["e2e"] }),
+    "access.revoke": () => ({ organizationId: newco.id, entitlementId: ids.entitlement(newco.id, { memberId: person(), resource: toolbox, scopes: ["e2e"] }).id }),
+    "access.enable": () => ({ organizationId: newco.id, entitlementId: ids.entitlement(newco.id, { memberId: person(), resource: toolbox, scopes: ["e2e"], status: "disabled" }).id }),
+    "toolbox.enable": () => ({ organizationId: organisation(), hostClientIds: ["claude-code-toolbox"], providers: ["e2e"] }),
+    "staff.grant": () => ({ memberId: staffer(false), role: "team" }),
+    "staff.revoke": () => ({ memberId: staffer(true), role: "team" }),
   },
+  moveTarget: target => ids.revise(target.resource_id),
 })
 
 const servers: TestMcp[] = []

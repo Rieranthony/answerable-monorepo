@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.2
+
+`testPrincipal` sets `upstreamAuthTime`, which `@answerable/auth` 0.5.0 makes a required field of `UserPrincipal`: the current time in seconds, as for a person who has just signed in at their directory, unless `overrides` replace it.
+
 ## 0.6.1
 
 Documentation only: the docs now render their type tables from these types, so every field says what it is. No behaviour changes.

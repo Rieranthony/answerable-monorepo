@@ -66,7 +66,7 @@ export async function createTestMcp(
 
 /**
  * A verified caller for unit tests of code that takes a principal, such as a store: a fresh person, membership, organisation and grant,
- * the client `test-client`, no scopes and organisation authorisation version 1, each field replaced by `overrides`.
+ * the client `test-client`, no scopes, organisation authorisation version 1 and a directory sign-in now, each field replaced by `overrides`.
  *
  * @example
  * ```ts
@@ -79,6 +79,7 @@ export async function createTestMcp(
 export function testPrincipal(overrides: Partial<UserPrincipal> = {}): UserPrincipal {
   return {
     userId: crypto.randomUUID(), organizationId: crypto.randomUUID(), membershipId: crypto.randomUUID(), grantId: crypto.randomUUID(),
-    clientId: "test-client", scopes: [], expiresAt: Math.floor(Date.now() / 1000) + 300, organizationAuthorizationVersion: 1, ...overrides,
+    clientId: "test-client", scopes: [], expiresAt: Math.floor(Date.now() / 1000) + 300, organizationAuthorizationVersion: 1,
+    upstreamAuthTime: Math.floor(Date.now() / 1000), ...overrides,
   }
 }

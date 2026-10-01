@@ -65,6 +65,13 @@ type UserPrincipal = Readonly<{
   expiresAt: number
   /** The organisation's authorisation version when the token was issued; ID advances it when it disables the organisation. */
   organizationAuthorizationVersion: number
+  /**
+   * When the person last signed in at their organisation's directory, in seconds since the epoch: the token's `upstream_auth_time`, or `null`
+   * when the directory reported no time. ID takes it from the browser session when it creates the authorisation (`grantId`), and every token of
+   * that authorisation, refreshed ones included, carries the same value, so only a new authorisation after a new directory sign-in makes it recent.
+   * A token without the claim gives `null`.
+   */
+  upstreamAuthTime: number | null
 }>
 ```
 
@@ -133,7 +140,10 @@ const principal = await verify(await issuer.sign({ resource: "https://example.te
 type TestIssuer = {
   /** The issuer URL to trust; default `https://id.test`. */
   issuer: string
-  /** Sign an access token for `resource`. `claims` replace the token's claims (an `undefined` value removes one) and `header` its header, to make unusual tokens. */
+  /**
+   * Sign an access token for `resource`, with ID's user claims: `upstream_auth_time` is the signing time, as for a person who has just signed in.
+   * `claims` replace the token's claims (an `undefined` value removes one) and `header` its header, to make unusual tokens.
+   */
   sign(options: {
     resource: string
     scopes?: readonly string[]
@@ -1026,7 +1036,7 @@ function testPrincipal(overrides?: Partial<UserPrincipal>): UserPrincipal
 ```
 
 A verified caller for unit tests of code that takes a principal, such as a store: a fresh person, membership, organisation and grant,
-the client `test-client`, no scopes and organisation authorisation version 1, each field replaced by `overrides`.
+the client `test-client`, no scopes, organisation authorisation version 1 and a directory sign-in now, each field replaced by `overrides`.
 
 **Example**
 

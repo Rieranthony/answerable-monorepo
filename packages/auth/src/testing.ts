@@ -4,7 +4,10 @@ import { decodeJwt, exportJWK, generateKeyPair, SignJWT, UnsecuredJWT, type JWK 
 export type TestIssuer = {
   /** The issuer URL to trust; default `https://id.test`. */
   issuer: string
-  /** Sign an access token for `resource`. `claims` replace the token's claims (an `undefined` value removes one) and `header` its header, to make unusual tokens. */
+  /**
+   * Sign an access token for `resource`, with ID's user claims: `upstream_auth_time` is the signing time, as for a person who has just signed in.
+   * `claims` replace the token's claims (an `undefined` value removes one) and `header` its header, to make unusual tokens.
+   */
   sign(options: {
     resource: string
     scopes?: readonly string[]
@@ -69,12 +72,13 @@ export async function createTestIssuer(options: { algorithm?: "EdDSA" | "ES256" 
       return new Response("Not found", { status: 404 })
     },
     async sign(options) {
+      const now = Math.floor(Date.now() / 1000)
       const token = new UnsecuredJWT({
         iss: issuer, aud: options.resource, sub: options.userId ?? crypto.randomUUID(),
         subject_type: "user", organization_id: options.organizationId ?? crypto.randomUUID(),
         membership_id: crypto.randomUUID(), organization_authorization_version: 1, grant_id: crypto.randomUUID(),
-        client_id: "test-client", scope: (options.scopes ?? []).join(" "),
-      }).setIssuedAt().setExpirationTime(options.expiresIn ?? "5m")
+        client_id: "test-client", scope: (options.scopes ?? []).join(" "), upstream_auth_time: now,
+      }).setIssuedAt(now).setExpirationTime(options.expiresIn ?? "5m")
       const payload = { ...decodeJwt(token.encode()), ...options.claims }
       for (const name of Object.keys(payload)) if (payload[name] === undefined) delete payload[name]
       return new SignJWT(payload).setProtectedHeader({ alg, kid, typ: "at+jwt", ...options.header }).sign(signingKey)

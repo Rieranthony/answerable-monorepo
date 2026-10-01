@@ -23,6 +23,8 @@ export type IdWriteOptions = IdCallOptions & {
   body?: unknown
   /** Sent as `If-Match`: the ETag the write expects the resource to have. */
   ifMatch?: string
+  /** Sent as `If-None-Match`: `*` asserts that the resource does not exist yet, where ID takes it (`PUT` of an SSO provider or a group member). */
+  ifNoneMatch?: "*"
   /**
    * Sent as `Idempotency-Key` on every method but GET. Default: a random UUID per call. ID replays the receipt of the same key with the same input and
    * refuses a different input with `409 idempotency_key_reused`. The key stays the same when the call is resent after a `401`.
@@ -63,61 +65,66 @@ export async function found<T>(answer: Promise<T>): Promise<T | undefined> {
 }
 
 /**
- * ID's admin API as a server's machine client, one per server. Reads (`get`) use a `platform:read` token; `manage` uses a `platform:read
- * platform:write` token of its own. Each is reused until 30 seconds before it expires and renewed once when ID refuses it. A status outside 2xx
- * throws `IdError`.
+ * ID's admin API as a server's machine client, one per server. Reads (`get`, `read`) use a `platform:read` token; `manage` uses a `platform:read
+ * platform:write` token of its own; `withToken` gets a token for another service that trusts the client. Each token is reused until 30 seconds
+ * before it expires and renewed once when it is refused. A status outside 2xx from the admin API throws `IdError`.
  */
 export function createIdAdmin({ issuer, adminResource, clientId, clientSecret, fetch = globalThis.fetch }: IdConfig) {
+  // One token per audience and scope.
   const tokens = new Map<string, { value: string; expiresAt: number }>()
   const pending = new Map<string, Promise<string>>()
-  async function issue(scope: string) {
+  async function issue(resource: string, scope: string) {
     const response = await reach("the token request", async () => fetch(new URL("/auth/oauth2/token", issuer), {
       method: "POST",
       headers: { Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`, "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ grant_type: "client_credentials", resource: adminResource, scope }),
+      body: new URLSearchParams({ grant_type: "client_credentials", resource, scope }),
       signal: AbortSignal.timeout(5000),
     }))
     if (!response.ok) {
-      throw new IdError(response.status, undefined, `Answerable ID refused the client credentials of ${clientId} (${response.status}); check the client id, the client secret and the client's ${scope.replace(" ", " and ")} capability for the admin resource`)
+      const audience = resource === adminResource ? "the admin resource" : resource
+      throw new IdError(response.status, undefined, `Answerable ID refused the client credentials of ${clientId} (${response.status}); check the client id, the client secret and the client's ${scope.replace(" ", " and ")} capability for ${audience}`)
     }
     const body = issued.parse(await response.json())
-    tokens.set(scope, { value: body.access_token, expiresAt: Date.now() + body.expires_in * 1000 })
-    return body.access_token
+    return { value: body.access_token, expiresAt: Date.now() + body.expires_in * 1000 }
   }
-  function accessToken(scope: string) {
-    const token = tokens.get(scope)
+  function accessToken(resource: string, scope: string) {
+    const key = `${resource} ${scope}`
+    const token = tokens.get(key)
     if (token && Date.now() < token.expiresAt - 30_000) return token.value
-    let renewing = pending.get(scope)
+    let renewing = pending.get(key)
     if (!renewing) {
-      renewing = issue(scope).finally(() => pending.delete(scope))
-      pending.set(scope, renewing)
+      renewing = issue(resource, scope).then(fresh => {
+        tokens.set(key, fresh)
+        return fresh.value
+      }).finally(() => pending.delete(key))
+      pending.set(key, renewing)
     }
     return renewing
   }
-  async function call(scope: string, method: string, path: string, { body, ifMatch, requestId, idempotencyKey }: IdWriteOptions = {}) {
+  // Send with a token, and once more with a new one when the token is refused.
+  async function withToken(resource: string, scope: string, send: (token: string) => Promise<Response>) {
+    const response = await send(await accessToken(resource, scope))
+    if (response.status !== 401) return response
+    tokens.delete(`${resource} ${scope}`)
+    return send(await accessToken(resource, scope))
+  }
+  async function call(scope: string, method: string, path: string, { body, ifMatch, ifNoneMatch, requestId, idempotencyKey }: IdWriteOptions = {}) {
     const url = `/api/admin/v1${path}`
     // One key per call: a renewed token repeats the same command.
     const key = idempotencyKey ?? crypto.randomUUID()
-    const send = async () => {
-      const authorization = `Bearer ${await accessToken(scope)}`
-      return reach(`${method} ${url}`, async () => fetch(new URL(url, issuer), {
-        method,
-        headers: {
-          Authorization: authorization,
-          ...(requestId === undefined ? {} : { "x-request-id": requestId }),
-          ...(method === "GET" ? {} : { "Idempotency-Key": key }),
-          ...(ifMatch === undefined ? {} : { "If-Match": ifMatch }),
-          ...(body === undefined ? {} : { "Content-Type": "application/json" }),
-        },
-        body: body === undefined ? undefined : JSON.stringify(body),
-        signal: AbortSignal.timeout(5000),
-      }))
-    }
-    let response = await send()
-    if (response.status === 401) {
-      tokens.delete(scope)
-      response = await send()
-    }
+    const response = await withToken(adminResource, scope, token => reach(`${method} ${url}`, async () => fetch(new URL(url, issuer), {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(requestId === undefined ? {} : { "x-request-id": requestId }),
+        ...(method === "GET" ? {} : { "Idempotency-Key": key }),
+        ...(ifMatch === undefined ? {} : { "If-Match": ifMatch }),
+        ...(ifNoneMatch === undefined ? {} : { "If-None-Match": ifNoneMatch }),
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(5000),
+    })))
     if (response.ok) return response
     const answer = problem.safeParse(await response.json().catch(() => undefined))
     const said = answer.success ? ` ${answer.data.code}: ${answer.data.title}` : ""
@@ -128,15 +135,31 @@ export function createIdAdmin({ issuer, adminResource, clientId, clientSecret, f
     async get(path: string, options?: IdCallOptions): Promise<unknown> {
       return (await call(read, "GET", path, options)).json()
     },
-    /**
-     * Call the admin API with `platform:read` and `platform:write`: a JSON `body`, an `If-Match` tag, an `Idempotency-Key` on every write (a random
-     * one unless `idempotencyKey` names it) and an `x-request-id`. Returns the JSON, the response's `ETag` and its `Operation-Id`, the id of the
-     * operation ID recorded for a write; both are `null` when ID sent none.
-     */
-    async manage(method: "GET" | "POST" | "PATCH" | "PUT", path: string, options?: IdWriteOptions): Promise<{ body: unknown; etag: string | null; operationId: string | null }> {
-      const response = await call(write, method, path, options)
-      return { body: await response.json(), etag: response.headers.get("ETag"), operationId: response.headers.get("Operation-Id") }
+    /** GET a path of the admin API and return its JSON with the response's `ETag`, `null` when ID sent none: the version a later `If-Match` names. */
+    async read(path: string, options?: IdCallOptions): Promise<{ body: unknown; etag: string | null }> {
+      const response = await call(read, "GET", path, options)
+      return { body: await response.json(), etag: response.headers.get("ETag") }
     },
+    /**
+     * Call the admin API with `platform:read` and `platform:write`: a JSON `body`, an `If-Match` or `If-None-Match` precondition, an `Idempotency-Key`
+     * on every write (a random one unless `idempotencyKey` names it) and an `x-request-id`. Returns the JSON (`null` for `204`), the response's
+     * `ETag`, its `Operation-Id`, the id of the operation ID recorded for a write, and whether ID replayed an earlier answer to the same key
+     * (`Idempotency-Replayed: true`), whose body is then ID's operation receipt rather than the resource; `etag` and `operationId` are `null`
+     * when ID sent none.
+     */
+    async manage(method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE", path: string, options?: IdWriteOptions): Promise<{ body: unknown; etag: string | null; operationId: string | null; replayed: boolean }> {
+      const response = await call(write, method, path, options)
+      return {
+        body: response.status === 204 ? null : await response.json(), etag: response.headers.get("ETag"),
+        operationId: response.headers.get("Operation-Id"), replayed: response.headers.get("Idempotency-Replayed") === "true",
+      }
+    },
+    /**
+     * Call another service that trusts this machine client, such as the Toolbox's admin API: `send` runs with a `client_credentials` token for
+     * `resource` carrying `scope`, and once more with a renewed token when the service answers `401`. Returns `send`'s response, whatever its
+     * status; throws `IdError` when ID refuses or does not answer the token request.
+     */
+    withToken,
   }
 }
 /** ID's admin API as a server's machine client. */

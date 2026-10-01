@@ -34,7 +34,7 @@ Pin `userId`, `organizationId` and `membershipId` to connect as the same princip
 
 <include lang="ts" meta='title="mcps/example/src/errors.test.ts"'>../../../../../mcps/example/src/errors.test.ts#refusal</include>
 
-**A caller without a server.** `testPrincipal(overrides?)` returns a verified caller for code that takes a principal, such as a store: fresh ids, the client `test-client` and no scopes, each replaced by `overrides`. `records.create(testPrincipal({ organizationId }), "Title")` seeds a record for a connection with that `organizationId`.
+**A caller without a server.** `testPrincipal(overrides?)` returns a verified caller for code that takes a principal, such as a store: fresh ids, the client `test-client`, no scopes and a directory sign-in now (`upstreamAuthTime`), each replaced by `overrides`. `records.create(testPrincipal({ organizationId }), "Title")` seeds a record for a connection with that `organizationId`.
 
 `mcps/example/src/*.test.ts` and `mcps/e2e/src/mcp.test.ts` are working examples. Reference: [`createTestMcp`](/docs/mcp/reference#createtestmcp), [`errorOf`](/docs/mcp/reference#errorof), [`testPrincipal`](/docs/mcp/reference#testprincipal).
 

@@ -29,7 +29,7 @@ A read tool's fields, with `prepare` and `commit` in place of `execute`:
 
 **`prepare(input, context)`** resolves the targets, reads their current state and returns `{ targets, preview, plan }`. It must not change anything; the conformance kit checks it with `prepare_has_no_side_effect`.
 
-**`plan`** is your own data for `commit`, optional. It is stored as JSON, so keep it plain data. Its type flows from `prepare` to `commit`.
+**`plan`** is your own data for `commit`, optional. It is stored as JSON, so keep it plain data. Its type flows from `prepare` to `commit`. Commit receives the stored plan, not the one its second `prepare` returns, so a value minted in `prepare` stays the same: [the admin MCP](/docs/admin#idempotency-and-correlation) keeps there the key it sends upstream as `Idempotency-Key`.
 
 **`commit(plan, context)`** receives exactly what `prepare` returned, as stored: `{ targets, preview, plan }`. It applies the change and returns `{ results, applied_changes, effects_performed }`. The server checks `results` against `output` and drops undeclared fields. When no target moved, the prepared `preview.changes` are the applied changes.
 

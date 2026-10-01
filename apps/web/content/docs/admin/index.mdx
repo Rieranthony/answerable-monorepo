@@ -1,6 +1,6 @@
 ---
 title: The admin MCP
-description: "The staff-only MCP server through which Answerable staff read organisations, members, access and the audit log in Answerable ID from an AI host: its roles, its tools, how it reads authority from ID, its limits and its errors."
+description: "The staff-only MCP server through which Answerable staff onboard and manage organisations in Answerable ID from an AI host: its roles, its read and write tools, how a change is prepared and confirmed, the critical operations, its limits and its errors."
 ---
 
 ```bash
@@ -8,11 +8,18 @@ claude mcp add --transport http answerable-admin http://localhost:47520/mcp \
   --client-id claude-code-admin --callback-port 47700
 ```
 
-The admin MCP (`mcps/admin`) gives Answerable staff the reads of [onboarding an organisation](/docs/id/onboard) in an AI host such as Claude Code. A staff member signs in with their Answerable account and sees exactly the tools their role allows. The server reads Answerable ID's admin API with its own machine client, and only after it has checked the person's role.
+The admin MCP (`mcps/admin`) gives Answerable staff the work of [onboarding an organisation](/docs/id/onboard) in an AI host such as Claude Code: reading organisations, members, access and the audit log, and changing them. A staff member signs in with their Answerable account and sees exactly the tools their role allows. The server acts on Answerable ID with its own machine client, and only after it has checked the person's role.
 
 **Staff only.** Only members of the platform organisation get any tool. An admin MCP for an organisation's own administrators: Not yet.
 
-Run the line above once the admin MCP runs locally with its registrations ([below](#run-it-locally)), then choose **Authenticate** in Claude Code's `/mcp` and ask Claude to call `admin_whoami`.
+Run the line above once the admin MCP runs locally with its registrations ([below](#run-it-locally)), then choose **Authenticate** in Claude Code's `/mcp` and ask Claude to call `admin_whoami`. Then ask for a change in words:
+
+```text
+Create the organisation newco, named Newco, route newco.example to it, enable the Toolbox for it
+from claude-code-toolbox with e2e, and grant everyone in it e2e/records on the Toolbox.
+```
+
+Claude prepares each change, shows you its summary and commits it only once you confirm: [Make a change](#make-a-change).
 
 ## Roles
 
@@ -20,8 +27,8 @@ Run the line above once the admin MCP runs locally with its registrations ([belo
 | --- | --- | --- |
 | None | None | `admin_whoami` only |
 | `team` | `answerable-team` | `admin_whoami` and every read tool |
-| `admin` | `answerable-admin` | The same. Ordinary writes: Not yet |
-| `owner` | `answerable-owner` | The same. Writes and the critical operations: Not yet |
+| `admin` | `answerable-admin` | The same, the eleven ordinary writes and the two commit tools |
+| `owner` | `answerable-owner` | Everything: also the [critical operations](#critical-operations), and any write to the platform organisation |
 
 **Where a role lives.** In Answerable ID, as an entitlement on the admin MCP's resource, with no client, whose scopes include the role's grant string. Hold it through a group of the platform organisation: put a member in the group and they have the role. The group's name confers nothing; the entitlement does.
 
@@ -29,9 +36,11 @@ Run the line above once the admin MCP runs locally with its registrations ([belo
 - **Only these three strings.** ID accepts any string as a scope, so the admin MCP ignores every other one: `answerable-root`, `Answerable-Owner` or a role on another resource confers nothing, and so does a role entitlement limited to one client.
 - **No role yet.** Any member of the platform organisation whose token carries `admin` gets `admin_whoami`, which says `role: null` and how to get one.
 
-Give someone a role by adding their member to the group, as [Narrow it to a group](/docs/id/onboard#grant-access) shows; they must have signed in once. It applies to their next request, without signing in again.
+**Give someone a role** with `staff_grant`, as an owner; take it away with `staff_revoke`. Both find the group by its entitlement, never by its slug. The person must have signed in once. It applies to their next request, without signing in again. Without the admin MCP, add their member to the group as [Narrow it to a group](/docs/id/onboard#grant-access) shows.
 
 ## Tools
+
+### Reads
 
 | Tool | Answers | Reads from Answerable ID |
 | --- | --- | --- |
@@ -56,8 +65,6 @@ This is `staff_list`'s contract in the provider's committed manifest:
 
 <ManifestEntry workspace="admin" identity="admin/staff.list" />
 
-**Writes.** Not yet. Creating and updating organisations, adding domains, setting SSO providers, groups, granting and revoking access and enabling the Toolbox, then the owner's critical operations, come next: the order is in `docs/goals/admin-mcp/task_plan.md` in the repository. Until then, make changes with cURL as [Onboard an organisation](/docs/id/onboard) shows.
-
 ### admin_whoami
 
 ```json
@@ -72,7 +79,114 @@ This is `staff_list`'s contract in the provider's committed manifest:
 }
 ```
 
-Your person, membership, organisation and host client from the token; your role as ID says it on this call; and the tools that role lets you call. `nextStep` is `null` when you hold a role.
+Your person, membership, organisation and host client from the token; your role as ID says it on this call; and the tools that role lets you call, the commit tools included. `nextStep` is `null` when you hold a role.
+
+### Writes
+
+Each write is a prepare tool: it changes nothing and returns an intent, which `admin_commit_confirmed` applies. All take `organizationId` but the first and the last two.
+
+| Tool | Prepares | Least role | Writes to Answerable ID |
+| --- | --- | --- | --- |
+| `organisations_create` | A new organisation: `slug`, `name`. Refused when the slug is taken | `admin` | [createOrganization](/docs/id/admin-api/organizations/createOrganization) |
+| `organisations_update` | A new `name`, `logo` or `metadata`; `null` removes the last two | `admin` | [updateOrganization](/docs/id/admin-api/organizations/updateOrganization) |
+| `domains_add` | An email `domain` routed to the organisation | `admin` | [createOrganizationDomain](/docs/id/admin-api/domains/createOrganizationDomain) |
+| `sso_set` | The SSO provider, `issuer` and `domain`, through Answerable's Microsoft or Google application | `admin` | [putSsoProvider](/docs/id/admin-api/sso-provider/putSsoProvider) |
+| `groups_create` | A group: `slug`, `name` | `admin` | [createGroup](/docs/id/admin-api/groups/createGroup) |
+| `groups_addmember` | `memberId` in `groupId`, until `validUntil` if given, or a new end for a membership | `admin` | [putGroupMember](/docs/id/admin-api/groups/putGroupMember) |
+| `groups_dropmember` | `memberId` out of `groupId` | `admin` | [removeGroupMember](/docs/id/admin-api/groups/removeGroupMember) |
+| `access_grant` | An entitlement: `principal` (`{ "kind": "organization" }`, or `group` or `member` with its `id`), `resource`, `clientId` if only one client, `scopes` | `admin` | [createEntitlement](/docs/id/admin-api/entitlements/createEntitlement) |
+| `access_revoke` | `entitlementId` disabled, so that it grants nothing; reversible | `admin` | [disableEntitlement](/docs/id/admin-api/entitlements/disableEntitlement) |
+| `access_enable` | A disabled `entitlementId` enabled, so that it grants its scopes again: the inverse of `access_revoke` | `admin` | [enableEntitlement](/docs/id/admin-api/entitlements/enableEntitlement) |
+| `toolbox_enable` | The Toolbox for the organisation: `providers` and the `hostClientIds` people use it from | `admin` | The Toolbox's [enable call](/docs/toolbox/admin#enable-an-organisation), which writes to ID itself |
+| `organisations_disable` | The organisation disabled: its grants are revoked and refresh stops | `owner` | [disableOrganization](/docs/id/admin-api/organizations/disableOrganization) |
+| `organisations_enable` | The organisation enabled again | `owner` | [enableOrganization](/docs/id/admin-api/organizations/enableOrganization) |
+| `staff_grant` | `role` for `memberId` of the platform organisation, through the group whose entitlement carries it | `owner` | [putGroupMember](/docs/id/admin-api/groups/putGroupMember) |
+| `staff_revoke` | `role` taken from `memberId`, out of every group whose entitlement carries it | `owner` | [removeGroupMember](/docs/id/admin-api/groups/removeGroupMember) |
+
+**Refused at prepare.** A write that would change nothing, or that ID would refuse, answers before anything is recorded: `PRECONDITION_FAILED` for a taken slug, a domain already routed, a member already in the group or not in it, an identical entitlement, an organisation already in that status, a role already held or not held; `INVALID_INPUT` for a scope the resource does not allow, an issuer `sso_set` does not take, or a provider or host client the Toolbox or ID does not know.
+
+## Make a change
+
+```json
+{
+  "intent_id": "01a0f8ec-1616-7000-8479-1511f525229e",
+  "capability": "admin/organisations.create",
+  "version": "2026-10-01",
+  "policy_class": "controlled",
+  "commit_tool": "admin_commit_confirmed",
+  "commit_token": "act_…",
+  "expires_at": "2026-10-01T12:30:00.000Z",
+  "targets": [],
+  "preview": {
+    "summary": "Create organisation “Newco” with slug newco",
+    "changes": [{ "path": "organizations[newco]", "from": null, "to": { "slug": "newco", "name": "Newco" } }],
+    "effects": ["publication"],
+    "warnings": ["Answerable ID takes no precondition on creating an organisation: the admin MCP reads the target again just before it writes, but a change in between is not refused by ID."],
+    "quantities": []
+  },
+  "approval": { "required": false, "status": "not_required" }
+}
+```
+
+1. **Prepare.** The host calls a write tool, here `organisations_create` with `{ "slug": "newco", "name": "Newco" }`. Nothing changes. It answers the intent above: what would change, from what, to what, and its warnings.
+2. **Show.** The host shows you the summary, changes and warnings.
+3. **Confirm.** On your yes, the host calls `admin_commit_confirmed` with `intent_id`, `commit_token` and `preview_summary`: the summary, word for word. Every write is controlled class, so `admin_commit` refuses each one with `APPROVAL_REQUIRED`, and so does a summary that differs.
+4. **Commit.** The server checks your role again, reads every target again, refuses with `INTENT_STALE` if one moved, then writes to ID and answers the receipt:
+
+```json
+{
+  "receipt_id": "01a0f8ec-2a41-7000-9c0e-6f3b2d1e8a77",
+  "intent_id": "01a0f8ec-1616-7000-8479-1511f525229e",
+  "status": "committed",
+  "results": { "organizationId": "01a0f8ec-2a3f-7000-b1d2-0c9e8f7a6b5c", "slug": "newco", "operationId": "01a0f8ec-2a40-7000-8e1f-4d3c2b1a0f9e" },
+  "applied_changes": [{ "path": "organizations[newco]", "from": null, "to": { "slug": "newco", "name": "Newco" } }],
+  "effects_performed": ["publication"],
+  "committed_at": "2026-10-01T12:01:07.000Z",
+  "committed_by": { "user_id": "0199a0d2-…", "membership_id": "0199a0d3-…", "client_id": "claude-code-admin" },
+  "idempotent_replay": false
+}
+```
+
+**Once.** Committing the same intent again answers the same receipt with `idempotent_replay: true` and writes nothing. An intent expires 30 minutes after prepare. [Mutations](/docs/mcp/mutations) describes the flow every `@answerable/mcp` server shares.
+
+### Targets and preconditions
+
+Prepare reads what the write acts on and binds ID's `ETag` to it as the target's version. Commit reads it again and answers `INTENT_STALE` when it moved; where ID takes a precondition, the write carries the ETag too, so a change between that read and the write is refused by ID as well.
+
+| Writes | What ID checks as it writes |
+| --- | --- |
+| `organisations_update` | `If-Match`: the organisation's ETag |
+| `sso_set` | `If-Match`: the provider's ETag; `If-None-Match: *` for a first provider |
+| `groups_addmember` | `If-Match`: the membership's ETag; `If-None-Match: *` for a new membership |
+| `staff_grant` | `If-None-Match: *`: the membership must not exist yet. Its target is the role's entitlement, read again just before the write |
+| `organisations_create`, `domains_add`, `groups_create`, `access_grant` | Nothing: the slug, domain or entitlement is checked again just before the write. ID refuses a duplicate with `409 conflict` |
+| `organisations_disable`, `organisations_enable`, `access_revoke`, `access_enable`, `groups_dropmember`, `staff_revoke` | Nothing: the target is read again just before the write |
+
+A write that ID takes without a precondition says so in its preview's warnings.
+
+### Idempotency and correlation
+
+- **One key per intent.** Prepare mints a UUIDv7 and keeps it in the intent; every write of the commit sends it as `Idempotency-Key`, as `<key>.<step>` when one commit writes more than once (`staff_revoke` out of two groups). A write refused with `401` is sent again with a new token and the same key; a write ID did not answer is sent once more with the same key, and ID answers what it did the first time, if it did.
+- **The execution id.** Every call to ID carries the call's execution id as `x-request-id`, which ID stores on the audit event as `requestId`.
+- **ID's operation.** The receipt's `results.operationId` (`operationIds` for `staff_revoke`) is the `Operation-Id` ID answered: filter `audit_list` by it.
+- **The Toolbox.** `toolbox_enable` sends no key: the Toolbox's enable call takes none, and repeating it makes only what is missing.
+
+## Critical operations
+
+**Which.** `organisations_disable`, `organisations_enable`, `staff_grant` and `staff_revoke`, and any write whose organisation is the platform organisation: it decides who is staff and how staff sign in.
+
+**Who.** An owner whose last sign-in at their company's directory is within `ADMIN_FRESH_SECONDS`, 1,800 seconds by default. The sign-in time is the token's `upstream_auth_time`. An admin preparing a write to the platform organisation gets `PERMISSION_DENIED`.
+
+**When it is checked.** At prepare and again at commit, so an intent prepared in time cannot be committed once the window has passed. Older, or no time at all, answers `ADMIN_REAUTHENTICATION_REQUIRED` with `details.upstream_auth_time` and `details.max_age_seconds`, and the refusal is evidence (`capability.denied`, reason `stale_authentication`).
+
+**Why refreshing does not help.** ID fixes `upstream_auth_time` when it creates the authorisation, from the browser session that signed in, and every token of that authorisation, refreshed ones included, carries it.
+
+### Sign in again
+
+1. In the browser you use for Answerable ID, open `http://localhost:47300/security` (your ID's origin and `/security`) and choose **Verify sign-in**. ID sends you to your company's directory with `prompt=login` and accepts only a sign-in from the last five minutes.
+2. In Claude Code, run `/mcp`, choose the admin MCP, **Clear authentication**, then **Authenticate**. The new authorisation takes the new sign-in time.
+
+Do them in that order: an authorisation made before step 1 keeps the old time. Signing out of ID and in again is not enough, because a sign-in that does not ask the directory to prompt can carry the directory's earlier time. This remedy is read from ID's code; a journey that runs it against a real ID: Not yet.
 
 ## How authority is read
 
@@ -81,7 +195,7 @@ On every request that lists or calls tools, in this order:
 1. **Token.** Verified offline against ID's keys: issuer, audience (the admin MCP's URL), type, expiry. It must carry `admin`. It never carries a role.
 2. **Platform organisation.** The token's organisation must be the platform organisation. The server learns its id once, at start, from ID's `GET /me` as its machine client: the organisation ID marks `isPlatform`, never a slug. Anyone else gets no tools at all, not even `admin_whoami`.
 3. **Role, live.** One read of ID's member access view for the caller's membership, shared by every tool the request decides. Nothing is cached between requests: a role granted or removed in ID applies to the next request with the same token.
-4. **Tool minimum.** A tool is served when the role is at or above its minimum: none for `admin_whoami`, `team` for every read.
+4. **Tool minimum.** A tool is served when the role is at or above its minimum: none for `admin_whoami`, `team` for every read, `admin` or `owner` for a write as [Writes](#writes) says. A commit checks it again: a person whose role fell below the intent's tool since prepare gets `PERMISSION_DENIED`, or no commit tool at all.
 
 **Hidden means refused.** A tool you may not use is absent from `tools/list`, and calling it answers the protocol's unknown-tool error, as a name that does not exist does.
 
@@ -91,12 +205,16 @@ On every request that lists or calls tools, in this order:
 
 ## Evidence
 
-Every call and every refusal is a row in the evidence chain of the platform organisation, in the admin MCP's database (`answerable_admin`), as in [the Toolbox](/docs/toolbox#evidence):
+Every call, every refusal and every step of an intent is a row in the evidence chain of the platform organisation, in the admin MCP's database (`answerable_admin`), as in [the Toolbox](/docs/toolbox#evidence):
 
 | Kind | When | Carries |
 | --- | --- | --- |
-| `capability.completed` | A call ran | `outcome` (`success` or `failure`), `error_code`, `execution_id`, `request_id` (the call's JSON-RPC id), `upstream: "id"` |
-| `capability.denied` | A call named a tool the caller may not use | `reason`: `not_platform` (with the caller's `organisation_id`), `missing_scope` (with `missing`) or `role_below_minimum` (with `held` and `needed`) |
+| `capability.completed` | A call ran: a read, a prepare or a commit | `outcome` (`success` or `failure`), `error_code`, `execution_id`, `request_id` (the call's JSON-RPC id), `upstream`: `toolbox` for `toolbox_enable`, otherwise `id` |
+| `capability.denied` | A call named a tool the caller may not use, or a critical operation found the sign-in too old | `reason`: `not_platform` (with the caller's `organisation_id`), `missing_scope` (with `missing`), `role_below_minimum` (with `held` and `needed`) or `stale_authentication` (with `upstream_auth_time` and `max_age_seconds`) |
+| `intent.prepared` | A write was prepared | `intent_id`, the policy class, and the preview as a payload that can be erased |
+| `intent.committed`, `receipt.issued` | A commit applied the intent | `intent_id`, `receipt_id` |
+| `intent.stale` | A commit found a target moved | `intent_id` |
+| `intent.expired` | An intent was found past its expiry | `intent_id` |
 
 Each row names the person (`actor_id`, their user id) and the host (`client_id`). Inputs and results are not recorded. A call refused because ID did not answer the role read leaves no row.
 
@@ -108,7 +226,7 @@ Each row names the person (`actor_id`, their user id) and the host (`client_id`)
 | --- | --- |
 | The resource | `http://localhost:47520/mcp`, exactly `ADMIN_RESOURCE_URL`; allowed scopes `admin`, `offline_access`, `answerable-team`, `answerable-admin`, `answerable-owner` |
 | Claude Code | A public client `claude-code-admin`, scopes `openid offline_access admin`, redirect `http://localhost:47700/callback`, linked to the resource; the platform organisation's login and `admin` capabilities and organisation-wide entitlements for it |
-| The machine client | `admin-mcp`, owned by the platform organisation, `client_credentials` with `platform:read`, linked to ID's admin resource with a matching capability |
+| The machine client | `admin-mcp`, owned by the platform organisation, `client_credentials` with `platform:read platform:write`, linked to ID's admin resource with a matching capability. For `toolbox_enable`, also linked to the Toolbox's admin resource (`http://localhost:47400/admin`) with a `toolbox:admin` capability: one client gets a token for each audience |
 | The roles | A group of the platform organisation per role, each with an entitlement on the resource whose scopes are its grant string |
 
 A step-by-step setup page: Not yet. Then put the machine client's id and secret in the root `.env` and start the server:
@@ -126,15 +244,15 @@ Read from the root `.env` by `bun run admin:dev`; every variable is listed in `d
 
 | Variable | Meaning | Local value |
 | --- | --- | --- |
-| `ADMIN_ID_ISSUER` | Answerable ID's origin | `http://localhost:47300` |
+| `ADMIN_ID_ISSUER` | Answerable ID's origin; [Sign in again](#sign-in-again) names its `/security` page | `http://localhost:47300` |
 | `ADMIN_RESOURCE_URL` | The admin MCP's URL as registered in ID: the token audience; its path is the endpoint | `http://localhost:47520/mcp` |
 | `ADMIN_PORT` | The loopback port | `47520` (the default) |
 | `ADMIN_DATABASE_URL` | Intents and evidence | `postgres://answerable:answerable@localhost:47432/answerable_admin` |
 | `ADMIN_TEST_DATABASE_URL` | The test database, reset by `db:test:migrate` | `postgres://answerable:answerable@localhost:47432/answerable_admin_test` (the default) |
 | `ADMIN_ID_CLIENT_ID`, `ADMIN_ID_CLIENT_SECRET` | The machine client, owned by the platform organisation | `admin-mcp` and its secret |
 | `ADMIN_ID_ADMIN_RESOURCE` | ID's admin resource, ID's `ADMIN_RESOURCE_IDENTIFIER` | `http://localhost:47300/api/admin` |
-| `ADMIN_TOOLBOX_ADMIN_RESOURCE` | The Toolbox's admin resource, for enabling the Toolbox; optional and not used yet | `http://localhost:47400/admin` |
-| `ADMIN_FRESH_SECONDS` | How recent a sign-in the critical operations will need; read and not used yet | `1800` (the default) |
+| `ADMIN_TOOLBOX_ADMIN_RESOURCE` | The Toolbox's admin resource: the audience of the `toolbox:admin` token, and the API's base with `/v1`. Unset, `toolbox_enable` stays listed and answers `PRECONDITION_FAILED` | `http://localhost:47400/admin` |
+| `ADMIN_FRESH_SECONDS` | How recent a directory sign-in the [critical operations](#critical-operations) need, in seconds | `1800` (the default) |
 
 `GET /health` answers `{ "status": "ok" }` while the database answers `select 1`, and `503` with `{ "status": "unavailable" }` otherwise, whatever the `Host` header.
 
@@ -146,24 +264,50 @@ Read from the root `.env` by `bun run admin:dev`; every variable is listed in `d
 | Role freshness | Read on every request. A `2026-07-28` host may keep `tools/list` for 30 seconds, as from [every `@answerable/mcp` server](/docs/mcp/servers#the-server); every call is checked against the current role |
 | ID unavailable | Nothing is served: lists fail, calls answer `UPSTREAM_UNAVAILABLE` |
 | Lists | At most 100 items a page |
+| Secrets | No tool takes one. `sso_set` sets Answerable's own Microsoft or Google application only: `https://login.microsoftonline.com/<tenant id>/v2.0` or `https://accounts.google.com`. A directory with its own credentials is set with cURL, as [Connect the directory](/docs/id/onboard#connect-the-directory) shows |
+| SSO provider changes | ID revokes every grant of the organisation when its provider changes, including when it is first set |
+| Writes without a precondition at ID | Creating an organisation, a domain, a group or an entitlement; disabling or enabling an organisation or an entitlement; removing a group member. The admin MCP reads the target again just before the write |
+| Entitlements | ID keeps one per principal and target, whatever its scopes or status: `access_grant` refuses a second, naming the one there. A disabled one comes back with `access_enable`; its scopes change only with [updateEntitlement](/docs/id/admin-api/entitlements/updateEntitlement) |
+| `toolbox_enable` | Not atomic: if the Toolbox fails part-way, what it made stays. Safe to repeat: prepare and commit the same request again, and it makes only what is missing |
+| Directory groups | Groups the organisation's directory keeps in step (`externalId` set) are refused by `groups_addmember` and `groups_dropmember` |
+| The platform organisation | `organisations_disable` refuses it: every member of staff would lose access |
+| Intents | Controlled class, 30 minutes from prepare to commit |
+| Evidence of a commit call | Its `capability.completed` row names `upstream: "id"` whichever tool the intent is for; the `intent.committed` row names that tool |
 | `sso_test` | ID refuses an issuer over plain HTTP, such as a local test directory, with the problem `insecure_issuer` |
 | Results | Not limited in size: lists are paged, and `organisations_get` answers every domain |
 | Evidence of calls refused because ID did not answer | Not recorded: the SDK answers that refusal before the server's call wrapper runs |
 
 ## Errors
 
+Every tool error is the envelope [MCP errors](/docs/mcp/errors) describes, with `code`, `message`, `retry` and `details`.
+
 | You see | Meaning | What to do |
 | --- | --- | --- |
 | `Tool <name> not found` | No such tool, or you may not use it: you are not a member of the platform organisation, your token lacks `admin`, or your role is below the tool's minimum | Call `admin_whoami`; ask an owner for a role |
+| `Tool admin_commit_confirmed not found` | Your role has no write, now: it fell since you prepared | Ask an owner for the role again, then commit |
 | `tools/list` holds only `admin_whoami` | You hold no role | Ask an owner to add you to a role group, then list again |
 | `tools/list` is empty | Your token is for another organisation, or lacks `admin` | Sign in again and choose the platform organisation |
 | `tools/list` fails, or a call answers `UPSTREAM_UNAVAILABLE`: `Answerable ID did not answer with your role; try again shortly` | ID did not answer the role read | Retry after `retry.after_ms`; the server log shows `[admin] reading the role failed` |
+| `APPROVAL_REQUIRED` | You committed with `admin_commit`, or `preview_summary` differs from the intent's summary | Show the person the preview, then call `admin_commit_confirmed` with its summary word for word |
+| `ADMIN_REAUTHENTICATION_REQUIRED` | A critical operation, and your last directory sign-in is older than `ADMIN_FRESH_SECONDS`, or unknown | [Sign in again](#sign-in-again), then prepare again |
+| `PERMISSION_DENIED`: `Changing the platform organisation is an owner's critical operation…` | An admin prepared a write to the platform organisation | Ask an owner |
+| `PERMISSION_DENIED`: `Your access no longer covers admin/<tool>` | Your role fell below the tool's minimum since you prepared | Ask for the role again, then prepare again |
+| `PRECONDITION_FAILED` | The write would change nothing, ID would refuse it, or the Toolbox is not configured; the message and `details.preconditions` say which | Change that state, or nothing is needed |
+| `PRECONDITION_FAILED`: `No group of the platform organisation holds answerable-<role>…` | `staff_grant` found no group whose entitlement carries the role | As the message says: `groups_create` in the platform organisation, then `access_grant` to that group on the admin MCP's resource with the role's grant string |
+| `PRECONDITION_FAILED`: `<who> has entitlement <id> on <resource>, disabled…` | `access_grant` found the principal's entitlement for that target, disabled | Call `access_enable` with that `entitlementId`; change its scopes with [updateEntitlement](/docs/id/admin-api/entitlements/updateEntitlement) if they differ |
+| `PRECONDITION_FAILED`: `The admin MCP does not know the Toolbox…` | `ADMIN_TOOLBOX_ADMIN_RESOURCE` is unset | Set it and restart the admin MCP |
+| `INVALID_INPUT` | An argument failed the schema, or a rule: an issuer `sso_set` does not take, a scope the resource does not allow, a `principal.id` missing or extra, a provider or host client unknown | Fix the field `details.field_violations` names |
+| `INTENT_STALE` | A target moved since prepare, or ID refused the write's precondition; `details.targets` holds both versions | Prepare again and show the new preview |
+| `INTENT_EXPIRED` | 30 minutes passed since prepare | Prepare again |
+| `INTENT_CONSUMED` | A commit of this intent failed earlier | Prepare again; after `UPSTREAM_UNAVAILABLE`, read the target back first |
+| `INTENT_NOT_FOUND`, `COMMIT_TOKEN_INVALID`, `PRINCIPAL_MISMATCH`, `COMMIT_IN_PROGRESS` | The intent id, the token or the caller does not match, or a commit is running | As [MCP errors](/docs/mcp/errors#codes) says |
 | Tool result `UPSTREAM_UNAVAILABLE`: `Answerable ID did not answer; try again shortly` | ID failed a read the tool needed | Retry; the log shows `[admin] Answerable ID failed` |
-| Tool result `UPSTREAM_REJECTED` | ID refused the machine client; the message is ID's, and `details.upstream` holds its status and code | Fix `ADMIN_ID_CLIENT_ID`, `ADMIN_ID_CLIENT_SECRET` or the client's `platform:read` capability |
-| Tool result `NOT_FOUND`: `Answerable ID has no organisation <id>…` or `…no member <id>…` | The id does not exist in ID | Take ids from `organisations_list` or `members_list` |
-| Tool result `NOT_FOUND`: `Organisation <id> has no SSO provider…` | `sso_test` found no provider to test | `organisations_get` shows `sso: null`; set one as [Connect the directory](/docs/id/onboard#connect-the-directory) shows |
+| Tool result `UPSTREAM_UNAVAILABLE`: `Answerable ID failed the write twice, or did not answer it…` | ID failed or did not answer a write, sent twice with the same key; whether it applied it is unknown | Read the target back with a read tool before preparing again |
+| Tool result `UPSTREAM_UNAVAILABLE`: `The Toolbox…` | The Toolbox did not answer, or failed | Retry; `toolbox_enable` is safe to repeat |
+| Tool result `UPSTREAM_REJECTED` | ID or the Toolbox refused the machine client or a write; the message is theirs, and `details.upstream` holds the status and code, such as `409 conflict` for a domain another organisation holds or `platform_application_missing` for a directory without Answerable's application | Fix what the message names, such as `ADMIN_ID_CLIENT_ID`, `ADMIN_ID_CLIENT_SECRET` or the client's capabilities |
+| Tool result `NOT_FOUND` | The organisation, member, group, entitlement, resource or client does not exist in ID | Take ids from the list tools |
+| Tool result `NOT_FOUND`: `Organisation <id> has no SSO provider…` | `sso_test` found no provider to test | `organisations_get` shows `sso: null`; set one with `sso_set` |
 | Tool result `NOT_FOUND`: `Answerable ID does not know this admin MCP's resource…` | `staff_list` found no resource registered as `ADMIN_RESOURCE_URL` | Register it, or correct the variable |
-| Tool result `INVALID_INPUT` | An argument failed the schema: an id that is not a UUID, a `limit` above 100, an unknown field | Fix the field `details.field_violations` names |
 | `401 invalid_token` | The token is for another resource, or expired | Sign in for the admin MCP's exact URL |
 | `The admin MCP cannot start: The machine client <id> belongs to organisation <id>, which is not the platform organisation…` | The machine client is owned by another organisation | Register `ADMIN_ID_CLIENT_ID` in the platform organisation |
 | `The admin MCP cannot start: Answerable ID refused the client credentials of <id> (<status>)…` | ID refused the machine client at start | Fix `ADMIN_ID_CLIENT_ID`, `ADMIN_ID_CLIENT_SECRET` or its `platform:read` capability |
@@ -177,7 +321,11 @@ Read from the root `.env` by `bun run admin:dev`; every variable is listed in `d
 
 | Item | Meanwhile |
 | --- | --- |
-| Writes: organisations, domains, SSO providers, groups, access, the Toolbox, and the owner's critical operations | cURL, as [Onboard an organisation](/docs/id/onboard) and [Administer the Toolbox](/docs/toolbox/admin) show |
+| Inviting a person before their first sign-in | ID has no invitation route. Grant the organisation or a group; the person appears at their first sign-in; then `groups_addmember` |
+| Deleting an organisation, a group, a member or an entitlement | Disable instead: `organisations_disable`, `access_revoke` |
+| SSO providers with their own credentials | cURL, as [Connect the directory](/docs/id/onboard#connect-the-directory) shows |
+| Human approval of a write | Every write is controlled class; the critical operations are owner-only and need a recent sign-in |
+| Registering clients and resources, users, sessions, disabling domains, member windows and removal | cURL, as [Onboard an organisation](/docs/id/onboard) and [Manage your organisation](/docs/id/manage) show |
 | A step-by-step setup page and the acceptance against a real ID | The registration values in [Run it locally](#run-it-locally) |
 | An admin MCP for an organisation's own administrators | They use [Manage your organisation](/docs/id/manage) |
 | Mounting this provider in the Toolbox | It is served alone, at its own resource |

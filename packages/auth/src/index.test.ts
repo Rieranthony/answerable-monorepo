@@ -13,7 +13,10 @@ test("valid tokens return only a frozen principal and de-duplicated scopes", asy
   const userId = crypto.randomUUID()
   const organizationId = crypto.randomUUID()
   const principal = await issuer.verify(await issuer.sign({ resource, userId, organizationId, scopes: ["read", "write", "read"] }))
-  expect(principal).toEqual({ userId, organizationId, membershipId: expect.any(String), grantId: expect.any(String), clientId: "test-client", scopes: ["read", "write"], expiresAt: expect.any(Number), organizationAuthorizationVersion: 1 })
+  expect(principal).toEqual({
+    userId, organizationId, membershipId: expect.any(String), grantId: expect.any(String), clientId: "test-client", scopes: ["read", "write"], expiresAt: expect.any(Number),
+    organizationAuthorizationVersion: 1, upstreamAuthTime: expect.any(Number),
+  })
   expect(Object.isFrozen(principal)).toBe(true)
   expect(Object.isFrozen(principal.scopes)).toBe(true)
 })
@@ -33,6 +36,9 @@ const invalidClaims: [string, Record<string, unknown>][] = [
   ["missing organisation authorisation version", { organization_authorization_version: undefined }],
   ["zero organisation authorisation version", { organization_authorization_version: 0 }],
   ["fractional organisation authorisation version", { organization_authorization_version: 1.5 }],
+  ["text upstream authentication time", { upstream_auth_time: "2026-10-01T09:00:00Z" }],
+  ["negative upstream authentication time", { upstream_auth_time: -1 }],
+  ["fractional upstream authentication time", { upstream_auth_time: 1.5 }],
 ]
 for (const [name, claims] of invalidClaims) {
   test(`rejects ${name} with a safe authentication error`, async () => {
@@ -50,6 +56,15 @@ test("rejects the wrong type, an unpublished signature and opaque tokens", async
 test("the organisation's authorisation version is the token's, which ID advances when it disables the organisation", async () => {
   const issuer = await fixture()
   expect((await issuer.verify(await issuer.sign({ resource, claims: { organization_authorization_version: 7 } }))).organizationAuthorizationVersion).toBe(7)
+})
+test("the upstream authentication time is the token's, null when the directory reported none or the token has no claim", async () => {
+  const issuer = await fixture()
+  const time = async (claims: Record<string, unknown>) => (await issuer.verify(await issuer.sign({ resource, claims }))).upstreamAuthTime
+  expect(await time({ upstream_auth_time: 1_790_000_000 })).toBe(1_790_000_000)
+  expect(await time({ upstream_auth_time: null })).toBeNull()
+  expect(await time({ upstream_auth_time: undefined })).toBeNull()
+  const now = Math.floor(Date.now() / 1000)
+  expect(await time({})).toBeWithin(now - 5, now + 1)
 })
 // What ID puts in a client_credentials token: the client is the subject, and there is no membership or grant.
 const machine = (claims: Record<string, unknown> = {}) => ({

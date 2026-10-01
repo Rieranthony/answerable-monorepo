@@ -51,7 +51,7 @@ The codes and their retry policies are read from `errorCodes` in `@answerable/mc
 
 ## Custom codes
 
-A provider may add its own codes, `<PROVIDER>_<CODE>` in capitals such as `ACME_QUOTA_EXCEEDED`, each with its own retry policy and listed in the `errors` of the tool that throws it; the manifest carries the list. [Tool errors](/docs/mcp/tools#tool-errors) shows how to throw and declare one. An undeclared custom code answers `INTERNAL`.
+A provider may add its own codes, `<PROVIDER>_<CODE>` in capitals such as `ACME_QUOTA_EXCEEDED`, each with its own retry policy and listed in the `errors` of the tool that throws it; the manifest carries the list. [Tool errors](/docs/mcp/tools#tool-errors) shows how to throw and declare one. An undeclared custom code answers `INTERNAL`. The admin MCP's `ADMIN_REAUTHENTICATION_REQUIRED`, retry `after_state_change`, is one: [Critical operations](/docs/admin#critical-operations).
 
 ## Field violations
 
