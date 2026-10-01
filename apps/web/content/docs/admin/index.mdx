@@ -1,0 +1,184 @@
+---
+title: The admin MCP
+description: "The staff-only MCP server through which Answerable staff read organisations, members, access and the audit log in Answerable ID from an AI host: its roles, its tools, how it reads authority from ID, its limits and its errors."
+---
+
+```bash
+claude mcp add --transport http answerable-admin http://localhost:47520/mcp \
+  --client-id claude-code-admin --callback-port 47700
+```
+
+The admin MCP (`mcps/admin`) gives Answerable staff the reads of [onboarding an organisation](/docs/id/onboard) in an AI host such as Claude Code. A staff member signs in with their Answerable account and sees exactly the tools their role allows. The server reads Answerable ID's admin API with its own machine client, and only after it has checked the person's role.
+
+**Staff only.** Only members of the platform organisation get any tool. An admin MCP for an organisation's own administrators: Not yet.
+
+Run the line above once the admin MCP runs locally with its registrations ([below](#run-it-locally)), then choose **Authenticate** in Claude Code's `/mcp` and ask Claude to call `admin_whoami`.
+
+## Roles
+
+| Role | Grant string | May use |
+| --- | --- | --- |
+| None | None | `admin_whoami` only |
+| `team` | `answerable-team` | `admin_whoami` and every read tool |
+| `admin` | `answerable-admin` | The same. Ordinary writes: Not yet |
+| `owner` | `answerable-owner` | The same. Writes and the critical operations: Not yet |
+
+**Where a role lives.** In Answerable ID, as an entitlement on the admin MCP's resource, with no client, whose scopes include the role's grant string. Hold it through a group of the platform organisation: put a member in the group and they have the role. The group's name confers nothing; the entitlement does.
+
+- **The highest role counts.** A member who holds `answerable-team` and `answerable-owner` is an owner.
+- **Only these three strings.** ID accepts any string as a scope, so the admin MCP ignores every other one: `answerable-root`, `Answerable-Owner` or a role on another resource confers nothing, and so does a role entitlement limited to one client.
+- **No role yet.** Any member of the platform organisation whose token carries `admin` gets `admin_whoami`, which says `role: null` and how to get one.
+
+Give someone a role by adding their member to the group, as [Narrow it to a group](/docs/id/onboard#grant-access) shows; they must have signed in once. It applies to their next request, without signing in again.
+
+## Tools
+
+| Tool | Answers | Reads from Answerable ID |
+| --- | --- | --- |
+| `admin_whoami` | You, your role and the tools you may call | [getMemberAccess](/docs/id/admin-api/access/getMemberAccess) |
+| `organisations_list` | Organisations, by text in the name or slug and by status | [listOrganizations](/docs/id/admin-api/organizations/listOrganizations) |
+| `organisations_get` | One organisation, every domain routed to it and its SSO provider, or `sso: null` | [getOrganization](/docs/id/admin-api/organizations/getOrganization), [listOrganizationDomains](/docs/id/admin-api/domains/listOrganizationDomains), [getSsoProvider](/docs/id/admin-api/sso-provider/getSsoProvider) |
+| `members_list` | An organisation's members, by email, text and whether the membership is in force | [listMembers](/docs/id/admin-api/members/listMembers) |
+| `members_get` | One member, their groups and what their entitlements reach | [getMember](/docs/id/admin-api/members/getMember), [getMemberAccess](/docs/id/admin-api/access/getMemberAccess) |
+| `groups_list` | An organisation's groups, by text and status | [listGroups](/docs/id/admin-api/groups/listGroups) |
+| `access_list` | An organisation's entitlements, by client, resource, member, group and status | [listEntitlements](/docs/id/admin-api/entitlements/listEntitlements) |
+| `audit_list` | ID's audit events, for one organisation or all, by action, actor, operation, outcome, target and time | [listAuditEvents](/docs/id/admin-api/audit/listAuditEvents) |
+| `sso_test` | ID's connectivity test of an organisation's SSO provider | [testSsoProvider](/docs/id/admin-api/diagnostics/testSsoProvider) |
+| `staff_list` | The platform organisation's members who can reach this server, with their roles | [listTargetAccess](/docs/id/admin-api/access/listTargetAccess) |
+
+**Fields are ID's.** Each tool takes ID's own parameter names (`organizationId`, `memberId`, `actorId`) and answers with ID's own field names, keeping the fields in its output schema: the admin API reference above describes each one. Identifiers are ID's UUIDs; times are ISO 8601 in UTC.
+
+**Lists** take `limit` (default 20, at most 100) and `cursor`, and answer `items`, `next_cursor` and `has_more`, newest first; pass `next_cursor` as `cursor` for the next page. `organisations_get` reads every page of domains itself.
+
+**The audit join.** Every call to ID carries the call's execution id as `x-request-id`. ID stores it as `requestId` on the audit event of a write, so `audit_list` joins a change to the admin MCP's evidence; `operationId` follows one change through ID. The machine client is the actor ID records.
+
+This is `staff_list`'s contract in the provider's committed manifest:
+
+<ManifestEntry workspace="admin" identity="admin/staff.list" />
+
+**Writes.** Not yet. Creating and updating organisations, adding domains, setting SSO providers, groups, granting and revoking access and enabling the Toolbox, then the owner's critical operations, come next: the order is in `docs/goals/admin-mcp/task_plan.md` in the repository. Until then, make changes with cURL as [Onboard an organisation](/docs/id/onboard) shows.
+
+### admin_whoami
+
+```json
+{
+  "userId": "0199a0d2-…",
+  "membershipId": "0199a0d3-…",
+  "organizationId": "01a09acb-…",
+  "clientId": "claude-code-admin",
+  "role": null,
+  "nextStep": "Ask an owner to add you to a group that holds answerable-team, answerable-admin or answerable-owner on the admin MCP's resource; your next call then has the role.",
+  "tools": ["admin_whoami"]
+}
+```
+
+Your person, membership, organisation and host client from the token; your role as ID says it on this call; and the tools that role lets you call. `nextStep` is `null` when you hold a role.
+
+## How authority is read
+
+On every request that lists or calls tools, in this order:
+
+1. **Token.** Verified offline against ID's keys: issuer, audience (the admin MCP's URL), type, expiry. It must carry `admin`. It never carries a role.
+2. **Platform organisation.** The token's organisation must be the platform organisation. The server learns its id once, at start, from ID's `GET /me` as its machine client: the organisation ID marks `isPlatform`, never a slug. Anyone else gets no tools at all, not even `admin_whoami`.
+3. **Role, live.** One read of ID's member access view for the caller's membership, shared by every tool the request decides. Nothing is cached between requests: a role granted or removed in ID applies to the next request with the same token.
+4. **Tool minimum.** A tool is served when the role is at or above its minimum: none for `admin_whoami`, `team` for every read.
+
+**Hidden means refused.** A tool you may not use is absent from `tools/list`, and calling it answers the protocol's unknown-tool error, as a name that does not exist does.
+
+**Fail closed.** When ID does not answer the role read, `tools/list` fails and every call answers `UPSTREAM_UNAVAILABLE`. Nothing is served from memory.
+
+**What it costs.** One round trip to ID per request. Measured in process against the in-memory fake ID of `@answerable/id-admin/testing`, 50 `tools/list` requests made one access read each, with a median of 2.9 ms; with 30 ms added to every ID answer, the median was 38.0 ms. Against a real ID: Not yet measured.
+
+## Evidence
+
+Every call and every refusal is a row in the evidence chain of the platform organisation, in the admin MCP's database (`answerable_admin`), as in [the Toolbox](/docs/toolbox#evidence):
+
+| Kind | When | Carries |
+| --- | --- | --- |
+| `capability.completed` | A call ran | `outcome` (`success` or `failure`), `error_code`, `execution_id`, `request_id` (the call's JSON-RPC id), `upstream: "id"` |
+| `capability.denied` | A call named a tool the caller may not use | `reason`: `not_platform` (with the caller's `organisation_id`), `missing_scope` (with `missing`) or `role_below_minimum` (with `held` and `needed`) |
+
+Each row names the person (`actor_id`, their user id) and the host (`client_id`). Inputs and results are not recorded. A call refused because ID did not answer the role read leaves no row.
+
+## Run it locally
+
+**Register it in Answerable ID first**, with a [staff token](/docs/id/onboard#get-a-staff-token) and the commands of [Register the Toolbox in ID](/docs/toolbox/admin#register-the-toolbox-in-id), using these values:
+
+| What | Values |
+| --- | --- |
+| The resource | `http://localhost:47520/mcp`, exactly `ADMIN_RESOURCE_URL`; allowed scopes `admin`, `offline_access`, `answerable-team`, `answerable-admin`, `answerable-owner` |
+| Claude Code | A public client `claude-code-admin`, scopes `openid offline_access admin`, redirect `http://localhost:47700/callback`, linked to the resource; the platform organisation's login and `admin` capabilities and organisation-wide entitlements for it |
+| The machine client | `admin-mcp`, owned by the platform organisation, `client_credentials` with `platform:read`, linked to ID's admin resource with a matching capability |
+| The roles | A group of the platform organisation per role, each with an entitlement on the resource whose scopes are its grant string |
+
+A step-by-step setup page: Not yet. Then put the machine client's id and secret in the root `.env` and start the server:
+
+```bash
+bun --env-file=.env run --filter @answerable/mcp-admin db:migrate
+bun run admin:dev
+```
+
+It prints `Admin MCP serving http://localhost:47520/mcp for platform organisation <id>`. The admin MCP has no tables of its own: `db:migrate` applies the intent and evidence tables of `@answerable/mcp-postgres`.
+
+## Environment
+
+Read from the root `.env` by `bun run admin:dev`; every variable is listed in `default.env`.
+
+| Variable | Meaning | Local value |
+| --- | --- | --- |
+| `ADMIN_ID_ISSUER` | Answerable ID's origin | `http://localhost:47300` |
+| `ADMIN_RESOURCE_URL` | The admin MCP's URL as registered in ID: the token audience; its path is the endpoint | `http://localhost:47520/mcp` |
+| `ADMIN_PORT` | The loopback port | `47520` (the default) |
+| `ADMIN_DATABASE_URL` | Intents and evidence | `postgres://answerable:answerable@localhost:47432/answerable_admin` |
+| `ADMIN_TEST_DATABASE_URL` | The test database, reset by `db:test:migrate` | `postgres://answerable:answerable@localhost:47432/answerable_admin_test` (the default) |
+| `ADMIN_ID_CLIENT_ID`, `ADMIN_ID_CLIENT_SECRET` | The machine client, owned by the platform organisation | `admin-mcp` and its secret |
+| `ADMIN_ID_ADMIN_RESOURCE` | ID's admin resource, ID's `ADMIN_RESOURCE_IDENTIFIER` | `http://localhost:47300/api/admin` |
+| `ADMIN_TOOLBOX_ADMIN_RESOURCE` | The Toolbox's admin resource, for enabling the Toolbox; optional and not used yet | `http://localhost:47400/admin` |
+| `ADMIN_FRESH_SECONDS` | How recent a sign-in the critical operations will need; read and not used yet | `1800` (the default) |
+
+`GET /health` answers `{ "status": "ok" }` while the database answers `select 1`, and `503` with `{ "status": "unavailable" }` otherwise, whatever the `Host` header.
+
+## Limits
+
+| Limit | Value |
+| --- | --- |
+| Who | Members of the platform organisation whose token carries `admin`. Everyone else: no tools |
+| Role freshness | Read on every request. A `2026-07-28` host may keep `tools/list` for 30 seconds, as from [every `@answerable/mcp` server](/docs/mcp/servers#the-server); every call is checked against the current role |
+| ID unavailable | Nothing is served: lists fail, calls answer `UPSTREAM_UNAVAILABLE` |
+| Lists | At most 100 items a page |
+| `sso_test` | ID refuses an issuer over plain HTTP, such as a local test directory, with the problem `insecure_issuer` |
+| Results | Not limited in size: lists are paged, and `organisations_get` answers every domain |
+| Evidence of calls refused because ID did not answer | Not recorded: the SDK answers that refusal before the server's call wrapper runs |
+
+## Errors
+
+| You see | Meaning | What to do |
+| --- | --- | --- |
+| `Tool <name> not found` | No such tool, or you may not use it: you are not a member of the platform organisation, your token lacks `admin`, or your role is below the tool's minimum | Call `admin_whoami`; ask an owner for a role |
+| `tools/list` holds only `admin_whoami` | You hold no role | Ask an owner to add you to a role group, then list again |
+| `tools/list` is empty | Your token is for another organisation, or lacks `admin` | Sign in again and choose the platform organisation |
+| `tools/list` fails, or a call answers `UPSTREAM_UNAVAILABLE`: `Answerable ID did not answer with your role; try again shortly` | ID did not answer the role read | Retry after `retry.after_ms`; the server log shows `[admin] reading the role failed` |
+| Tool result `UPSTREAM_UNAVAILABLE`: `Answerable ID did not answer; try again shortly` | ID failed a read the tool needed | Retry; the log shows `[admin] Answerable ID failed` |
+| Tool result `UPSTREAM_REJECTED` | ID refused the machine client; the message is ID's, and `details.upstream` holds its status and code | Fix `ADMIN_ID_CLIENT_ID`, `ADMIN_ID_CLIENT_SECRET` or the client's `platform:read` capability |
+| Tool result `NOT_FOUND`: `Answerable ID has no organisation <id>…` or `…no member <id>…` | The id does not exist in ID | Take ids from `organisations_list` or `members_list` |
+| Tool result `NOT_FOUND`: `Organisation <id> has no SSO provider…` | `sso_test` found no provider to test | `organisations_get` shows `sso: null`; set one as [Connect the directory](/docs/id/onboard#connect-the-directory) shows |
+| Tool result `NOT_FOUND`: `Answerable ID does not know this admin MCP's resource…` | `staff_list` found no resource registered as `ADMIN_RESOURCE_URL` | Register it, or correct the variable |
+| Tool result `INVALID_INPUT` | An argument failed the schema: an id that is not a UUID, a `limit` above 100, an unknown field | Fix the field `details.field_violations` names |
+| `401 invalid_token` | The token is for another resource, or expired | Sign in for the admin MCP's exact URL |
+| `The admin MCP cannot start: The machine client <id> belongs to organisation <id>, which is not the platform organisation…` | The machine client is owned by another organisation | Register `ADMIN_ID_CLIENT_ID` in the platform organisation |
+| `The admin MCP cannot start: Answerable ID refused the client credentials of <id> (<status>)…` | ID refused the machine client at start | Fix `ADMIN_ID_CLIENT_ID`, `ADMIN_ID_CLIENT_SECRET` or its `platform:read` capability |
+| `The admin MCP cannot start: Answerable ID did not answer the token request…` | ID is not running at `ADMIN_ID_ISSUER` | Start ID, or correct the variable |
+| `Invalid admin MCP configuration: <VARIABLE>: …` at start | A variable is missing or invalid | Set it as in [Environment](#environment) |
+| `503 {"status":"unavailable"}` from `/health` | The database does not answer | Check `ADMIN_DATABASE_URL` and Postgres |
+| Log `relation "evidence_events" does not exist`, and every call fails | The database is not migrated | Run `bun --env-file=.env run --filter @answerable/mcp-admin db:migrate` |
+| `Refusing to reset <database>; expected answerable_admin_test` | `db:test:migrate` points elsewhere | Point `ADMIN_TEST_DATABASE_URL` at `answerable_admin_test` |
+
+## Not yet
+
+| Item | Meanwhile |
+| --- | --- |
+| Writes: organisations, domains, SSO providers, groups, access, the Toolbox, and the owner's critical operations | cURL, as [Onboard an organisation](/docs/id/onboard) and [Administer the Toolbox](/docs/toolbox/admin) show |
+| A step-by-step setup page and the acceptance against a real ID | The registration values in [Run it locally](#run-it-locally) |
+| An admin MCP for an organisation's own administrators | They use [Manage your organisation](/docs/id/manage) |
+| Mounting this provider in the Toolbox | It is served alone, at its own resource |
+| Spans, rate limits and budgets | None |

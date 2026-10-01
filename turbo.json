@@ -85,6 +85,16 @@
       "persistent": true,
       "passThroughEnv": ["TOOLBOX_*", "OTEL_EXPORTER_OTLP_ENDPOINT"]
     },
+    "@answerable/mcp-admin#test": {
+      "cache": false,
+      "dependsOn": ["^build"],
+      "passThroughEnv": ["ADMIN_*"]
+    },
+    "@answerable/mcp-admin#dev": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": ["ADMIN_*"]
+    },
     "lint": {},
     "typecheck": {},
     "@answerable/id#dev": {

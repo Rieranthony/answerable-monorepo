@@ -1,4 +1,4 @@
 {
   "title": "Docs",
-  "pages": ["index", "agents", "id", "mcp", "toolbox"]
+  "pages": ["index", "agents", "id", "mcp", "toolbox", "admin"]
 }

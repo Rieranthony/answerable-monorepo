@@ -11,6 +11,7 @@
     "dev": "bun run env:up && turbo run dev --filter='./apps/*'",
     "mcp:dev": "bun --env-file=.env run --filter @answerable/mcp-e2e dev",
     "toolbox:dev": "bun --env-file=.env run --filter @answerable/mcp-toolbox dev",
+    "admin:dev": "bun --env-file=.env run --filter @answerable/mcp-admin dev",
     "mcp:new": "bun scripts/mcp-new.ts",
     "mcp:test": "bun run --filter @answerable/auth --filter @answerable/id-admin --filter '@answerable/mcp*' --filter @answerable/scripts test",
     "mcp:check": "turbo run typecheck lint test --filter",

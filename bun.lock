@@ -85,6 +85,24 @@
         "typescript": "^5",
       },
     },
+    "mcps/admin": {
+      "name": "@answerable/mcp-admin",
+      "version": "0.1.0",
+      "dependencies": {
+        "@answerable/auth": "workspace:*",
+        "@answerable/id-admin": "workspace:*",
+        "@answerable/mcp": "workspace:*",
+        "@answerable/mcp-postgres": "workspace:*",
+        "zod": "4.6.5",
+      },
+      "devDependencies": {
+        "@eslint/js": "9.39.5",
+        "@types/bun": "1.3.1",
+        "eslint": "9.39.5",
+        "typescript": "5.9.3",
+        "typescript-eslint": "8.48.1",
+      },
+    },
     "mcps/e2e": {
       "name": "@answerable/mcp-e2e",
       "version": "0.1.0",
@@ -195,7 +213,7 @@
     },
     "packages/id-admin": {
       "name": "@answerable/id-admin",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "zod": "4.6.5",
       },
@@ -299,6 +317,8 @@
     "@answerable/id-admin": ["@answerable/id-admin@workspace:packages/id-admin"],
 
     "@answerable/mcp": ["@answerable/mcp@workspace:packages/mcp"],
+
+    "@answerable/mcp-admin": ["@answerable/mcp-admin@workspace:mcps/admin"],
 
     "@answerable/mcp-e2e": ["@answerable/mcp-e2e@workspace:mcps/e2e"],
 

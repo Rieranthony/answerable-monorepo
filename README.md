@@ -18,6 +18,7 @@ The [enterprise foundation](docs/05-id-enterprise-foundation.md) implementation 
 | `packages/mcp-postgres` | Postgres storage for MCP servers: the intent store, the hash-chained evidence and the migrator, shared by the Toolbox | Locally tested |
 | `mcps/e2e` | Reference MCP: five tools (one a prepared mutation), a prompt, a resource and an MCP Apps view; every new MCP is compared with it | Local acceptance passes |
 | `mcps/toolbox` | The Toolbox: one MCP endpoint serving each person the capabilities their organisation granted, with intents, evidence, spans and an admin API | Local acceptance passes |
+| `mcps/admin` | The admin MCP: a staff-only server that reads organisations, members, access and the audit log in ID, each tool behind a role read live from ID; writes are next | Locally tested |
 | `packages/acceptance` | The acceptance kit and journeys: real ID, the official MCP OAuth client, a browser and ID's pages | Locally tested |
 | `scripts` | Repository scripts: `bun run mcp:new <name>` scaffolds an MCP server | Locally tested |
 | `apps/community-mcp` | The tutor MCP (the Omni Accelerator community inside OmniChat)                                                                                                      | **Parked** until Answerable ID ships — its docs and Circle mocks stay in that folder, out of the plan                                                    |
@@ -57,7 +58,8 @@ bun dev
 | `id`       | 47300     | Answerable ID API and browser pages                           |
 | `toolbox`  | 47400     | The Toolbox MCP (`bun run toolbox:dev`)                       |
 | `e2e MCP`  | 47500     | The reference MCP (`bun run mcp:dev`); a scaffolded MCP uses 47510 |
-| `postgres` | 47432     | `answerable_id`, plus `answerable_id_test` for the test suite; `answerable_toolbox` and `answerable_toolbox_test` for the Toolbox; `answerable_mcp_postgres_test` for `packages/mcp-postgres` |
+| `admin MCP` | 47520    | The admin MCP (`bun run admin:dev`)                           |
+| `postgres` | 47432     | `answerable_id`, plus `answerable_id_test` for the test suite; `answerable_toolbox` and `answerable_toolbox_test` for the Toolbox; `answerable_admin` and `answerable_admin_test` for the admin MCP; `answerable_mcp_postgres_test` for `packages/mcp-postgres` |
 | `redis`    | 47379     | Session read-cache — later; unused by v1 code                 |
 
 The MCP acceptance (`bun run mcp:test:e2e`) owns 47532 (its own disposable PostgreSQL), 47600, 47602, 47603, 47604 and 47605, and never touches the normal ID database; run one acceptance at a time. Uncommon host ports so nothing clashes with other local projects. Answerable ID itself runs on the host at `http://localhost:47300`. Other commands: `bun run env:down` · `bun run env:reset` (wipes data) · `bun run test` (Answerable ID against Postgres, plus the web unit tests) · `bun run build` · `bun run lint`.
@@ -74,17 +76,18 @@ The development-only [OAuth test](apps/web/README.md#local-oauth-test) lets the 
 - [`packages/mcp-postgres`](packages/mcp-postgres/README.md) is the Postgres intent store, evidence chain and migrator that servers with a database share.
 - [`mcps/e2e`](mcps/e2e/README.md) is the reference server.
 - [`mcps/toolbox`](mcps/toolbox/README.md) is the Toolbox, with its own Postgres databases `answerable_toolbox` and `answerable_toolbox_test`.
+- [`mcps/admin`](mcps/admin/README.md) is the admin MCP for Answerable staff, with its own databases `answerable_admin` and `answerable_admin_test`.
 - [`packages/acceptance`](packages/acceptance/README.md) holds the real-ID acceptance kit and journeys.
 
 | Command | Does |
 | --- | --- |
 | `bun run mcp:new <name>` | Scaffold `mcps/<name>`: a server with one tool and its conformance test; it prints the commands that install it, write its manifest and check it |
 | `bun run mcp:check <workspace>` | Typecheck, lint and test one workspace, such as `@answerable/mcp-e2e` |
-| `bun run mcp:test` | The suites of `packages/auth`, `packages/id-admin`, `packages/mcp`, `packages/mcp-postgres`, every server under `mcps/` and the scaffold; the Toolbox and `packages/mcp-postgres` need the development Postgres |
+| `bun run mcp:test` | The suites of `packages/auth`, `packages/id-admin`, `packages/mcp`, `packages/mcp-postgres`, every server under `mcps/` and the scaffold; the Toolbox, the admin MCP and `packages/mcp-postgres` need the development Postgres |
 | `bun run mcp:test:e2e` | The journeys against real ID, a browser and the official MCP OAuth client (Docker) |
-| `bun run toolbox:dev` | Serve the Toolbox on 47400; `bun run mcp:dev` serves the reference server on 47500 |
+| `bun run toolbox:dev` | Serve the Toolbox on 47400; `bun run mcp:dev` serves the reference server on 47500 and `bun run admin:dev` the admin MCP on 47520 |
 
-Create an MCP with `mcp:new` and [Build your first MCP](apps/web/content/docs/mcp/quickstart.mdx), and mount it in the Toolbox with [Add tools to the Toolbox](apps/web/content/docs/toolbox/add-tools.mdx); the [standard](apps/web/content/docs/mcp/standard.mdx) says which rules the SDK, the conformance kit and the Toolbox enforce. [Connect Claude Code](apps/web/content/docs/mcp/claude-code.mdx) covers a real host. Decisions: [MCP foundation](docs/07-mcp-platform-draft.md) and [the capability platform](docs/08-capability-platform.md); results: [evidence](reports/mcp-foundation-evidence.md). Normal `bun dev` starts apps only.
+Create an MCP with `mcp:new` and [Build your first MCP](apps/web/content/docs/mcp/quickstart.mdx), and mount it in the Toolbox with [Add tools to the Toolbox](apps/web/content/docs/toolbox/add-tools.mdx); the [standard](apps/web/content/docs/mcp/standard.mdx) says which rules the SDK, the conformance kit and the Toolbox enforce. [Connect Claude Code](apps/web/content/docs/mcp/claude-code.mdx) covers a real host; [The admin MCP](apps/web/content/docs/admin/index.mdx) covers the server for Answerable staff. Decisions: [MCP foundation](docs/07-mcp-platform-draft.md) and [the capability platform](docs/08-capability-platform.md); results: [evidence](reports/mcp-foundation-evidence.md). Normal `bun dev` starts apps only.
 
 ### Repository principles
 

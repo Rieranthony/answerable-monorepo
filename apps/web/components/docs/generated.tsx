@@ -14,11 +14,12 @@ import {
   type PolicyClass,
 } from "../../../../packages/mcp/src/mutation"
 import { scaffoldSources } from "../../../../scripts/mcp-templates"
+import admin from "../../../../mcps/admin/manifest.json"
 import e2e from "../../../../mcps/e2e/manifest.json"
 import example from "../../../../mcps/example/manifest.json"
 import toolbox from "../../../../mcps/toolbox/manifest.json"
 
-const manifests = { e2e, example, toolbox }
+const manifests = { admin, e2e, example, toolbox }
 type Workspace = keyof typeof manifests
 
 // Plain functions, not components: `asMarkdown()` opts in the component that calls it, so each exported block must call
