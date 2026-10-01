@@ -17,16 +17,15 @@ import { z } from "zod"
 import {
   connect,
   launchBrowser,
-  linkClient,
   refusal,
   registerClient,
+  registerMachine,
   registerResource,
   serve,
   signIn,
   startId,
   step,
   tool,
-  type Admin,
   type Id,
   type OAuthSession,
 } from "../index"
@@ -74,15 +73,6 @@ async function counted(input: string | URL | Request, init?: RequestInit) {
   else if (pathname.endsWith("/audit-events")) asked.polls++
   return response
 }
-// A machine client of the platform organisation: its secret, once, with the capability to ask for `scopes` for `audience`.
-async function registerMachine(admin: Admin, organizationId: string, clientId: string, scopes: string[], audience: string) {
-  const created = z.object({ clientSecret: z.string() }).parse(await admin("POST", "/clients", {
-    clientId, name: clientId, organizationId, tokenEndpointAuthMethod: "client_secret_basic", grantTypes: ["client_credentials"], clientCredentialsScopes: scopes,
-  }))
-  await linkClient(admin, clientId, audience)
-  await admin("POST", `/organizations/${organizationId}/capabilities`, { clientId, resource: audience, grantKind: "client_credentials", scopes })
-  return created.clientSecret
-}
 // A token for the Toolbox's admin resource from ID, as the staff client.
 async function staffToken() {
   const response = await fetch(new URL("/auth/oauth2/token", id.manifest.idOrigin), {
@@ -125,8 +115,8 @@ beforeAll(async () => {
   step("Registering the Toolbox's machine client and a staff client in the platform organisation")
   const organisations = z.object({ items: z.array(z.object({ id: z.uuid(), slug: z.string() })) }).parse(await admin("GET", "/organizations?q=answerable"))
   const platform = organisations.items.find(organisation => organisation.slug === "answerable")!
-  const hubSecret = await registerMachine(admin, platform.id, hubClientId, ["platform:read", "platform:write"], manifest.adminResource)
-  staffSecret = await registerMachine(admin, platform.id, staffClientId, ["toolbox:admin"], toolboxAdmin)
+  const hub = await registerMachine(admin, platform.id, hubClientId, { [manifest.adminResource]: ["platform:read", "platform:write"] })
+  staffSecret = (await registerMachine(admin, platform.id, staffClientId, { [toolboxAdmin]: ["toolbox:admin"] })).clientSecret
   // ID makes its signing key when it signs its first token, and two first tokens at once make two keys: a verifier that read the keys between them
   // refuses the second's token for 30 seconds. The Toolbox's poller and the first enable call would ask together, so one token comes first.
   await staffToken()
@@ -136,7 +126,7 @@ beforeAll(async () => {
   await server.close()
   db = new SQL({ url: `postgres://answerable:answerable@127.0.0.1:47532/${database}`, max: 4 })
   await migrate(db)
-  const machine = createIdAdmin({ issuer: manifest.idOrigin, adminResource: manifest.adminResource, clientId: hubClientId, clientSecret: hubSecret, fetch: counted })
+  const machine = createIdAdmin({ issuer: manifest.idOrigin, adminResource: manifest.adminResource, ...hub, fetch: counted })
   const toolbox = await createToolbox({ providers, auth: { issuer: manifest.idOrigin, resource }, db, id: machine, spans: tracer })
   const read = toolbox.grants.read
   toolbox.grants.read = principal => {

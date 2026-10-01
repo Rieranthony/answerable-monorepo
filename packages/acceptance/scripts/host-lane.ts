@@ -13,7 +13,7 @@ import { createToolbox } from "@answerable/mcp-toolbox/toolbox"
 import { decodeJwt } from "jose"
 import { z } from "zod"
 import { cleanup, onCleanup } from "../src/cleanup"
-import { connect, launchBrowser, linkClient, registerClient, registerResource, serve, signIn, startId, step, type Admin } from "../src/index"
+import { connect, launchBrowser, registerClient, registerMachine, registerResource, serve, signIn, startId, step } from "../src/index"
 
 const resource = "http://127.0.0.1:47604/mcp"
 const toolboxAdmin = toolboxAdminResource(resource)
@@ -23,16 +23,6 @@ const librechat = { clientId: "librechat-lane", redirectUri: "http://localhost:3
 const claudeCode = { clientId: "claude-code-lane", redirectUri: "http://localhost:47700/callback" }
 const hosts = [librechat, claudeCode]
 const compose = new URL("../host-lane/compose.yaml", import.meta.url).pathname
-
-// A machine client of the platform organisation: its secret, once, with the capability to ask for `scopes` for `audience`.
-async function registerMachine(admin: Admin, organizationId: string, clientId: string, scopes: string[], audience: string) {
-  const created = z.object({ clientSecret: z.string() }).parse(await admin("POST", "/clients", {
-    clientId, name: clientId, organizationId, tokenEndpointAuthMethod: "client_secret_basic", grantTypes: ["client_credentials"], clientCredentialsScopes: scopes,
-  }))
-  await linkClient(admin, clientId, audience)
-  await admin("POST", `/organizations/${organizationId}/capabilities`, { clientId, resource: audience, grantKind: "client_credentials", scopes })
-  return created.clientSecret
-}
 
 // One company sign-in each for LibreChat, Claude Code and the check, and spares for a second try. A refresh needs none.
 const id = await startId({ tenants: [{ slug: "host-lane", signIns: 12 }] })
@@ -45,13 +35,13 @@ await registerResource(admin, { identifier: toolboxAdmin, scopes: ["toolbox:admi
 for (const { clientId, redirectUri } of hosts) await registerClient(admin, { clientId, redirectUri, scopes: ["toolbox"] })
 const organisations = z.object({ items: z.array(z.object({ id: z.uuid(), slug: z.string() })) }).parse(await admin("GET", "/organizations?q=answerable"))
 const platform = organisations.items.find(organisation => organisation.slug === "answerable")!
-const hubSecret = await registerMachine(admin, platform.id, "toolbox-hub", ["platform:read", "platform:write"], manifest.adminResource)
-const staffSecret = await registerMachine(admin, platform.id, "toolbox-staff", ["toolbox:admin"], toolboxAdmin)
+const hub = await registerMachine(admin, platform.id, "toolbox-hub", { [manifest.adminResource]: ["platform:read", "platform:write"] })
+const staff = await registerMachine(admin, platform.id, "toolbox-staff", { [toolboxAdmin]: ["toolbox:admin"] })
 // ID makes its signing key when it signs its first token; two first tokens at once make two keys. One token comes first, as in the Toolbox journey.
 async function staffToken() {
   const response = await fetch(new URL("/auth/oauth2/token", manifest.idOrigin), {
     method: "POST",
-    headers: { Authorization: `Basic ${btoa(`toolbox-staff:${staffSecret}`)}`, "Content-Type": "application/x-www-form-urlencoded" },
+    headers: { Authorization: `Basic ${btoa(`${staff.clientId}:${staff.clientSecret}`)}`, "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ grant_type: "client_credentials", resource: toolboxAdmin, scope: "toolbox:admin" }),
   })
   if (!response.ok) throw new Error(`ID refused the staff client a token (${response.status}): ${await response.text()}`)
@@ -66,7 +56,7 @@ await server.close()
 const db = new SQL({ url: `postgres://answerable:answerable@127.0.0.1:47532/${database}`, max: 4 })
 onCleanup(() => db.close())
 await migrate(db)
-const machine = createIdAdmin({ issuer: manifest.idOrigin, adminResource: manifest.adminResource, clientId: "toolbox-hub", clientSecret: hubSecret })
+const machine = createIdAdmin({ issuer: manifest.idOrigin, adminResource: manifest.adminResource, ...hub })
 const provider = createE2eProvider({ records: createRecordStore(), viewHtml: "<!doctype html><title>Records</title>" })
 const toolbox = await createToolbox({ providers: [provider], auth: { issuer: manifest.idOrigin, resource }, db, id: machine, spans: createMemoryTracer().tracer })
 const poller = startGrantsPoller({ id: machine, grants: toolbox.grants })

@@ -1,5 +1,5 @@
 // Real Answerable ID for the MCP acceptance (packages/acceptance), booted on its own database.
-// It provisions each tenant's organisation, domain and company directory and leaves everything else to the admin API.
+// It provisions each tenant's organisation, domain and company directory, optionally the platform organisation's and the spare directories, and leaves everything else to the admin API.
 // Test-only: never imported by a production service.
 import { rename } from "node:fs/promises";
 import { sql } from "drizzle-orm";
@@ -17,12 +17,20 @@ const [planPath, manifestPath] = process.argv.slice(2);
 if (!planPath || !manifestPath || !process.argv.includes("--isolated-mcp-fixture"))
   throw new Error("Use the isolated MCP acceptance runner");
 
-// { tenants: [{ slug, signIns }] }: one organisation and one company directory per tenant.
+// Every company directory is a local test issuer whose one person signs in `signIns` times.
+const queued = z.number().int().min(0);
+const directory = z.object({ slug: z.string().min(1), signIns: queued });
 const plan = z
   .object({
-    tenants: z.array(
-      z.object({ slug: z.string().min(1), signIns: z.number().int().min(0) }),
-    ),
+    // One organisation per tenant, with its domain and its own company directory.
+    tenants: z.array(directory),
+    // Gives the platform organisation (Answerable staff) a domain and a company
+    // directory, so a staff member can sign in during a journey.
+    platform: z.object({ signIns: queued }).optional(),
+    // Company directories that ID trusts from boot but that belong to no
+    // organisation yet, for the organisations a journey creates later: ID
+    // accepts an identity provider's endpoints only if they were listed at boot.
+    spares: z.array(directory).default([]),
   })
   .parse(await Bun.file(planPath).json());
 
@@ -32,7 +40,19 @@ const databaseUrl =
 const idOrigin = "http://127.0.0.1:47600";
 const callback = "http://127.0.0.1:47603/callback";
 const rootSecret = `${crypto.randomUUID()}${crypto.randomUUID()}`;
-const upstreams = await Promise.all(plan.tenants.map(() => startOidcIssuer()));
+const platformSlug = "answerable";
+const tenantUpstreams = await Promise.all(
+  plan.tenants.map(() => startOidcIssuer()),
+);
+const platformUpstream = plan.platform ? await startOidcIssuer() : undefined;
+const spareUpstreams = await Promise.all(
+  plan.spares.map(() => startOidcIssuer()),
+);
+const upstreams = [
+  ...tenantUpstreams,
+  ...(platformUpstream ? [platformUpstream] : []),
+  ...spareUpstreams,
+];
 const environment = testEnvironment({
   databaseUrl,
   betterAuthUrl: idOrigin,
@@ -45,8 +65,8 @@ const environment = testEnvironment({
 
 const setup = createDatabase(environment);
 await runMigrations(setup.db);
-await bootstrap(setup.db, systemActor("mcp-e2e"), {
-  platformOrganizationSlug: "answerable",
+const seeded = await bootstrap(setup.db, systemActor("mcp-e2e"), {
+  platformOrganizationSlug: platformSlug,
   platformOrganizationName: "Answerable",
   adminResourceIdentifier: environment.adminResourceIdentifier,
 });
@@ -91,46 +111,108 @@ async function admin(
   return (await response.json()) as Record<string, unknown>;
 }
 
-const tenants = [];
-for (const [index, { slug, signIns }] of plan.tenants.entries()) {
-  const upstream = upstreams[index]!;
+type Upstream = Awaited<ReturnType<typeof startOidcIssuer>>;
+
+// A company directory for `slug`: its one person, `<person>@<slug>.example.test`, signs in `signIns` times, and each company sign-in consumes one queued identity.
+// Returns what an organisation's single sign-on needs to use it.
+function openDirectory(
+  upstream: Upstream,
+  slug: string,
+  person: string,
+  signIns: number,
+) {
   const domain = `${slug}.example.test`;
-  const organization = await admin("POST", "/organizations", {
+  const email = `${person}@${domain}`;
+  for (let signIn = 0; signIn < signIns; signIn++)
+    upstream.enqueue({
+      sub: `${slug}-${person}`,
+      email,
+      email_verified: true,
+      name: "MCP tester",
+      auth_time: Math.floor(Date.now() / 1000),
+    });
+  return {
     slug,
-    name: slug,
-  });
-  const organizationId = String(organization.id);
+    domain,
+    email,
+    issuer: upstream.origin,
+    authorizationEndpoint: `${upstream.origin}/authorize`,
+    tokenEndpoint: `${upstream.origin}/token`,
+    jwksEndpoint: `${upstream.origin}/jwks`,
+    clientId: slug,
+    clientSecret: "local-fixture-only",
+  };
+}
+
+// Route the organisation's domain to the directory and set its single sign-on there, as an operator does through the admin API.
+async function connectDirectory(
+  organizationId: string,
+  {
+    domain,
+    issuer,
+    authorizationEndpoint,
+    tokenEndpoint,
+    jwksEndpoint,
+    clientId,
+    clientSecret,
+  }: ReturnType<typeof openDirectory>,
+) {
   const path = `/organizations/${organizationId}`;
   await admin("POST", `${path}/domains`, { domain });
   await admin(
     "PUT",
     `${path}/sso-provider`,
     {
-      issuer: upstream.origin,
+      issuer,
       domain,
       oidc: {
         credentials: "own",
-        clientId: slug,
-        clientSecret: "local-fixture-only",
-        authorizationEndpoint: `${upstream.origin}/authorize`,
-        tokenEndpoint: `${upstream.origin}/token`,
-        jwksEndpoint: `${upstream.origin}/jwks`,
+        clientId,
+        clientSecret,
+        authorizationEndpoint,
+        tokenEndpoint,
+        jwksEndpoint,
       },
     },
     { "If-None-Match": "*" },
   );
-  const email = `tester@${domain}`;
-  // Each company sign-in consumes one queued identity.
-  for (let signIn = 0; signIn < signIns; signIn++)
-    upstream.enqueue({
-      sub: `${slug}-tester`,
-      email,
-      email_verified: true,
-      name: "MCP tester",
-      auth_time: Math.floor(Date.now() / 1000),
-    });
-  tenants.push({ slug, email, organizationId });
 }
+
+const tenants = [];
+for (const [index, { slug, signIns }] of plan.tenants.entries()) {
+  const company = openDirectory(
+    tenantUpstreams[index]!,
+    slug,
+    "tester",
+    signIns,
+  );
+  const organization = await admin("POST", "/organizations", {
+    slug,
+    name: slug,
+  });
+  const organizationId = String(organization.id);
+  await connectDirectory(organizationId, company);
+  tenants.push({ slug, email: company.email, organizationId });
+}
+
+// The platform organisation is the one ID bound at boot, found through that binding and not by its slug.
+let platform;
+if (plan.platform && platformUpstream) {
+  const staff = openDirectory(
+    platformUpstream,
+    platformSlug,
+    "staff",
+    plan.platform.signIns,
+  );
+  const organizationId = seeded.organization.id;
+  await connectDirectory(organizationId, staff);
+  platform = { organizationId, domain: staff.domain, email: staff.email };
+}
+
+// A spare has no organisation: the journey creates one and sets its single sign-on from this entry.
+const spares = plan.spares.map(({ slug, signIns }, index) =>
+  openDirectory(spareUpstreams[index]!, slug, "tester", signIns),
+);
 
 // The runner polls for this file, so it appears whole or not at all.
 await Bun.write(
@@ -140,6 +222,8 @@ await Bun.write(
     adminResource: environment.adminResourceIdentifier,
     rootSecret,
     tenants,
+    platform,
+    spares,
   }),
 );
 await rename(`${manifestPath}.partial`, manifestPath);

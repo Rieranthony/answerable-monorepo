@@ -9,7 +9,7 @@ bun install
 bun run mcp:test:e2e
 ```
 
-Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It runs `bun test` in `packages/acceptance`: the journeys below and the kit's own tests. It exits non-zero when a test fails, and it removes its database and processes either way, including after Ctrl-C (exit 130) or SIGTERM (exit 143). Measured: the 50 tests took 31.7 and 33.9 seconds, at one-minute load averages of 9.3 and 7.8.
+Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It runs `bun test` in `packages/acceptance`: the journeys below and the kit's own tests. It exits non-zero when a test fails, and it removes its database and processes either way, including after Ctrl-C (exit 130) or SIGTERM (exit 143). Measured: the 57 tests took 43.7 and 39.4 seconds, at one-minute load averages of 13.9 and 16.4 when they started.
 
 ## What the e2e journeys prove
 
@@ -92,6 +92,14 @@ The last test logs what the Toolbox asked ID, and requires exactly 2 token reque
 18. `PUT` catalogue with `e2e/records.list` disabled hides that tool from `toolbox-alpha` and from no one else, 4 to 14 ms later in eight runs; a second `PUT` restores it.
 19. The evidence check runs through the admin API, and a host client row is stored and removed.
 
+## What the kit journey proves
+
+`packages/acceptance/src/journeys/kit.journeys.test.ts` starts its own ID with `startId({ tenants: [], platform: { signIns: 1 }, spares: [{ slug: "spare", signIns: 2 }] })` and serves the e2e MCP on port `47602`. It proves what a journey for a staff-only MCP, such as the admin MCP, relies on.
+
+1. Answerable staff sign in to the MCP through the platform organisation's company directory (`staff@answerable.example.test`). The token's `organization_id` and `identity_get` name the platform organisation.
+2. An organisation created through the admin API, given its domain and pointed at the spare directory with `setSsoProvider`, is refused by ID before it is entitled: `signInRefused` returns "Access is unavailable for this organisation. Sign in again or ask its administrator to check your access." in 393 to 506 ms in four runs, where `signIn` would wait 30 seconds. After `grantOrganisation`, its person signs in and the token names the new organisation.
+3. A machine client registered with `registerMachine` for two audiences gets a token for each, with that audience's scopes. Asking for one audience's scope at the other audience is refused.
+
 ## Ports
 
 | Service | Loopback port |
@@ -107,20 +115,23 @@ Keep these free. PostgreSQL belongs to the Compose project `answerable-mcp-e2e` 
 
 ## The kit
 
-`@answerable/acceptance` (`packages/acceptance`) exports these functions. Everything that a journey varies is provisioned by the kit through ID's admin API with the root secret; only each tenant's organisation, domain and company directory come from the fixture.
+`@answerable/acceptance` (`packages/acceptance`) exports these functions. Everything that a journey varies is provisioned by the kit through ID's admin API with the root secret; only the organisations, domains and company directories of the plan (`tenants`, `platform` and `spares`) come from the fixture.
 
 | Function | What it does |
 | --- | --- |
-| `startId({ tenants })` | Starts PostgreSQL and ID, and returns `{ manifest, admin, stop }`. `tenants` is `[{ slug, signIns }]`: one organisation each, with a company directory that accepts `signIns` sign-ins. `manifest` holds `idOrigin`, `adminResource`, `rootSecret` and each tenant's `slug`, `email` and `organizationId`. |
+| `startId({ tenants, platform?, spares? })` | Starts PostgreSQL and ID, and returns `{ manifest, admin, stop }`. `tenants` is `[{ slug, signIns }]`: one organisation each, with a company directory that accepts `signIns` sign-ins. `platform: { signIns }` gives the platform organisation (Answerable staff) the domain `answerable.example.test` and such a directory for `staff@answerable.example.test`. `spares` is `[{ slug, signIns }]`: directories that ID trusts from boot and no organisation uses yet, for organisations a journey creates later (ID accepts an identity provider's endpoints only if they were listed at boot). `manifest` holds `idOrigin`, `adminResource`, `rootSecret`, each tenant's `slug`, `email` and `organizationId`, `platform` (`organizationId`, `domain` and `email`, when the plan had one) and `spares` (each directory's `slug`, `domain`, `email`, `issuer`, `authorizationEndpoint`, `tokenEndpoint`, `jwksEndpoint`, `clientId` and `clientSecret`). |
 | `id.admin(method, path, body?)` | Calls ID's admin API as root with a fresh `Idempotency-Key`. A status outside 2xx throws with the body. |
 | `id.stop()` | Ends ID, brings PostgreSQL down with its volume, removes the temporary directory and closes everything else the kit opened. Safe to call twice; also runs on Ctrl-C and SIGTERM. |
 | `registerResource(admin, { identifier, scopes, accessTokenTtl })` | Registers the MCP's resource; `offline_access` is added to `scopes` unless listed. |
 | `registerClient(admin, { clientId, redirectUri, scopes })` | Registers a public client for the authorisation code and refresh token grants. |
 | `linkClient(admin, clientId, resource)` | Lets the client ask for the resource. |
 | `grantOrganisation(admin, organizationId, { clientId, resource, scopes, entitledScopes? })` | Approves the client and the resource for an organisation and entitles its members to `entitledScopes`, all of `scopes` by default. |
+| `registerMachine(admin, organizationId, clientId, audiences)` | Registers a machine client owned by the organisation, for the `client_credentials` grant. `audiences` maps each resource to the scopes the client may ask there: `{ [manifest.adminResource]: ["platform:read"], [toolboxAdmin]: ["toolbox:admin"] }`. Returns `{ clientId, clientSecret }`; ID shows the secret once. |
+| `setSsoProvider(admin, organizationId, spare)` | Sets an organisation's single sign-on to a spare directory from `manifest.spares`, with the directory's own credentials. The organisation must already hold `spare.domain`. |
 | `serve(port, fetch)` | Serves a fetch handler on a loopback port until the kit stops. |
 | `launchBrowser()` | Starts headless Chromium with Playwright's signal handlers off, so cleanup runs on Ctrl-C. |
 | `signIn(browser, { idOrigin, resource, clientId, callback, scopes }, { slug, email, scopes })` | Signs one person in as a host does: the SDK follows the MCP's `401`, a real browser completes ID's pages, the SDK exchanges the code. Returns an `OAuthSession`, `{ provider, state }`: the SDK's `OAuthClientProvider` for a client registered in ID ahead of time, and the tokens, authorisation URL and discovery result it saved. The first `scopes` are what the MCP advertises; the second are what the organisation is entitled to, and the consent page must list exactly those and name the rest as not approved. |
+| `signInRefused(browser, target, tenant)` | Like `signIn`, for a person ID refuses, such as one of an organisation that is not yet entitled to the MCP. Returns the refusal ID shows at the organisation chooser at once, where `signIn` would wait 30 seconds for a consent page. |
 | `connect(resource, provider, protocol)` | Connects the official MCP client, as a `"2025"` client or pinned to `"2026-07-28"`. A `"2026-07-28"` client hears `tools/list_changed` once it calls `listen({ toolsListChanged: true })` with a handler set by `setNotificationHandler`, as J3 does. |
 | `tool(client, name, args?)` | Calls a tool and returns its `structuredContent`. A failed call throws with the envelope's code and message. |
 | `refusal(client, name, args?)` | Calls a tool that must fail and returns the `error` of its envelope, read with [`errorOf`](/docs/mcp/testing#serve-a-provider-in-process). |
@@ -167,7 +178,7 @@ test("a new organisation has no records", async () => {
 
 **Serve your MCP in the test process** with your own resource URL and port (the ports above are the reserved ones), so the journey controls its stores and clocks. Serve the second MCP the same way when a journey needs a token refused elsewhere.
 
-**`signIns`** counts the company sign-ins a tenant may perform: one per `signIn`. A tenant that signs in more often than queued fails at its company directory.
+**`signIns`** counts the company sign-ins a directory may perform: one per `signIn` or `signInRefused`, for a tenant, the platform organisation or a spare. A person who signs in more often than queued fails at the company directory.
 
 **Every file gets its own ID.** Start it in `beforeAll` and call `stop()` in `afterAll`, as above. A `startId` that throws has already stopped.
 

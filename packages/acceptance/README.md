@@ -12,13 +12,14 @@ Requires Bun 1.3.1 and Docker Compose. It starts PostgreSQL in a Compose project
 
 | File | Job |
 | --- | --- |
-| `src/id.ts` | `startId`: Compose, the ID fixture (`apps/id/scripts/mcp-e2e-fixture.ts`), the manifest, `stop` |
-| `src/admin.ts` | `createAdmin` and the provisioning functions over ID's admin API |
+| `src/id.ts` | `startId`: Compose, the ID fixture (`apps/id/scripts/mcp-e2e-fixture.ts`) with its plan (`tenants`, `platform`, `spares`), the manifest, `stop` |
+| `src/admin.ts` | `createAdmin` and the provisioning functions over ID's admin API, including `registerMachine` and `setSsoProvider` |
 | `src/oauth.ts` | The SDK's OAuth client provider in memory, which `signIn` fills |
-| `src/browser.ts` | `launchBrowser` and `signIn`: the SDK challenge and ID's pages in Chromium |
+| `src/browser.ts` | `launchBrowser`, `signIn` and `signInRefused`: the SDK challenge and ID's pages in Chromium |
 | `src/mcp.ts` | `serve`, `connect`, `tool` and `refusal` |
 | `src/cleanup.ts` | What `stop` and Ctrl-C run |
 | `src/journeys/e2e.journeys.test.ts` | The e2e MCP: sign-in, tokens, J4 agent-class mutation, J5 controlled class, isolation, refresh, revocation |
+| `src/journeys/kit.journeys.test.ts` | The kit's platform and spare directories: staff sign-in, an organisation created through the admin API, ID's refusal before an entitlement, a machine client with two audiences |
 | `src/journeys/toolbox.journeys.test.ts` | The Toolbox on port `47604`: J1 direct list, J2 partial and denied, J6 human class, J7 meta projection, J3 grant change and `tools/list_changed`, J10 evidence and payload erasure, and the admin API (enabling organisations, the catalogue, host clients) |
 
 [Test MCPs locally](../../apps/web/content/docs/mcp/local-testing.mdx) lists what each journey proves, the ports, every kit function, how to write a journey, and the errors you can hit. Changes: [CHANGELOG](CHANGELOG.md).

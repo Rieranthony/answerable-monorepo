@@ -1,3 +1,6 @@
+import { z } from "zod"
+import type { Spare } from "./id"
+
 /** Call ID's admin API as root: `admin("POST", "/organizations", { slug, name })`. Every call carries a fresh `Idempotency-Key`; a status outside 2xx throws with the body. */
 export type Admin = (method: string, path: string, body?: unknown) => Promise<Record<string, unknown>>
 
@@ -54,4 +57,32 @@ export async function grantOrganisation(
   }
   await admin("POST", `${path}/entitlements`, { clientId, scopes: signIn })
   await admin("POST", `${path}/entitlements`, { clientId, resource, scopes: entitledScopes })
+}
+
+/**
+ * Register a machine client owned by an organisation, for the `client_credentials` grant. `audiences` maps each resource it may ask a token for to the scopes it may ask there: `{ [adminResource]: ["platform:read"], [other]: ["other:admin"] }`.
+ * Links the client to each resource and approves those scopes there. Returns the client id and its secret, which ID shows only once: spread it into `createIdAdmin`.
+ */
+export async function registerMachine(admin: Admin, organizationId: string, clientId: string, audiences: Readonly<Record<string, readonly string[]>>) {
+  const entries = Object.entries(audiences)
+  const created = z.object({ clientSecret: z.string() }).parse(
+    await admin("POST", "/clients", {
+      clientId,
+      name: clientId,
+      organizationId,
+      tokenEndpointAuthMethod: "client_secret_basic",
+      grantTypes: ["client_credentials"],
+      clientCredentialsScopes: [...new Set(entries.flatMap(([, scopes]) => scopes))],
+    }),
+  )
+  for (const [audience, scopes] of entries) {
+    await linkClient(admin, clientId, audience)
+    await admin("POST", `/organizations/${organizationId}/capabilities`, { clientId, resource: audience, grantKind: "client_credentials", scopes })
+  }
+  return { clientId, clientSecret: created.clientSecret }
+}
+
+/** Set an organisation's single sign-on to a spare directory of the fixture, with the directory's own credentials. The organisation must already hold `spare.domain`. */
+export function setSsoProvider(admin: Admin, organizationId: string, { issuer, domain, clientId, clientSecret, authorizationEndpoint, tokenEndpoint, jwksEndpoint }: Spare) {
+  return admin("PUT", `/organizations/${organizationId}/sso-provider`, { issuer, domain, oidc: { credentials: "own", clientId, clientSecret, authorizationEndpoint, tokenEndpoint, jwksEndpoint } })
 }

@@ -146,7 +146,7 @@
     },
     "packages/acceptance": {
       "name": "@answerable/acceptance",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@answerable/id-admin": "workspace:*",
         "@answerable/mcp": "workspace:*",

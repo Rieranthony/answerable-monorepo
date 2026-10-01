@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0
+
+What the admin MCP's journeys need from the kit. Nothing breaks.
+
+- `startId` takes `platform: { signIns }`, which gives the platform organisation (Answerable staff) a domain and a company directory with queued sign-ins, and `spares: [{ slug, signIns }]`, company directories that ID trusts from boot and no organisation uses yet, for organisations a journey creates later. The manifest gains `platform` (`organizationId`, `domain`, `email`) and `spares` (each directory's `slug`, `domain`, `email`, `issuer`, endpoints, `clientId` and `clientSecret`). The fixture finds the platform organisation through ID's system binding, not by its slug.
+- `registerMachine(admin, organizationId, clientId, audiences)` replaces the copies in the Toolbox journey and the host lane. `audiences` maps each resource to the scopes the client may ask there, so one machine client can ask ID's admin resource and another resource for tokens. It returns `{ clientId, clientSecret }`, which spreads into `createIdAdmin`.
+- `setSsoProvider(admin, organizationId, spare)` points an organisation's single sign-on at a spare directory.
+- `signInRefused(browser, target, tenant)` returns the refusal ID shows at the organisation chooser ("Access is unavailable for this organisation. …") at once, where `signIn` waits 30 seconds for a consent page that never comes.
+- `src/journeys/kit.journeys.test.ts` runs all of it against real ID: staff sign in, an organisation created through the admin API signs its person in through a spare directory after ID refused it, and a machine client gets a token for each of two audiences.
+
 ## 0.2.0
 
 A smaller kit: what a journey can say as plainly with ID's admin API or the MCP client goes. Breaking for journeys that used them.
