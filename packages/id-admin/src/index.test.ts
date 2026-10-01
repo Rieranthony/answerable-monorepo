@@ -1,6 +1,6 @@
 import { afterEach, expect, setSystemTime, test } from "bun:test"
-import { createIdAdmin, found, IdError } from "./id"
-import { createFakeId } from "./test/fake-id"
+import { createIdAdmin, found, IdError } from "./index"
+import { createFakeId } from "./testing"
 
 afterEach(() => setSystemTime())
 
@@ -41,10 +41,10 @@ test("found makes ID's 404 an answer, undefined, and passes every other result a
   await expect(found(admin.get("/organizations/org/members/member/access"))).rejects.toMatchObject({ status: 503 })
 })
 
-test("wrong client credentials name the variables to check", async () => {
+test("wrong client credentials name the client and what to check", async () => {
   const id = createFakeId()
   const admin = createIdAdmin({ ...id.config, clientSecret: "wrong" })
-  await expect(admin.get("/audit-events?limit=1")).rejects.toThrow("Answerable ID refused the Toolbox's client credentials (401); check TOOLBOX_ID_CLIENT_ID, TOOLBOX_ID_CLIENT_SECRET and the client's platform:read capability for the admin resource")
+  await expect(admin.get("/audit-events?limit=1")).rejects.toThrow("Answerable ID refused the client credentials of toolbox-hub (401); check the client id, the client secret and the client's platform:read capability for the admin resource")
 })
 
 const toolbox = "https://toolbox.test/mcp"
@@ -60,8 +60,9 @@ test("manage reads and writes with a token of its own for platform:read and plat
   expect(patched.body).toMatchObject({ allowedScopes: ["e2e", "toolbox"], revision: 2 })
   expect(patched.etag).not.toBe(read.etag)
   await admin.manage("PATCH", toolboxPath, { body: { allowedScopes: ["e2e", "toolbox"] } })
-  expect(id.keys).toHaveLength(2)
-  expect(new Set(id.keys).size).toBe(2)
+  const keys = id.received.map(request => request.idempotencyKey).filter(key => key !== null)
+  expect(keys).toHaveLength(2)
+  expect(new Set(keys).size).toBe(2)
   await admin.manage("GET", toolboxPath)
   await admin.get("/audit-events?limit=1")
   expect(id.scopesAsked).toEqual(["platform:read platform:write", "platform:read"])
@@ -94,7 +95,7 @@ test("a failure of manage throws an IdError with the status, ID's problem code a
 test("wrong client credentials name both scopes for manage", async () => {
   const id = createFakeId()
   const admin = createIdAdmin({ ...id.config, clientSecret: "wrong" })
-  await expect(admin.manage("GET", toolboxPath)).rejects.toThrow("Answerable ID refused the Toolbox's client credentials (401); check TOOLBOX_ID_CLIENT_ID, TOOLBOX_ID_CLIENT_SECRET and the client's platform:read and platform:write capability for the admin resource")
+  await expect(admin.manage("GET", toolboxPath)).rejects.toThrow("Answerable ID refused the client credentials of toolbox-hub (401); check the client id, the client secret and the client's platform:read and platform:write capability for the admin resource")
 })
 
 test("a request ID never answers throws an IdError that says what was called and why, for the token and for the call", async () => {
@@ -109,4 +110,55 @@ test("a request ID never answers throws an IdError that says what was called and
   const failed = await admin.manage("GET", toolboxPath).catch(error => error)
   expect(failed).toBeInstanceOf(IdError)
   expect(failed).toMatchObject({ status: 0, code: undefined, message: `Answerable ID did not answer GET /api/admin/v1${toolboxPath}: Unable to connect` })
+})
+
+test("a request id is sent as x-request-id on a read and on a write, and left out when none is given", async () => {
+  const id = createFakeId()
+  const admin = createIdAdmin(id.config)
+  id.resource(toolbox, ["toolbox"])
+  await admin.get("/audit-events?limit=1", { requestId: "exec-1" })
+  await admin.manage("PATCH", toolboxPath, { body: { allowedScopes: ["toolbox"] }, requestId: "exec-2" })
+  await admin.manage("GET", toolboxPath, { requestId: "exec-3" })
+  await admin.get("/audit-events?limit=1")
+  expect(id.received.map(request => request.requestId)).toEqual(["exec-1", "exec-2", "exec-3", null])
+})
+
+test("a caller-chosen idempotency key is sent on a write instead of a random one, never on a read, and a random one is sent when none is given", async () => {
+  const id = createFakeId()
+  const admin = createIdAdmin(id.config)
+  id.resource(toolbox, ["toolbox"])
+  await admin.manage("PATCH", toolboxPath, { body: { allowedScopes: ["toolbox"] }, idempotencyKey: "intent-1" })
+  await admin.manage("PATCH", toolboxPath, { body: { allowedScopes: ["toolbox"] } })
+  await admin.manage("GET", toolboxPath, { idempotencyKey: "ignored" })
+  const [chosen, random, read] = id.received
+  expect(chosen!.idempotencyKey).toBe("intent-1")
+  expect(random!.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/)
+  expect(read!.idempotencyKey).toBeNull()
+})
+
+test("the request id and the idempotency key, chosen or random, stay the same when the call is resent after a 401", async () => {
+  const id = createFakeId()
+  const admin = createIdAdmin(id.config)
+  id.resource(toolbox, ["toolbox"])
+  await admin.manage("GET", toolboxPath)
+  for (const idempotencyKey of ["intent-2", undefined]) {
+    id.received.length = 0
+    id.revoke()
+    await admin.manage("PATCH", toolboxPath, { body: { allowedScopes: ["toolbox"] }, requestId: "exec-4", idempotencyKey })
+    expect(id.received).toHaveLength(2)
+    expect(id.received[1]).toEqual(id.received[0]!)
+    expect(id.received[0]).toMatchObject({ requestId: "exec-4", idempotencyKey: idempotencyKey ?? expect.stringMatching(/^[0-9a-f-]{36}$/) })
+  }
+})
+
+test("manage returns the Operation-Id ID sends with a write, and null where it sends none", async () => {
+  const id = createFakeId()
+  const admin = createIdAdmin(id.config)
+  id.resource(toolbox, ["toolbox"])
+  const read = await admin.manage("GET", toolboxPath)
+  const first = await admin.manage("PATCH", toolboxPath, { body: { allowedScopes: ["toolbox"] } })
+  const second = await admin.manage("PATCH", toolboxPath, { body: { allowedScopes: ["toolbox"] } })
+  expect(read.operationId).toBeNull()
+  expect(first.operationId).toMatch(/^[0-9a-f-]{36}$/)
+  expect(second.operationId).not.toBe(first.operationId)
 })

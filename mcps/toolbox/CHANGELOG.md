@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1
+
+Uses the extracted packages. No behaviour changes except one message.
+
+- `createIdAdmin`, `IdError`, `found` and the fake ID come from `@answerable/id-admin`; `createEvidence`, `createPostgresIntentStore` and `withEvidence` from `@answerable/mcp-postgres`. The files `id.ts`, `evidence.ts`, `intents.ts`, `intent-evidence.ts`, `test/fake-id.ts` and the migrations `0002_evidence.sql` and `0004_intents.sql` moved there with their tests, and the migrator now reads the Toolbox's `migrations/` and the package's. `migrate(db)` still applies `0001` to `0004` in order, and a database that applied them before applies none again.
+- The `./evidence` and `./id` exports are gone; `./migrate` stays and still migrates a Toolbox database in full.
+- ID refusing the machine client's credentials now reads `Answerable ID refused the client credentials of <client id> (<status>)…` instead of naming the Toolbox's variables.
 ## 0.3.0
 
 One machine client, and one place for each thing the merge of 0.2.0 left twice. Breaking for code that builds the Toolbox.

@@ -70,6 +70,8 @@ The server never sees a password, never runs Better Auth and never reads ID's da
 | `@answerable/acceptance` | The kit that starts real ID, provisions it and signs a person in, and the journeys (`packages/acceptance`) |
 | `@answerable/mcp-e2e` | The reference server: five tools, a prompt, a resource and a view (`mcps/e2e`) |
 | `@answerable/mcp-example` | The finished quickstart: `notes.list` and `notes.add` (`mcps/example`) |
+| `@answerable/id-admin` | A server's machine client on Answerable ID's admin API: `createIdAdmin`, `IdError`, `found`, and the fake ID in `@answerable/id-admin/testing` (`packages/id-admin`) |
+| `@answerable/mcp-postgres` | Postgres storage for MCP servers: the intent store, the evidence chain and the migrator (`packages/mcp-postgres`) |
 | `@answerable/mcp-toolbox` | The Toolbox: `createToolbox`, the grants reader and poller, the catalogue, evidence, spans and the admin API (`mcps/toolbox`) |
 
 The packages are private to the monorepo: a public npm release is Not yet. Views import the official MCP Apps browser API, `@modelcontextprotocol/ext-apps`, directly. Every export of `@answerable/auth` and `@answerable/mcp` is in the [API reference](/docs/mcp/reference).

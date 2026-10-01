@@ -14,6 +14,8 @@ The [enterprise foundation](docs/05-id-enterprise-foundation.md) implementation 
 | `packages/countries` | ISO country list, priority order and flag URL helper; framework-free                                                                                                | Live                                                                                                                                                     |
 | `packages/auth` | Verify Answerable ID access tokens, for a person or a machine client, in any service; an in-process test issuer | Locally tested |
 | `packages/mcp` | The SDK for MCP servers, on the official MCP TypeScript SDK: `defineTool`, `defineMutation`, `defineProvider`, `createMcpServer`, the error envelope, the manifest, the conformance kit and the in-process test client | Locally tested |
+| `packages/id-admin` | A server's machine client on ID's admin API (`createIdAdmin`, with `x-request-id` and a caller-chosen `Idempotency-Key`) and the fake ID for tests | Locally tested |
+| `packages/mcp-postgres` | Postgres storage for MCP servers: the intent store, the hash-chained evidence and the migrator, shared by the Toolbox | Locally tested |
 | `mcps/e2e` | Reference MCP: five tools (one a prepared mutation), a prompt, a resource and an MCP Apps view; every new MCP is compared with it | Local acceptance passes |
 | `mcps/toolbox` | The Toolbox: one MCP endpoint serving each person the capabilities their organisation granted, with intents, evidence, spans and an admin API | Local acceptance passes |
 | `packages/acceptance` | The acceptance kit and journeys: real ID, the official MCP OAuth client, a browser and ID's pages | Locally tested |
@@ -55,7 +57,7 @@ bun dev
 | `id`       | 47300     | Answerable ID API and browser pages                           |
 | `toolbox`  | 47400     | The Toolbox MCP (`bun run toolbox:dev`)                       |
 | `e2e MCP`  | 47500     | The reference MCP (`bun run mcp:dev`); a scaffolded MCP uses 47510 |
-| `postgres` | 47432     | `answerable_id`, plus `answerable_id_test` for the test suite; `answerable_toolbox` and `answerable_toolbox_test` for the Toolbox |
+| `postgres` | 47432     | `answerable_id`, plus `answerable_id_test` for the test suite; `answerable_toolbox` and `answerable_toolbox_test` for the Toolbox; `answerable_mcp_postgres_test` for `packages/mcp-postgres` |
 | `redis`    | 47379     | Session read-cache — later; unused by v1 code                 |
 
 The MCP acceptance (`bun run mcp:test:e2e`) owns 47532 (its own disposable PostgreSQL), 47600, 47602, 47603, 47604 and 47605, and never touches the normal ID database; run one acceptance at a time. Uncommon host ports so nothing clashes with other local projects. Answerable ID itself runs on the host at `http://localhost:47300`. Other commands: `bun run env:down` · `bun run env:reset` (wipes data) · `bun run test` (Answerable ID against Postgres, plus the web unit tests) · `bun run build` · `bun run lint`.
@@ -68,6 +70,8 @@ The development-only [OAuth test](apps/web/README.md#local-oauth-test) lets the 
 
 - [`packages/auth`](packages/auth/README.md) verifies Answerable ID access tokens.
 - [`packages/mcp`](packages/mcp/README.md) is the SDK: define tools, mutations and providers, serve them on the official MCP TypeScript SDK, check them with the conformance kit and test them in-process.
+- [`packages/id-admin`](packages/id-admin/README.md) is the machine client on ID's admin API, with the fake ID for tests.
+- [`packages/mcp-postgres`](packages/mcp-postgres/README.md) is the Postgres intent store, evidence chain and migrator that servers with a database share.
 - [`mcps/e2e`](mcps/e2e/README.md) is the reference server.
 - [`mcps/toolbox`](mcps/toolbox/README.md) is the Toolbox, with its own Postgres databases `answerable_toolbox` and `answerable_toolbox_test`.
 - [`packages/acceptance`](packages/acceptance/README.md) holds the real-ID acceptance kit and journeys.
@@ -76,7 +80,7 @@ The development-only [OAuth test](apps/web/README.md#local-oauth-test) lets the 
 | --- | --- |
 | `bun run mcp:new <name>` | Scaffold `mcps/<name>`: a server with one tool and its conformance test; it prints the commands that install it, write its manifest and check it |
 | `bun run mcp:check <workspace>` | Typecheck, lint and test one workspace, such as `@answerable/mcp-e2e` |
-| `bun run mcp:test` | The suites of `packages/auth`, `packages/mcp`, every server under `mcps/` and the scaffold; the Toolbox needs the development Postgres |
+| `bun run mcp:test` | The suites of `packages/auth`, `packages/id-admin`, `packages/mcp`, `packages/mcp-postgres`, every server under `mcps/` and the scaffold; the Toolbox and `packages/mcp-postgres` need the development Postgres |
 | `bun run mcp:test:e2e` | The journeys against real ID, a browser and the official MCP OAuth client (Docker) |
 | `bun run toolbox:dev` | Serve the Toolbox on 47400; `bun run mcp:dev` serves the reference server on 47500 |
 

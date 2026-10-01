@@ -211,11 +211,11 @@ Intent events carry the intent's organisation, person, host client, capability a
 
 **What a row holds.** The organisation, actor, host client, capability identity and version, execution id, JSON-RPC id, trace and span ids, outcome and bounded `data` (at most 4 KiB). Inputs, results and secrets are never recorded.
 
-**The chain.** A database trigger takes a per-organisation lock, sets `seq` to the organisation's next number and `row_hash` to SHA-256 over the previous row's hash and every field, each written as its byte length, a colon and its text. The migration `mcps/toolbox/migrations/0002_evidence.sql` spells the layout out. Another trigger refuses `UPDATE`, `DELETE` and `TRUNCATE`.
+**The chain.** A database trigger takes a per-organisation lock, sets `seq` to the organisation's next number and `row_hash` to SHA-256 over the previous row's hash and every field, each written as its byte length, a colon and its text. The migration `packages/mcp-postgres/migrations/0002_evidence.sql` spells the layout out. Another trigger refuses `UPDATE`, `DELETE` and `TRUNCATE`.
 
 ```ts
 import { SQL } from "bun"
-import { createEvidence } from "@answerable/mcp-toolbox/evidence"
+import { createEvidence } from "@answerable/mcp-postgres"
 
 const db = new SQL(process.env.TOOLBOX_DATABASE_URL!)
 const evidence = createEvidence(db)
@@ -313,7 +313,7 @@ The admin API's audience is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`, s
 | Tool result `INVALID_INPUT`: `<identity> is a read; run it with toolbox_execute` | `toolbox_prepare` prepares mutations only | Call `toolbox_execute` |
 | Commit answers `APPROVAL_REQUIRED` with `status: "pending"` | The organisation set the mutation to the human class | Not yet: approvals cannot be given, so the intent expires after 24 hours; ask for the class to be changed |
 | A host hears no `tools/list_changed` | It speaks the 2025 revision, or does not listen | List tools again; the change shows within 60 seconds |
-| Log `Answerable ID refused the Toolbox's client credentials (401)…` | The machine client's ID, secret or `platform:read` capability is wrong, or, for the enable call, its `platform:write` | Fix `TOOLBOX_ID_CLIENT_ID`, `TOOLBOX_ID_CLIENT_SECRET` or the capability |
+| Log `Answerable ID refused the client credentials of <client id> (401)…` | The machine client's ID, secret or `platform:read` capability is wrong, or, for the enable call, its `platform:write` | Fix `TOOLBOX_ID_CLIENT_ID`, `TOOLBOX_ID_CLIENT_SECRET` or the capability |
 | Log `[toolbox] reading ID's audit log failed` | The poller could not read the audit log | Changes still arrive within 60 seconds; fix ID or the machine client |
 | Commit answers `PERMISSION_DENIED` | Your grant no longer covers the prepared mutation | Ask for access, then prepare again |
 | `401 invalid_token` | The token is for another resource, or expired | Sign in for the Toolbox's exact URL |

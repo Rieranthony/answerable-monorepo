@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, expect, test } from "bun:test"
 import type { Intent, Receipt } from "@answerable/mcp"
-import { migrate } from "./db/migrate"
 import { createPostgresIntentStore } from "./intents"
+import { migrate, migrations } from "./migrate"
 import { testDatabase } from "./test/database"
 
 const db = testDatabase()
-beforeAll(() => migrate(db))
+beforeAll(() => migrate(db, [migrations]))
 afterAll(() => db.close())
 
 const minute = 60_000

@@ -47,7 +47,7 @@ type Row = Record<(typeof chained)[number] | "prev_hash" | "row_hash", string | 
 const field = (value: string | null) => value === null ? "~" : `${Buffer.byteLength(value)}:${value}`
 const rowHash = (row: Row) => new Bun.CryptoHasher("sha256").update(row.prev_hash + chained.map(name => field(row[name])).join("")).digest("hex")
 
-/** The Toolbox's evidence: `record` appends to an organisation's chain, `verify` recomputes it, `erase` removes a payload's body. */
+/** An MCP server's evidence: `record` appends to an organisation's chain, `verify` recomputes it, `erase` removes a payload's body. */
 export function createEvidence(db: SQL) {
   return {
     /** Append an event to its organisation's chain; the database assigns its `seq` and hashes. */

@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test"
 import { SQL } from "bun"
+import { createEvidence } from "@answerable/mcp-postgres"
 import { toolboxAdminResource } from "./admin"
 import { ingest } from "./catalogue"
 import { migrate } from "./db/migrate"
-import { createEvidence } from "./evidence"
 import { testDatabase, testDatabaseUrl } from "./test/database"
 import { adminResource, createHub, providerId, records, resource } from "./test/hub"
 

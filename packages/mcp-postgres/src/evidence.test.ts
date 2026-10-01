@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, expect, test } from "bun:test"
-import { migrate } from "./db/migrate"
 import { createEvidence, type EvidenceEvent } from "./evidence"
+import { migrate, migrations } from "./migrate"
 import { testDatabase } from "./test/database"
 
 const db = testDatabase()
 const evidence = createEvidence(db)
-beforeAll(() => migrate(db))
+beforeAll(() => migrate(db, [migrations]))
 afterAll(() => db.close())
 
 const event = (organisation_id: string, overrides: Partial<EvidenceEvent> = {}): EvidenceEvent => ({

@@ -63,6 +63,13 @@
     "@answerable/scripts#test": {
       "cache": false
     },
+    "@answerable/id-admin#test": {
+      "cache": false
+    },
+    "@answerable/mcp-postgres#test": {
+      "cache": false,
+      "passThroughEnv": ["MCP_POSTGRES_TEST_DATABASE_URL"]
+    },
     "@answerable/mcp-e2e#dev": {
       "cache": false,
       "persistent": true,

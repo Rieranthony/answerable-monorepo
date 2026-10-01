@@ -1,9 +1,9 @@
 import type { SQL } from "bun"
+import { found, IdError, type IdAdmin } from "@answerable/id-admin"
 import type { Provider } from "@answerable/mcp"
 import { z } from "zod"
 import { readCatalogue, writeCatalogue } from "./catalogue"
 import { allowedScopes } from "./grants"
-import { found, IdError, type IdAdmin } from "./id"
 import { parse, Problem } from "./problem"
 
 const request = z.object({ hostClientIds: z.array(z.string().min(1)).min(1), providers: z.array(z.string().min(1)).min(1) }).strict()

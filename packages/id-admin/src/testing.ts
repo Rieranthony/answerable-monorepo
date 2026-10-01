@@ -1,4 +1,4 @@
-// Answerable ID's token endpoint and the admin routes the Toolbox calls, in memory, for tests. Shapes follow apps/id/openapi.admin.json.
+// Answerable ID's token endpoint and the admin routes its consumers call, in memory, for tests. Shapes follow apps/id/openapi.admin.json.
 type Target = { kind: "client" | "resource" | "client_resource"; id: string; resource?: string; scopes: string[] }
 type Event = { id: string; occurredAt: string; action: string; organizationId: string | null; targetType: string; targetId: string | null }
 type Row = Record<string, unknown> & { id: string; scopes: string[] }
@@ -8,6 +8,7 @@ const hubClient = { issuer: "https://id.test", adminResource: "https://id.test/a
 const problem = (status: number, code: string, title: string) =>
   Response.json({ type: "about:blank", title, status, code, request_id: "test" }, { status, headers: { "Content-Type": "application/problem+json" } })
 
+/** Answerable ID in memory, for the tests of a server that calls its admin API: `config` goes to `createIdAdmin`, the rest sets up what ID holds and reads back what it received. */
 export function createFakeId({ expiresIn = 3600, pageSize = 200 } = {}) {
   const access = new Map<string, Target[]>()
   const events: Event[] = []
@@ -15,7 +16,7 @@ export function createFakeId({ expiresIn = 3600, pageSize = 200 } = {}) {
   // The scope each token was issued with, and the scopes each token request asked for.
   const tokens = new Map<string, string>()
   const asked: string[] = []
-  const keys: string[] = []
+  const received: { request: string; requestId: string | null; idempotencyKey: string | null }[] = []
   const resources = new Map<string, Resource>()
   const clients = new Set<string>()
   const organisations = new Set<string>()
@@ -35,11 +36,11 @@ export function createFakeId({ expiresIn = 3600, pageSize = 200 } = {}) {
     const shown = rest.slice(0, size)
     return { items: shown, nextCursor: rest.length > size ? shown.at(-1)!.id : null }
   }
+  // The Operation-Id header of a write's answer, as ID's commands send it.
+  const operation = () => ({ "Operation-Id": Bun.randomUUIDv7() })
   // A write: an Idempotency-Key is required, and one can be made to fail.
   function refuse(request: Request) {
-    const key = request.headers.get("Idempotency-Key")
-    if (!key) return problem(400, "invalid_idempotency_key", "A 1–256 character Idempotency-Key is required")
-    keys.push(key)
+    if (!request.headers.get("Idempotency-Key")) return problem(400, "invalid_idempotency_key", "A 1–256 character Idempotency-Key is required")
     if (failing && --failing.remaining === 0) {
       const { status } = failing
       failing = undefined
@@ -64,7 +65,7 @@ export function createFakeId({ expiresIn = 3600, pageSize = 200 } = {}) {
       if (ifMatch && ifMatch !== etag(found)) return problem(412, "revision_mismatch", "Configuration revision does not match")
       found.allowedScopes = [...new Set(body.allowedScopes as string[])].sort()
       found.revision++
-      return Response.json({ identifier: decodeURIComponent(resource[1]!), ...found }, { headers: { ETag: etag(found) } })
+      return Response.json({ identifier: decodeURIComponent(resource[1]!), ...found }, { headers: { ETag: etag(found), ...operation() } })
     }
     const link = /^\/clients\/([^/]+)\/resources\/([^/]+)$/.exec(path)
     if (link && request.method === "PUT") {
@@ -74,7 +75,7 @@ export function createFakeId({ expiresIn = 3600, pageSize = 200 } = {}) {
       if (!clients.has(link[1]!) || !found) return problem(404, "not_found", "Client or resource not found")
       const created = !found.clients.includes(link[1]!)
       if (created) found.clients.push(link[1]!)
-      return Response.json({ created }, { status: created ? 201 : 200 })
+      return Response.json({ created }, { status: created ? 201 : 200, headers: operation() })
     }
     const organisation = /^\/organizations\/([^/]+)\/(capabilities|entitlements)$/.exec(path)
     if (organisation) {
@@ -93,7 +94,7 @@ export function createFakeId({ expiresIn = 3600, pageSize = 200 } = {}) {
       if (held.some(row => key(row) === key(body))) return problem(409, "conflict", "A row already exists")
       const row = { id: Bun.randomUUIDv7(), organizationId: organisation[1], memberId: null, groupId: null, clientId: null, resource: null, status: "active", ...body, scopes } as Row
       held.push(row)
-      return Response.json(row, { status: 201 })
+      return Response.json(row, { status: 201, headers: operation() })
     }
     const member = /^\/organizations\/([^/]+)\/members\/([^/]+)\/access$/.exec(path)
     if (member) {
@@ -115,6 +116,7 @@ export function createFakeId({ expiresIn = 3600, pageSize = 200 } = {}) {
     requests.push(`${request.method} ${url.pathname}${url.search}`)
     if (latency) await Bun.sleep(latency)
     if (gone) throw new TypeError("Unable to connect")
+    if (url.pathname.startsWith("/api/admin/v1")) received.push({ request: `${request.method} ${url.pathname}${url.search}`, requestId: request.headers.get("x-request-id"), idempotencyKey: request.headers.get("Idempotency-Key") })
     if (down) return new Response("Unavailable", { status: 503 })
     if (request.method === "POST" && url.pathname === "/auth/oauth2/token") {
       const form = new URLSearchParams(await request.text())
@@ -138,8 +140,8 @@ export function createFakeId({ expiresIn = 3600, pageSize = 200 } = {}) {
     requests,
     /** The `scope` of each token request, in order. */
     scopesAsked: asked,
-    /** The Idempotency-Key of each write, in order. */
-    keys,
+    /** Every request to the admin API, in order, with the `x-request-id` and `Idempotency-Key` it carried (`null` when it carried none); the ones refused with `401` too. */
+    received,
     /** Set the targets of a member's access view. */
     grant(organizationId: string, memberId: string, targets: Target[]) { access.set(`${organizationId}/${memberId}`, targets) },
     /** Append an audit event, newer than every one before it. */

@@ -1,11 +1,11 @@
 import type { SQL } from "bun"
 import { createIdVerifier } from "@answerable/auth"
+import type { IdAdmin } from "@answerable/id-admin"
 import { manifest, type IdVerifierConfig, type Provider } from "@answerable/mcp"
+import type { createEvidence } from "@answerable/mcp-postgres"
 import { z } from "zod"
 import { createEnable } from "./admin-enable"
 import { hostClientSettings, listHostClients, overridesSchema, readCatalogue, removeHostClient, writeCatalogue, writeHostClient } from "./catalogue"
-import type { createEvidence } from "./evidence"
-import type { IdAdmin } from "./id"
 import { parse, Problem } from "./problem"
 
 /** The Toolbox's admin resource: the audience of its admin API's tokens, the origin of the Toolbox's resource URL and `/admin`. */

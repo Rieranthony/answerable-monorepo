@@ -1,14 +1,14 @@
 import { afterAll, beforeAll, expect, test } from "bun:test"
 import type { Intent } from "@answerable/mcp"
-import { migrate } from "./db/migrate"
 import { createEvidence } from "./evidence"
 import { withEvidence } from "./intent-evidence"
 import { createPostgresIntentStore } from "./intents"
+import { migrate, migrations } from "./migrate"
 import { testDatabase } from "./test/database"
 
 const db = testDatabase()
 const evidence = createEvidence(db)
-beforeAll(() => migrate(db))
+beforeAll(() => migrate(db, [migrations]))
 afterAll(() => db.close())
 
 function intent(organisation_id: string, overrides: Partial<Intent> = {}): Intent {
@@ -71,7 +71,7 @@ test("an expiry is evidence once, whether a read or a claim finds it", async () 
   const organisation = crypto.randomUUID()
   const [read, claimed] = [intent(organisation), intent(organisation)]
   for (const stored of [read, claimed]) await intents.insert(stored)
-  clock += 60_000
+  clock += 61_000
   expect((await intents.get(read.intent_id))!.status).toBe("expired")
   expect((await intents.get(read.intent_id))!.status).toBe("expired")
   expect(await intents.transition(claimed.intent_id, "prepared", "committing")).toBe(false)

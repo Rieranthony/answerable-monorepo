@@ -209,11 +209,11 @@ test("when ID cannot be reached, refuses the Toolbox's credentials or times out,
   down.id.outage(true)
   expect((await down.enable(body(down))).body.error).toEqual({
     code: "id_failed",
-    message: "Answerable ID refused the Toolbox's client credentials (503); check TOOLBOX_ID_CLIENT_ID, TOOLBOX_ID_CLIENT_SECRET and the client's platform:read and platform:write capability for the admin resource. Nothing is rolled back: repeat the call, which skips what already exists",
+    message: "Answerable ID refused the client credentials of toolbox-hub (503); check the client id, the client secret and the client's platform:read and platform:write capability for the admin resource. Nothing is rolled back: repeat the call, which skips what already exists",
   })
   const wrong = await setup()
   const strangers = await createHub(db, wrong.mounted, { secret: "wrong" })
-  expect((await strangers.admin("POST", `/organisations/${wrong.organisation}/enable`, { body: body(wrong) })).body.error.message).toContain("(401); check TOOLBOX_ID_CLIENT_ID")
+  expect((await strangers.admin("POST", `/organisations/${wrong.organisation}/enable`, { body: body(wrong) })).body.error.message).toContain("refused the client credentials of toolbox-hub (401)")
   const gone = await setup()
   gone.id.unreachable(true)
   expect((await gone.enable(body(gone))).body.error.message).toBe("Answerable ID did not answer the token request: Unable to connect. Nothing is rolled back: repeat the call, which skips what already exists")

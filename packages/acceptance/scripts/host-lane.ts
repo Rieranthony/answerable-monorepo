@@ -2,10 +2,10 @@
 // Not a test and not part of `mcp:test:e2e`. Run it from the repository root: `bun packages/acceptance/scripts/host-lane.ts`; `--check` signs in once as Claude Code's client and exits.
 import assert from "node:assert/strict"
 import { SQL } from "bun"
+import { createIdAdmin } from "@answerable/id-admin"
 import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
 import { createRecordStore } from "@answerable/mcp-e2e/records"
 import { toolboxAdminResource } from "@answerable/mcp-toolbox/admin"
-import { createIdAdmin } from "@answerable/mcp-toolbox/id"
 import { migrate } from "@answerable/mcp-toolbox/migrate"
 import { startGrantsPoller } from "@answerable/mcp-toolbox/poller"
 import { createMemoryTracer } from "@answerable/mcp-toolbox/spans"

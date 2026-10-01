@@ -1,8 +1,8 @@
 import { expect, spyOn, test } from "bun:test"
+import { createIdAdmin } from "@answerable/id-admin"
+import { createFakeId } from "@answerable/id-admin/testing"
 import type { GrantsReader } from "./grants"
-import { createIdAdmin } from "./id"
 import { startGrantsPoller } from "./poller"
-import { createFakeId } from "./test/fake-id"
 
 function setup(intervalMs = 60_000) {
   const id = createFakeId()

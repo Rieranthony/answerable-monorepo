@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-/** How the Toolbox reaches Answerable ID's admin API: ID's origin, the admin resource and the Toolbox's machine client. */
+/** How a server reaches Answerable ID's admin API: ID's origin, the admin resource and the server's machine client. */
 export type IdConfig = {
   issuer: string
   /** The identifier of ID's admin resource, ID's `ADMIN_RESOURCE_IDENTIFIER`. */
@@ -9,6 +9,25 @@ export type IdConfig = {
   clientSecret: string
   /** HTTP client. Default: the global fetch. */
   fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+}
+
+/** What a call to ID may carry besides its path. */
+export type IdCallOptions = {
+  /** Sent as `x-request-id`; ID stores it on the audit row of a write and echoes it. ID ignores one that does not match `[A-Za-z0-9._:-]{1,128}`. */
+  requestId?: string
+}
+
+/** What a write to ID may carry besides its call options. */
+export type IdWriteOptions = IdCallOptions & {
+  /** The JSON body. */
+  body?: unknown
+  /** Sent as `If-Match`: the ETag the write expects the resource to have. */
+  ifMatch?: string
+  /**
+   * Sent as `Idempotency-Key` on every method but GET. Default: a random UUID per call. ID replays the receipt of the same key with the same input and
+   * refuses a different input with `409 idempotency_key_reused`. The key stays the same when the call is resent after a `401`.
+   */
+  idempotencyKey?: string
 }
 
 /** ID's admin API, or its token endpoint, did not answer as needed. `status` is 0 when there was no answer at all; `code` is the problem's `code`, absent when the body is not a problem. */
@@ -44,9 +63,9 @@ export async function found<T>(answer: Promise<T>): Promise<T | undefined> {
 }
 
 /**
- * ID's admin API as the Toolbox's machine client, one per Toolbox, for the grants reader, the poller and the enable operation. Reads (`get`) use a
- * `platform:read` token; the enable operation (`manage`) uses a `platform:read platform:write` token of its own. Each is reused until 30 seconds
- * before it expires and renewed once when ID refuses it. A status outside 2xx throws `IdError`.
+ * ID's admin API as a server's machine client, one per server. Reads (`get`) use a `platform:read` token; `manage` uses a `platform:read
+ * platform:write` token of its own. Each is reused until 30 seconds before it expires and renewed once when ID refuses it. A status outside 2xx
+ * throws `IdError`.
  */
 export function createIdAdmin({ issuer, adminResource, clientId, clientSecret, fetch = globalThis.fetch }: IdConfig) {
   const tokens = new Map<string, { value: string; expiresAt: number }>()
@@ -59,7 +78,7 @@ export function createIdAdmin({ issuer, adminResource, clientId, clientSecret, f
       signal: AbortSignal.timeout(5000),
     }))
     if (!response.ok) {
-      throw new IdError(response.status, undefined, `Answerable ID refused the Toolbox's client credentials (${response.status}); check TOOLBOX_ID_CLIENT_ID, TOOLBOX_ID_CLIENT_SECRET and the client's ${scope.replace(" ", " and ")} capability for the admin resource`)
+      throw new IdError(response.status, undefined, `Answerable ID refused the client credentials of ${clientId} (${response.status}); check the client id, the client secret and the client's ${scope.replace(" ", " and ")} capability for the admin resource`)
     }
     const body = issued.parse(await response.json())
     tokens.set(scope, { value: body.access_token, expiresAt: Date.now() + body.expires_in * 1000 })
@@ -75,16 +94,17 @@ export function createIdAdmin({ issuer, adminResource, clientId, clientSecret, f
     }
     return renewing
   }
-  async function call(scope: string, method: string, path: string, { body, ifMatch }: { body?: unknown; ifMatch?: string } = {}) {
+  async function call(scope: string, method: string, path: string, { body, ifMatch, requestId, idempotencyKey }: IdWriteOptions = {}) {
     const url = `/api/admin/v1${path}`
     // One key per call: a renewed token repeats the same command.
-    const key = crypto.randomUUID()
+    const key = idempotencyKey ?? crypto.randomUUID()
     const send = async () => {
       const authorization = `Bearer ${await accessToken(scope)}`
       return reach(`${method} ${url}`, async () => fetch(new URL(url, issuer), {
         method,
         headers: {
           Authorization: authorization,
+          ...(requestId === undefined ? {} : { "x-request-id": requestId }),
           ...(method === "GET" ? {} : { "Idempotency-Key": key }),
           ...(ifMatch === undefined ? {} : { "If-Match": ifMatch }),
           ...(body === undefined ? {} : { "Content-Type": "application/json" }),
@@ -99,21 +119,25 @@ export function createIdAdmin({ issuer, adminResource, clientId, clientSecret, f
       response = await send()
     }
     if (response.ok) return response
-    const found = problem.safeParse(await response.json().catch(() => undefined))
-    const said = found.success ? ` ${found.data.code}: ${found.data.title}` : ""
-    throw new IdError(response.status, found.data?.code, `Answerable ID answered ${method} ${url} with ${response.status}${said}`)
+    const answer = problem.safeParse(await response.json().catch(() => undefined))
+    const said = answer.success ? ` ${answer.data.code}: ${answer.data.title}` : ""
+    throw new IdError(response.status, answer.data?.code, `Answerable ID answered ${method} ${url} with ${response.status}${said}`)
   }
   return {
     /** GET a path of the admin API, such as `/audit-events?limit=200`, and return its JSON. */
-    async get(path: string): Promise<unknown> {
-      return (await call(read, "GET", path)).json()
+    async get(path: string, options?: IdCallOptions): Promise<unknown> {
+      return (await call(read, "GET", path, options)).json()
     },
-    /** Call the admin API with `platform:read` and `platform:write`, as the enable operation does: a JSON `body`, an `If-Match` tag, a fresh `Idempotency-Key` on every write. Returns the JSON and the response's `ETag`. */
-    async manage(method: "GET" | "POST" | "PATCH" | "PUT", path: string, options?: { body?: unknown; ifMatch?: string }): Promise<{ body: unknown; etag: string | null }> {
+    /**
+     * Call the admin API with `platform:read` and `platform:write`: a JSON `body`, an `If-Match` tag, an `Idempotency-Key` on every write (a random
+     * one unless `idempotencyKey` names it) and an `x-request-id`. Returns the JSON, the response's `ETag` and its `Operation-Id`, the id of the
+     * operation ID recorded for a write; both are `null` when ID sent none.
+     */
+    async manage(method: "GET" | "POST" | "PATCH" | "PUT", path: string, options?: IdWriteOptions): Promise<{ body: unknown; etag: string | null; operationId: string | null }> {
       const response = await call(write, method, path, options)
-      return { body: await response.json(), etag: response.headers.get("ETag") }
+      return { body: await response.json(), etag: response.headers.get("ETag"), operationId: response.headers.get("Operation-Id") }
     },
   }
 }
-/** ID's admin API as the Toolbox's machine client. */
+/** ID's admin API as a server's machine client. */
 export type IdAdmin = ReturnType<typeof createIdAdmin>

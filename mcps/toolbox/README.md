@@ -18,10 +18,11 @@ bun run toolbox:dev                                    # builds the e2e view, se
 
 Register the Toolbox in ID, then enable an organisation with one call to the admin API: [Administer the Toolbox](../../apps/web/content/docs/toolbox/admin.mdx). To mount another provider: [Add tools to the Toolbox](../../apps/web/content/docs/toolbox/add-tools.mdx). The variables are listed in `default.env`. Changes: [CHANGELOG](CHANGELOG.md).
 
+It builds on two shared packages: `@answerable/id-admin` (`createIdAdmin`, the Toolbox's one machine client on ID's admin API, shared by the grants reader, the poller and the enable operation: reads with `platform:read`, the enable operation with `platform:read platform:write`; `found` makes ID's 404 an answer; the fake ID for tests) and `@answerable/mcp-postgres` (`createEvidence`, `createPostgresIntentStore`, `withEvidence` and the migrator).
+
 | File | Job |
 | --- | --- |
 | `src/toolbox.ts` | `createToolbox({ providers, auth, db, id, spans })`: the endpoint on `@answerable/mcp`, authority and the projection per request, evidence and a span per call, `RESULT_TOO_LARGE` above 100 KiB, `/health` |
-| `src/id.ts` | `createIdAdmin`, the Toolbox's one machine client on ID's admin API, shared by the grants reader, the poller and the enable operation: reads with `platform:read`, the enable operation with `platform:read platform:write`. `found` makes ID's 404 an answer |
 | `src/grants.ts` | `createGrantsReader`: grant strings from ID's member access view, cached 60 seconds; an invalidation sends `tools/list_changed`. `allowedScopes(providers)`, the Toolbox resource's allowed scopes |
 | `src/poller.ts` | `startGrantsPoller`: reads ID's audit log every 15 seconds and invalidates the organisations it names |
 | `src/admin.ts` | The platform-tier admin API under `/admin/v1`: authentication (a machine client's token with `toolbox:admin`), routing, and the routes for providers, catalogue entries and host clients; `toolboxAdminResource` |
@@ -31,12 +32,9 @@ Register the Toolbox in ID, then enable an organisation with one call to the adm
 | `src/projection.ts` | `allowed`, policy classes, tool order and `projectionOf`, direct or meta |
 | `src/meta.ts` | The Toolbox's own provider, `toolbox`: `toolbox_whoami` and the meta tools `toolbox_search`, `toolbox_describe`, `toolbox_execute` and `toolbox_prepare` |
 | `src/search.ts` | Postgres full-text ranking over `capabilities.search` |
-| `src/intents.ts` | `createPostgresIntentStore(db, { now? })`: intents in the `intents` table |
-| `src/intent-evidence.ts` | `withEvidence(store, evidence)`: every intent transition as evidence |
-| `src/evidence.ts` | `createEvidence(db)`: `record`, `verify` and `erase` |
 | `src/spans.ts` | One server span per call; OTLP/HTTP export when `OTEL_EXPORTER_OTLP_ENDPOINT` is set |
 | `src/environment.ts` | `readToolboxEnvironment` |
-| `src/db/migrate.ts`, `migrations/` | Numbered SQL files and `schema_migrations` |
+| `src/db/migrate.ts`, `migrations/` | `0001_catalogue.sql` and `0003_host_clients.sql`; `migrate(db)` applies them together with the migrations of `@answerable/mcp-postgres` (`0002`, `0004`), in the order of their names |
 | `src/server.ts` | The entry point; `src/server.test.ts` starts it against the test database |
 
-`manifest.json` is the `toolbox` provider's contract; `UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-toolbox test` rewrites it. The journeys against real ID are `packages/acceptance/src/journeys/toolbox.journeys.test.ts`, run by `bun run mcp:test:e2e`. The acceptance imports this package through its `exports`.
+`manifest.json` is the `toolbox` provider's contract; `UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-toolbox test` rewrites it. The journeys against real ID are `packages/acceptance/src/journeys/toolbox.journeys.test.ts`, run by `bun run mcp:test:e2e`. The acceptance imports this package through its `exports` (`./admin`, `./grants`, `./migrate`, `./poller`, `./spans`, `./toolbox`).

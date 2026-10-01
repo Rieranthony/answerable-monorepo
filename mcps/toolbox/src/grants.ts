@@ -1,6 +1,6 @@
+import { found, type IdAdmin } from "@answerable/id-admin"
 import { ToolError, type Provider, type UserPrincipal } from "@answerable/mcp"
 import { z } from "zod"
-import { found, type IdAdmin } from "./id"
 
 const grantForm = /^([a-z][a-z0-9]{0,11})(\/[a-z][a-z0-9]{0,15}(\.[a-z][a-z0-9]{0,15})?)?$/
 

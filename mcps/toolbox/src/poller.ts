@@ -1,6 +1,6 @@
+import type { IdAdmin } from "@answerable/id-admin"
 import { z } from "zod"
 import type { GrantsReader } from "./grants"
-import type { IdAdmin } from "./id"
 
 const page = z.object({
   items: z.array(z.object({ id: z.string(), action: z.string(), organizationId: z.string().nullable() })),
