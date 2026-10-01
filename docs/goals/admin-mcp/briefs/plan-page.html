@@ -1,0 +1,143 @@
+<title>Answerable Admin MCP Plan</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one calm reading column, tables for anything scanned; role chips carry the permission tiers. */
+:root {
+  --bg: #f7f8fa; --surface: #ffffff; --fg: #1b2230; --muted: #5b6577; --line: #dfe3ea;
+  --accent: #2c5d8f; --accent-soft: #e6eef7;
+  --team: #3d6b4f; --team-bg: #e7f1ea; --admin: #8a5a12; --admin-bg: #f6ecdc; --owner: #8f2c3a; --owner-bg: #f6e3e6;
+  --ok: #3d6b4f; --wait: #5b6577; --run: #2c5d8f;
+  --font-body: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #12161d; --surface: #1a2029; --fg: #e3e7ee; --muted: #9aa4b5; --line: #2c3442;
+  --accent: #8db6e0; --accent-soft: #1f2c3b;
+  --team: #9ccdaa; --team-bg: #1d2c23; --admin: #e2bb7a; --admin-bg: #33281a; --owner: #ec9aa6; --owner-bg: #362026;
+  --ok: #9ccdaa; --wait: #9aa4b5; --run: #8db6e0; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #12161d; --surface: #1a2029; --fg: #e3e7ee; --muted: #9aa4b5; --line: #2c3442;
+  --accent: #8db6e0; --accent-soft: #1f2c3b;
+  --team: #9ccdaa; --team-bg: #1d2c23; --admin: #e2bb7a; --admin-bg: #33281a; --owner: #ec9aa6; --owner-bg: #362026;
+  --ok: #9ccdaa; --wait: #9aa4b5; --run: #8db6e0; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font: 14px/1.55 var(--font-body); padding-inline: 16px; padding-block: 28px 56px; }
+main { max-width: 860px; margin: 0 auto; display: grid; gap: 28px; }
+h1 { font-size: 22px; font-weight: 700; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+h2 { font-size: 15px; font-weight: 650; margin: 0 0 10px; text-wrap: balance; }
+p { margin: 0; max-width: 68ch; }
+.lead { color: var(--muted); }
+header { display: grid; gap: 8px; }
+.eyebrow { font: 500 11px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+section { display: grid; gap: 10px; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 12px; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+code { font: 12.5px var(--font-mono); background: var(--accent-soft); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.chip { display: inline-block; font: 500 11px/1.6 var(--font-mono); padding: 0 7px; border-radius: 999px; white-space: nowrap; }
+.team { color: var(--team); background: var(--team-bg); }
+.admin { color: var(--admin); background: var(--admin-bg); }
+.owner { color: var(--owner); background: var(--owner-bg); }
+.none { color: var(--muted); background: var(--accent-soft); }
+ol.steps { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 70ch; }
+ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 5px; max-width: 72ch; }
+.status { font: 500 12px var(--font-mono); white-space: nowrap; }
+.status.done { color: var(--ok); } .status.running { color: var(--run); } .status.queued { color: var(--wait); }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: grid; gap: 6px; min-width: 0; }
+.panel h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.panel p, .panel li { font-size: 13px; color: var(--fg); }
+.foot { color: var(--muted); font-size: 12px; }
+</style>
+
+<main>
+  <header>
+    <span class="eyebrow">Goal · opened 1 October 2026</span>
+    <h1>Answerable Admin MCP</h1>
+    <p class="lead">A standalone MCP, for Answerable staff only, that onboards and manages organisations in Answerable ID: create an organisation, route its domain, connect its directory, turn on the Toolbox for it and grant its people access. The plan was written by Fable 5.1 after test runs against real ID. Opus 5.5 and Sonnet 5.5 build it in five steps.</p>
+  </header>
+
+  <section>
+    <h2>The demo it must make possible</h2>
+    <ol class="steps">
+      <li>An owner connects Claude Code to the admin MCP and signs in with their Answerable account.</li>
+      <li>Through the MCP's tools they create an organisation, add its domain, connect its directory, enable the Toolbox for it and grant its people access. Each change is previewed and confirmed before it runs.</li>
+      <li>A person from that organisation signs in to the Toolbox and uses it. Before the grant, ID turns them away: "Access is unavailable for this organisation."</li>
+      <li>Anyone who is not staff, or staff without the right role, gets no tools, or no write tools.</li>
+    </ol>
+    <p class="foot">Proven twice: automated journeys against a real ID on every run, and a hand lane script that starts ID, the Toolbox and the admin MCP for Claude Code.</p>
+  </section>
+
+  <section>
+    <h2>Roles</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Role</th><th>Grant held in ID</th><th>May</th></tr></thead>
+      <tbody>
+        <tr><td><span class="chip none">no role</span></td><td>Any platform member</td><td>Only <code>admin_whoami</code>, which says they hold no role</td></tr>
+        <tr><td><span class="chip team">team</span></td><td><code>answerable-team</code></td><td>Every read: organisations, members, groups, access, audit, staff</td></tr>
+        <tr><td><span class="chip admin">admin</span></td><td><code>answerable-admin</code></td><td>Reads, plus create and update organisations, domains, SSO, groups, grant and revoke access, enable the Toolbox</td></tr>
+        <tr><td><span class="chip owner">owner</span></td><td><code>answerable-owner</code></td><td>Everything, plus disable or enable an organisation and grant or revoke staff roles. These need a sign-in from the last 30 minutes.</td></tr>
+      </tbody>
+    </table></div>
+    <p>Roles are entitlements of three groups in Answerable's own organisation, stored in ID. The MCP reads the person's role from ID on every request, so adding or removing someone takes effect on their next call, with no sign-in again. The MCP keeps no permission table of its own, and nothing is cached: if ID is unreachable, nothing is served.</p>
+  </section>
+
+  <section>
+    <h2>Tools</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Tool</th><th>Kind</th><th>Minimum</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td><code>admin.whoami</code></td><td>read</td><td><span class="chip none">staff</span></td><td>Who you are to the MCP, your role, the tools you may use</td></tr>
+        <tr><td><code>organisations.list</code>, <code>organisations.get</code></td><td>read</td><td><span class="chip team">team</span></td><td>Find organisations; one organisation with its domains and SSO summary</td></tr>
+        <tr><td><code>members.list</code>, <code>members.get</code>, <code>groups.list</code></td><td>read</td><td><span class="chip team">team</span></td><td>People, their groups and what they can reach</td></tr>
+        <tr><td><code>access.list</code>, <code>audit.list</code>, <code>sso.test</code>, <code>staff.list</code></td><td>read</td><td><span class="chip team">team</span></td><td>Entitlements, ID's audit trail, a directory check, who is staff</td></tr>
+        <tr><td><code>organisations.create</code>, <code>organisations.update</code>, <code>domains.add</code></td><td>write</td><td><span class="chip admin">admin</span></td><td>Onboard and edit an organisation</td></tr>
+        <tr><td><code>sso.set</code></td><td>write</td><td><span class="chip admin">admin</span></td><td>Connect the directory with Answerable's Microsoft or Google application (no secrets ever pass through a tool)</td></tr>
+        <tr><td><code>groups.create</code>, <code>groups.addmember</code>, <code>groups.dropmember</code></td><td>write</td><td><span class="chip admin">admin</span></td><td>Shape who belongs where</td></tr>
+        <tr><td><code>access.grant</code>, <code>access.revoke</code>, <code>toolbox.enable</code></td><td>write</td><td><span class="chip admin">admin</span></td><td>Grant and revoke access; turn on the Toolbox for an organisation</td></tr>
+        <tr><td><code>organisations.disable</code>, <code>organisations.enable</code>, <code>staff.grant</code>, <code>staff.revoke</code></td><td>write</td><td><span class="chip owner">owner</span></td><td>The critical operations</td></tr>
+      </tbody>
+    </table></div>
+    <p>Every write is prepared first: the MCP shows a preview (what changes, the effects, the warnings), the host asks the person to confirm, and only then does the change run, once. If the target changed in between, the commit is refused and has to be prepared again.</p>
+  </section>
+
+  <section>
+    <h2>How it stays safe</h2>
+    <div class="two">
+      <div class="panel"><h3>Who acts on ID</h3><p>ID's admin API does not accept a person's token, so the MCP calls ID with its own machine credential. It does so only after the person's role allowed the tool. This is the same model the Toolbox uses.</p></div>
+      <div class="panel"><h3>Who did what</h3><p>ID's audit log names the MCP's machine client. The MCP records the person in its own append-only, hash-chained evidence. Both sides share the request id and ID's operation id, so a change can be traced from either side.</p></div>
+      <div class="panel"><h3>Retries are safe</h3><p>Each write is sent to ID with the intent id as its idempotency key. A lost answer can be retried without applying the change twice.</p></div>
+      <div class="panel"><h3>Fresh sign-in for critical changes</h3><p>ID asks people for a sign-in from the last 5 minutes before sensitive changes, but not machines. The MCP adds its own rule: critical tools need a sign-in from the last 30 minutes. Refreshing a token does not count as a new sign-in.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Decisions taken (the owner can overrule any of them)</h2>
+    <ul class="plain">
+      <li><strong>Hand-written and standalone.</strong> About 24 curated tools in <code>mcps/admin</code>. The plan's earlier idea, an admin MCP generated from ID's API spec inside the Toolbox, would have exposed 81 raw operations and had no role model.</li>
+      <li><strong>Roles live in ID</strong> as group entitlements and are read live on every request, with no cache.</li>
+      <li><strong>Every write is "controlled".</strong> The host confirms each one with the server's own summary. The human-approval class has no approval page yet, so it is Not yet.</li>
+      <li><strong>Own database.</strong> <code>answerable_admin</code> holds the prepared changes and the evidence, using code extracted from the Toolbox into shared packages rather than copied.</li>
+      <li><strong>Not yet:</strong> inviting a person before their first sign-in (ID has no route for it), SSO with an organisation's own credentials (that needs a secret), erasing anything, and the admin MCP for an organisation's own administrators.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Build steps</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Step</th><th>Model</th><th>What</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>Plan</td><td>Fable 5.1</td><td>Research, test runs against real ID, design, decisions</td><td><span class="status done">done</span></td></tr>
+        <tr><td>B0</td><td>Sonnet 5.5</td><td>Move the ID client and the Postgres intents and evidence out of the Toolbox into shared packages</td><td><span class="status done">done</span></td></tr>
+        <tr><td>B1</td><td>Opus 5.5</td><td>The admin MCP's read side: platform check, live roles, whoami, ten reads, evidence, docs page</td><td><span class="status done">done</span></td></tr>
+        <tr><td>B3a</td><td>Sonnet 5.5</td><td>Test kit: staff and spare company directories in the real-ID fixture (runs beside B1)</td><td><span class="status done">done</span></td></tr>
+        <tr><td>B2</td><td>Opus 5.5</td><td>The writes: 14 prepared changes against ID and the Toolbox, the fresh sign-in rule</td><td><span class="status running">running</span></td></tr>
+        <tr><td>B3b</td><td>Sonnet 5.5</td><td>Journeys against real ID, the demo lane, setup docs, measured numbers</td><td><span class="status queued">queued</span></td></tr>
+        <tr><td>B4</td><td>Opus 5.5</td><td>Whole-tree cleanup, the design record, final gates, land on main</td><td><span class="status queued">queued</span></td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <p class="foot">Plan files: <code>docs/goals/admin-mcp/</code> on branch <code>claude/admin-mcp</code> (task plan, findings with how each was verified, design, decisions, progress).</p>
+</main>
