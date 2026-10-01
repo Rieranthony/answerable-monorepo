@@ -1,7 +1,7 @@
 import { z } from "zod"
 import type { Spare } from "./id"
 
-/** Call ID's admin API as root: `admin("POST", "/organizations", { slug, name })`. Every call carries a fresh `Idempotency-Key`; a status outside 2xx throws with the body. */
+/** Call ID's admin API as root: `admin("POST", "/organizations", { slug, name })`. Every call carries a fresh `Idempotency-Key`; a status outside 2xx throws with the body. A `204` answers `{}`. */
 export type Admin = (method: string, path: string, body?: unknown) => Promise<Record<string, unknown>>
 
 export function createAdmin({ idOrigin, rootSecret }: { idOrigin: string; rootSecret: string }): Admin {
@@ -16,7 +16,8 @@ export function createAdmin({ idOrigin, rootSecret }: { idOrigin: string; rootSe
       body: body === undefined ? undefined : JSON.stringify(body),
     })
     if (!response.ok) throw new Error(`${method} ${path} returned ${response.status}: ${await response.text()}`)
-    return (await response.json()) as Record<string, unknown>
+    const text = await response.text()
+    return (text ? JSON.parse(text) : {}) as Record<string, unknown>
   }
 }
 

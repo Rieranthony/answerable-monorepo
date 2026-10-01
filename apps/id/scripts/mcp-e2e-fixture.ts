@@ -10,7 +10,10 @@ import { bootstrap, systemActor } from "../src/bootstrap.ts";
 import { createDatabase } from "../src/db/client.ts";
 import { runMigrations } from "../src/db/migrate.ts";
 import { configureRuntimeRole } from "../src/db/runtime-role.ts";
-import { startOidcIssuer } from "../src/__tests__/oidc-issuer.ts";
+import {
+  startOidcIssuer,
+  type OidcClaims,
+} from "../src/__tests__/oidc-issuer.ts";
 import { testEnvironment } from "../src/__tests__/support.ts";
 
 const [planPath, manifestPath] = process.argv.slice(2);
@@ -123,14 +126,23 @@ function openDirectory(
 ) {
   const domain = `${slug}.example.test`;
   const email = `${person}@${domain}`;
-  for (let signIn = 0; signIn < signIns; signIn++)
-    upstream.enqueue({
+  for (let signIn = 0; signIn < signIns; signIn++) {
+    const claims: OidcClaims = {
       sub: `${slug}-${person}`,
       email,
       email_verified: true,
       name: "MCP tester",
-      auth_time: Math.floor(Date.now() / 1000),
+    };
+    // The issuer copies these claims into the ID token when it answers the
+    // token request, so a getter makes `auth_time` the time of that sign-in,
+    // not of boot: the sign-in time ID reads for a Verify sign-in, and a
+    // person who signs in minutes after boot still carries a recent one.
+    Object.defineProperty(claims, "auth_time", {
+      enumerable: true,
+      get: () => Math.floor(Date.now() / 1000),
     });
+    upstream.enqueue(claims);
+  }
   return {
     slug,
     domain,

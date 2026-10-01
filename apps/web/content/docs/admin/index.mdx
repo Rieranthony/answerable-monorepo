@@ -12,7 +12,7 @@ The admin MCP (`mcps/admin`) gives Answerable staff the work of [onboarding an o
 
 **Staff only.** Only members of the platform organisation get any tool. An admin MCP for an organisation's own administrators: Not yet.
 
-Run the line above once the admin MCP runs locally with its registrations ([below](#run-it-locally)), then choose **Authenticate** in Claude Code's `/mcp` and ask Claude to call `admin_whoami`. Then ask for a change in words:
+Run the line above once the admin MCP runs locally with its registrations ([Set up the admin MCP](/docs/admin/setup), or the lane that does it all on your machine: [Try it locally](/docs/admin/setup#try-it-locally)), then choose **Authenticate** in Claude Code's `/mcp` and ask Claude to call `admin_whoami`. Then ask for a change in words:
 
 ```text
 Create the organisation newco, named Newco, route newco.example to it, enable the Toolbox for it
@@ -186,7 +186,7 @@ A write that ID takes without a precondition says so in its preview's warnings.
 1. In the browser you use for Answerable ID, open `http://localhost:47300/security` (your ID's origin and `/security`) and choose **Verify sign-in**. ID sends you to your company's directory with `prompt=login` and accepts only a sign-in from the last five minutes.
 2. In Claude Code, run `/mcp`, choose the admin MCP, **Clear authentication**, then **Authenticate**. The new authorisation takes the new sign-in time.
 
-Do them in that order: an authorisation made before step 1 keeps the old time. Signing out of ID and in again is not enough, because a sign-in that does not ask the directory to prompt can carry the directory's earlier time. This remedy is read from ID's code; a journey that runs it against a real ID: Not yet.
+Do them in that order: an authorisation made before step 1 keeps the old time, as does one made through the same browser session without step 1. Signing out of ID and in again is not enough, because a sign-in that does not ask the directory to prompt can carry the directory's earlier time. A journey runs exactly this against a real ID: [What the admin journeys prove](/docs/mcp/local-testing#what-the-admin-journeys-prove).
 
 ## How authority is read
 
@@ -201,7 +201,7 @@ On every request that lists or calls tools, in this order:
 
 **Fail closed.** When ID does not answer the role read, `tools/list` fails and every call answers `UPSTREAM_UNAVAILABLE`. Nothing is served from memory.
 
-**What it costs.** One round trip to ID per request. Measured in process against the in-memory fake ID of `@answerable/id-admin/testing`, 50 `tools/list` requests made one access read each, with a median of 2.9 ms; with 30 ms added to every ID answer, the median was 38.0 ms. Against a real ID: Not yet measured.
+**What it costs.** One round trip to ID per request. Against a real ID, 25 `tools/list` requests, each with one access read, took a median of 31.3 to 34.3 ms and a maximum of 35.2 to 50.7 ms in five runs; the reads alone took a median of 26.7 to 29.8 ms: [What the admin journeys prove](/docs/mcp/local-testing#what-the-admin-journeys-prove).
 
 ## Evidence
 
@@ -220,16 +220,7 @@ Each row names the person (`actor_id`, their user id) and the host (`client_id`)
 
 ## Run it locally
 
-**Register it in Answerable ID first**, with a [staff token](/docs/id/onboard#get-a-staff-token) and the commands of [Register the Toolbox in ID](/docs/toolbox/admin#register-the-toolbox-in-id), using these values:
-
-| What | Values |
-| --- | --- |
-| The resource | `http://localhost:47520/mcp`, exactly `ADMIN_RESOURCE_URL`; allowed scopes `admin`, `offline_access`, `answerable-team`, `answerable-admin`, `answerable-owner` |
-| Claude Code | A public client `claude-code-admin`, scopes `openid offline_access admin`, redirect `http://localhost:47700/callback`, linked to the resource; the platform organisation's login and `admin` capabilities and organisation-wide entitlements for it |
-| The machine client | `admin-mcp`, owned by the platform organisation, `client_credentials` with `platform:read platform:write`, linked to ID's admin resource with a matching capability. For `toolbox_enable`, also linked to the Toolbox's admin resource (`http://localhost:47400/admin`) with a `toolbox:admin` capability: one client gets a token for each audience |
-| The roles | A group of the platform organisation per role, each with an entitlement on the resource whose scopes are its grant string |
-
-A step-by-step setup page: Not yet. Then put the machine client's id and secret in the root `.env` and start the server:
+**Register it in Answerable ID first**, with a staff token: [Register the admin MCP](/docs/admin/setup#register-the-admin-mcp) has the cURL for the resource, the Claude Code client, the platform organisation's access, a group per role and the machine client with its two audiences. Then put the machine client's id and secret in the root `.env` and start the server:
 
 ```bash
 bun --env-file=.env run --filter @answerable/mcp-admin db:migrate
@@ -326,7 +317,6 @@ Every tool error is the envelope [MCP errors](/docs/mcp/errors) describes, with 
 | SSO providers with their own credentials | cURL, as [Connect the directory](/docs/id/onboard#connect-the-directory) shows |
 | Human approval of a write | Every write is controlled class; the critical operations are owner-only and need a recent sign-in |
 | Registering clients and resources, users, sessions, disabling domains, member windows and removal | cURL, as [Onboard an organisation](/docs/id/onboard) and [Manage your organisation](/docs/id/manage) show |
-| A step-by-step setup page and the acceptance against a real ID | The registration values in [Run it locally](#run-it-locally) |
 | An admin MCP for an organisation's own administrators | They use [Manage your organisation](/docs/id/manage) |
 | Mounting this provider in the Toolbox | It is served alone, at its own resource |
 | Spans, rate limits and budgets | None |

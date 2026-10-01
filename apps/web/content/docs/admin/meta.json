@@ -1,4 +1,4 @@
 {
   "title": "Admin MCP",
-  "pages": ["index"]
+  "pages": ["index", "setup"]
 }

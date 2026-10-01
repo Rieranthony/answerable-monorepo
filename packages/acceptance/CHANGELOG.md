@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0
+
+What the admin MCP's journeys and lane need from the kit. Nothing breaks.
+
+- `src/journeys/admin.journeys.test.ts` runs the admin MCP (port `47606`) and the Toolbox against real ID: roles without re-authorisation, onboarding through the tools, the new organisation's person in the Toolbox, refusals, idempotency, freshness with a real Verify sign-in, and evidence joined to ID's audit.
+- `src/admin-mcp.ts` registers the admin MCP and the Toolbox as `apps/web/content/docs/admin/setup.mdx` shows, and starts their databases and the Toolbox's poller. `scripts/admin-lane.ts` starts from it and keeps ID, the admin MCP and the Toolbox up for Claude Code by hand; `--check` runs the whole story headlessly.
+- `signIn`, `signInRefused` and `approve` take a browser or one of its contexts; through a context, ID's session carries from one sign-in to the next and the email step is skipped. `verifySignIn(context, idOrigin)` chooses Verify sign-in on ID's Security page.
+- `createAdmin` answers `{}` for an empty body (a `204`), so `DELETE` works.
+- `cleanup` collects garbage after the closers. Without it a collection ran during a later file of a long run and closed the pipes of that file's Chromium, whose sign-ins and `close` then hung.
+- The ID fixture stamps each directory sign-in's `auth_time` with the time of the sign-in, not of boot (`apps/id/scripts/mcp-e2e-fixture.ts`), so ID accepts a Verify sign-in.
+
 ## 0.3.0
 
 What the admin MCP's journeys need from the kit. Nothing breaks.

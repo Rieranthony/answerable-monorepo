@@ -3,7 +3,7 @@ title: Administer the Toolbox
 description: "Enable the Toolbox for an organisation in one call, then manage its catalogue, host clients and grant strings through the platform-tier admin API, with cURL."
 ---
 
-**Answerable staff.** This page is for us. Every step is a `curl` command. The Toolbox itself is described in [The Toolbox](/docs/toolbox). Staff can also enable it through [the admin MCP](/docs/admin)'s `toolbox_enable`, which calls the enable operation below.
+**Answerable staff.** This page is for us. Every step is a `curl` command. The Toolbox itself is described in [The Toolbox](/docs/toolbox). Staff can also enable it through [the admin MCP](/docs/admin)'s `toolbox_enable`, which calls the enable operation below; [Set up the admin MCP](/docs/admin/setup) registers its machine client for the Toolbox's admin resource.
 
 ## Enable an organisation
 
@@ -244,4 +244,4 @@ Every failure answers `{ "error": { "code": "...", "message": "..." } }`; the me
 | `502 id_failed` | ID refused the Toolbox's client credentials or a call, or did not answer | Read the message, fix ID, the client's `platform:read platform:write` capability or `TOOLBOX_ID_CLIENT_SECRET`, then repeat the call |
 | `500 internal_error` | Something unexpected, such as the database | The Toolbox's log has `[toolbox] admin API failed` |
 
-The journey that proves the enable call against real ID is in [Test MCPs locally](/docs/mcp/local-testing#what-the-toolbox-journeys-prove).
+The journey that proves the enable call against real ID is in [Test MCPs locally](/docs/mcp/local-testing#what-the-toolbox-journeys-prove); [the admin journeys](/docs/mcp/local-testing#what-the-admin-journeys-prove) call it through `toolbox_enable`.

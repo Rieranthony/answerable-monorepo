@@ -1,0 +1,212 @@
+---
+title: Set up the admin MCP
+description: "Register the admin MCP in Answerable ID with cURL, run it, connect Claude Code, and try the whole onboarding story on your machine with the admin lane."
+---
+
+```bash
+bun packages/acceptance/scripts/admin-lane.ts
+```
+
+The lane starts a throwaway ID, the admin MCP and the Toolbox, registers them as this page shows, and prints the Claude Code commands to try: [Try it locally](#try-it-locally). To use your own ID, [register the admin MCP](#register-the-admin-mcp) in it, [run it](#run-it) and [connect Claude Code](#connect-claude-code).
+
+[The admin MCP](/docs/admin) describes what it does. The journeys in `packages/acceptance` make the same registrations, through the kit's functions in `src/admin-mcp.ts`, in a real ID and then use the result: [What the admin journeys prove](/docs/mcp/local-testing#what-the-admin-journeys-prove).
+
+## Register the admin MCP
+
+**Who.** Answerable staff, once per ID. Use the root secret as `TOKEN` while no person is a platform administrator; ID then answers `403 root_locked` and `TOKEN` is a [staff token](/docs/id/onboard#get-a-staff-token). Every write needs its own `Idempotency-Key`.
+
+```bash
+export ID=http://localhost:47300
+export TOKEN=...                    # the root secret, or a staff token
+export PLATFORM_ORG=...             # the platform organisation's id
+export ADMIN_MCP=http://localhost:47520/mcp
+export ADMIN_MCP_PATH=http%3A%2F%2Flocalhost%3A47520%2Fmcp
+export ID_ADMIN_PATH=http%3A%2F%2Flocalhost%3A47300%2Fapi%2Fadmin
+export TOOLBOX_ADMIN_PATH=http%3A%2F%2Flocalhost%3A47400%2Fadmin
+```
+
+1. **The resource.** `ADMIN_MCP` is the token audience: it must match `ADMIN_RESOURCE_URL` exactly. The three role strings are the only scopes besides `admin` that mean anything to the server. Claude Code refreshes a token that is close to expiry, so 900 seconds spares it a refresh on every request.
+
+   ```bash
+   curl "$ID/api/admin/v1/resources" \
+     -H "Idempotency-Key: admin-mcp-resource-v1" -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"classification":"platform_shared","organizationId":null,"identifier":"'"$ADMIN_MCP"'","name":"Admin MCP","allowedScopes":["admin","answerable-team","answerable-admin","answerable-owner","offline_access"],"accessTokenTtl":900}'
+   ```
+
+2. **Claude Code as a host client.** A public client: PKCE protects the code, and the redirect URI must match `--callback-port`.
+
+   ```bash
+   curl "$ID/api/admin/v1/clients" \
+     -H "Idempotency-Key: claude-code-admin-v1" -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"clientId":"claude-code-admin","name":"Claude Code (admin MCP)","tokenEndpointAuthMethod":"none","grantTypes":["authorization_code","refresh_token"],"redirectUris":["http://localhost:47700/callback"],"scopes":["openid","offline_access","admin"]}'
+
+   curl -X PUT "$ID/api/admin/v1/clients/claude-code-admin/resources/$ADMIN_MCP_PATH" \
+     -H "Idempotency-Key: claude-code-admin-link-v1" -H "Authorization: Bearer $TOKEN"
+   ```
+
+3. **The platform organisation's access.** Only its members may use the admin MCP, so it is the only organisation given the client and the resource. The `admin` scope lets every staff member sign in; it confers no role.
+
+   ```bash
+   for grant in authorization_code refresh_token; do
+     curl "$ID/api/admin/v1/organizations/$PLATFORM_ORG/capabilities" \
+       -H "Idempotency-Key: admin-login-$grant-v1" -H "Authorization: Bearer $TOKEN" \
+       -H "Content-Type: application/json" \
+       -d '{"clientId":"claude-code-admin","resource":null,"grantKind":"'"$grant"'","scopes":["openid","offline_access"]}'
+     curl "$ID/api/admin/v1/organizations/$PLATFORM_ORG/capabilities" \
+       -H "Idempotency-Key: admin-resource-$grant-v1" -H "Authorization: Bearer $TOKEN" \
+       -H "Content-Type: application/json" \
+       -d '{"clientId":"claude-code-admin","resource":"'"$ADMIN_MCP"'","grantKind":"'"$grant"'","scopes":["admin"]}'
+   done
+
+   curl "$ID/api/admin/v1/organizations/$PLATFORM_ORG/entitlements" \
+     -H "Idempotency-Key: admin-login-entitlement-v1" -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"clientId":"claude-code-admin","scopes":["openid","offline_access"]}'
+   curl "$ID/api/admin/v1/organizations/$PLATFORM_ORG/entitlements" \
+     -H "Idempotency-Key: admin-resource-entitlement-v1" -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"clientId":"claude-code-admin","resource":"'"$ADMIN_MCP"'","scopes":["admin"]}'
+   ```
+
+4. **A group per role.** The server reads a role from the entitlement a member's groups give them on `ADMIN_MCP`, so each group holds one role string. The group's name confers nothing. Keep the owner group's id as `OWNER_GROUP`.
+
+   ```bash
+   for role in team admin owner; do
+     GROUP=$(curl -s "$ID/api/admin/v1/organizations/$PLATFORM_ORG/groups" \
+       -H "Idempotency-Key: admin-group-$role-v1" -H "Authorization: Bearer $TOKEN" \
+       -H "Content-Type: application/json" \
+       -d '{"slug":"answerable-'"$role"'","name":"Answerable '"$role"'"}' | jq -r .id)
+     curl "$ID/api/admin/v1/organizations/$PLATFORM_ORG/entitlements" \
+       -H "Idempotency-Key: admin-role-$role-v1" -H "Authorization: Bearer $TOKEN" \
+       -H "Content-Type: application/json" \
+       -d '{"groupId":"'"$GROUP"'","resource":"'"$ADMIN_MCP"'","scopes":["answerable-'"$role"'"]}'
+   done
+   OWNER_GROUP=$GROUP   # the loop ends with owner
+   ```
+
+5. **The machine client**, owned by the platform organisation, with two audiences: ID's admin API, which the server reads and writes with, and the Toolbox's admin API, which `toolbox_enable` calls. Register the [Toolbox's admin resource](/docs/toolbox/admin#register-the-toolbox-in-id) first. The first call answers `clientSecret` once.
+
+   ```bash
+   curl "$ID/api/admin/v1/clients" \
+     -H "Idempotency-Key: admin-mcp-v1" -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"clientId":"admin-mcp","name":"Admin MCP","organizationId":"'"$PLATFORM_ORG"'","tokenEndpointAuthMethod":"client_secret_basic","grantTypes":["client_credentials"],"clientCredentialsScopes":["platform:read","platform:write","toolbox:admin"]}'
+
+   curl -X PUT "$ID/api/admin/v1/clients/admin-mcp/resources/$ID_ADMIN_PATH" \
+     -H "Idempotency-Key: admin-mcp-link-id-v1" -H "Authorization: Bearer $TOKEN"
+   curl "$ID/api/admin/v1/organizations/$PLATFORM_ORG/capabilities" \
+     -H "Idempotency-Key: admin-mcp-capability-id-v1" -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"clientId":"admin-mcp","resource":"'"$ID"'/api/admin","grantKind":"client_credentials","scopes":["platform:read","platform:write"]}'
+
+   curl -X PUT "$ID/api/admin/v1/clients/admin-mcp/resources/$TOOLBOX_ADMIN_PATH" \
+     -H "Idempotency-Key: admin-mcp-link-toolbox-v1" -H "Authorization: Bearer $TOKEN"
+   curl "$ID/api/admin/v1/organizations/$PLATFORM_ORG/capabilities" \
+     -H "Idempotency-Key: admin-mcp-capability-toolbox-v1" -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"clientId":"admin-mcp","resource":"http://localhost:47400/admin","grantKind":"client_credentials","scopes":["toolbox:admin"]}'
+   ```
+
+6. **The first owner.** A person is a member once they have signed in, so sign in at ID's login page first, as [First run](/docs/id/onboard#first-run) does for the first administrator. Then find the member and put them in the owner group:
+
+   ```bash
+   curl --get "$ID/api/admin/v1/organizations/$PLATFORM_ORG/members" \
+     -H "Authorization: Bearer $TOKEN" --data-urlencode "email=you@answerable.org"
+
+   curl -X PUT "$ID/api/admin/v1/organizations/$PLATFORM_ORG/groups/$OWNER_GROUP/members/$MEMBER" \
+     -H "Idempotency-Key: admin-first-owner-v1" -H "If-None-Match: *" -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" -d '{}'
+   ```
+
+   From then on an owner adds staff with [`staff_grant`](/docs/admin#roles). The role applies to the next request, without signing in again.
+
+## Run it
+
+Put the machine client's id and secret in the root `.env`, with the rest of the [environment](/docs/admin#environment): `ADMIN_ID_ISSUER=http://localhost:47300`, `ADMIN_RESOURCE_URL=http://localhost:47520/mcp`, `ADMIN_DATABASE_URL`, `ADMIN_ID_CLIENT_ID=admin-mcp`, `ADMIN_ID_CLIENT_SECRET`, `ADMIN_ID_ADMIN_RESOURCE=http://localhost:47300/api/admin` and `ADMIN_TOOLBOX_ADMIN_RESOURCE=http://localhost:47400/admin`. A Postgres volume made before the admin MCP existed has no database for it: create it once.
+
+```bash
+docker exec answerable-postgres-1 psql -U answerable -d postgres \
+  -c 'create database answerable_admin' -c 'create database answerable_admin_test'
+bun --env-file=.env run --filter @answerable/mcp-admin db:migrate
+bun run admin:dev
+```
+
+It prints `Admin MCP serving http://localhost:47520/mcp for platform organisation <id>`. `toolbox_enable` also needs the Toolbox: [run it](/docs/toolbox#run-it-locally) and its machine client, and register each host client you will name.
+
+## Connect Claude Code
+
+```bash
+claude mcp add --transport http answerable-admin http://localhost:47520/mcp \
+  --client-id claude-code-admin --callback-port 47700
+```
+
+In Claude Code, run `/mcp`, choose `answerable-admin` and **Authenticate**, and sign in with your work account. Ask Claude to call `admin_whoami`: it answers your role and the tools it lets you use. [Connect Claude Code](/docs/mcp/claude-code#the-admin-mcp) has the other hosts and the errors every MCP shares.
+
+## Try it locally
+
+Run the lane from the repository root. It needs Docker and Playwright's Chromium, as [Test MCPs locally](/docs/mcp/local-testing) shows, and it cannot run beside the acceptance: the ports and the Compose project are the same.
+
+```bash
+bun packages/acceptance/scripts/admin-lane.ts
+```
+
+It starts ID on `47600`, the admin MCP on `47606` and the Toolbox on `47604`, makes the staff member an owner, and keeps them up until Ctrl-C. It prints, in this order:
+
+1. **The staff member**, `staff@answerable.example.test`, and the `claude mcp add` command for the admin MCP with the fixed client `claude-code-admin` and callback port `47700`.
+2. **The organisation to create**: slug `newco`, with the domain `newco.example.test`.
+3. **The Toolbox**: the `claude mcp add` command with the client `claude-code-toolbox` and callback port `47701`, and the new organisation's person, `tester@newco.example.test`.
+
+At ID's email step type the address given; the company sign-in that follows accepts it. Then, in Claude Code:
+
+| Step | You | It shows |
+| --- | --- | --- |
+| 1 | `/mcp`, **Authenticate** the admin MCP as the staff member. Ask: `Call admin_whoami.` | `role: "owner"` and 27 tools |
+| 2 | Ask: `Create the organisation newco, named Newco, and route newco.example.test to it.` | Each change is prepared and shown to you; on your yes, `admin_commit_confirmed` commits it. The lane prints that it set the organisation's SSO provider |
+| 3 | Run the Toolbox's `claude mcp add` line the lane printed, then `/mcp` and **Authenticate** it as `tester@newco.example.test` | ID stops them: `Access is unavailable for this organisation` |
+| 4 | Ask: `Enable the Toolbox for newco from claude-code-toolbox with e2e, and grant everyone in newco e2e/records on http://127.0.0.1:47604/mcp.` | Two more previews and receipts. A directory with its own credentials needs a client secret that no tool takes, so the lane sets the SSO provider itself when an organisation holds `newco.example.test` |
+| 5 | **Authenticate** the Toolbox again as the new person. Ask: `Call toolbox_whoami, then list the records.` | The grant `e2e/records`, and seven tools: `toolbox_whoami`, the four `e2e_records` tools and the two commit tools |
+| 6 | As the staff member, ask: `Revoke that grant.` | The Toolbox drops the tools from the same token within its cache window |
+| 7 | As the staff member, ask: `Show ID's audit events for the receipt's operation id.` | The machine client is the actor, and `requestId` is the commit's execution id |
+
+`--check` runs steps 1 to 5 headlessly with the kit's browser, prints each step's time, and exits 0:
+
+```bash
+bun packages/acceptance/scripts/admin-lane.ts --check
+```
+
+**When Claude Code asks.** Claude Code 2.1.282's source asks before any tool marked `anthropic/requiresUserInteraction`, whatever your allow rules say, and the server marks `admin_commit_confirmed` and no other tool: `--check` asserts it. Seeing that prompt in a session with a model: Not yet tested.
+
+**Critical operations.** `organisations_disable`, `organisations_enable`, `staff_grant` and `staff_revoke` need a company sign-in at most 30 minutes old. When the lane has been up longer, follow [Sign in again](/docs/admin#sign-in-again): open `http://127.0.0.1:47600/security` in the browser you signed in with, choose **Verify sign-in**, then clear the server's authentication in Claude Code and authenticate again. The lane queues 12 company sign-ins for the staff member.
+
+Remove the servers from Claude Code when you are done:
+
+```bash
+claude mcp remove answerable-admin
+claude mcp remove answerable-toolbox
+```
+
+## Errors
+
+| You see | Meaning | What to do |
+| --- | --- | --- |
+| `Access is unavailable for this organisation` at ID's organisation chooser | The organisation has no capability or entitlement for the client and the resource. For staff: step 3 above. For a new organisation's person: the Toolbox is not enabled and granted for it yet | Repeat step 3; or `toolbox_enable` and `access_grant` for the organisation |
+| `invalid_target` instead of the chooser | The resource is not registered exactly as the server's URL, or the client is not linked to it. For the Toolbox's host client the first enable for any organisation links it | Step 1 and step 2; or enable the Toolbox for an organisation |
+| `invalid_redirect` | The callback port differs from the client's redirect URI | Use `--callback-port 47700` (`47701` for the Toolbox in the lane), or register the port you use |
+| `admin_whoami` answers `role: null` | The member is in no group whose entitlement holds a role string | Step 4 and step 6; `members_get` shows the member's access |
+| `tools/list` is empty | The token is for another organisation than the platform organisation | Sign in with a work account of the platform organisation |
+| `toolbox_enable` answers `PRECONDITION_FAILED` naming `ADMIN_TOOLBOX_ADMIN_RESOURCE` | The variable is unset | Set it and restart the admin MCP |
+| `toolbox_enable` answers `UPSTREAM_REJECTED` that ID refused the client credentials | The machine client has no link or capability for the Toolbox's admin resource | The last two calls of step 5 |
+| `Failed to start server. Is port 47606 in use?` (or `47604`, `47600`, `47700`, `47701`) | Something holds a port the lane needs; the acceptance or another lane may be running | Find it with `lsof -nP -iTCP:47606 -sTCP:LISTEN` and stop what you started |
+| `Command failed: docker compose -p answerable-mcp-e2e` | Docker is not running, or port `47532` is taken | [Test MCPs locally](/docs/mcp/local-testing#errors) |
+
+The admin MCP's own start and request errors are in [the admin MCP's Errors](/docs/admin#errors).
+
+## Not yet
+
+| Item | Meanwhile |
+| --- | --- |
+| Registering clients and resources through the admin MCP | The cURL above |
+| The lane against a directory with a real company sign-in | Your own ID with an Entra tenant: step 1 to 6 above, then `sso_set` with the tenant's issuer |
+| Claude Code's prompt before `admin_commit_confirmed`, in a session with a model | Run the lane and allow `mcp__answerable-admin` in `/permissions` |

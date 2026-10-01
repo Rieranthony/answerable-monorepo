@@ -141,6 +141,15 @@ MCP_ID_ISSUER=http://localhost:47300 MCP_RESOURCE_URL=http://localhost:47500/mcp
   bun run --filter @answerable/mcp-e2e start
 ```
 
+## The admin MCP
+
+```bash
+claude mcp add --transport http answerable-admin http://localhost:47520/mcp \
+  --client-id claude-code-admin --callback-port 47700
+```
+
+For Answerable staff: [the admin MCP](/docs/admin) onboards and manages organisations from Claude Code, each tool behind a role read live from ID. Register it with the cURL in [Set up the admin MCP](/docs/admin/setup), or try it on your machine with the lane that registers everything for you: `bun packages/acceptance/scripts/admin-lane.ts`, described in [Try it locally](/docs/admin/setup#try-it-locally). It uses the callback port `47700`, so the Toolbox in the same session needs another, such as `--callback-port 47701`.
+
 ## Other hosts
 
 **Claude.ai and Claude Desktop connectors.** They connect from Anthropic's servers, so they cannot reach `localhost`. Register `https://claude.ai/api/mcp/auth_callback` as the redirect URI and enter the client ID under the connector's advanced settings once the server has a public URL: Not yet tested.
@@ -152,7 +161,8 @@ MCP_ID_ISSUER=http://localhost:47300 MCP_RESOURCE_URL=http://localhost:47500/mcp
 | Limit | Value |
 | --- | --- |
 | Claude Code against the Toolbox, with a partial entitlement (`e2e/records`) | Signing in (`claude mcp login`) and connecting were run, and the seven tools and their `_meta` were read with the same public client through the kit ([Host lane](/docs/mcp/local-testing#host-lane)). A session with a model: Not yet tested |
-| Whether Claude Code asks before a confirmed commit under an allow rule | Not yet tested in a session. The Toolbox sets `anthropic/requiresUserInteraction: true` on `toolbox_commit_confirmed` and on no other tool |
+| Whether Claude Code asks before a confirmed commit under an allow rule | Not yet tested in a session. The Toolbox sets `anthropic/requiresUserInteraction: true` on `toolbox_commit_confirmed` and on no other tool, and the admin MCP on `admin_commit_confirmed` |
+| Claude Code against the admin MCP | Signing in and the whole onboarding story were run with the kit's client for `claude-code-admin` ([the admin lane](/docs/admin/setup#try-it-locally)). A session with a model: Not yet tested |
 | A partial entitlement to the e2e server in Claude Code by hand | Not yet tested |
 | Client registration | A client registered in ID ahead of time; registration by the host itself: Not yet |
 

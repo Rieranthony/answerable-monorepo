@@ -1,6 +1,6 @@
 {
   "name": "@answerable/acceptance",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -14,6 +14,7 @@
   "dependencies": {
     "@answerable/id-admin": "workspace:*",
     "@answerable/mcp": "workspace:*",
+    "@answerable/mcp-admin": "workspace:*",
     "@answerable/mcp-e2e": "workspace:*",
     "@answerable/mcp-postgres": "workspace:*",
     "@answerable/mcp-toolbox": "workspace:*",

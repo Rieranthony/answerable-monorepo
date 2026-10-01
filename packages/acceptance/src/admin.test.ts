@@ -9,6 +9,7 @@ const server = Bun.serve({
   async fetch(request) {
     requests.push(request.clone())
     const { pathname } = new URL(request.url)
+    if (pathname.endsWith("/empty")) return new Response(null, { status: 204 })
     return pathname.endsWith("/refused") ? new Response("Not allowed here", { status: 403 }) : Response.json({ echoed: await request.text() })
   },
 })
@@ -24,6 +25,10 @@ test("admin calls ID's admin API as root with a fresh idempotency key each time,
   expect(post!.headers.get("content-type")).toBe("application/json")
   expect(put!.headers.get("content-type")).toBeNull()
   expect(post!.headers.get("idempotency-key")).not.toBe(put!.headers.get("idempotency-key"))
+})
+
+test("a 204 answers an empty object", async () => {
+  expect(await admin("DELETE", "/empty")).toEqual({})
 })
 
 test("a status outside 2xx throws with the method, path, status and body", async () => {

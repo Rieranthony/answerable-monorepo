@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+The package exports `./admin` (`createAdminMcp`) and `./platform` (`readPlatform`), which the acceptance imports to run the admin MCP in its journeys and its lane. Nothing else changes.
+
 ## 0.2.0
 
 The writes, each a prepared intent of the controlled class: the host shows the preview and commits with `admin_commit_confirmed` and its summary.

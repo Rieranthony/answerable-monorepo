@@ -449,6 +449,73 @@ The partial entitlement showed: no `e2e_identity_get`. LibreChat removes a leadi
 - A real model in LibreChat: the calls above came from a scripted model, so they show what LibreChat sends and shows, not what a model would choose.
 - `tools/list_changed` in LibreChat: its `GET /mcp` is answered `405`, so no stream carries it; LibreChat re-lists on each reconnect.
 
+## 2 October 2026: the admin MCP against real ID (brief B3b)
+
+Tree: branch `goal/admin-b3b`, cut from `claude/admin-mcp` at b055fc4 after the admin MCP's writes (B2), uncommitted when measured. Versions: Bun 1.3.1; Playwright 1.63.0 with Chromium 153.0.8010.12; `@answerable/acceptance` 0.4.0; `@answerable/mcp-admin` 0.2.1. One acceptance ran at a time; the machine also ran the owner's services, at one-minute load averages of 5 to 29.
+
+| Check | Result |
+| --- | --- |
+| `bun run mcp:test:e2e` | 78 pass, 0 fail across 9 files, 100% lines and functions over `packages/acceptance/src`: 89.3, 88.8, 88.1, 87.2 and 86.6 seconds, at load averages 7.0, 6.5, 6.8, 13.9 and 12.2; nothing left behind. The admin journeys alone: 20 tests, 49.8 seconds |
+| `bun packages/acceptance/scripts/admin-lane.ts --check` | Exit 0 in 10.2, 8.4 and 8.4 seconds |
+| `bun packages/acceptance/scripts/host-lane.ts --check` | Exit 0 in 6.7 and 5.9 seconds |
+| `bun run mcp:test` | Pass: `id-admin` 18, `auth` 56, `mcp-postgres` 23, `mcp` 171, `mcp-admin` 218, `mcp-toolbox` 92, `mcp-e2e` 45, `mcp-example` 28, scaffold (`scripts`) 19; every workspace but `scripts` at 100% lines and functions |
+| `bun run typecheck`, `bun run lint`, `bun run build` | Pass (14, 14 and 3 tasks) |
+| `bun --filter web test` | 88 pass, including the link check over `/docs/admin/setup` |
+
+**The journeys** (`packages/acceptance/src/journeys/admin.journeys.test.ts`, seven groups, measured alone): A1 roles without re-authorisation 2.6 s; A2 onboarding through the MCP 3.1 s; A3 the Toolbox outcome 24.9 s, of which 23.9 are the wait for the Toolbox's cache; A4 refusals 1.9 s; A5 idempotency 0.3 s; A6 freshness 11.2 s, of which 9.5 are the wait for the window; A7 evidence 0.03 s. Sign-ins queued: staff 2 (A1 and the Verify sign-in of A6), the client organisation's member 2 (one refused, one let through) and the new organisation's person 2 (the same). What each asserted is in [Test MCPs locally](../apps/web/content/docs/mcp/local-testing.mdx#what-the-admin-journeys-prove).
+
+**Measured, five runs of the acceptance:**
+
+| What | Result |
+| --- | --- |
+| `tools/list` with the live access read, 25 requests with one token | Median 31.3 to 34.3 ms, maximum 35.2 to 50.7 ms |
+| The member-access read inside those requests (ID's answer to the admin MCP) | Median 26.7 to 29.8 ms, maximum 30.4 to 44.3 ms; exactly one read per request (25 reads for 25 requests) |
+| Roles: tools listed | 10 for `team`, 23 for `admin`, 27 for `owner`, from one access token across all role changes |
+| The new organisation's person refused at ID's chooser, before `toolbox_enable` | 371 to 422 ms (and 382, 394 and 479 ms in earlier runs); the exact text "Access is unavailable for this organisation. Sign in again or ask its administrator to check your access." |
+| Tools gone from the Toolbox after `access_revoke`, same token | 8.1, 9.1, 9.2, 9.2 and 9.1 seconds (the Toolbox's poller reads ID's audit log every 15 seconds; its cache window is 60) |
+| Tools back after `access_enable` | 15.2, 14.2, 14.2, 15.2 and 15.2 seconds |
+| Two concurrent commits of one intent | One receipt (`idempotent_replay: false`) and one `COMMIT_IN_PROGRESS` in 5 of 5; a third commit answered the same receipt with `idempotent_replay: true`; ID held one organisation and one `organization.created` row |
+| The freshness remedy (Verify sign-in, a new authorisation, the committed critical tool), against a 10-second window | 1046, 1024, 1016, 987 and 934 ms |
+| `INTENT_STALE` after a rename through ID | Expected ETag `"<id>:1"`, current `"<id>:2"` |
+| Evidence chain of the platform organisation | 89 events, verified: `capability.completed` 47, `capability.denied` 7, `intent.prepared` 12, `intent.committed` 11, `receipt.issued` 11, `intent.stale` 1; 9 ID audit rows by the machine client for 9 committed writes, each joined by `requestId` to its commit's `capability.completed` row |
+| What the admin MCP asked ID in a whole file | 83 member-access reads and 3 token requests (ID's admin API for reads, for writes, and the Toolbox's admin API) |
+
+**The lane's output**, as printed:
+
+```text
+Admin lane is up. ID http://127.0.0.1:47600, the admin MCP http://127.0.0.1:47606/mcp, the Toolbox http://127.0.0.1:47604/mcp. Ctrl-C stops it and removes everything.
+At ID's email step type the address given below; the company sign-in that follows accepts it.
+
+1. Staff, an owner of the admin MCP: staff@answerable.example.test
+   claude mcp add --transport http answerable-admin http://127.0.0.1:47606/mcp --client-id claude-code-admin --callback-port 47700
+   then run /mcp in Claude Code, choose answerable-admin and Authenticate, and type the email above. Ask Claude to call admin_whoami: you are an owner, with 27 tools.
+
+2. Onboard a new organisation: ask Claude to create the organisation newco, named Newco, and route the domain newco.example.test to it, enable the Toolbox for it from
+   claude-code-toolbox with e2e, and grant everyone in it e2e/records on http://127.0.0.1:47604/mcp. A directory with its own credentials needs a secret that no tool takes,
+   so this lane sets the SSO provider itself once the organisation holds newco.example.test, and says so here.
+
+3. The new organisation's person, in the Toolbox: tester@newco.example.test
+   claude mcp add --transport http answerable-toolbox http://127.0.0.1:47604/mcp --client-id claude-code-toolbox --callback-port 47701
+   then /mcp, choose answerable-toolbox and Authenticate. Before step 2 ID stops this person with "Access is unavailable for this organisation". After it, the Toolbox lists seven tools:
+   toolbox_whoami, the four e2e_records tools and the two commit tools; toolbox_whoami shows the grant e2e/records.
+```
+
+`--check` printed the steps' times: `organisations_create` 117 to 124 ms, `domains_add` 117 to 132 ms, the lane's SSO write seen after 520 to 521 ms (its watcher polls every second), `toolbox_enable` 396 to 408 ms, `access_grant` 141 to 163 ms and the new person's sign-in to the Toolbox 598 to 601 ms. Ctrl-C stopped the lane in one second and left no container, process or port.
+
+**What changed outside the admin MCP.** `apps/id/scripts/mcp-e2e-fixture.ts` gives each directory sign-in's `auth_time` as a getter, so the issuer stamps the time of the sign-in. `packages/acceptance` gained `src/admin-mcp.ts`, `verifySignIn`, contexts as `signIn`'s first argument, an empty-body answer in `createAdmin`, a garbage collection in `cleanup`, the admin journeys and the lane. `mcps/admin` gained `exports` for `./admin` and `./platform` (0.2.1); no behaviour of the admin MCP changed, and no journey step found a defect in it.
+
+**Found by testing.**
+
+- **The fixture's `auth_time` made Verify sign-in impossible.** It stamped the time once at boot. Against that fixture the journey's Verify sign-in ended on ID's Security page with "Verify your current company sign-in, then try your action again. Your provider must confirm when you authenticated". With the getter it works, and the remedy `ADMIN_REAUTHENTICATION_REQUIRED` names is proven end to end: Verify sign-in in the browser that holds the session, then a new authorisation; authorising again without the Verify sign-in gives the same `sid` and `upstream_auth_time`; a refresh keeps the sign-in time.
+- **The Toolbox's first host client is refused at the resource, not at the chooser.** Until any organisation is enabled, the host client is not linked to the Toolbox, and ID redirects with `error=invalid_target` ("client … is not linked to resource(s) …"). The "Access is unavailable for this organisation" text appears once another organisation has been enabled. The journey enables an existing client organisation first; the lane links the client in advance.
+- **A pair of files could not share a long run until `cleanup` collected garbage.** With the admin journeys first, the Toolbox journey, later in the same `bun test` process, lost its Chromium: the browser exited with code 0 and "Connection terminated while reading from pipe" between 0.4 and 10 seconds after launch, Playwright reported no disconnection, and a sign-in or the final `browser.close()` hung for 120 seconds, leaving the container behind. In 9 of 9 runs of the four files in that order it failed; the same files without the admin journeys passed 3 of 3, and the admin journeys alone, or with one other file, passed. Bisecting the admin journey, A1 to A5 and A6's first test passed, and A6's Verify sign-in with the sign-in after it failed. Calling `Bun.gc(true)` after the admin journeys' cleanup passed 2 of 2 and, moved into `cleanup`, the full acceptance passed 5 of 5. The cause is not established: a keep-alive-free `fetch`, a different port for the Toolbox and a single GC test in a plain script did not reproduce or cure it. The comment on `cleanup` says what was seen, not why.
+- **Bun 1.3.1's `toMatchObject` rewrites the received value** when it meets an asymmetric matcher (`expect.any(String)`): the property becomes the matcher object. A journey that read `requestId` after matching it joined nothing. The journey reads values before it matches.
+- **ID answers `503 database_busy` to a read of an organisation while a write to it is in progress.** The lane's first `--check` passed; the next polled `organisations_get` while its watcher wrote the SSO provider, and failed with `UPSTREAM_UNAVAILABLE` (the log shows `503 database_busy` for `GET …/sso-provider`). The check now waits for the write itself, and passed 3 of 3.
+- **A thrown error in a lane left its ID fixture running.** `host-lane.ts` has no such handler (read, not run) and is unchanged. The admin lane removes everything and exits 1 on any failure, as a run with port 47606 held showed.
+- **`access_list` with a `resource` returns the host client's own entitlements as well** as the organisation-wide one, once the Toolbox is enabled for the organisation.
+
+**Not measured.** A session of Claude Code with a model against the admin lane, and whether it asks before `admin_commit_confirmed` under an allow rule (`--check` asserts only that the tool is the one marked `anthropic/requiresUserInteraction`). The owner's own ID with a real Entra tenant and `sso_set`. The admin MCP behind the Toolbox's cache with more than one staff member signed in at once.
+
 ## Limits
 
 The acceptance uses local test issuers for company directories, a pre-registered public client and loopback HTTP. It does not certify Claude.ai, another host, another company directory or a production deployment; the host lane above records LibreChat and Claude Code by hand.

@@ -9,7 +9,7 @@ bun install
 bun run mcp:test:e2e
 ```
 
-Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It runs `bun test` in `packages/acceptance`: the journeys below and the kit's own tests. It exits non-zero when a test fails, and it removes its database and processes either way, including after Ctrl-C (exit 130) or SIGTERM (exit 143). Measured: the 57 tests took 43.7 and 39.4 seconds, at one-minute load averages of 13.9 and 16.4 when they started.
+Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It runs `bun test` in `packages/acceptance`: the journeys below and the kit's own tests. It exits non-zero when a test fails, and it removes its database and processes either way, including after Ctrl-C (exit 130) or SIGTERM (exit 143). Measured: the 78 tests took 89.3, 88.8, 88.1, 87.2 and 86.6 seconds, at one-minute load averages of 7.0, 6.5, 6.8, 13.9 and 12.2 when they started; the admin journeys are about 50 of those seconds.
 
 ## What the e2e journeys prove
 
@@ -100,6 +100,52 @@ The last test logs what the Toolbox asked ID, and requires exactly 2 token reque
 2. An organisation created through the admin API, given its domain and pointed at the spare directory with `setSsoProvider`, is refused by ID before it is entitled: `signInRefused` returns "Access is unavailable for this organisation. Sign in again or ask its administrator to check your access." in 393 to 506 ms in four runs, where `signIn` would wait 30 seconds. After `grantOrganisation`, its person signs in and the token names the new organisation.
 3. A machine client registered with `registerMachine` for two audiences gets a token for each, with that audience's scopes. Asking for one audience's scope at the other audience is refused.
 
+## What the admin journeys prove
+
+`packages/acceptance/src/journeys/admin.journeys.test.ts` starts its own ID with `startId({ tenants: [{ slug: "client", signIns: 2 }], platform: { signIns: 2 }, spares: [{ slug: "newco", signIns: 2 }] })` and serves [the admin MCP](/docs/admin) on port `47606` and [the Toolbox](/docs/toolbox) on port `47604` in the test process, each with a database of its own on the disposable PostgreSQL (`answerable_admin_acceptance` and `answerable_toolbox_acceptance`). It proves what [Set up the admin MCP](/docs/admin/setup) shows.
+
+**Setup.** `src/admin-mcp.ts` registers what the setup page registers, in its order: the Toolbox's resource (900-second tokens), its admin resource, its host client and its machine client; the admin MCP's resource (900-second tokens, allowing `admin` and the three role strings), its host client, the platform organisation's capabilities and entitlements for it, a group per role holding that role's string, and the admin MCP's machine client with two audiences, ID's admin resource (`platform:read platform:write`) and the Toolbox's admin resource (`toolbox:admin`). The admin lane starts from the same code. Nobody is staff yet: the journeys put the staff member in a group through ID's admin API as root, as an operator adds the first owner.
+
+**Sign-ins.** Each is one queued identity of a company directory. Staff: one for A1, one for the Verify sign-in of A6 (the authorisation after it reuses the session ID made). The member of the client organisation: one that ID refuses at its chooser and one it lets through (A4). The new organisation's person: the same two (A3).
+
+**A1, roles without re-authorisation.**
+
+1. Staff sign in to the admin MCP with the platform organisation's company directory. The token names the platform organisation and carries `admin` and `offline_access`. `admin_whoami` says `role: null` and the only tool listed is `admin_whoami`; calling `organisations_list` is the unknown-tool error.
+2. Root puts the member in the team group: the same access token lists the nine reads on its next call, and `admin_whoami` says `team`. 25 `tools/list` requests, each with one access-view read to ID, took a median of 31.3 to 34.3 ms and a maximum of 35.2 to 50.7 ms in five runs; the reads alone took a median of 26.7 to 29.8 ms and a maximum of 30.4 to 44.3 ms.
+3. The owner group adds the writes and the critical tools: 10 tools for `team`, 23 for `admin` and 27 for `owner`, all from one access token. Taking the owner role away removes them on the next call.
+
+**A2, onboarding through the MCP.**
+
+4. As an owner: `toolbox_enable` for an existing client organisation links the Toolbox's host client to the Toolbox in ID (9 rows made). `organisations_create` prepares an intent whose `admin_commit` answers `APPROVAL_REQUIRED` and whose `admin_commit_confirmed` with the summary commits. `domains_add` routes the spare directory's domain; `sso_set` with the spare's local issuer answers `INVALID_INPUT` (no tool takes a secret), so the kit sets the provider with `setSsoProvider`; `groups_create` makes a group.
+5. **A3, before the enable.** The new organisation's person is refused at ID's organisation chooser with "Access is unavailable for this organisation. Sign in again or ask its administrator to check your access.", in 371 to 422 ms in five runs. Before any organisation is enabled the Toolbox's host client is not linked to the Toolbox, and ID redirects with `error=invalid_target` ("client … is not linked to resource(s) …") instead of reaching the chooser: the journey enables an existing client organisation first for that reason.
+6. `toolbox_enable` for the new organisation (7 rows made, 2 found) and `access_grant` of `e2e` to everyone in it. Every write's receipt carries ID's `Operation-Id`; `audit_list` and ID's admin API as root return the same one audit row for it, written by the machine client `admin-mcp` with the commit's execution id as `requestId`, which the evidence row of that commit call carries.
+
+**A3, the Toolbox outcome.**
+
+7. After the enable and the grant the new organisation's person signs in to the Toolbox, lists `toolbox_whoami`, `e2e_identity_get`, the four `e2e_records` tools and the two commit tools, and calls `e2e_identity_get` and `e2e_records_list`.
+8. `access_revoke` takes the tools away from the same token 8.1 to 9.2 seconds later in five runs, polling `tools/list` every second; the Toolbox's poller reads ID's audit log every 15 seconds and its grant cache lasts 60. `access_enable` brings them back 14.2 to 15.2 seconds later.
+9. `organisations_disable` by an owner with a recent sign-in: the organisation's refresh answers `invalid_grant`.
+
+**A4, refusals.**
+
+10. A member of a client organisation is refused at ID's chooser. Granted the admin resource deliberately, they get a token whose organisation is the client's: the admin MCP lists no tool and `admin_whoami` is the unknown-tool error, with a `capability.denied` row, reason `not_platform`.
+11. An admin calling `organisations_disable` gets the unknown-tool error and a `capability.denied` row (`held` `admin`, `needed` `owner`). An admin calling `groups_addmember` on the platform organisation's owner group gets `PERMISSION_DENIED`; the owner group still has no member and no intent was stored.
+12. Renaming an organisation through ID's admin API between the prepare and the commit of `organisations_update` answers `INTENT_STALE`, with `details.targets` holding the ETag the prepare bound and the one ID holds now: `"<id>:1"` and `"<id>:2"`.
+
+**A5, idempotency.**
+
+13. Committing one intent twice at once: one call answers the receipt with `idempotent_replay: false` and the other `COMMIT_IN_PROGRESS`, in five runs. A third commit answers the same receipt with `idempotent_replay: true`. ID holds one organisation with that slug and one `organization.created` audit row; the chain holds one `intent.committed` and one `receipt.issued` for the intent.
+
+**A6, freshness.** The admin MCP runs with `ADMIN_FRESH_SECONDS=10` for this journey.
+
+14. A critical tool's prepare answers `ADMIN_REAUTHENTICATION_REQUIRED` with the remedy of [Sign in again](/docs/admin#sign-in-again) in its message, `retry.policy` `after_state_change` and the token's `upstream_auth_time` in `details`; a read tool still works, and a `capability.denied` row with reason `stale_authentication` is recorded. Authorising again in the host alone, through the browser that holds ID's session, gives a token with the same `sid` and the same `upstream_auth_time`: still refused.
+15. The remedy, run exactly as the message says: **Verify sign-in** on ID's Security page in that browser, then a new authorisation. The token has a new `sid` and a later `upstream_auth_time`, and the critical tool prepares and commits: 0.9 to 1.0 seconds for the three steps. Against the fixture as it was, which stamped `auth_time` once at boot, ID refused the Verify sign-in with "Your provider must confirm when you authenticated"; the fixture now stamps each sign-in with the time it happens.
+16. After the window passes, a token refreshed from that authorisation carries the same `upstream_auth_time` and is refused again: a refresh never counts as a sign-in.
+
+**A7, evidence.**
+
+17. The platform organisation's chain verifies (89 events), and holds `capability.completed`, `capability.denied`, `intent.prepared`, `intent.committed`, `receipt.issued` and `intent.stale` rows. Every ID audit row of a write by the machine client names the execution id of a commit that succeeded, and there are as many (9) as intents committed other than `toolbox_enable`, whose writes the Toolbox makes with its own client. The admin MCP asked ID 83 times for a member's access and 3 times for a token.
+
 ## Ports
 
 | Service | Loopback port |
@@ -110,6 +156,7 @@ The last test logs what the Toolbox asked ID, and requires exactly 2 token reque
 | OAuth callback | `47603` |
 | Toolbox | `47604` |
 | Second MCP | `47605` |
+| Admin MCP | `47606` |
 
 Keep these free. PostgreSQL belongs to the Compose project `answerable-mcp-e2e` and holds ID's database and the Toolbox journeys' `answerable_toolbox_acceptance`; the run never reads your `DATABASE_URL`. Journey files run one after another, each starting and stopping its own ID, so they share these ports and cannot run in parallel. Two runs at once cannot either: the Compose project name is fixed, so one run's cleanup removes the other's PostgreSQL. Run one at a time.
 
@@ -130,7 +177,8 @@ Keep these free. PostgreSQL belongs to the Compose project `answerable-mcp-e2e` 
 | `setSsoProvider(admin, organizationId, spare)` | Sets an organisation's single sign-on to a spare directory from `manifest.spares`, with the directory's own credentials. The organisation must already hold `spare.domain`. |
 | `serve(port, fetch)` | Serves a fetch handler on a loopback port until the kit stops. |
 | `launchBrowser()` | Starts headless Chromium with Playwright's signal handlers off, so cleanup runs on Ctrl-C. |
-| `signIn(browser, { idOrigin, resource, clientId, callback, scopes }, { slug, email, scopes })` | Signs one person in as a host does: the SDK follows the MCP's `401`, a real browser completes ID's pages, the SDK exchanges the code. Returns an `OAuthSession`, `{ provider, state }`: the SDK's `OAuthClientProvider` for a client registered in ID ahead of time, and the tokens, authorisation URL and discovery result it saved. The first `scopes` are what the MCP advertises; the second are what the organisation is entitled to, and the consent page must list exactly those and name the rest as not approved. |
+| `signIn(browser, { idOrigin, resource, clientId, callback, scopes }, { slug, email, scopes })` | Signs one person in as a host does, in a browser, or in one of its contexts when ID's session must carry from one sign-in to the next: the SDK follows the MCP's `401`, a real browser completes ID's pages, the SDK exchanges the code. Returns an `OAuthSession`, `{ provider, state }`: the SDK's `OAuthClientProvider` for a client registered in ID ahead of time, and the tokens, authorisation URL and discovery result it saved. The first `scopes` are what the MCP advertises; the second are what the organisation is entitled to, and the consent page must list exactly those and name the rest as not approved. |
+| `verifySignIn(context, idOrigin)` | What ID's Security page asks of a person whose last company sign-in is too old: in the context that holds their ID session, opens `<idOrigin>/security`, chooses **Verify sign-in**, and returns when the company directory has brought the browser back. ID makes a new session, so the next `signIn` through the context carries the new sign-in time. Throws with ID's message when ID refuses. Takes one queued sign-in. |
 | `signInRefused(browser, target, tenant)` | Like `signIn`, for a person ID refuses, such as one of an organisation that is not yet entitled to the MCP. Returns the refusal ID shows at the organisation chooser at once, where `signIn` would wait 30 seconds for a consent page. |
 | `connect(resource, provider, protocol)` | Connects the official MCP client, as a `"2025"` client or pinned to `"2026-07-28"`. A `"2026-07-28"` client hears `tools/list_changed` once it calls `listen({ toolsListChanged: true })` with a handler set by `setNotificationHandler`, as J3 does. |
 | `tool(client, name, args?)` | Calls a tool and returns its `structuredContent`. A failed call throws with the envelope's code and message. |
@@ -229,6 +277,14 @@ Open `http://localhost:3080`, register an account, open **MCP Settings**, choose
 
 Ports beyond the acceptance's: `3080` (LibreChat) and `47700` (Claude Code's callback).
 
+## Admin lane
+
+```sh
+bun packages/acceptance/scripts/admin-lane.ts
+```
+
+Tries the whole onboarding story from Claude Code by hand. It starts real ID, the admin MCP and the Toolbox on ports `47600`, `47606` and `47604`, registered as the admin journeys register them, makes the staff member an owner, and keeps everything up until Ctrl-C. It prints the staff email, the `claude mcp add` command for the admin MCP, the organisation to create (slug `newco` and its domain) and the command for the Toolbox, then the email of the new organisation's person. While it runs it sets the SSO provider of any organisation that holds the spare directory's domain, because a directory with its own credentials needs a secret no tool takes. It is not part of `mcp:test:e2e` and cannot run beside it. [Try it locally](/docs/admin/setup#try-it-locally) has the prompts to type and what each step shows. `--check` runs the story headlessly with the kit (the staff member signs in, onboards `newco` through the tools, and its person signs in to the Toolbox and calls a tool) and exits 0; it took 10.2, 8.4 and 8.4 seconds, and the host lane's `--check` 6.7 and 5.9. The admin lane removes ID, its database and its servers when a step fails; both lanes do on Ctrl-C.
+
 ## Errors
 
 | You see | Meaning | What to do |
@@ -241,6 +297,7 @@ Ports beyond the acceptance's: `3080` (LibreChat) and `47700` (Claude Code's cal
 | `launch: Executable doesn't exist at …` | Playwright's Chromium is not installed | Run `(cd packages/acceptance && bun x playwright install chromium)` |
 | `[acceptance] ID page: /path text` before a Playwright timeout | A step on ID's pages did not appear within 30 seconds; the text is what ID showed instead | Read the page text: an error page names the cause, such as a scope the organisation is not entitled to |
 | `POST /… returned 400: {…}` | ID's admin API refused a provisioning call | Read the `errors` in the body, for example `Scopes are not allowed for this resource` |
+| `ID refused Verify sign-in` with "Your provider must confirm when you authenticated" | The company directory's identity carried an `auth_time` older than the flow: ID accepts only a sign-in made since Verify sign-in began, and at most five minutes ago | In a journey, queue the sign-in in the plan, not in a fixture that stamped the time at boot |
 | `<slug> never signed in; the first test shows why` | The first journey test failed, so the later ones have no session | Fix the first failure |
 
 ## Limits

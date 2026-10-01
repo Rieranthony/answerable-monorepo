@@ -35,4 +35,6 @@ It needs its registrations in ID and the `ADMIN_*` variables, which `default.env
 | `src/server.ts` | The entry point; `src/server.test.ts` starts it against a fake ID over HTTP |
 | `scripts/migrate.ts` | `db:migrate` and `db:test:migrate`: the migrations of `@answerable/mcp-postgres`, its only tables |
 
+The package exports `./admin` (`createAdminMcp`) and `./platform` (`readPlatform`): the acceptance runs the server in its journeys and its lane, as [Set up the admin MCP](../../apps/web/content/docs/admin/setup.mdx) shows.
+
 It builds on `@answerable/id-admin` (`createIdAdmin`, the machine client, and the fake ID in its tests) and `@answerable/mcp-postgres` (intents, evidence and the migrator). `src/test/admin.ts` holds the tests' fake Toolbox, the seeded organisations and role groups, and the in-process server, which signs a member's tokens again with the directory sign-in time a test sets. `manifest.json` is the `admin` provider's contract; `UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-admin test` rewrites it.

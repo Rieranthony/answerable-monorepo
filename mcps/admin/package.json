@@ -1,8 +1,12 @@
 {
   "name": "@answerable/mcp-admin",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
+  "exports": {
+    "./admin": "./src/admin.ts",
+    "./platform": "./src/platform.ts"
+  },
   "scripts": {
     "dev": "bun --hot src/server.ts",
     "start": "bun src/server.ts",
