@@ -1,10 +1,9 @@
 import { defineMutation, type ToolContext } from "@answerable/mcp"
 import { z } from "zod"
-import { roleOf, roles, type Role } from "./roles"
+import { confers, grantString, roleOf, roles } from "./roles"
 import { commitWith, errors, newKey, noPrecondition, precondition, scopes, target, type Assignment, type Entitlement, type Group, type Member, type Writes } from "./writes"
 
 type Via = { entitlementId: string; principal: "organization" | "group" | "member"; groupId: string | null }
-const grantString = (role: Role) => `answerable-${role}`
 const rank = (scopes: string[]) => roles.indexOf(roleOf(scopes)!)
 const input = z.object({
   memberId: z.uuid().describe("The member's id in the platform organisation, from staff_list"),
@@ -22,7 +21,7 @@ export function staffWrites({ calls, role, platform, resource, fresh }: Writes) 
     const member = await calls.need<Member>(`/organizations/${platform}/members/${memberId}`, context,
       `The platform organisation has no member ${memberId}; staff_list lists its members`)
     const view = await calls.read<{ targets: { kind: string; id: string; scopes: string[]; via: Via[] }[] }>(`/organizations/${platform}/members/${memberId}/access`, context)
-    const held = view?.targets.filter(item => item.kind === "resource" && item.id === resource) ?? []
+    const held = view?.targets.filter(confers(resource)) ?? []
     return { member, scopes: held.flatMap(item => item.scopes), via: held.flatMap(item => item.via) }
   }
   // The platform organisation's role entitlements: on the admin MCP's resource, active, for every client.

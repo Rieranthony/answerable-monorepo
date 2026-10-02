@@ -184,7 +184,7 @@
       "name": "access_list",
       "version": "2026-10-01",
       "kind": "read",
-      "description": "List the entitlements of an organisation, newest first, 20 per page by default and at most 100. Each names who holds it (memberId, else groupId, else the whole organisation), the client and resource it reaches, its scopes, status and validity window. Filter by clientId, resource, memberId, groupId and status. When has_more is true, pass next_cursor as cursor. Changes nothing.",
+      "description": "List the entitlements of an organisation, newest first, 20 per page by default and at most 100. Each names who holds it (memberId, else groupId, else the whole organisation), the client and resource it reaches, its scopes, status and validity window. A row with a clientId reaches its resource through that client only: toolbox_enable makes one per host client, carrying toolbox, beside the grants for people. Filter by clientId, resource, memberId, groupId and status. When has_more is true, pass next_cursor as cursor. Changes nothing.",
       "scopes": [
         "admin"
       ],

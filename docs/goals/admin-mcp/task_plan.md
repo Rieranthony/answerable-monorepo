@@ -1,6 +1,18 @@
 # Task plan: the Answerable admin MCP
 
-Order, not time. Every brief starts with its failing tests, leaves its docs page complete, ends with the cleanup pass, and is reviewed against [`design.md`](design.md), `docs/08`, `docs/09` and this plan. Facts: [`findings.md`](findings.md). Choices: [`decisions.md`](decisions.md).
+Order, not time. Every brief starts with its failing tests, leaves its docs page complete, ends with the cleanup pass, and is reviewed against the design (now [`docs/11-admin-mcp.md`](../../11-admin-mcp.md)), `docs/08`, `docs/09` and this plan. Facts: [`findings.md`](findings.md). Choices: [`decisions.md`](decisions.md).
+
+**Status: delivered.** Every brief is done, below. The design the briefs followed was folded into [`docs/11-admin-mcp.md`](../../11-admin-mcp.md), which records what was built, and deleted. Where this plan and the build differ, docs/11 and the briefs' "Notes from …" win: the intents, evidence and migrator package is `@answerable/mcp-postgres` (not `@answerable/evidence`); the databases come from `infra/postgres/init/004-create-mcp-databases.sql`; the reads are `admin_whoami` and nine others; the writes are fifteen, `access.enable` added; each intent's idempotency key is minted at prepare and kept in its plan, because commit receives the plan and not the intent id; every write to the platform organisation is a critical operation; the freshness remedy is Verify sign-in on ID's Security page, then a new authorisation; the journeys are A1 to A7.
+
+| Brief | Commit | What landed |
+| --- | --- | --- |
+| Plan | 61bd74b, e4bed78 | This plan, the findings, the decisions and the design |
+| B0 | d6bd0ae | `@answerable/id-admin` and `@answerable/mcp-postgres` extracted from the Toolbox |
+| B3a | 65972f3 | The fixture's `platform` and `spares`, `registerMachine` with several audiences, `setSsoProvider`, `signInRefused`, the kit journey |
+| B1 | 087e28a | `mcps/admin`: the platform check, live roles, `admin_whoami`, nine reads, evidence, `/docs/admin` |
+| B2 | ff4890f | Fifteen writes as controlled intents, the escalation guard, freshness, `UserPrincipal.upstreamAuthTime` |
+| B3b | df039b3 | Journeys A1 to A7 against real ID, the admin lane, `/docs/admin/setup`, the evidence report |
+| B4 | the commit that adds `docs/11-admin-mcp.md` | The whole-tree cleanup pass, docs/11, the register, the host lane's failure cleanup, the final gates |
 
 ## Goal
 
@@ -67,7 +79,7 @@ Before B1 the coordinator creates the databases on the running Postgres once (`d
 
 ## B4. Cleanup, the design record and the register (Opus 5.5)
 
-**Scope.** The first-principles cleanup pass over `mcps/admin`, `packages/id-admin`, `packages/evidence`, the Toolbox's touched files, the kit and the docs; `docs/11-admin-mcp.md` from [`design.md`](design.md) with what was built (no planned behaviour in the present tense); `docs/02-plan.md`: a line in "MCP kit and Toolbox", register rows (`Q-ADMIN-SSO-SECRETS`: how staff set own-credential providers without a secret entering a tool; `Q-ADMIN-FRESHNESS`: the window and whether ID should expose re-authentication for MCP tokens), "Do not re-propose" lines (no roles in the token; no second permission store in the admin MCP; no cached authority for staff tools; no tool that takes a secret); `docs/10-capability-platform-plan.md` "After the goal" item 2 updated (D1); `docs/00-orientation.md` cast gains the admin MCP; `AGENTS.md`, `README.md` final; the evidence report's final section; memory notes for the coordinator.
+**Scope.** The first-principles cleanup pass over `mcps/admin`, `packages/id-admin`, `packages/evidence`, the Toolbox's touched files, the kit and the docs; `docs/11-admin-mcp.md` from `design.md` with what was built (no planned behaviour in the present tense); `docs/02-plan.md`: a line in "MCP kit and Toolbox", register rows (`Q-ADMIN-SSO-SECRETS`: how staff set own-credential providers without a secret entering a tool; `Q-ADMIN-FRESHNESS`: the window and whether ID should expose re-authentication for MCP tokens), "Do not re-propose" lines (no roles in the token; no second permission store in the admin MCP; no cached authority for staff tools; no tool that takes a secret); `docs/10-capability-platform-plan.md` "After the goal" item 2 updated (D1); `docs/00-orientation.md` cast gains the admin MCP; `AGENTS.md`, `README.md` final; the evidence report's final section; memory notes for the coordinator.
 **Gates.** Every gate from the root: `bun run typecheck`, `bun run lint`, `bun run build`, `bun --filter web test`, `bun run mcp:test`, `bun run mcp:test:e2e`, `bun --filter @answerable/countries test`; the ID suite only if `apps/id` application code changed (it should not have).
 
 ## Acceptance journeys, gates and definition of done
@@ -78,6 +90,16 @@ Before B1 the coordinator creates the databases on the running Postgres once (`d
 - Docs pages `/docs/admin` and `/docs/admin/setup` exist with `title` and `description`, in `meta.json` and `/llms.txt`, cross-linked from `/docs/id/onboard`, `/docs/toolbox/admin`, `/docs/mcp/claude-code` and `/docs/mcp/local-testing`; the link test passes.
 - `default.env` and `.env.example` list every `ADMIN_*` variable; `infra/postgres/init/004` exists; `README.md` and `AGENTS.md` carry the workspace, ports 47520 and 47606, the databases, `admin:dev` and the gates.
 - Every brief's diff reviewed against design.md and docs/09; measured numbers only in docs and the evidence report.
+
+**Checked against the build (B4, 2 October 2026).**
+
+- Done: journeys A1 to A7 (one more than planned: A6 freshness, A7 evidence) pass in `bun run mcp:test:e2e` with J1 to J7 and J10, 78 tests across 9 files, in 86.3 and 87.6 seconds; the admin lane's `--check` is recorded in the evidence report (9.0 seconds).
+- Not done: the hand demo with Claude Code in a session with a model, against the lane or the owner's ID with Entra. Recorded as Not yet tested in the evidence report and [`docs/11`](../../11-admin-mcp.md#not-yet); the lane's `--check` drives the same public client headlessly.
+- Done: 100% lines and functions in `mcps/admin`, `packages/id-admin` (over `src/index.ts`; the fake ID is exercised through its consumers' suites), `packages/mcp-postgres` (the package `@answerable/evidence` became), and in `packages/auth`, `packages/mcp`, `packages/acceptance`, `mcps/toolbox` and `mcps/e2e`.
+- Done: `mcps/admin/manifest.json` committed and conformance passing; `reference.mdx` regenerated for `upstreamAuthTime` (B2).
+- Done: `/docs/admin` and `/docs/admin/setup` with `title` and `description`, in `meta.json`, listed by `/llms.txt` (generated from the docs source), cross-linked from `/docs/id/onboard`, `/docs/toolbox/admin`, `/docs/mcp/claude-code` and `/docs/mcp/local-testing`; the link test passes (88 web tests).
+- Done: `default.env` and `.env.example` list the ten `ADMIN_*` variables; the init script is `infra/postgres/init/004-create-mcp-databases.sql`; `README.md` and `AGENTS.md` carry the workspaces, ports 47520 and 47606 (and the lanes' 47700 and 47701), the databases, `admin:dev`, the lanes and the gates.
+- Done: `apps/id` changed only in the test fixture `apps/id/scripts/mcp-e2e-fixture.ts`, so the ID suite was not required.
 
 ## The demo script
 

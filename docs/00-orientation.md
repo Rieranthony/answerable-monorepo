@@ -37,6 +37,7 @@
 | Omni Accelerator (Circle) | Points its community SSO at Answerable ID (a planned flag-day cutover) |
 | External AI tools (Claude Code, …) | OAuth clients of Answerable ID under the registration policy |
 | Hosted MCP servers | OAuth resource servers of Answerable ID — the tutor is the first, later |
+| Admin MCP | Answerable staff's MCP server for onboarding and managing organisations in Answerable ID, each tool behind a role ID holds ([`11-admin-mcp.md`](11-admin-mcp.md)) |
 
 ## The problem
 

@@ -1,12 +1,11 @@
 import { defineMutation, type ToolContext } from "@answerable/mcp"
 import { z } from "zod"
 import {
-  commitWith, errors, invalid, named, newKey, noPrecondition, organizationId, precondition, scopes, slugPattern, target,
+  commitWith, errors, invalid, memberId, missingMember, named, newKey, noPrecondition, organizationId, precondition, scopes, slug, target,
   type Assignment, type Entitlement, type Group, type Member, type Writes,
 } from "./writes"
 
 const groupId = z.uuid().describe("The group's id, from groups_list")
-const memberId = z.uuid().describe("The member's id, from members_list")
 const sameTime = (a: string | null | undefined, b: string | null | undefined) => (a ? Date.parse(a) : null) === (b ? Date.parse(b) : null)
 const sameScopes = (a: string[], b: string[]) => a.length === b.length && a.every(scope => b.includes(scope))
 
@@ -14,7 +13,6 @@ const sameScopes = (a: string[], b: string[]) => a.length === b.length && a.ever
 export function accessWrites(writes: Writes) {
   const { calls, role, organisation } = writes
   const missingGroup = (organizationId: string, id: string) => `Answerable ID has no group ${id} in organisation ${organizationId}; groups_list lists them`
-  const missingMember = (organizationId: string, id: string) => `Answerable ID has no member ${id} in organisation ${organizationId}; members_list lists them`
   const group = (organizationId: string, id: string, context: ToolContext) =>
     calls.need<Group>(`/organizations/${organizationId}/groups/${id}`, context, missingGroup(organizationId, id))
   // A group whose members the directory decides cannot be changed by hand (apps/id/src/services/groups.ts requireManual).
@@ -37,7 +35,7 @@ export function accessWrites(writes: Writes) {
     description: `Prepare creating a group in an organisation in Answerable ID, with a slug unique in the organisation and a name. ${commitWith} Add members with groups_addmember and give the group access with access_grant.`,
     input: z.object({
       organizationId,
-      slug: z.string().max(100).regex(slugPattern, "Lowercase letters and digits, words joined by single hyphens").describe("Unique in the organisation, such as engineers"),
+      slug: slug.describe("Unique in the organisation, such as engineers"),
       name: z.string().trim().min(1).max(200).describe("The group's name, 1 to 200 characters"),
     }),
     output: z.object({ groupId: z.uuid(), operationId: z.uuid() }),

@@ -8,9 +8,8 @@ import { organisationWrites } from "./organisations"
 import { roleOf, roles, type Role, type Roles } from "./roles"
 import { staffWrites } from "./staff"
 import { toolboxWrites, type ToolboxAdmin } from "./toolbox"
-import { createOrganisations, organizationId, scopes, type Writes } from "./writes"
+import { createOrganisations, memberId, missingMember, missingOrganisation, organizationId, scopes, type Writes } from "./writes"
 
-// The role is read from ID on each request, never from the token.
 const time = z.iso.datetime()
 const status = z.enum(["active", "disabled"])
 const page = {
@@ -36,7 +35,7 @@ const target = z.object({
 })
 
 /** What `createAdminProvider` needs: ID's admin API, the roles, the platform organisation, the admin MCP's resource and the critical operations' rule. */
-export type AdminProviderConfig = {
+type AdminProviderConfig = {
   id: IdAdmin
   authority: Roles
   platform: string
@@ -60,7 +59,6 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
   }
   const calls = createCalls(id)
   const { read, need, list, all } = calls
-  const noOrganisation = (organizationId: string) => `Answerable ID has no organisation ${organizationId}; organisations_list lists them`
 
   const whoami = role(null, defineTool({
     name: "admin.whoami", title: "Who am I",
@@ -108,8 +106,8 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
     }),
     async execute({ organizationId }, context) {
       const path = `/organizations/${organizationId}`
-      const row = await need<z.input<typeof organisation>>(path, context, noOrganisation(organizationId))
-      const domains = await all<{ id: string; domain: string; status: "active" | "disabled" }>(`${path}/domains`, context, noOrganisation(organizationId))
+      const row = await need<z.input<typeof organisation>>(path, context, missingOrganisation(organizationId))
+      const domains = await all<{ id: string; domain: string; status: "active" | "disabled" }>(`${path}/domains`, context, missingOrganisation(organizationId))
       const sso = await read<{ issuer: string; domain: string; oidc: { credentials: "platform" | "own"; hasClientSecret: boolean } }>(`${path}/sso-provider`, context)
       return { ...row, domains, sso: sso ?? null }
     },
@@ -124,7 +122,7 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
       effective: z.boolean().optional().describe("Only members whose membership is, or is not, in force now"), ...page,
     }),
     output: paged(member),
-    execute: ({ organizationId, ...params }, context) => list(`/organizations/${organizationId}/members`, params, context, noOrganisation(organizationId)),
+    execute: ({ organizationId, ...params }, context) => list(`/organizations/${organizationId}/members`, params, context, missingOrganisation(organizationId)),
   }))
 
   const memberDetail = member.extend({
@@ -136,11 +134,11 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
     name: "members.get",
     description: "Read one member of an organisation: their user, email, name, status and validity window, the groups they belong to, and their access: each client and resource their entitlements reach, with the scopes and the entitlements (organisation-wide, a group's or their own) that grant them. memberId is the id from members_list. Changes nothing.",
     scopes,
-    input: z.object({ organizationId, memberId: z.uuid().describe("The member's id, from members_list") }),
+    input: z.object({ organizationId, memberId }),
     output: memberDetail,
     async execute({ organizationId, memberId }, context) {
       const path = `/organizations/${organizationId}/members/${memberId}`
-      const missing = `Answerable ID has no member ${memberId} in organisation ${organizationId}; members_list lists them`
+      const missing = missingMember(organizationId, memberId)
       const [row, access] = await Promise.all([
         need<Omit<z.input<typeof memberDetail>, "access">>(path, context, missing), need<{ targets: z.input<typeof target>[] }>(`${path}/access`, context, missing),
       ])
@@ -154,12 +152,12 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
     scopes,
     input: z.object({ organizationId, q: z.string().trim().min(1).max(100).optional().describe("Text to find in the name or slug"), status: status.optional(), ...page }),
     output: paged(z.object({ id: z.uuid(), slug: z.string(), name: z.string(), status, externalId: z.string().nullable() })),
-    execute: ({ organizationId, ...params }, context) => list(`/organizations/${organizationId}/groups`, params, context, noOrganisation(organizationId)),
+    execute: ({ organizationId, ...params }, context) => list(`/organizations/${organizationId}/groups`, params, context, missingOrganisation(organizationId)),
   }))
 
   const accessList = role("team", defineTool({
     name: "access.list",
-    description: "List the entitlements of an organisation, newest first, 20 per page by default and at most 100. Each names who holds it (memberId, else groupId, else the whole organisation), the client and resource it reaches, its scopes, status and validity window. Filter by clientId, resource, memberId, groupId and status. When has_more is true, pass next_cursor as cursor. Changes nothing.",
+    description: "List the entitlements of an organisation, newest first, 20 per page by default and at most 100. Each names who holds it (memberId, else groupId, else the whole organisation), the client and resource it reaches, its scopes, status and validity window. A row with a clientId reaches its resource through that client only: toolbox_enable makes one per host client, carrying toolbox, beside the grants for people. Filter by clientId, resource, memberId, groupId and status. When has_more is true, pass next_cursor as cursor. Changes nothing.",
     scopes,
     input: z.object({
       organizationId, clientId: z.string().min(1).optional().describe("Only entitlements for this OAuth client"), resource: z.url().optional().describe("Only entitlements for this resource URL"),
@@ -169,7 +167,7 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
       id: z.uuid(), memberId: z.uuid().nullable(), groupId: z.uuid().nullable(), clientId: z.string().nullable(), resource: z.string().nullable(),
       scopes: z.array(z.string()), status, validFrom: time.nullable(), validUntil: time.nullable(),
     })),
-    execute: ({ organizationId, ...params }, context) => list(`/organizations/${organizationId}/entitlements`, params, context, noOrganisation(organizationId)),
+    execute: ({ organizationId, ...params }, context) => list(`/organizations/${organizationId}/entitlements`, params, context, missingOrganisation(organizationId)),
   }))
 
   const auditList = role("team", defineTool({

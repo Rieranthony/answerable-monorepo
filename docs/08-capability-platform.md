@@ -18,7 +18,7 @@ The product is the Toolbox. The capability platform is what makes it work: the S
 | Term | Meaning |
 | --- | --- |
 | **Capability** | One useful, typed, bounded operation with a stable identity, classified as read, mutate, start or subscribe. Defined with `defineTool` in `@answerable/mcp`. |
-| **Provider** | A named module of capabilities with one owner and one version, for example `acc` (Autodesk Construction Cloud) or `id` (Answerable ID administration). Mounted in the hub or served alone. |
+| **Provider** | A named module of capabilities with one owner and one version, for example `acc` (Autodesk Construction Cloud) or `admin` (Answerable staff's administration of ID, served alone: [`11-admin-mcp.md`](11-admin-mcp.md)). Mounted in the hub or served alone. |
 | **Toolbox** | The hub: one MCP server per deployment that serves every organisation, resolves the organisation and person from the Answerable ID token, and projects that person's granted capabilities as MCP tools. |
 | **Projection** | How the hub turns granted capabilities into MCP tools for one caller: a direct list, or meta-tools (search, describe, execute, prepare, commit). |
 | **Grant string** | The name an entitlement carries for the Toolbox resource: a capability identity, a domain family or a provider family. Answerable ID stores it; the hub interprets it. |
@@ -196,7 +196,7 @@ Prepare returns the intent without the hash and with the commit token, the commi
 
 | Adapter | Source | First use |
 | --- | --- | --- |
-| OpenAPI | A specification whose operations carry `x-kind` (read, write, erase), `x-scopes` and examples; `select` picks operations; `write` and `erase` become mutations whose prepare calls the operation with `validate_only` when the API offers it and otherwise reads the target first. | Answerable ID's admin API (`apps/id/openapi.admin.json`), which already carries `x-kind`, `x-scopes` and examples on every operation: the admin MCP becomes a generated provider. |
+| OpenAPI | A specification whose operations carry `x-kind` (read, write, erase), `x-scopes` and examples; `select` picks operations; `write` and `erase` become mutations whose prepare calls the operation with `validate_only` when the API offers it and otherwise reads the target first. | **Not yet.** Answerable ID's admin API (`apps/id/openapi.admin.json`) already carries `x-kind`, `x-scopes` and examples on every operation. The admin MCP for staff is hand-written and served alone instead ([`11-admin-mcp.md`](11-admin-mcp.md)). |
 | GraphQL | Introspection; one read capability per selected query field with a `select` argument; mutations only as hand-written prepare and commit pairs. | **Not yet.** |
 | Upstream MCP | A remote MCP server's `tools/list`, persisted with its annotations; `destructiveHint` maps to `controlled`; the hub is that server's OAuth client per person. | **Not yet.** |
 

@@ -13,8 +13,8 @@ export const toolboxMcp = "https://toolbox.test/mcp"
 export const entraIssuer = "https://login.microsoftonline.com/00000000-0000-0000-0000-00000000000a/v2.0"
 
 /** A fake ID whose machine client, admin-mcp, gets tokens for ID's admin API and, with `toolbox:admin`, for the Toolbox's admin API. */
-export const createIdFake = (options: { platform?: boolean } = {}) => createFakeId({
-  clientId: "admin-mcp", ...options,
+export const createIdFake = () => createFakeId({
+  clientId: "admin-mcp",
   resources: { "https://id.test/api/admin": ["platform:read", "platform:read platform:write"], [toolboxResource]: ["toolbox:admin"] },
 })
 export type FakeId = ReturnType<typeof createIdFake>
@@ -85,7 +85,7 @@ export function seed(id: FakeId) {
 }
 
 /** The admin MCP in-process on a fake ID whose machine client belongs to the platform organisation, a fake Toolbox, and staff to sign in as. */
-export async function createAdmin(db: SQL, { freshSeconds, toolbox: withToolbox = true }: { freshSeconds?: number; toolbox?: boolean } = {}) {
+export async function createAdmin(db: SQL, { freshSeconds }: { freshSeconds?: number } = {}) {
   const id = createIdFake()
   const toolbox = createFakeToolbox(id)
   const platform = id.organizationId
@@ -114,8 +114,7 @@ export async function createAdmin(db: SQL, { freshSeconds, toolbox: withToolbox 
   }
   const mcp: TestMcp = await createTestMcp(auth => {
     const server = createAdminMcp({
-      auth, db, id: createIdAdmin({ ...id.config, fetch: observed }), platform, freshSeconds,
-      toolbox: withToolbox ? { resource: toolboxResource, fetch: toolbox.fetch } : undefined,
+      auth, db, id: createIdAdmin({ ...id.config, fetch: observed }), platform, freshSeconds, toolbox: { resource: toolboxResource, fetch: toolbox.fetch },
     })
     return { fetch: async (request: Request) => server.fetch(await resign(request)) }
   })
@@ -138,5 +137,5 @@ export async function createAdmin(db: SQL, { freshSeconds, toolbox: withToolbox 
   }
   /** Sign in as a member of the platform organisation that a test seeded itself. */
   const connectAs = (member: { id: string; userId: unknown }) => mcp.connect({ organizationId: platform, membershipId: member.id, userId: String(member.userId) })
-  return { id, platform, mcp, staff, connectAs, toolbox, answers, lose() { losing = true } }
+  return { id, platform, mcp, staff, connectAs, answers, lose() { losing = true } }
 }

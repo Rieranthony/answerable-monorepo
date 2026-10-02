@@ -21,9 +21,9 @@ export const errors = [reauthenticationRequired]
 /** How every mutation's description ends: what prepare returns and how to commit it. */
 export const commitWith = "Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary."
 export const organizationId = z.uuid().describe("The organisation's id in Answerable ID, from organisations_list")
-export const slugPattern = /^[a-z0-9]+(-[a-z0-9]+)*$/
-// ID's host rule for a domain (apps/id/src/http/admin/domains.ts hostSchema).
-export const domain = z.string().trim().toLowerCase().max(253).regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/, "Must be a domain name such as newco.example")
+export const memberId = z.uuid().describe("The member's id, from members_list")
+/** ID's slug rule for an organisation or a group. */
+export const slug = z.string().max(100).regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "Lowercase letters and digits, words joined by single hyphens")
 
 /** ID's rows, as far as the mutations read them. */
 export type Organisation = { id: string; slug: string; name: string; status: "active" | "disabled"; logo: string | null; metadata: string | null }
@@ -41,6 +41,7 @@ export const noPrecondition = (write: string) =>
   `Answerable ID takes no precondition on ${write}: the admin MCP reads the target again just before it writes, but a change in between is not refused by ID.`
 export const named = (organisation: Organisation) => `“${organisation.name}” (${organisation.slug})`
 export const missingOrganisation = (organizationId: string) => `Answerable ID has no organisation ${organizationId}; organisations_list lists them`
+export const missingMember = (organizationId: string, id: string) => `Answerable ID has no member ${id} in organisation ${organizationId}; members_list lists them`
 export const precondition = (message: string, details: Record<string, unknown>) => new ToolError("PRECONDITION_FAILED", message, { details: { preconditions: [details] } })
 export const invalid = (field: string, message: string) => new ToolError("INVALID_INPUT", message, { details: { field_violations: [{ field, message }] } })
 

@@ -29,7 +29,7 @@ person ── host (Claude Code, Claude.ai, LibreChat)
 | [Answerable ID](/docs/id) | Sign-in and access for organisations: an identity broker and an OAuth authorisation server | `apps/id` |
 | [MCP kit](/docs/mcp) | `@answerable/mcp` defines tools and serves them; `@answerable/auth` verifies ID's tokens | `packages/mcp`, `packages/auth` |
 | [Toolbox](/docs/toolbox) | One MCP endpoint for every organisation, serving the providers mounted in it | `mcps/toolbox` |
-| [Admin MCP](/docs/admin) | The staff-only server that reads organisations and access in ID | `mcps/admin` |
+| [Admin MCP](/docs/admin) | The staff-only server through which Answerable staff onboard and manage organisations in ID and enable the Toolbox for them | `mcps/admin` |
 | Examples | The finished quickstart and the reference server | `mcps/example`, `mcps/e2e` |
 
 ## Status
@@ -39,7 +39,7 @@ person ── host (Claude Code, Claude.ai, LibreChat)
 | Answerable ID | Built and tested locally: sign-in through Microsoft Entra ID or Google Workspace, OAuth for apps and MCP servers, admin API and machine access. Production deployment: Not yet | [How Answerable ID works](/docs/id) |
 | MCP kit | Built, private to the monorepo, and accepted against real ID with a browser. A public npm release: Not yet | [Build your first MCP](/docs/mcp/quickstart) |
 | Toolbox | Built and accepted against real ID. Hosted deployment, human approvals and remote providers: Not yet | [The Toolbox](/docs/toolbox) |
-| Admin MCP | Read tools for Answerable staff, with roles read live from ID; tested in process. Writes and the acceptance against real ID: Not yet | [The admin MCP](/docs/admin) |
+| Admin MCP | Built and accepted against real ID: roles read live from ID, every change a prepared intent the person confirms. Hosted deployment and an admin MCP for an organisation's own administrators: Not yet | [The admin MCP](/docs/admin) |
 
 ## For AI agents
 

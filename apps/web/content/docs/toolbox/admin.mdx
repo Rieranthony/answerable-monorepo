@@ -114,7 +114,7 @@ curl "$ID/api/admin/v1/clients" -H "Idempotency-Key: claude-code-toolbox-v1" -H 
   -d '{"clientId":"claude-code-toolbox","name":"Claude Code (Toolbox)","tokenEndpointAuthMethod":"none","grantTypes":["authorization_code","refresh_token"],"redirectUris":["http://localhost:47700/callback"],"scopes":["openid","offline_access","toolbox"]}'
 ```
 
-Do not link it or add its capabilities and entitlements by hand: the enable call does. Then [start the Toolbox](/docs/toolbox#run-it-locally) and enable an organisation.
+Do not link it or add its capabilities and entitlements by hand: the enable call does. Until the first enable that names it, the client is not linked to the Toolbox, so a person signing in through it gets `invalid_target` from ID instead of the organisation chooser's "Access is unavailable for this organisation". Then [start the Toolbox](/docs/toolbox#run-it-locally) and enable an organisation.
 
 ## The catalogue
 

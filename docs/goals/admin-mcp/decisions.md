@@ -1,6 +1,6 @@
 # Decisions for the owner: the admin MCP
 
-Each decision lists the options with the recommendation first and why. Facts are in [`findings.md`](findings.md) (F-numbers). The coordinator takes the recommendations by default.
+Each decision lists the options with the recommendation first and why. Facts are in [`findings.md`](findings.md) (F-numbers). The coordinator took every recommendation ([task plan](task_plan.md#coordinator-decisions-2026-10-01)); what was built is recorded in [`docs/11-admin-mcp.md`](../../11-admin-mcp.md), which wins where the two differ.
 
 ## D0. The demo, confirmed with two corrections
 
@@ -42,7 +42,7 @@ The window is `ADMIN_FRESH_SECONDS`, default 1,800; the owner can shorten it.
 2. In-memory intents and no evidence; rely on ID's audit with `x-request-id`. Smallest, but a restart loses receipts, a retried commit would re-run as a new intent, and the person behind a change would be nowhere durable.
 3. Copy the Toolbox's files into `mcps/admin`. Duplication the repository forbids.
 
-Package names: `@answerable/evidence` (`createEvidence`, `createPostgresIntentStore`, `withEvidence`, `migrate`, the two SQL files) and `@answerable/id-admin` (`createIdAdmin`, `IdError`, `found`, and `@answerable/id-admin/testing` with the fake ID). An alternative is one package for both; two keep each one's purpose plain.
+Package names: `@answerable/evidence` (`createEvidence`, `createPostgresIntentStore`, `withEvidence`, `migrate`, the two SQL files; built as `@answerable/mcp-postgres`) and `@answerable/id-admin` (`createIdAdmin`, `IdError`, `found`, and `@answerable/id-admin/testing` with the fake ID). An alternative is one package for both; two keep each one's purpose plain.
 
 ## D6. Correlation and idempotency with ID
 
@@ -54,7 +54,7 @@ Package names: `@answerable/evidence` (`createEvidence`, `createPostgresIntentSt
 
 ## D8. The tool set
 
-**24 tools: 10 reads (team), 10 ordinary writes (admin), 4 critical writes (owner), plus the two commit tools; `sso.set` takes platform credentials only; erasure, invitations, own-credential SSO and client registration are Not yet** (recommended; the table is in [`design.md`](design.md)). Cut candidates if the owner wants fewer: `organisations.update`, `groups.dropmember`, `sso.test`. Alternative: the full admin surface (81 operations) — the adapter's job, later.
+**24 tools: 10 reads (team), 10 ordinary writes (admin), 4 critical writes (owner), plus the two commit tools; `sso.set` takes platform credentials only; erasure, invitations, own-credential SSO and client registration are Not yet** (recommended; as built, 25 with `access.enable`, plus the two commit tools: [`docs/11-admin-mcp.md`](../../11-admin-mcp.md#tools-by-domain)). Cut candidates if the owner wants fewer: `organisations.update`, `groups.dropmember`, `sso.test`. Alternative: the full admin surface (81 operations) — the adapter's job, later.
 
 ## D9. Ports, databases, names
 

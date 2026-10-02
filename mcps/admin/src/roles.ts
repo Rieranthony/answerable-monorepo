@@ -6,14 +6,15 @@ import { z } from "zod"
 export const roles = ["team", "admin", "owner"] as const
 export type Role = (typeof roles)[number]
 
-/**
- * The highest role that scopes on the admin MCP's resource confer, or null. Role `<role>` is conferred by the scope `answerable-<role>` alone:
- * ID accepts any string as a scope, so every other string confers nothing.
- */
-export const roleOf = (scopes: readonly string[]): Role | null => roles.findLast(role => scopes.includes(`answerable-${role}`)) ?? null
+/** The scope that confers a role: `answerable-<role>`. ID accepts any string as a scope, so every other string confers nothing. */
+export const grantString = (role: Role) => `answerable-${role}`
+/** The highest role that scopes on the admin MCP's resource confer, or null. */
+export const roleOf = (scopes: readonly string[]): Role | null => roles.findLast(role => scopes.includes(grantString(role))) ?? null
+/** Whether a target of ID's member access view can confer a role: an entitlement on the admin MCP's resource itself, not one through a single client. */
+export const confers = (resource: string) => (target: { kind: string; id: string }) => target.kind === "resource" && target.id === resource
 
 /** Why a caller may not use a tool, as its `capability.denied` evidence records it. */
-export type Refusal = { reason: "not_platform" | "missing_scope" | "role_below_minimum"; data: Record<string, unknown> }
+type Refusal = { reason: "not_platform" | "missing_scope" | "role_below_minimum"; data: Record<string, unknown> }
 
 const accessView = z.object({ targets: z.array(z.object({ kind: z.string(), id: z.string(), scopes: z.array(z.string()) })) })
 
@@ -30,7 +31,7 @@ export function createRoles({ id, platform, resource }: { id: IdAdmin; platform:
     try {
       const view = await found(id.get(`/organizations/${platform}/members/${membershipId}/access`))
       const targets = view === undefined ? [] : accessView.parse(view).targets
-      return roleOf(targets.filter(target => target.kind === "resource" && target.id === resource).flatMap(target => target.scopes))
+      return roleOf(targets.filter(confers(resource)).flatMap(target => target.scopes))
     } catch (error) {
       console.error("[admin] reading the role failed", error)
       throw new ToolError("UPSTREAM_UNAVAILABLE", "Answerable ID did not answer with your role; try again shortly")

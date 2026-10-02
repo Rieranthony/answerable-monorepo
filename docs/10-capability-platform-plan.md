@@ -105,7 +105,7 @@ Each journey runs against real Answerable ID through `packages/acceptance` unles
 In order, each with the exit evidence the design names.
 
 1. Approval pages for the human class (the hub as an OIDC client of ID, `toolbox/approve`, `four_eyes`) and the operations table with the pg-boss worker.
-2. Tenant-tier writes for groups, group members and entitlements in ID; the OpenAPI adapter with ID's admin API as its first source, producing the admin MCP as a generated provider.
+2. Tenant-tier writes for groups, group members and entitlements in ID; the OpenAPI adapter, for other OpenAPI sources. The admin MCP for Answerable staff is built, standalone and hand-written ([`11-admin-mcp.md`](11-admin-mcp.md)); an admin MCP for an organisation's own administrators needs the tenant-tier writes first.
 3. Hosts: CIMD and policy-gated DCR in ID with the Better Auth upgrade as its own commit; hosted deployment; Claude.ai on a public URL.
 4. Programmatic composition: `toolbox_run` on QuickJS in a pool of secret-free Bun subprocesses (capped WebAssembly memory, host-side deadline, call budget, parent-side kill), typed handles, intents returned as a set.
 5. Remote providers and upstream identity: RFC 8693 token exchange in ID, the credential vault and per-person connect flows, the upstream-MCP adapter.

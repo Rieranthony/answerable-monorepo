@@ -13,7 +13,7 @@ function upstream(error: unknown): never {
 }
 
 /** What a write to ID sends besides its path: the body, a precondition and the idempotency key the intent's plan carries. */
-export type Write = { body?: unknown; ifMatch?: string; ifNoneMatch?: "*"; key: string }
+type Write = { body?: unknown; ifMatch?: string; ifNoneMatch?: "*"; key: string }
 
 /**
  * ID's admin API as the tools call it: every call carries the call's execution id as `x-request-id`, and every failure answers the error a model

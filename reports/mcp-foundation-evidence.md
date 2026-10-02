@@ -516,6 +516,34 @@ At ID's email step type the address given below; the company sign-in that follow
 
 **Not measured.** A session of Claude Code with a model against the admin lane, and whether it asks before `admin_commit_confirmed` under an allow rule (`--check` asserts only that the tool is the one marked `anthropic/requiresUserInteraction`). The owner's own ID with a real Entra tenant and `sso_set`. The admin MCP behind the Toolbox's cache with more than one staff member signed in at once.
 
+## 2 October 2026: the admin MCP goal closed (brief B4)
+
+Tree: branch `goal/admin-b4`, cut from `claude/admin-mcp` at 20ed8d6 after B3b, uncommitted when measured. Versions: Bun 1.3.1; `@answerable/mcp-admin` 0.2.2; `@answerable/acceptance` 0.4.1. One acceptance or lane ran at a time; the machine also ran the owner's services, at one-minute load averages of 3.2 to 15.3 when a gate started. The design record is [`docs/11-admin-mcp.md`](../docs/11-admin-mcp.md); the goal's open questions are `Q-ADMIN-SSO-SECRETS`, `Q-ADMIN-REAUTH`, `Q-SDK-ALLOW-EVIDENCE` and `Q-ACCEPTANCE-GC` in [the register](../docs/02-plan.md#open-register).
+
+| Gate, from the root | Result |
+| --- | --- |
+| `bunx turbo run typecheck lint --force` | 28 of 28 tasks, none cached, 13.1 seconds |
+| `bun run build` | 3 of 3 tasks (`web#build` run, the two package builds cached), 19.0 seconds |
+| `bun --filter web test` | 88 pass, 0 fail, 0.9 seconds |
+| `bun run mcp:test` | 670 pass, 0 fail, 6.6 seconds: `id-admin` 18, `auth` 56, `mcp-postgres` 23, `mcp` 171, `mcp-admin` 218, `mcp-toolbox` 92, `mcp-e2e` 45, `mcp-example` 28, scaffold (`scripts`) 19; every workspace but `scripts` at 100% lines and functions. The todo tests are the conformance checks the kit marks Not yet (17 in `mcp-admin`) |
+| `bun run mcp:check @answerable/mcp-admin` | 218 pass, 17 todo, 0 fail, 100% lines and functions; 4.1 seconds |
+| `bun run mcp:test:e2e`, twice | 78 pass, 0 fail across 9 files, 100% lines and functions over `packages/acceptance/src`: 86.3 and 87.6 seconds, at load averages 7.9 and 3.9; no container, process or temporary directory left |
+| `bun packages/acceptance/scripts/admin-lane.ts --check` | Exit 0 in 9.0 seconds |
+| `bun packages/acceptance/scripts/host-lane.ts --check` | Exit 0 in 5.8 seconds |
+| `bun --filter @answerable/countries test` | 5 pass, 0 fail |
+| `git diff --stat origin/main -- apps/id` | `apps/id/scripts/mcp-e2e-fixture.ts` only, the test fixture: no application code changed, so the ID suite was not required |
+
+**Measured in the two acceptance runs:** `tools/list` with the live access read, 25 requests with one token, median 31.9 and 31.1 ms, maximum 34.3 and 33.5 ms; the access reads inside them median 27.2 and 26.5 ms. The new organisation's person refused at ID's chooser in 388 and 391 ms. The Toolbox dropped the tools 9,171 and 9,175 ms after `access_revoke`, and listed them again 15,206 and 15,188 ms after `access_enable`. Two concurrent commits: one receipt and one `COMMIT_IN_PROGRESS`, both runs. The freshness remedy took 1,022 and 936 ms. The platform organisation's chain: 89 events, verified, both runs; 9 ID audit rows by the machine client for 9 committed writes; 83 member-access reads and 3 token requests by the admin MCP. **The admin lane's check:** `organisations_create` 126 ms, `domains_add` 114 ms, the lane's SSO write seen after 513 ms, `toolbox_enable` 392 ms, `access_grant` 141 ms, the new person's sign-in to the Toolbox 593 ms.
+
+**The cleanup pass.** In `mcps/admin`: one rule for what confers a role (`grantString` and `confers` in `src/roles.ts`), which the role read and the staff tools had each written out; the slug and member id schemas and the missing-organisation and missing-member messages, each written twice, shared; `domain` moved to its one user; three types exported for no other file made private, and two test options no test passed removed; a comment that described a different line removed; `ADMIN_FRESH_SECONDS`'s default kept in `createAdminMcp` alone. `access_list`'s description now says that a row with a `clientId` reaches its resource through that client only, such as the one `toolbox_enable` makes per host client. No tool's behaviour or schema changed: the manifest changed in that one description, and every security test stayed. The fake ID was measured for dead behaviour by running the admin MCP's, the Toolbox's and its own suites with coverage over it: every helper and route is used, and the one line no suite reaches is its answer to a route it does not serve.
+
+**Found by testing.**
+
+- **The host lane left ID running when a step failed.** It now does what the admin lane does. With port 47604 held by another process it printed `Failed to start server. Is port 47604 in use?` and exited 1 after 5 seconds, leaving no container, volume, fixture process or temporary directory; only the holder was on 47604.
+- **Docs that said the admin MCP had no writes and no acceptance**: the docs home's status table and the MCP kit's page, from B1, now say what is built.
+
+**Not yet tested**, kept as such: Claude Code asking before `admin_commit_confirmed` in a session with a model (only the `anthropic/requiresUserInteraction` marking is asserted), and `sso_set` with a real Entra tenant on the owner's ID.
+
 ## Limits
 
 The acceptance uses local test issuers for company directories, a pre-registered public client and loopback HTTP. It does not certify Claude.ai, another host, another company directory or a production deployment; the host lane above records LibreChat and Claude Code by hand.

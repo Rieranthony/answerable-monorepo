@@ -1,11 +1,13 @@
 import { defineMutation } from "@answerable/mcp"
 import { z } from "zod"
 import {
-  commitWith, domain, errors, invalid, missingOrganisation, named, newKey, noPrecondition, organizationId, precondition, scopes, slugPattern, target,
+  commitWith, errors, invalid, missingOrganisation, named, newKey, noPrecondition, organizationId, precondition, scopes, slug, target,
   type Organisation, type Writes,
 } from "./writes"
 
 const name = z.string().trim().min(1).max(200)
+// ID's host rule for a domain (apps/id/src/http/admin/domains.ts hostSchema).
+const domain = z.string().trim().toLowerCase().max(253).regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/, "Must be a domain name such as newco.example")
 // The issuers ID signs in through Answerable's own Microsoft or Google application (apps/id/src/services/federation.ts classifyIssuer).
 const entra = /^https:\/\/login\.microsoftonline\.com\/[0-9a-f-]{36}\/v2\.0$/
 const google = "https://accounts.google.com"
@@ -18,7 +20,7 @@ export function organisationWrites(writes: Writes) {
     name: "organisations.create", risk: "normal", scopes, effects: ["publication"],
     description: `Prepare creating an organisation in Answerable ID with a unique slug and a name. ${commitWith} It starts with no domain, SSO provider or access: then domains_add, sso_set, toolbox_enable and access_grant.`,
     input: z.object({
-      slug: z.string().max(100).regex(slugPattern, "Lowercase letters and digits, words joined by single hyphens").describe("Unique in Answerable ID: lowercase letters and digits, words joined by single hyphens, such as newco"),
+      slug: slug.describe("Unique in Answerable ID: lowercase letters and digits, words joined by single hyphens, such as newco"),
       name: name.describe("The organisation's name, 1 to 200 characters"),
     }),
     output: z.object({ organizationId: z.uuid(), slug: z.string(), operationId: z.uuid() }),

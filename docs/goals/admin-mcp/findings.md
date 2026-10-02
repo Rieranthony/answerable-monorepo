@@ -1,6 +1,6 @@
 # Findings: the Answerable admin MCP
 
-Every fact the plan rests on, with how it was verified. "Verified" means read in the installed source at the line given, or observed by a probe whose command and output are recorded below. "Assumed" means a brief must prove it before building on it. Worktree `.claude/worktrees/admin-mcp` at a2b72cc; probes ran on 2026-10-01.
+Every fact the plan rests on, with how it was verified. The design built on them is [`docs/11-admin-mcp.md`](../../11-admin-mcp.md). "Verified" means read in the installed source at the line given, or observed by a probe whose command and output are recorded below. "Assumed" means a brief must prove it before building on it. Worktree `.claude/worktrees/admin-mcp` at a2b72cc; probes ran on 2026-10-01.
 
 ## Verified
 

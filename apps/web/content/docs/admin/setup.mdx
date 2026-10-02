@@ -164,7 +164,7 @@ At ID's email step type the address given; the company sign-in that follows acce
 | --- | --- | --- |
 | 1 | `/mcp`, **Authenticate** the admin MCP as the staff member. Ask: `Call admin_whoami.` | `role: "owner"` and 27 tools |
 | 2 | Ask: `Create the organisation newco, named Newco, and route newco.example.test to it.` | Each change is prepared and shown to you; on your yes, `admin_commit_confirmed` commits it. The lane prints that it set the organisation's SSO provider |
-| 3 | Run the Toolbox's `claude mcp add` line the lane printed, then `/mcp` and **Authenticate** it as `tester@newco.example.test` | ID stops them: `Access is unavailable for this organisation` |
+| 3 | Run the Toolbox's `claude mcp add` line the lane printed, then `/mcp` and **Authenticate** it as `tester@newco.example.test` | ID stops them: `Access is unavailable for this organisation`. The lane links the Toolbox's host client in advance; on an ID where no `toolbox_enable` has named the client yet, ID answers `invalid_target` here instead |
 | 4 | Ask: `Enable the Toolbox for newco from claude-code-toolbox with e2e, and grant everyone in newco e2e/records on http://127.0.0.1:47604/mcp.` | Two more previews and receipts. A directory with its own credentials needs a client secret that no tool takes, so the lane sets the SSO provider itself when an organisation holds `newco.example.test` |
 | 5 | **Authenticate** the Toolbox again as the new person. Ask: `Call toolbox_whoami, then list the records.` | The grant `e2e/records`, and seven tools: `toolbox_whoami`, the four `e2e_records` tools and the two commit tools |
 | 6 | As the staff member, ask: `Revoke that grant.` | The Toolbox drops the tools from the same token within its cache window |

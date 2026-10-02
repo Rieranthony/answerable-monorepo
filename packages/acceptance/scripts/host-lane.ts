@@ -15,6 +15,15 @@ import { z } from "zod"
 import { cleanup, onCleanup } from "../src/cleanup"
 import { connect, launchBrowser, registerClient, registerMachine, registerResource, serve, signIn, startId, step } from "../src/index"
 
+// A failure must not leave ID, its database and the Toolbox running behind it.
+async function fail(error: unknown) {
+  console.error(error)
+  await cleanup()
+  process.exit(1)
+}
+process.on("unhandledRejection", fail)
+process.on("uncaughtException", fail)
+
 const resource = "http://127.0.0.1:47604/mcp"
 const toolboxAdmin = toolboxAdminResource(resource)
 const database = "answerable_toolbox_hostlane"

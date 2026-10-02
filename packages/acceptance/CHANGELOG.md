@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1
+
+- `scripts/host-lane.ts` removes ID, its database and the Toolbox and exits 1 when a step fails, as the admin lane does; before, a failure left the ID fixture running.
+- `startAdminStack(…).adminMcp(freshSeconds?)` leaves the default window to `createAdminMcp`.
+
 ## 0.4.0
 
 What the admin MCP's journeys and lane need from the kit. Nothing breaks.

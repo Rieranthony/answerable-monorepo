@@ -10,7 +10,7 @@ const schema = z.object({
   ADMIN_ID_CLIENT_SECRET: z.string().min(1),
   ADMIN_ID_ADMIN_RESOURCE: z.url(),
   ADMIN_TOOLBOX_ADMIN_RESOURCE: z.url().optional(),
-  ADMIN_FRESH_SECONDS: z.coerce.number().int().min(1).default(1800),
+  ADMIN_FRESH_SECONDS: z.coerce.number().int().min(1).optional(),
 })
 
 /** Read the admin MCP's configuration from the environment; throws naming the variable that is missing or invalid. */
@@ -32,7 +32,7 @@ export function readAdminEnvironment(env: Record<string, string | undefined>) {
     id: { issuer: data.ADMIN_ID_ISSUER, adminResource: data.ADMIN_ID_ADMIN_RESOURCE, clientId: data.ADMIN_ID_CLIENT_ID, clientSecret: data.ADMIN_ID_CLIENT_SECRET },
     /** The Toolbox's admin resource, for enabling the Toolbox for an organisation; unset, that is refused. */
     toolboxAdminResource: data.ADMIN_TOOLBOX_ADMIN_RESOURCE,
-    /** How recent an upstream sign-in a critical operation needs, in seconds. */
+    /** How recent an upstream sign-in a critical operation needs, in seconds; unset, `createAdminMcp`'s 1,800. */
     freshSeconds: data.ADMIN_FRESH_SECONDS,
   }
 }

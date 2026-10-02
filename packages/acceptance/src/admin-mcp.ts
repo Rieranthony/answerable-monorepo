@@ -92,8 +92,8 @@ export async function startAdminStack(id: Id, { adminHost, toolboxHost, fetch }:
   onCleanup(() => poller.stop())
 
   return {
-    /** The admin MCP, for a critical operation to need a company sign-in at most `freshSeconds` old. Each call makes a server on the same database and the same machine client. */
-    adminMcp: (freshSeconds = 1800) => createAdminMcp({ auth: { issuer: manifest.idOrigin, resource: adminResource }, db: adminDb, id: ids, platform: learned, freshSeconds, toolbox: { resource: toolboxAdmin } }),
+    /** The admin MCP, for a critical operation to need a company sign-in at most `freshSeconds` old (by default 1,800). Each call makes a server on the same database and the same machine client. */
+    adminMcp: (freshSeconds?: number) => createAdminMcp({ auth: { issuer: manifest.idOrigin, resource: adminResource }, db: adminDb, id: ids, platform: learned, freshSeconds, toolbox: { resource: toolboxAdmin } }),
     toolbox,
     /** Each role's group in the platform organisation. */
     groups,

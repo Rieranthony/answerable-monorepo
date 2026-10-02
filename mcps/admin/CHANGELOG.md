@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2
+
+The goal's cleanup pass. No tool changes behaviour or schema.
+
+- `access_list`'s description says that a row with a `clientId` reaches its resource through that client only, such as the one `toolbox_enable` makes for each host client beside the grants for people.
+- `ADMIN_FRESH_SECONDS` unset leaves the window to `createAdminMcp`, whose default, 1,800 seconds, is now the only one.
+- One rule for what confers a role, `grantString` and `confers` in `src/roles.ts`, serves both the role read and the staff tools; the slug and member id schemas and the missing-organisation and missing-member messages are shared by the reads and the writes.
+
 ## 0.2.1
 
 The package exports `./admin` (`createAdminMcp`) and `./platform` (`readPlatform`), which the acceptance imports to run the admin MCP in its journeys and its lane. Nothing else changes.
