@@ -24,7 +24,7 @@ const { etag, operationId, replayed } = await id.manage("PATCH", `/organizations
 })
 ```
 
-- **Tokens.** Reads use a `platform:read` token, `manage` a `platform:read platform:write` token. Each is reused until 30 seconds before it expires and renewed once when ID answers 401. Calls time out after 5 seconds.
+- **Tokens.** Reads use a `platform:read` token, `manage` a `platform:read platform:write` token. Each is reused until 30 seconds before it expires and renewed once when ID answers 401. Calls time out after 5 seconds, or `timeoutMs`.
 - **Another audience.** `withToken(resource, scope, send)` runs `send(token)` with a token for another service that trusts the same machine client, such as the Toolbox's admin API (`toolbox:admin` for `<toolbox>/admin`), renewed once when that service answers 401.
 - **Idempotency.** `manage` sends `Idempotency-Key` on every method but `GET`: yours, or a random UUID per call. A call resent after a 401 carries the same key and the same `x-request-id`. When ID replays an earlier answer to the key, `replayed` is true and `body` is ID's operation receipt: read the resource's id from `body.resultReference.id`.
 - **Preconditions.** `ifMatch` sends the ETag a write expects; `ifNoneMatch: "*"` asserts that nothing exists yet where ID takes it. A stale one answers `412 revision_mismatch`.
@@ -35,13 +35,13 @@ const { etag, operationId, replayed } = await id.manage("PATCH", `/organizations
 
 - **The machine client.** `clientId` and `clientSecret` (default `toolbox-hub`), owned by a fresh organisation, `fake.organizationId`, which `GET /me` marks as the platform organisation unless `platform` is false. `resources` maps each audience the token endpoint issues for to the scopes it may carry; the default is ID's admin resource with `platform:read` or `platform:read platform:write`.
 - **What ID holds.** `organisation`, `domain`, `ssoProvider`, `member`, `group`, `join` and `entitlement` add rows with ID's fields and return them; `grant` sets a member's access view, which `listTargetAccess` (`…/access?resource=`) also reads; `event` appends an audit event. Lists are newest first, with ID's filters. `revise(id)` advances a row's revision, as another writer would.
-- **Writes.** Organisations (create, update, disable, enable), domains, the SSO provider, groups, group assignments, entitlements (create, disable, enable), resource scopes and client links, each a command as in ID: `Idempotency-Key` required, replayed for the same input (`Idempotency-Replayed: true`, ID's receipt body), `409 idempotency_key_reused` for another, `412 revision_mismatch` for a stale `If-Match`, `409 conflict` for a slug, domain or principal and target that exists.
+- **Writes.** Organisations (create, update, disable, enable), domains, the SSO provider, groups, group assignments, entitlements (create, disable, enable), resource scopes and client links, each a command as in ID: `Idempotency-Key` required, replayed for the same input (`Idempotency-Replayed: true`, ID's receipt body), `409 idempotency_key_reused` for another, `412 revision_mismatch` for a stale `If-Match`, `409 conflict` for a slug, domain or principal and target that exists. A replay's receipt names ID's `resultReference` and says `noop` for a write that changed nothing. With `operationInProgress`, a write whose key a running write holds answers `409 operation_in_progress`. A method the fake does not implement on a route answers `405`.
 - **Another service.** `issued(token)` returns the audience and scope a token was issued for, so that a fake of a service that trusts the client, such as the Toolbox's admin API, can check its bearer. `resources` lists the audiences the token endpoint serves.
-- **Failures.** `outage` answers 503, `unreachable` answers nothing, `slow` adds latency, `revoke` refuses every issued token and `failWrite` fails one write.
+- **Failures.** `outage` answers 503, `unreachable` answers nothing, `slow` adds latency, which the caller's `AbortSignal` cuts short, `revoke` refuses every issued token (`401` with `WWW-Authenticate`) and `failWrite` fails one write (`503 database_busy` with `Retry-After: 1`).
 
 ```sh
 bun run --filter @answerable/id-admin test
 bun run mcp:check @answerable/id-admin
 ```
 
-The suite enforces 100% line and function coverage over `src/index.ts`; the fake is exercised through the suites of its consumers. Changes: [CHANGELOG](CHANGELOG.md).
+The suite enforces 100% line and function coverage over `src/index.ts`. `src/testing.test.ts` checks every answer the fake gives against `apps/id/openapi.admin.json`; its consumers' suites exercise the rest. Changes: [CHANGELOG](CHANGELOG.md).

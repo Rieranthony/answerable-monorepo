@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+`migrate` creates `schema_migrations` under its advisory lock too. Two migrators starting on a fresh database at once collided in Postgres's catalogue (`pg_type_typname_nsp_index`), so one of them failed; now both succeed and each file is applied once.
+
 ## 0.1.0
 
 `createEvidence`, `createPostgresIntentStore`, `withEvidence` and the migrator moved out of the Toolbox (`mcps/toolbox/src/evidence.ts`, `intents.ts`, `intent-evidence.ts`, `db/migrate.ts`) so that a second server can use them. Nothing about them changes.

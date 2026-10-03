@@ -35,7 +35,7 @@ The description is what a model reads to choose a tool. Write operational docume
 | Whether it changes state | A mutation: `Prepare adding a note. Changes nothing: returns a preview; commit the intent with the tool its commit_tool names.` Name no commit tool: a hub serves the mutation under its own commit tools, and the intent's `commit_tool` says which |
 | What identifiers mean | `id is the note's id from notes.list.` |
 
-`defineTool` refuses fewer than 40 or more than 1,000 characters. The conformance kit adds two checks: `descriptions_operational` (a mutation's description says `prepare` or `intent`) and `deprecations_mirrored` (a deprecated tool's description ends with the deprecation sentence).
+`defineTool` refuses fewer than 40 or more than 1,000 characters, and a deprecated tool's description gets the deprecation sentence on the wire. The conformance kit adds one check: `descriptions_operational` (a mutation's description says `prepare` or `intent`).
 
 ## The caller
 

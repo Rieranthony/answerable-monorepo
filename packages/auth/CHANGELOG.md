@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1
+
+No behaviour change for a server. The default HTTP client is the global `fetch` as it is when the verifier is created. Tests now hold the algorithm allow-list, expiry with no clock tolerance, discovery that answers with a redirect, an audience list, and a person's token without `organization_id`, `grant_id`, `client_id` or `scope`.
+
 ## 0.5.0
 
 `UserPrincipal.upstreamAuthTime`: when the person last signed in at their organisation's directory, for a server that asks for a recent sign-in before a critical operation, such as the admin MCP. A server that does not read it changes nothing, unless it writes a `UserPrincipal` by hand.

@@ -1,6 +1,6 @@
 import { afterEach, expect, spyOn, test } from "bun:test"
 import { z } from "zod"
-import { createMcpServer, createMemoryIntentStore, defineMutation, defineProvider, defineTool, manifest, ToolError, type IntentStore, type McpServerConfig, type Mutation, type Tool } from "./index"
+import { createMcpServer, createMemoryIntentStore, defineMutation, defineProvider, defineTool, manifest, ToolError, type IntentStore, type McpServerConfig, type Mutation, type PolicyClass, type Tool } from "./index"
 import { createTestMcp, errorOf, type TestMcp } from "./testing"
 
 const uuidV7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
@@ -110,49 +110,47 @@ const commitArgs = (intent: Prepared) => ({ intent_id: intent.intent_id, commit_
 const confirmedArgs = (intent: Prepared) => ({ ...commitArgs(intent), preview_summary: intent.preview.summary })
 const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
 
-for (const protocol of ["2025", "2026-07-28"] as const) {
-  test(`${protocol}: tools/list shows each prepare tool as read-only with its class, then the two commit tools`, async () => {
-    const { connect, provider } = await serve()
-    const tools = (await (await connect({ protocol })).listTools()).tools
-    expect(tools.map(tool => tool.name)).toEqual(["docs_list", "docs_rename", "docs_delete", "docs_publish", "docs_purge", "test_commit", "test_commit_confirmed"])
-    const [, rename, remove, publish, , commit, confirmed] = tools
-    expect(rename).toMatchObject({
-      description: about("Rename a document"), annotations: readOnly,
-      _meta: { "com.answerable/capability": { identity: "test/docs.rename", version: "2026-09-29", kind: "mutate", risk: "low", policy_class: "agent" } },
-      inputSchema: { additionalProperties: false, required: ["id", "title"], properties: { validate_only: { type: "boolean", default: false, description: expect.stringContaining("without recording an intent") } } },
-      outputSchema: { required: ["intent_id", "capability", "version", "policy_class", "commit_tool", "commit_token", "expires_at", "targets", "preview", "approval"] },
-    })
-    expect(remove!._meta).toEqual({ "com.answerable/capability": { identity: "test/docs.delete", version: "2026-09-29", kind: "mutate", risk: "normal", policy_class: "controlled" } })
-    expect(publish!._meta!["com.answerable/capability"]).toMatchObject({ risk: "high", policy_class: "human" })
-    expect(commit).toMatchObject({
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      inputSchema: { additionalProperties: false, required: ["intent_id", "commit_token"] },
-    })
-    expect(commit!._meta).toEqual({ "com.answerable/capability": { identity: "test/commit", kind: "commit" } })
-    expect(confirmed).toMatchObject({
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-      inputSchema: { additionalProperties: false, required: ["intent_id", "commit_token", "preview_summary"] },
-    })
-    expect(confirmed!._meta).toEqual({ "com.answerable/capability": { identity: "test/commit_confirmed", kind: "commit" }, "anthropic/requiresUserInteraction": true })
-    for (const tool of [commit!, confirmed!]) {
-      expect(tool.outputSchema).toMatchObject({ required: ["receipt_id", "intent_id", "status", "results", "applied_changes", "effects_performed", "committed_at", "committed_by", "idempotent_replay"] })
-      expect(tool.description!.length).toBeGreaterThanOrEqual(40)
-      expect(tool.description!.length).toBeLessThanOrEqual(1000)
-    }
-    const entries = manifest(provider).tools
-    for (const tool of tools) {
-      const entry = entries.find(item => item.name === tool.name)!
-      expect(tool).toMatchObject({ description: entry.description, annotations: entry.annotations })
-      if (entry.kind === "commit") expect(tool).toMatchObject({ inputSchema: entry.input, outputSchema: entry.output })
-      const { validate_only, ...properties } = tool.inputSchema.properties!
-      if (entry.kind === "mutate") expect<object>({ ...tool.inputSchema, properties }).toEqual(entry.input)
-      else expect(validate_only).toBeUndefined()
-    }
-    expect(commit!.description).toContain("agent-class")
-    expect(confirmed!.description).toContain("controlled-class")
-    expect(confirmed!.description).toContain("word for word")
+test("tools/list shows each prepare tool as read-only with its class, then the two commit tools", async () => {
+  const { connect, provider } = await serve()
+  const tools = (await (await connect()).listTools()).tools
+  expect(tools.map(tool => tool.name)).toEqual(["docs_list", "docs_rename", "docs_delete", "docs_publish", "docs_purge", "test_commit", "test_commit_confirmed"])
+  const [, rename, remove, publish, , commit, confirmed] = tools
+  expect(rename).toMatchObject({
+    description: about("Rename a document"), annotations: readOnly,
+    _meta: { "com.answerable/capability": { identity: "test/docs.rename", version: "2026-09-29", kind: "mutate", risk: "low", policy_class: "agent" } },
+    inputSchema: { additionalProperties: false, required: ["id", "title"], properties: { validate_only: { type: "boolean", default: false, description: expect.stringContaining("without recording an intent") } } },
+    outputSchema: { required: ["intent_id", "capability", "version", "policy_class", "commit_tool", "commit_token", "expires_at", "targets", "preview", "approval"] },
   })
-}
+  expect(remove!._meta).toEqual({ "com.answerable/capability": { identity: "test/docs.delete", version: "2026-09-29", kind: "mutate", risk: "normal", policy_class: "controlled" } })
+  expect(publish!._meta!["com.answerable/capability"]).toMatchObject({ risk: "high", policy_class: "human" })
+  expect(commit).toMatchObject({
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: { additionalProperties: false, required: ["intent_id", "commit_token"] },
+  })
+  expect(commit!._meta).toEqual({ "com.answerable/capability": { identity: "test/commit", kind: "commit" } })
+  expect(confirmed).toMatchObject({
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    inputSchema: { additionalProperties: false, required: ["intent_id", "commit_token", "preview_summary"] },
+  })
+  expect(confirmed!._meta).toEqual({ "com.answerable/capability": { identity: "test/commit_confirmed", kind: "commit" }, "anthropic/requiresUserInteraction": true })
+  for (const tool of [commit!, confirmed!]) {
+    expect(tool.outputSchema).toMatchObject({ required: ["receipt_id", "intent_id", "status", "results", "applied_changes", "effects_performed", "committed_at", "committed_by", "idempotent_replay"] })
+    expect(tool.description!.length).toBeGreaterThanOrEqual(40)
+    expect(tool.description!.length).toBeLessThanOrEqual(1000)
+  }
+  const entries = manifest(provider).tools
+  for (const tool of tools) {
+    const entry = entries.find(item => item.name === tool.name)!
+    expect(tool).toMatchObject({ description: entry.description, annotations: entry.annotations })
+    if (entry.kind === "commit") expect(tool).toMatchObject({ inputSchema: entry.input, outputSchema: entry.output })
+    const { validate_only, ...properties } = tool.inputSchema.properties!
+    if (entry.kind === "mutate") expect<object>({ ...tool.inputSchema, properties }).toEqual(entry.input)
+    else expect(validate_only).toBeUndefined()
+  }
+  expect(commit!.description).toContain("agent-class")
+  expect(confirmed!.description).toContain("controlled-class")
+  expect(confirmed!.description).toContain("word for word")
+})
 
 test("prepare returns the intent: a single-use token, the commit tool for its class, the preview with defaults and the expiry", async () => {
   const { connect, docs } = await serve()
@@ -340,17 +338,37 @@ test("a second commit while the first runs answers COMMIT_IN_PROGRESS, and later
   expect(await ok(client, "test_commit", commitArgs(intent))).toMatchObject({ idempotent_replay: true })
 })
 
-test("a commit that loses the claim to a concurrent commit reads the new status", async () => {
-  const intents = createMemoryIntentStore()
+test("two commits of one intent at once apply it once: one receipt, and the other answers COMMIT_IN_PROGRESS or replays it", async () => {
+  // Both commits read the intent as prepared before either claims it.
+  const memory = createMemoryIntentStore()
+  const both = Promise.withResolvers<void>()
+  let reads = 0
+  const intents: IntentStore = {
+    ...memory,
+    async get(intentId) {
+      const intent = await memory.get(intentId)
+      if (++reads === 2) both.resolve()
+      if (reads <= 2) await both.promise
+      return intent
+    },
+  }
   const { connect, docs } = await serve({ intents })
   const client = await connect()
   const intent = await ok(client, "docs_rename", { id: "d1", title: "Renamed" })
-  spyOn(intents, "transition").mockImplementationOnce(async (intentId, from, to) => {
-    await intents.transition(intentId, from, to)
-    return false
-  })
-  expect(await refused(client, "test_commit", commitArgs(intent))).toMatchObject({ code: "COMMIT_IN_PROGRESS" })
-  expect(docs.get("d1")).toEqual({ title: "First", version: 1 })
+  const results = await Promise.all([1, 2].map(() => client.callTool({ name: "test_commit", arguments: commitArgs(intent) })))
+  const receipts = results.filter(result => !result.isError).map(result => result.structuredContent as { receipt_id: string; idempotent_replay: boolean })
+  const answers = [...receipts.map(receipt => receipt.idempotent_replay ? "replay" : "receipt"), ...results.filter(result => result.isError).map(result => errorOf(result).code)]
+  expect([["COMMIT_IN_PROGRESS", "receipt"], ["receipt", "replay"]]).toContainEqual(answers.sort())
+  expect(new Set(receipts.map(receipt => receipt.receipt_id)).size).toBe(1)
+  expect(docs.get("d1")).toEqual({ title: "Renamed", version: 2 })
+})
+
+test("an intent keeps only the SHA-256 of its commit token", async () => {
+  const { connect, intents } = await serve()
+  const intent = await ok(await connect(), "docs_rename", { id: "d1", title: "Renamed" })
+  const stored = (await intents.get(intent.intent_id))!
+  expect(stored.commit_token_hash).toBe(new Bun.CryptoHasher("sha256").update(intent.commit_token).digest("hex"))
+  expect(JSON.stringify(stored)).not.toContain(intent.commit_token)
 })
 
 test("a commit that throws marks the intent failed: a ToolError is returned, anything else answers INTERNAL, and a retry answers INTENT_CONSUMED", async () => {
@@ -467,6 +485,26 @@ test("policyClass decides the class for each caller: in _meta, the intent, the c
   expect(await ok(client, "docs_publish", { id: "d2" })).toMatchObject({ policy_class: "agent", approval: { required: false, status: "not_required" } })
   expect(await ok(client, "test_commit", commitArgs(intent))).toMatchObject({ results: { deleted: true } })
   expect(calls).toContain(`test/docs.delete ${person.userId}`)
+})
+
+test("commit rechecks the policy class: one that rose since prepare answers APPROVAL_REQUIRED for what a fresh prepare would need, and the intent stays prepared", async () => {
+  let policy: PolicyClass = "agent"
+  const { connect, docs, intents } = await serve({ policyClass: () => policy })
+  const client = await connect()
+  const intent = await ok(client, "docs_rename", { id: "d1", title: "Renamed" })
+  const rose = (to: PolicyClass, approval: object) => ({
+    code: "APPROVAL_REQUIRED", message: `test/docs.rename now needs the ${to} class, not the agent class intent ${intent.intent_id} was prepared with; prepare it again`,
+    retry: { policy: "after_approval" }, details: { approval: { class: to, commit_tool: "test_commit_confirmed", ...approval } }, request_id: requestId,
+  })
+  policy = "controlled"
+  expect(await refused(client, "test_commit", commitArgs(intent))).toEqual(rose("controlled", {}))
+  policy = "human"
+  expect(await refused(client, "test_commit_confirmed", confirmedArgs(intent))).toEqual(rose("human", { status: "pending" }))
+  expect(await ok(client, "docs_rename", { id: "d2", title: "Renamed" })).toMatchObject({ policy_class: "human", commit_tool: "test_commit_confirmed", approval: { required: true, status: "pending" } })
+  expect((await intents.get(intent.intent_id))!.status).toBe("prepared")
+  expect(docs.get("d1")).toEqual({ title: "First", version: 1 })
+  policy = "agent"
+  expect(await ok(client, "test_commit", commitArgs(intent))).toMatchObject({ results: { title: "Renamed" } })
 })
 
 test("timeoutMs bounds prepare, and re-prepare with commit: a commit past it answers TIMEOUT and finishes in the background", async () => {

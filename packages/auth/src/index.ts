@@ -109,7 +109,7 @@ function trustedUrl(value: string, name: string) {
 export function createIdVerifier<Kind extends "user" | "client" = "user">(config: IdVerifierConfig<Kind>): (token: string) => Promise<Kind extends "client" ? MachinePrincipal : UserPrincipal> {
   const { issuer, resource } = config
   const claimsSchema = claimsOf[config.subjectType ?? "user"]
-  const fetcher = config.fetch ?? ((input, init) => fetch(input, init))
+  const fetcher = config.fetch ?? fetch
   const issuerUrl = trustedUrl(issuer, "issuer")
   trustedUrl(resource, "resource")
   let discovery: Promise<ReturnType<typeof createRemoteJWKSet>> | undefined

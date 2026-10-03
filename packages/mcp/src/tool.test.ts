@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { z } from "zod"
-import { defineTool, defineView } from "./index"
+import { defineMutation, defineTool, defineView } from "./index"
 import { wireDescription, wireName } from "./tool"
 
 const description = "List the records of your organisation, oldest first, twenty per page."
@@ -62,10 +62,14 @@ test("versions and deprecation dates are YYYY-MM-DD dates", () => {
   }
 })
 
-test("scopes, when given, are non-empty tokens", () => {
+test("scopes, when given, are non-empty tokens; a mutation's default is <provider>:write", () => {
   for (const scopes of [[], [""], ["has space"]]) {
     expect(() => defineTool({ ...fields, scopes })).toThrow("Tool records.list: scopes must be non-empty and contain no spaces; omit them for the default <provider>:read")
   }
+  expect(() => defineMutation({
+    name: "records.delete", description, input: z.object({}), output: z.object({}), scopes: [],
+    async prepare() { return { targets: [], preview: { summary: "Delete" } } }, async commit() { return { results: {}, applied_changes: [], effects_performed: [] } },
+  })).toThrow("Mutation records.delete: scopes must be non-empty and contain no spaces; omit them for the default <provider>:write")
 })
 
 test("the wire name swaps the dot, and a deprecated description ends with the deprecation sentence", () => {

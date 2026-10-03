@@ -65,3 +65,27 @@ test("transition moves only from the expected status, and the receipt is stored 
   expect(await store.transition(stored.intent_id, "committing", "committed", receipt(stored.intent_id))).toBe(false)
   expect(await store.get(stored.intent_id)).toEqual({ ...stored, status: "committed", receipt: first })
 })
+
+test("an insert sweeps the store at most once a minute: expired, failed and stale intents leave it, and a committed one a day after its commit", async () => {
+  let clock = 0
+  const store = createMemoryIntentStore({ now: () => clock })
+  const day = 86_400_000
+  const open = intent({ expires_at: new Date(2 * day).toISOString() })
+  const lapsed = intent()
+  const waiting = intent({ status: "awaiting_approval", approval: { required: true, status: "pending" }, policy_class: "human" })
+  const settled = (["expired", "failed", "stale"] as const).map(status => intent({ status }))
+  const running = intent({ status: "committing" })
+  const committed = intent({ status: "committed" })
+  committed.receipt = receipt(committed.intent_id)
+  for (const item of [open, lapsed, waiting, ...settled, running, committed]) await store.insert(item)
+  const present = async () => (await Promise.all([open, lapsed, waiting, ...settled, running, committed].map(item => store.get(item.intent_id)))).map(item => item?.status ?? null)
+  clock = 59_999
+  await store.insert(intent({ expires_at: new Date(2 * day).toISOString() }))
+  expect(await present()).toEqual(["prepared", "expired", "expired", "expired", "failed", "stale", "committing", "committed"])
+  clock = 60_000
+  await store.insert(intent({ expires_at: new Date(2 * day).toISOString() }))
+  expect(await present()).toEqual(["prepared", null, null, null, null, null, "committing", "committed"])
+  clock = 500 + day
+  await store.insert(intent({ expires_at: new Date(2 * day).toISOString() }))
+  expect(await present()).toEqual(["prepared", null, null, null, null, null, "committing", null])
+})

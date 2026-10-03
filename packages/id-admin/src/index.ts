@@ -9,6 +9,8 @@ export type IdConfig = {
   clientSecret: string
   /** HTTP client. Default: the global fetch. */
   fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+  /** How long to wait for ID to answer the token request or an admin call, in milliseconds; past it the call throws `IdError` with status 0. Default: 5,000. */
+  timeoutMs?: number
 }
 
 /** What a call to ID may carry besides its path. */
@@ -69,7 +71,7 @@ export async function found<T>(answer: Promise<T>): Promise<T | undefined> {
  * platform:write` token of its own; `withToken` gets a token for another service that trusts the client. Each token is reused until 30 seconds
  * before it expires and renewed once when it is refused. A status outside 2xx from the admin API throws `IdError`.
  */
-export function createIdAdmin({ issuer, adminResource, clientId, clientSecret, fetch = globalThis.fetch }: IdConfig) {
+export function createIdAdmin({ issuer, adminResource, clientId, clientSecret, fetch = globalThis.fetch, timeoutMs = 5000 }: IdConfig) {
   // One token per audience and scope.
   const tokens = new Map<string, { value: string; expiresAt: number }>()
   const pending = new Map<string, Promise<string>>()
@@ -78,7 +80,7 @@ export function createIdAdmin({ issuer, adminResource, clientId, clientSecret, f
       method: "POST",
       headers: { Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`, "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ grant_type: "client_credentials", resource, scope }),
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(timeoutMs),
     }))
     if (!response.ok) {
       const audience = resource === adminResource ? "the admin resource" : resource
@@ -123,7 +125,7 @@ export function createIdAdmin({ issuer, adminResource, clientId, clientSecret, f
         ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(timeoutMs),
     })))
     if (response.ok) return response
     const answer = problem.safeParse(await response.json().catch(() => undefined))

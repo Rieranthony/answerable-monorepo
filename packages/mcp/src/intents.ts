@@ -55,10 +55,25 @@ export type IntentStore = {
 }
 
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value))
+// How long a committed intent keeps its receipt for a repeated commit, and how often an insert sweeps the store, in milliseconds.
+const replayMs = 86_400_000
+const sweepMs = 60_000
+
+// Whether an intent can leave the store at `at`: one that can no longer be committed, or a committed one whose receipt no longer replays.
+function removable(intent: Intent, at: number) {
+  switch (intent.status) {
+    case "committing": return false
+    case "committed": return Date.parse(intent.receipt!.committed_at) + replayMs <= at
+    case "prepared": case "awaiting_approval": return Date.parse(intent.expires_at) <= at
+    default: return true
+  }
+}
 
 /**
  * An `IntentStore` in memory: one per server by default, lost when the process stops. It keeps JSON copies, as a database would.
- * A test moves the clock instead of waiting for an intent to expire.
+ * An insert, at most once a minute by the store's clock, removes the intents that can no longer be committed (expired, failed and stale ones)
+ * and committed ones a day after their commit, so a repeated commit replays its receipt for a day; after that, or once an intent is removed,
+ * a commit answers `INTENT_NOT_FOUND`. A test moves the clock instead of waiting for an intent to expire.
  *
  * @example
  * ```ts
@@ -71,6 +86,7 @@ const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value))
 export function createMemoryIntentStore(options: { now?: () => number } = {}): IntentStore {
   const { now = Date.now } = options
   const intents = new Map<string, Intent>()
+  let swept = -Infinity
   function current(intentId: string) {
     const intent = intents.get(intentId)
     if ((intent?.status === "prepared" || intent?.status === "awaiting_approval") && Date.parse(intent.expires_at) <= now()) intent.status = "expired"
@@ -78,7 +94,14 @@ export function createMemoryIntentStore(options: { now?: () => number } = {}): I
   }
   return {
     now,
-    async insert(intent) { intents.set(intent.intent_id, copy(intent)) },
+    async insert(intent) {
+      const at = now()
+      if (at - swept >= sweepMs) {
+        swept = at
+        for (const [intentId, stored] of intents) if (removable(stored, at)) intents.delete(intentId)
+      }
+      intents.set(intent.intent_id, copy(intent))
+    },
     async get(intentId) {
       const intent = current(intentId)
       return intent && copy(intent)

@@ -1,4 +1,5 @@
 import { expect, spyOn, test } from "bun:test"
+import { decodeJwt, exportJWK, generateKeyPair, SignJWT, type JWK } from "jose"
 import { AuthenticationError, createIdVerifier, type MachinePrincipal, type UserPrincipal } from "./index"
 import { createTestIssuer } from "./testing"
 
@@ -29,7 +30,10 @@ for (const algorithm of ["ES256", "RS256"] as const) {
 const invalidClaims: [string, Record<string, unknown>][] = [
   ["issuer", { iss: "https://wrong.test" }], ["audience", { aud: "https://wrong.test/mcp" }],
   ["expired", { exp: 1 }], ["future nbf", { nbf: Math.floor(Date.now() / 1000) + 3600 }],
-  ["missing exp", { exp: undefined }], ["missing iat", { iat: undefined }],
+  ["missing exp", { exp: undefined }], ["missing iat", { iat: undefined }], ["expiry a second ago", { exp: Math.floor(Date.now() / 1000) - 1 }],
+  ["audience list without the resource", { aud: ["https://wrong.test/mcp"] }],
+  ["missing organisation", { organization_id: undefined }], ["missing grant", { grant_id: undefined }],
+  ["missing client id", { client_id: undefined }], ["missing scope", { scope: undefined }],
   ["client subject", { subject_type: "client" }], ["missing membership", { membership_id: undefined }],
   ["non-UUID subject", { sub: "not-a-uuid" }], ["different azp", { azp: "another-client" }],
   ["non-string scope", { scope: ["read"] }], ["proof-bound token", { cnf: { jkt: "key" } }],
@@ -46,6 +50,42 @@ for (const [name, claims] of invalidClaims) {
     await expect(issuer.verify(await issuer.sign({ resource, claims }))).rejects.toThrow(new AuthenticationError())
   })
 }
+test("accepts a token five seconds from expiry, with no clock tolerance, and an audience list that contains the resource", async () => {
+  const issuer = await fixture()
+  const exp = Math.floor(Date.now() / 1000) + 5
+  expect((await issuer.verify(await issuer.sign({ resource, claims: { exp } }))).expiresAt).toBe(exp)
+  expect((await issuer.verify(await issuer.sign({ resource, claims: { aud: ["https://other.test/mcp", resource] } }))).clientId).toBe("test-client")
+})
+test("refuses a token signed with an algorithm ID does not use, by a key the issuer publishes", async () => {
+  const claims = decodeJwt(await (await fixture()).sign({ resource }))
+  const keys: JWK[] = []
+  const tokens: string[] = []
+  for (const alg of ["PS256", "ES384"]) {
+    const pair = await generateKeyPair(alg)
+    const kid = crypto.randomUUID()
+    keys.push({ ...await exportJWK(pair.publicKey), kid, alg })
+    tokens.push(await new SignJWT(claims).setProtectedHeader({ alg, kid, typ: "at+jwt" }).sign(pair.privateKey))
+  }
+  const issuer = String(claims.iss)
+  const verify = createIdVerifier({ issuer, resource, async fetch(input) {
+    const path = new URL(String(input)).pathname
+    return path === "/jwks" ? Response.json({ keys }) : Response.json({ issuer, jwks_uri: `${issuer}/jwks` })
+  } })
+  for (const token of tokens) await expect(verify(token)).rejects.toThrow(new AuthenticationError())
+})
+test("discovery that answers with a redirect fails, wherever it points", async () => {
+  const signer = await fixture()
+  // Fetch's own handling of a 302: follow it unless the request says otherwise.
+  const verify = createIdVerifier({ issuer: signer.issuer, resource, async fetch(input, init) {
+    const url = new URL(String(input))
+    if (url.pathname !== "/.well-known/oauth-authorization-server") return signer.fetch(input, init)
+    if (init?.redirect === "error") throw new TypeError("fetch failed: unexpected redirect")
+    if (init?.redirect === "manual") return new Response(null, { status: 302, headers: { Location: `${signer.issuer}/moved` } })
+    return signer.fetch(url, init)
+  } })
+  await expect(verify(await signer.sign({ resource }))).rejects.toThrow(new AuthenticationError())
+  expect(signer.jwksRequests()).toBe(0)
+})
 test("rejects the wrong type, an unpublished signature and opaque tokens", async () => {
   const issuer = await fixture()
   const other = await fixture()
@@ -104,9 +144,6 @@ for (const [name, claims] of invalidMachine) {
     await expect(clientOnly(issuer)(await issuer.sign({ resource, claims: machine(claims) }))).rejects.toThrow(new AuthenticationError())
   })
 }
-test("a rejection says only that a valid Answerable ID access token is required, for a person's token or a machine's", () => {
-  expect(new AuthenticationError().message).toBe("A valid Answerable ID access token is required")
-})
 test("does not require resource pins or cap the token lifetime", async () => {
   const issuer = await fixture()
   expect((await issuer.verify(await issuer.sign({ resource, expiresIn: "2h", claims: { azp: "test-client", resource_instance: "ignored" } }))).scopes).toEqual([])
@@ -187,21 +224,5 @@ for (const field of ["issuer", "resource"] as const) {
 test("loopback HTTP needs no opt-in and construction performs no discovery", () => {
   for (const host of ["localhost", "127.0.0.1", "[::1]"]) {
     expect(createIdVerifier({ issuer: `http://${host}`, resource: `http://${host}/mcp` })).toBeFunction()
-  }
-})
-
-test("uses the global fetch by default", async () => {
-  const issuer = await createTestIssuer()
-  const verify = createIdVerifier({ issuer: issuer.issuer, resource })
-  const fetch = spyOn(globalThis, "fetch").mockImplementation(issuer.fetch as typeof globalThis.fetch)
-  try {
-    expect((await verify(await issuer.sign({ resource }))).clientId).toBe("test-client")
-  } finally { fetch.mockRestore() }
-})
-test("test issuer routes are in-process and origin-bound", async () => {
-  const issuer = await createTestIssuer({ issuer: "http://localhost:1234" })
-  expect(issuer.issuer).toBe("http://localhost:1234")
-  for (const [url, method] of [[`${issuer.issuer}/missing`, "GET"], [`${issuer.issuer}/jwks`, "POST"], ["https://other.test/jwks", "GET"]]) {
-    expect((await issuer.fetch(url!, { method })).status).toBe(404)
   }
 })

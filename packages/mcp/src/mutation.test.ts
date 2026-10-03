@@ -66,20 +66,3 @@ test("expiresInMs may shorten the expiry its risk gives, never lengthen it", () 
     }
   }
 })
-
-test("the tool rules apply, naming the mutation", () => {
-  expect(() => defineMutation({ ...fields, name: "records_delete" })).toThrow('Mutation name "records_delete" must be <domain>.<operation>')
-  expect(() => defineMutation({ ...fields, description: "Too short" })).toThrow("Mutation records.delete: the description is 9 characters")
-  expect(() => defineMutation({ ...fields, timeoutMs: 55_001 })).toThrow("Mutation records.delete: timeoutMs 55001 must be a whole number")
-  expect(() => defineMutation({ ...fields, version: "2026-9-29" })).toThrow('Mutation records.delete: version "2026-9-29" must be a date, YYYY-MM-DD')
-  expect(() => defineMutation({ ...fields, deprecated: { since: "soon", sunset: "2027-09-29" } })).toThrow("Mutation records.delete: deprecated.since and deprecated.sunset must be dates")
-  expect(() => defineMutation({ ...fields, scopes: [] })).toThrow("Mutation records.delete: scopes must be non-empty and contain no spaces; omit them for the default <provider>:write")
-})
-
-test("errors declare the custom codes prepare and commit raise, by the same rule as a tool", () => {
-  expect(defineMutation(fields).errors).toEqual([])
-  const mutation = defineMutation({ ...fields, errors: ["ACME_LOCKED"] })
-  expect(mutation.errors).toEqual(["ACME_LOCKED"])
-  expect(Object.isFrozen(mutation.errors)).toBe(true)
-  expect(() => defineMutation({ ...fields, errors: ["INTENT_STALE"] })).toThrow('Mutation records.delete: errors entry "INTENT_STALE" must be a custom code')
-})

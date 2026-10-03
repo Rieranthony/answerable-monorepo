@@ -57,62 +57,6 @@ test("tsconfig.json, eslint.config.mjs and bunfig.toml, with its 100% coverage g
   expect(await read("bunfig.toml")).toContain("coverageThreshold = { lines = 1, functions = 1 }")
 })
 
-test("the provider has one five-field read tool and is dated today", async () => {
-  await scaffold("acme", { root, date })
-  expect(await read("src/provider.ts")).toBe(`import { defineProvider, defineTool } from "@answerable/mcp"
-import { z } from "zod"
-
-const status = defineTool({
-  name: "acme.status",
-  description: "Report that the acme server is running and which organisation the caller signed in to. Replace it with your first real tool.",
-  input: z.object({}),
-  output: z.object({ status: z.string(), organizationId: z.uuid() }),
-  async execute(_input, { principal }) {
-    return { status: "ok", organizationId: principal.organizationId }
-  },
-})
-
-export const provider = defineProvider({ id: "acme", version: "2026-09-29", tools: [status] })
-`)
-})
-
-test("the server reads the environment and serves the provider", async () => {
-  await scaffold("acme", { root, date })
-  expect(await read("src/server.ts")).toBe(`import { createMcpServer, readMcpEnvironment } from "@answerable/mcp"
-import { provider } from "./provider"
-
-const { auth, port } = readMcpEnvironment(process.env)
-const server = createMcpServer({ provider, auth })
-Bun.serve({ hostname: "127.0.0.1", port, fetch: server.fetch })
-console.log(\`acme MCP serving \${auth.resource}\`)
-`)
-})
-
-test("the test runs the conformance kit and one in-process call", async () => {
-  await scaffold("acme", { root, date })
-  expect(await read("src/provider.test.ts")).toBe(`import { expect, test } from "bun:test"
-import { assertProviderConformance, createTestMcp } from "@answerable/mcp/testing"
-import { provider } from "./provider"
-
-assertProviderConformance(provider, {
-  manifest: new URL("../manifest.json", import.meta.url),
-  examples: { "acme.status": {} },
-})
-
-test("acme_status names the caller's organisation", async () => {
-  const mcp = await createTestMcp(provider)
-  try {
-    const organizationId = crypto.randomUUID()
-    const client = await mcp.connect({ organizationId })
-    const result = await client.callTool({ name: "acme_status", arguments: {} })
-    expect(result.structuredContent).toEqual({ status: "ok", organizationId })
-  } finally {
-    await mcp.close()
-  }
-})
-`)
-})
-
 test(".env.example names the three variables with a port to change", async () => {
   await scaffold("acme", { root, date })
   expect(await read(".env.example")).toBe(`# Copy to .env (git-ignored) to change a value; an MCP running beside another needs its own port.

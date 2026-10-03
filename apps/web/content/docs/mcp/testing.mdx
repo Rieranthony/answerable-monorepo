@@ -9,7 +9,7 @@ This is the e2e server's; `mcps/example/src/provider.test.ts` has a smaller one.
 
 ## Serve a provider in-process
 
-`assertProviderConformance` serves the provider with `createTestMcp`, signs in as one caller who holds every scope the provider advertises, and gives the server its own intent store and clock, so expiry needs no help from you.
+`assertProviderConformance` serves the provider with `createTestMcp`, signs in as one caller who holds every scope the provider advertises, and gives the server its own intent store.
 
 Use `createTestMcp` directly to test your own logic. It serves a provider inside the test process with a local ID issuer and the official MCP client: no port, no network.
 
@@ -46,26 +46,23 @@ Pin `userId`, `organizationId` and `membershipId` to connect as the same princip
 - **`examples`**: `read_has_no_side_effect` and the mutate checks call each definition with its example. A function runs each time the kit needs an input, so a delete gets a fresh record every time.
 - **`moveTarget`**: `commit_rejects_stale` moves a target, then commits. Needed only when a mutation prepares targets; the check fails without it.
 
+While it registers the checks, the kit prepares each mutation once with its example, to see whether it prepares targets. An example that fails stops the test file with the kit's message, such as `notes_add answered INVALID_INPUT: …`.
+
 The principal is the caller the kit signed in as. Its `userId`, `organizationId`, `membershipId`, `clientId` and `scopes` are the token's; `grantId` and `expiresAt` are placeholders. Store data under `principal.organizationId`, as the provider does. Reference: [`ConformanceFixture`](/docs/mcp/reference#conformancefixture).
 
 ## The checks
 
 Read checks run once for the provider, mutate checks once for each mutation, and provider checks once. The rules are on [the design standard](/docs/mcp/standard) page, which says what enforces each; the R numbers are its rules.
 
-Some checks repeat what `defineTool`, `defineMutation` and the server already enforce. They guard providers built by other means, such as the hub's adapters, and the SDK itself against a change that breaks a rule.
+The kit checks only what a provider built with `defineTool`, `defineMutation` and `defineProvider` can get wrong. The SDK enforces the rest on every provider, so no check repeats it: identities and host-safe names, closed inputs, timeouts, deprecation sentences and the error envelope when a definition is made; the commit token, expiry, replay and the preparer's identity when a commit runs. `commit.test.ts`, `server.test.ts`, `tool.test.ts` and `provider.test.ts` in `packages/mcp` test those.
 
 **Read**
 
 | Check | What it proves | Rule |
 | --- | --- | --- |
-| `identity_is_stable` | Every tool's identity is `<provider id>/<name>` and has the identity form | R2 |
-| `name_is_host_safe` | The hub name `<provider id>_<wire name>` is at most 46 characters of `a-z`, `0-9` and `_` | R3 |
-| `input_schema_is_closed` | Every input schema in the manifest has `additionalProperties: false` | R8 |
-| `output_schema_declared` | Every output schema is an object with `properties`. A property named `*_at` is a string with `format: date-time`; `amount`, `area` and `duration` are objects with `value` and `unit` | R9, R13 |
+| `output_schema_declared` | A property named `*_at` is a string with `format: date-time`; `amount`, `area` and `duration` are objects with `value` and `unit` | R9, R13 |
 | `list_paginates` | A read whose output has an `items` array declares `limit` and `cursor` inputs and `next_cursor` and `has_more` outputs | R10 |
 | `read_has_no_side_effect` | Each read called twice with its example returns equal structured content, and the server records no intent | R5 |
-| `errors_use_envelope` | Each read called with an unknown field answers `INVALID_INPUT` as the [envelope](/docs/mcp/errors): one text block, no structured content, a standard or declared code | Errors |
-| `timeout_bounded` | `timeoutMs` is at most 55,000 | R33 |
 | `manifest_matches_snapshot` | `manifest(provider)` equals the committed file | R37, R38 |
 
 **Mutate**, for every mutation
@@ -73,26 +70,22 @@ Some checks repeat what `defineTool`, `defineMutation` and the server already en
 | Check | What it proves | Rule |
 | --- | --- | --- |
 | `prepare_has_no_side_effect` | After two prepares, every read with its example returns what it returned before | R16 |
-| `preview_is_semantic` | The preview has a summary and at least one change or effect | R17 |
-| `targets_have_versions` | Every target has `version.kind` and a non-empty `version.value` | R16, R19 |
-| `commit_requires_token` | A wrong commit token answers `COMMIT_TOKEN_INVALID` | R21 |
-| `commit_rejects_stale` | After `moveTarget`, the commit answers `INTENT_STALE`. A mutation that prepares no targets is skipped, and the reason is printed | R19 |
-| `commit_rejects_expired` | With the clock past `expires_at`, the commit answers `INTENT_EXPIRED` | R19 |
-| `commit_is_idempotent` | A second commit returns the same receipt with `idempotent_replay: true` | R20 |
-| `commit_rejects_other_principal` | A commit by another person answers `PRINCIPAL_MISMATCH` | R19, R21 |
-| `receipt_is_structured` | The receipt has every field, names the intent prepared and the caller who committed it, and its first commit has `idempotent_replay: false` | R35 |
-| `errors_use_envelope` | Preparing with an unknown field answers `INVALID_INPUT`, and committing an unknown intent answers `INTENT_NOT_FOUND`, both as the envelope | Errors |
+| `preview_is_semantic` | The preview has a summary that is not blank and at least one change or effect | R17 |
+| `targets_have_versions` | Every target has a non-empty `version.value` | R16, R19 |
+| `commit_rejects_stale` | After `moveTarget`, the commit answers `INTENT_STALE` | R19 |
+| `receipt_is_structured` | Committing the example returns the receipt: `commit` runs, and its results match the mutation's `output` | R35 |
+
+A mutation that prepares no targets, such as a create, cannot have a version move: its `targets_have_versions` and `commit_rejects_stale` are registered as skipped, named `targets_have_versions (not applicable: e2e/records.create prepares no targets)`, and `bun test` counts them as skips.
 
 **Provider**
 
 | Check | What it proves | Rule |
 | --- | --- | --- |
-| `descriptions_operational` | Every description is 40 to 1,000 characters, and a mutation's says `prepare` or `intent` | R14 |
-| `deprecations_mirrored` | A deprecated tool's description ends with the deprecation sentence | R37 |
+| `descriptions_operational` | A mutation's description says `prepare` or `intent` | R14 |
 
 An `errors` entry that is not a custom code is refused when the tool is defined, and a handler that throws an undeclared custom code answers `INTERNAL`; see [tool errors](/docs/mcp/tools#tool-errors).
 
-**Human class.** A `high` risk mutation has the `human` class, which cannot be committed yet. The kit runs it as `controlled`, so every commit check still runs; the commit tool for the class it really has answers `APPROVAL_REQUIRED`.
+**Human class.** A `high` risk mutation has the `human` class, which cannot be committed yet. The kit runs it as `controlled`, so its commit checks still run; the commit tool for the class it really has answers `APPROVAL_REQUIRED`.
 
 ## The manifest snapshot
 
@@ -114,12 +107,7 @@ Run this from the repository root with a workspace name. It runs the workspace's
 
 ## Not yet
 
-Three checks are registered with `test.todo`, so `bun test` lists them without running them. `bun test --todo` runs them; each stops with its reason and stays counted as a todo.
-
-| Check | Reason |
-| --- | --- |
-| `approval_bound_to_digest` | Not yet: human approvals. There is no approval page, so no approval to bind to an intent digest |
-| `secrets_declared`, `egress_guarded` | Not yet: providers declare no secrets and have no upstream client |
+The standard's checks for human approvals (`approval_bound_to_digest`), declared secrets (`secrets_declared`) and the egress-guarded client (`egress_guarded`) are not in the kit, because what they would check is not built. [The design standard](/docs/mcp/standard#not-yet) lists them.
 
 ## The acceptance
 
@@ -129,13 +117,13 @@ The in-process tests use a local issuer. `bun run mcp:test:e2e` signs three orga
 
 | Limit | Value |
 | --- | --- |
-| Callers | One person with every advertised scope, and one other person for `commit_rejects_other_principal`. Scope filtering and organisation isolation are not checked: test them with `createTestMcp` |
+| Callers | One person with every advertised scope. Scope filtering and organisation isolation are not checked: test them with `createTestMcp` |
 | Protocol | The client's default revision |
 | Reads | Two calls with the same example must return equal structured content, so a read that returns the time or a counter fails. Without a read tool, `prepare_has_no_side_effect` has nothing to compare |
 | Schemas | The schema checks read the manifest's JSON Schema. `output_schema_declared` looks through `properties`, `items`, `anyOf` and `oneOf`, not `$ref` |
-| Errors | `errors_use_envelope` provokes the errors the server answers itself. It does not call a handler's own `ToolError` paths: test them yourself |
+| Errors | The kit calls no handler's own `ToolError` paths: test them yourself |
 | Stale | `commit_rejects_stale` moves the first target only |
-| Intent store | The memory store, with the kit's own clock |
+| Intent store | A memory store of the kit's own |
 
 ## Errors
 
@@ -144,26 +132,18 @@ A failed check names the check in its test and the tool or mutation in its messa
 | Message begins | Meaning | What to change |
 | --- | --- | --- |
 | `fixture.examples has no entry for …` | A tool or mutation has no example | Add a valid input for it under its name |
-| `… the identity is "…"; it must be …` | A tool's identity differs from `<provider id>/<name>` | Build providers with `defineProvider` and tools with `defineTool`; do not edit their fields |
-| `… the hub tool name "…" must be 1 to 46 characters…` | The name is too long for hosts | Shorten the tool name |
-| `… the input schema allows unknown fields…` | An input schema lacks `additionalProperties: false` | Define inputs with `defineTool` and `defineMutation`, which close them |
-| `… the output schema must be an object with properties` | An output is not an object schema | Use `z.object` |
 | `… output property "…" is named like a timestamp…` | A `*_at` property is not a `date-time` string | Use `z.iso.datetime()` |
 | `… output property "…" is named like a quantity…` | `amount`, `area` or `duration` is not `{ value, unit }` | Use `z.object({ value: z.number(), unit: z.string() })` |
 | `… returns an items array but does not declare …` | A list lacks part of the pagination contract | Add `limit`, `cursor`, `next_cursor` and `has_more`; see [pagination](/docs/mcp/tools#pagination) |
 | `… returned different results for the same input twice…` | A read changed state, or returned something that varies | Remove the side effect, or the varying field |
 | `… recorded an intent; only a mutation's prepare tool does that` | A read created an intent | Make it a mutation |
 | `… is out of date; regenerate it with UPDATE_MANIFEST=1…` | The manifest differs from the code | Run the command in the message, review the diff and commit |
-| `…: an error result must be one text block…`, `…: the error text is not JSON`, `…: the error is not { error: … }` | An error is not the envelope | Throw `ToolError`; do not return error content yourself |
-| `…: error code … is neither a standard code nor declared in errors…` | A custom code is missing from `errors` | Add it to the definition's `errors` |
-| `… succeeded where INVALID_INPUT was expected; its input must be closed` | A tool accepted an unknown field | Define inputs with `defineTool` and `defineMutation`, which close them |
-| `… timeoutMs … is above 55000…` | A timeout above the ceiling | Use at most 55,000, or return an operation (Not yet) |
+| `… answered INVALID_INPUT: …`, `… answered NOT_FOUND: …` in any check | An example does not fit the tool, or names something the provider does not hold | Fix the example, or have its function create what it names first |
 | `…: preparing changed what the reads return…` | `prepare` changed state | Move the change into `commit` |
 | `…: the preview names no change and no effect…`, `…: the preview summary is blank` | The preview only echoes the arguments | Say what will change, from what, to what |
 | `…: target … has no version…` | A target has an empty version value | Set `version.value` from the source's etag, version, timestamp or serial |
-| `… succeeded where INTENT_STALE was expected; make moveTarget change …` | `moveTarget` did not move the version `prepare` reads | Make `moveTarget` change the resource, or bind the version in the target from the resource's current state |
+| `… succeeded where INTENT_STALE was expected; make moveTarget change …`, `… answered … where INTENT_STALE was expected…` | `moveTarget` did not move the version `prepare` reads, or removed the target | Make `moveTarget` change the resource, or bind the version in the target from the resource's current state |
 | `… prepares targets, so the fixture needs moveTarget…` | A mutation with targets and no `moveTarget` | Add `moveTarget` to the fixture |
-| `… succeeded where COMMIT_TOKEN_INVALID`, `INTENT_EXPIRED` or `PRINCIPAL_MISMATCH` `was expected`; `…: a second commit must return the same receipt…`; `…: the receipt is malformed…`, `…: the receipt names another intent…`, `…: committed_by is not the caller`, `…: the first commit must have idempotent_replay false` | The SDK enforces these on every mutation, and the kit serves your provider with the SDK's own memory store, so a definition cannot cause them | It is a defect in `@answerable/mcp`: report it |
+| `… prepared no targets this time, though it did when the kit registered its checks…` | The example's prepare returns targets only sometimes | Make its example prepare the same targets every time |
 | `… answered INTERNAL: …` in any check | A handler threw something unexpected | Read the server log for the `request_id`; if it threw a custom code, add it to `errors` |
-| `… the description is N characters…`, `… a mutation's description must say that it prepares an intent…` | A description breaks R14 | Say what it does, when to use it and its limits; name `prepare` or `intent` in a mutation's |
-| `… is deprecated, so its description must end with "…"` | The manifest lacks the deprecation sentence | Set `deprecated` on the definition; do not write the sentence yourself |
+| `… a mutation's description must say that it prepares an intent…` | A mutation's description breaks R14 | Name `prepare` or `intent` in it |

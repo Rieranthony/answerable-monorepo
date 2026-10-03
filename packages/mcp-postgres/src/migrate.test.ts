@@ -42,10 +42,20 @@ test("the package's migrations apply once, in order, and a second run changes no
   expect(tables.map((row: { table_name: string }) => row.table_name)).toEqual(["evidence_events", "evidence_payloads", "intents", "schema_migrations"])
 })
 
-test("a fresh schema receives every migration, each in its own transaction", async () => {
-  await inSchema(async scoped => {
-    expect(await migrate(scoped, [migrations])).toEqual(["0002_evidence.sql", "0004_intents.sql"])
-  })
+test("two migrators on a fresh schema at once apply each file once, and both succeed", async () => {
+  const schema = `migrate_${crypto.randomUUID().replaceAll("-", "")}`
+  await db.unsafe(`create schema ${schema}`)
+  const [first, second] = await Promise.all([db.reserve(), db.reserve()])
+  try {
+    for (const replica of [first, second]) await replica.unsafe(`set search_path to ${schema}`)
+    const applied = await Promise.all([migrate(first, [migrations]), migrate(second, [migrations])])
+    expect(applied.flat().sort()).toEqual(["0002_evidence.sql", "0004_intents.sql"])
+    expect(names(await first`select name from schema_migrations order by name`)).toEqual(["0002_evidence.sql", "0004_intents.sql"])
+  } finally {
+    first.release()
+    second.release()
+    await db.unsafe(`drop schema ${schema} cascade`)
+  }
 })
 
 test("the files of several directories apply in the order of their names across all of them, and files that are not SQL are left alone", async () => {

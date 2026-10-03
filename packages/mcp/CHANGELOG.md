@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.0
+
+The conformance kit keeps only the checks a provider built with the SDK can fail, and the server closes three gaps the test audit found. Breaking: ten kit checks and the three todo entries are gone, a JSON-RPC batch answers `400`, and `errorOf` reports a malformed envelope with the parser's own error.
+
+- The kit runs `output_schema_declared`, `list_paginates`, `read_has_no_side_effect`, `manifest_matches_snapshot`, `prepare_has_no_side_effect`, `preview_is_semantic`, `targets_have_versions`, `commit_rejects_stale`, `receipt_is_structured` and `descriptions_operational`. `identity_is_stable`, `name_is_host_safe`, `input_schema_is_closed`, `timeout_bounded`, `deprecations_mirrored`, `errors_use_envelope`, `commit_requires_token`, `commit_rejects_expired`, `commit_is_idempotent` and `commit_rejects_other_principal` are gone: the SDK enforces each on every provider, and this package's own tests hold them. The todo entries `approval_bound_to_digest`, `secrets_declared` and `egress_guarded` are gone; the design standard keeps them as Not yet.
+- For a mutation that prepares no targets, `targets_have_versions` and `commit_rejects_stale` are registered as skipped, with the reason in their names, instead of passing having checked nothing. The kit prepares each mutation once while it registers the checks, to see whether it has targets.
+- Inside the kept checks, the assertions the SDK makes impossible to fail are gone: an object output, a version kind, the receipt's shape and the description's length.
+- A commit reruns `policyClass` for the caller: when the class is stricter than the intent's, it answers `APPROVAL_REQUIRED` with the class and commit tool a fresh prepare would give, and the intent stays prepared (R19).
+- A JSON-RPC batch at the MCP endpoint answers `400` with the JSON-RPC error `-32600`, so that `allow` always learns which tool a call names.
+- The memory intent store removes, at an insert at most once a minute by its clock, the intents that can no longer be committed (expired, failed and stale) and committed ones a day after their commit; a repeated commit replays its receipt for a day.
+- The tool context's signal is the SDK's request signal, which already aborts when the HTTP request does.
+
 ## 0.6.2
 
 `testPrincipal` sets `upstreamAuthTime`, which `@answerable/auth` 0.5.0 makes a required field of `UserPrincipal`: the current time in seconds, as for a person who has just signed in at their directory, unless `overrides` replace it.

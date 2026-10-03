@@ -3,13 +3,13 @@ import { commitToolName } from "./commit-tools"
 import type { ToolContext } from "./definitions"
 import { ToolError } from "./errors"
 import type { Intent, IntentStore, Receipt } from "./intents"
-import { outcome, preparePlan, type Mutation, type Target } from "./mutation"
+import { outcome, preparePlan, type Mutation, type PolicyClass, type Target } from "./mutation"
 import { hashToken } from "./prepare"
 import type { Served } from "./provider"
 
-// A human-class intent also says where its approval stands.
-const approvalRequired = ({ policy_class, approval }: Intent, commit_tool: string, message: string) =>
-  new ToolError("APPROVAL_REQUIRED", message, { details: { approval: { class: policy_class, commit_tool, ...(approval.required ? { status: approval.status } : {}) } } })
+// A human-class intent also says where its approval stands: pending, since no approval can be recorded yet.
+const approvalRequired = (policyClass: PolicyClass, commit_tool: string, message: string) =>
+  new ToolError("APPROVAL_REQUIRED", message, { details: { approval: { class: policyClass, commit_tool, ...(policyClass === "human" ? { status: "pending" } : {}) } } })
 
 /** The receipt of an intent that is no longer `prepared`, or the error that says why it cannot be committed. */
 function settled(intent: Intent, id: string): Receipt {
@@ -21,7 +21,7 @@ function settled(intent: Intent, id: string): Receipt {
     case "stale": throw new ToolError("INTENT_STALE", `Intent ${intent_id} is stale; prepare it again`)
     case "failed": throw new ToolError("INTENT_CONSUMED", `Intent ${intent_id} was used and its commit failed; prepare it again`)
     default: // awaiting_approval
-      throw approvalRequired(intent, commitToolName(id, "human"), `Intent ${intent_id} is human class and needs a person's approval, which this server cannot record yet`)
+      throw approvalRequired("human", commitToolName(id, "human"), `Intent ${intent_id} is human class and needs a person's approval, which this server cannot record yet`)
   }
 }
 
@@ -78,11 +78,15 @@ type CommitRequest = {
   mutations: readonly Served<Mutation>[]
   /** Whether the caller may still use a mutation. */
   permitted(mutation: Served<Mutation>): boolean
+  /** The mutation's policy class for the caller now, as a fresh prepare would decide it. */
+  policyClass(mutation: Served<Mutation>): PolicyClass | Promise<PolicyClass>
 }
+
+const strictness: Record<PolicyClass, number> = { agent: 0, controlled: 1, human: 2 }
 
 /** Commit an intent: check it can be committed by this caller through this tool, claim it, then apply it. */
 export async function commitIntent(request: CommitRequest): Promise<Receipt> {
-  const { id, tool, input, context, store, mutations, permitted } = request
+  const { id, tool, input, context, store, mutations, permitted, policyClass } = request
   const { principal } = context
   const intent = await store.get(input.intent_id)
   if (!intent) throw new ToolError("INTENT_NOT_FOUND", `No intent ${input.intent_id} exists; prepare the mutation again`)
@@ -97,14 +101,19 @@ export async function commitIntent(request: CommitRequest): Promise<Receipt> {
   }
   if (!permitted(mutation)) throw new ToolError("PERMISSION_DENIED", `Your access no longer covers ${mutation.identity}`)
   if (hashToken(input.commit_token) !== intent.commit_token_hash) throw new ToolError("COMMIT_TOKEN_INVALID", `The commit token does not match intent ${intent_id}`)
+  // A class that rose since prepare asks for what a fresh prepare would; the intent stays prepared.
+  const current = await policyClass(mutation)
+  if (strictness[current] > strictness[intent.policy_class]) {
+    throw approvalRequired(current, commitToolName(id, current), `${mutation.identity} now needs the ${current} class, not the ${intent.policy_class} class intent ${intent_id} was prepared with; prepare it again`)
+  }
   const needed = commitToolName(id, intent.policy_class)
   if (tool !== needed) {
-    throw approvalRequired(intent, needed, intent.policy_class === "agent"
+    throw approvalRequired(intent.policy_class, needed, intent.policy_class === "agent"
       ? `Intent ${intent_id} is agent class; commit it with ${needed}`
       : `Intent ${intent_id} is controlled class: show the person its preview, then commit it with ${needed} and its summary as preview_summary`)
   }
   if (intent.policy_class === "controlled" && input.preview_summary !== intent.preview.summary) {
-    throw approvalRequired(intent, needed, `preview_summary differs from the summary of intent ${intent_id}; show the person the preview and pass its summary word for word`)
+    throw approvalRequired(intent.policy_class, needed, `preview_summary differs from the summary of intent ${intent_id}; show the person the preview and pass its summary word for word`)
   }
   // Losing the claim to a concurrent commit means the status moved on: read it again.
   if (!(await store.transition(intent_id, "prepared", "committing"))) return commitIntent(request)

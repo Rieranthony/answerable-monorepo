@@ -79,17 +79,7 @@ export function errorOf(result: CallToolResult): { code: string; message: string
   if (result.structuredContent !== undefined) throw new Error("an error result must not carry structuredContent; the envelope is one text block")
   const [block, ...rest] = result.content
   if (block?.type !== "text" || rest.length) throw new Error("an error result must be one text block holding the envelope as JSON")
-  let json: unknown
-  try {
-    json = JSON.parse(block.text)
-  } catch {
-    throw new Error(`the error text is not JSON: ${block.text}`)
-  }
-  const parsed = envelope.safeParse(json)
-  if (!parsed.success) {
-    throw new Error(`the error is not { error: { code, message, retry: { policy }, request_id } }: ${parsed.error.issues.map(issue => `${issue.path.join(".")}: ${issue.message}`).join("; ")}`)
-  }
-  return parsed.data.error
+  return envelope.parse(JSON.parse(block.text)).error
 }
 
 /** Answer a tool call with its data as structured content and the same JSON as text, or with the error envelope. */

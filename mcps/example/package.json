@@ -3,9 +3,6 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": {
-    "./provider": "./src/provider.ts"
-  },
   "scripts": {
     "dev": "bun --hot src/server.ts",
     "start": "bun src/server.ts",

@@ -87,6 +87,30 @@ test("verify names the first event whose fields, order or link no longer match",
   }
 })
 
+test("a row rewritten with its row_hash recomputed still breaks the chain at the next row", async () => {
+  const organisation = crypto.randomUUID()
+  for (let index = 0; index < 3; index++) await evidence.record(event(organisation))
+  const tamper = await db.reserve()
+  try {
+    await tamper`set session_replication_role = replica`
+    await tamper`update evidence_events set outcome = 'failure' where organisation_id = ${organisation} and seq = 2`
+    // The trigger's own formula, so that the rewritten row verifies by itself.
+    await tamper`update evidence_events set row_hash = encode(sha256(convert_to(prev_hash
+      || evidence_field(schema_version::text) || evidence_field(organisation_id::text) || evidence_field(seq::text) || evidence_field(id::text)
+      || evidence_field(to_char(occurred_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')) || evidence_field(kind) || evidence_field(actor_type)
+      || evidence_field(actor_id) || evidence_field(on_behalf_of) || evidence_field(client_id) || evidence_field(capability_identity)
+      || evidence_field(capability_version) || evidence_field(execution_id::text) || evidence_field(intent_id::text) || evidence_field(receipt_id::text)
+      || evidence_field(operation_id::text) || evidence_field(upstream) || evidence_field(target_type) || evidence_field(target_id) || evidence_field(outcome)
+      || evidence_field(reason) || evidence_field(error_code) || evidence_field(request_id) || evidence_field(trace_id) || evidence_field(span_id)
+      || evidence_field(data::text) || evidence_field(payload_ref::text) || evidence_field(payload_hash), 'UTF8')), 'hex')
+      where organisation_id = ${organisation} and seq = 2`
+    expect(await evidence.verify(organisation)).toEqual({ ok: false, length: 3, broken_at: 3 })
+  } finally {
+    await tamper`set session_replication_role = origin`
+    tamper.release()
+  }
+})
+
 test("a payload is stored beside the chain by hash; erasing it keeps the chain valid", async () => {
   const organisation = crypto.randomUUID()
   const preview = { summary: "Delete record “Quarterly plan”", changes: [{ path: "records[1]", from: { title: "Quarterly plan" }, to: null }] }

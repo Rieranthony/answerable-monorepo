@@ -147,6 +147,17 @@ test("a ToolError from allow answers any call with its envelope and fails a list
   expect((await mcp.fetch("https://mcp.test/mcp", { method: "POST", headers, body: "{not json" })).status).toBe(400)
 })
 
+test("a JSON-RPC batch is refused with a JSON-RPC error, so allow never sees a call it cannot tell from a list", async () => {
+  const { mcp, decisions } = await hub()
+  const token = await mcp.issuer.sign({ resource: "https://mcp.test/mcp", scopes: ["hub"] })
+  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream", "MCP-Protocol-Version": "2025-11-25" }
+  const call = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "beta_notes_create", arguments: { text: "hidden" } } }
+  const response = await mcp.fetch("https://mcp.test/mcp", { method: "POST", headers, body: JSON.stringify([call]) })
+  expect(response.status).toBe(400)
+  expect(await response.json()).toEqual({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Batches are not supported; send one JSON-RPC request per POST" } })
+  expect(decisions).toEqual([])
+})
+
 test("a commit rechecks allow: a mutation the caller may no longer use answers PERMISSION_DENIED", async () => {
   const { grants, person } = await hub()
   const writer = person(["alpha/notes.create", "beta/notes.create"])

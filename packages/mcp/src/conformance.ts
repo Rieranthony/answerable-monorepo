@@ -1,15 +1,12 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import type { CallToolResult } from "@modelcontextprotocol/server"
+import { afterAll, describe, expect, test } from "bun:test"
 import type { z } from "zod"
 import { errorOf } from "./call"
-import { receipt } from "./commit-tools"
-import { errorCodes } from "./errors"
 import { createKit, type Kit, type Subject, type ConformanceFixture } from "./kit"
 import type { Mutation } from "./mutation"
 import type { intentView } from "./prepare"
 import type { Provider, Served } from "./provider"
 import { lintOutput, type Schema } from "./schema-lint"
-import { deprecationSentence, wireName, type Tool } from "./tool"
+import { wireName, type Tool } from "./tool"
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message)
@@ -17,18 +14,6 @@ function assert(condition: unknown, message: string): asserts condition {
 
 const reads = (provider: Provider) => provider.tools.filter((tool): tool is Served<Tool> => tool.kind === "read")
 const wire = (tool: { name: string }) => wireName(tool.name)
-
-/** The envelope of an error result, or a failure naming the tool and saying what is wrong with it. */
-function readEnvelope(result: CallToolResult, provider: Provider, tool: string) {
-  let error: ReturnType<typeof errorOf>
-  try {
-    error = errorOf(result)
-  } catch (problem) {
-    throw new Error(`${tool}: ${(problem as Error).message}`)
-  }
-  assert(Object.hasOwn(errorCodes, error.code) || provider.tools.some(definition => definition.errors.includes(error.code)), `${tool}: error code ${error.code} is neither a standard code nor declared in errors; add it to the definition's errors`)
-  return error
-}
 
 async function example(kit: Kit, name: string) {
   const value = kit.fixture.examples[name]
@@ -39,18 +24,10 @@ async function example(kit: Kit, name: string) {
 async function ok(kit: Kit, name: string, args: Record<string, unknown>) {
   const result = await kit.call(name, args)
   if (result.isError) {
-    const { code, message } = readEnvelope(result, kit.provider, name)
+    const { code, message } = errorOf(result)
     throw new Error(`${name} answered ${code}: ${message}${code === "INTERNAL" ? "; the handler threw something unexpected, such as a custom code missing from errors: read the server log for the request_id" : ""}`)
   }
   return result.structuredContent as Record<string, unknown>
-}
-
-async function refused(kit: Kit, name: string, args: Record<string, unknown>, code: string, options: { as?: "other"; advice?: string } = {}) {
-  const result = await kit.call(name, args, options.as)
-  const advice = options.advice ? `; ${options.advice}` : ""
-  assert(result.isError, `${name} succeeded where ${code} was expected${advice}`)
-  const error = readEnvelope(result, kit.provider, name)
-  assert(error.code === code, `${name} answered ${error.code} where ${code} was expected: ${error.message}${advice}`)
 }
 
 // The kit never validates only, so every intent it prepares has an id and a token.
@@ -70,30 +47,14 @@ async function snapshot(kit: Kit, inputs: [Served<Tool>, Record<string, unknown>
   return seen
 }
 
-const identityForm = /^[a-z][a-z0-9]{0,11}\/[a-z][a-z0-9]{0,15}\.[a-z][a-z0-9]{0,15}$/
-
-/** The checks of the standard's read checklist, in its order, by name. Each throws, naming the definition and what to change. */
+/**
+ * The checks of the standard's read checklist, in its order, by name. Each throws, naming the definition and what to change. The kit keeps only
+ * checks a provider built with `defineTool`, `defineMutation` and `defineProvider` can fail; the SDK enforces the rest itself.
+ */
 export const readChecks = {
-  identity_is_stable({ provider }: Subject) {
-    for (const tool of provider.tools) {
-      assert(tool.identity === `${provider.id}/${tool.name}`, `${tool.name}: the identity is "${tool.identity}"; it must be "${provider.id}/${tool.name}", and it never changes`)
-      assert(identityForm.test(tool.identity), `${tool.identity}: an identity is <provider>/<domain>.<operation>, in lowercase letters and digits`)
-    }
-  },
-  name_is_host_safe({ provider }: Subject) {
-    for (const tool of provider.tools) {
-      const hub = `${provider.id}_${wire(tool)}`
-      assert(/^[a-z0-9_]{1,46}$/.test(hub), `${tool.identity}: the hub tool name "${hub}" must be 1 to 46 characters of a-z, 0-9 and _; shorten the tool name`)
-    }
-  },
-  input_schema_is_closed({ manifest }: Subject) {
-    for (const tool of manifest.tools) assert(tool.input.additionalProperties === false, `${tool.identity}: the input schema allows unknown fields; it must set additionalProperties to false`)
-  },
   output_schema_declared({ manifest }: Subject) {
     for (const tool of manifest.tools) {
-      const output = tool.output as Schema
-      assert(output.type === "object" && typeof output.properties === "object", `${tool.identity}: the output schema must be an object with properties`)
-      const problems = lintOutput(output)
+      const problems = lintOutput(tool.output as Schema)
       assert(!problems.length, problems.map(problem => `${tool.identity}: ${problem}`).join("\n"))
     }
   },
@@ -119,12 +80,6 @@ export const readChecks = {
       assert(kit.stored.length === before, `${tool.identity} recorded an intent; only a mutation's prepare tool does that`)
     }
   },
-  async errors_use_envelope(kit: Kit) {
-    for (const tool of reads(kit.provider)) await refused(kit, wire(tool), { unexpected_field: true }, "INVALID_INPUT", { advice: "its input must be closed" })
-  },
-  timeout_bounded({ provider }: Subject) {
-    for (const tool of provider.tools) assert(tool.timeoutMs <= 55_000, `${tool.identity}: timeoutMs ${tool.timeoutMs} is above 55000; a tool that needs longer must return an operation, which is not yet built`)
-  },
   async manifest_matches_snapshot({ manifest, fixture }: Subject) {
     const file = Bun.file(fixture.manifest)
     const current = `${JSON.stringify(manifest, null, 2)}\n`
@@ -135,7 +90,7 @@ export const readChecks = {
   },
 }
 
-/** The checks of the mutate checklist, by name, each run for one mutation. A string marks a check that is Not yet built, with its reason. */
+/** The checks of the mutate checklist, by name, each run for one mutation. `targets_have_versions` and `commit_rejects_stale` apply only to a mutation that prepares targets. */
 export const mutateChecks = {
   async prepare_has_no_side_effect(kit: Kit, mutation: Served<Mutation>) {
     const args = await example(kit, mutation.name)
@@ -153,88 +108,51 @@ export const mutateChecks = {
   },
   async targets_have_versions(kit: Kit, mutation: Served<Mutation>) {
     for (const target of (await prepare(kit, mutation)).targets) {
-      assert(target.version?.kind && target.version.value, `${mutation.identity}: target ${target.resource_type} ${target.resource_id} has no version; every target needs version.kind and a non-empty version.value`)
+      assert(target.version.value, `${mutation.identity}: target ${target.resource_type} ${target.resource_id} has no version; every target needs a non-empty version.value`)
     }
-  },
-  async commit_requires_token(kit: Kit, mutation: Served<Mutation>) {
-    const intent = await prepare(kit, mutation)
-    await refused(kit, intent.commit_tool, { ...commitArgs(intent), commit_token: "act_wrong" }, "COMMIT_TOKEN_INVALID")
   },
   async commit_rejects_stale(kit: Kit, mutation: Served<Mutation>) {
     const intent = await prepare(kit, mutation)
-    if (!intent.targets.length) return console.log(`commit_rejects_stale skipped for ${mutation.identity}: it prepares no targets, so no version can move`)
+    const [target] = intent.targets
+    assert(target, `${mutation.identity} prepared no targets this time, though it did when the kit registered its checks; make its example prepare the same targets every time`)
     assert(kit.fixture.moveTarget, `${mutation.identity} prepares targets, so the fixture needs moveTarget(target, principal) to change one outside the MCP`)
-    await kit.fixture.moveTarget(intent.targets[0]!, kit.principal)
-    await refused(kit, intent.commit_tool, commitArgs(intent), "INTENT_STALE", { advice: `make moveTarget change what ${mutation.identity} reads as the target's version` })
+    await kit.fixture.moveTarget(target, kit.principal)
+    const result = await kit.call(intent.commit_tool, commitArgs(intent))
+    const advice = `make moveTarget change what ${mutation.identity} reads as the target's version`
+    assert(result.isError, `${intent.commit_tool} succeeded where INTENT_STALE was expected; ${advice}`)
+    const { code, message } = errorOf(result)
+    assert(code === "INTENT_STALE", `${intent.commit_tool} answered ${code} where INTENT_STALE was expected: ${message}; ${advice}`)
   },
-  async commit_rejects_expired(kit: Kit, mutation: Served<Mutation>) {
-    const intent = await prepare(kit, mutation)
-    kit.advanceTo(Date.parse(intent.expires_at) + 1)
-    await refused(kit, intent.commit_tool, commitArgs(intent), "INTENT_EXPIRED")
-  },
-  async commit_is_idempotent(kit: Kit, mutation: Served<Mutation>) {
-    const intent = await prepare(kit, mutation)
-    const first = await ok(kit, intent.commit_tool, commitArgs(intent))
-    const second = await ok(kit, intent.commit_tool, commitArgs(intent))
-    expect(second, `${intent.commit_tool}: a second commit must return the same receipt with idempotent_replay true`).toEqual({ ...first, idempotent_replay: true })
-  },
-  async commit_rejects_other_principal(kit: Kit, mutation: Served<Mutation>) {
-    const intent = await prepare(kit, mutation)
-    await refused(kit, intent.commit_tool, commitArgs(intent), "PRINCIPAL_MISMATCH", { as: "other" })
-  },
-  approval_bound_to_digest: "Not yet: human approvals",
   async receipt_is_structured(kit: Kit, mutation: Served<Mutation>) {
     const intent = await prepare(kit, mutation)
-    const tool = intent.commit_tool
-    const result = await ok(kit, tool, commitArgs(intent))
-    const parsed = receipt.safeParse(result)
-    if (!parsed.success) throw new Error(`${tool}: the receipt is malformed: ${parsed.error.issues.map(issue => `${issue.path.join(".")}: ${issue.message}`).join("; ")}`)
-    const { intent_id, committed_by, idempotent_replay } = parsed.data
-    assert(intent_id === intent.intent_id, `${tool}: the receipt names another intent than the one prepared`)
-    assert(committed_by.user_id === kit.principal.userId && committed_by.membership_id === kit.principal.membershipId && committed_by.client_id === kit.principal.clientId, `${tool}: committed_by is not the caller`)
-    assert(!idempotent_replay, `${tool}: the first commit must have idempotent_replay false`)
-  },
-  async errors_use_envelope(kit: Kit, mutation: Served<Mutation>) {
-    await refused(kit, wire(mutation), { unexpected_field: true }, "INVALID_INPUT", { advice: "its input must be closed" })
-    await refused(kit, `${kit.provider.id}_commit`, { intent_id: crypto.randomUUID(), commit_token: "act_unknown" }, "INTENT_NOT_FOUND")
+    await ok(kit, intent.commit_tool, commitArgs(intent))
   },
 }
 
-const noUpstream = "Not yet: providers declare no secrets and have no upstream client"
-/** The checks of the provider checklist, by name. A string marks a check that is Not yet built, with its reason. */
+/** The mutate checks that need a target, so do not apply to a mutation whose prepare returns none, such as a create. */
+export const targetChecks: readonly (keyof typeof mutateChecks)[] = ["targets_have_versions", "commit_rejects_stale"]
+
+/** The checks of the provider checklist, by name. */
 export const providerChecks = {
-  secrets_declared: noUpstream,
-  egress_guarded: noUpstream,
   descriptions_operational({ provider }: Subject) {
     for (const tool of provider.tools) {
-      const { length } = tool.description
-      assert(length >= 40 && length <= 1000, `${tool.identity}: the description is ${length} characters; write 40 to 1,000 saying what it does, when to use it and its limits`)
       assert(tool.kind === "read" || /prepare|intent/i.test(tool.description), `${tool.identity}: a mutation's description must say that it prepares an intent; use the word "prepare" or "intent"`)
     }
   },
-  deprecations_mirrored({ provider, manifest }: Subject) {
-    for (const tool of provider.tools) {
-      if (!tool.deprecated) continue
-      const sentence = deprecationSentence(tool.deprecated)
-      assert(manifest.tools.find(entry => entry.identity === tool.identity)?.description.endsWith(sentence), `${tool.identity} is deprecated, so its description must end with "${sentence}"`)
-    }
-  },
 }
 
-// A todo test that fails with its reason when bun runs todo tests (`bun test --todo`).
-export const notYet = (reason: string) => () => { throw new Error(reason) }
-
-function register<Args extends unknown[]>(checks: Record<string, string | ((kit: Kit, ...args: Args) => unknown)>, kit: () => Kit, ...args: Args) {
+function register<Args extends unknown[]>(checks: Record<string, (kit: Kit, ...args: Args) => unknown>, kit: Kit, args: Args, skipped: readonly string[] = [], reason = "") {
   for (const [name, check] of Object.entries(checks)) {
-    if (typeof check === "string") test.todo(`${name} (${check})`, notYet(check))
-    else test(name, async () => { await check(kit(), ...args) })
+    const skip = skipped.includes(name)
+    test.skipIf(skip)(skip ? `${name} (not applicable: ${reason})` : name, async () => { await check(kit, ...args) })
   }
 }
 
 /**
  * Register one test per conformance check for a provider: call it at the top level of a test file, with the provider built on
- * test dependencies such as in-memory stores. The provider is served in-process with its own intent store and clock,
- * so a failing test names the check and the definition to change.
+ * test dependencies such as in-memory stores. The provider is served in-process with its own intent store, so a failing test names the check
+ * and the definition to change. Each mutation is prepared once while the checks are registered: the two checks that need a target are
+ * registered as skipped, with the reason, for a mutation that prepares none.
  *
  * @param fixture What the kit cannot derive: the committed manifest, one valid input per tool and how to move a target.
  * @example
@@ -250,15 +168,14 @@ function register<Args extends unknown[]>(checks: Record<string, string | ((kit:
  * ```
  */
 export function assertProviderConformance(provider: Provider, fixture: ConformanceFixture) {
-  describe(`${provider.id} conformance`, () => {
-    let kit: Kit
-    beforeAll(async () => { kit = await createKit(provider, fixture) })
-    afterAll(async () => { await kit?.close() })
-    const current = () => kit
-    describe("read", () => register(readChecks, current))
+  describe(`${provider.id} conformance`, async () => {
+    const kit = await createKit(provider, fixture)
+    afterAll(() => kit.close())
+    describe("read", () => register(readChecks, kit, []))
     for (const mutation of provider.tools.filter((tool): tool is Served<Mutation> => tool.kind === "mutate")) {
-      describe(`mutate ${mutation.identity}`, () => register(mutateChecks, current, mutation))
+      const untargeted = !(await prepare(kit, mutation)).targets.length
+      describe(`mutate ${mutation.identity}`, () => register(mutateChecks, kit, [mutation], untargeted ? targetChecks : [], `${mutation.identity} prepares no targets`))
     }
-    describe("provider", () => register(providerChecks, current))
+    describe("provider", () => register(providerChecks, kit, []))
   })
 }

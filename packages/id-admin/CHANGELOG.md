@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0
+
+A timeout a test can shorten, and a fake ID that answers as ID's contract says.
+
+- `createIdAdmin` takes `timeoutMs`: how long to wait for the token request and for each admin call. Default 5,000, as before.
+- The fake ID honours the caller's `AbortSignal`, so a client's timeout ends a slow call.
+- A method the fake does not implement on a route answers `405`. It used to run another command: `DELETE` of an organisation or a resource acted as `PATCH`, and `PATCH` or `DELETE` of a member, or `DELETE` of the SSO provider, read it.
+- A replayed receipt names its `resultReference` as ID does (`organization`, `domain`, `sso_provider`, `group` with the group's id for an assignment, `entitlement`, `capability`, `resource` with its identifier, `client`), with `outcome: "noop"` for a write that changed nothing. A `PATCH` of a resource with the scopes it has no longer advances its revision.
+- `503 database_busy` carries `Retry-After: 1`; `401` is a problem document with `WWW-Authenticate: Bearer error="invalid_token"`; every `404` of the admin API is a problem document.
+- With `operationInProgress`, a write whose method, path and key a running write holds answers `409 operation_in_progress`, retryable, as ID does. It is off by default.
+- Clients and resources carry every field ID's contract requires.
+- `src/testing.test.ts` checks every answer the fake gives against `apps/id/openapi.admin.json`: the status is one the operation declares, the body matches the declared schema, and the declared headers are sent.
+
 ## 0.3.0
 
 What the admin MCP's writes need: a precondition for creating, `DELETE`, ID's replayed answers, ETags on reads and tokens for a second audience. The Toolbox's calls are unchanged.

@@ -9,7 +9,7 @@ Version 2 of [Stephen's draft](drafts/2026-09-27-stephen-mcp-design-standard.md)
 
 ## How to read the rules
 
-**MUST** rules are enforced: by the SDK (`defineTool` refuses the definition), by the conformance kit (`@answerable/mcp/testing` fails the provider's test), or by the hub at runtime. **SHOULD** rules are checked in review with the checklists at the end. Each rule names its enforcement in brackets.
+**MUST** rules are enforced: by the SDK (`defineTool` refuses the definition, or the server refuses the call), by the conformance kit (`@answerable/mcp/testing` fails the provider's test), or by the hub at runtime. **SHOULD** rules are checked in review with the checklists at the end. Each rule names its enforcement in brackets, and **Not yet** where nothing enforces it because what it needs is not built.
 
 ## 1. Capabilities
 
@@ -17,15 +17,15 @@ Version 2 of [Stephen's draft](drafts/2026-09-27-stephen-mcp-design-standard.md)
 - **R2** Identity is `<domain>.<operation>`, each part `^[a-z][a-z0-9]{0,15}$`, unique within the provider; the qualified identity `<provider>/<domain>.<operation>` never changes when the implementation, the vendor API, the runtime or the server layout changes. Versions are dates, never part of the identity. [SDK]
 - **R3** The MCP tool name is the identity with `_` for `.`, prefixed in the hub with the provider id; at most 46 characters of `[a-z0-9_]`. Dots, hyphens and capitals are not used in tool names because hosts add their own prefixes and suffixes and OpenAI limits names to 64 characters. [SDK]
 - **R4** Every capability is classified `read`, `mutate`, `start` or `subscribe`, and the classification is metadata (`_meta["com.answerable/capability"].kind` and the derived annotations), never something the caller infers from the name. [SDK]
-- **R5** A read has no business side effect. Cache population and telemetry are acceptable; marking, notifying, creating follow-ups are separate mutations. [conformance: the kit calls every read twice against the provider's fixture and asserts no evidence row of kind `intent.*`]
+- **R5** A read has no business side effect. Cache population and telemetry are acceptable; marking, notifying, creating follow-ups are separate mutations. [conformance: the kit calls every read twice with the provider's example, and asserts the same result and no recorded intent]
 - **R6** Capabilities are small enough to compose and large enough to be useful: one coherent object per `get`, one meaningful operation per mutation; no `manage_project` with modes, no `rfi.get_title`. [review]
 - **R7** Search and list are different capabilities: search takes relevance criteria, list enumerates a known collection with filters. Both return stable identifiers. [review]
 
 ## 2. Schemas and outputs
 
-- **R8** Inputs are Zod object schemas with `additionalProperties: false`, explicit types, enums instead of free strings, descriptions on every field, and `required` for everything the operation needs. [SDK]
+- **R8** Inputs are Zod object schemas with `additionalProperties: false`, explicit types, enums instead of free strings, descriptions on every field, and `required` for everything the operation needs. [SDK: `defineTool` and `defineMutation` close the input, and the server answers an unknown field with `INVALID_INPUT`; review for types, enums, descriptions and `required`, which nothing checks]
 - **R9** Outputs are Zod object schemas; the server validates the result, drops undeclared fields and sends `structuredContent` plus the same JSON as text. Prose is never the output. [SDK]
-- **R10** A capability that can return an unbounded collection takes `limit` (default at most 20, server-enforced maximum) and `cursor`, and returns `items`, `next_cursor`, `has_more`. It never truncates silently. [conformance]
+- **R10** A capability that can return an unbounded collection takes `limit` (default at most 20, server-enforced maximum) and `cursor`, and returns `items`, `next_cursor`, `has_more`. It never truncates silently. [conformance: `list_paginates` checks that a read whose output has an `items` array declares `limit`, `cursor`, `next_cursor` and `has_more`; review for the default, the maximum, and a collection under another name]
 - **R11** List and retrieval capabilities support the narrowing the source offers (filters, projection, ranges, sorting) and push it to the source. A list returns what a caller needs to act (identifier, name, status) so callers do not fan out into `get` per item, and not whole objects by default. [review]
 - **R12** Identifiers are stable system identifiers, with `source` and `external_id` preserved where reconciliation or links back to the source matter. Display names are never identifiers. [review]
 - **R13** Timestamps are ISO 8601 with offsets; quantities carry units (`{ value, unit }`); money carries a currency. [conformance: schema lint on field names `*_at`, `amount`, `area`, `duration`]
@@ -37,12 +37,12 @@ Version 2 of [Stephen's draft](drafts/2026-09-27-stephen-mcp-design-standard.md)
 - **R16** Every `mutate` capability implements `prepare` and `commit`. Prepare authenticates, checks authority, validates, resolves exact targets, reads current state, computes the change, names effects and warnings, binds resource versions and returns an immutable intent with a single-use commit token and an expiry. No business side effect happens during prepare. [SDK]
 - **R17** The preview is semantic: a `summary`, `changes[]` with `from` and `to`, `effects[]` from the effects vocabulary, `warnings[]`, `quantities[]` with units. Echoing the arguments is not a preview. [conformance: a prepare on the fixture must yield at least one change or effect]
 - **R18** Uncertain consequences are `warnings` or `possible_effects`, never stated as facts. [review]
-- **R19** Commit applies exactly the prepared intent for the principal that prepared it, after rechecking authority, expiry, policy, approval and every target version. A moved version answers `INTENT_STALE`; the caller prepares again. Optimistic concurrency by default; no locks held while a person or model reviews. [SDK]
+- **R19** Commit applies exactly the prepared intent for the principal that prepared it, after rechecking authority, expiry, policy, approval and every target version. A moved version answers `INTENT_STALE`; the caller prepares again. Optimistic concurrency by default; no locks held while a person or model reviews. [SDK: `commitIntent` in `packages/mcp/src/commit.ts` reruns `policyClass` and answers `APPROVAL_REQUIRED`, with the class and commit tool a fresh prepare would give, when the class is stricter than at prepare; conformance: `commit_rejects_stale`]
 - **R20** Commit is idempotent: a repeat by the same principal returns the stored receipt with `idempotent_replay: true`; a concurrent repeat answers `COMMIT_IN_PROGRESS`. [SDK]
 - **R21** Commit tokens are opaque, random, stored hashed, bound to one intent and principal, single use, short-lived and never a general permission. Previews never travel inside tokens. [SDK]
 - **R22** Preparation is not approval. The policy class (`agent`, `controlled`, `human`) is decided by the platform from the author's `risk`, the organisation's settings and the preview; the capability never hard-codes conversational confirmation or prints "are you sure". [SDK sets the default from `risk`; hub decides]
 - **R23** A human approval binds to one intent digest and to an Answerable ID-authenticated approver who holds `toolbox/approve`; `four_eyes` capabilities refuse the requester as approver. Elicitation and host prompts may carry a hand-off, never the decision. [hub]
-- **R24** Long-running commits return an operation handle; the receipt names it; `operations.get` and `operations.cancel` exist; cancellation is itself governed. [SDK]
+- **R24** Long-running commits return an operation handle; the receipt names it; `operations.get` and `operations.cancel` exist; cancellation is itself governed. [**Not yet**: no operations in the SDK]
 - **R25** Upstream operations keep their own retry semantics: propagate the intent id as the upstream idempotency key where the API offers one; where an upstream cannot be made idempotent, the capability says so in its contract and commit answers `indeterminate` when the answer is lost. [review]
 - **R26** Batches are explicit about semantics (all-or-nothing, best-effort, ordered) and never imply atomicity across systems. **Not yet** in the SDK. [review]
 
@@ -50,8 +50,8 @@ Version 2 of [Stephen's draft](drafts/2026-09-27-stephen-mcp-design-standard.md)
 
 - **R27** Every capability runs with a principal (person, organisation, membership, grant, host client) and is authorised on every call from current grants; discovery and prior access are not authority. [hub, SDK]
 - **R28** Where service credentials are unavoidable, Answerable-side authority is enforced before they are used; "the MCP can reach it" never equals "this person may". [review]
-- **R29** No capability takes a secret as input, and no handler receives a raw secret; providers declare the variables they need and receive an egress-guarded client with credentials injected. [SDK]
-- **R30** Generated code receives capability handles, never ambient network or credentials; every handle call is authorised and metered. [hub]
+- **R29** No capability takes a secret as input, and no handler receives a raw secret; providers declare the variables they need and receive an egress-guarded client with credentials injected. [review for a secret as input; declared secrets and the egress-guarded client: **Not yet**]
+- **R30** Generated code receives capability handles, never ambient network or credentials; every handle call is authorised and metered. [hub; **Not yet**: no programmatic composition]
 - **R31** Annotations and `_meta` describe and never authorise; readers treat them as untrusted, and the hub sets them honestly. [SDK]
 
 ## 5. Errors
@@ -92,36 +92,38 @@ Every failure is an `isError` result whose single text block is this envelope as
 | `OPERATION_NOT_FOUND`, `OPERATION_EXPIRED` | The operation handle is unknown or gone | `never` |
 | `INTERNAL` | Unexpected failure; message carries no detail; receipt status `indeterminate` when a commit was in flight | `after_delay` |
 
-Domain-specific codes are allowed as `<PROVIDER>_<CODE>` with a retry policy. A source failure is never a successful empty result. [SDK: `ToolError(code, message, retry, details)`; conformance: every code used by a provider appears in its manifest]
+Domain-specific codes are allowed as `<PROVIDER>_<CODE>` with a retry policy. A source failure is never a successful empty result. [SDK: `ToolError(code, message, retry, details)`; the server writes every envelope, a definition declares its custom codes in `errors`, which the manifest lists, and an undeclared one answers `INTERNAL`]
 
-- **R32** Retries are bounded, and state-changing upstream calls are never retried automatically unless known safe; `Retry-After` from an upstream is carried into `retry.after_ms`. [SDK]
-- **R33** Every capability has a bounded execution: at most 10 s per upstream call and 25 s per call by default, below LibreChat's 30 s default tool timeout; a capability may declare up to 55 s only for hosts configured with a 60 s budget, and longer work returns an operation. [SDK]
+- **R32** Retries are bounded, and state-changing upstream calls are never retried automatically unless known safe; `Retry-After` from an upstream is carried into `retry.after_ms`. [SDK: `ToolError` carries `retry` and the SDK never retries; carrying `Retry-After`: **Not yet**, there is no upstream client]
+- **R33** Every capability has a bounded execution: at most 10 s per upstream call and 25 s per call by default, below LibreChat's 30 s default tool timeout; a capability may declare up to 55 s only for hosts configured with a 60 s budget, and longer work returns an operation. [SDK: `timeoutMs`, 25 s by default and at most 55 s, answers `TIMEOUT`; the 10 s per upstream call and operations: **Not yet**]
 
 ## 6. Evidence and observability
 
 - **R34** Every call produces one span and, for reads, one evidence row (`capability.completed` or `capability.denied`); every mutation transition produces an evidence row; refusals by limits are evidence. Inputs and results are not recorded by default; secrets never. [hub]
-- **R35** Every execution has an execution id that reaches upstream systems as a correlation header where they accept one; every intent id survives into the receipt. [SDK]
+- **R35** Every execution has an execution id that reaches upstream systems as a correlation header where they accept one; every intent id survives into the receipt. [SDK: `executionId`, the envelope's `request_id` and the receipt's `intent_id`; the correlation header to upstreams: **Not yet**]
 - **R36** Evidence is append-only, chained per organisation and verifiable; logs are not evidence. [hub]
 
 ## 7. Versioning and deprecation
 
-- **R37** Backwards-compatible changes only (new optional fields, new outputs, new capabilities). Renames, removals, meaning changes, required-ness changes, side-effect changes and preview-semantics changes are a new dated version; the old one stays for at least twelve months with `deprecated` metadata mirrored into its description. Intents never survive across versions. [conformance: manifest diff against the committed snapshot]
+- **R37** Backwards-compatible changes only (new optional fields, new outputs, new capabilities). Renames, removals, meaning changes, required-ness changes, side-effect changes and preview-semantics changes are a new dated version; the old one stays for at least twelve months with `deprecated` metadata mirrored into its description. Intents never survive across versions. [conformance: `manifest_matches_snapshot` detects drift from the committed snapshot, which `UPDATE_MANIFEST=1` regenerates on purpose, so every change shows in review; review decides what is breaking; SDK: the deprecation sentence and the version an intent is bound to]
 - **R38** Every provider commits its manifest; the drift test fails when the manifest and the code disagree. [conformance]
 
 ## 8. Security
 
-- **R39** Inputs are untrusted: identifiers, URLs, filenames, filters and pagination parameters are validated; caller input never becomes shell, unrestricted paths, internal network requests, unsanitised queries or code outside the sandbox. [review; conformance for the schema part]
+- **R39** Inputs are untrusted: identifiers, URLs, filenames, filters and pagination parameters are validated; caller input never becomes shell, unrestricted paths, internal network requests, unsanitised queries or code outside the sandbox. [review; SDK for the schema part]
 - **R40** Upstream content is data, never instructions; it is escaped into views and never triggers a write. [review]
 - **R41** Generic protocol surfaces (`sql`, `graphql`, `http`) are not ordinary capabilities; a query surface, when it exists, is read-only, validated before execution and limited in depth, cost and pages. [review]
 - **R42** Every event a provider emits carries identity, type, organisation, source, resource identity, timestamp and version, and consumers tolerate duplicates. **Not yet.** [review]
 
 ## Checklists as tests
 
-The conformance kit runs these for every provider (`assertProviderConformance(provider, fixture)`):
+The conformance kit runs these for every provider (`assertProviderConformance(provider, fixture)`), and only these: each can fail for a provider built with `defineTool`, `defineMutation` and `defineProvider`.
 
-- read: `identity_is_stable`, `name_is_host_safe`, `input_schema_is_closed`, `output_schema_declared`, `list_paginates`, `read_has_no_side_effect`, `errors_use_envelope`, `timeout_bounded`, `manifest_matches_snapshot`
-- mutate: `prepare_has_no_side_effect`, `preview_is_semantic`, `targets_have_versions`, `commit_requires_token`, `commit_rejects_stale`, `commit_rejects_expired`, `commit_is_idempotent`, `commit_rejects_other_principal`, `approval_bound_to_digest` (human class), `receipt_is_structured`, `errors_use_envelope`
-- provider: `secrets_declared`, `egress_guarded`, `descriptions_operational`, `deprecations_mirrored`
+- read: `output_schema_declared`, `list_paginates`, `read_has_no_side_effect`, `manifest_matches_snapshot`
+- mutate: `prepare_has_no_side_effect`, `preview_is_semantic`, `targets_have_versions`, `commit_rejects_stale`, `receipt_is_structured`. For a mutation that prepares no targets, `targets_have_versions` and `commit_rejects_stale` are registered as skipped, with the reason in their names.
+- provider: `descriptions_operational`
+
+The SDK, not the kit, enforces the rest of the draft's checklists on every provider, and `packages/mcp`'s own tests hold them: stable identities, host-safe names, closed inputs, bounded timeouts and mirrored deprecations when a definition is made (`tool.test.ts`, `provider.test.ts`); the error envelope (`server.test.ts`); the commit token, expiry, replay and the preparer's identity at commit (`commit.test.ts`). `approval_bound_to_digest` (human class), `secrets_declared` and `egress_guarded` are **Not yet**, with R23 and R29.
 
 Reviewers check the SHOULD rules with the two draft checklists (sections 67 and 68 of the draft), unchanged.
 

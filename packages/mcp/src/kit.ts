@@ -19,34 +19,30 @@ export type ConformanceFixture = {
 
 /** What the checks that read only the definitions need. */
 export type Subject = { provider: Provider; manifest: Manifest; fixture: ConformanceFixture }
-/** The provider served in-process, signed in as one caller, with its own intent store and clock. */
+/** The provider served in-process, signed in as one caller, with its own intent store. */
 export type Kit = Subject & {
   /** The caller the kit signs in as; `grantId` and `expiresAt` are placeholders. */
   principal: UserPrincipal
   /** Every intent the server recorded, in order. */
   stored: Intent[]
-  /** Call a tool as the caller (`owner`) or as another person (`other`). */
-  call(name: string, args: Record<string, unknown>, as?: "owner" | "other"): Promise<CallToolResult>
-  /** Move the intent store's clock forward to an epoch time in milliseconds. */
-  advanceTo(epochMs: number): void
+  /** Call a tool as the caller. */
+  call(name: string, args: Record<string, unknown>): Promise<CallToolResult>
   close(): Promise<void>
 }
 
 /** Serve `provider` in-process for the checks. A high-risk mutation is human class, which cannot commit yet, so the kit runs it as controlled. */
 export async function createKit(provider: Provider, fixture: ConformanceFixture): Promise<Kit> {
-  const clock = { now: Date.now() }
   const stored: Intent[] = []
-  const memory = createMemoryIntentStore({ now: () => clock.now })
+  const memory = createMemoryIntentStore()
   const intents: IntentStore = { ...memory, async insert(intent) { stored.push(intent); await memory.insert(intent) } }
   const mcp = await createTestMcp(auth => createMcpServer({ provider, auth, intents, policyClass: ({ risk }) => riskClass[risk] === "human" ? "controlled" : riskClass[risk] }))
   const contract = manifestOf(provider)
   const scopes = [...new Set([...contract.tools, ...contract.prompts, ...contract.resources].flatMap(entry => entry.scopes))].sort()
   const principal = testPrincipal({ clientId: "conformance-kit", scopes })
-  const clients = { owner: await mcp.connect(principal), other: await mcp.connect({ scopes }) }
+  const client = await mcp.connect(principal)
   return {
     provider, manifest: contract, fixture, stored, principal,
-    async call(name, args, as = "owner") { return await clients[as].callTool({ name, arguments: args }) as CallToolResult },
-    advanceTo(epochMs) { clock.now = Math.max(clock.now, epochMs) },
+    async call(name, args) { return await client.callTool({ name, arguments: args }) as CallToolResult },
     close: () => mcp.close(),
   }
 }

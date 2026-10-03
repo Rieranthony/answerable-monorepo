@@ -22,7 +22,11 @@ export async function migrate(db: SQL, directories: readonly URL[]): Promise<str
       files.set(name, new URL(name, directory))
     }
   }
-  await db`create table if not exists schema_migrations (name text primary key, applied_at timestamptz not null default now())`
+  // Under the lock too: two migrators creating the table at once would collide in the catalogue.
+  await db.begin(async tx => {
+    await tx`select pg_advisory_xact_lock(${lock})`
+    await tx`create table if not exists schema_migrations (name text primary key, applied_at timestamptz not null default now())`
+  })
   const applied: string[] = []
   for (const name of [...files.keys()].sort()) {
     await db.begin(async tx => {

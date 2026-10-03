@@ -546,7 +546,9 @@ function createMemoryIntentStore(options?: {
 ```
 
 An `IntentStore` in memory: one per server by default, lost when the process stops. It keeps JSON copies, as a database would.
-A test moves the clock instead of waiting for an intent to expire.
+An insert, at most once a minute by the store's clock, removes the intents that can no longer be committed (expired, failed and stale ones)
+and committed ones a day after their commit, so a repeated commit replays its receipt for a day; after that, or once an intent is removed,
+a commit answers `INTENT_NOT_FOUND`. A test moves the clock instead of waiting for an intent to expire.
 
 **Example**
 
@@ -1102,8 +1104,9 @@ function assertProviderConformance(provider: Provider, fixture: ConformanceFixtu
 ```
 
 Register one test per conformance check for a provider: call it at the top level of a test file, with the provider built on
-test dependencies such as in-memory stores. The provider is served in-process with its own intent store and clock,
-so a failing test names the check and the definition to change.
+test dependencies such as in-memory stores. The provider is served in-process with its own intent store, so a failing test names the check
+and the definition to change. Each mutation is prepared once while the checks are registered: the two checks that need a target are
+registered as skipped, with the reason, for a mutation that prepares none.
 
 **Parameters**
 

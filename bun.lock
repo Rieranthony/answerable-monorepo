@@ -187,7 +187,7 @@
     },
     "packages/auth": {
       "name": "@answerable/auth",
-      "version": "0.5.0",
+      "version": "0.5.1",
       "dependencies": {
         "jose": "6.2.12",
         "zod": "4.6.5",
@@ -214,7 +214,7 @@
     },
     "packages/id-admin": {
       "name": "@answerable/id-admin",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
         "zod": "4.6.5",
       },
@@ -228,7 +228,7 @@
     },
     "packages/mcp": {
       "name": "@answerable/mcp",
-      "version": "0.6.2",
+      "version": "0.7.0",
       "dependencies": {
         "@answerable/auth": "workspace:*",
         "@modelcontextprotocol/client": "2.1.0",
@@ -246,7 +246,7 @@
     },
     "packages/mcp-postgres": {
       "name": "@answerable/mcp-postgres",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@answerable/mcp": "workspace:*",
       },

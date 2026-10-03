@@ -132,12 +132,13 @@ They return the receipt:
 3. Its status: `committed` returns the stored receipt with `idempotent_replay: true`; `committing` answers `COMMIT_IN_PROGRESS`; `expired`, `stale` and `failed` answer `INTENT_EXPIRED`, `INTENT_STALE` and `INTENT_CONSUMED`; `awaiting_approval` answers `APPROVAL_REQUIRED`.
 4. This server serves the intent's capability version, else `INTENT_NOT_FOUND`; the caller can still use the mutation (the token carries its scopes, or a hub's `allow` still admits it), else `PERMISSION_DENIED`.
 5. The SHA-256 of `commit_token` matches: else `COMMIT_TOKEN_INVALID`.
-6. The tool matches the class, and a controlled intent's `preview_summary` matches: else `APPROVAL_REQUIRED` with `details.approval`.
-7. The intent moves to `committing`: the token is spent.
-8. `prepare` runs again and the targets are compared: a change answers `INTENT_STALE`.
-9. `commit` runs. The receipt is stored and the intent is `committed`. A `ToolError` marks it `failed` and is returned; any other exception marks it `failed` and answers `INTERNAL`. A later commit answers `INTENT_CONSUMED`.
+6. The policy class is no stricter now: `policyClass` runs again for the caller, and a class stricter than the intent's (`agent` to `controlled` or `human`, `controlled` to `human`) answers `APPROVAL_REQUIRED` with the class and commit tool a fresh prepare would give. Prepare again.
+7. The tool matches the class, and a controlled intent's `preview_summary` matches: else `APPROVAL_REQUIRED` with `details.approval`.
+8. The intent moves to `committing`: the token is spent.
+9. `prepare` runs again and the targets are compared: a change answers `INTENT_STALE`.
+10. `commit` runs. The receipt is stored and the intent is `committed`. A `ToolError` marks it `failed` and is returned; any other exception marks it `failed` and answers `INTERNAL`. A later commit answers `INTENT_CONSUMED`.
 
-A refusal in steps 1 to 6 leaves the intent committable. [MCP errors](/docs/mcp/errors) has every code.
+A refusal in steps 1 to 7 leaves the intent committable. [MCP errors](/docs/mcp/errors) has every code.
 
 **Replay.** A repeat by the same principal returns the same receipt with `idempotent_replay: true`; `commit` runs once.
 
@@ -149,7 +150,7 @@ A refusal in steps 1 to 6 leaves the intent committable. [MCP errors](/docs/mcp/
 
 <include lang="ts" meta='title="mcps/example/src/intents.test.ts"'>../../../../../mcps/example/src/intents.test.ts#expiry</include>
 
-By default each server keeps intents in memory, lost when the process stops. The store owns the clock and decides expiry, so a test moves `now` instead of waiting. `IntentStore` is four members: `now()`, `insert(intent)`, `get(intentId)`, which marks an intent `expired` once `expires_at` has passed, and `transition(intentId, from, to, receipt?)`, a compare-and-set on the status. [The Toolbox](/docs/toolbox#mutations-through-the-toolbox) keeps its intents in Postgres with a store of its own.
+By default each server keeps intents in memory, lost when the process stops. An insert, at most once a minute, removes the intents that can no longer be committed (expired, failed and stale) and committed ones a day after their commit: a repeated commit replays its receipt for a day, then answers `INTENT_NOT_FOUND`. The store owns the clock and decides expiry, so a test moves `now` instead of waiting. `IntentStore` is four members: `now()`, `insert(intent)`, `get(intentId)`, which marks an intent `expired` once `expires_at` has passed, and `transition(intentId, from, to, receipt?)`, a compare-and-set on the status. [The Toolbox](/docs/toolbox#mutations-through-the-toolbox) keeps its intents in Postgres with a store of its own.
 
 ## Views and mutations
 
@@ -161,6 +162,6 @@ A view prepares, shows `preview.summary`, then calls the tool in `commit_tool` w
 | --- | --- |
 | Preview summary | 1 to 500 characters |
 | Intent expiry | 10 minutes, 30 minutes or 24 hours by class; `expiresInMs` only shortens it |
-| Intents in the memory store | Kept until the process stops. For a long-lived server, pass your own `IntentStore` |
+| Intents in the memory store | Lost when the process stops; removed once they can no longer be committed, and a committed one a day after its commit. For intents that survive a restart, pass your own `IntentStore` |
 | Effects | `notification`, `external_call`, `money_movement`, `cascade_delete`, `permission_change`, `publication` |
 | Human approvals, operations, idempotency keys, batches of intents | Not yet |

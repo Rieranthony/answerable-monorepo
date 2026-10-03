@@ -27,7 +27,7 @@ It returns:
 
 <AutoTypeTable path="../../packages/mcp/src/server.ts" name="McpServerHandle" />
 
-**What it serves.** `GET /health`, the protected-resource metadata, and the MCP endpoint at the resource URL's path behind the bearer gate. It answers both the 2026 and the 2025 protocol revisions, builds a fresh MCP server per request and sends `Cache-Control: no-store`. The server's name and version are the provider's id and version.
+**What it serves.** `GET /health`, the protected-resource metadata, and the MCP endpoint at the resource URL's path behind the bearer gate. It answers both the 2026 and the 2025 protocol revisions, builds a fresh MCP server per request and sends `Cache-Control: no-store`. A JSON-RPC batch, which the protocol no longer has, answers `400` with a JSON-RPC error (`-32600`): send one request per POST. The server's name and version are the provider's id and version.
 
 **Sign-in.** Without a valid token the endpoint answers `401` with `WWW-Authenticate: Bearer resource_metadata="…"`. The host reads that [protected-resource metadata](https://datatracker.ietf.org/doc/html/rfc9728), finds Answerable ID and signs the person in. The server then verifies every token against ID's published keys: issuer, audience (its own URL), type `at+jwt`, expiry, and the user and organisation claims. It never sees a password and never calls ID per request. [How Answerable ID works](/docs/id#how-a-person-reaches-an-mcp-server) walks through it.
 

@@ -87,7 +87,7 @@ export type McpServerHandle = {
 
 const validateOnly = z.boolean().default(false).describe("Return the preview without recording an intent or issuing a commit token; default false")
 const message = z.object({ method: z.string(), params: z.object({ name: z.string().optional() }).optional() })
-type Peeked = { method?: string; name?: string }
+type Peeked = { method?: string; name?: string; batch?: true }
 // Requests whose answer depends on which tools, and so which views, the caller may use.
 const decided = new Set(["tools/list", "tools/call", "resources/list", "resources/read"])
 // A caller's tool list changes only with its scopes, fixed for a token's life, or with a hub's grants.
@@ -95,16 +95,20 @@ const cacheHints = { "tools/list": { ttlMs: 30_000, cacheScope: "private" as con
 // Bun.serve closes a connection idle for 10 seconds by default, so a subscriptions/listen stream sends a keep-alive comment more often than that.
 const keepAliveMs = 5_000
 
-// The method and tool name of a request, read from a copy of its body, so that `allow` runs only when tools matter and can tell a call from a list.
+// The method and tool name of a request, read from a copy of its body, so that `allow` runs only when tools matter and can tell a call from a list;
+// or that the body is a JSON-RPC batch, which the protocol no longer has and which would hide its calls from `allow`.
 async function peek(request: Request): Promise<Peeked> {
   try {
     const body = await readRequestBody(request.clone())
-    const { method, params } = message.parse(JSON.parse(body.tooLarge ? "" : body.text))
+    const json = JSON.parse(body.tooLarge ? "" : body.text)
+    if (Array.isArray(json)) return { batch: true }
+    const { method, params } = message.parse(json)
     return { method, name: params?.name }
   } catch {
     return {}
   }
 }
+const batchRefused = () => Response.json({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Batches are not supported; send one JSON-RPC request per POST" } }, { status: 400 })
 
 // Each tool with its name on the wire: `provider`'s own unprefixed, mounted ones prefixed with their provider's id.
 function wireNames(provider: Provider, mount: readonly Provider[]) {
@@ -210,14 +214,13 @@ export function createMcpServer(config: McpServerConfig): McpServerHandle {
       policyClass: policy, commitTool: commitToolName(provider.id, policy), principal: call.principal, store: intents, validateOnly: validate_only === true,
     })
   }
-  const handler = createMcpHandler(async ({ authInfo, requestInfo }) => {
+  const handler = createMcpHandler(async ({ authInfo }) => {
     const { principal, request = {} } = authInfo!.extra as { principal: UserPrincipal; request?: Peeked }
     const called = request.method === "tools/call" ? request.name : undefined
     // Capabilities follow the definitions, not the caller's scopes, so every caller sees the same server.
     const server = new McpServer({ name: provider.id, version: provider.version }, { capabilities, cacheHints })
-    const context = (signal: AbortSignal): ToolContext => Object.freeze({
-      principal, executionId: Bun.randomUUIDv7(), signal: requestInfo?.signal ? AbortSignal.any([signal, requestInfo.signal]) : signal,
-    })
+    // The SDK's request signal also aborts when the HTTP request does.
+    const context = (signal: AbortSignal): ToolContext => Object.freeze({ principal, executionId: Bun.randomUUIDv7(), signal })
     let permitted: Served<Tool | Mutation>[]
     let tools: Served<Tool | Mutation>[]
     try {
@@ -265,7 +268,7 @@ export function createMcpServer(config: McpServerConfig): McpServerHandle {
         const call = context(sdkContext.mcpReq.signal)
         return wrapped(commit.call, commit.name, call, sdkContext.mcpReq, async () => commitIntent({
           id: provider.id, tool: commit.name, input: await parseArguments(commit.input, args), context: call, store: intents, mutations,
-          permitted: mutation => permitted.includes(mutation),
+          permitted: mutation => permitted.includes(mutation), policyClass: mutation => policyClass(mutation, principal),
         }))
       })
     }
@@ -310,8 +313,9 @@ export function createMcpServer(config: McpServerConfig): McpServerHandle {
       let response = originValidationResponse(request, hosts)
       if (!response) {
         const authInfo = await gate(request)
-        if (!(authInfo instanceof Response) && allow && request.method === "POST") authInfo.extra = { ...authInfo.extra, request: await peek(request) }
-        response = authInfo instanceof Response ? authInfo : await handler.fetch(request, { authInfo })
+        const peeked = !(authInfo instanceof Response) && request.method === "POST" ? await peek(request) : {}
+        if (!(authInfo instanceof Response) && allow) authInfo.extra = { ...authInfo.extra, request: peeked }
+        response = authInfo instanceof Response ? authInfo : peeked.batch ? batchRefused() : await handler.fetch(request, { authInfo })
       }
       response.headers.set("Cache-Control", "no-store")
       return response

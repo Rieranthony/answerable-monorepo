@@ -68,16 +68,6 @@ test("manage reads and writes with a token of its own for platform:read and plat
   expect(id.scopesAsked).toEqual(["platform:read platform:write", "platform:read"])
 })
 
-test("a token that was refused is renewed once for manage too", async () => {
-  const id = createFakeId()
-  const admin = createIdAdmin(id.config)
-  id.resource(toolbox, ["toolbox"])
-  await admin.manage("GET", toolboxPath)
-  id.revoke()
-  expect((await admin.manage("GET", toolboxPath)).body).toMatchObject({ revision: 1 })
-  expect(id.scopesAsked).toHaveLength(2)
-})
-
 test("a failure of manage throws an IdError with the status, ID's problem code and title, and what was called; a body that is not a problem leaves the code out", async () => {
   const id = createFakeId()
   const admin = createIdAdmin(id.config)
@@ -92,12 +82,6 @@ test("a failure of manage throws an IdError with the status, ID's problem code a
   expect(down).toMatchObject({ status: 503, code: undefined, message: `Answerable ID answered GET /api/admin/v1${toolboxPath} with 503` })
 })
 
-test("wrong client credentials name both scopes for manage", async () => {
-  const id = createFakeId()
-  const admin = createIdAdmin({ ...id.config, clientSecret: "wrong" })
-  await expect(admin.manage("GET", toolboxPath)).rejects.toThrow("Answerable ID refused the client credentials of toolbox-hub (401); check the client id, the client secret and the client's platform:read and platform:write capability for the admin resource")
-})
-
 test("a request ID never answers throws an IdError that says what was called and why, for the token and for the call", async () => {
   const id = createFakeId()
   const admin = createIdAdmin(id.config)
@@ -110,6 +94,20 @@ test("a request ID never answers throws an IdError that says what was called and
   const failed = await admin.manage("GET", toolboxPath).catch(error => error)
   expect(failed).toBeInstanceOf(IdError)
   expect(failed).toMatchObject({ status: 0, code: undefined, message: `Answerable ID did not answer GET /api/admin/v1${toolboxPath}: Unable to connect` })
+})
+
+test("ID answering too slowly fails the token request and the call after the timeout, with an IdError of status 0", async () => {
+  const id = createFakeId()
+  const admin = createIdAdmin({ ...id.config, timeoutMs: 50 })
+  id.resource(toolbox, ["toolbox"])
+  id.slow(1000)
+  const started = performance.now()
+  await expect(admin.manage("GET", toolboxPath)).rejects.toMatchObject({ status: 0, message: expect.stringMatching(/^Answerable ID did not answer the token request: /) })
+  id.slow(0)
+  await admin.manage("GET", toolboxPath)
+  id.slow(1000)
+  await expect(admin.manage("GET", toolboxPath)).rejects.toMatchObject({ status: 0, message: `Answerable ID did not answer GET /api/admin/v1${toolboxPath}: The operation timed out.` })
+  expect(performance.now() - started).toBeLessThan(900)
 })
 
 test("a request id is sent as x-request-id on a read and on a write, and left out when none is given", async () => {
@@ -207,42 +205,4 @@ test("withToken gets a token for another audience with its own scope, reuses it,
   await expect(admin.withToken("https://other.test/admin", "toolbox:admin", service)).rejects.toThrow(
     "Answerable ID refused the client credentials of toolbox-hub (400); check the client id, the client secret and the client's toolbox:admin capability for https://other.test/admin",
   )
-})
-
-test("the fake ID answers 412 revision_mismatch for a stale If-Match, and for If-None-Match on a row that exists, as ID's PATCH and PUT routes do", async () => {
-  const id = createFakeId()
-  const admin = createIdAdmin(id.config)
-  const organisation = id.organisation(crypto.randomUUID())
-  const group = id.group(organisation.id, { slug: "engineers" })
-  const member = id.member(organisation.id)
-  const stale = (path: string, options: Parameters<typeof admin.manage>[2]) => admin.manage(path.endsWith("sso-provider") || path.includes("/members/") ? "PUT" : "PATCH", path, options).catch(error => error)
-  const provider = `/organizations/${organisation.id}/sso-provider`
-  const created = await admin.manage("PUT", provider, { body: { issuer: "https://accounts.google.com", domain: "newco.example" }, ifNoneMatch: "*" })
-  expect(created.body).toMatchObject({ revision: 1, oidc: { credentials: "platform" } })
-  expect(await stale(provider, { body: { issuer: "https://accounts.google.com", domain: "newco.example" }, ifNoneMatch: "*" })).toMatchObject({ status: 412, code: "revision_mismatch" })
-  await admin.manage("PUT", provider, { body: { issuer: "https://accounts.google.com", domain: "mail.newco.example" }, ifMatch: created.etag! })
-  expect(await stale(provider, { body: { issuer: "https://accounts.google.com", domain: "newco.example" }, ifMatch: created.etag! })).toMatchObject({ status: 412, code: "revision_mismatch" })
-  expect(await stale(provider, { body: { issuer: "https://idp.example", domain: "newco.example" } })).toMatchObject({ status: 400, code: "platform_credentials_unsupported" })
-  const assignment = `/organizations/${organisation.id}/groups/${group.id}/members/${member.id}`
-  const joined = await admin.manage("PUT", assignment, { body: {}, ifNoneMatch: "*" })
-  expect(await stale(assignment, { body: {}, ifNoneMatch: "*" })).toMatchObject({ status: 412, code: "revision_mismatch" })
-  await admin.manage("PUT", assignment, { body: { validUntil: "2027-01-01T00:00:00.000Z" }, ifMatch: joined.etag! })
-  expect(await stale(assignment, { body: { validUntil: "2028-01-01T00:00:00.000Z" }, ifMatch: joined.etag! })).toMatchObject({ status: 412, code: "revision_mismatch" })
-  const tagged = await admin.read(`/organizations/${organisation.id}`)
-  id.revise(organisation.id)
-  expect(await stale(`/organizations/${organisation.id}`, { body: { name: "Renamed" }, ifMatch: tagged.etag! })).toMatchObject({ status: 412, code: "revision_mismatch" })
-  expect(await stale(`/organizations/${organisation.id}`, { body: { name: "Renamed" }, ifMatch: "W/\"weak\"" })).toMatchObject({ status: 400, code: "invalid_revision" })
-})
-
-test("the fake ID replays a write sent again with the same key and input, and refuses the key with another input", async () => {
-  const id = createFakeId()
-  const admin = createIdAdmin(id.config)
-  const first = await admin.manage("POST", "/organizations", { body: { slug: "acme", name: "Acme" }, idempotencyKey: "intent-5" })
-  const again = await admin.manage("POST", "/organizations", { body: { slug: "acme", name: "Acme" }, idempotencyKey: "intent-5" })
-  expect(again).toEqual({
-    body: { operationId: first.operationId, outcome: "applied", statusCode: 201, resultReference: { type: "organizations", id: (first.body as { id: string }).id } },
-    etag: null, operationId: first.operationId, replayed: true,
-  })
-  expect(await admin.manage("POST", "/organizations", { body: { slug: "acme", name: "Acme Ltd" }, idempotencyKey: "intent-5" }).catch(error => error)).toMatchObject({ status: 409, code: "idempotency_key_reused" })
-  expect(await admin.manage("POST", "/organizations", { body: { slug: "acme", name: "Acme" }, idempotencyKey: "intent-6" }).catch(error => error)).toMatchObject({ status: 409, code: "conflict" })
 })

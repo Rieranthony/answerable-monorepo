@@ -16,7 +16,7 @@ The Toolbox serves tools from **providers** mounted inside it. To add tools, bui
 
 ### Check the names fit
 
-Through the Toolbox each tool is named `<provider id>_<wire name>`, such as `acme_notes_list`, at most 46 characters. The conformance kit's `name_is_host_safe` check enforces it, so `mcp:check` has already passed it. The provider's id must differ from every provider the Toolbox mounts, and from `toolbox`.
+Through the Toolbox each tool is named `<provider id>_<wire name>`, such as `acme_notes_list`, at most 46 characters. `defineProvider` and `defineTool` keep every name within it: an id has at most 12 characters and a tool name at most 33. The provider's id must differ from every provider the Toolbox mounts, and from `toolbox`.
 
 </Step>
 <Step>
@@ -31,7 +31,7 @@ The Toolbox imports the provider from its workspace, so the workspace needs an `
 },
 ```
 
-`mcps/example/package.json` has the same entry.
+`mcps/example` has none, since nothing mounts it; add the entry there first if you mount it, as the run end to end did.
 
 </Step>
 <Step>
