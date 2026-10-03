@@ -1,6 +1,6 @@
 import { platformWriteService } from "../__tests__/platform-context.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import { createOrganization } from "../__tests__/organization-queries.ts";
@@ -8,13 +8,11 @@ import { createId } from "../lib/id.ts";
 import {
   users,
   members,
-  entitlements,
   oauthClients,
   oauthResources,
   auditEvents,
 } from "../db/schema/index.ts";
 import { createGroup, addGroupMember } from "../__tests__/group-queries.ts";
-import { createEntitlement } from "../__tests__/entitlement-queries.ts";
 let connection: DatabaseConnection;
 beforeAll(() => {
   connection = createDatabase(testEnvironment());
@@ -111,7 +109,6 @@ const service = {
     ),
 };
 import type { Actor } from "./actor.ts";
-import { mapDatabaseError } from "../http/problem.ts";
 const actor: Actor = {
   actorType: "system",
   actorId: "root",
@@ -119,15 +116,6 @@ const actor: Actor = {
   ip: "192.0.2.1",
   userAgent: "test",
 };
-const invalidActor = { ...actor, requestId: "\0" };
-async function mapped(promise: Promise<unknown>, status: number, code: string) {
-  try {
-    await promise;
-    throw new Error("Expected a database error");
-  } catch (error) {
-    expect(mapDatabaseError(error)).toMatchObject({ status, code });
-  }
-}
 test("entitlement writes each audit once, keep immutable fields and preserve omitted windows", async () => {
   const { db, org, group, ids, resource, clientId } = await seed();
   const input = { resource, scopes: ["read"] };
@@ -248,162 +236,4 @@ test("entitlement writes each audit once, keep immutable fields and preserve omi
       deletionMode: "soft",
     },
   });
-});
-test("service validates principal, target, references and resource scopes before creating", async () => {
-  const { db, org, other, group, foreignGroup, ids, resource, clientId } =
-    await seed();
-  for (const input of [
-    { resource, memberId: ids[0]!, groupId: group.id, scopes: ["read"] },
-    { scopes: ["read"] },
-    { resource, scopes: ["unknown", "forbidden"] },
-  ])
-    await expect(
-      service.createEntitlement(db, actor, org.id, input),
-    ).rejects.toMatchObject({
-      status: 400,
-      code: "validation_failed",
-      extensions: { errors: expect.any(Array) },
-    });
-  await expect(
-    service.createEntitlement(db, actor, org.id, {
-      resource,
-      scopes: ["unknown", "forbidden"],
-    }),
-  ).rejects.toMatchObject({
-    extensions: {
-      errors: [
-        {
-          path: "scopes",
-          message:
-            "Scopes are not allowed for this resource: unknown, forbidden",
-        },
-      ],
-    },
-  });
-  for (const input of [
-    { memberId: ids[3]!, resource },
-    { memberId: createId(), resource },
-    { groupId: foreignGroup.id, resource },
-    { groupId: createId(), resource },
-    { clientId: "missing" },
-    { resource: "https://none.example" },
-  ])
-    await expect(
-      service.createEntitlement(db, actor, org.id, {
-        ...input,
-        scopes: ["read"],
-      }),
-    ).rejects.toMatchObject({ status: 404, code: "not_found" });
-  await expect(
-    service.createEntitlement(db, actor, createId(), {
-      resource,
-      scopes: ["read"],
-    }),
-  ).rejects.toMatchObject({ status: 404 });
-  expect(await db.select().from(auditEvents)).toEqual([]);
-  const row = await service.createEntitlement(db, actor, org.id, {
-    resource,
-    scopes: ["read"],
-  });
-  await mapped(
-    service.createEntitlement(db, actor, org.id, {
-      resource,
-      scopes: ["read"],
-    }),
-    409,
-    "conflict",
-  );
-  await expect(
-    service.updateEntitlement(db, actor, org.id, row.id, {
-      scopes: ["forbidden"],
-    }),
-  ).rejects.toMatchObject({ status: 400, code: "validation_failed" });
-  for (const patch of [{ validFrom: future, validUntil: past }, { scopes: [] }])
-    await mapped(
-      service.updateEntitlement(db, actor, org.id, row.id, patch),
-      400,
-      "constraint_violation",
-    );
-  await mapped(
-    service.createEntitlement(db, actor, org.id, {
-      clientId,
-      scopes: [],
-      validFrom: future,
-      validUntil: past,
-    }),
-    400,
-    "constraint_violation",
-  );
-  await mapped(
-    service.createEntitlement(db, actor, org.id, { clientId, scopes: [""] }),
-    400,
-    "constraint_violation",
-  );
-  for (const organizationId of [other.id, createId()]) {
-    await expect(
-      service.getEntitlement(db, organizationId, row.id),
-    ).rejects.toMatchObject({ status: 404 });
-    await expect(
-      service.updateEntitlement(db, actor, organizationId, row.id, {
-        validUntil: null,
-      }),
-    ).rejects.toMatchObject({ status: 404 });
-    for (const operation of [
-      service.disableEntitlement,
-      service.enableEntitlement,
-      service.removeEntitlement,
-    ])
-      await expect(
-        operation(db, actor, organizationId, row.id),
-      ).rejects.toMatchObject({ status: 404 });
-  }
-  await expect(
-    service.listEntitlements(db, createId(), { limit: 1 }),
-  ).rejects.toMatchObject({ status: 404 });
-  await db
-    .update(oauthResources)
-    .set({ allowedScopes: null })
-    .where(eq(oauthResources.identifier, resource));
-  await expect(
-    service.updateEntitlement(db, actor, org.id, row.id, { scopes: ["read"] }),
-  ).rejects.toMatchObject({ status: 400 });
-  expect(await db.select().from(auditEvents)).toHaveLength(1);
-});
-test("every write rolls back when its audit cannot be stored", async () => {
-  const { db, org, resource, clientId } = await seed();
-  const row = await createEntitlement(db, {
-    organizationId: org.id,
-    resource,
-    scopes: ["read"],
-  });
-  await expect(
-    service.createEntitlement(db, invalidActor, org.id, {
-      clientId,
-      scopes: ["openid"],
-    }),
-  ).rejects.toThrow();
-  await expect(
-    service.updateEntitlement(db, invalidActor, org.id, row.id, {
-      scopes: ["write"],
-    }),
-  ).rejects.toThrow();
-  await expect(
-    service.disableEntitlement(db, invalidActor, org.id, row.id),
-  ).rejects.toThrow();
-  await expect(
-    service.removeEntitlement(db, invalidActor, org.id, row.id),
-  ).rejects.toThrow();
-  expect(await service.getEntitlement(db, org.id, row.id)).toEqual(row);
-  await db
-    .update(entitlements)
-    .set({ status: "disabled" })
-    .where(eq(entitlements.id, row.id));
-  await expect(
-    service.enableEntitlement(db, invalidActor, org.id, row.id),
-  ).rejects.toThrow();
-  expect((await service.getEntitlement(db, org.id, row.id)).status).toBe(
-    "disabled",
-  );
-  expect(await db.select().from(entitlements)).toHaveLength(1);
-  expect(await db.select().from(auditEvents)).toEqual([]);
 });

@@ -4,7 +4,7 @@ import type { AdminRoute } from "./route-table.ts";
 export const json = (schema: z.ZodType) => ({
   "application/json": { schema: resolver(schema) },
 });
-export const operationReceiptSchema = z.object({
+const operationReceiptSchema = z.object({
   operationId: z.uuid(),
   outcome: z.enum(["applied", "noop"]),
   statusCode: z.number().int(),

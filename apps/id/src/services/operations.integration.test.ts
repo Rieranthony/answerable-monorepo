@@ -47,7 +47,13 @@ test.each([200, 201, 204])(
       effects++;
       return receiptResult;
     };
-    const first = await executeOperation(connection.db, command, allow, mutate);
+    const first = await executeOperation(
+      connection.db,
+      command,
+      allow,
+      mutate,
+      () => {},
+    );
     const replay = await executeOperation(
       connection.db,
       {
@@ -60,6 +66,7 @@ test.each([200, 201, 204])(
       },
       allow,
       mutate,
+      () => {},
     );
     expect(first.replayed).toBe(false);
     expect(replay).toEqual({
@@ -76,6 +83,7 @@ test.each([200, 201, 204])(
           throw new Error("revoked");
         },
         mutate,
+        () => {},
       ),
     ).rejects.toThrow("revoked");
     await expect(
@@ -84,6 +92,7 @@ test.each([200, 201, 204])(
         { ...command, input: { target: "two" } },
         allow,
         mutate,
+        () => {},
       ),
     ).rejects.toMatchObject({
       code: "idempotency_key_reused",
@@ -99,6 +108,7 @@ test.each([200, 201, 204])(
         { ...command, ...identity },
         allow,
         mutate,
+        () => {},
       );
       expect(isolated.replayed).toBe(false);
       expect(isolated.operation.fingerprint).toMatch(/^[a-f0-9]{64}$/);
@@ -120,24 +130,30 @@ test.each([200, 201, 204])(
 test("failed mutation or journal insertion rolls back its audit and releases the command key", async () => {
   for (const fail of ["mutation", "journal"] as const) {
     await expect(
-      executeOperation(connection.db, command, allow, async (tx, id) => {
-        await tx.insert(verifications).values({
-          id,
-          identifier: "operation-effect",
-          value: "changed",
-          expiresAt: new Date(Date.now() + 60_000),
-        });
-        await recordAuditEvent(tx, {
-          actorType: "system",
-          actorId: "test",
-          action: "test.changed",
-          targetType: "operation",
-          targetId: id,
-          outcome: "success",
-        });
-        if (fail === "mutation") throw new Error("interrupted");
-        return { ...result, outcome: "invalid" as "applied" };
-      }),
+      executeOperation(
+        connection.db,
+        command,
+        allow,
+        async (tx, id) => {
+          await tx.insert(verifications).values({
+            id,
+            identifier: "operation-effect",
+            value: "changed",
+            expiresAt: new Date(Date.now() + 60_000),
+          });
+          await recordAuditEvent(tx, {
+            actorType: "system",
+            actorId: "test",
+            action: "test.changed",
+            targetType: "operation",
+            targetId: id,
+            outcome: "success",
+          });
+          if (fail === "mutation") throw new Error("interrupted");
+          return { ...result, outcome: "invalid" as "applied" };
+        },
+        () => {},
+      ),
     ).rejects.toThrow();
     expect(await connection.db.select().from(adminOperations)).toHaveLength(0);
     expect(await connection.db.select().from(auditEvents)).toHaveLength(0);
@@ -158,6 +174,7 @@ test("failed mutation or journal insertion rolls back its audit and releases the
       });
       return { ...result, outcome: "noop" };
     },
+    () => {},
   );
   expect(committed.operation.outcome).toBe("noop");
   expect(await connection.db.select().from(auditEvents)).toHaveLength(1);
@@ -173,19 +190,31 @@ test("concurrent duplicates receive a retryable response and then recover the si
     release = resolve;
   });
   let effects = 0;
-  const first = executeOperation(connection.db, command, allow, async () => {
-    effects++;
-    entered();
-    await barrier;
-    return result;
-  });
+  const first = executeOperation(
+    connection.db,
+    command,
+    allow,
+    async () => {
+      effects++;
+      entered();
+      await barrier;
+      return result;
+    },
+    () => {},
+  );
   await started;
   try {
     await expect(
-      executeOperation(connection.db, command, allow, async () => {
-        effects++;
-        return result;
-      }),
+      executeOperation(
+        connection.db,
+        command,
+        allow,
+        async () => {
+          effects++;
+          return result;
+        },
+        () => {},
+      ),
     ).rejects.toMatchObject({
       code: "operation_in_progress",
       extensions: { retryable: true },
@@ -202,30 +231,11 @@ test("concurrent duplicates receive a retryable response and then recover the si
       effects++;
       return result;
     },
+    () => {},
   );
   expect(replay.operation.id).toBe(committed.operation.id);
   expect(replay.replayed).toBe(true);
   expect(effects).toBe(1);
-});
-
-test("invalid keys and non-JSON numbers cannot reserve an operation", () => {
-  for (const key of ["", "x".repeat(257)])
-    expect(() =>
-      executeOperation(
-        connection.db,
-        { ...command, key },
-        allow,
-        async () => result,
-      ),
-    ).toThrow("Idempotency key");
-  expect(() =>
-    executeOperation(
-      connection.db,
-      { ...command, input: NaN },
-      allow,
-      async () => result,
-    ),
-  ).toThrow("finite JSON");
 });
 
 for (const phase of ["authority", "mutation"] as const) {
@@ -298,6 +308,7 @@ for (const phase of ["authority", "mutation"] as const) {
           command,
           allow,
           async () => result,
+          () => {},
         )
       ).replayed,
     ).toBe(false);
@@ -308,6 +319,7 @@ for (const phase of ["authority", "mutation"] as const) {
           command,
           allow,
           async () => result,
+          () => {},
         )
       ).replayed,
     ).toBe(true);

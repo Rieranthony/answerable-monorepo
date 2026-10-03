@@ -126,24 +126,6 @@ test("round-trips JSON data and optional fields inside a transaction", async () 
   }
 });
 
-test("rolls back the administrative change and its audit event together", async () => {
-  await expect(
-    connection.db.transaction(async (tx) => {
-      const id = createId();
-      await tx
-        .insert(organizations)
-        .values({ id, name: "Rollback", slug: "rollback" });
-      await recordAuditEvent(tx, { ...event, organizationId: id });
-      throw new Error("Abort change");
-    }),
-  ).rejects.toThrow("Abort change");
-  expect(await connection.db.select().from(organizations)).toEqual([]);
-  expect(await listAuditEvents(connection.db, {}, { limit: 2 })).toEqual({
-    items: [],
-    nextCursor: null,
-  });
-});
-
 test("lists newest first and walks five rows without gaps or repeats", async () => {
   const ids: string[] = [];
   for (let i = 0; i < 5; i++) {

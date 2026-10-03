@@ -15,7 +15,7 @@ import { json, pathParameter, uuidParam } from "./schemas.ts";
 
 const params = uuidParam("organizationId");
 const query = z.object({ email: z.email().toLowerCase() });
-export const signInDiagnosisSchema = z.object({
+const signInDiagnosisSchema = z.object({
   email: z.email(),
   routing: z.object({
     domain: z.string(),

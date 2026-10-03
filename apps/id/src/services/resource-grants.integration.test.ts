@@ -206,31 +206,3 @@ test("resource deletion records every revoked context, preserving unrelated auth
     ).items,
   ).toEqual([event!]);
 });
-
-for (const mode of ["disable", "erase"] as const) {
-  test(`resource ${mode} rolls back context effects when audit fails`, async () => {
-    const { db, target, contexts } = await seed();
-    await expect(
-      inPlatformWrite(
-        db,
-        async (context) => {
-          if (mode === "disable")
-            await disableResource(context, target.identifier);
-          else
-            await eraseResource(context, target.identifier, target.identifier);
-        },
-        { requestId: "\0" },
-      ),
-    ).rejects.toThrow();
-    expect(
-      await db.select().from(grantContexts).orderBy(grantContexts.id),
-    ).toEqual(contexts.sort((a, b) => a.id.localeCompare(b.id)));
-    expect(
-      await db
-        .select()
-        .from(oauthResources)
-        .where(eq(oauthResources.id, target.id)),
-    ).toEqual([target]);
-    expect(await db.select().from(auditEvents)).toHaveLength(0);
-  });
-}

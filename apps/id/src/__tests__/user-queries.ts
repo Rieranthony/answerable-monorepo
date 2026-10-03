@@ -6,7 +6,7 @@ import {
   inPlatformWrite,
 } from "./platform-context.ts";
 export type * from "../db/queries/users.ts";
-export { retiredEmailFor, UserNotRetirableError } from "../db/queries/users.ts";
+export { retiredEmailFor } from "../db/queries/users.ts";
 export const retireUserEmail = bindQuery(inPlatformUsers)(
   queries.retireUserEmail,
 );

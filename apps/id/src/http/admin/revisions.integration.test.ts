@@ -23,7 +23,7 @@ import {
 } from "../../db/schema/index.ts";
 let fixture: AdminFixture;
 beforeEach(async () => {
-  fixture = await createAdminFixture();
+  fixture = await createAdminFixture({}, { restrictedRole: true });
 });
 afterEach(async () => fixture?.close());
 const cases = [

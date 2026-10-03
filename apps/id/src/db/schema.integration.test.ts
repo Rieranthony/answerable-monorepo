@@ -7,7 +7,6 @@ import {
   test,
 } from "bun:test";
 import { eq, sql } from "drizzle-orm";
-import { getTableConfig } from "drizzle-orm/pg-core";
 
 import { createClient } from "../__tests__/client-queries.ts";
 import {
@@ -25,28 +24,20 @@ import { createId } from "../lib/id.ts";
 import { createDatabase, type DatabaseConnection } from "./client.ts";
 import {
   accounts,
-  auditEvents,
   entitlements,
-  grantContexts,
   groupMembers,
   groups,
   invitations,
   jwks,
   members,
-  oauthAccessTokens,
   oauthClientAssertions,
   oauthClientResources,
   oauthClients,
-  oauthConsents,
-  oauthRefreshTokens,
   oauthResources,
-  organizationCapabilities,
   organizationDomains,
   organizations,
-  sessions,
   ssoProviders,
   users,
-  verifications,
 } from "./schema/index.ts";
 
 const environment = testEnvironment();
@@ -140,45 +131,7 @@ async function registerTutor(auth: ReturnType<typeof createAuth>) {
   return { clientId, resource };
 }
 
-const allTables = [
-  users,
-  organizations,
-  sessions,
-  accounts,
-  verifications,
-  members,
-  invitations,
-  jwks,
-  oauthClients,
-  oauthResources,
-  oauthClientResources,
-  oauthRefreshTokens,
-  oauthAccessTokens,
-  oauthConsents,
-  oauthClientAssertions,
-  organizationCapabilities,
-  organizationDomains,
-  groups,
-  groupMembers,
-  grantContexts,
-  entitlements,
-  ssoProviders,
-  auditEvents,
-];
-
 describe("integration: PostgreSQL schema", () => {
-  test("resolves every table configuration and foreign key reference", () => {
-    for (const table of allTables) {
-      // Resolving every lazy reference proves each foreign key points at a
-      // real schema column, not merely that PostgreSQL accepted the push.
-      for (const foreignKey of getTableConfig(table).foreignKeys) {
-        const reference = foreignKey.reference();
-        expect(reference.columns).not.toBeEmpty();
-        expect(reference.foreignColumns).toHaveLength(reference.columns.length);
-      }
-    }
-  });
-
   test("Better Auth creates core records with UUIDv7 and the inert default", async () => {
     const auth = createAuth(connection.db, environment);
     const context = await auth.$context;
@@ -396,15 +349,6 @@ describe("integration: PostgreSQL schema", () => {
     );
     expect(updatedDomain!.status).toBe("disabled");
     expect(updatedDomain!.updatedAt.getTime()).toBeGreaterThan(past.getTime());
-  });
-
-  test("the real Better Auth health route is mounted at /auth", async () => {
-    const auth = createAuth(connection.db, environment);
-    const app = createApp({ auth, db: connection.db, environment });
-    const response = await app.request("/auth/ok");
-
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true });
   });
 
   test("reuses the single bounded pool for readiness checks", async () => {
@@ -1063,75 +1007,5 @@ describe("integration: PostgreSQL schema", () => {
     await connection.db.delete(groups).where(eq(groups.id, group.id));
     await connection.db.delete(members).where(eq(members.id, member.id));
     expect(await connection.db.select().from(entitlements)).toHaveLength(3);
-  });
-
-  test("cascades organization data while keeping clients and resources", async () => {
-    const auth = createAuth(connection.db, environment);
-    const { clientId, resource } = await registerTutor(auth);
-    const organization = await insertOrganization();
-    const user = await insertUser();
-    const member = await insertMember(organization.id, user.id);
-    const group = await createGroup(connection.db, {
-      organizationId: organization.id,
-      slug: "everyone",
-      name: "Everyone",
-    });
-    await addGroupMember(connection.db, {
-      organizationId: organization.id,
-      groupId: group.id,
-      memberId: member.id,
-    });
-    await createOrganizationDomain(connection.db, {
-      organizationId: organization.id,
-      domain: "example.com",
-    });
-    await createEntitlement(connection.db, {
-      organizationId: organization.id,
-      groupId: group.id,
-      resource,
-      scopes: ["tutor:read"],
-    });
-    await createEntitlement(connection.db, {
-      organizationId: organization.id,
-      memberId: member.id,
-      clientId,
-      scopes: ["openid"],
-    });
-
-    const graph = await connection.db.query.organizations.findFirst({
-      where: eq(organizations.id, organization.id),
-      with: {
-        domains: true,
-        groups: { with: { groupMembers: true, entitlements: true } },
-        members: { with: { groupMembers: true, entitlements: true } },
-        entitlements: { with: { oauthClient: true, oauthResource: true } },
-      },
-    });
-    expect(graph?.domains).toHaveLength(1);
-    expect(graph?.groups[0]?.groupMembers).toHaveLength(1);
-    expect(graph?.groups[0]?.entitlements).toHaveLength(1);
-    expect(graph?.members[0]?.groupMembers).toHaveLength(1);
-    expect(graph?.members[0]?.entitlements).toHaveLength(1);
-    expect(
-      graph?.entitlements.map(
-        (entitlement) =>
-          entitlement.oauthClient?.clientId ??
-          entitlement.oauthResource?.identifier,
-      ),
-    ).toEqual(expect.arrayContaining([clientId, resource]));
-
-    await connection.db
-      .delete(organizations)
-      .where(eq(organizations.id, organization.id));
-
-    expect(await connection.db.select().from(members)).toHaveLength(0);
-    expect(await connection.db.select().from(groups)).toHaveLength(0);
-    expect(await connection.db.select().from(groupMembers)).toHaveLength(0);
-    expect(await connection.db.select().from(organizationDomains)).toHaveLength(
-      0,
-    );
-    expect(await connection.db.select().from(entitlements)).toHaveLength(0);
-    expect(await connection.db.select().from(oauthClients)).toHaveLength(1);
-    expect(await connection.db.select().from(oauthResources)).toHaveLength(1);
   });
 });

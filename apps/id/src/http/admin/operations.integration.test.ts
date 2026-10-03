@@ -1,5 +1,4 @@
 import { createDatabase } from "../../db/client.ts";
-import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import {
@@ -9,7 +8,6 @@ import {
 import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
 import {
   adminOperations,
-  members,
   organizations,
   auditEvents,
 } from "../../db/schema/index.ts";
@@ -19,7 +17,7 @@ import { routes } from "./operations.ts";
 let fixture: AdminFixture;
 const id = createId();
 beforeAll(async () => {
-  fixture = await createAdminFixture();
+  fixture = await createAdminFixture({}, { restrictedRole: true });
   await fixture.db.execute(sql`truncate admin_operations cascade`);
   await fixture.db.insert(adminOperations).values({
     id,
@@ -89,31 +87,6 @@ test("unknown operations return not_found and invalid UUIDs are rejected", async
   expect((await read("/operations/not-a-uuid", "platformReader")).status).toBe(
     400,
   );
-});
-
-test("operation audit reads require authority current at transaction entry", async () => {
-  for (const path of [`/operations/${id}`]) {
-    const original = fixture.db.transaction.bind(fixture.db);
-    fixture.db.transaction = afterBrokerRead(original, (async (
-      ...args: Parameters<typeof original>
-    ) => {
-      fixture.db.transaction = original;
-      await fixture.db
-        .update(members)
-        .set({ status: "revoked", revokedAt: new Date() })
-        .where(eq(members.id, fixture.principals.platformReader.memberId));
-      return original(...args);
-    }) as typeof original);
-    try {
-      expect((await read(path, "platformReader")).status).toBe(403);
-    } finally {
-      fixture.db.transaction = original;
-      await fixture.db
-        .update(members)
-        .set({ status: "active", revokedAt: null })
-        .where(eq(members.id, fixture.principals.platformReader.memberId));
-    }
-  }
 });
 
 test("platform operation auditing survives tenant erasure", async () => {

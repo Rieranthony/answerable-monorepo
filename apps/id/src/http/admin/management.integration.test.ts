@@ -27,7 +27,7 @@ const auditService = {
 };
 let fixture: AdminFixture;
 beforeEach(async () => {
-  fixture = await createAdminFixture();
+  fixture = await createAdminFixture({}, { restrictedRole: true });
 });
 afterEach(async () => {
   await fixture?.close();

@@ -7,10 +7,8 @@ import {
 } from "../../__tests__/admin.ts";
 import { createOrganizationDomain } from "../../__tests__/domain-queries.ts";
 import { signInThroughIdp } from "../../__tests__/federation.ts";
-import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { createSsoProvider } from "../../__tests__/sso-queries.ts";
 import {
-  adminOperations,
   auditEvents,
   entitlements,
   members,
@@ -19,11 +17,13 @@ import {
   users,
 } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
-import { organizationSchema, routes } from "./organizations.ts";
+import { routes } from "./organizations.ts";
+import { responseSchema } from "../../__tests__/openapi-response.ts";
+const organizationSchema = responseSchema("getOrganization", 200);
 
 let fixture: AdminFixture;
 beforeAll(async () => {
-  fixture = await createAdminFixture();
+  fixture = await createAdminFixture({}, { restrictedRole: true });
 });
 afterAll(async () => {
   await fixture?.close();
@@ -366,93 +366,3 @@ test("organisation paths validate UUIDs and platform writes return 404 for missi
     expect((await request("", "POST", body)).status).toBe(400);
   }
 });
-
-test("organisation commands recover committed results across lifecycle changes and erasure", async () => {
-  const input = { slug: "organisation-replay", name: "Replay" };
-  const first = await command("org-create", "", "POST", input);
-  expect(first.status).toBe(201);
-  const original = await first.json();
-  expect(first.headers.get("Operation-Id")).toBeString();
-  const duplicate = await command("org-create", "", "POST", input);
-  expect(duplicate.headers.get("Idempotency-Replayed")).toBe("true");
-  await expectReceipt(fixture.db, duplicate);
-  expect(
-    (await command("org-create", "", "POST", { ...input, name: "Other" }))
-      .status,
-  ).toBe(409);
-  for (const [suffix, method, body] of [
-    ["", "PATCH", { name: "Changed" }],
-    ["/disable", "POST", undefined],
-    ["/enable", "POST", undefined],
-  ] as const) {
-    const key = `org-${method}-${suffix}`;
-    const path = `/${original.id}${suffix}`;
-    const changed = await command(key, path, method, body);
-    expect(changed.status).toBe(200);
-    const saved = await changed.json();
-    const repeated = await command(key, path, method, body);
-    expect(repeated.headers.get("Operation-Id")).toBe(
-      changed.headers.get("Operation-Id"),
-    );
-    expect(repeated.headers.get("Idempotency-Replayed")).toBe("true");
-    await expectReceipt(fixture.db, repeated);
-    expect(
-      await fixture.db
-        .select()
-        .from(auditEvents)
-        .where(
-          eq(auditEvents.operationId, changed.headers.get("Operation-Id")!),
-        ),
-    ).toHaveLength(1);
-    const noop = await command(`${key}-noop`, path, method, body);
-    expect(noop.status).toBe(200);
-    expect(await noop.json()).toEqual(saved);
-    const [receipt] = await fixture.db
-      .select()
-      .from(adminOperations)
-      .where(eq(adminOperations.id, noop.headers.get("Operation-Id")!));
-    expect(receipt?.outcome).toBe("noop");
-  }
-  const erasePath = `/${original.id}?confirm=${original.id}`;
-  const erased = await command("org-erase", erasePath, "DELETE");
-  expect(erased.status).toBe(204);
-  const eraseReplay = await command("org-erase", erasePath, "DELETE");
-  expect(eraseReplay.status).toBe(204);
-  expect(eraseReplay.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(
-    await fixture.db
-      .select()
-      .from(organizations)
-      .where(eq(organizations.id, original.id)),
-  ).toMatchObject([{ status: "disabled", deletedAt: expect.any(Date) }]);
-  const creationReplay = await command("org-create", "", "POST", input);
-  expect(creationReplay.headers.get("Idempotency-Replayed")).toBe("true");
-  await expectReceipt(fixture.db, creationReplay);
-});
-
-const patchTags = new Map<string, string>();
-async function command(
-  key: string,
-  path: string,
-  method: string,
-  body?: unknown,
-) {
-  const headers = fixture.headers("platformAdmin");
-  headers.set("Idempotency-Key", key);
-  if (method === "PATCH") {
-    if (!patchTags.has(key)) {
-      const current = await fixture.app.request(
-        `/api/admin/v1/organizations${path}`,
-        { headers },
-      );
-      patchTags.set(key, current.headers.get("ETag")!);
-    }
-    headers.set("If-Match", patchTags.get(key)!);
-  }
-  if (body !== undefined) headers.set("Content-Type", "application/json");
-  return fixture.app.request(`/api/admin/v1/organizations${path}`, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-}

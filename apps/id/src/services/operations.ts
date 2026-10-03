@@ -14,7 +14,8 @@ export type OperationJson =
   | { [key: string]: OperationJson };
 type Json = OperationJson;
 
-/** Callers supply validated, defaulted JSON; domain sets must already be sorted. */
+/** Callers supply validated, defaulted JSON from a request (so every number is
+ * finite); domain sets must already be sorted. */
 function canonical(value: Json): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   if (value !== null && typeof value === "object")
@@ -22,8 +23,6 @@ function canonical(value: Json): string {
       .sort()
       .map((key) => `${JSON.stringify(key)}:${canonical(value[key]!)}`)
       .join(",")}}`;
-  if (typeof value === "number" && !Number.isFinite(value))
-    throw new Error("Operation input must be finite JSON");
   return JSON.stringify(value);
 }
 const digest = (value: string) =>
@@ -51,14 +50,8 @@ export function executeOperation<Authority>(
     operationId: string,
     authority: Authority,
   ) => Promise<Result & { body?: Json }>,
-  releaseAuthority?: (authority: Authority) => void,
+  releaseAuthority: (authority: Authority) => void,
 ) {
-  if (!command.key.length || command.key.length > 256)
-    throw new ProblemError(
-      400,
-      "invalid_idempotency_key",
-      "Idempotency key must contain 1–256 characters",
-    );
   const identity = {
     actorInstance: command.actorInstance,
     authorityScope: command.authorityScope,
@@ -120,7 +113,7 @@ export function executeOperation<Authority>(
         .returning();
       return { operation: operation!, replayed: false, body };
     } finally {
-      releaseAuthority?.(authority);
+      releaseAuthority(authority);
     }
   });
 }

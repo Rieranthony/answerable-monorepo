@@ -18,7 +18,7 @@ import { createId } from "../../lib/id.ts";
 
 let fixture: AdminFixture;
 beforeAll(async () => {
-  fixture = await createAdminFixture();
+  fixture = await createAdminFixture({}, { restrictedRole: true });
 });
 afterAll(async () => {
   await fixture?.close();

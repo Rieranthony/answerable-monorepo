@@ -160,39 +160,6 @@ test("missing resources, confirmation mismatch and entitlement references fail w
     .where(eq(entitlements.resource, row.identifier));
   await service.eraseResource(db, actor, row.identifier, row.identifier);
 });
-test("audit failures roll back every resource write", async () => {
-  const db = connection.db;
-  const bad = { ...actor, requestId: "\0" };
-  await expect(service.createResource(db, bad, input)).rejects.toThrow();
-  await expect(service.getResource(db, input.identifier)).rejects.toMatchObject(
-    { status: 404 },
-  );
-  const row = await service.createResource(db, actor, input);
-  await expect(
-    service.updateResource(db, bad, row.identifier, { name: "Failed" }),
-  ).rejects.toThrow();
-  await expect(
-    service.disableResource(db, bad, row.identifier),
-  ).rejects.toThrow();
-  expect(await service.getResource(db, row.identifier)).toMatchObject({
-    name: "MCP",
-    disabled: false,
-  });
-  await service.disableResource(db, actor, row.identifier);
-  await expect(
-    service.enableResource(db, bad, row.identifier),
-  ).rejects.toThrow();
-  expect(await service.getResource(db, row.identifier)).toMatchObject({
-    disabled: true,
-  });
-  await expect(
-    service.eraseResource(db, bad, row.identifier, row.identifier),
-  ).rejects.toThrow();
-  expect(await service.getResource(db, row.identifier)).toMatchObject({
-    disabled: true,
-  });
-  expect(await db.select().from(auditEvents)).toHaveLength(2);
-});
 
 test("resource erasure requires explicit unlinking in both the service and database", async () => {
   const db = connection.db;

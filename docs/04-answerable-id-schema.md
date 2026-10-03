@@ -4,7 +4,7 @@ This is the current storage contract. [Design](03-answerable-id.md) describes be
 
 ## Service contract
 
-Bun, Hono and Better Auth 1.7.2 use Postgres for identity, sessions, protocol state, policy, audit and command recovery. The baseline has 28 tables, 27 custom functions, 61 triggers, 24 policies and eleven RLS-enabled tables. The [catalogue](../apps/id/src/__tests__/migration-catalog.json) preserves custom SQL that schema generation alone does not fully describe.
+Bun, Hono and Better Auth 1.7.2 use Postgres for identity, sessions, protocol state, policy, audit and command recovery. The baseline has 26 tables, 23 custom functions, 57 triggers, 24 policies and eleven RLS-enabled tables. The [catalogue](../apps/id/src/__tests__/migration-catalog.json) preserves custom SQL that schema generation alone does not fully describe.
 
 ## Entity relationship diagram
 

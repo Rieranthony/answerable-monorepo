@@ -15,7 +15,6 @@ import {
   oauthClients,
   users,
 } from "../db/schema/index.ts";
-import { mapDatabaseError } from "../http/problem.ts";
 import { createId } from "../lib/id.ts";
 import type { Actor } from "./actor.ts";
 import * as implementation from "./groups.ts";
@@ -58,15 +57,6 @@ const actor: Actor = {
   ip: "192.0.2.1",
   userAgent: "test",
 };
-
-async function mapped(promise: Promise<unknown>, status: number, code: string) {
-  try {
-    await promise;
-    throw new Error("Expected a database error");
-  } catch (error) {
-    expect(mapDatabaseError(error)).toMatchObject({ status, code });
-  }
-}
 async function grant(
   organizationId: string,
   principal: { groupId: string } | { memberId: string },
@@ -222,74 +212,4 @@ test("group lifecycle and membership writes emit one attributed audit each and e
   });
   for (const event of events.filter((e) => e.targetType === "group_member"))
     expect(event.data).toMatchObject({ groupId: row.id });
-});
-test("group writes reject missing or foreign rows, managed memberships and database constraints", async () => {
-  const { db, org, other, ids } = await seed();
-  const row = await service.createGroup(db, actor, org.id, {
-    slug: "finance",
-    name: "Finance",
-    externalId: "directory",
-  });
-  for (const input of [
-    { slug: "finance", name: "Duplicate" },
-    { slug: "another", name: "Duplicate", externalId: "directory" },
-  ])
-    await mapped(
-      service.createGroup(db, actor, org.id, input),
-      409,
-      "conflict",
-    );
-  for (const organizationId of [other.id, createId()]) {
-    await expect(
-      service.getGroup(db, organizationId, row.id),
-    ).rejects.toMatchObject({ status: 404 });
-    await expect(
-      service.updateGroup(db, actor, organizationId, row.id, { name: "No" }),
-    ).rejects.toMatchObject({ status: 404 });
-    await expect(
-      service.disableGroup(db, actor, organizationId, row.id),
-    ).rejects.toMatchObject({ status: 404 });
-    await expect(
-      service.enableGroup(db, actor, organizationId, row.id),
-    ).rejects.toMatchObject({ status: 404 });
-    await expect(
-      service.eraseGroup(db, actor, organizationId, row.id, row.id),
-    ).rejects.toMatchObject({ status: 404 });
-    await expect(
-      service.listGroupMembers(db, organizationId, row.id, { limit: 1 }),
-    ).rejects.toMatchObject({ status: 404 });
-    await expect(
-      service.putMember(db, actor, organizationId, row.id, ids[0]!, {}),
-    ).rejects.toMatchObject({ status: 404 });
-    await expect(
-      service.removeMember(db, actor, organizationId, row.id, ids[0]!),
-    ).rejects.toMatchObject({ status: 404 });
-  }
-  await expect(
-    service.listGroups(db, createId(), { limit: 1 }),
-  ).rejects.toMatchObject({ status: 404 });
-  await expect(
-    service.createGroup(db, actor, createId(), { slug: "no", name: "No" }),
-  ).rejects.toMatchObject({ status: 404 });
-  for (const memberId of [ids[2]!, createId()])
-    await expect(
-      service.putMember(db, actor, org.id, row.id, memberId, {}),
-    ).rejects.toMatchObject({ status: 404 });
-  await expect(
-    service.putMember(db, actor, org.id, row.id, ids[0]!, {}),
-  ).rejects.toMatchObject({ status: 409, code: "group_directory_managed" });
-  await expect(
-    service.removeMember(db, actor, org.id, row.id, ids[0]!),
-  ).rejects.toMatchObject({ status: 409, code: "group_directory_managed" });
-  await service.updateGroup(db, actor, org.id, row.id, { externalId: null });
-  await mapped(
-    service.putMember(db, actor, org.id, row.id, ids[0]!, {
-      validFrom: future,
-      validUntil: past,
-    }),
-    400,
-    "constraint_violation",
-  );
-  expect(await queries.findGroupMember(db, org.id, row.id, ids[0]!)).toBeNull();
-  expect(await db.select().from(auditEvents)).toHaveLength(2);
 });

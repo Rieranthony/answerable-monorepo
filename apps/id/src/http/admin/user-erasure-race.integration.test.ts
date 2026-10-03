@@ -4,10 +4,7 @@ import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
-import { createApp } from "../../app.ts";
-import { createAuth } from "../../auth.ts";
-import { createDatabase, type DatabaseConnection } from "../../db/client.ts";
-import { configureRuntimeRole } from "../../db/runtime-role.ts";
+import { createDatabase } from "../../db/client.ts";
 import {
   auditEvents,
   oauthAccessTokens,
@@ -19,35 +16,11 @@ import {
 import { createId } from "../../lib/id.ts";
 
 let fixture: AdminFixture;
-let runtime: DatabaseConnection;
-let app: ReturnType<typeof createApp>;
-let role: string;
 beforeEach(async () => {
-  fixture = await createAdminFixture();
-  role = `id_test_user_cascade_${crypto.randomUUID().replaceAll("-", "")}`;
-  await configureRuntimeRole(fixture.db, role);
-  const password = crypto.randomUUID().replaceAll("-", "");
-  await fixture.db.execute(
-    sql.raw(`alter role "${role}" login password '${password}'`),
-  );
-  const url = new URL(fixture.environment.databaseUrl);
-  url.username = role;
-  url.password = password;
-  const environment = { ...fixture.environment, databaseUrl: url.toString() };
-  runtime = createDatabase(environment);
-  app = createApp({
-    db: runtime.db,
-    auth: createAuth(runtime.db, environment),
-    environment,
-  });
+  fixture = await createAdminFixture({}, { restrictedRole: true });
 });
 afterEach(async () => {
-  await runtime?.close();
-  if (fixture) {
-    await fixture.db.execute(sql`drop owned by ${sql.identifier(role)}`);
-    await fixture.db.execute(sql`drop role ${sql.identifier(role)}`);
-    await fixture.close();
-  }
+  await fixture?.close();
 });
 function request(
   path: string,
@@ -57,7 +30,7 @@ function request(
 ) {
   const headers = fixture.headers(kind);
   headers.set("Idempotency-Key", key);
-  return app.request(`/api/admin/v1${path}`, { method, headers });
+  return fixture.app.request(`/api/admin/v1${path}`, { method, headers });
 }
 
 import {

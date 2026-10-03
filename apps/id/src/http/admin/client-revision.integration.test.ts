@@ -8,7 +8,10 @@ import {
 } from "../../__tests__/admin.ts";
 let fixture: AdminFixture;
 beforeAll(async () => {
-  fixture = await createAdminFixture({ databasePoolMax: 2 });
+  fixture = await createAdminFixture(
+    { databasePoolMax: 2 },
+    { restrictedRole: true },
+  );
   const headers = fixture.headers("platformAdmin");
   headers.set("Content-Type", "application/json");
   const response = await fixture.app.request("/api/admin/v1/clients", {

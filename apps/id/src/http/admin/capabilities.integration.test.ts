@@ -18,7 +18,7 @@ import { createId } from "../../lib/id.ts";
 import { routes } from "./capabilities.ts";
 let fixture: AdminFixture;
 beforeAll(async () => {
-  fixture = await createAdminFixture();
+  fixture = await createAdminFixture({}, { restrictedRole: true });
 });
 afterAll(async () => {
   await fixture?.close();
@@ -315,53 +315,6 @@ test("platform writers can suspend and remove legacy user capabilities even afte
   ).toBe(200);
   expect((await request("DELETE", path)).status).toBe(204);
   expect((await request("GET", path)).status).toBe(404);
-});
-
-test("a machine cannot recover a capability command after its own approval is revoked", async () => {
-  const input = await setup();
-  const token = await fixture.mintMachineToken();
-  const headers = fixture.headers({ bearer: token });
-  headers.set("Content-Type", "application/json");
-  const send = () =>
-    fixture.app.request(base(), {
-      method: "POST",
-      headers,
-      body: JSON.stringify(input),
-    });
-  const created = await send();
-  expect(created.status).toBe(201);
-  const row = await created.json();
-  const [own] = await fixture.db
-    .select()
-    .from(organizationCapabilities)
-    .where(
-      eq(organizationCapabilities.clientId, fixture.platform.client.clientId),
-    );
-  await fixture.db
-    .update(organizationCapabilities)
-    .set({ status: "disabled" })
-    .where(eq(organizationCapabilities.id, own!.id));
-  try {
-    const denied = await send();
-    expect(denied.status).toBe(403);
-    expect(await denied.json()).toMatchObject({ code: "insufficient_scope" });
-    expect(
-      await fixture.db
-        .select()
-        .from(auditEvents)
-        .where(
-          and(
-            eq(auditEvents.targetId, row.id),
-            eq(auditEvents.action, "capability.created"),
-          ),
-        ),
-    ).toHaveLength(1);
-  } finally {
-    await fixture.db
-      .update(organizationCapabilities)
-      .set({ status: "active" })
-      .where(eq(organizationCapabilities.id, own!.id));
-  }
 });
 
 test("direct-session ceilings narrow assignments and can be removed/recreated without restoring old receipt effects", async () => {

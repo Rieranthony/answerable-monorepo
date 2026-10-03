@@ -6,7 +6,7 @@ import { standardResponses } from "./openapi.ts";
 import { adminScopes } from "./scopes.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 
-export const meSchema = z.object({
+const meSchema = z.object({
   principal: z.discriminatedUnion("type", [
     z.object({ type: z.literal("root"), scopes: z.array(z.string()) }),
     z.object({

@@ -22,7 +22,7 @@ export const hostSchema = z
   .trim()
   .toLowerCase()
   .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/);
-export const domainSchema = z.object({
+const domainSchema = z.object({
   id: z.uuid(),
   organizationId: z.uuid(),
   domain: z.string(),

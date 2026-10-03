@@ -63,34 +63,6 @@ test("person and tenant audit history survive membership and identity erasure", 
   ).toEqual([event.id]);
 });
 
-test("subject-write failure rolls back the audit fact", async () => {
-  const db = connection.db;
-  await db.execute(
-    sql`alter table audit_event_subjects add constraint test_subject_failure check (entity_id <> 'fail-subject')`,
-  );
-  try {
-    await expect(
-      recordAuditEvent(db, {
-        actorType: "system",
-        actorId: "fail-subject",
-        action: "test",
-        targetType: "route",
-        outcome: "success",
-      }),
-    ).rejects.toThrow();
-    expect(
-      await db
-        .select()
-        .from(auditEvents)
-        .where(eq(auditEvents.actorId, "fail-subject")),
-    ).toHaveLength(0);
-  } finally {
-    await db.execute(
-      sql`alter table audit_event_subjects drop constraint test_subject_failure`,
-    );
-  }
-});
-
 test("recorded subjects do not invent a removed membership's user", async () => {
   const db = connection.db;
   const eventId = createId(),

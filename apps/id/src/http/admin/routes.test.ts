@@ -8,11 +8,6 @@ import {
 import { adminRouteTables } from "./index.ts";
 import { tierOf } from "./route-table.ts";
 
-// Temporary F3 backlog, not exemptions from the final command contract.
-// Remove entries only when the route's replay/revision integration tests pass.
-const pendingReplay: string[] = [];
-const pendingRevision: string[] = [];
-
 test("administrative command contract gaps cannot grow unnoticed", () => {
   const mutations = adminRouteTables
     .flatMap((table) => Object.values(table))
@@ -84,8 +79,8 @@ test("administrative command contract gaps cannot grow unnoticed", () => {
           expect(route.responses, route.operationId).toHaveProperty(status);
     }
   }
-  expect(missingReplay.sort()).toEqual(pendingReplay);
-  expect(missingRevision.sort()).toEqual(pendingRevision);
+  expect(missingReplay).toEqual([]);
+  expect(missingRevision).toEqual([]);
 });
 
 test("admin route tables equal the OpenAPI operation union", async () => {

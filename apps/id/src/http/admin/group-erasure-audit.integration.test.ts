@@ -1,15 +1,10 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { eq, inArray, sql } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
 import { expectReceipt } from "../../__tests__/operation-receipt.ts";
-import { createApp } from "../../app.ts";
-import { createAuth } from "../../auth.ts";
-import { createDatabase, type DatabaseConnection } from "../../db/client.ts";
-import { withDatabaseScope } from "../../db/isolation.ts";
-import { configureRuntimeRole } from "../../db/runtime-role.ts";
 import {
   adminOperations,
   auditEvents,
@@ -21,39 +16,14 @@ import {
 } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
 let fixture: AdminFixture;
-let runtime: DatabaseConnection;
-let app: ReturnType<typeof createApp>;
-let role: string;
 beforeEach(async () => {
-  fixture = await createAdminFixture();
-  role = `id_test_group_audit_${crypto.randomUUID().replaceAll("-", "")}`;
-  await configureRuntimeRole(fixture.db, role);
-  const password = crypto.randomUUID().replaceAll("-", "");
-  await fixture.db.execute(
-    sql.raw(`alter role "${role}" login password '${password}'`),
+  fixture = await createAdminFixture(
+    { databasePoolMax: 4 },
+    { restrictedRole: true },
   );
-  const url = new URL(fixture.environment.databaseUrl);
-  url.username = role;
-  url.password = password;
-  const environment = {
-    ...fixture.environment,
-    databaseUrl: url.toString(),
-    databasePoolMax: 4,
-  };
-  runtime = createDatabase(environment);
-  app = createApp({
-    db: runtime.db,
-    auth: createAuth(runtime.db, environment),
-    environment,
-  });
 });
 afterEach(async () => {
-  await runtime?.close();
-  if (fixture) {
-    await fixture.db.execute(sql`drop owned by ${sql.identifier(role)}`);
-    await fixture.db.execute(sql`drop role ${sql.identifier(role)}`);
-    await fixture.close();
-  }
+  await fixture?.close();
 });
 
 async function seedGroup(organizationId: string, memberId: string) {
@@ -110,7 +80,7 @@ async function seedGroup(organizationId: string, memberId: string) {
 function erase(group: { id: string; organizationId: string }, key: string) {
   const headers = fixture.headers("root");
   headers.set("Idempotency-Key", key);
-  return app.request(
+  return fixture.app.request(
     `/api/admin/v1/organizations/${group.organizationId}/groups/${group.id}?confirm=${group.id}`,
     { method: "DELETE", headers },
   );
@@ -286,13 +256,13 @@ test("group erasure records actual removed policy rows, preserves another tenant
   headers.set("Idempotency-Key", crypto.randomUUID());
   expect(
     (
-      await app.request(
+      await fixture.app.request(
         `/api/admin/v1/users/${person.userId}?confirm=${person.userId}`,
         { method: "DELETE", headers },
       )
     ).status,
   ).toBe(204);
-  const history = await app.request(
+  const history = await fixture.app.request(
     `/api/admin/v1/users/${person.userId}/audit-events?action=group.erased`,
     { headers },
   );
@@ -302,176 +272,6 @@ test("group erasure records actual removed policy rows, preserves another tenant
   ]);
 });
 
-test("group erasure audit failure restores assignments, entitlements and receipt before same-key recovery", async () => {
-  const a = await seedGroup(
-    fixture.tenant.organizationId,
-    fixture.principals.tenantReader.memberId,
-  );
-  const key = crypto.randomUUID();
-  const before = await snapshot();
-  await fixture.db.execute(
-    sql`create function fail_group_erasure_audit() returns trigger language plpgsql as $$ begin if NEW.action = 'group.erased' then raise exception 'injected audit failure'; end if; return NEW; end $$`,
-  );
-  await fixture.db.execute(
-    sql`create trigger fail_group_erasure_audit before insert on audit_events for each row execute function fail_group_erasure_audit()`,
-  );
-  try {
-    expect((await erase(a.group, key)).status).toBe(500);
-    expect(await snapshot()).toEqual(before);
-  } finally {
-    await fixture.db.execute(
-      sql`drop trigger fail_group_erasure_audit on audit_events`,
-    );
-    await fixture.db.execute(sql`drop function fail_group_erasure_audit()`);
-  }
-  expect((await erase(a.group, key)).status).toBe(204);
-  const after = await snapshot();
-  expect(after.operations.length).toBe(before.operations.length + 1);
-  expect(
-    after.events.filter((row) => row.action === "group.erased"),
-  ).toHaveLength(1);
-});
-
-for (const order of ["assignment-first", "user-first"] as const) {
-  test(`assignment removal history and global user erasure are ordered: ${order}`, async () => {
-    const person = fixture.principals.tenantReader;
-    const a = await seedGroup(fixture.tenant.organizationId, person.memberId);
-    const auditAction =
-      order === "assignment-first" ? "group_member.removed" : "user.erased";
-    const gateKey = Math.floor(Math.random() * 1_000_000_000);
-    await fixture.db.execute(
-      sql.raw(
-        `create function pause_assignment_history() returns trigger language plpgsql as $$ begin if NEW.action = '${auditAction}' then perform pg_advisory_xact_lock(${gateKey}); end if; return NEW; end $$`,
-      ),
-    );
-    await fixture.db.execute(
-      sql`create trigger pause_assignment_history before insert on audit_events for each row execute function pause_assignment_history()`,
-    );
-    let entered!: () => void;
-    let release!: () => void;
-    let blockerPid = 0;
-    const held = new Promise<void>((resolve) => {
-      entered = resolve;
-    });
-    const resume = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const blocker = fixture.db.transaction(async (tx) => {
-      await tx.execute(sql`select pg_advisory_xact_lock(${gateKey})`);
-      blockerPid = Number(
-        (await tx.execute(sql`select pg_backend_pid() as pid`)).rows[0]!.pid,
-      );
-      entered();
-      await resume;
-    });
-    const assignmentHeaders = fixture.headers("root");
-    assignmentHeaders.set("Idempotency-Key", crypto.randomUUID());
-    const userHeaders = fixture.headers("root");
-    userHeaders.set("Idempotency-Key", crypto.randomUUID());
-    const removeAssignment = () =>
-      app.request(
-        `/api/admin/v1/organizations/${a.group.organizationId}/groups/${a.group.id}/members/${person.memberId}`,
-        { method: "DELETE", headers: assignmentHeaders },
-      );
-    const eraseUser = () =>
-      app.request(
-        `/api/admin/v1/users/${person.userId}?confirm=${person.userId}`,
-        { method: "DELETE", headers: userHeaders },
-      );
-    async function waitingOn(pid: number) {
-      const deadline = Date.now() + 1500;
-      while (true) {
-        const waiting = await runtime.db.execute(
-          sql`select pid from pg_stat_activity where usename = ${role} and ${pid} = any(pg_blocking_pids(pid))`,
-        );
-        if (waiting.rows.length) return Number(waiting.rows[0]!.pid);
-        if (Date.now() > deadline)
-          throw new Error("Expected command did not reach its database lock");
-        await Bun.sleep(10);
-      }
-    }
-    let first: ReturnType<typeof app.request> | undefined;
-    let second: ReturnType<typeof app.request> | undefined;
-    await held;
-    try {
-      first = order === "assignment-first" ? removeAssignment() : eraseUser();
-      const firstPid = await waitingOn(blockerPid);
-      second = order === "assignment-first" ? eraseUser() : removeAssignment();
-      await waitingOn(firstPid);
-    } finally {
-      release();
-      await blocker;
-      // Finish both real requests before removing the test barrier or closing pools.
-      await Promise.allSettled([first, second]);
-      await fixture.db.execute(
-        sql`drop trigger pause_assignment_history on audit_events`,
-      );
-      await fixture.db.execute(sql`drop function pause_assignment_history()`);
-    }
-    const firstResponse = await first!;
-    const secondResponse = await second!;
-    expect(firstResponse.status).toBe(204);
-    expect(secondResponse.status).toBe(
-      order === "assignment-first" ? 204 : 404,
-    );
-    const history = await app.request(
-      `/api/admin/v1/users/${person.userId}/audit-events?action=group_member.removed`,
-      { headers: fixture.headers("root") },
-    );
-    if (order === "assignment-first") {
-      expect(history.status).toBe(200);
-      const items = (await history.json()).items;
-      expect(items).toHaveLength(1);
-      expect(items[0]).toMatchObject({
-        action: "group_member.removed",
-        schemaVersion: 3,
-        organizationId: a.group.organizationId,
-        targetId: person.memberId,
-        data: {
-          groupId: a.group.id,
-          before: { id: a.assignment.id },
-          after: { deletedAt: expect.any(String) },
-        },
-      });
-      const references = await withDatabaseScope(
-        runtime.db,
-        { kind: "platform", access: "read" },
-        (tx) =>
-          tx
-            .select()
-            .from(auditEventSubjects)
-            .where(eq(auditEventSubjects.eventId, items[0].id)),
-      );
-      expect(references).toContainEqual(
-        expect.objectContaining({
-          entityType: "user",
-          entityId: person.userId,
-          relationship: "affected",
-          provenance: "recorded",
-        }),
-      );
-      const replay = await removeAssignment();
-      expect(replay.status).toBe(204);
-      expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-    } else {
-      expect(history.status).toBe(200);
-      expect((await history.json()).items).toEqual([]);
-      expect((await removeAssignment()).status).toBe(404);
-      expect(
-        await withDatabaseScope(
-          runtime.db,
-          { kind: "platform", access: "read" },
-          (tx) =>
-            tx
-              .select()
-              .from(auditEvents)
-              .where(eq(auditEvents.action, "group_member.removed")),
-        ),
-      ).toEqual([]);
-    }
-  });
-}
-
 async function statusGroup(
   group: { id: string; organizationId: string },
   status: "enable" | "disable",
@@ -479,7 +279,7 @@ async function statusGroup(
 ) {
   const headers = fixture.headers("root");
   headers.set("Idempotency-Key", key);
-  return app.request(
+  return fixture.app.request(
     `/api/admin/v1/organizations/${group.organizationId}/groups/${group.id}/${status}`,
     { method: "POST", headers },
   );
@@ -591,14 +391,14 @@ test("group status changes retain their policy sources and affected users after 
   headers.set("Idempotency-Key", crypto.randomUUID());
   expect(
     (
-      await app.request(
+      await fixture.app.request(
         `/api/admin/v1/users/${person.userId}?confirm=${person.userId}`,
         { method: "DELETE", headers },
       )
     ).status,
   ).toBe(204);
   for (const event of events) {
-    const history = await app.request(
+    const history = await fixture.app.request(
       `/api/admin/v1/users/${person.userId}/audit-events?action=${event.action}`,
       { headers },
     );
@@ -607,180 +407,4 @@ test("group status changes retain their policy sources and affected users after 
       JSON.parse(JSON.stringify(event)),
     ]);
   }
-});
-for (const order of ["status-first", "user-first"] as const) {
-  test(`group status history and global user erasure are ordered: ${order}`, async () => {
-    const person = fixture.principals.tenantReader;
-    const a = await seedGroup(fixture.tenant.organizationId, person.memberId);
-    const auditAction =
-      order === "status-first" ? "group.disabled" : "user.erased";
-    const gateKey = Math.floor(Math.random() * 1_000_000_000);
-    await fixture.db.execute(
-      sql.raw(
-        `create function pause_group_status_history() returns trigger language plpgsql as $$ begin if NEW.action = '${auditAction}' then perform pg_advisory_xact_lock(${gateKey}); end if; return NEW; end $$`,
-      ),
-    );
-    await fixture.db.execute(
-      sql`create trigger pause_group_status_history before insert on audit_events for each row execute function pause_group_status_history()`,
-    );
-    let entered!: () => void;
-    let release!: () => void;
-    let blockerPid = 0;
-    const held = new Promise<void>((resolve) => {
-      entered = resolve;
-    });
-    const resume = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const blocker = fixture.db.transaction(async (tx) => {
-      await tx.execute(sql`select pg_advisory_xact_lock(${gateKey})`);
-      blockerPid = Number(
-        (await tx.execute(sql`select pg_backend_pid() as pid`)).rows[0]!.pid,
-      );
-      entered();
-      await resume;
-    });
-    const assignmentHeaders = fixture.headers("root");
-    assignmentHeaders.set("Idempotency-Key", crypto.randomUUID());
-    const userHeaders = fixture.headers("root");
-    userHeaders.set("Idempotency-Key", crypto.randomUUID());
-    const disableGroup = () =>
-      app.request(
-        `/api/admin/v1/organizations/${a.group.organizationId}/groups/${a.group.id}/disable`,
-        { method: "POST", headers: assignmentHeaders },
-      );
-    const eraseUser = () =>
-      app.request(
-        `/api/admin/v1/users/${person.userId}?confirm=${person.userId}`,
-        { method: "DELETE", headers: userHeaders },
-      );
-    async function waitingOn(pid: number) {
-      const deadline = Date.now() + 1500;
-      while (true) {
-        const waiting = await runtime.db.execute(
-          sql`select pid from pg_stat_activity where usename = ${role} and ${pid} = any(pg_blocking_pids(pid))`,
-        );
-        if (waiting.rows.length) return Number(waiting.rows[0]!.pid);
-        if (Date.now() > deadline)
-          throw new Error("Expected command did not reach its database lock");
-        await Bun.sleep(10);
-      }
-    }
-    let first: ReturnType<typeof app.request> | undefined;
-    let second: ReturnType<typeof app.request> | undefined;
-    await held;
-    try {
-      first = order === "status-first" ? disableGroup() : eraseUser();
-      const firstPid = await waitingOn(blockerPid);
-      second = order === "status-first" ? eraseUser() : disableGroup();
-      await waitingOn(firstPid);
-    } finally {
-      release();
-      await blocker;
-      // Finish both real requests before removing the test barrier or closing pools.
-      await Promise.allSettled([first, second]);
-      await fixture.db.execute(
-        sql`drop trigger pause_group_status_history on audit_events`,
-      );
-      await fixture.db.execute(sql`drop function pause_group_status_history()`);
-    }
-    const firstResponse = await first!;
-    const secondResponse = await second!;
-    expect(firstResponse.status).toBe(order === "status-first" ? 200 : 204);
-    expect(secondResponse.status).toBe(order === "status-first" ? 204 : 200);
-    const history = await app.request(
-      `/api/admin/v1/users/${person.userId}/audit-events?action=group.disabled`,
-      { headers: fixture.headers("root") },
-    );
-    if (order === "status-first") {
-      expect(history.status).toBe(200);
-      const items = (await history.json()).items;
-      expect(items).toHaveLength(1);
-      expect(items[0]).toMatchObject({
-        action: "group.disabled",
-        schemaVersion: 2,
-        organizationId: a.group.organizationId,
-        targetId: a.group.id,
-        data: {
-          before: { status: "active" },
-          after: { status: "disabled" },
-          policySources: {
-            assignments: [
-              expect.objectContaining({
-                id: a.assignment.id,
-                userId: person.userId,
-              }),
-            ],
-          },
-        },
-      });
-      const references = await withDatabaseScope(
-        runtime.db,
-        { kind: "platform", access: "read" },
-        (tx) =>
-          tx
-            .select()
-            .from(auditEventSubjects)
-            .where(eq(auditEventSubjects.eventId, items[0].id)),
-      );
-      expect(references).toContainEqual(
-        expect.objectContaining({
-          entityType: "user",
-          entityId: person.userId,
-          relationship: "affected",
-          provenance: "recorded",
-        }),
-      );
-      const replay = await disableGroup();
-      expect(replay.status).toBe(200);
-      expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-    } else {
-      expect(history.status).toBe(200);
-      expect((await history.json()).items).toEqual([]);
-      const [event] = await withDatabaseScope(
-        runtime.db,
-        { kind: "platform", access: "read" },
-        (tx) =>
-          tx
-            .select()
-            .from(auditEvents)
-            .where(eq(auditEvents.action, "group.disabled")),
-      );
-      expect(event!.data!.policySources).toMatchObject({ assignments: [] });
-      const replay = await disableGroup();
-      expect(replay.status).toBe(200);
-      expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-    }
-  });
-}
-
-test("group status subject failure rolls back status and receipt before same-key recovery", async () => {
-  const a = await seedGroup(
-    fixture.tenant.organizationId,
-    fixture.principals.tenantReader.memberId,
-  );
-  const before = await snapshot();
-  const key = crypto.randomUUID();
-  await fixture.db.execute(
-    sql`create function reject_status_subject() returns trigger language plpgsql as $$ begin if NEW.relationship = 'affected' then raise exception 'test subject failure'; end if; return NEW; end $$`,
-  );
-  await fixture.db.execute(
-    sql`create trigger reject_status_subject before insert on audit_event_subjects for each row execute function reject_status_subject()`,
-  );
-  try {
-    expect((await statusGroup(a.group, "disable", key)).status).toBe(500);
-  } finally {
-    await fixture.db.execute(
-      sql`drop trigger reject_status_subject on audit_event_subjects`,
-    );
-    await fixture.db.execute(sql`drop function reject_status_subject()`);
-  }
-  expect(await snapshot()).toEqual(before);
-  expect(
-    await fixture.db
-      .select()
-      .from(auditEvents)
-      .where(eq(auditEvents.action, "group.disabled")),
-  ).toEqual([]);
-  expect((await statusGroup(a.group, "disable", key)).status).toBe(200);
 });

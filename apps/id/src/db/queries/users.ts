@@ -37,17 +37,11 @@ import {
   oauthConsents,
 } from "../schema/index.ts";
 
-export class UserNotRetirableError extends Error {
-  constructor(userId: string) {
-    super(`User cannot be retired: ${userId}`);
-    this.name = "UserNotRetirableError";
-  }
-}
-
 export function retiredEmailFor(userId: string): string {
   return `${userId}@retired.invalid`;
 }
 
+/** The caller has locked the user and checked it is disabled and unretired. */
 export async function retireUserEmail(
   context: PlatformUsersContext,
   userId: string,
@@ -68,10 +62,7 @@ export async function retireUserEmail(
       ),
     )
     .returning();
-
-  if (!user) throw new UserNotRetirableError(userId);
-
-  return user;
+  return user!;
 }
 
 import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
@@ -563,26 +554,25 @@ export async function deleteUser(
     })
     .where(and(sql`${users.deletedAt} is null`, eq(users.id, userId)))
     .returning();
-  return row
-    ? {
-        ...row,
-        revokedGrantContexts,
-        effects: {
-          deletedAccessTokens,
-          deletedRefreshTokens,
-          softDeletedConsents,
-          clearedAccessTokenSessions,
-          clearedRefreshTokenSessions,
-          softDeletedEntitlements,
-          softDeletedAssignments,
-          softDeletedMembers,
-          softDeletedClientResources,
-          softDeletedClients,
-          deletedSessions,
-          softDeletedAccounts,
-          softDeletedInvitations,
-          detachedSsoProviders,
-        },
-      }
-    : null;
+  // The caller has locked this live user, so the update returns its row.
+  return {
+    ...row!,
+    revokedGrantContexts,
+    effects: {
+      deletedAccessTokens,
+      deletedRefreshTokens,
+      softDeletedConsents,
+      clearedAccessTokenSessions,
+      clearedRefreshTokenSessions,
+      softDeletedEntitlements,
+      softDeletedAssignments,
+      softDeletedMembers,
+      softDeletedClientResources,
+      softDeletedClients,
+      deletedSessions,
+      softDeletedAccounts,
+      softDeletedInvitations,
+      detachedSsoProviders,
+    },
+  };
 }

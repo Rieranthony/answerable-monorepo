@@ -35,7 +35,7 @@ import { standardResponses } from "./openapi.ts";
 const orgParams = uuidParam("organizationId");
 const params = orgParams.extend({ capabilityId: z.uuid() });
 const scopes = z.array(z.string().min(1)).min(1);
-export const capabilitySchema = z.object({
+const capabilitySchema = z.object({
   id: z.uuid(),
   organizationId: z.uuid(),
   clientId: z.string().nullable(),

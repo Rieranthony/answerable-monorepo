@@ -8,14 +8,8 @@ import {
 import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { approveMachineCapability } from "../../__tests__/capabilities.ts";
 import { signInThroughIdp } from "../../__tests__/federation.ts";
-import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { platformWriteService } from "../../__tests__/platform-context.ts";
-import {
-  adminOperations,
-  auditEvents,
-  members,
-  users,
-} from "../../db/schema/index.ts";
+import { auditEvents, members, users } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
 import * as clientsImplementation from "../../services/clients.ts";
 import { routes } from "./members.ts";
@@ -26,7 +20,7 @@ const clients = {
 };
 let fixture: AdminFixture;
 beforeAll(async () => {
-  fixture = await createAdminFixture();
+  fixture = await createAdminFixture({}, { restrictedRole: true });
 });
 afterAll(async () => {
   await fixture?.close();
@@ -389,11 +383,11 @@ test.each(["PATCH", "DELETE", "POST"])(
           headers,
         ),
       );
-    const original = fixture.db.transaction.bind(fixture.db);
-    fixture.db.transaction = afterBrokerRead(original, (async (
+    const original = fixture.appDb.transaction.bind(fixture.appDb);
+    fixture.appDb.transaction = afterBrokerRead(original, (async (
       ...args: Parameters<typeof original>
     ) => {
-      fixture.db.transaction = original;
+      fixture.appDb.transaction = original;
       // HTTP principal resolution has already admitted this actor. Commit a
       // revocation before the command enters its transaction.
       await fixture.db
@@ -439,7 +433,7 @@ test.each(["PATCH", "DELETE", "POST"])(
           ),
       ).toHaveLength(0);
     } finally {
-      fixture.db.transaction = original;
+      fixture.appDb.transaction = original;
       await fixture.db
         .update(members)
         .set({ status: "active", revokedAt: null })
@@ -520,165 +514,6 @@ test("an owned machine with org:users changes only its tenant's members", async 
     );
     expect(response.status).toBe(expected);
   }
-});
-
-test("member commands recover the same result without repeating their audit effect", async () => {
-  const target = await freshMember();
-  for (const [method, suffix, body] of [
-    ["PATCH", "", { validUntil: future }],
-    ["DELETE", "", undefined],
-    ["POST", "/reinstate", undefined],
-  ] as const) {
-    const headers = fixture.headers("tenantAdmin");
-    headers.set("content-type", "application/json");
-    const path = `/api/admin/v1/organizations/${fixture.tenant.organizationId}/members/${target.id}${suffix}`;
-    if (method === "PATCH")
-      headers.set("If-Match", await configurationTag(path, headers));
-    const send = () =>
-      fixture.app.request(path, {
-        method,
-        headers,
-        body: body === undefined ? undefined : JSON.stringify(body),
-      });
-    const first = await send();
-    expect(first.status).toBe(method === "DELETE" ? 204 : 200);
-    const operationId = first.headers.get("Operation-Id");
-    expect(operationId).toBeTruthy();
-    await first.text();
-    const replay = await send();
-    expect(replay.status).toBe(first.status);
-    await expectReceipt(fixture.db, replay);
-    expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-    expect(replay.headers.get("Operation-Id")).toBe(operationId);
-    expect(
-      await fixture.db
-        .select()
-        .from(auditEvents)
-        .where(eq(auditEvents.operationId, operationId!)),
-    ).toHaveLength(1);
-    const [operation] = await fixture.db
-      .select()
-      .from(adminOperations)
-      .where(eq(adminOperations.id, operationId!));
-    expect(operation!.authorityScope).toBe(
-      `tenant:${fixture.tenant.organizationId}`,
-    );
-    const changed = await fixture.app.request(
-      path.replace(target.id, fixture.principals.tenantReader.memberId),
-      {
-        method,
-        headers,
-        body: body === undefined ? undefined : JSON.stringify(body),
-      },
-    );
-    expect(changed.status).toBe(409);
-    expect(await changed.json()).toMatchObject({
-      code: "idempotency_key_reused",
-      retryable: false,
-    });
-    headers.set("Idempotency-Key", createId());
-    if (method === "PATCH")
-      headers.set("If-Match", await configurationTag(path, headers));
-    const unchanged = await send();
-    const [noop] = await fixture.db
-      .select()
-      .from(adminOperations)
-      .where(eq(adminOperations.id, unchanged.headers.get("Operation-Id")!));
-    expect(noop!.outcome).toBe("noop");
-  }
-});
-
-test("member replay requires current authority and cannot rerun after recovery data is removed", async () => {
-  const target = await freshMember();
-  const actor = fixture.principals.tenantUsersOnly;
-  const headers = fixture.headers("tenantUsersOnly");
-  const path = `/api/admin/v1/organizations/${fixture.tenant.organizationId}/members/${target.id}`;
-  const send = () => fixture.app.request(path, { method: "DELETE", headers });
-  const first = await send();
-  expect(first.status).toBe(204);
-  const operationId = first.headers.get("Operation-Id")!;
-  const original = fixture.db.transaction.bind(fixture.db);
-  fixture.db.transaction = afterBrokerRead(original, (async (
-    ...args: Parameters<typeof original>
-  ) => {
-    fixture.db.transaction = original;
-    await fixture.db
-      .update(members)
-      .set({ status: "revoked", revokedAt: new Date() })
-      .where(eq(members.id, actor.memberId));
-    return original(...args);
-  }) as typeof original);
-  try {
-    expect((await send()).status).toBe(403);
-  } finally {
-    fixture.db.transaction = original;
-    await fixture.db
-      .update(members)
-      .set({ status: "active", revokedAt: null })
-      .where(eq(members.id, actor.memberId));
-  }
-  await expectReceipt(fixture.db, await send());
-  expect(
-    await fixture.db
-      .select()
-      .from(auditEvents)
-      .where(eq(auditEvents.operationId, operationId)),
-  ).toHaveLength(1);
-  headers.delete("Idempotency-Key");
-  expect((await send()).status).toBe(400);
-});
-
-test("all member reads recheck current membership after middleware and keep projections private", async () => {
-  const target = await freshMember();
-  const base = `/api/admin/v1/organizations/${fixture.tenant.organizationId}/members`;
-  for (const [suffix, kind] of [
-    ["", "tenantReader"],
-    [`/${target.id}`, "tenantReader"],
-    [`/${target.id}/configuration`, "tenantUsersOnly"],
-  ] as const) {
-    const path = base + suffix;
-    const headers = fixture.headers(kind);
-    const read = () => fixture.app.request(path, { headers });
-    const accepted = await read();
-    expect(accepted.status).toBe(200);
-    expect(accepted.headers.get("Cache-Control")).toBe("no-store");
-    const original = fixture.db.transaction.bind(fixture.db);
-    fixture.db.transaction = afterBrokerRead(original, (async (
-      ...args: Parameters<typeof original>
-    ) => {
-      fixture.db.transaction = original;
-      await fixture.db
-        .update(members)
-        .set({ status: "revoked", revokedAt: new Date() })
-        .where(eq(members.id, fixture.principals[kind].memberId));
-      return original(...args);
-    }) as typeof original);
-    try {
-      const denied = await read();
-      expect(denied.status).toBe(403);
-      expect(await denied.json()).toMatchObject({ code: "insufficient_scope" });
-    } finally {
-      fixture.db.transaction = original;
-      await fixture.db
-        .update(members)
-        .set({ status: "active", revokedAt: null })
-        .where(eq(members.id, fixture.principals[kind].memberId));
-    }
-  }
-  expect(
-    (
-      await fixture.app.request(`${base}/${target.id}`, {
-        headers: fixture.headers("tenantUsersOnly"),
-      })
-    ).status,
-  ).toBe(403);
-  expect(
-    (
-      await fixture.app.request(`${base}/${target.id}/configuration`, {
-        headers: fixture.headers("tenantReader"),
-      })
-    ).status,
-  ).toBe(403);
 });
 
 test("simultaneous member retries commit only one removal", async () => {

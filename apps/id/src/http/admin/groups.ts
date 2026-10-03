@@ -35,7 +35,7 @@ import { lifecycleStatuses } from "../../db/schema/vocabulary.ts";
 const page = (schema: z.ZodType) =>
   z.object({ items: z.array(schema), nextCursor: z.uuid().nullable() });
 const orgParams = uuidParam("organizationId");
-export const groupSchema = z.object({
+const groupSchema = z.object({
   id: z.uuid(),
   revision: z.number().int().positive(),
   organizationId: z.uuid(),

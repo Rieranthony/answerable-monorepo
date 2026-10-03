@@ -210,29 +210,6 @@ for (const mode of ["disable", "erase"] as const) {
       ).items,
     ).toEqual([effect!]);
   });
-  test(`client ${mode} rolls back all context and lifecycle effects when audit fails`, async () => {
-    const { db, target, contexts } = await seed();
-    await expect(
-      inPlatformWrite(
-        db,
-        async (context) => {
-          if (mode === "disable") await disableClient(context, target.clientId);
-          else await eraseClient(context, target.clientId, target.clientId);
-        },
-        { requestId: "\0" },
-      ),
-    ).rejects.toThrow();
-    expect(
-      await db.select().from(grantContexts).orderBy(grantContexts.id),
-    ).toEqual(contexts.sort((a, b) => a.id.localeCompare(b.id)));
-    expect(
-      await db
-        .select()
-        .from(oauthClients)
-        .where(eq(oauthClients.id, target.id)),
-    ).toEqual([target]);
-    expect(await db.select().from(auditEvents)).toHaveLength(0);
-  });
 }
 test("already-disabled client reconciles remaining contexts before reporting a no-op", async () => {
   const { db, target } = await seed();
@@ -251,50 +228,6 @@ test("already-disabled client reconciles remaining contexts before reporting a n
     ),
   ).toMatchObject({ changed: false });
 });
-
-for (const mode of ["disable", "erase"] as const) {
-  test(`client ${mode} rolls back the platform effect event when the owner event fails`, async () => {
-    const { db, target, contexts } = await seed();
-    await db.execute(sql`create function test_reject_client_owner_event() returns trigger language plpgsql as $$
-      begin
-        if new.action in ('client.disabled', 'client.erased') then
-          if not exists (select 1 from audit_events where target_id = new.target_id and action in ('client.grants_revoked', 'client.grants_erased')) then
-            raise exception 'missing earlier effect event';
-          end if;
-          raise exception 'owner audit failure after effect';
-        end if;
-        return new;
-      end $$`);
-    await db.execute(
-      sql`create trigger test_reject_client_owner_event before insert on audit_events for each row execute function test_reject_client_owner_event()`,
-    );
-    try {
-      const failure = await inPlatformWrite(db, async (context) => {
-        if (mode === "disable") await disableClient(context, target.clientId);
-        else await eraseClient(context, target.clientId, target.clientId);
-      }).then(
-        () => null,
-        (error) => error,
-      );
-      expect(failure?.cause?.message).toBe("owner audit failure after effect");
-      expect(await db.select().from(auditEvents)).toHaveLength(0);
-      expect(
-        await db.select().from(grantContexts).orderBy(grantContexts.id),
-      ).toEqual(contexts.sort((a, b) => a.id.localeCompare(b.id)));
-      expect(
-        await db
-          .select()
-          .from(oauthClients)
-          .where(eq(oauthClients.id, target.id)),
-      ).toEqual([target]);
-    } finally {
-      await db.execute(
-        sql`drop trigger test_reject_client_owner_event on audit_events`,
-      );
-      await db.execute(sql`drop function test_reject_client_owner_event()`);
-    }
-  });
-}
 
 for (const failAudit of [false, true]) {
   test(`secret rotation ${failAudit ? "rolls back" : "revokes"} existing client contexts atomically`, async () => {

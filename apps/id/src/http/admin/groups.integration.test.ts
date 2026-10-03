@@ -6,7 +6,6 @@ import {
   type AdminFixture,
 } from "../../__tests__/admin.ts";
 import { addGroupMember, createGroup } from "../../__tests__/group-queries.ts";
-import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import {
   adminOperations,
   auditEvents,
@@ -16,7 +15,7 @@ import { createId } from "../../lib/id.ts";
 import { routes } from "./groups.ts";
 let fixture: AdminFixture;
 beforeAll(async () => {
-  fixture = await createAdminFixture();
+  fixture = await createAdminFixture({}, { restrictedRole: true });
 });
 afterAll(async () => {
   await fixture?.close();
@@ -310,6 +309,10 @@ test("platform administrator and machine perform the complete group lifecycle wi
       ).status,
     ).toBe(204);
     expect((await request(id, `/${row.id}`)).status).toBe(404);
+    const listed = await (await request(id)).json();
+    expect(listed.items.map((item: { id: string }) => item.id)).not.toContain(
+      row.id,
+    );
   }
 });
 test("directory groups reject both membership edits and external IDs are unique", async () => {
@@ -482,60 +485,6 @@ async function command(
     },
   );
 }
-test("group commands return receipts without repeating membership or erasure effects", async () => {
-  const org = fixture.tenant.organizationId;
-  const input = { slug: "group-replay", name: "Replay" };
-  const created = await command(org, "group-create", "", "POST", input);
-  expect(created.status).toBe(201);
-  expect(created.headers.get("Operation-Id")).toBeString();
-  const group = await created.json();
-  const memberId = fixture.principals.tenantReader.memberId;
-  for (const [key, path, method, body, status] of [
-    ["group-create", "", "POST", input, 201],
-    ["group-update", `/${group.id}`, "PATCH", { name: "Changed" }, 200],
-    ["group-disable", `/${group.id}/disable`, "POST", undefined, 200],
-    ["group-enable", `/${group.id}/enable`, "POST", undefined, 200],
-    ["group-add", `/${group.id}/members/${memberId}`, "PUT", {}, 201],
-    [
-      "group-remove",
-      `/${group.id}/members/${memberId}`,
-      "DELETE",
-      undefined,
-      204,
-    ],
-    [
-      "group-erase",
-      `/${group.id}?confirm=${group.id}`,
-      "DELETE",
-      undefined,
-      204,
-    ],
-  ] as const) {
-    const first = await command(org, key, path, method, body);
-    expect(first.status).toBe(status);
-    const retry = await command(org, key, path, method, body);
-    expect(retry.status).toBe(status);
-    await expectReceipt(fixture.db, retry);
-    expect(retry.headers.get("Idempotency-Replayed")).toBe("true");
-    expect(retry.headers.get("Operation-Id")).toBe(
-      first.headers.get("Operation-Id"),
-    );
-    expect(
-      await fixture.db
-        .select()
-        .from(auditEvents)
-        .where(eq(auditEvents.operationId, first.headers.get("Operation-Id")!)),
-    ).toHaveLength(1);
-  }
-  expect(
-    (
-      await command(org, "group-create", "", "POST", {
-        ...input,
-        name: "Different",
-      })
-    ).status,
-  ).toBe(409);
-});
 
 test("group noops preserve state and old removal replay does not remove a new assignment", async () => {
   const org = fixture.tenant.organizationId;

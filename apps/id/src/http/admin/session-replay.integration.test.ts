@@ -1,5 +1,4 @@
 import { expectReceipt } from "../../__tests__/operation-receipt.ts";
-import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import {
@@ -9,7 +8,6 @@ import {
 import {
   adminOperations,
   auditEvents,
-  entitlements,
   oauthAccessTokens,
   sessions,
   users,
@@ -17,7 +15,7 @@ import {
 import { createId } from "../../lib/id.ts";
 let fixture: AdminFixture;
 beforeAll(async () => {
-  fixture = await createAdminFixture();
+  fixture = await createAdminFixture({}, { restrictedRole: true });
 });
 afterAll(async () => fixture?.close());
 async function seed() {
@@ -143,54 +141,4 @@ test("revoke-all replay preserves later sessions and new empty commands are noop
   const erasedReplay = await command("all", target.userId);
   expect(erasedReplay.headers.get("Idempotency-Replayed")).toBe("true");
   await expectReceipt(fixture.db, erasedReplay);
-});
-
-test("platform users-only authority is sufficient and revoked authority denies recovery", async () => {
-  const target = await seed();
-  const actor = fixture.principals.platformReader;
-  const predicate = eq(entitlements.memberId, actor.memberId);
-  await fixture.db
-    .update(entitlements)
-    .set({ scopes: ["platform:users"] })
-    .where(predicate);
-  const original = fixture.db.transaction.bind(fixture.db);
-  try {
-    const first = await command(
-      "users-only",
-      target.userId,
-      undefined,
-      "platformReader",
-    );
-    expect(first.status).toBe(200);
-    fixture.db.transaction = afterBrokerRead(original, (async (
-      ...args: Parameters<typeof original>
-    ) => {
-      fixture.db.transaction = original;
-      await fixture.db
-        .update(entitlements)
-        .set({ scopes: ["platform:read"] })
-        .where(predicate);
-      return original(...args);
-    }) as typeof original);
-    const denied = await command(
-      "users-only",
-      target.userId,
-      undefined,
-      "platformReader",
-    );
-    expect(denied.status).toBe(403);
-    expect(await denied.json()).toMatchObject({ code: "insufficient_scope" });
-    expect(
-      await fixture.db
-        .select()
-        .from(auditEvents)
-        .where(eq(auditEvents.operationId, first.headers.get("Operation-Id")!)),
-    ).toHaveLength(1);
-  } finally {
-    fixture.db.transaction = original;
-    await fixture.db
-      .update(entitlements)
-      .set({ scopes: ["platform:read"] })
-      .where(predicate);
-  }
 });

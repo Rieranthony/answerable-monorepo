@@ -13,7 +13,7 @@ import { createId } from "../../lib/id.ts";
 import { routes, clientSchema } from "./clients.ts";
 let fixture: AdminFixture;
 beforeAll(async () => {
-  fixture = await createAdminFixture();
+  fixture = await createAdminFixture({}, { restrictedRole: true });
 });
 afterAll(async () => {
   await fixture?.close();
@@ -425,6 +425,8 @@ test("a soft-deleted client's public identifier still conflicts", async () => {
       )
     ).status,
   ).toBe(204);
+  const listed = await (await request("?q=tombstone-reservation")).json();
+  expect(listed.items).toEqual([]);
   const replacement = await request("", "POST", input);
   expect(replacement.status).toBe(409);
   expect(await replacement.json()).toMatchObject({ code: "conflict" });

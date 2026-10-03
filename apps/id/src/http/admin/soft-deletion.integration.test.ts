@@ -5,10 +5,7 @@ import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
-import { createApp } from "../../app.ts";
 import { createAuth } from "../../auth.ts";
-import { createDatabase, type DatabaseConnection } from "../../db/client.ts";
-import { configureRuntimeRole } from "../../db/runtime-role.ts";
 import {
   adminOperations,
   auditEvents,
@@ -32,44 +29,19 @@ import {
 } from "../../db/schema/index.ts";
 
 let fixture: AdminFixture;
-let runtime: DatabaseConnection;
-let app: ReturnType<typeof createApp>;
-let role: string;
 beforeEach(async () => {
-  fixture = await createAdminFixture();
-  role = `id_test_soft_delete_${crypto.randomUUID().replaceAll("-", "")}`;
-  await configureRuntimeRole(fixture.db, role);
-  const password = crypto.randomUUID().replaceAll("-", "");
-  await fixture.db.execute(
-    sql.raw(`alter role "${role}" login password '${password}'`),
+  fixture = await createAdminFixture(
+    { databasePoolMax: 3 },
+    { restrictedRole: true },
   );
-  const url = new URL(fixture.environment.databaseUrl);
-  url.username = role;
-  url.password = password;
-  const environment = {
-    ...fixture.environment,
-    databaseUrl: url.toString(),
-    databasePoolMax: 3,
-  };
-  runtime = createDatabase(environment);
-  app = createApp({
-    db: runtime.db,
-    auth: createAuth(runtime.db, environment),
-    environment,
-  });
 });
 afterEach(async () => {
-  await runtime?.close();
-  if (fixture) {
-    await fixture.db.execute(sql`drop owned by ${sql.identifier(role)}`);
-    await fixture.db.execute(sql`drop role ${sql.identifier(role)}`);
-    await fixture.close();
-  }
+  await fixture?.close();
 });
 function request(path: string, method = "GET", key = createId()) {
   const headers = fixture.headers("root");
   headers.set("Idempotency-Key", key);
-  return app.request(`/api/admin/v1${path}`, { method, headers });
+  return fixture.app.request(`/api/admin/v1${path}`, { method, headers });
 }
 
 test("user deletion retains identity, hides ordinary reads and cannot be enabled; replay keeps one transition", async () => {
@@ -143,14 +115,14 @@ test("user deletion retains identity, hides ordinary reads and cannot be enabled
     },
   ]);
   await expect(
-    runtime.db
+    fixture.appDb
       .update(users)
       .set({ deletedAt: null })
       .where(eq(users.id, person.userId))
       .execute(),
   ).rejects.toThrow();
   await expect(
-    runtime.db.delete(users).where(eq(users.id, person.userId)).execute(),
+    fixture.appDb.delete(users).where(eq(users.id, person.userId)).execute(),
   ).rejects.toThrow();
   fixture.issuer.enqueue({
     sub: "tenantReader-subject",
@@ -158,7 +130,7 @@ test("user deletion retains identity, hides ordinary reads and cannot be enabled
     email_verified: true,
     name: before.name,
   });
-  const signIn = await signInThroughIdp(app, {
+  const signIn = await signInThroughIdp(fixture.app, {
     providerId: fixture.tenant.slug,
     callbackURL: `${fixture.trustedOrigin}/callback`,
     errorCallbackURL: `${fixture.trustedOrigin}/error`,
@@ -371,8 +343,9 @@ test("unlink and explicit relink allocate a new relationship; client deletion re
         .where(eq(oauthConsents.id, consentId))
     )[0]!.deletedAt,
   ).toBeInstanceOf(Date);
-  const adapter = (await createAuth(runtime.db, fixture.environment).$context)
-    .adapter;
+  const adapter = (
+    await createAuth(fixture.appDb, fixture.environment).$context
+  ).adapter;
   expect(
     await adapter.findOne({
       model: "oauthClient",
@@ -447,8 +420,9 @@ test("domain and provider deletion remove native discovery while retaining their
     oidcConfig: null,
     samlConfig: null,
   });
-  const adapter = (await createAuth(runtime.db, fixture.environment).$context)
-    .adapter;
+  const adapter = (
+    await createAuth(fixture.appDb, fixture.environment).$context
+  ).adapter;
   expect(await adapter.findMany({ model: "ssoProvider" })).not.toContainEqual(
     expect.objectContaining({ id: provider!.id }),
   );
@@ -482,7 +456,7 @@ test("live uniqueness permits repeated replacements at one database timestamp an
   await fixture.db
     .insert(oauthResources)
     .values({ id: createId(), identifier: resourceId, name: "Replacement" });
-  await inPlatformWrite(runtime.db, async (context) => {
+  await inPlatformWrite(fixture.appDb, async (context) => {
     const retired = [];
     for (let index = 0; index < 3; index++) {
       expect(
@@ -556,7 +530,7 @@ test("parent deletion committed first denies a waiting SQL relationship creation
   });
   await held.promise;
   const insertedId = createId();
-  const creation = inPlatformWrite(runtime.db, (context) =>
+  const creation = inPlatformWrite(fixture.appDb, (context) =>
     Promise.resolve(
       context.tx.insert(groupMembers).values({
         id: insertedId,
@@ -574,7 +548,7 @@ test("parent deletion committed first denies a waiting SQL relationship creation
     const deadline = Date.now() + 2000;
     let blocked = false;
     while (Date.now() < deadline) {
-      const waiting = await runtime.db.execute(
+      const waiting = await fixture.appDb.execute(
         sql`select 1 from pg_stat_activity where ${parentPid} = any(pg_blocking_pids(pid))`,
       );
       if (waiting.rows.length) {
@@ -599,18 +573,18 @@ test("parent deletion committed first denies a waiting SQL relationship creation
 
 test("startup refuses domain DELETE privileges even when audit permissions are protected", async () => {
   await fixture.db.execute(
-    sql`grant delete on groups to ${sql.identifier(role)}`,
+    sql`grant delete on groups to ${sql.identifier(fixture.runtimeRole!)}`,
   );
   try {
-    await expect(assertRuntimeRole(runtime.db)).rejects.toThrow(
+    await expect(assertRuntimeRole(fixture.appDb)).rejects.toThrow(
       "Unsafe database runtime role",
     );
   } finally {
     await fixture.db.execute(
-      sql`revoke delete on groups from ${sql.identifier(role)}`,
+      sql`revoke delete on groups from ${sql.identifier(fixture.runtimeRole!)}`,
     );
   }
-  await assertRuntimeRole(runtime.db);
+  await assertRuntimeRole(fixture.appDb);
 });
 
 for (const targetType of ["user", "organization", "group"] as const) {
@@ -647,7 +621,7 @@ for (const targetType of ["user", "organization", "group"] as const) {
       outcome: "success" as const,
       data,
     };
-    const valid = await recordAuditEvent(runtime.db, base);
+    const valid = await recordAuditEvent(fixture.appDb, base);
     for (const patch of [
       { outcome: "failure" as const },
       { data: { ...data, deletionMode: "physical" } },
@@ -660,11 +634,11 @@ for (const targetType of ["user", "organization", "group"] as const) {
       },
       { data: { ...data, effects: { [field]: effect } } },
     ])
-      await recordAuditEvent(runtime.db, { ...base, ...patch });
-    expect(await runtime.db.select().from(auditEventSubjects)).toEqual([]);
+      await recordAuditEvent(fixture.appDb, { ...base, ...patch });
+    expect(await fixture.appDb.select().from(auditEventSubjects)).toEqual([]);
     expect(
       await withDatabaseScope(
-        runtime.db,
+        fixture.appDb,
         { kind: "platform", access: "read" },
         (tx) =>
           tx

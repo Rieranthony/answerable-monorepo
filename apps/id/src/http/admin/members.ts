@@ -36,7 +36,7 @@ import {
 const page = (schema: z.ZodType) =>
   z.object({ items: z.array(schema), nextCursor: z.uuid().nullable() });
 const orgParams = uuidParam("organizationId");
-export const memberSchema = z.object({
+const memberSchema = z.object({
   id: z.uuid(),
   revision: z.number().int().positive(),
   organizationId: z.uuid(),

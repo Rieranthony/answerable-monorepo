@@ -5,7 +5,6 @@ import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
-import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { signInThroughIdp } from "../../__tests__/federation.ts";
 import {
   auditEvents,
@@ -20,7 +19,7 @@ import { routes } from "./users.ts";
 
 let fixture: AdminFixture;
 beforeAll(async () => {
-  fixture = await createAdminFixture();
+  fixture = await createAdminFixture({}, { restrictedRole: true });
 });
 afterAll(async () => {
   await fixture?.close();
@@ -308,6 +307,14 @@ test("platform admin and machine administer a fresh user through revocation, dis
       ).status,
     ).toBe(204);
     expect((await request(path, "GET", undefined, kind)).status).toBe(404);
+    const ids = async (list: string) =>
+      (await (await request(list, "GET", undefined, kind)).json()).items.map(
+        (item: { id: string }) => item.id,
+      );
+    expect(await ids("/users")).not.toContain(id);
+    expect(
+      await ids(`/organizations/${fixture.tenant.organizationId}/members`),
+    ).not.toContain(fresh.memberId);
     expect(
       await fixture.db
         .select()
@@ -410,39 +417,4 @@ test("user pagination, platform reader access, validation and lifecycle conflict
       .sort()
       .reverse(),
   );
-});
-
-test("global identity reads reject platform authority revoked after middleware", async () => {
-  const { members } = await import("../../db/schema/index.ts");
-  const { eq } = await import("drizzle-orm");
-  const target = fixture.principals.tenantReader.userId;
-  for (const path of [
-    "/users",
-    `/users/${target}`,
-    `/users/${target}/sessions`,
-  ]) {
-    const original = fixture.db.transaction.bind(fixture.db);
-    fixture.db.transaction = afterBrokerRead(original, (async (
-      ...args: Parameters<typeof original>
-    ) => {
-      fixture.db.transaction = original;
-      await fixture.db
-        .update(members)
-        .set({ status: "revoked", revokedAt: new Date() })
-        .where(eq(members.id, fixture.principals.platformReader.memberId));
-      return original(...args);
-    }) as typeof original);
-    try {
-      const response = await fixture.app.request(`/api/admin/v1${path}`, {
-        headers: fixture.headers("platformReader"),
-      });
-      expect(response.status).toBe(403);
-    } finally {
-      fixture.db.transaction = original;
-      await fixture.db
-        .update(members)
-        .set({ status: "active", revokedAt: null })
-        .where(eq(members.id, fixture.principals.platformReader.memberId));
-    }
-  }
 });

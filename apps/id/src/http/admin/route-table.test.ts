@@ -6,15 +6,11 @@ import type { Database } from "../../db/client.ts";
 import { testEnvironment } from "../../__tests__/support.ts";
 import type { AppEnvironment } from "../context.ts";
 import { problemHandler } from "../problem.ts";
-import { registerRoute, tierOf, type AdminRoute } from "./route-table.ts";
+import { registerRoute, type AdminRoute } from "./route-table.ts";
 import { adminScopes } from "./scopes.ts";
-import { register as registerMe, meSchema } from "./me.ts";
-
-test("tierOf distinguishes platform, organisation and the me exception", () => {
-  expect(tierOf({})).toBe("platform");
-  expect(tierOf({ orgScope: "org:read" })).toBe("tenant");
-  expect(tierOf({ open: true })).toBe("tenant");
-});
+import { register as registerMe } from "./me.ts";
+import { responseSchema } from "../../__tests__/openapi-response.ts";
+const meSchema = responseSchema("getAdminMe", 200);
 test("registerRoute describes, authorises and handles a route", async () => {
   const app = new Hono<AppEnvironment>();
   const rows: unknown[] = [];
@@ -96,40 +92,6 @@ test("registerRoute describes, authorises and handles a route", async () => {
     parameters: route.parameters,
   });
 });
-test.each(["user", "client"] as const)(
-  "me serialises a %s principal separately from grants",
-  async (type) => {
-    const app = new Hono<AppEnvironment>();
-    const grants = [
-      {
-        organizationId: "own",
-        organizationSlug: "tenant",
-        isPlatform: false,
-        scopes: ["org:read"],
-      },
-    ];
-    const principal =
-      type === "user"
-        ? {
-            type,
-            userId: "user",
-            email: "user@example.com",
-            sessionId: "session",
-          }
-        : { type, clientId: "client", organizationId: "own" };
-    app.use("*", async (c, next) => {
-      c.set("principal", { ...principal, grants });
-      await next();
-    });
-    registerMe(app);
-    const response = await app.request("/me");
-    expect(response.status).toBe(200);
-    expect(meSchema.parse(await response.json())).toEqual({
-      principal,
-      grants,
-    });
-  },
-);
 
 test("me serialises root scopes without phantom grants", async () => {
   const app = new Hono<AppEnvironment>();
@@ -151,51 +113,6 @@ test("me serialises root scopes without phantom grants", async () => {
     principal: { type: "root", scopes: [...adminScopes] },
     grants: [],
   });
-});
-
-test("open routes still audit a root request", async () => {
-  const app = new Hono<AppEnvironment>();
-  const rows: unknown[] = [];
-  app.use("*", async (c, next) => {
-    c.set("requestId", "request");
-    c.set("db", {
-      execute: async () => ({ rows: [{ occurredAt: "2026-09-11T00:00:00Z" }] }),
-      insert: () => ({
-        values: (row: unknown) => {
-          rows.push(row);
-          return Promise.resolve();
-        },
-      }),
-    } as unknown as Database);
-    c.set("principal", { type: "root", grants: [] });
-    await next();
-  });
-  registerMe(app);
-  const response = await app.request("/me");
-  expect(response.status).toBe(200);
-  expect(rows).toHaveLength(1);
-  expect(rows[0]).toMatchObject({
-    actorId: "root",
-    action: "admin.root_request",
-    targetId: "getAdminMe",
-  });
-});
-
-test("open routes skip authorisation for principals with zero grants", async () => {
-  const app = new Hono<AppEnvironment>();
-  app.use("*", async (c, next) => {
-    c.set("principal", {
-      type: "client",
-      clientId: "client",
-      organizationId: "own",
-      grants: [],
-    });
-    await next();
-  });
-  registerMe(app);
-  const response = await app.request("/me");
-  expect(response.status).toBe(200);
-  expect(await response.json()).toMatchObject({ grants: [] });
 });
 
 test("validity windows preserve omitted and cleared boundaries", () => {

@@ -30,7 +30,7 @@ import { validate } from "../validation.ts";
 import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 
-export const organizationSchema = z.object({
+const organizationSchema = z.object({
   id: z.uuid(),
   revision: z.number().int().positive(),
   name: z.string(),

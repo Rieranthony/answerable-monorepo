@@ -7,7 +7,7 @@ import {
 import { auditEvents, organizations } from "../../db/schema/index.ts";
 let fixture: AdminFixture;
 beforeAll(async () => {
-  fixture = await createAdminFixture();
+  fixture = await createAdminFixture({}, { restrictedRole: true });
 });
 afterAll(async () => fixture?.close());
 

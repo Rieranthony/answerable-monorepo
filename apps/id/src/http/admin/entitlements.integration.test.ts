@@ -5,12 +5,12 @@ import {
   type AdminFixture,
 } from "../../__tests__/admin.ts";
 import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
-import { auditEvents } from "../../db/schema/index.ts";
+import { auditEvents, oauthResources } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
 import { routes } from "./entitlements.ts";
 let fixture: AdminFixture;
 beforeAll(async () => {
-  fixture = await createAdminFixture();
+  fixture = await createAdminFixture({}, { restrictedRole: true });
 });
 afterAll(async () => {
   await fixture?.close();
@@ -257,6 +257,10 @@ test("platform administrator and machine manage every principal with attributed 
       (await request(id, `/${row.id}`, "DELETE", undefined, kind)).status,
     ).toBe(404);
     expect((await request(id, `/${row.id}`)).status).toBe(404);
+    const listed = await (await request(id)).json();
+    expect(listed.items.map((item: { id: string }) => item.id)).not.toContain(
+      row.id,
+    );
   }
 });
 test("client filter, foreign references, tenant isolation and request validation", async () => {
@@ -359,4 +363,24 @@ test("client filter, foreign references, tenant isolation and request validation
       ).status,
     ).toBe(404);
   expect((await request(id, `/${foreign.id}`)).status).toBe(404);
+  // A resource whose scope vocabulary is withdrawn accepts no scope changes.
+  const scoped = await (
+    await request(
+      id,
+      "",
+      "POST",
+      { resource, scopes: ["tutor:read"] },
+      "platformAdmin",
+      "entitlement.created",
+    )
+  ).json();
+  await fixture.db
+    .update(oauthResources)
+    .set({ allowedScopes: null })
+    .where(eq(oauthResources.identifier, resource));
+  const withdrawn = await request(id, `/${scoped.id}`, "PATCH", {
+    scopes: ["tutor:read"],
+  });
+  expect(withdrawn.status).toBe(400);
+  expect(await withdrawn.json()).toMatchObject({ code: "validation_failed" });
 });

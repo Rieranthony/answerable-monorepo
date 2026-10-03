@@ -1,4 +1,3 @@
-import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import {
   createAdminFixture,
@@ -6,10 +5,12 @@ import {
 } from "../../__tests__/admin.ts";
 import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
 import { createId } from "../../lib/id.ts";
-import { routes, signInDiagnosisSchema } from "./diagnostics.ts";
+import { routes } from "./diagnostics.ts";
+import { responseSchema } from "../../__tests__/openapi-response.ts";
+const signInDiagnosisSchema = responseSchema("diagnoseSignIn", 200);
 let fixture: AdminFixture;
 beforeAll(async () => {
-  fixture = await createAdminFixture();
+  fixture = await createAdminFixture({}, { restrictedRole: true });
 });
 afterAll(async () => {
   await fixture?.close();
@@ -83,9 +84,7 @@ test("tenant diagnosis does not expose foreign users, accounts or routing identi
   expect({ ...result, email: null }).toEqual({ ...unknown, email: null });
 });
 
-test("diagnosis rechecks tenant authority after middleware and does not broaden staff projections", async () => {
-  const { members } = await import("../../db/schema/index.ts");
-  const { eq } = await import("drizzle-orm");
+test("tenant diagnosis does not broaden staff projections", async () => {
   const email = "tenantadmin@tenant.example.com";
   const accepted = await request(email);
   expect(accepted.headers.get("Cache-Control")).toBe("no-store");
@@ -93,26 +92,4 @@ test("diagnosis rechecks tenant authority after middleware and does not broaden 
   expect(body).not.toHaveProperty("accounts");
   expect(body.user).not.toHaveProperty("retiredEmail");
   expect(await (await request(email, "platformReader")).json()).toEqual(body);
-  const original = fixture.db.transaction.bind(fixture.db);
-  fixture.db.transaction = afterBrokerRead(original, (async (
-    ...args: Parameters<typeof original>
-  ) => {
-    fixture.db.transaction = original;
-    await fixture.db
-      .update(members)
-      .set({ status: "revoked", revokedAt: new Date() })
-      .where(eq(members.id, fixture.principals.tenantUsersOnly.memberId));
-    return original(...args);
-  }) as typeof original);
-  try {
-    const denied = await request(email);
-    expect(denied.status).toBe(403);
-    expect(await denied.json()).toMatchObject({ code: "insufficient_scope" });
-  } finally {
-    fixture.db.transaction = original;
-    await fixture.db
-      .update(members)
-      .set({ status: "active", revokedAt: null })
-      .where(eq(members.id, fixture.principals.tenantUsersOnly.memberId));
-  }
 });

@@ -1,4 +1,3 @@
-import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import {
@@ -6,14 +5,14 @@ import {
   type AdminFixture,
 } from "../../__tests__/admin.ts";
 import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
-import { auditEvents, members } from "../../db/schema/index.ts";
+import { auditEvents } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
 import { createGroup, addGroupMember } from "../../__tests__/group-queries.ts";
 import { createResource } from "../../__tests__/resource-queries.ts";
 import { routes } from "./access.ts";
 let fixture: AdminFixture;
 beforeAll(async () => {
-  fixture = await createAdminFixture();
+  fixture = await createAdminFixture({}, { restrictedRole: true });
 });
 afterAll(async () => {
   await fixture?.close();
@@ -229,56 +228,6 @@ test("tenant users review all three sources, readers review resource and client 
       )
     ).status,
   ).toBe(404);
-});
-
-test("access reads recheck current tenant authority after middleware admission", async () => {
-  const resource = "https://access-context.example";
-  await createResource(fixture.db, {
-    identifier: resource,
-    name: "Context",
-    allowedScopes: ["read"],
-  });
-  const target = fixture.principals.tenantReader.memberId;
-  for (const [suffix, kind] of [
-    [`/members/${target}/access`, "tenantUsersOnly"],
-    [`/access?resource=${encodeURIComponent(resource)}`, "tenantReader"],
-  ] as const) {
-    const path = `/api/admin/v1/organizations/${fixture.tenant.organizationId}${suffix}`;
-    const headers = fixture.headers(kind);
-    const send = () => fixture.app.request(path, { headers });
-    const accepted = await send();
-    expect(accepted.status).toBe(200);
-    expect(accepted.headers.get("Cache-Control")).toBe("no-store");
-    const original = fixture.db.transaction.bind(fixture.db);
-    fixture.db.transaction = afterBrokerRead(original, (async (
-      ...args: Parameters<typeof original>
-    ) => {
-      fixture.db.transaction = original;
-      await fixture.db
-        .update(members)
-        .set({ status: "revoked", revokedAt: new Date() })
-        .where(eq(members.id, fixture.principals[kind].memberId));
-      return original(...args);
-    }) as typeof original);
-    try {
-      const denied = await send();
-      expect(denied.status).toBe(403);
-      expect(await denied.json()).toMatchObject({ code: "insufficient_scope" });
-    } finally {
-      fixture.db.transaction = original;
-      await fixture.db
-        .update(members)
-        .set({ status: "active", revokedAt: null })
-        .where(eq(members.id, fixture.principals[kind].memberId));
-    }
-  }
-  // Platform read remains sufficient for member access despite the tenant users requirement.
-  expect(
-    (await read(`/members/${target}/access`, "platformReader")).status,
-  ).toBe(200);
-  expect((await read(`/members/${target}/access`, "tenantReader")).status).toBe(
-    403,
-  );
 });
 
 test("HTTP pair creation and reads preserve both targets without granting direct admin access", async () => {

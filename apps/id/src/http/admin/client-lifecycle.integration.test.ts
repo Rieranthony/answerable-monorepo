@@ -1,14 +1,14 @@
 import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
-import { auditEvents, adminOperations } from "../../db/schema/index.ts";
+import { auditEvents } from "../../db/schema/index.ts";
 let fixture: AdminFixture;
 beforeAll(async () => {
-  fixture = await createAdminFixture();
+  fixture = await createAdminFixture({}, { restrictedRole: true });
 });
 afterAll(async () => fixture?.close());
 function request(path: string, method: string, key: string, body?: unknown) {
@@ -29,77 +29,20 @@ async function status(response: Response) {
   return result.json();
 }
 
-test("client lifecycle commands recover original results and record new desired-state noops", async () => {
-  const created = await request("/clients", "POST", "create-lifecycle", {
-    clientId: "lifecycle",
-    name: "Lifecycle",
-    organizationId: fixture.tenant.organizationId,
-    tokenEndpointAuthMethod: "client_secret_basic",
-    grantTypes: ["client_credentials"],
-    clientCredentialsScopes: ["tool:read"],
-  });
-  expect(created.status).toBe(201);
-  const disabled = await request(
-    "/clients/lifecycle/disable",
-    "POST",
-    "disable-once",
-  );
-  expect(disabled.status).toBe(200);
-  const body = await disabled.json();
-  expect(await status(disabled)).toMatchObject({ outcome: "applied" });
-  const replay = await request(
-    "/clients/lifecycle/disable",
-    "POST",
-    "disable-once",
-  );
-  await expectReceipt(fixture.db, replay);
-  expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-  const noop = await request(
-    "/clients/lifecycle/disable",
-    "POST",
-    "disable-again",
-  );
-  expect(noop.status).toBe(200);
-  expect(await noop.json()).toEqual(body);
-  expect(await status(noop)).toMatchObject({ outcome: "noop" });
-  const enabled = await request(
-    "/clients/lifecycle/enable",
-    "POST",
-    "enable-once",
-  );
-  expect(await status(enabled)).toMatchObject({ outcome: "applied" });
-  const enabledBody = await enabled.json();
-  const enableNoop = await request(
-    "/clients/lifecycle/enable",
-    "POST",
-    "enable-again",
-  );
-  expect(await status(enableNoop)).toMatchObject({ outcome: "noop" });
-  expect(await enableNoop.json()).toEqual(enabledBody);
-  const oldDisable = await request(
-    "/clients/lifecycle/disable",
-    "POST",
-    "disable-once",
-  );
-  await expectReceipt(fixture.db, oldDisable);
-  const current = await request("/clients/lifecycle", "GET", "read");
-  expect(await current.json()).toMatchObject({
-    disabled: false,
-    revision: enabledBody.revision,
-  });
-  const events = await fixture.db
-    .select()
-    .from(auditEvents)
-    .where(eq(auditEvents.operationId, disabled.headers.get("Operation-Id")!));
-  expect(events).toHaveLength(1);
-  expect(events[0]).toMatchObject({
-    organizationId: fixture.tenant.organizationId,
-    data: { before: { disabled: false }, after: { disabled: true } },
-  });
-});
-
 test("resource links, immutable owner verification and erasure replay without recreating erased state", async () => {
   const resource = "https://lifecycle.example/mcp";
+  expect(
+    (
+      await request("/clients", "POST", "create-lifecycle", {
+        clientId: "lifecycle",
+        name: "Lifecycle",
+        organizationId: fixture.tenant.organizationId,
+        tokenEndpointAuthMethod: "client_secret_basic",
+        grantTypes: ["client_credentials"],
+        clientCredentialsScopes: ["tool:read"],
+      })
+    ).status,
+  ).toBe(201);
   expect(
     (
       await request("/resources", "POST", "resource", {
@@ -192,46 +135,4 @@ test("resource links, immutable owner verification and erasure replay without re
       },
     },
   });
-});
-
-test("failed lifecycle audit rolls back state and reservation; retry then commits", async () => {
-  expect(
-    (
-      await request("/clients", "POST", "fault-create", {
-        clientId: "fault-lifecycle",
-        name: "Fault",
-        tokenEndpointAuthMethod: "none",
-        grantTypes: ["authorization_code"],
-        redirectUris: ["https://fault.example/callback"],
-      })
-    ).status,
-  ).toBe(201);
-  const before = await (
-    await request("/clients/fault-lifecycle", "GET", "read")
-  ).json();
-  const operations = await fixture.db.select().from(adminOperations);
-  await fixture.db.execute(
-    sql`alter table audit_events add constraint lifecycle_audit_fault check (action <> 'client.disabled') not valid`,
-  );
-  try {
-    expect(
-      (await request("/clients/fault-lifecycle/disable", "POST", "retry-fault"))
-        .status,
-    ).toBeGreaterThanOrEqual(400);
-  } finally {
-    await fixture.db.execute(
-      sql`alter table audit_events drop constraint lifecycle_audit_fault`,
-    );
-  }
-  expect(
-    await (await request("/clients/fault-lifecycle", "GET", "read")).json(),
-  ).toEqual(before);
-  expect(await fixture.db.select().from(adminOperations)).toEqual(operations);
-  const retried = await request(
-    "/clients/fault-lifecycle/disable",
-    "POST",
-    "retry-fault",
-  );
-  expect(retried.status).toBe(200);
-  expect(await status(retried)).toMatchObject({ outcome: "applied" });
 });

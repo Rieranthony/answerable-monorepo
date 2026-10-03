@@ -7,10 +7,12 @@ import {
 } from "../../__tests__/admin.ts";
 import { auditEvents, entitlements } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
-import { resourceSchema, routes } from "./resources.ts";
+import { routes } from "./resources.ts";
+import { responseSchema } from "../../__tests__/openapi-response.ts";
+const resourceSchema = responseSchema("createResource", 201);
 let fixture: AdminFixture;
 beforeAll(async () => {
-  fixture = await createAdminFixture();
+  fixture = await createAdminFixture({}, { restrictedRole: true });
 });
 afterAll(async () => {
   await fixture?.close();
@@ -126,6 +128,15 @@ for (const machine of [false, true])
       (await request(path, "DELETE", { confirm: identifier }, kind)).status,
     ).toBe(204);
     expect((await request(path, "GET", undefined, kind)).status).toBe(404);
+    const listed = await (
+      await request(
+        "?q=" + encodeURIComponent(identifier),
+        "GET",
+        undefined,
+        kind,
+      )
+    ).json();
+    expect(listed.items).toEqual([]);
     const events = await fixture.db
       .select()
       .from(auditEvents)

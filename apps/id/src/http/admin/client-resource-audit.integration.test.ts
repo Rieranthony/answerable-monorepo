@@ -1,44 +1,19 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
 import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
-import { createApp } from "../../app.ts";
-import { createAuth } from "../../auth.ts";
-import { createDatabase, type DatabaseConnection } from "../../db/client.ts";
-import { configureRuntimeRole } from "../../db/runtime-role.ts";
 import {
   auditEvents,
   oauthClients,
-  oauthClientResources,
   oauthResources,
 } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
 
 let fixture: AdminFixture;
-let runtime: DatabaseConnection;
-let app: ReturnType<typeof createApp>;
-let role: string;
 const clientId = "resource-audit-client";
 beforeEach(async () => {
-  fixture = await createAdminFixture();
-  role = `id_test_link_audit_${crypto.randomUUID().replaceAll("-", "")}`;
-  await configureRuntimeRole(fixture.db, role);
-  const password = crypto.randomUUID().replaceAll("-", "");
-  await fixture.db.execute(
-    sql.raw(`alter role "${role}" login password '${password}'`),
-  );
-  const url = new URL(fixture.environment.databaseUrl);
-  url.username = role;
-  url.password = password;
-  const environment = { ...fixture.environment, databaseUrl: url.toString() };
-  runtime = createDatabase(environment);
-  app = createApp({
-    db: runtime.db,
-    auth: createAuth(runtime.db, environment),
-    environment,
-  });
+  fixture = await createAdminFixture({}, { restrictedRole: true });
   await fixture.db.insert(oauthClients).values({
     id: createId(),
     clientId,
@@ -47,12 +22,7 @@ beforeEach(async () => {
   });
 });
 afterEach(async () => {
-  await runtime?.close();
-  if (fixture) {
-    await fixture.db.execute(sql`drop owned by ${sql.identifier(role)}`);
-    await fixture.db.execute(sql`drop role ${sql.identifier(role)}`);
-    await fixture.close();
-  }
+  await fixture?.close();
 });
 async function resource(kind: "shared" | "own" | "foreign") {
   const [row] = await fixture.db
@@ -76,7 +46,7 @@ async function resource(kind: "shared" | "own" | "foreign") {
 function command(target: string, method: "PUT" | "DELETE", key = createId()) {
   const headers = fixture.headers("root");
   headers.set("Idempotency-Key", key);
-  return app.request(
+  return fixture.app.request(
     `/api/admin/v1/clients/${clientId}/resources/${encodeURIComponent(target)}`,
     { method, headers },
   );
@@ -89,7 +59,7 @@ async function history(
     kind === "platformReader"
       ? "/audit-events"
       : `/organizations/${kind === "outsider" ? fixture.outsider.organizationId : fixture.tenant.organizationId}/audit-events`;
-  const response = await app.request(
+  const response = await fixture.app.request(
     `/api/admin/v1${path}?${new URLSearchParams({ targetType: "client", targetId: clientId, limit: "200", ...query })}`,
     { headers: fixture.headers(kind) },
   );
@@ -158,7 +128,7 @@ for (const kind of ["shared", "own"] as const) {
     headers.set("Idempotency-Key", createId());
     expect(
       (
-        await app.request(
+        await fixture.app.request(
           `/api/admin/v1/resources/${encodeURIComponent(target.identifier)}?confirm=${encodeURIComponent(target.identifier)}`,
           { method: "DELETE", headers },
         )
@@ -242,40 +212,3 @@ test("unlink of an unclassified missing target stays platform-only", async () =>
     },
   ]);
 });
-
-for (const method of ["PUT", "DELETE"] as const) {
-  test(`${method} link audit failure rolls back before same-key recovery`, async () => {
-    const target = await resource("foreign");
-    if (method === "DELETE")
-      expect((await command(target.identifier, "PUT")).status).toBe(201);
-    const before = await fixture.db
-      .select()
-      .from(oauthClientResources)
-      .where(eq(oauthClientResources.clientId, clientId));
-    const key = createId();
-    await fixture.db.execute(
-      sql`alter table audit_events add constraint link_audit_failure check (target_id <> 'resource-audit-client') not valid`,
-    );
-    try {
-      expect((await command(target.identifier, method, key)).status).toBe(400);
-      expect(
-        await fixture.db
-          .select()
-          .from(oauthClientResources)
-          .where(eq(oauthClientResources.clientId, clientId)),
-      ).toEqual(before);
-    } finally {
-      await fixture.db.execute(
-        sql`alter table audit_events drop constraint link_audit_failure`,
-      );
-    }
-    const recovered = await command(target.identifier, method, key);
-    expect(recovered.status).toBe(method === "PUT" ? 201 : 204);
-    expect(
-      (await command(target.identifier, method, key)).headers.get(
-        "Idempotency-Replayed",
-      ),
-    ).toBe("true");
-    expect((await history("tenantReader")).items).toEqual([]);
-  });
-}

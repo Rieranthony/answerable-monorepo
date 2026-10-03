@@ -5,28 +5,50 @@ import {
   type AdminFixture,
 } from "../../__tests__/admin.ts";
 import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
-import { members } from "../../db/schema/index.ts";
+import { adminOperations, members } from "../../db/schema/index.ts";
+import { createId } from "../../lib/id.ts";
 let fixture: AdminFixture;
+const operationId = createId();
 beforeAll(async () => {
-  fixture = await createAdminFixture();
+  fixture = await createAdminFixture({}, { restrictedRole: true });
+  await fixture.db.insert(adminOperations).values({
+    id: operationId,
+    actorInstance: `user:${fixture.principals.platformAdmin.userId}`,
+    authorityScope: "platform",
+    name: "test.context",
+    keyDigest: "context-key-digest",
+    fingerprint: "context-fingerprint",
+    outcome: "applied",
+    statusCode: 200,
+    resultReference: { type: "organization", id: createId() },
+  });
 });
 afterAll(async () => fixture?.close());
-const paths = () => [
-  `/organizations/${fixture.tenant.organizationId}/sso-provider/test`,
-  "/clients",
-  `/clients/${fixture.platform.client.clientId}`,
-  "/resources",
-  `/resources/${encodeURIComponent(fixture.platform.adminResource)}`,
-  "/organizations",
-  "/entitlements",
-];
+const paths = () => {
+  const user = fixture.principals.tenantReader.userId;
+  return [
+    `/organizations/${fixture.tenant.organizationId}/sso-provider/test`,
+    "/clients",
+    `/clients/${fixture.platform.client.clientId}`,
+    "/resources",
+    `/resources/${encodeURIComponent(fixture.platform.adminResource)}`,
+    "/organizations",
+    "/entitlements",
+    "/audit-events",
+    `/operations/${operationId}`,
+    "/users",
+    `/users/${user}`,
+    `/users/${user}/sessions`,
+    `/users/${user}/audit-events`,
+  ];
+};
 test("fleet reads reject platform authority revoked after middleware", async () => {
   for (const path of paths()) {
-    const original = fixture.db.transaction.bind(fixture.db);
-    fixture.db.transaction = afterBrokerRead(original, (async (
+    const original = fixture.appDb.transaction.bind(fixture.appDb);
+    fixture.appDb.transaction = afterBrokerRead(original, (async (
       ...args: Parameters<typeof original>
     ) => {
-      fixture.db.transaction = original;
+      fixture.appDb.transaction = original;
       await fixture.db
         .update(members)
         .set({ status: "revoked", revokedAt: new Date() })
@@ -37,9 +59,9 @@ test("fleet reads reject platform authority revoked after middleware", async () 
       const response = await fixture.app.request(`/api/admin/v1${path}`, {
         headers: fixture.headers("platformReader"),
       });
-      expect(response.status).toBe(403);
+      expect(response.status, path).toBe(403);
     } finally {
-      fixture.db.transaction = original;
+      fixture.appDb.transaction = original;
       await fixture.db
         .update(members)
         .set({ status: "active", revokedAt: null })
@@ -53,7 +75,7 @@ test("fleet responses prohibit caching", async () => {
     const response = await fixture.app.request(`/api/admin/v1${path}`, {
       headers: fixture.headers("platformReader"),
     });
-    expect(response.status).toBe(200);
+    expect(response.status, path).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
   }
 });
@@ -67,10 +89,10 @@ test("SSO probe receives only endpoints and runs after the read transaction clos
     getSsoTestConfiguration(context, fixture.tenant.organizationId),
   );
   expect(Object.keys(snapshot).sort()).toEqual(["discoveryEndpoint", "issuer"]);
-  const original = fixture.db.transaction.bind(fixture.db);
+  const original = fixture.appDb.transaction.bind(fixture.appDb);
   let activeTransactions = 0;
   const observedTransactions: number[] = [];
-  fixture.db.transaction = (async (...args: Parameters<typeof original>) => {
+  fixture.appDb.transaction = (async (...args: Parameters<typeof original>) => {
     activeTransactions++;
     try {
       return await original(...args);
@@ -98,7 +120,7 @@ test("SSO probe receives only endpoints and runs after the read transaction clos
     expect(observedTransactions).toEqual([0, 0]);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
   } finally {
-    fixture.db.transaction = original;
+    fixture.appDb.transaction = original;
     fetcher.mockRestore();
   }
 });

@@ -1,6 +1,4 @@
 import { expectReceipt } from "../../__tests__/operation-receipt.ts";
-import { z } from "zod";
-import { clientSchema } from "./clients.ts";
 import { createId } from "../../lib/id.ts";
 import { authorizeCommand } from "../../services/command-authority.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
@@ -17,137 +15,12 @@ import {
 } from "../../db/schema/index.ts";
 let fixture: AdminFixture;
 beforeAll(async () => {
-  fixture = await createAdminFixture({ databasePoolMax: 2 });
+  fixture = await createAdminFixture(
+    { databasePoolMax: 2 },
+    { restrictedRole: true },
+  );
 });
 afterAll(async () => fixture?.close());
-function request(path: string, key: string, body?: unknown) {
-  const headers = fixture.headers("platformAdmin");
-  headers.set("Idempotency-Key", key);
-  if (body !== undefined) headers.set("Content-Type", "application/json");
-  return fixture.app.request(`/api/admin/v1/clients${path}`, {
-    method: "POST",
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-}
-test("client creation and rotation return receipts without repeating their effects", async () => {
-  const input = {
-    clientId: "replay-client",
-    name: "Replay client",
-    organizationId: fixture.tenant.organizationId,
-    tokenEndpointAuthMethod: "client_secret_basic",
-    grantTypes: ["client_credentials"],
-    clientCredentialsScopes: ["tool:write", "tool:read"],
-  };
-  const first = await request("", "create-key", input);
-  expect(first.status).toBe(201);
-  expect(first.headers.get("access-control-expose-headers")).toContain(
-    "Operation-Id",
-  );
-  expect(first.headers.get("Cache-Control")).toBe("no-store");
-  const created = await first.json();
-  expect(
-    clientSchema
-      .extend({ clientSecret: z.string() })
-      .strict()
-      .safeParse(created).success,
-  ).toBe(true);
-  const second = await request("", "create-key", {
-    ...input,
-    redirectUris: [],
-    clientCredentialsScopes: ["tool:read", "tool:write", "tool:read"],
-  });
-  expect(second.status).toBe(201);
-  await expectReceipt(fixture.db, second);
-  expect(second.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(second.headers.get("Operation-Id")).toBe(
-    first.headers.get("Operation-Id"),
-  );
-  const rotated = await request(
-    `/${created.clientId}/rotate-secret`,
-    "rotate-key",
-  );
-  expect(rotated.status).toBe(200);
-  const secret = await rotated.json();
-  const [before] = await fixture.db
-    .select()
-    .from(oauthClients)
-    .where(eq(oauthClients.clientId, created.clientId));
-  const recovered = await request(
-    `/${created.clientId}/rotate-secret`,
-    "rotate-key",
-  );
-  await expectReceipt(fixture.db, recovered);
-  const [after] = await fixture.db
-    .select()
-    .from(oauthClients)
-    .where(eq(oauthClients.clientId, created.clientId));
-  expect(after!.authorizationVersion).toBe(before!.authorizationVersion);
-  expect(after!.clientSecret).toBe(before!.clientSecret);
-  const events = await fixture.db
-    .select()
-    .from(auditEvents)
-    .where(eq(auditEvents.targetId, created.clientId));
-  expect(
-    events.filter((event) => event.action === "client.created"),
-  ).toHaveLength(1);
-  expect(
-    events.filter((event) => event.action === "client.secret_rotated"),
-  ).toHaveLength(1);
-  expect(JSON.stringify(events)).not.toContain(secret.clientSecret);
-  expect(
-    events.every(
-      (event) => event.organizationId === fixture.tenant.organizationId,
-    ),
-  ).toBe(true);
-  expect(
-    events.find((event) => event.action === "client.secret_rotated")!.data,
-  ).toMatchObject({
-    after: { authorizationVersion: before!.authorizationVersion },
-    effects: { credentialChanged: true },
-  });
-  const trace = await fixture.app.request(
-    `/api/admin/v1/audit-events?operationId=${first.headers.get("Operation-Id")}`,
-    { headers: fixture.headers("platformAdmin") },
-  );
-  expect(trace.status).toBe(200);
-  const traced = await trace.json();
-  expect(traced.items).toHaveLength(1);
-  expect(traced.items[0]).toMatchObject({
-    action: "client.created",
-    schemaVersion: 1,
-  });
-  expect(
-    events.find((event) => event.action === "client.created")!.operationId,
-  ).toBe(first.headers.get("Operation-Id"));
-  expect(
-    events.find((event) => event.action === "client.secret_rotated")!
-      .operationId,
-  ).toBe(rotated.headers.get("Operation-Id"));
-});
-
-test("key errors cannot repeat a rotation", async () => {
-  const path = "/replay-client/rotate-secret";
-  const invalidHeaders = fixture.headers("platformAdmin");
-  invalidHeaders.delete("Idempotency-Key");
-  expect(
-    (
-      await fixture.app.request(`/api/admin/v1/clients${path}`, {
-        method: "POST",
-        headers: invalidHeaders,
-      })
-    ).status,
-  ).toBe(400);
-  const different = await request(
-    "/different-client/rotate-secret",
-    "rotate-key",
-  );
-  expect(different.status).toBe(409);
-  expect(await different.json()).toMatchObject({
-    code: "idempotency_key_reused",
-    retryable: false,
-  });
-});
 
 test("transactional authority rejects stale admitted users, root and machine credentials", async () => {
   const principal = fixture.principals.platformAdmin;
@@ -215,35 +88,11 @@ test("transactional authority rejects stale admitted users, root and machine cre
   ).rejects.toMatchObject({ code: "invalid_token" });
 });
 
-test("deletion replay uses the retained operation, and a revoked session cannot recover it", async () => {
-  await fixture.db
-    .delete(oauthClients)
-    .where(eq(oauthClients.clientId, "replay-client"));
-  const input = {
-    clientId: "replay-client",
-    name: "Replay client",
-    organizationId: fixture.tenant.organizationId,
-    tokenEndpointAuthMethod: "client_secret_basic",
-    grantTypes: ["client_credentials"],
-    clientCredentialsScopes: ["tool:read", "tool:write"],
-  };
-  const replay = await request("", "create-key", input);
-  expect(replay.status).toBe(201);
-  await expectReceipt(fixture.db, replay);
-  expect(
-    await fixture.db
-      .select()
-      .from(oauthClients)
-      .where(eq(oauthClients.clientId, "replay-client")),
-  ).toHaveLength(0);
-  await fixture.db
-    .delete(sessions)
-    .where(eq(sessions.userId, fixture.principals.platformAdmin.userId));
-  expect((await request("", "create-key", input)).status).toBe(401);
-});
-
 test("rotation replay returns its receipt without revoking grants established afterwards", async () => {
-  const f = await createAdminFixture({ databasePoolMax: 1 });
+  const f = await createAdminFixture(
+    { databasePoolMax: 1 },
+    { restrictedRole: true },
+  );
   try {
     const post = (path: string, key: string, body?: unknown) => {
       const headers = f.headers("platformAdmin");

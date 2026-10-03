@@ -4,10 +4,6 @@ import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
-import { createApp } from "../../app.ts";
-import { createAuth } from "../../auth.ts";
-import { createDatabase, type DatabaseConnection } from "../../db/client.ts";
-import { configureRuntimeRole } from "../../db/runtime-role.ts";
 import {
   adminOperations,
   auditEvents,
@@ -28,39 +24,14 @@ import {
 } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
 let fixture: AdminFixture;
-let runtime: DatabaseConnection;
-let app: ReturnType<typeof createApp>;
-let role: string;
 beforeEach(async () => {
-  fixture = await createAdminFixture();
-  role = `id_test_org_audit_${crypto.randomUUID().replaceAll("-", "")}`;
-  await configureRuntimeRole(fixture.db, role);
-  const password = crypto.randomUUID().replaceAll("-", "");
-  await fixture.db.execute(
-    sql.raw(`alter role "${role}" login password '${password}'`),
+  fixture = await createAdminFixture(
+    { databasePoolMax: 4 },
+    { restrictedRole: true },
   );
-  const url = new URL(fixture.environment.databaseUrl);
-  url.username = role;
-  url.password = password;
-  const environment = {
-    ...fixture.environment,
-    databaseUrl: url.toString(),
-    databasePoolMax: 4,
-  };
-  runtime = createDatabase(environment);
-  app = createApp({
-    db: runtime.db,
-    auth: createAuth(runtime.db, environment),
-    environment,
-  });
 });
 afterEach(async () => {
-  await runtime?.close();
-  if (fixture) {
-    await fixture.db.execute(sql`drop owned by ${sql.identifier(role)}`);
-    await fixture.db.execute(sql`drop role ${sql.identifier(role)}`);
-    await fixture.close();
-  }
+  await fixture?.close();
 });
 
 async function seed() {
@@ -147,10 +118,13 @@ async function state() {
 function erase(id: string, key: string) {
   const headers = fixture.headers("root");
   headers.set("Idempotency-Key", key);
-  return app.request(`/api/admin/v1/organizations/${id}?confirm=${id}`, {
-    method: "DELETE",
-    headers,
-  });
+  return fixture.app.request(
+    `/api/admin/v1/organizations/${id}?confirm=${id}`,
+    {
+      method: "DELETE",
+      headers,
+    },
+  );
 }
 
 test("organisation erasure records removed tenant configuration and member history without issued grants", async () => {
@@ -252,7 +226,7 @@ test("organisation erasure records removed tenant configuration and member histo
   await fixture.db
     .delete(users)
     .where(eq(users.id, fixture.principals.tenantReader.userId));
-  const history = await app.request(
+  const history = await fixture.app.request(
     `/api/admin/v1/users/${fixture.principals.tenantReader.userId}/audit-events?action=organization.erased`,
     { headers: fixture.headers("root") },
   );
@@ -335,15 +309,15 @@ for (const order of ["organisation-first", "user-first"] as const) {
     const headers = fixture.headers("root");
     headers.set("Idempotency-Key", createId());
     const eraseUser = () =>
-      app.request(
+      fixture.app.request(
         `/api/admin/v1/users/${person.userId}?confirm=${person.userId}`,
         { method: "DELETE", headers },
       );
     async function waitingOn(pid: number) {
       const deadline = Date.now() + 1500;
       while (true) {
-        const waiting = await runtime.db.execute(
-          sql`select pid from pg_stat_activity where usename = ${role} and ${pid} = any(pg_blocking_pids(pid))`,
+        const waiting = await fixture.appDb.execute(
+          sql`select pid from pg_stat_activity where usename = ${fixture.runtimeRole} and ${pid} = any(pg_blocking_pids(pid))`,
         );
         if (waiting.rows.length) return Number(waiting.rows[0]!.pid);
         if (Date.now() > deadline)
@@ -351,8 +325,8 @@ for (const order of ["organisation-first", "user-first"] as const) {
         await Bun.sleep(10);
       }
     }
-    let first: ReturnType<typeof app.request> | undefined,
-      second: ReturnType<typeof app.request> | undefined;
+    let first: ReturnType<typeof fixture.app.request> | undefined,
+      second: ReturnType<typeof fixture.app.request> | undefined;
     await held;
     try {
       first =

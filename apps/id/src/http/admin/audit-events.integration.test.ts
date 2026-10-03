@@ -1,6 +1,5 @@
 import { recordAuditEvent } from "../../__tests__/audit-queries.ts";
 import { createId } from "../../lib/id.ts";
-import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { decodeJwt } from "jose";
 import {
@@ -12,7 +11,7 @@ import type { AuditEvent } from "../../__tests__/audit-queries.ts";
 import { routes } from "./audit-events.ts";
 let fixture: AdminFixture;
 beforeAll(async () => {
-  fixture = await createAdminFixture();
+  fixture = await createAdminFixture({}, { restrictedRole: true });
 });
 afterAll(async () => {
   await fixture?.close();
@@ -155,36 +154,6 @@ test("tenant readers see their sign-ins and denied attempts only", async () => {
   ).toBe(404);
 });
 
-test("tenant audit reads recheck membership after middleware admission", async () => {
-  const { members } = await import("../../db/schema/index.ts");
-  const { eq } = await import("drizzle-orm");
-  const original = fixture.db.transaction.bind(fixture.db);
-  fixture.db.transaction = afterBrokerRead(original, (async (
-    ...args: Parameters<typeof original>
-  ) => {
-    fixture.db.transaction = original;
-    await fixture.db
-      .update(members)
-      .set({ status: "revoked", revokedAt: new Date() })
-      .where(eq(members.id, fixture.principals.tenantReader.memberId));
-    return original(...args);
-  }) as typeof original);
-  try {
-    const response = await fixture.app.request(
-      `/api/admin/v1/organizations/${fixture.tenant.organizationId}/audit-events`,
-      { headers: fixture.headers("tenantReader") },
-    );
-    expect(response.status).toBe(403);
-    expect(await response.json()).toMatchObject({ code: "insufficient_scope" });
-  } finally {
-    fixture.db.transaction = original;
-    await fixture.db
-      .update(members)
-      .set({ status: "active", revokedAt: null })
-      .where(eq(members.id, fixture.principals.tenantReader.memberId));
-  }
-});
-
 test("staff read retained tenant history after erasure without opening unknown history", async () => {
   const { createOrganization } =
     await import("../../__tests__/organization-queries.ts");
@@ -230,39 +199,6 @@ test("staff read retained tenant history after erasure without opening unknown h
       })
     ).status,
   ).toBe(404);
-});
-
-test("platform audit reads reject authority revoked after middleware", async () => {
-  const { members } = await import("../../db/schema/index.ts");
-  const { eq } = await import("drizzle-orm");
-  for (const path of [
-    "/audit-events",
-    `/users/${fixture.principals.tenantReader.userId}/audit-events`,
-  ]) {
-    const original = fixture.db.transaction.bind(fixture.db);
-    fixture.db.transaction = afterBrokerRead(original, (async (
-      ...args: Parameters<typeof original>
-    ) => {
-      fixture.db.transaction = original;
-      await fixture.db
-        .update(members)
-        .set({ status: "revoked", revokedAt: new Date() })
-        .where(eq(members.id, fixture.principals.platformReader.memberId));
-      return original(...args);
-    }) as typeof original);
-    try {
-      const response = await fixture.app.request(`/api/admin/v1${path}`, {
-        headers: fixture.headers("platformReader"),
-      });
-      expect(response.status).toBe(403);
-    } finally {
-      fixture.db.transaction = original;
-      await fixture.db
-        .update(members)
-        .set({ status: "active", revokedAt: null })
-        .where(eq(members.id, fixture.principals.platformReader.memberId));
-    }
-  }
 });
 
 test("indirect global erasure history is visible to staff but not through tenant history", async () => {

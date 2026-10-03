@@ -64,7 +64,7 @@ const putSchema = z.object({
   domain: hostSchema,
   oidc: oidcSchema.optional(),
 });
-export const ssoProviderSchema = z.object({
+const ssoProviderSchema = z.object({
   id: z.uuid(),
   revision: z.number().int().positive(),
   organizationId: z.uuid(),
@@ -88,7 +88,7 @@ export const ssoProviderSchema = z.object({
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
-export const ssoTestSchema = z.object({
+const ssoTestSchema = z.object({
   issuer: z.string(),
   kind: z.enum(["entra", "google", "oidc"]),
   discovery: z.object({

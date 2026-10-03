@@ -62,7 +62,7 @@ async function httpCommand<T>(
   authority: {
     scope: string;
     authorize: (tx: Executor, freshAuthentication: boolean) => Promise<T>;
-    release?: (authority: T) => void;
+    release: (authority: T) => void;
   },
   mutate: (tx: Executor, actor: Actor, authority: T) => Promise<CommandResult>,
   options: CommandOptions,

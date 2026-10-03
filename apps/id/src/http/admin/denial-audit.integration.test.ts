@@ -5,8 +5,6 @@ import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
-import { createDatabase, type DatabaseConnection } from "../../db/client.ts";
-import { configureRuntimeRole } from "../../db/runtime-role.ts";
 import { createApp } from "../../app.ts";
 import { createAuth } from "../../auth.ts";
 import {
@@ -16,36 +14,16 @@ import {
 } from "../../db/schema/index.ts";
 
 let fixture: AdminFixture;
-let runtime: DatabaseConnection;
-let role: string;
 let app: ReturnType<typeof createApp>;
 beforeEach(async () => {
-  fixture = await createAdminFixture();
-  role = `id_test_denial_audit_${crypto.randomUUID().replaceAll("-", "")}`;
-  await configureRuntimeRole(fixture.db, role);
-  const password = crypto.randomUUID().replaceAll("-", "");
-  await fixture.db.execute(
-    sql.raw(`alter role "${role}" login password '${password}'`),
+  fixture = await createAdminFixture(
+    { databasePoolMax: 2 },
+    { restrictedRole: true },
   );
-  const url = new URL(fixture.environment.databaseUrl);
-  url.username = role;
-  url.password = password;
-  runtime = createDatabase({
-    ...fixture.environment,
-    databaseUrl: url.toString(),
-    databasePoolMax: 2,
-  });
-  app = createApp({
-    db: runtime.db,
-    auth: createAuth(runtime.db, fixture.environment),
-    environment: fixture.environment,
-  });
+  app = fixture.app;
 });
 afterEach(async () => {
-  await runtime?.close();
-  await fixture.db.execute(sql`drop owned by ${sql.identifier(role)}`);
-  await fixture.db.execute(sql`drop role ${sql.identifier(role)}`);
-  await fixture.close();
+  await fixture?.close();
 });
 
 for (const kind of ["scope", "foreign", "locked-root", "machine"] as const) {
@@ -57,8 +35,8 @@ for (const kind of ["scope", "foreign", "locked-root", "machine"] as const) {
         rootAdminBreakGlass: false,
       };
       app = createApp({
-        db: runtime.db,
-        auth: createAuth(runtime.db, environment),
+        db: fixture.appDb,
+        auth: createAuth(fixture.appDb, environment),
         environment,
       });
     }

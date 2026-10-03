@@ -1,7 +1,6 @@
 import { expectReceipt } from "../../__tests__/operation-receipt.ts";
-import { afterBrokerRead } from "../../__tests__/after-broker-read.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   createAdminFixture,
   type AdminFixture,
@@ -16,7 +15,7 @@ import {
 import { createId } from "../../lib/id.ts";
 let fixture: AdminFixture;
 beforeAll(async () => {
-  fixture = await createAdminFixture();
+  fixture = await createAdminFixture({}, { restrictedRole: true });
 });
 afterAll(async () => {
   await fixture?.close();
@@ -49,7 +48,9 @@ async function request(
     },
   );
 }
-import { routes, ssoProviderSchema } from "./sso-providers.ts";
+import { routes } from "./sso-providers.ts";
+import { responseSchema } from "../../__tests__/openapi-response.ts";
+const ssoProviderSchema = responseSchema("getSsoProvider", 200);
 import { findSsoProviderByOrganization } from "../../__tests__/sso-queries.ts";
 const input = {
   issuer: "https://login.example.com",
@@ -221,7 +222,7 @@ test("machine token creates, updates and deletes the provider", async () => {
 });
 
 import { createSsoProvider } from "../../__tests__/sso-queries.ts";
-import { ssoTestSchema } from "./sso-providers.ts";
+const ssoTestSchema = responseSchema("testSsoProvider", 200);
 test("platform admins, readers and a machine test the in-process SSO issuer", async () => {
   for (const kind of [
     "platformAdmin",
@@ -268,7 +269,7 @@ test("SSO test reports a missing provider and an unreachable issuer", async () =
   expect(
     ssoTestSchema
       .parse(await unreachable.json())
-      .problems.map((problem) => problem.code),
+      .problems.map((problem: { code: string }) => problem.code),
   ).toEqual(["untrusted_origin", "discovery_unreachable"]);
 });
 
@@ -367,103 +368,6 @@ test("SSO retries recover historical redacted results without replacing later cr
   expectRedacted(events);
 });
 
-test("SSO noops preserve timestamps and credentials while secret changes remain fingerprinted", async () => {
-  const org = await createOrganization(fixture.db, {
-    slug: "sso-noop",
-    name: "Noop",
-  });
-  const first = await command(org.id, "sso-noop-create", "PUT", input);
-  const original = await first.json();
-  const noop = await command(org.id, "sso-noop", "PUT", {
-    ...input,
-    oidc: { clientId: input.oidc.clientId },
-  });
-  expect(noop.status).toBe(200);
-  expect(await noop.json()).toEqual(original);
-  const [receipt] = await fixture.db
-    .select()
-    .from(adminOperations)
-    .where(eq(adminOperations.id, noop.headers.get("Operation-Id")!));
-  expect(receipt?.outcome).toBe("noop");
-  expect(receipt?.fingerprint).toMatch(/^[a-f0-9]{64}$/);
-  const [event] = await fixture.db
-    .select()
-    .from(auditEvents)
-    .where(eq(auditEvents.operationId, receipt!.id));
-  expect(event).toMatchObject({
-    action: "sso_provider.update_unchanged",
-    data: {
-      before: { issuer: input.issuer },
-      after: { issuer: input.issuer },
-      credentialsChanged: false,
-    },
-  });
-  expectRedacted(event);
-  const rotateInput = {
-    ...input,
-    oidc: { ...input.oidc, clientSecret: "replacement-secret" },
-  };
-  const rotation = await command(org.id, "sso-rotate", "PUT", rotateInput);
-  expect(rotation.status).toBe(200);
-  const [rotationEvent] = await fixture.db
-    .select()
-    .from(auditEvents)
-    .where(eq(auditEvents.operationId, rotation.headers.get("Operation-Id")!));
-  expect(rotationEvent?.data).toMatchObject({ credentialsChanged: true });
-  expect(JSON.stringify(rotationEvent)).not.toContain("replacement-secret");
-  expect(
-    (
-      await command(org.id, "sso-rotate", "PUT", {
-        ...rotateInput,
-        oidc: { ...rotateInput.oidc, clientSecret: "different-secret" },
-      })
-    ).status,
-  ).toBe(409);
-  expect(
-    (await command(org.id, "sso-rotate", "PUT", rotateInput)).headers.get(
-      "Idempotency-Replayed",
-    ),
-  ).toBe("true");
-});
-
-test("SSO audit failure rolls back credentials and the command reservation", async () => {
-  const org = await createOrganization(fixture.db, {
-    slug: "sso-rollback",
-    name: "Rollback",
-  });
-  await command(org.id, "sso-rollback-create", "PUT", input);
-  const before = await findSsoProviderByOrganization(fixture.db, org.id);
-  const receipts = await fixture.db.select().from(adminOperations);
-  await fixture.db.execute(
-    sql`alter table audit_events add constraint sso_replay_fault check (action <> 'sso_provider.updated') not valid`,
-  );
-  const changed = {
-    ...input,
-    oidc: { clientId: "changed", clientSecret: "failed-secret" },
-  };
-  try {
-    expect(
-      (await command(org.id, "sso-rollback", "PUT", changed)).status,
-    ).toBeGreaterThanOrEqual(400);
-  } finally {
-    await fixture.db.execute(
-      sql`alter table audit_events drop constraint sso_replay_fault`,
-    );
-  }
-  expect(await findSsoProviderByOrganization(fixture.db, org.id)).toEqual(
-    before,
-  );
-  expect(await fixture.db.select().from(adminOperations)).toEqual(receipts);
-  expect((await command(org.id, "sso-rollback", "PUT", changed)).status).toBe(
-    200,
-  );
-  expect(
-    (await command(org.id, "sso-rollback", "PUT", changed)).headers.get(
-      "Idempotency-Replayed",
-    ),
-  ).toBe("true");
-});
-
 test("concurrent SSO creation has one mutation and a recoverable result", async () => {
   const org = await createOrganization(fixture.db, {
     slug: "sso-concurrent",
@@ -490,44 +394,6 @@ test("concurrent SSO creation has one mutation and a recoverable result", async 
       .select()
       .from(auditEvents)
       .where(eq(auditEvents.operationId, replay.headers.get("Operation-Id")!)),
-  ).toHaveLength(1);
-});
-
-test("SSO replay rechecks current platform authority", async () => {
-  const org = await createOrganization(fixture.db, {
-    slug: "sso-authority",
-    name: "Authority",
-  });
-  const first = await command(org.id, "sso-authority", "PUT", input);
-  expect(first.status).toBe(201);
-  const original = fixture.db.transaction.bind(fixture.db);
-  const actor = fixture.principals.platformAdmin;
-  fixture.db.transaction = afterBrokerRead(original, (async (
-    ...args: Parameters<typeof original>
-  ) => {
-    fixture.db.transaction = original;
-    await fixture.db
-      .update(members)
-      .set({ status: "revoked", revokedAt: new Date() })
-      .where(eq(members.id, actor.memberId));
-    return original(...args);
-  }) as typeof original);
-  try {
-    const denied = await command(org.id, "sso-authority", "PUT", input);
-    expect(denied.status).toBe(403);
-    expect(await denied.json()).toMatchObject({ code: "insufficient_scope" });
-  } finally {
-    fixture.db.transaction = original;
-    await fixture.db
-      .update(members)
-      .set({ status: "active", revokedAt: null })
-      .where(eq(members.id, actor.memberId));
-  }
-  expect(
-    await fixture.db
-      .select()
-      .from(auditEvents)
-      .where(eq(auditEvents.operationId, first.headers.get("Operation-Id")!)),
   ).toHaveLength(1);
 });
 

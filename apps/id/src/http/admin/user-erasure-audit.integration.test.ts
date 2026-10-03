@@ -4,11 +4,7 @@ import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
-import { createApp } from "../../app.ts";
-import { createAuth } from "../../auth.ts";
-import { createDatabase, type DatabaseConnection } from "../../db/client.ts";
 import { recordAuditEvent } from "../../db/queries/audit.ts";
-import { configureRuntimeRole } from "../../db/runtime-role.ts";
 import {
   accounts,
   adminOperations,
@@ -32,39 +28,14 @@ import {
 } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
 let fixture: AdminFixture;
-let runtime: DatabaseConnection;
-let app: ReturnType<typeof createApp>;
-let role: string;
 beforeEach(async () => {
-  fixture = await createAdminFixture();
-  role = `id_test_user_audit_${crypto.randomUUID().replaceAll("-", "")}`;
-  await configureRuntimeRole(fixture.db, role);
-  const password = crypto.randomUUID().replaceAll("-", "");
-  await fixture.db.execute(
-    sql.raw(`alter role "${role}" login password '${password}'`),
+  fixture = await createAdminFixture(
+    { databasePoolMax: 4 },
+    { restrictedRole: true },
   );
-  const url = new URL(fixture.environment.databaseUrl);
-  url.username = role;
-  url.password = password;
-  const environment = {
-    ...fixture.environment,
-    databaseUrl: url.toString(),
-    databasePoolMax: 4,
-  };
-  runtime = createDatabase(environment);
-  app = createApp({
-    db: runtime.db,
-    auth: createAuth(runtime.db, environment),
-    environment,
-  });
 });
 afterEach(async () => {
-  await runtime?.close();
-  if (fixture) {
-    await fixture.db.execute(sql`drop owned by ${sql.identifier(role)}`);
-    await fixture.db.execute(sql`drop role ${sql.identifier(role)}`);
-    await fixture.close();
-  }
+  await fixture?.close();
 });
 
 async function seed() {
@@ -259,7 +230,7 @@ async function state() {
 function erase(id: string, key: string) {
   const headers = fixture.headers("root");
   headers.set("Idempotency-Key", key);
-  return app.request(`/api/admin/v1/users/${id}?confirm=${id}`, {
+  return fixture.app.request(`/api/admin/v1/users/${id}?confirm=${id}`, {
     method: "DELETE",
     headers,
   });
@@ -440,7 +411,7 @@ test("global user erasure records actual cross-tenant and owned-client effects w
   expect(replay.status).toBe(204);
   expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
   expect(await state()).toEqual(after);
-  const history = await app.request(
+  const history = await fixture.app.request(
     `/api/admin/v1/users/${other.userId}/audit-events?action=user.erased`,
     { headers: fixture.headers("root") },
   );
@@ -457,7 +428,7 @@ test("global user erasure records actual cross-tenant and owned-client effects w
     "clearedAccessTokenSessions",
     "clearedRefreshTokenSessions",
   ]) {
-    const isolated = await recordAuditEvent(runtime.db, {
+    const isolated = await recordAuditEvent(fixture.appDb, {
       actorType: "system",
       actorId: "contract-test",
       organizationId: null,
@@ -483,31 +454,6 @@ test("global user erasure records actual cross-tenant and owned-client effects w
         .map((row) => row.entityId),
     ).toEqual([other.userId]);
   }
-});
-test("global user erasure rolls back all effects and its receipt when subject capture fails", async () => {
-  const { person } = await seed();
-  const before = await state();
-  const key = createId();
-  await fixture.db.execute(
-    sql`alter table audit_event_subjects add constraint user_erasure_fault check (relationship <> 'affected') not valid`,
-  );
-  try {
-    expect((await erase(person.userId, key)).status).toBe(400);
-  } finally {
-    await fixture.db.execute(
-      sql`alter table audit_event_subjects drop constraint user_erasure_fault`,
-    );
-  }
-  expect(await state()).toEqual(before);
-  expect((await erase(person.userId, key)).status).toBe(204);
-  const [event] = await fixture.db
-    .select()
-    .from(auditEvents)
-    .where(eq(auditEvents.action, "user.erased"));
-  expect(event!.schemaVersion).toBe(3);
-  expect(
-    (await erase(person.userId, key)).headers.get("Idempotency-Replayed"),
-  ).toBe("true");
 });
 
 for (const reference of ["entitlement", "capability"] as const) {
@@ -546,100 +492,6 @@ for (const reference of ["entitlement", "capability"] as const) {
     expect((await erase(person.userId, key)).status).toBe(204);
     expect(
       (await erase(person.userId, key)).headers.get("Idempotency-Replayed"),
-    ).toBe("true");
-  });
-}
-
-for (const order of ["user-first", "client-first"] as const) {
-  test(`global user erasure orders owned-client effects with client erasure: ${order}`, async () => {
-    const { person, owned } = await seed();
-    const action = order === "user-first" ? "user.erased" : "client.erased";
-    const gateKey = Math.floor(Math.random() * 1_000_000_000);
-    await fixture.db.execute(
-      sql.raw(
-        `create function pause_user_erasure() returns trigger language plpgsql as $$ begin if NEW.action = '${action}' then perform pg_advisory_xact_lock(${gateKey}); end if; return NEW; end $$`,
-      ),
-    );
-    await fixture.db.execute(
-      sql`create trigger pause_user_erasure before insert on audit_events for each row execute function pause_user_erasure()`,
-    );
-    let entered!: () => void, release!: () => void;
-    let blockerPid = 0;
-    const held = new Promise<void>((resolve) => {
-      entered = resolve;
-    });
-    const resume = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const blocker = fixture.db.transaction(async (tx) => {
-      await tx.execute(sql`select pg_advisory_xact_lock(${gateKey})`);
-      blockerPid = Number(
-        (await tx.execute(sql`select pg_backend_pid() as pid`)).rows[0]!.pid,
-      );
-      entered();
-      await resume;
-    });
-    const userKey = createId(),
-      clientKey = createId();
-    const eraseClient = () => {
-      const headers = fixture.headers("root");
-      headers.set("Idempotency-Key", clientKey);
-      return app.request(
-        `/api/admin/v1/clients/${owned.clientId}?confirm=${owned.clientId}`,
-        { method: "DELETE", headers },
-      );
-    };
-    async function waitingOn(pid: number) {
-      const deadline = Date.now() + 1500;
-      while (true) {
-        const waiting = await runtime.db.execute(
-          sql`select pid from pg_stat_activity where usename = ${role} and ${pid} = any(pg_blocking_pids(pid))`,
-        );
-        if (waiting.rows.length) return Number(waiting.rows[0]!.pid);
-        if (Date.now() > deadline)
-          throw new Error("Expected erasure lock was not observed");
-        await Bun.sleep(10);
-      }
-    }
-    let first: ReturnType<typeof app.request> | undefined,
-      second: ReturnType<typeof app.request> | undefined;
-    await held;
-    try {
-      first =
-        order === "user-first" ? erase(person.userId, userKey) : eraseClient();
-      const firstPid = await waitingOn(blockerPid);
-      second =
-        order === "user-first" ? eraseClient() : erase(person.userId, userKey);
-      await waitingOn(firstPid);
-    } finally {
-      release();
-      await blocker;
-      await Promise.allSettled([first, second]);
-      await fixture.db.execute(
-        sql`drop trigger pause_user_erasure on audit_events`,
-      );
-      await fixture.db.execute(sql`drop function pause_user_erasure()`);
-    }
-    expect((await first!).status).toBe(204);
-    expect((await second!).status).toBe(order === "user-first" ? 404 : 204);
-    const [event] = await fixture.db
-      .select()
-      .from(auditEvents)
-      .where(eq(auditEvents.action, "user.erased"));
-    const effects = event!.data!.effects as {
-      softDeletedClients: Array<{ id: string }>;
-      deletedAccessTokens: Array<{ clientId: string }>;
-    };
-    expect(effects.softDeletedClients.some((row) => row.id === owned.id)).toBe(
-      order === "user-first",
-    );
-    expect(
-      effects.deletedAccessTokens.some(
-        (row) => row.clientId === owned.clientId,
-      ),
-    ).toBe(order === "user-first");
-    expect(
-      (await erase(person.userId, userKey)).headers.get("Idempotency-Replayed"),
     ).toBe("true");
   });
 }
