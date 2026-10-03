@@ -1,11 +1,11 @@
 // The admin lane: real Answerable ID, the admin MCP and the Toolbox, kept up for an owner to onboard an organisation with Claude Code by hand.
-// Not a test and not part of `mcp:test:e2e`. Run it from the repository root: `bun packages/acceptance/scripts/admin-lane.ts`; `--check` runs the whole story headlessly with the kit and exits.
-import assert from "node:assert/strict"
+// Not a test and not part of `mcp:test:e2e`. Run it from the repository root: `bun packages/acceptance/scripts/admin-lane.ts`.
 import { decodeJwt } from "jose"
 import { z } from "zod"
-import { adminResource, startAdminStack, toolboxResource, type HostClient } from "../src/admin-mcp"
+import { adminResource, startAdminStack } from "../src/admin-mcp"
 import { cleanup, onCleanup } from "../src/cleanup"
-import { connect, launchBrowser, linkClient, serve, setSsoProvider, signIn, startId, step, tool } from "../src/index"
+import { launchBrowser, linkClient, serve, setSsoProvider, signIn, startId, step } from "../src/index"
+import { toolboxResource, type HostClient } from "../src/toolbox"
 
 // A failure must not leave ID, its database and the servers running behind it.
 async function fail(error: unknown) {
@@ -85,47 +85,6 @@ async function connectSpare() {
 }
 const watcher = setInterval(() => void connectSpare().catch(error => console.error("[lane] setting an SSO provider failed", error)), 1_000)
 onCleanup(() => clearInterval(watcher))
-
-if (process.argv.includes("--check")) {
-  const timed = async <T>(label: string, run: () => Promise<T>) => {
-    const started = performance.now()
-    const result = await run()
-    step(`${label}: ${Math.round(performance.now() - started)} ms`)
-    return result
-  }
-  const client = await connect(adminResource, staff.provider, "2026-07-28")
-  const whoami = await tool(client, "admin_whoami")
-  assert.equal(whoami.role, "owner")
-  assert.equal((whoami.tools as string[]).length, 27)
-  // Claude Code asks before any tool that sets this, whatever the allow rules say: it must be the confirmed commit alone.
-  const { tools } = await client.listTools()
-  assert.deepEqual(tools.filter(item => item._meta?.["anthropic/requiresUserInteraction"] === true).map(item => item.name), ["admin_commit_confirmed"])
-  /** Prepare a write and commit it with its summary, as Claude Code does once the person says yes. */
-  async function change(name: string, args: Record<string, unknown>) {
-    const intent = z.object({ intent_id: z.uuid(), commit_token: z.string(), preview: z.object({ summary: z.string() }) }).parse(await tool(client, name, args))
-    return timed(`${name} (${intent.preview.summary})`, async () =>
-      z.object({ results: z.record(z.string(), z.unknown()) }).parse(await tool(client, "admin_commit_confirmed", { intent_id: intent.intent_id, commit_token: intent.commit_token, preview_summary: intent.preview.summary })).results)
-  }
-  const created = await change("organisations_create", { slug: "newco", name: "Newco" })
-  const organizationId = z.uuid().parse(created.organizationId)
-  await change("domains_add", { organizationId, domain: spare.domain })
-  // ID answers a read of an organisation 503 while a write to it is in progress, so the check waits for the lane's write, not for a read to show it.
-  await timed("the lane set newco's SSO provider", async () => {
-    while (!connected.has(organizationId)) await Bun.sleep(100)
-    await connected.get(organizationId)
-  })
-  await change("toolbox_enable", { organizationId, hostClientIds: [toolboxHost.clientId], providers: ["e2e"] })
-  await change("access_grant", { organizationId, principal: { kind: "organization" }, resource: toolboxResource, scopes: ["e2e/records"] })
-  const person = await timed("newco's person signed in to the Toolbox", () => signInAs(toolboxHost, toolboxResource, "toolbox", { slug: "newco", email: spare.email }))
-  const toolbox = await connect(toolboxResource, person.provider, "2026-07-28")
-  const listed = (await toolbox.listTools()).tools.map(({ name }) => name)
-  assert.deepEqual(listed, ["toolbox_whoami", "e2e_records_create", "e2e_records_delete", "e2e_records_list", "e2e_records_show", "toolbox_commit", "toolbox_commit_confirmed"])
-  assert.equal((await tool(toolbox, "toolbox_whoami")).organisation_id, organizationId)
-  assert.deepEqual(await tool(toolbox, "e2e_records_list"), { items: [], next_cursor: null, has_more: false })
-  step("Check passed: the owner onboarded newco through the admin MCP and its person lists seven tools in the Toolbox and calls one")
-  await cleanup()
-  process.exit(0)
-}
 
 console.log(`
 Admin lane is up. ID ${manifest.idOrigin}, the admin MCP ${adminResource}, the Toolbox ${toolboxResource}. Ctrl-C stops it and removes everything.

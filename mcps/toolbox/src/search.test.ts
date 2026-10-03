@@ -4,9 +4,9 @@ import { z } from "zod"
 import { ingest } from "./catalogue"
 import { migrate } from "./db/migrate"
 import { search } from "./search"
-import { testDatabase } from "./test/database"
+import { database } from "./test/database"
 
-const db = testDatabase()
+const db = database.connect()
 const id = `s${crypto.randomUUID().slice(0, 8)}`
 const tool = (name: string, description: string, fields: { title?: string; input?: z.ZodObject } = {}) => defineTool({
   name, description, title: fields.title, input: fields.input ?? z.object({}), output: z.object({}), async execute() { return {} },

@@ -2,9 +2,9 @@ import { afterAll, beforeAll, expect, test } from "bun:test"
 import type { Intent, Receipt } from "@answerable/mcp"
 import { createPostgresIntentStore } from "./intents"
 import { migrate, migrations } from "./migrate"
-import { testDatabase } from "./test/database"
+import { database } from "./test/database"
 
-const db = testDatabase()
+const db = database.connect()
 beforeAll(() => migrate(db, [migrations]))
 afterAll(() => db.close())
 

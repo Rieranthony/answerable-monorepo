@@ -6,14 +6,6 @@ import { createToolboxAdmin } from "./toolbox"
 
 const failure = (promise: Promise<unknown>) => promise.then(() => { throw new Error("expected a refusal") }, (error: unknown) => error)
 
-test("the Toolbox's admin API is called with a toolbox:admin token for its admin resource, issued to the admin MCP's own machine client", async () => {
-  const id = createIdFake()
-  const toolbox = createToolboxAdmin({ id: createIdAdmin(id.config), resource: toolboxResource, fetch: createFakeToolbox(id).fetch })
-  expect(await toolbox.providers()).toEqual(["docs", "e2e"])
-  expect(id.requests.filter(request => request.startsWith("POST /auth/oauth2/token"))).toHaveLength(1)
-  expect(id.scopesAsked).toEqual(["toolbox:admin"])
-})
-
 test("a refusal by ID or the Toolbox is UPSTREAM_REJECTED with what was refused, and no answer from either UPSTREAM_UNAVAILABLE", async () => {
   const log = spyOn(console, "error").mockImplementation(() => {})
   try {

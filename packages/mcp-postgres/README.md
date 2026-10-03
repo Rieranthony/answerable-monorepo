@@ -28,4 +28,6 @@ bun run --filter @answerable/mcp-postgres test
 bun run mcp:check @answerable/mcp-postgres
 ```
 
+`@answerable/mcp-postgres/testing` exports `testDatabase(name, url?)` for a server's own suite: the test database's URL (`url`, else the development Postgres on port 47432), `connect()` and `assertDisposable(action)`, each of which refuses a URL that names another database, so a reset never reaches a real one. The admin MCP, the Toolbox and this package name theirs in `src/test/database.ts`.
+
 The suite needs the development Postgres on port 47432 and resets `answerable_mcp_postgres_test` first (`MCP_POSTGRES_TEST_DATABASE_URL` overrides the URL; the name must stay `answerable_mcp_postgres_test`, which nothing else may use). `bunfig.toml` gates 100% line and function coverage over `src`. Changes: [CHANGELOG](CHANGELOG.md).

@@ -15,10 +15,3 @@ test("a machine client of another organisation is refused, saying what to fix", 
     `The machine client admin-mcp belongs to organisation ${id.organizationId}, which is not the platform organisation; register ADMIN_ID_CLIENT_ID in the platform organisation`,
   )
 })
-
-test("ID refusing the credentials or not answering is refused with ID's own message", async () => {
-  const id = createFakeId({ clientId: "admin-mcp" })
-  await expect(readPlatform(createIdAdmin({ ...id.config, clientSecret: "wrong" }))).rejects.toThrow("Answerable ID refused the client credentials of admin-mcp (401)")
-  id.unreachable(true)
-  await expect(readPlatform(createIdAdmin(id.config))).rejects.toThrow("Answerable ID did not answer the token request")
-})

@@ -28,8 +28,15 @@ const plan = z
     // One organisation per tenant, with its domain and its own company directory.
     tenants: z.array(directory),
     // Gives the platform organisation (Answerable staff) a domain and a company
-    // directory, so a staff member can sign in during a journey.
-    platform: z.object({ signIns: queued }).optional(),
+    // directory, so staff can sign in during a journey: `signIns` times its
+    // staff member, or, in order, the person of each sign-in, such as
+    // ["staff", "colleague", "staff"] for a second member between two of the
+    // first's.
+    platform: z
+      .object({
+        signIns: z.union([queued, z.array(z.string().regex(/^[a-z]+$/))]),
+      })
+      .optional(),
     // Company directories that ID trusts from boot but that belong to no
     // organisation yet, for the organisations a journey creates later: ID
     // accepts an identity provider's endpoints only if they were listed at boot.
@@ -116,20 +123,24 @@ async function admin(
 
 type Upstream = Awaited<ReturnType<typeof startOidcIssuer>>;
 
-// A company directory for `slug`: its one person, `<person>@<slug>.example.test`, signs in `signIns` times, and each company sign-in consumes one queued identity.
-// Returns what an organisation's single sign-on needs to use it.
+// A company directory for `slug` whose person, `<person>@<slug>.example.test`, signs in `signIns` times; or, given a list, whose sign-ins are each
+// listed person's, in order. Each company sign-in consumes one queued identity. Returns what an organisation's single sign-on needs to use it.
 function openDirectory(
   upstream: Upstream,
   slug: string,
   person: string,
-  signIns: number,
+  signIns: number | readonly string[],
 ) {
   const domain = `${slug}.example.test`;
   const email = `${person}@${domain}`;
-  for (let signIn = 0; signIn < signIns; signIn++) {
+  const people =
+    typeof signIns === "number"
+      ? Array.from({ length: signIns }, () => person)
+      : signIns;
+  for (const who of people) {
     const claims: OidcClaims = {
-      sub: `${slug}-${person}`,
-      email,
+      sub: `${slug}-${who}`,
+      email: `${who}@${domain}`,
       email_verified: true,
       name: "MCP tester",
     };

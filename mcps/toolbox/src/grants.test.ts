@@ -72,27 +72,33 @@ test("a token with another organisation authorisation version reads again", asyn
   expect(reads()).toBe(2)
 })
 
-test("invalidating an organisation reads its members again and keeps other organisations' entries", async () => {
+test("invalidating an organisation reads its members again, and invalidating a user reads them again in every organisation; other entries are kept", async () => {
   const { id, grants, caller, reads } = setup()
   const other = principal()
-  for (const person of [caller, other]) id.grant(person.organizationId, person.membershipId, [{ kind: "resource", id: toolbox, scopes: ["e2e"] }])
-  await grants.read(caller)
-  await grants.read(other)
+  // The caller's person, a member of a second organisation too.
+  const elsewhere = principal({ userId: caller.userId })
+  for (const person of [caller, other, elsewhere]) id.grant(person.organizationId, person.membershipId, [{ kind: "resource", id: toolbox, scopes: ["e2e"] }])
+  for (const person of [caller, other, elsewhere]) await grants.read(person)
   grants.invalidate([caller.organizationId, crypto.randomUUID()])
   id.grant(caller.organizationId, caller.membershipId, [])
-  expect(await grants.read(caller)).toEqual([])
-  expect(await grants.read(other)).toEqual(["e2e"])
-  expect(reads()).toBe(3)
+  id.grant(elsewhere.organizationId, elsewhere.membershipId, [])
+  expect([await grants.read(caller), await grants.read(other), await grants.read(elsewhere)]).toEqual([[], ["e2e"], ["e2e"]])
+  expect(reads()).toBe(4)
+  grants.invalidate([], [caller.userId, crypto.randomUUID()])
+  expect([await grants.read(other), await grants.read(elsewhere)]).toEqual([["e2e"], []])
+  expect(reads()).toBe(5)
 })
 
-test("an invalidation that names an organisation calls changed once, whether or not any of its members is cached; naming none does not", () => {
+test("an invalidation that names an organisation or a user calls changed once, whether or not any of its members is cached; naming none does not", () => {
   const id = createFakeId()
   let changes = 0
   const grants = createGrantsReader({ id: createIdAdmin(id.config), resource: toolbox, changed: () => { changes++ } })
-  grants.invalidate([])
+  grants.invalidate([], [])
   expect(changes).toBe(0)
   grants.invalidate(new Set([crypto.randomUUID(), crypto.randomUUID()]))
   expect(changes).toBe(1)
+  grants.invalidate([], [crypto.randomUUID()])
+  expect(changes).toBe(2)
 })
 
 test("when ID fails, a cached entry answers until its 60 seconds end, and without one the read answers UPSTREAM_UNAVAILABLE", async () => {

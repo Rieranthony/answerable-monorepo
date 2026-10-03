@@ -34,9 +34,12 @@ export type IdWriteOptions = IdCallOptions & {
   idempotencyKey?: string
 }
 
-/** ID's admin API, or its token endpoint, did not answer as needed. `status` is 0 when there was no answer at all; `code` is the problem's `code`, absent when the body is not a problem. */
+/**
+ * ID's admin API, or its token endpoint, did not answer as needed. `status` is 0 when there was no answer at all; `code` is the problem's `code`, absent
+ * when the body is not a problem; `retryAfterMs` is ID's `Retry-After` in milliseconds, absent when ID sent none (it sends one with `503 database_busy`).
+ */
 export class IdError extends Error {
-  constructor(readonly status: number, readonly code: string | undefined, message: string) {
+  constructor(readonly status: number, readonly code: string | undefined, message: string, readonly retryAfterMs?: number) {
     super(message)
     this.name = "IdError"
   }
@@ -130,7 +133,8 @@ export function createIdAdmin({ issuer, adminResource, clientId, clientSecret, f
     if (response.ok) return response
     const answer = problem.safeParse(await response.json().catch(() => undefined))
     const said = answer.success ? ` ${answer.data.code}: ${answer.data.title}` : ""
-    throw new IdError(response.status, answer.data?.code, `Answerable ID answered ${method} ${url} with ${response.status}${said}`)
+    const retryAfter = response.headers.get("Retry-After")
+    throw new IdError(response.status, answer.data?.code, `Answerable ID answered ${method} ${url} with ${response.status}${said}`, retryAfter && /^\d+$/.test(retryAfter) ? Number(retryAfter) * 1000 : undefined)
   }
   return {
     /** GET a path of the admin API, such as `/audit-events?limit=200`, and return its JSON. */

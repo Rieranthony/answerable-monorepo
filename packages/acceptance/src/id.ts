@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { SQL } from "bun"
 import { z } from "zod"
 import { createAdmin } from "./admin"
 import { cleanup, onCleanup } from "./cleanup"
@@ -40,7 +41,8 @@ async function run(command: string[], stderr: "ignore" | "inherit" = "inherit") 
  * Start a real Answerable ID on its own database and return what a journey needs.
  * Starts the Compose PostgreSQL (port 47532), runs `apps/id/scripts/mcp-e2e-fixture.ts` (ID on port 47600, through its production migrations and restricted runtime role)
  * and waits up to `timeoutMs` (90 seconds) for its manifest. The fixture creates one organisation per tenant, with its domain and a local test company directory that accepts `signIns` sign-ins.
- * `platform` gives the platform organisation (Answerable staff) a domain and such a directory too, so a staff member can sign in.
+ * `platform` gives the platform organisation (Answerable staff) a domain and such a directory too, so a staff member can sign in: `signIns` times, or, given a list,
+ * one sign-in per person listed, in order, each `<person>@answerable.example.test`, so that a second member, such as `colleague`, can sign in between two of `staff`'s.
  * `spares` start directories that are trusted at boot but belong to no organisation, for organisations a journey creates later: `setSsoProvider` points one at a spare.
  * Everything else is provisioned through `admin`.
  * `stop()` ends ID, brings PostgreSQL down with its volume, removes the temporary directory and closes everything else the kit opened. It is safe to call twice, and it runs on Ctrl-C and SIGTERM.
@@ -53,7 +55,7 @@ export async function startId({
   timeoutMs = 90_000,
 }: {
   tenants: readonly { slug: string; signIns: number }[]
-  platform?: { signIns: number }
+  platform?: { signIns: number | readonly string[] }
   spares?: readonly { slug: string; signIns: number }[]
   timeoutMs?: number
 }) {
@@ -92,3 +94,14 @@ export async function startId({
  * `platform` (the platform organisation's `organizationId`, its `domain` and its staff member's `email`; only when the plan had `platform`) and `spares` (see `Spare`).
  */
 export type Id = Awaited<ReturnType<typeof startId>>
+
+/** Create the database `name` on the PostgreSQL `startId` started (port 47532), and connect to it; the connection closes when the kit stops. */
+export async function createDatabase(name: string) {
+  const postgres = "postgres://answerable:answerable@127.0.0.1:47532"
+  const server = new SQL({ url: `${postgres}/answerable_id_test`, max: 1 })
+  await server.unsafe(`create database ${name}`)
+  await server.close()
+  const db = new SQL({ url: `${postgres}/${name}`, max: 4 })
+  onCleanup(() => db.close())
+  return db
+}

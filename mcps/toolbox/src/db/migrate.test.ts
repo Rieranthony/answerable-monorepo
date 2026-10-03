@@ -5,10 +5,10 @@ import { copyFile, mkdtemp, readdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
-import { testDatabase } from "../test/database"
+import { database } from "../test/database"
 import { migrate } from "./migrate"
 
-const db = testDatabase()
+const db = database.connect()
 afterAll(() => db.close())
 
 test("migrations apply once, in order, and a second run changes nothing", async () => {

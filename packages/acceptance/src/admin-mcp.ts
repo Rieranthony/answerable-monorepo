@@ -1,6 +1,5 @@
 // The admin MCP and the Toolbox as the setup page of the admin MCP's docs registers them in ID, and the two servers started against it.
 // The admin journeys and the admin lane both start from here, so what the page shows is what both run.
-import { SQL } from "bun"
 import { createIdAdmin, type IdConfig } from "@answerable/id-admin"
 import { createAdminMcp } from "@answerable/mcp-admin/admin"
 import { readPlatform } from "@answerable/mcp-admin/platform"
@@ -15,29 +14,15 @@ import { createToolbox } from "@answerable/mcp-toolbox/toolbox"
 import { z } from "zod"
 import { grantOrganisation, linkClient, registerClient, registerMachine, registerResource } from "./admin"
 import { onCleanup } from "./cleanup"
-import type { Id } from "./id"
+import { createDatabase, type Id } from "./id"
 import { step } from "./step"
+import { toolboxResource, type HostClient } from "./toolbox"
 
 /** The admin MCP's URL, which is the audience of its tokens; it is served on port 47606. */
 export const adminResource = "http://127.0.0.1:47606/mcp"
-/** The Toolbox's URL, which is the audience of its tokens; it is served on port 47604. */
-export const toolboxResource = "http://127.0.0.1:47604/mcp"
 const toolboxAdmin = toolboxAdminResource(toolboxResource)
 // Each staff role is the grant string `answerable-<role>`, held through a group of the platform organisation.
 const staffRoles = ["team", "admin", "owner"] as const
-
-/** A public client a person signs in from, such as Claude Code: its id and the redirect URI it was registered with. */
-export type HostClient = { clientId: string; redirectUri: string }
-
-const postgres = "postgres://answerable:answerable@127.0.0.1:47532"
-async function createDatabase(name: string) {
-  const server = new SQL({ url: `${postgres}/answerable_id_test`, max: 1 })
-  await server.unsafe(`create database ${name}`)
-  await server.close()
-  const db = new SQL({ url: `${postgres}/${name}`, max: 4 })
-  onCleanup(() => db.close())
-  return db
-}
 
 /**
  * Register the admin MCP and the Toolbox in a started ID, in the order the setup page shows them, and start both servers' machinery: the

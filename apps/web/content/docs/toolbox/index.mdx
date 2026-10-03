@@ -160,7 +160,7 @@ curl "$ID/api/admin/v1/organizations/$ORGANISATION_ID/members/$MEMBERSHIP_ID/acc
 
 **The cache.** Grant strings are cached per organisation, member and the token's `organization_authorization_version` for 60 seconds. A token with another version reads again.
 
-**The poller.** Every 15 seconds the Toolbox reads ID's audit log (`GET /api/admin/v1/audit-events?limit=200`, newest first, back to the last event it saw) and marks stale the cache of every organisation named by an `entitlement.*`, `group_member.*`, `group.*`, `member.*` or `organization.*` event; the next request reads again. Its first poll only records the newest event.
+**The poller.** Every 15 seconds the Toolbox reads ID's audit log (`GET /api/admin/v1/audit-events?limit=200`, newest first, back to the last event it saw) and marks stale the cache of every organisation named by a `capability.*`, `entitlement.*`, `group_member.*`, `group.*`, `member.*` or `organization.*` event, and of every user, in every organisation, a `user.*` event names (`user.disabled`, `user.erased`); the next request reads again. Its first poll only records the newest event.
 
 **The bound.** A change in ID reaches the person within 60 seconds even when the poller is down, and usually within one poll. In two acceptance runs, an entitlement added to a member reached the same access token after 10.0 and 15.0 seconds, listed by polling `tools/list` every 5 seconds; a listening host is told as soon as the poller sees it ([change](#change)).
 

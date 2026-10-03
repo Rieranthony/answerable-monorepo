@@ -99,7 +99,7 @@ Every mutation is `risk: "normal"` and the server fixes its policy class to `con
 
 - **One machine client** of the platform organisation for reads and writes; tokens are reused until 30 seconds before expiry and renewed once on `401`. The role read and the tools' reads use `platform:read`, writes `platform:read platform:write`. Through it ID's audit names the machine client as actor (D13); the person is in the admin MCP's evidence.
 - **Correlation.** Every call carries the execution id as `x-request-id`; ID stores it on the audit row of a write (F9). A7 found exactly one ID audit row per committed write, each joined by `requestId` to the `capability.completed` row of its commit call.
-- **Errors.** No answer or a `5xx` is `UPSTREAM_UNAVAILABLE` (retry after a delay), ID's `404` for a named resource is `NOT_FOUND`, any other refusal `UPSTREAM_REJECTED` with ID's status and code; a source failure is never an empty success. The admin lane's check saw ID answer `503 database_busy` to a read of an organisation's SSO provider while a write to it was in progress; a tool answers that as `UPSTREAM_UNAVAILABLE`.
+- **Errors.** No answer, a `5xx` or `409 operation_in_progress` (a write with the same key still running) is `UPSTREAM_UNAVAILABLE`, retried after ID's `Retry-After` when it sends one (`503 database_busy` says 1 second), else after 1 second; ID's `404` for a named resource is `NOT_FOUND`, any other refusal `UPSTREAM_REJECTED` with ID's status and code; a source failure is never an empty success. A write that meets `operation_in_progress` is not sent again: the commit says ID may or may not have applied it. The admin lane once saw ID answer `503 database_busy` to a read of an organisation's SSO provider while a write to it was in progress.
 
 ## How it calls the Toolbox
 
@@ -117,11 +117,9 @@ One hash-chained chain, the platform organisation's, in `answerable_admin` (`@an
 | `capability.denied` | A tool was refused, or a critical operation found the sign-in too old | `reason`: `not_platform`, `missing_scope`, `role_below_minimum` or `stale_authentication`, with what decided it |
 | `intent.prepared`, `intent.committed`, `receipt.issued`, `intent.stale`, `intent.expired` | The intent's transitions | `intent_id`, `receipt_id`; the preview as an erasable payload |
 
-Each row names the person (`actor_id`, their user id) and the host (`client_id`). Inputs and results are not recorded. The chain verifies with `createEvidence(db).verify(platformOrganisationId)`; A7 verified 89 events. Two gaps, both in the SDK (`Q-SDK-ALLOW-EVIDENCE`): a call refused because ID did not answer the role read leaves no row, since the SDK answers it before `wrapCall`; and a commit call's row names `upstream: "id"` whichever tool the intent is for, since `wrapCall` cannot tell.
+Each row names the person (`actor_id`, their user id) and the host (`client_id`). Inputs and results are not recorded. The chain verifies with `createEvidence(db).verify(platformOrganisationId)`; A7 verified 108 to 109 events in three runs. Two gaps, both in the SDK (`Q-SDK-ALLOW-EVIDENCE`): a call refused because ID did not answer the role read leaves no row, since the SDK answers it before `wrapCall`; and a commit call's row names `upstream: "id"` whichever tool the intent is for, since `wrapCall` cannot tell.
 
 ## Security invariants
-
-Each is held by a test that stays: `mcps/admin/src/admin.test.ts` and `writes.test.ts` against the fake ID, and the admin journeys against real ID.
 
 1. A token is accepted only for the admin MCP's audience and never forwarded; the server acts upstream with its own machine client.
 2. Only members of the platform organisation, known by ID's system binding and never by slug, get any tool; everyone else gets none, and ID is not asked.
@@ -132,7 +130,22 @@ Each is held by a test that stays: `mcps/admin/src/admin.test.ts` and `writes.te
 7. A critical operation, which includes every write to the platform organisation, needs the owner role and a directory sign-in within the freshness window, at prepare and at commit; a refresh never renews it.
 8. No tool takes a secret (R29).
 9. Every call that runs, every refusal of a tool and every intent transition is evidence, append-only and chained; ID's audit holds each write with the same request id.
-10. Nothing identity-related leaves `apps/id`: the admin MCP is a consumer of ID's tokens and admin API.
+10. The admin MCP imports nothing from `apps/id`: it consumes ID's tokens and admin API.
+
+**What holds each.** Measured by the test audit of 3 October 2026, which broke the code one guard at a time (probes) and recorded what failed; the unit tests are in `mcps/admin/src` against the fake ID, the journeys in `packages/acceptance` against real ID.
+
+| Invariant | Unit tests | Journeys |
+| --- | --- | --- |
+| 1. Audience | `@answerable/auth`'s audience test and `@answerable/mcp`'s server test refuse a token for another audience; no `mcps/admin` test fails without the check | A3: the admin MCP answers `401` to the person's Toolbox token |
+| 2. Platform members only | `admin.test` (another organisation's token: no tool, ID not asked); `platform.test` (`isPlatform`) | A4: a client organisation's member |
+| 3. Read every request | `admin.test`: a role change on the next request, ID not answering, a demotion between prepare and commit | A1: `staff_grant` and `staff_revoke` change a colleague's tools on their next call, the only place ID computes the role from real groups |
+| 4. Three strings, resource target | `admin.test`: the highest role, another resource, one client, an unknown string | A1 |
+| 5. Machine client after the role | `admin.test`: another organisation's call reaches no ID route | None explicit: the SDK runs `allow` before a handler |
+| 6. Controlled intent, once, one key | `admin.test` commit and lost answer; `writes.test`; `calls.test` (ID's `412`); the conformance kit's `commit_rejects_stale` | A2, A4 (`INTENT_STALE` with real ETags), A5 |
+| 7. Critical operations | `admin.test`'s two tables: each of the 12 tools that take an organisation, on the platform organisation, refused to an admin and to an owner with a stale sign-in; each of the 4 critical tools refused with a stale or no sign-in, at prepare and at commit | A4 (`groups_addmember` as an admin), A6 |
+| 8. No tool takes a secret | `writes.test`: `sso_set` refuses another issuer; the manifest snapshot is the only check on the input schemas | A2: `sso_set` refuses the spare's issuer |
+| 9. Evidence | `admin.test`: refusals, calls, transitions and the `x-request-id` join | A7: one ID audit row per committed write |
+| 10. No import from `apps/id` | `admin.test` reads every import of the workspace | None |
 
 ## Configuration
 
@@ -150,7 +163,7 @@ Each is held by a test that stays: `mcps/admin/src/admin.test.ts` and `writes.te
 | Registering clients and resources, users, sessions, domain disable, member windows and removal | cURL | A staff need the reads and writes above do not meet |
 | Generating this provider with the OpenAPI adapter, or mounting it in the Toolbox | Hand-written and served alone | The adapter exists, and staff tools need the hub |
 | An evidence verification route, spans, rate limits, hosted deployment | `verify` through the database; the acceptance proves the chain | A second reader of the evidence, or a hosted ID |
-| Claude Code asking before `admin_commit_confirmed`, in a session with a model; `sso_set` against a real Entra tenant | `--check` asserts that `admin_commit_confirmed` alone carries `anthropic/requiresUserInteraction`; unit tests against the fake ID cover `sso_set` | The owner's hand demo |
+| Claude Code asking before `admin_commit_confirmed`, in a session with a model; `sso_set` against a real Entra tenant | A1 asserts that `admin_commit_confirmed` alone carries `anthropic/requiresUserInteraction`; unit tests against the fake ID cover `sso_set` | The owner's hand demo |
 
 ## Decision summary
 

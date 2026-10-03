@@ -18,21 +18,21 @@ export function allowedScopes(providers: readonly Provider[]) {
 }
 
 const accessView = z.object({ targets: z.array(z.object({ kind: z.string(), id: z.string(), resource: z.string().optional(), scopes: z.array(z.string()) })) })
-type Entry = { version: number; grants: readonly string[]; expiresAt: number; stale: boolean }
+type Entry = { userId: string; version: number; grants: readonly string[]; expiresAt: number; stale: boolean }
 
 /** A member's grant strings, read from ID and cached. */
 export type GrantsReader = {
   /** The caller's grant strings, sorted: from the cache for 60 seconds after a read, else from ID's member access view. */
   read(principal: UserPrincipal): Promise<readonly string[]>
-  /** Read these organisations' members from ID again on their next call, and call `changed` when there is at least one. */
-  invalidate(organisationIds: Iterable<string>): void
+  /** Read these organisations' members, and these users in every organisation, from ID again on their next call, and call `changed` when at least one is named. */
+  invalidate(organisationIds: Iterable<string>, userIds?: Iterable<string>): void
 }
 
 /**
  * Read each caller's grant strings from ID's member access view: the scopes of every target whose resource is the Toolbox, keeping only
  * grant strings. Cached per organisation, member and the token's organisation authorisation version for 60 seconds. When ID fails,
  * a cached entry answers until it expires; without one the read throws `UPSTREAM_UNAVAILABLE`. `changed` runs after an invalidation that names an
- * organisation, cached or not, since a member who is listening may not have been read for a while.
+ * organisation or a user, cached or not, since a member who is listening may not have been read for a while.
  */
 export function createGrantsReader({ id, resource, changed = () => {} }: { id: IdAdmin; resource: string; changed?: () => void }): GrantsReader {
   const cache = new Map<string, Map<string, Entry>>()
@@ -51,10 +51,10 @@ export function createGrantsReader({ id, resource, changed = () => {} }: { id: I
     }
     cache.set(organisationId, (cache.get(organisationId) ?? new Map()).set(memberId, entry))
   }
-  async function refresh({ organizationId, membershipId, organizationAuthorizationVersion: version }: UserPrincipal, kept: Entry | undefined) {
+  async function refresh({ userId, organizationId, membershipId, organizationAuthorizationVersion: version }: UserPrincipal, kept: Entry | undefined) {
     try {
       const grants = await fetchGrants(organizationId, membershipId)
-      remember(organizationId, membershipId, { version, grants, expiresAt: Date.now() + 60_000, stale: false })
+      remember(organizationId, membershipId, { userId, version, grants, expiresAt: Date.now() + 60_000, stale: false })
       return grants
     } catch (error) {
       console.error("[toolbox] reading access failed", error)
@@ -76,12 +76,14 @@ export function createGrantsReader({ id, resource, changed = () => {} }: { id: I
       }
       return read
     },
-    invalidate(organisationIds) {
-      let named = false
+    invalidate(organisationIds, userIds = []) {
+      const users = new Set(userIds)
+      let named = users.size > 0
       for (const organisationId of organisationIds) {
         named = true
         for (const entry of cache.get(organisationId)?.values() ?? []) entry.stale = true
       }
+      for (const members of users.size ? cache.values() : []) for (const entry of members.values()) if (users.has(entry.userId)) entry.stale = true
       if (named) changed()
     },
   }

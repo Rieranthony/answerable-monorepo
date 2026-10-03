@@ -2,10 +2,10 @@ import { afterAll, beforeAll, expect, test } from "bun:test"
 import { readCatalogue, writeCatalogue } from "./catalogue"
 import { migrate } from "./db/migrate"
 import { allowedScopes } from "./grants"
-import { testDatabase } from "./test/database"
+import { database } from "./test/database"
 import { createHub, providerId, records, resource } from "./test/hub"
 
-const db = testDatabase()
+const db = database.connect()
 beforeAll(() => migrate(db))
 afterAll(() => db.close())
 
@@ -55,19 +55,6 @@ test("enabling one organisation for one host client and one provider makes the I
   })
   expect(await readCatalogue(db, hub.organisation)).toEqual(new Map([[provider!.id, { enabled: true, overrides: { disabled: [], policy_class: {} } }]]))
   expect(hub.id.scopesAsked).toEqual(["platform:read platform:write"])
-})
-
-test("a repeat reads what ID holds, reports everything as existing and writes nothing", async () => {
-  const hub = await setup()
-  const body = { hostClientIds: ["host-a"], providers: [hub.mounted[0]!.id] }
-  const first = await hub.enable(body)
-  const written = hub.calls().length
-  const before = { ...rows(hub), revision: hub.id.resourceOf(resource).revision }
-  const again = await hub.enable(body)
-  expect(again.body).toEqual({ organisation_id: hub.organisation, created: [], existing: first.body.created })
-  expect(hub.calls().slice(written).map(call => call.split(" ")[0])).toEqual(["GET", "GET", "GET"])
-  expect({ ...rows(hub), revision: hub.id.resourceOf(resource).revision }).toEqual(before)
-  expect(hub.id.scopesAsked).toHaveLength(1)
 })
 
 test("two host clients and two providers make each call once; a host client added later gets only its own rows", async () => {

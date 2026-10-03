@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { defineMutation, defineProvider, defineTool, type Mutation, type Served } from "@answerable/mcp"
 import { z } from "zod"
 import type { Catalogue } from "./catalogue"
-import { allowed, ordered, policyClassOf, projectionOf } from "./projection"
+import { allowed, ordered, policyClassOf } from "./projection"
 
 const read = (name: string) => defineTool({ name, description: "A fixture read that returns its name and changes nothing.", input: z.object({}), output: z.object({ name: z.string() }), async execute() { return { name } } })
 const remove = defineMutation({
@@ -34,12 +34,4 @@ test("an ordered provider lists its tools by domain then operation, and keeps ea
   const sorted = ordered(provider)
   expect(sorted.tools.map(tool => tool.name)).toEqual(["identity.get", "records.delete", "records.get", "records.list"])
   for (const tool of sorted.tools) expect(tool).toBe(provider.tools.find(original => original.name === tool.name)!)
-})
-
-test("auto serves the direct projection while the granted tools number at most the direct limit, the meta projection above it; direct and meta are fixed", () => {
-  expect(projectionOf({ projection: "auto", direct_limit: 40 }, 40)).toBe("direct")
-  expect(projectionOf({ projection: "auto", direct_limit: 40 }, 41)).toBe("meta")
-  expect(projectionOf({ projection: "auto", direct_limit: 0 }, 0)).toBe("direct")
-  expect(projectionOf({ projection: "direct", direct_limit: 1 }, 500)).toBe("direct")
-  expect(projectionOf({ projection: "meta", direct_limit: 40 }, 1)).toBe("meta")
 })

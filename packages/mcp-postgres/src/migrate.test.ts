@@ -5,9 +5,9 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { migrate, migrations } from "./migrate"
-import { testDatabase } from "./test/database"
+import { database } from "./test/database"
 
-const db = testDatabase()
+const db = database.connect()
 afterAll(() => db.close())
 
 const names = (rows: { name: string }[]) => rows.map(row => row.name)

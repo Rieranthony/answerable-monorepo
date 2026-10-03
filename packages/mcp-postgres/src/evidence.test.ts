@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test"
 import { createEvidence, type EvidenceEvent } from "./evidence"
 import { migrate, migrations } from "./migrate"
-import { testDatabase } from "./test/database"
+import { database } from "./test/database"
 
-const db = testDatabase()
+const db = database.connect()
 const evidence = createEvidence(db)
 beforeAll(() => migrate(db, [migrations]))
 afterAll(() => db.close())

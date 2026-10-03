@@ -3,16 +3,18 @@ import { z } from "zod"
 import type { GrantsReader } from "./grants"
 
 const page = z.object({
-  items: z.array(z.object({ id: z.string(), action: z.string(), organizationId: z.string().nullable() })),
+  items: z.array(z.object({ id: z.string(), action: z.string(), organizationId: z.string().nullable(), targetId: z.string().nullable() })),
   nextCursor: z.string().nullable(),
 })
-// Actions that can change what a member of the event's organisation may use.
-const changes = ["entitlement.", "group_member.", "group.", "member.", "organization."]
+/** The audit actions, by prefix, that can change what a member of the event's organisation may use: a capability is the organisation's ceiling. */
+export const organisationActions = ["capability.", "entitlement.", "group_member.", "group.", "member.", "organization."]
+/** The audit actions on a person's account, such as `user.disabled` and `user.erased`: they name no organisation, and the user as their target. */
+export const userActions = ["user."]
 
 /**
  * Read ID's audit log every `intervalMs` (15 seconds), newest first, back to the last event seen, and invalidate the grants of every
- * organisation an entitlement, group, group member, member or organisation event names. The first poll only records the newest event.
- * Polls run one at a time; a failed poll is logged and the next one catches up.
+ * organisation a capability, entitlement, group, group member, member or organisation event names, and of every user a user event names,
+ * in every organisation. The first poll only records the newest event. Polls run one at a time; a failed poll is logged and the next one catches up.
  */
 export function startGrantsPoller({ id, grants, intervalMs = 15_000 }: { id: IdAdmin; grants: GrantsReader; intervalMs?: number }) {
   let last: string | undefined
@@ -22,6 +24,7 @@ export function startGrantsPoller({ id, grants, intervalMs = 15_000 }: { id: IdA
     busy = true
     try {
       const organisations = new Set<string>()
+      const users = new Set<string>()
       let newest: string | undefined
       let cursor: string | null = null
       pages: do {
@@ -30,12 +33,13 @@ export function startGrantsPoller({ id, grants, intervalMs = 15_000 }: { id: IdA
           newest ??= event.id
           // Audit event ids are UUIDv7, so they sort by time.
           if (last === undefined || event.id <= last) break pages
-          if (event.organizationId && changes.some(prefix => event.action.startsWith(prefix))) organisations.add(event.organizationId)
+          if (event.organizationId && organisationActions.some(prefix => event.action.startsWith(prefix))) organisations.add(event.organizationId)
+          if (event.targetId && userActions.some(prefix => event.action.startsWith(prefix))) users.add(event.targetId)
         }
         cursor = nextCursor
       } while (cursor)
       last = newest ?? last ?? ""
-      grants.invalidate(organisations)
+      grants.invalidate(organisations, users)
     } catch (error) {
       console.error("[toolbox] reading ID's audit log failed", error)
     } finally {
@@ -43,8 +47,10 @@ export function startGrantsPoller({ id, grants, intervalMs = 15_000 }: { id: IdA
     }
   }
   const poll = () => (running = running.then(once))
-  const timer = setInterval(() => { if (!busy) void poll() }, intervalMs)
-  void poll()
+  // One poll now and one every intervalMs, none while one runs.
+  const tick = () => { if (!busy) void poll() }
+  const timer = setInterval(tick, intervalMs)
+  tick()
   return {
     /** Poll now, after any poll in progress. */
     poll,

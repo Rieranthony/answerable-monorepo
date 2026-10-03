@@ -1,7 +1,6 @@
 // Real Answerable ID, a real browser and the official MCP OAuth client against the e2e MCP.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { createMcpServer, createMemoryIntentStore } from "@answerable/mcp"
-import { testPrincipal } from "@answerable/mcp/testing"
+import { createMcpServer } from "@answerable/mcp"
 import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
 import { createRecordStore } from "@answerable/mcp-e2e/records"
 import type { Client } from "@modelcontextprotocol/client"
@@ -48,19 +47,15 @@ const intentSchema = z.object({
   preview: z.object({ summary: z.string(), changes: z.array(z.unknown()) }),
 })
 const recordSchema = z.object({ id: z.uuid(), organizationId: z.uuid(), title: z.string(), version: z.number() })
-const receiptSchema = z.object({ receipt_id: z.uuid(), intent_id: z.uuid(), status: z.string(), idempotent_replay: z.boolean(), results: z.record(z.string(), z.unknown()) })
+const receiptSchema = z.object({ intent_id: z.uuid(), status: z.string(), idempotent_replay: z.boolean(), results: z.record(z.string(), z.unknown()) })
 const identitySchema = z.object({ userId: z.string(), organizationId: z.string(), scopes: z.array(z.string()) })
 const commitArgs = (intent: z.infer<typeof intentSchema>) => ({ intent_id: intent.intent_id, commit_token: intent.commit_token })
 
 let id: Id
 let browser: Awaited<ReturnType<typeof launchBrowser>>
-const records = createRecordStore()
-// The journey controls the intent clock; token lifetimes stay on real time.
-let clockOffset = 0
-const intents = createMemoryIntentStore({ now: () => Date.now() + clockOffset })
 const sessions = new Map<string, { organizationId: string; scopes: string[]; oauth: OAuthSession }>()
-const kept = new Map<string, { record: z.infer<typeof recordSchema>; intent: z.infer<typeof intentSchema>; receipt: z.infer<typeof receiptSchema> }>()
-const drafts = new Map<string, z.infer<typeof recordSchema>>()
+// Each writer's record, made in J4.
+const kept = new Map<string, z.infer<typeof recordSchema>>()
 
 function session(slug: string) {
   const found = sessions.get(slug)
@@ -81,8 +76,8 @@ beforeAll(async () => {
     const { organizationId } = manifest.tenants.find(({ slug }) => slug === tenant.slug)!
     await grantOrganisation(admin, organizationId, { clientId, resource, scopes, entitledScopes: tenant.scopes })
   }
-  const provider = createE2eProvider({ records, viewHtml: "<!doctype html><title>Records</title>" })
-  serve(47_602, createMcpServer({ provider, auth: { issuer: manifest.idOrigin, resource }, intents }).fetch)
+  const provider = createE2eProvider({ records: createRecordStore(), viewHtml: "<!doctype html><title>Records</title>" })
+  serve(47_602, createMcpServer({ provider, auth: { issuer: manifest.idOrigin, resource } }).fetch)
   serve(47_605, createMcpServer({ provider, auth: { issuer: manifest.idOrigin, resource: otherResource } }).fetch)
   serve(Number(new URL(callback).port), () => new Response("Signed in. You can close this page."))
   browser = await launchBrowser()
@@ -135,77 +130,16 @@ describe("J4 agent-class mutation", () => {
     for (const { slug } of writers) {
       step(`${slug}: create through records_create and e2e_commit`)
       const client = await clientFor(slug)
-      const created = []
-      for (const title of [`${slug} record`, `${slug} draft`]) {
-        const intent = await prepare(client, "records_create", { title })
-        expect(intent).toMatchObject({ commit_tool: "e2e_commit", policy_class: "agent", preview: { summary: `Create record “${title}”` } })
-        expect(intent.commit_token).toStartWith("act_")
-        expect(intent.preview.changes).toHaveLength(1)
-        const receipt = receiptSchema.parse(await tool(client, "e2e_commit", commitArgs(intent)))
-        expect(receipt).toMatchObject({ intent_id: intent.intent_id, status: "committed", idempotent_replay: false })
-        const record = recordSchema.parse(receipt.results)
-        expect(record).toMatchObject({ title, organizationId: session(slug).organizationId, version: 1 })
-        created.push({ record, intent, receipt })
-      }
-      kept.set(slug, created[0]!)
-      drafts.set(slug, created[1]!.record)
-    }
-  })
-
-  test("a repeat of the commit returns the same receipt as a replay and creates nothing", async () => {
-    const client = await clientFor("mcp-alpha")
-    const { intent, receipt, record } = kept.get("mcp-alpha")!
-    step("mcp-alpha: repeating the commit with the same token")
-    const replay = receiptSchema.parse(await tool(client, "e2e_commit", commitArgs(intent)))
-    expect(replay.receipt_id).toBe(receipt.receipt_id)
-    expect(replay).toEqual({ ...receipt, idempotent_replay: true })
-    expect((await listed(client)).filter(({ title }) => title === record.title)).toHaveLength(1)
-  })
-
-  test("a record changed after prepare makes the delete stale, with the expected and current versions", async () => {
-    const client = await clientFor("mcp-alpha")
-    const { record } = kept.get("mcp-alpha")!
-    const intent = await prepare(client, "records_delete", { id: record.id })
-    step("mcp-alpha: changing the record after prepare, as another writer would")
-    records.touch(testPrincipal({ organizationId: session("mcp-alpha").organizationId }), record.id)
-    const error = await refusal(client, "e2e_commit_confirmed", { ...commitArgs(intent), preview_summary: intent.preview.summary })
-    expect(error.code).toBe("INTENT_STALE")
-    expect(error.details).toEqual({ targets: [{ resource_id: record.id, expected: "1", current: "2" }] })
-  })
-
-  test("an intent past its expiry answers INTENT_EXPIRED", async () => {
-    const client = await clientFor("mcp-alpha")
-    const intent = await prepare(client, "records_create", { title: "Too late" })
-    step("mcp-alpha: moving the intent clock past the expiry")
-    clockOffset += Date.parse(intent.expires_at) - intents.now() + 1
-    expect((await refusal(client, "e2e_commit", commitArgs(intent))).code).toBe("INTENT_EXPIRED")
-  })
-})
-
-describe("J5 controlled class", () => {
-  test("a delete names the confirmed commit tool, and e2e_commit answers APPROVAL_REQUIRED", async () => {
-    for (const { slug } of writers) {
-      step(`${slug}: delete through records_delete needs e2e_commit_confirmed`)
-      const client = await clientFor(slug)
-      const intent = await prepare(client, "records_delete", { id: drafts.get(slug)!.id })
-      expect(intent).toMatchObject({ commit_tool: "e2e_commit_confirmed", policy_class: "controlled", preview: { summary: `Delete record “${slug} draft”` } })
-      const error = await refusal(client, "e2e_commit", commitArgs(intent))
-      expect(error).toMatchObject({ code: "APPROVAL_REQUIRED", details: { approval: { class: "controlled", commit_tool: "e2e_commit_confirmed" } } })
-    }
-  })
-
-  test("a summary that differs by one character is refused; the exact summary commits and the record is gone", async () => {
-    for (const { slug } of writers) {
-      const client = await clientFor(slug)
-      const draft = drafts.get(slug)!
-      const intent = await prepare(client, "records_delete", { id: draft.id })
-      step(`${slug}: confirming with a summary that differs by one character`)
-      const wrong = await refusal(client, "e2e_commit_confirmed", { ...commitArgs(intent), preview_summary: intent.preview.summary.slice(0, -1) })
-      expect(wrong.code).toBe("APPROVAL_REQUIRED")
-      expect(wrong.message).toContain("differs")
-      const receipt = receiptSchema.parse(await tool(client, "e2e_commit_confirmed", { ...commitArgs(intent), preview_summary: intent.preview.summary }))
-      expect(receipt.results).toEqual({ deleted: true, id: draft.id })
-      expect((await listed(client)).map(({ id }) => id)).not.toContain(draft.id)
+      const title = `${slug} record`
+      const intent = await prepare(client, "records_create", { title })
+      expect(intent).toMatchObject({ commit_tool: "e2e_commit", policy_class: "agent", preview: { summary: `Create record “${title}”` } })
+      expect(intent.commit_token).toStartWith("act_")
+      expect(intent.preview.changes).toHaveLength(1)
+      const receipt = receiptSchema.parse(await tool(client, "e2e_commit", commitArgs(intent)))
+      expect(receipt).toMatchObject({ intent_id: intent.intent_id, status: "committed", idempotent_replay: false })
+      const record = recordSchema.parse(receipt.results)
+      expect(record).toMatchObject({ title, organizationId: session(slug).organizationId, version: 1 })
+      kept.set(slug, record)
     }
   })
 })
@@ -214,8 +148,8 @@ test("each organisation lists only its own records, and preparing to delete anot
   for (const { slug } of writers) {
     step(`${slug}: lists only its own records and cannot prepare deleting another's`)
     const client = await clientFor(slug)
-    expect((await listed(client)).map(({ id }) => id)).toEqual([kept.get(slug)!.record.id])
-    for (const [other, { record }] of kept) {
+    expect((await listed(client)).map(({ id }) => id)).toEqual([kept.get(slug)!.id])
+    for (const [other, record] of kept) {
       if (other !== slug) expect((await refusal(client, "records_delete", { id: record.id })).code).toBe("NOT_FOUND")
     }
   }

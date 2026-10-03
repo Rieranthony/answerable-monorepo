@@ -9,13 +9,13 @@ bun install
 bun run mcp:test:e2e
 ```
 
-Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It runs `bun test` in `packages/acceptance`: the journeys below and the kit's own tests. It exits non-zero when a test fails, and it removes its database and processes either way, including after Ctrl-C (exit 130) or SIGTERM (exit 143). Measured: the 78 tests took 89.3, 88.8, 88.1, 87.2 and 86.6 seconds, at one-minute load averages of 7.0, 6.5, 6.8, 13.9 and 12.2 when they started; the admin journeys are about 50 of those seconds.
+Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It runs `bun test` in `packages/acceptance`: the journeys below and the kit's own tests. It exits non-zero when a test fails, and it removes its database and processes either way, including after Ctrl-C (exit 130) or SIGTERM (exit 143). Measured: the 53 tests took 87.3, 84.2 and 82.5 seconds, at one-minute load averages of 4.5, 24.8 and 7.1 when they started; the admin journeys are about 50 of those seconds.
 
 ## What the e2e journeys prove
 
 `packages/acceptance/src/journeys/e2e.journeys.test.ts` starts ID once and runs the tests below in order.
 
-**Setup.** ID starts from production migrations, served through the restricted runtime role, and is provisioned only through its admin API: the MCP resource with a 60-second token lifetime, a public client, and three organisations with company sign-in, capabilities and entitlements. The third organisation, `mcp-gamma`, is entitled to `e2e:identity` and `e2e:read` only. The e2e MCP runs in the test process on port `47602`, so the journeys control its record store and its intent clock.
+**Setup.** ID starts from production migrations, served through the restricted runtime role, and is provisioned only through its admin API: the MCP resource with a 60-second token lifetime, a public client, and three organisations with company sign-in, capabilities and entitlements. The third organisation, `mcp-gamma`, is entitled to `e2e:identity` and `e2e:read` only. The e2e MCP runs in the test process on port `47602`, so the journeys control its record store.
 
 1. Each organisation signs in through ID with the SDK's OAuth client and a real browser. The client follows the MCP's `401` to its metadata, discovers ID and builds the request: PKCE S256, the MCP URL as `resource`, the advertised scopes (`e2e:identity`, `e2e:read`, `e2e:write`) plus `offline_access`. The browser completes ID's pages: email, company sign-in, organisation, and consent listing every entitled scope. The consent of `mcp-gamma` names `e2e:write` as not approved. The callback carries ID's `iss` (RFC 9207), which the client checks.
 2. Each access token is bound to the MCP, lives 60 seconds and carries exactly the entitled scopes.
@@ -24,22 +24,16 @@ Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It runs 
 **J4, agent-class mutation.** [Prepared mutations](/docs/mcp/mutations) of low risk commit with `e2e_commit`. The codes below are in [MCP errors](/docs/mcp/errors).
 
 4. `records_create` returns a preview with a summary and one change, a commit token, `commit_tool: "e2e_commit"` and `policy_class: "agent"`. `e2e_commit` returns a receipt whose `results` is the record, at version 1, in the caller's organisation.
-5. A repeat of the commit with the same token returns the same `receipt_id` with `idempotent_replay: true`, and creates no second record.
-6. `records_delete` is prepared, the record is changed outside the MCP, and the matching commit answers `INTENT_STALE`, with `details.targets` giving the expected version `"1"` and the current version `"2"`.
-7. An intent whose expiry has passed answers `INTENT_EXPIRED`. The journey serves the MCP with an intent store whose clock it controls; token lifetimes stay on real time.
 
-**J5, controlled class.** A delete needs the person's confirmation.
-
-8. `records_delete` returns `commit_tool: "e2e_commit_confirmed"` and `policy_class: "controlled"`, and `e2e_commit` answers `APPROVAL_REQUIRED`.
-9. `e2e_commit_confirmed` with a `preview_summary` that differs by one character answers `APPROVAL_REQUIRED` with a message saying the summary differs. With the exact summary it commits, and the record is gone.
+The commit rules in which ID plays no part, a repeated commit, a stale target, an expired intent and the controlled class with its summary, are held by `@answerable/mcp`'s own tests (`packages/mcp/src/commit.test.ts`), for every MCP built with it.
 
 **Isolation, tokens and refresh.**
 
-10. Each of the first two organisations lists only its own record, and preparing to delete another organisation's record answers `NOT_FOUND`.
-11. `mcp-gamma` lists no records, and `records_create`, `records_delete`, `e2e_commit` and `e2e_commit_confirmed` are unknown tools to it.
-12. A second MCP at another URL refuses the token with `401`, after the MCP it was issued for accepted the same token.
-13. The client refreshes an expired access token by itself, ID rotates the refresh token, and the new tokens keep the same scopes.
-14. Disabling the organisation through the admin API makes refresh fail with `invalid_grant`; the access token already issued keeps working until it expires.
+5. Each of the first two organisations lists only its own record, and preparing to delete another organisation's record answers `NOT_FOUND`.
+6. `mcp-gamma` lists no records, and `records_create`, `records_delete`, `e2e_commit` and `e2e_commit_confirmed` are unknown tools to it.
+7. A second MCP at another URL refuses the token with `401`, after the MCP it was issued for accepted the same token.
+8. The client refreshes an expired access token by itself, ID rotates the refresh token, and the new tokens keep the same scopes.
+9. Disabling the organisation through the admin API makes refresh fail with `invalid_grant`; the access token already issued keeps working until it expires.
 
 The company directories are local test issuers. ID, its database role, its pages, token issuance, the MCP and the MCP client are real.
 
@@ -47,7 +41,7 @@ The company directories are local test issuers. ID, its database role, its pages
 
 `packages/acceptance/src/journeys/toolbox.journeys.test.ts` starts its own ID and runs [the Toolbox](/docs/toolbox) and its [admin API](/docs/toolbox/admin) in the test process on port `47604`, with the e2e provider mounted.
 
-**Setup.** Through ID's admin API: the Toolbox resource, allowing only `toolbox` and `offline_access` with a 60-second token lifetime; the Toolbox's admin resource; two public clients asking for `toolbox`, `toolbox-browser` and `toolbox-meta`; and two machine clients in the platform organisation, the Toolbox's (`platform:read` and `platform:write` for ID's admin resource) and a staff client (`toolbox:admin` for the Toolbox's admin resource). The journey creates and migrates `answerable_toolbox_acceptance` on the disposable PostgreSQL, starts the Toolbox with the audit-log poller and in-memory spans, and calls its [enable operation](/docs/toolbox/admin#enable-an-organisation) for each of three organisations (for `toolbox-alpha` with both public clients): it links the clients to the Toolbox resource, widens the resource to the grant strings of `e2e`, and makes the login and `toolbox` rows and the catalogue row. Entitlements to the Toolbox resource then carry grant strings: `toolbox-alpha` gets `e2e`, `toolbox-beta` gets `e2e/records`, `toolbox-gamma` nothing. The catalogue is the ceiling: gamma may use `e2e` but has no entitlement to any of it until J3. `toolbox-meta` is set to the meta projection through the admin API.
+**Setup.** `src/toolbox.ts` (`startToolboxStack`, which the host lane starts from too) registers through ID's admin API the Toolbox resource, allowing only `toolbox` and `offline_access` with a 60-second token lifetime; the Toolbox's admin resource; two public clients asking for `toolbox`, `toolbox-browser` and `toolbox-meta`; and two machine clients in the platform organisation, the Toolbox's (`platform:read` and `platform:write` for ID's admin resource) and a staff client (`toolbox:admin` for the Toolbox's admin resource). It creates and migrates `answerable_toolbox_acceptance` on the disposable PostgreSQL and starts the Toolbox with the audit-log poller and in-memory spans. The journey calls its [enable operation](/docs/toolbox/admin#enable-an-organisation) for each of three organisations (for `toolbox-alpha` with both public clients): it links the clients to the Toolbox resource, widens the resource to the grant strings of `e2e`, and makes the login and `toolbox` rows and the catalogue row. Entitlements to the Toolbox resource then carry grant strings: `toolbox-alpha` gets `e2e`, `toolbox-beta` gets `e2e/records`, `toolbox-gamma` nothing. The catalogue is the ceiling: gamma may use `e2e` but has no entitlement to any of it until J3. `toolbox-meta` is set to the meta projection through the admin API.
 
 1. Each organisation signs in through ID with the SDK's OAuth client and a real browser; its token carries `toolbox` and `offline_access` only. `toolbox-alpha` signs in a second time, through `toolbox-meta`.
 
@@ -79,40 +73,31 @@ The company directories are local test issuers. ID, its database role, its pages
 
 **J10, evidence.**
 
-13. `toolbox-alpha`'s chain verifies: its calls, its intents' transitions and its commits.
-14. An `UPDATE` and a `DELETE` on `evidence_events` through the journey's superuser connection are refused by the trigger, and the chain still verifies.
-15. Erasing the preview of alpha's first `intent.prepared` removes the payload's body, keeps the event's `payload_hash`, and the chain still verifies.
+13. `toolbox-alpha`'s chain verifies: its calls, its intents' transitions and its commits. The append-only trigger and payload erasure are held by `@answerable/mcp-postgres`'s own tests (`packages/mcp-postgres/src/evidence.test.ts`).
 
 The last test logs what the Toolbox asked ID, and requires exactly 2 token requests: the Toolbox and its poller share one machine client, with a `platform:read` token for grants and the audit log and a `platform:read platform:write` token for the enable calls. In two runs: 44 and 45 grant reads answered by 4 access-view calls (90.9% and 91.1% cache hits) and 2 audit-log reads; the median access-view latency was 35.3 and 32.2 ms and the maximum 40.7 and 45.7 ms.
 
 **Administration.**
 
-16. The admin API refuses a person's token with `401`, and lists the mounted providers and their capabilities to staff.
-17. The enable calls left the Toolbox resource allowing the grant strings of `e2e` and linked to both host clients. Calling it again for `toolbox-alpha` reports all nine steps as existing and changes nothing in ID.
-18. `PUT` catalogue with `e2e/records.list` disabled hides that tool from `toolbox-alpha` and from no one else, 4 to 14 ms later in eight runs; a second `PUT` restores it.
-19. The evidence check runs through the admin API, and a host client row is stored and removed.
+14. The admin API refuses a person's token with `401`, and lists the mounted providers and their capabilities to staff.
+15. The enable calls left the Toolbox resource allowing the grant strings of `e2e` and linked to both host clients. Calling it again for `toolbox-alpha` reports all nine steps as existing and changes nothing in ID.
+16. `PUT` catalogue with `e2e/records.list` disabled hides that tool from `toolbox-alpha` and from no one else, 4 to 14 ms later in eight runs; a second `PUT` restores it.
 
-## What the kit journey proves
-
-`packages/acceptance/src/journeys/kit.journeys.test.ts` starts its own ID with `startId({ tenants: [], platform: { signIns: 1 }, spares: [{ slug: "spare", signIns: 2 }] })` and serves the e2e MCP on port `47602`. It proves what a journey for a staff-only MCP, such as the admin MCP, relies on.
-
-1. Answerable staff sign in to the MCP through the platform organisation's company directory (`staff@answerable.example.test`). The token's `organization_id` and `identity_get` name the platform organisation.
-2. An organisation created through the admin API, given its domain and pointed at the spare directory with `setSsoProvider`, is refused by ID before it is entitled: `signInRefused` returns "Access is unavailable for this organisation. Sign in again or ask its administrator to check your access." in 393 to 506 ms in four runs, where `signIn` would wait 30 seconds. After `grantOrganisation`, its person signs in and the token names the new organisation.
-3. A machine client registered with `registerMachine` for two audiences gets a token for each, with that audience's scopes. Asking for one audience's scope at the other audience is refused.
+The admin API's evidence check and host client rows are held by the Toolbox's own tests (`mcps/toolbox/src/admin.test.ts`).
 
 ## What the admin journeys prove
 
-`packages/acceptance/src/journeys/admin.journeys.test.ts` starts its own ID with `startId({ tenants: [{ slug: "client", signIns: 2 }], platform: { signIns: 2 }, spares: [{ slug: "newco", signIns: 2 }] })` and serves [the admin MCP](/docs/admin) on port `47606` and [the Toolbox](/docs/toolbox) on port `47604` in the test process, each with a database of its own on the disposable PostgreSQL (`answerable_admin_acceptance` and `answerable_toolbox_acceptance`). It proves what [Set up the admin MCP](/docs/admin/setup) shows.
+`packages/acceptance/src/journeys/admin.journeys.test.ts` starts its own ID with `startId({ tenants: [{ slug: "client", signIns: 2 }], platform: { signIns: ["staff", "colleague", "staff"] }, spares: [{ slug: "newco", signIns: 2 }] })` and serves [the admin MCP](/docs/admin) on port `47606` and [the Toolbox](/docs/toolbox) on port `47604` in the test process, each with a database of its own on the disposable PostgreSQL (`answerable_admin_acceptance` and `answerable_toolbox_acceptance`). It proves what [Set up the admin MCP](/docs/admin/setup) shows.
 
-**Setup.** `src/admin-mcp.ts` registers what the setup page registers, in its order: the Toolbox's resource (900-second tokens), its admin resource, its host client and its machine client; the admin MCP's resource (900-second tokens, allowing `admin` and the three role strings), its host client, the platform organisation's capabilities and entitlements for it, a group per role holding that role's string, and the admin MCP's machine client with two audiences, ID's admin resource (`platform:read platform:write`) and the Toolbox's admin resource (`toolbox:admin`). The admin lane starts from the same code. Nobody is staff yet: the journeys put the staff member in a group through ID's admin API as root, as an operator adds the first owner.
+**Setup.** `src/admin-mcp.ts` registers what the setup page registers, in its order: the Toolbox's resource (900-second tokens), its admin resource, its host client and its machine client; the admin MCP's resource (900-second tokens, allowing `admin` and the three role strings), its host client, the platform organisation's capabilities and entitlements for it, a group per role holding that role's string, and the admin MCP's machine client with two audiences, ID's admin resource (`platform:read platform:write`) and the Toolbox's admin resource (`toolbox:admin`). The admin lane starts from the same code. Nobody is staff yet: the journeys put the staff member in the owner group through ID's admin API as root, as an operator adds the first owner; every later role change is the owner's, through `staff_grant` and `staff_revoke`, so ID computes each role from real groups and entitlements.
 
-**Sign-ins.** Each is one queued identity of a company directory. Staff: one for A1, one for the Verify sign-in of A6 (the authorisation after it reuses the session ID made). The member of the client organisation: one that ID refuses at its chooser and one it lets through (A4). The new organisation's person: the same two (A3).
+**Sign-ins.** Each is one queued identity of a company directory, used in order. The platform directory: the staff member for A1, their colleague (`colleague@answerable.example.test`) for A1, then the staff member's Verify sign-in for A6 (the authorisation after it reuses the session ID made). The member of the client organisation: one that ID refuses at its chooser and one it lets through (A4). The new organisation's person: the same two (A3).
 
 **A1, roles without re-authorisation.**
 
 1. Staff sign in to the admin MCP with the platform organisation's company directory. The token names the platform organisation and carries `admin` and `offline_access`. `admin_whoami` says `role: null` and the only tool listed is `admin_whoami`; calling `organisations_list` is the unknown-tool error.
-2. Root puts the member in the team group: the same access token lists the nine reads on its next call, and `admin_whoami` says `team`. 25 `tools/list` requests, each with one access-view read to ID, took a median of 31.3 to 34.3 ms and a maximum of 35.2 to 50.7 ms in five runs; the reads alone took a median of 26.7 to 29.8 ms and a maximum of 30.4 to 44.3 ms.
-3. The owner group adds the writes and the critical tools: 10 tools for `team`, 23 for `admin` and 27 for `owner`, all from one access token. Taking the owner role away removes them on the next call.
+2. Root puts the member in the owner group: the same access token lists all 27 tools on its next call, and `admin_whoami` says `owner`. Only `admin_commit_confirmed` carries `anthropic/requiresUserInteraction`, which makes Claude Code ask before it whatever the allow rules say. 25 `tools/list` requests, each with one access-view read to ID, took a median of 31.3 to 34.3 ms and a maximum of 35.2 to 50.7 ms in five runs as `team`, and a median of 38.8 to 40.7 ms and a maximum of 48.8 to 83.3 ms in three runs as `owner`; the reads alone took a median of 26.7 to 29.8 ms and a maximum of 30.4 to 44.3 ms as `team`, and a median of 29.3 to 31.4 ms and a maximum of 40.5 to 71.2 ms as `owner`.
+3. The colleague signs in with no role and lists `admin_whoami` alone. The owner's `staff_grant` gives them `team`: their same access token lists the ten `team` tools on its next call, and `staff_list` names the owner and the colleague with their roles. The owner's `staff_revoke` takes it away: the colleague's next call lists `admin_whoami` alone again, and `organisations_list` is the unknown-tool error. Each role lists 10 tools for `team`, 23 for `admin` and 27 for `owner`.
 
 **A2, onboarding through the MCP.**
 
@@ -123,28 +108,29 @@ The last test logs what the Toolbox asked ID, and requires exactly 2 token reque
 **A3, the Toolbox outcome.**
 
 7. After the enable and the grant the new organisation's person signs in to the Toolbox, lists `toolbox_whoami`, `e2e_identity_get`, the four `e2e_records` tools and the two commit tools, and calls `e2e_identity_get` and `e2e_records_list`.
-8. `access_revoke` takes the tools away from the same token 8.1 to 9.2 seconds later in five runs, polling `tools/list` every second; the Toolbox's poller reads ID's audit log every 15 seconds and its grant cache lasts 60. `access_enable` brings them back 14.2 to 15.2 seconds later.
-9. `organisations_disable` by an owner with a recent sign-in: the organisation's refresh answers `invalid_grant`.
+8. The admin MCP answers `401` to that person's Toolbox token, which the Toolbox accepts: a token is good for its own audience only.
+9. `access_revoke` takes the tools away from the same token 8.1 to 9.2 seconds later in five runs, polling `tools/list` every second; the Toolbox's poller reads ID's audit log every 15 seconds and its grant cache lasts 60. `access_enable` brings them back 14.2 to 15.2 seconds later.
+10. `organisations_disable` by an owner with a recent sign-in: the organisation's refresh answers `invalid_grant`.
 
 **A4, refusals.**
 
-10. A member of a client organisation is refused at ID's chooser. Granted the admin resource deliberately, they get a token whose organisation is the client's: the admin MCP lists no tool and `admin_whoami` is the unknown-tool error, with a `capability.denied` row, reason `not_platform`.
-11. An admin calling `organisations_disable` gets the unknown-tool error and a `capability.denied` row (`held` `admin`, `needed` `owner`). An admin calling `groups_addmember` on the platform organisation's owner group gets `PERMISSION_DENIED`; the owner group still has no member and no intent was stored.
-12. Renaming an organisation through ID's admin API between the prepare and the commit of `organisations_update` answers `INTENT_STALE`, with `details.targets` holding the ETag the prepare bound and the one ID holds now: `"<id>:1"` and `"<id>:2"`.
+11. A member of a client organisation is refused at ID's chooser. Granted the admin resource deliberately, they get a token whose organisation is the client's: the admin MCP lists no tool and `admin_whoami` is the unknown-tool error, with a `capability.denied` row, reason `not_platform`.
+12. The owner makes the colleague an `admin` with `staff_grant`. The colleague calling `organisations_disable` gets the unknown-tool error and a `capability.denied` row (`held` `admin`, `needed` `owner`). Their `groups_addmember` of themselves to the platform organisation's owner group gets `PERMISSION_DENIED`; the owner group still holds only the owner, and no intent was stored.
+13. Renaming an organisation through ID's admin API between the prepare and the commit of `organisations_update` answers `INTENT_STALE`, with `details.targets` holding the ETag the prepare bound and the one ID holds now: `"<id>:1"` and `"<id>:2"`.
 
 **A5, idempotency.**
 
-13. Committing one intent twice at once: one call answers the receipt with `idempotent_replay: false` and the other `COMMIT_IN_PROGRESS`, in five runs. A third commit answers the same receipt with `idempotent_replay: true`. ID holds one organisation with that slug and one `organization.created` audit row; the chain holds one `intent.committed` and one `receipt.issued` for the intent.
+14. Committing one intent twice at once: one call answers the receipt with `idempotent_replay: false` and the other `COMMIT_IN_PROGRESS`, in five runs. A third commit answers the same receipt with `idempotent_replay: true`. ID holds one organisation with that slug and one `organization.created` audit row; the chain holds one `intent.committed` and one `receipt.issued` for the intent.
 
 **A6, freshness.** The admin MCP runs with `ADMIN_FRESH_SECONDS=10` for this journey.
 
-14. A critical tool's prepare answers `ADMIN_REAUTHENTICATION_REQUIRED` with the remedy of [Sign in again](/docs/admin#sign-in-again) in its message, `retry.policy` `after_state_change` and the token's `upstream_auth_time` in `details`; a read tool still works, and a `capability.denied` row with reason `stale_authentication` is recorded. Authorising again in the host alone, through the browser that holds ID's session, gives a token with the same `sid` and the same `upstream_auth_time`: still refused.
-15. The remedy, run exactly as the message says: **Verify sign-in** on ID's Security page in that browser, then a new authorisation. The token has a new `sid` and a later `upstream_auth_time`, and the critical tool prepares and commits: 0.9 to 1.0 seconds for the three steps. Against the fixture as it was, which stamped `auth_time` once at boot, ID refused the Verify sign-in with "Your provider must confirm when you authenticated"; the fixture now stamps each sign-in with the time it happens.
-16. After the window passes, a token refreshed from that authorisation carries the same `upstream_auth_time` and is refused again: a refresh never counts as a sign-in.
+15. A critical tool's prepare answers `ADMIN_REAUTHENTICATION_REQUIRED` with the remedy of [Sign in again](/docs/admin#sign-in-again) in its message, `retry.policy` `after_state_change` and the token's `upstream_auth_time` in `details`; a read tool still works, and a `capability.denied` row with reason `stale_authentication` is recorded. Authorising again in the host alone, through the browser that holds ID's session, gives a token with the same `sid` and the same `upstream_auth_time`: still refused.
+16. The remedy, run exactly as the message says: **Verify sign-in** on ID's Security page in that browser, then a new authorisation. The token has a new `sid` and a later `upstream_auth_time`, and the critical tool prepares and commits: 0.9 to 1.0 seconds for the three steps. Against the fixture as it was, which stamped `auth_time` once at boot, ID refused the Verify sign-in with "Your provider must confirm when you authenticated"; the fixture now stamps each sign-in with the time it happens.
+17. After the window passes, a token refreshed from that authorisation carries the same `upstream_auth_time` and is refused again: a refresh never counts as a sign-in.
 
 **A7, evidence.**
 
-17. The platform organisation's chain verifies (89 events), and holds `capability.completed`, `capability.denied`, `intent.prepared`, `intent.committed`, `receipt.issued` and `intent.stale` rows. Every ID audit row of a write by the machine client names the execution id of a commit that succeeded, and there are as many (9) as intents committed other than `toolbox_enable`, whose writes the Toolbox makes with its own client. The admin MCP asked ID 83 times for a member's access and 3 times for a token.
+18. The platform organisation's chain verifies (108 to 109 events in three runs), and holds `capability.completed`, `capability.denied`, `intent.prepared`, `intent.committed`, `receipt.issued` and `intent.stale` rows. Every ID audit row of a write by the machine client names the execution id of a commit that succeeded, and there are as many (12) as intents committed other than `toolbox_enable`, whose writes the Toolbox makes with its own client; `staff_revoke`'s receipt names one operation per group left. The admin MCP asked ID 101 to 102 times for a member's access and 3 times for a token.
 
 ## Ports
 
@@ -166,7 +152,7 @@ Keep these free. PostgreSQL belongs to the Compose project `answerable-mcp-e2e` 
 
 | Function | What it does |
 | --- | --- |
-| `startId({ tenants, platform?, spares? })` | Starts PostgreSQL and ID, and returns `{ manifest, admin, stop }`. `tenants` is `[{ slug, signIns }]`: one organisation each, with a company directory that accepts `signIns` sign-ins. `platform: { signIns }` gives the platform organisation (Answerable staff) the domain `answerable.example.test` and such a directory for `staff@answerable.example.test`. `spares` is `[{ slug, signIns }]`: directories that ID trusts from boot and no organisation uses yet, for organisations a journey creates later (ID accepts an identity provider's endpoints only if they were listed at boot). `manifest` holds `idOrigin`, `adminResource`, `rootSecret`, each tenant's `slug`, `email` and `organizationId`, `platform` (`organizationId`, `domain` and `email`, when the plan had one) and `spares` (each directory's `slug`, `domain`, `email`, `issuer`, `authorizationEndpoint`, `tokenEndpoint`, `jwksEndpoint`, `clientId` and `clientSecret`). |
+| `startId({ tenants, platform?, spares? })` | Starts PostgreSQL and ID, and returns `{ manifest, admin, stop }`. `tenants` is `[{ slug, signIns }]`: one organisation each, with a company directory that accepts `signIns` sign-ins. `platform: { signIns }` gives the platform organisation (Answerable staff) the domain `answerable.example.test` and such a directory for `staff@answerable.example.test`; given a list such as `["staff", "colleague", "staff"]`, the directory's sign-ins are each listed person's, `<person>@answerable.example.test`, in that order. `spares` is `[{ slug, signIns }]`: directories that ID trusts from boot and no organisation uses yet, for organisations a journey creates later (ID accepts an identity provider's endpoints only if they were listed at boot). `manifest` holds `idOrigin`, `adminResource`, `rootSecret`, each tenant's `slug`, `email` and `organizationId`, `platform` (`organizationId`, `domain` and `email`, when the plan had one) and `spares` (each directory's `slug`, `domain`, `email`, `issuer`, `authorizationEndpoint`, `tokenEndpoint`, `jwksEndpoint`, `clientId` and `clientSecret`). |
 | `id.admin(method, path, body?)` | Calls ID's admin API as root with a fresh `Idempotency-Key`. A status outside 2xx throws with the body. |
 | `id.stop()` | Ends ID, brings PostgreSQL down with its volume, removes the temporary directory and closes everything else the kit opened. Safe to call twice; also runs on Ctrl-C and SIGTERM. |
 | `registerResource(admin, { identifier, scopes, accessTokenTtl })` | Registers the MCP's resource; `offline_access` is added to `scopes` unless listed. |
@@ -226,7 +212,7 @@ test("a new organisation has no records", async () => {
 
 **Serve your MCP in the test process** with your own resource URL and port (the ports above are the reserved ones), so the journey controls its stores and clocks. Serve the second MCP the same way when a journey needs a token refused elsewhere.
 
-**`signIns`** counts the company sign-ins a directory may perform: one per `signIn` or `signInRefused`, for a tenant, the platform organisation or a spare. A person who signs in more often than queued fails at the company directory.
+**`signIns`** counts the company sign-ins a directory may perform: one per `signIn`, `signInRefused` or `verifySignIn`, for a tenant, the platform organisation or a spare. A person who signs in more often than queued fails at the company directory. The platform organisation's list form queues several people in the order they sign in.
 
 **Every file gets its own ID.** Start it in `beforeAll` and call `stop()` in `afterAll`, as above. A `startId` that throws has already stopped.
 
@@ -255,7 +241,7 @@ bun run mcp:dev
 bun packages/acceptance/scripts/host-lane.ts
 ```
 
-Tries the Toolbox from two real hosts. It starts real ID and the Toolbox on ports `47600` and `47604`, with one organisation entitled to `e2e/records` only, and keeps them up until Ctrl-C. It prints the email to type at ID's sign-in and the commands below, and logs each request the Toolbox answers and each OAuth event ID records. It is not part of `mcp:test:e2e` and cannot run beside it: the ports and the Compose project are the same. `--check` signs in once as Claude Code's client, prints the seven tools with their `_meta` and exits; it took 10.2 and 6.8 seconds.
+Tries the Toolbox from two real hosts. It starts real ID and the Toolbox on ports `47600` and `47604`, with one organisation entitled to `e2e/records` only, and keeps them up until Ctrl-C. It prints the email to type at ID's sign-in and the commands below, and logs each request the Toolbox answers and each OAuth event ID records. It is not part of `mcp:test:e2e` and cannot run beside it: the ports and the Compose project are the same. It starts the Toolbox from the same code as the Toolbox journeys (`startToolboxStack`), which prove what it serves.
 
 **Claude Code.**
 
@@ -263,7 +249,7 @@ Tries the Toolbox from two real hosts. It starts real ID and the Toolbox on port
 claude mcp add --transport http toolbox-lane http://127.0.0.1:47604/mcp --client-id claude-code-lane --callback-port 47700
 ```
 
-Then `/mcp`, choose `toolbox-lane` and **Authenticate**. The Toolbox lists that client seven tools and no `e2e_identity_get`; `--check` prints them. To see the prompt for `toolbox_commit_confirmed` under an allow rule, allow `mcp__toolbox-lane` in `/permissions` and ask Claude to create a record and delete it.
+Then `/mcp`, choose `toolbox-lane` and **Authenticate**. The Toolbox lists that client seven tools and no `e2e_identity_get`. To see the prompt for `toolbox_commit_confirmed` under an allow rule, allow `mcp__toolbox-lane` in `/permissions` and ask Claude to create a record and delete it.
 
 **LibreChat.**
 
@@ -283,7 +269,7 @@ Ports beyond the acceptance's: `3080` (LibreChat) and `47700` (Claude Code's cal
 bun packages/acceptance/scripts/admin-lane.ts
 ```
 
-Tries the whole onboarding story from Claude Code by hand. It starts real ID, the admin MCP and the Toolbox on ports `47600`, `47606` and `47604`, registered as the admin journeys register them, makes the staff member an owner, and keeps everything up until Ctrl-C. It prints the staff email, the `claude mcp add` command for the admin MCP, the organisation to create (slug `newco` and its domain) and the command for the Toolbox, then the email of the new organisation's person. While it runs it sets the SSO provider of any organisation that holds the spare directory's domain, because a directory with its own credentials needs a secret no tool takes. It is not part of `mcp:test:e2e` and cannot run beside it. [Try it locally](/docs/admin/setup#try-it-locally) has the prompts to type and what each step shows. `--check` runs the story headlessly with the kit (the staff member signs in, onboards `newco` through the tools, and its person signs in to the Toolbox and calls a tool) and exits 0; it took 10.2, 8.4 and 8.4 seconds, and the host lane's `--check` 6.7 and 5.9. Both lanes remove ID, its database and their servers when a step fails, and on Ctrl-C.
+Tries the whole onboarding story from Claude Code by hand. It starts real ID, the admin MCP and the Toolbox on ports `47600`, `47606` and `47604`, registered as the admin journeys register them, makes the staff member an owner, and keeps everything up until Ctrl-C. It prints the staff email, the `claude mcp add` command for the admin MCP, the organisation to create (slug `newco` and its domain) and the command for the Toolbox, then the email of the new organisation's person. While it runs it sets the SSO provider of any organisation that holds the spare directory's domain, because a directory with its own credentials needs a secret no tool takes. It is not part of `mcp:test:e2e` and cannot run beside it. [Try it locally](/docs/admin/setup#try-it-locally) has the prompts to type and what each step shows; the admin journeys run the same story headlessly. Both lanes remove ID, its database and their servers when a step fails, and on Ctrl-C.
 
 ## Errors
 
@@ -306,7 +292,7 @@ Tries the whole onboarding story from Claude Code by hand. It starts real ID, th
 
 **The MCP under test** runs inside the test process on a real port, not as a separate deployed process.
 
-**Time.** Token lifetimes use real time. Only an intent store's clock is controlled, and only where a journey passes one.
+**Time.** Token lifetimes and intent expiry use real time; no journey controls a clock.
 
 **Browser.** Chromium only.
 

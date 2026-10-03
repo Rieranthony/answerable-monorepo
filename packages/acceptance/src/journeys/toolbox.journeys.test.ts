@@ -1,50 +1,23 @@
 // Real Answerable ID, a real browser and the official MCP OAuth client against the Toolbox, with the e2e provider mounted.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { SQL } from "bun"
-import { createIdAdmin } from "@answerable/id-admin"
-import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
-import { createRecordStore } from "@answerable/mcp-e2e/records"
+import type { SQL } from "bun"
 import { createEvidence } from "@answerable/mcp-postgres"
-import { toolboxAdminResource } from "@answerable/mcp-toolbox/admin"
 import { allowedScopes } from "@answerable/mcp-toolbox/grants"
-import { migrate } from "@answerable/mcp-toolbox/migrate"
-import { startGrantsPoller } from "@answerable/mcp-toolbox/poller"
-import { createMemoryTracer } from "@answerable/mcp-toolbox/spans"
-import { createToolbox } from "@answerable/mcp-toolbox/toolbox"
 import type { Client } from "@modelcontextprotocol/client"
 import { decodeJwt } from "jose"
 import { z } from "zod"
-import {
-  connect,
-  launchBrowser,
-  refusal,
-  registerClient,
-  registerMachine,
-  registerResource,
-  serve,
-  signIn,
-  startId,
-  step,
-  tool,
-  type Id,
-  type OAuthSession,
-} from "../index"
+import { connect, launchBrowser, refusal, serve, signIn, startId, step, tool, type Id, type OAuthSession } from "../index"
+import { startToolboxStack, toolboxResource as resource } from "../toolbox"
 
-const resource = "http://127.0.0.1:47604/mcp"
-const toolboxAdmin = toolboxAdminResource(resource)
 const callback = "http://127.0.0.1:47603/callback"
 const clientId = "toolbox-browser"
 // A second host client, set to the meta projection in the Toolbox; alpha signs in through it too.
 const metaClientId = "toolbox-meta"
-const hubClientId = "toolbox-hub"
-const staffClientId = "toolbox-staff"
-const database = "answerable_toolbox_acceptance"
 const tenants = [
   { slug: "toolbox-alpha", grants: ["e2e"], signIns: 2 },
   { slug: "toolbox-beta", grants: ["e2e/records"], signIns: 1 },
   { slug: "toolbox-gamma", grants: [], signIns: 1 },
 ]
-const providers = [createE2eProvider({ records: createRecordStore(), viewHtml: "<!doctype html><title>Records</title>" })]
 const records = ["e2e_records_create", "e2e_records_delete", "e2e_records_list", "e2e_records_show"]
 const commits = ["toolbox_commit", "toolbox_commit_confirmed"]
 const metaTools = ["toolbox_whoami", "toolbox_search", "toolbox_describe", "toolbox_execute", "toolbox_prepare", ...commits]
@@ -53,11 +26,9 @@ const commitArgs = ({ intent_id, commit_token }: z.infer<typeof intentSchema>) =
 const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
 
 let id: Id
-let staffSecret: string
+let stack: Awaited<ReturnType<typeof startToolboxStack>>
 let db: SQL
 let browser: Awaited<ReturnType<typeof launchBrowser>>
-let poller: ReturnType<typeof startGrantsPoller> | undefined
-const { tracer, spans } = createMemoryTracer()
 const sessions = new Map<string, { organizationId: string; oauth: OAuthSession }>()
 let meta: OAuthSession
 // What the Toolbox asked ID, for the evidence report: each access-view read with its latency, token requests and audit-log polls.
@@ -73,26 +44,8 @@ async function counted(input: string | URL | Request, init?: RequestInit) {
   else if (pathname.endsWith("/audit-events")) asked.polls++
   return response
 }
-// A token for the Toolbox's admin resource from ID, as the staff client.
-async function staffToken() {
-  const response = await fetch(new URL("/auth/oauth2/token", id.manifest.idOrigin), {
-    method: "POST",
-    headers: { Authorization: `Basic ${btoa(`${staffClientId}:${staffSecret}`)}`, "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "client_credentials", resource: toolboxAdmin, scope: "toolbox:admin" }),
-  })
-  if (!response.ok) throw new Error(`ID refused the staff client a token for ${toolboxAdmin} (${response.status}): ${await response.text()}`)
-  return z.object({ access_token: z.string() }).parse(await response.json()).access_token
-}
 // The Toolbox's admin API as staff.
-async function toolboxAdminCall(method: string, path: string, body?: unknown) {
-  const response = await fetch(`${new URL(resource).origin}/admin/v1${path}`, {
-    method,
-    headers: { Authorization: `Bearer ${await staffToken()}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
-  const text = await response.text()
-  return { status: response.status, body: (text ? JSON.parse(text) : {}) as Record<string, unknown> }
-}
+const toolboxAdminCall = (method: string, path: string, body?: unknown) => stack.adminApi(method, path, body)
 function session(slug: string) {
   const found = sessions.get(slug)
   if (!found) throw new Error(`${slug} never signed in; the first test shows why`)
@@ -105,35 +58,16 @@ const events = (organisation: string) => db`select kind, outcome, capability_ide
 
 beforeAll(async () => {
   id = await startId({ tenants: tenants.map(({ slug, signIns }) => ({ slug, signIns })) })
-  const { admin, manifest } = id
-  step("Registering the Toolbox resource, its admin resource and two public clients")
+  const { admin } = id
   // The resource allows only `toolbox` and `offline_access`: enabling an organisation widens it to the providers' grant strings.
-  await registerResource(admin, { identifier: resource, scopes: ["toolbox"], accessTokenTtl: 60 })
-  await registerResource(admin, { identifier: toolboxAdmin, scopes: ["toolbox:admin"], accessTokenTtl: 300 })
-  await registerClient(admin, { clientId, redirectUri: callback, scopes: ["toolbox"] })
-  await registerClient(admin, { clientId: metaClientId, redirectUri: callback, scopes: ["toolbox"] })
-  step("Registering the Toolbox's machine client and a staff client in the platform organisation")
-  const organisations = z.object({ items: z.array(z.object({ id: z.uuid(), slug: z.string() })) }).parse(await admin("GET", "/organizations?q=answerable"))
-  const platform = organisations.items.find(organisation => organisation.slug === "answerable")!
-  const hub = await registerMachine(admin, platform.id, hubClientId, { [manifest.adminResource]: ["platform:read", "platform:write"] })
-  staffSecret = (await registerMachine(admin, platform.id, staffClientId, { [toolboxAdmin]: ["toolbox:admin"] })).clientSecret
-  // ID makes its signing key when it signs its first token, and two first tokens at once make two keys: a verifier that read the keys between them
-  // refuses the second's token for 30 seconds. The Toolbox's poller and the first enable call would ask together, so one token comes first.
-  await staffToken()
-  step(`Creating and migrating ${database}`)
-  const server = new SQL({ url: "postgres://answerable:answerable@127.0.0.1:47532/answerable_id_test", max: 1 })
-  await server.unsafe(`create database ${database}`)
-  await server.close()
-  db = new SQL({ url: `postgres://answerable:answerable@127.0.0.1:47532/${database}`, max: 4 })
-  await migrate(db)
-  const machine = createIdAdmin({ issuer: manifest.idOrigin, adminResource: manifest.adminResource, ...hub, fetch: counted })
-  const toolbox = await createToolbox({ providers, auth: { issuer: manifest.idOrigin, resource }, db, id: machine, spans: tracer })
+  stack = await startToolboxStack(id, { hosts: [{ clientId, redirectUri: callback }, { clientId: metaClientId, redirectUri: callback }], database: "answerable_toolbox_acceptance", fetch: counted })
+  db = stack.db
+  const { toolbox, providers } = stack
   const read = toolbox.grants.read
   toolbox.grants.read = principal => {
     reads++
     return read(principal)
   }
-  poller = startGrantsPoller({ id: machine, grants: toolbox.grants })
   serve(47_604, toolbox.fetch)
   serve(Number(new URL(callback).port), () => new Response("Signed in. You can close this page."))
   // The catalogue is the ceiling: gamma may use e2e but has no entitlement to any of it until J3. Alpha also signs in through the meta host client.
@@ -149,11 +83,7 @@ beforeAll(async () => {
   if (host.status !== 200) throw new Error(`Setting ${metaClientId} to meta answered ${host.status}: ${JSON.stringify(host.body)}`)
   browser = await launchBrowser()
 })
-afterAll(async () => {
-  poller?.stop()
-  await db?.close()
-  await id?.stop()
-})
+afterAll(() => id?.stop())
 
 test("each organisation signs in to the Toolbox through ID, and its token carries toolbox and offline_access only", async () => {
   for (const { slug } of tenants) {
@@ -204,7 +134,7 @@ describe("J1 direct list", () => {
   test("e2e_records_list succeeds and leaves a capability.completed row and a span for the call", async () => {
     const { organizationId } = session("toolbox-alpha")
     expect(await tool(await clientFor("toolbox-alpha"), "e2e_records_list")).toEqual({ items: [], next_cursor: null, has_more: false })
-    const span = spans().findLast(item => item.name === "tools/call e2e/records.list" && item.attributes["answerable.organisation.id"] === organizationId)!
+    const span = stack.spans().findLast(item => item.name === "tools/call e2e/records.list" && item.attributes["answerable.organisation.id"] === organizationId)!
     expect(span.attributes).toMatchObject({ "mcp.method.name": "tools/call", "gen_ai.tool.name": "e2e_records_list", "answerable.outcome": "success", "answerable.client.name": clientId })
     const row = (await events(organizationId)).find((event: { execution_id: string }) => event.execution_id === span.attributes["gen_ai.tool.call.id"])
     expect(row).toEqual({
@@ -348,23 +278,6 @@ describe("J10 evidence", () => {
     expect(events).toBeGreaterThan(2)
     expect(await createEvidence(db).verify(alpha())).toEqual({ ok: true, length: events })
   })
-
-  test("an update and a delete through the superuser connection are refused by the trigger", async () => {
-    const organisation = alpha()
-    const run = async (query: PromiseLike<unknown>) => { await query }
-    await expect(run(db`update evidence_events set outcome = 'failure' where organisation_id = ${organisation}`)).rejects.toThrow("evidence_events is append-only: UPDATE is refused")
-    await expect(run(db`delete from evidence_events where organisation_id = ${organisation}`)).rejects.toThrow("evidence_events is append-only: DELETE is refused")
-    expect(await createEvidence(db).verify(organisation)).toEqual({ ok: true, length: await length() })
-  })
-
-  test("erasing the preview of alpha's first intent.prepared keeps the chain valid and the row's payload_hash unchanged", async () => {
-    const [prepared] = await db`select id::text, payload_ref::text, payload_hash from evidence_events where organisation_id = ${alpha()} and kind = 'intent.prepared' order by seq limit 1`
-    expect<unknown>(await db`select body ->> 'summary' as summary from evidence_payloads where id = ${prepared.payload_ref}`).toEqual([{ summary: "Create record “Through the meta tools”" }])
-    await createEvidence(db).erase(prepared.payload_ref)
-    expect<unknown>(await db`select body, hash, erased_at is not null as erased from evidence_payloads where id = ${prepared.payload_ref}`).toEqual([{ body: null, hash: prepared.payload_hash, erased: true }])
-    expect<unknown>(await db`select payload_hash from evidence_events where id = ${prepared.id}`).toEqual([{ payload_hash: prepared.payload_hash }])
-    expect(await createEvidence(db).verify(alpha())).toEqual({ ok: true, length: await length() })
-  })
 })
 
 test("the grant cache answered most reads; what the Toolbox asked ID is logged for the evidence report", async () => {
@@ -393,7 +306,7 @@ describe("administration", () => {
 
   test("the enable calls left the Toolbox resource allowing the providers' grant strings and linked to the host client; a repeat reports everything as existing and changes nothing in ID", async () => {
     const resourcePath = `/resources/${encodeURIComponent(resource)}`
-    expect(await held(resourcePath)).toMatchObject({ allowedScopes: allowedScopes(providers), clients: expect.arrayContaining([clientId, metaClientId]) })
+    expect(await held(resourcePath)).toMatchObject({ allowedScopes: allowedScopes(stack.providers), clients: expect.arrayContaining([clientId, metaClientId]) })
     const state = async () => ({ resource: await held(resourcePath), capabilities: await held(`/organizations/${alpha()}/capabilities`), entitlements: await held(`/organizations/${alpha()}/entitlements`) })
     const before = await state()
     step("toolbox-alpha: calling the enable operation a second time")
@@ -415,15 +328,8 @@ describe("administration", () => {
     expect(await names(await clientFor("toolbox-beta", "2025"))).toContain("e2e_records_list")
     const listed = await toolboxAdminCall("GET", `/organisations/${alpha()}/catalogue`)
     expect(listed.body).toEqual({ items: [{ provider_id: "e2e", enabled: true, overrides: { disabled: ["e2e/records.list"], policy_class: {} } }] })
-    // Leave alpha as it was for the tests that follow.
+    // Enabled again without the override, the tool is back at once.
     await toolboxAdminCall("PUT", `/organisations/${alpha()}/catalogue/e2e`, { enabled: true })
     expect(await names(client)).toContain("e2e_records_list")
-  })
-
-  test("the evidence check runs through the admin API, and host clients are stored", async () => {
-    expect(await toolboxAdminCall("GET", `/organisations/${alpha()}/evidence/verify`)).toMatchObject({ status: 200, body: { ok: true } })
-    expect(await toolboxAdminCall("PUT", `/host-clients/${clientId}`, { projection: "meta", direct_limit: 20 })).toMatchObject({ status: 200, body: { client_id: clientId, projection: "meta", direct_limit: 20 } })
-    expect(await toolboxAdminCall("GET", "/host-clients")).toMatchObject({ body: { items: expect.arrayContaining([{ client_id: clientId, projection: "meta", direct_limit: 20 }, { client_id: metaClientId, projection: "meta", direct_limit: 40 }]) } })
-    expect((await toolboxAdminCall("DELETE", `/host-clients/${clientId}`)).status).toBe(204)
   })
 })

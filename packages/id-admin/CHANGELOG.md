@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1
+
+`IdError` carries `retryAfterMs`: ID's `Retry-After` in milliseconds when it sends one in seconds, as it does with `503 database_busy`, so that a caller can wait as long as ID asks.
+
 ## 0.4.0
 
 A timeout a test can shorten, and a fake ID that answers as ID's contract says.

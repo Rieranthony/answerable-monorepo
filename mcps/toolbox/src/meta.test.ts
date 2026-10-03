@@ -4,10 +4,10 @@ import { errorOf } from "@answerable/mcp/testing"
 import { z } from "zod"
 import { writeCatalogue, writeHostClient } from "./catalogue"
 import { migrate } from "./db/migrate"
-import { testDatabase } from "./test/database"
+import { database } from "./test/database"
 import { createHub, e2e, names, type Client, type Hub } from "./test/hub"
 
-const db = testDatabase()
+const db = database.connect()
 beforeAll(() => migrate(db))
 afterAll(() => db.close())
 const hubs: Hub[] = []

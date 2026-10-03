@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0
+
+What the test audit kept of the acceptance. Breaking: `approve` is no longer exported, and the lanes have no `--check`.
+
+- The admin journeys run `staff_grant` and `staff_revoke` against real ID: after root makes the first owner, the owner gives a colleague `team` and takes it away, and makes them `admin` for A4; ID computes each role from real groups. A3 shows the admin MCP answering `401` to the person's Toolbox token. A1 asserts that `admin_commit_confirmed` alone carries `anthropic/requiresUserInteraction`, which the admin lane's `--check` used to.
+- `startId`'s `platform.signIns` takes a list of people too, such as `["staff", "colleague", "staff"]`: the platform directory's sign-ins in order, each `<person>@answerable.example.test` (`apps/id/scripts/mcp-e2e-fixture.ts`).
+- `src/toolbox.ts`: `startToolboxStack`, from which the Toolbox journeys and the host lane both start. `createDatabase` moved to `src/id.ts`, beside the PostgreSQL it uses.
+- Deleted, because a test closer to the code holds the same fact: `kit.journeys.test.ts`; the e2e journeys' repeat, stale, expiry and controlled-class steps (`packages/mcp/src/commit.test.ts`); the Toolbox journeys' trigger and erasure steps (`packages/mcp-postgres/src/evidence.test.ts`) and the admin API's evidence and host-client step (`mcps/toolbox/src/admin.test.ts`).
+- The kit is test support: no coverage gate. Its unit tests of `tool`, `refusal`, `approve`, the root caller and `startId`'s failures are gone; `cleanup.test.ts` and `startId`'s happy path stay. `refusal` returns `errorOf`'s answer, which throws when the call succeeded.
+- The lanes keep ID and the servers up for Claude Code by hand; the journeys are their proof.
+
 ## 0.4.1
 
 - `scripts/host-lane.ts` removes ID, its database and the Toolbox and exits 1 when a step fails, as the admin lane does; before, a failure left the ID fixture running.

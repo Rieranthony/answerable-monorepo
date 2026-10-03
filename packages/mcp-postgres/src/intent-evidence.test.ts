@@ -4,9 +4,9 @@ import { createEvidence } from "./evidence"
 import { withEvidence } from "./intent-evidence"
 import { createPostgresIntentStore } from "./intents"
 import { migrate, migrations } from "./migrate"
-import { testDatabase } from "./test/database"
+import { database } from "./test/database"
 
-const db = testDatabase()
+const db = database.connect()
 const evidence = createEvidence(db)
 beforeAll(() => migrate(db, [migrations]))
 afterAll(() => db.close())

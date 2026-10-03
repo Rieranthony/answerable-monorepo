@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.2
+
+The poller reads every audit event that can change what a member may use.
+
+- `capability.*` events invalidate the organisation they name: a capability is the organisation's ceiling.
+- `user.*` events, such as `user.disabled` and `user.erased`, name no organisation; they invalidate the user they name in every organisation. `GrantsReader.invalidate(organisationIds, userIds?)` takes the users, and each cached entry keeps its user id.
+- The action prefixes are exported (`organisationActions`, `userActions`), and a test fails when one of them names no action ID's source emits.
+
 ## 0.3.1
 
 Uses the extracted packages. No behaviour changes except one message.

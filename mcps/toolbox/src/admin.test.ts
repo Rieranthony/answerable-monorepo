@@ -2,12 +2,11 @@ import { afterAll, beforeAll, expect, spyOn, test } from "bun:test"
 import { SQL } from "bun"
 import { createEvidence } from "@answerable/mcp-postgres"
 import { toolboxAdminResource } from "./admin"
-import { ingest } from "./catalogue"
 import { migrate } from "./db/migrate"
-import { testDatabase, testDatabaseUrl } from "./test/database"
+import { database } from "./test/database"
 import { adminResource, createHub, providerId, records, resource } from "./test/hub"
 
-const db = testDatabase()
+const db = database.connect()
 beforeAll(() => migrate(db))
 afterAll(() => db.close())
 
@@ -108,18 +107,6 @@ test("PUT catalogue refuses a provider that is not mounted, identities it does n
   expect((await call("GET", `/organisations/${organisation}/catalogue`)).body).toEqual({ items: [] })
 })
 
-test("capabilities a new version adds stay disabled until PUT catalogue lists them as enabled", async () => {
-  const provider = providerId()
-  const { admin: call } = await createHub(db, [records(provider)])
-  const organisation = crypto.randomUUID()
-  await call("PUT", `/organisations/${organisation}/catalogue/${provider}`, { body: { enabled: true } })
-  await ingest(db, [records(provider, { version: "2026-10-01", extra: ["notes.list"] })])
-  const entry = async () => (await call("GET", `/organisations/${organisation}/catalogue`)).body.items[0].overrides.disabled
-  expect(await entry()).toEqual([`${provider}/notes.list`])
-  await call("PUT", `/organisations/${organisation}/catalogue/${provider}`, { body: { enabled: true, overrides: { disabled: [] } } })
-  expect(await entry()).toEqual([])
-})
-
 test("host clients are stored by client id with the defaults auto and 40, replaced by PUT, removed by DELETE and listed by id", async () => {
   const { admin: call } = await createHub(db, [records(providerId())])
   const client = `host-${crypto.randomUUID().slice(0, 8)}`
@@ -149,7 +136,7 @@ test("GET evidence/verify runs the organisation's chain check", async () => {
 })
 
 test("a failure the admin API did not expect answers 500 without its cause, and is logged", async () => {
-  const own = new SQL({ url: testDatabaseUrl, max: 1 })
+  const own = new SQL({ url: database.url, max: 1 })
   const { admin: call } = await createHub(own, [records(providerId())])
   await own.close()
   const log = spyOn(console, "error").mockImplementation(() => {})

@@ -7,8 +7,9 @@ import type { Client } from "@modelcontextprotocol/client"
 import type { BrowserContext } from "@playwright/test"
 import { decodeJwt } from "jose"
 import { z } from "zod"
-import { adminResource, startAdminStack, toolboxResource } from "../admin-mcp"
+import { adminResource, startAdminStack } from "../admin-mcp"
 import { connect, grantOrganisation, launchBrowser, refusal, serve, setSsoProvider, signIn, signInRefused, startId, step, tool, verifySignIn, type Id, type OAuthSession } from "../index"
+import { toolboxResource } from "../toolbox"
 
 const callback = "http://127.0.0.1:47603/callback"
 const adminHost = { clientId: "admin-browser", redirectUri: callback }
@@ -50,6 +51,10 @@ let staffBrowser: BrowserContext
 let staff: OAuthSession
 let staffClient: Client
 let staffMember: string
+// A second member of the platform organisation, whose role the owner changes with staff_grant and staff_revoke.
+let colleague: OAuthSession
+let colleagueClient: Client
+let colleagueMember: string
 let newco: { organizationId: string; entitlementId: string }
 let idem: string
 const writes: { tool: string; receipt: Receipt }[] = []
@@ -69,15 +74,11 @@ const platformOrganization = () => id.manifest.platform!.organizationId
 const adminTarget = () => ({ idOrigin: id.manifest.idOrigin, resource: adminResource, clientId: adminHost.clientId, callback, scopes: ["admin"] })
 const toolboxTarget = () => ({ idOrigin: id.manifest.idOrigin, resource: toolboxResource, clientId: toolboxHost.clientId, callback, scopes: ["toolbox"] })
 const staffPerson = () => ({ slug: "answerable", email: id.manifest.platform!.email, scopes: ["admin"] })
+const colleaguePerson = () => ({ slug: "answerable", email: `colleague@${id.manifest.platform!.domain}`, scopes: ["admin"] })
 // A 2025 client asks the server on every list; a 2026-07-28 client may keep one for 30 seconds.
 const on = (session: OAuthSession, resource = adminResource) => connect(resource, session.provider, "2025")
 const names = async (client: Client) => (await client.listTools()).tools.map(item => item.name).toSorted()
 const claims = (session: OAuthSession) => decodeJwt(session.state.tokens!.access_token)
-
-// Root puts the staff member in a role's group, or takes them out of it, the way a first owner is added.
-const membership = (role: keyof typeof stack.groups) => `/organizations/${platformOrganization()}/groups/${stack.groups[role]}/members/${staffMember}`
-const join = (role: keyof typeof stack.groups) => id.admin("PUT", membership(role), {})
-const leave = (role: keyof typeof stack.groups) => id.admin("DELETE", membership(role))
 
 const prepare = async (client: Client, name: string, args: Record<string, unknown>) => intentSchema.parse(await tool(client, name, args))
 const confirm = async (client: Client, { intent_id, commit_token, preview }: Intent) =>
@@ -116,9 +117,10 @@ async function audited(client: Client, receipt: Receipt) {
 }
 
 beforeAll(async () => {
-  // Sign-ins each step consumes. Staff: one for A1, one Verify sign-in for A6 (the authorisations after it reuse ID's session). The tenant's member: one ID refuses and one it
-  // lets through (A4). The spare directory's person: one ID refuses before the Toolbox is enabled and one it lets through (A3).
-  id = await startId({ tenants: [{ slug: "client", signIns: 2 }], platform: { signIns: 2 }, spares: [{ slug: "newco", signIns: 2 }] })
+  // Sign-ins each step consumes, in order. The platform directory: the staff member for A1, their colleague for A1, then the staff member's Verify sign-in for A6
+  // (the authorisations after it reuse ID's session). The tenant's member: one ID refuses and one it lets through (A4). The spare directory's person: one ID refuses
+  // before the Toolbox is enabled and one it lets through (A3).
+  id = await startId({ tenants: [{ slug: "client", signIns: 2 }], platform: { signIns: ["staff", "colleague", "staff"] }, spares: [{ slug: "newco", signIns: 2 }] })
   stack = await startAdminStack(id, { adminHost, toolboxHost, fetch: counted })
   adminMcp = stack.adminMcp()
   serve(47_606, request => adminMcp.fetch(request))
@@ -146,11 +148,14 @@ describe("A1 roles without re-authorisation", () => {
     staffMember = String(token.membership_id)
   })
 
-  test("root puts the member in the team group: the same token lists the reads on the next call, one access read per request", async () => {
+  test("root makes the member the first owner: the same token lists every tool on the next call, one access read per request, and only the confirmed commit asks the host to stop", async () => {
     const token = staff.state.tokens!.access_token
-    await join("team")
-    expect(await names(staffClient)).toEqual(teamTools)
-    expect(await tool(staffClient, "admin_whoami")).toMatchObject({ role: "team", nextStep: null })
+    await id.admin("PUT", `/organizations/${platformOrganization()}/groups/${stack.groups.owner}/members/${staffMember}`, {})
+    expect(await names(staffClient)).toEqual(ownerTools)
+    expect(await tool(staffClient, "admin_whoami")).toMatchObject({ role: "owner", nextStep: null })
+    // Claude Code asks before any tool that sets this, whatever the allow rules say: it must be the confirmed commit alone.
+    const { tools } = await staffClient.listTools()
+    expect(tools.filter(item => item._meta?.["anthropic/requiresUserInteraction"] === true).map(item => item.name)).toEqual(["admin_commit_confirmed"])
     const before = asked.access.length
     const latencies: number[] = []
     for (let call = 0; call < 25; call++) {
@@ -165,16 +170,30 @@ describe("A1 roles without re-authorisation", () => {
     expect(staff.state.tokens!.access_token).toBe(token)
   })
 
-  test("the owner group adds the writes and the critical tools; taking the owner role away removes them at the next call", async () => {
-    const token = staff.state.tokens!.access_token
-    await join("owner")
-    expect(await names(staffClient)).toEqual(ownerTools)
-    expect(await tool(staffClient, "admin_whoami")).toMatchObject({ role: "owner" })
-    await leave("owner")
-    expect(await names(staffClient)).toEqual(teamTools)
-    await expect(staffClient.callTool({ name: "organisations_disable", arguments: { organizationId: platformOrganization() } })).rejects.toThrow("Tool organisations_disable not found")
-    expect(staff.state.tokens!.access_token).toBe(token)
-    step(`roles: ${teamTools.length} tools for team, ${adminTools.length} for admin, ${ownerTools.length} for owner, all from one access token`)
+  test("the owner gives a colleague team with staff_grant: the colleague's same token lists the reads on its next call; staff_revoke takes it away and the list shrinks", async () => {
+    colleague = await signIn(browser, adminTarget(), colleaguePerson())
+    colleagueMember = String(claims(colleague).membership_id)
+    colleagueClient = await on(colleague)
+    const token = colleague.state.tokens!.access_token
+    expect(await names(colleagueClient)).toEqual(["admin_whoami"])
+    const granted = await change(staffClient, "staff_grant", { memberId: colleagueMember, role: "team" })
+    expect(granted.intent.preview.summary).toBe(`Make ${colleaguePerson().email} team of the admin MCP: add them to group “Answerable team” of the platform organisation`)
+    expect(granted.receipt.results).toMatchObject({ memberId: colleagueMember, groupId: stack.groups.team, role: "team" })
+    await audited(staffClient, granted.receipt)
+    expect(await names(colleagueClient)).toEqual(teamTools)
+    expect(await tool(colleagueClient, "admin_whoami")).toMatchObject({ role: "team", nextStep: null })
+    const staffList = z.object({ items: z.array(z.object({ memberId: z.uuid(), role: z.string().nullable() })) })
+    const roles = async () => new Map(staffList.parse(await tool(staffClient, "staff_list", { limit: 100 })).items.map(item => [item.memberId, item.role]))
+    const listed = await roles()
+    expect([listed.get(staffMember), listed.get(colleagueMember)]).toEqual(["owner", "team"])
+    const revoked = await change(staffClient, "staff_revoke", { memberId: colleagueMember, role: "team" })
+    expect(revoked.receipt.results).toMatchObject({ memberId: colleagueMember, groupIds: [stack.groups.team] })
+    expect(await names(colleagueClient)).toEqual(["admin_whoami"])
+    expect(await tool(colleagueClient, "admin_whoami")).toMatchObject({ role: null })
+    await expect(colleagueClient.callTool({ name: "organisations_list", arguments: {} })).rejects.toThrow("Tool organisations_list not found")
+    expect((await roles()).get(colleagueMember) ?? null).toBeNull()
+    expect(colleague.state.tokens!.access_token).toBe(token)
+    step(`roles: ${teamTools.length} tools for team, ${adminTools.length} for admin, ${ownerTools.length} for owner; the colleague's changed twice through staff_grant and staff_revoke on one access token`)
   })
 })
 
@@ -182,7 +201,6 @@ describe("A2 onboarding through the MCP", () => {
   const spare = () => id.manifest.spares[0]!
 
   test("an existing client organisation is enabled for the Toolbox first, which links the Toolbox's host client in ID", async () => {
-    await join("owner")
     const tenant = id.manifest.tenants[0]!
     const { receipt } = await change(staffClient, "toolbox_enable", { organizationId: tenant.organizationId, hostClientIds: [toolboxHost.clientId], providers: ["e2e"] })
     const { created, existing } = z.object({ created: z.array(z.string()), existing: z.array(z.string()) }).parse(receipt.results)
@@ -268,6 +286,18 @@ describe("A3 the Toolbox outcome", () => {
     expect(await tool(toolbox, "e2e_records_list")).toEqual({ items: [], next_cursor: null, has_more: false })
   })
 
+  test("the admin MCP answers 401 to the person's Toolbox token, which the Toolbox accepts: a token is good for its own audience only", async () => {
+    const list = (url: string) => fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${person.state.tokens!.access_token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+    })
+    expect((await list(toolboxResource)).status).toBe(200)
+    const refused = await list(adminResource)
+    expect(refused.status).toBe(401)
+    expect(refused.headers.get("www-authenticate")).toMatch(/resource_metadata=/)
+  })
+
   test("access_revoke takes the tools away from the same token within the Toolbox's 60-second cache window, and access_enable brings them back", async () => {
     const { receipt } = await change(staffClient, "access_revoke", { organizationId: newco.organizationId, entitlementId: newco.entitlementId })
     await audited(staffClient, receipt)
@@ -312,24 +342,23 @@ describe("A4 refusals", () => {
   })
 
   test("an admin is not an owner: organisations_disable is the unknown-tool error with a capability.denied row, and groups_addmember on the owner group of the platform organisation is PERMISSION_DENIED with nothing written", async () => {
-    await leave("owner")
-    await join("admin")
-    expect(await names(staffClient)).toEqual(adminTools)
-    expect(await tool(staffClient, "admin_whoami")).toMatchObject({ role: "admin" })
-    await expect(staffClient.callTool({ name: "organisations_disable", arguments: { organizationId: newco.organizationId } })).rejects.toThrow("Tool organisations_disable not found")
-    const denials = (await chain()).filter(row => row.kind === "capability.denied" && row.capability_identity === "admin/organisations.disable")
-    // A1 left the first, when the member held team; this is the second.
-    expect(denials.map(row => row.data)).toEqual([{ held: "team", needed: "owner" }, { held: "admin", needed: "owner" }])
-    expect(denials.at(-1)).toMatchObject({ outcome: "denied", reason: "role_below_minimum", actor_id: claims(staff).sub })
+    await change(staffClient, "staff_grant", { memberId: colleagueMember, role: "admin" })
+    expect(await names(colleagueClient)).toEqual(adminTools)
+    expect(await tool(colleagueClient, "admin_whoami")).toMatchObject({ role: "admin" })
+    await expect(colleagueClient.callTool({ name: "organisations_disable", arguments: { organizationId: newco.organizationId } })).rejects.toThrow("Tool organisations_disable not found")
+    const denials = (await chain()).filter(row => row.kind === "capability.denied" && row.actor_id === claims(colleague).sub)
+    expect(denials.map(row => [row.capability_identity, row.reason, row.data])).toEqual([
+      // A1 left the first, when the colleague held no role; this is the second.
+      ["admin/organisations.list", "role_below_minimum", { held: null, needed: "team" }],
+      ["admin/organisations.disable", "role_below_minimum", { held: "admin", needed: "owner" }],
+    ])
     const intents = async () => (await stack.database`select count(*)::int as n from intents where capability_identity = 'admin/groups.addmember'`)[0].n as number
     const [before, members] = [await intents(), `/organizations/${platformOrganization()}/groups/${stack.groups.owner}/members`]
-    const denied = await refusal(staffClient, "groups_addmember", { organizationId: platformOrganization(), groupId: stack.groups.owner, memberId: staffMember })
+    const denied = await refusal(colleagueClient, "groups_addmember", { organizationId: platformOrganization(), groupId: stack.groups.owner, memberId: colleagueMember })
     expect(denied).toMatchObject({ code: "PERMISSION_DENIED", message: expect.stringContaining("owner's critical operation") })
-    expect(await id.admin("GET", members)).toMatchObject({ items: [] })
+    expect(z.object({ items: z.array(z.object({ memberId: z.uuid() })) }).parse(await id.admin("GET", members)).items.map(item => item.memberId)).toEqual([staffMember])
     expect(await intents()).toBe(before)
-    expect(await tool(staffClient, "admin_whoami")).toMatchObject({ role: "admin" })
-    await leave("admin")
-    await join("owner")
+    expect(await tool(colleagueClient, "admin_whoami")).toMatchObject({ role: "admin" })
   })
 
   test("renaming the organisation through the kit between prepare and commit of organisations_update answers INTENT_STALE with the ETags", async () => {
@@ -439,7 +468,10 @@ describe("A7 evidence", () => {
     const [{ n }] = await stack.database`select count(*)::int as n from intents where status = 'committed' and capability_identity <> 'admin/toolbox.enable'`
     expect(new Set(audit.map(event => event.requestId)).size).toBe(n)
     for (const { tool: name, receipt } of writes.filter(write => write.tool !== "toolbox_enable")) {
-      expect(audit.filter(event => event.operationId === receipt.results.operationId), `${name} ${receipt.receipt_id}`).toHaveLength(1)
+      // staff_revoke leaves each group in turn, one operation each.
+      for (const operationId of (receipt.results.operationIds as string[] | undefined) ?? [receipt.results.operationId]) {
+        expect(audit.filter(event => event.operationId === operationId), `${name} ${receipt.receipt_id}`).toHaveLength(1)
+      }
     }
     step(`ID's audit: ${audit.length} rows by the machine client, one per committed write (${n}), each joined to its commit's evidence; ${asked.access.length} member-access reads and ${asked.tokens} token requests by the admin MCP`)
   })

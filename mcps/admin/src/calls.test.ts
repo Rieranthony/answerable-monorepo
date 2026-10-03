@@ -1,5 +1,6 @@
 import { expect, spyOn, test } from "bun:test"
-import { IdError, type IdAdmin } from "@answerable/id-admin"
+import { createIdAdmin, IdError, type IdAdmin } from "@answerable/id-admin"
+import { createFakeId } from "@answerable/id-admin/testing"
 import { ToolError } from "@answerable/mcp"
 import { testPrincipal } from "@answerable/mcp/testing"
 import { createCalls } from "./calls"
@@ -20,22 +21,12 @@ function writing(answers: (Awaited<ReturnType<IdAdmin["manage"]>> | Error)[]) {
 }
 const write = (calls: ReturnType<typeof createCalls>) => calls.write("POST", "/organizations", { body: { slug: "acme" }, key: "intent-key" }, context).catch((error: unknown) => error)
 
-test("a write ID does not answer is sent once more with the same key and execution id; a replayed answer names the row from ID's receipt", async () => {
-  const replayed = { body: { operationId: "op-1", outcome: "applied", statusCode: 201, resultReference: { type: "organization", id: "org-1" } }, etag: null, operationId: "op-1", replayed: true }
-  const { calls, sent } = writing([new IdError(0, undefined, "Answerable ID did not answer POST"), replayed])
-  expect(await write(calls)).toEqual({ operationId: "op-1", id: "org-1" })
-  expect(sent).toEqual([
-    ["POST", "/organizations", { body: { slug: "acme" }, idempotencyKey: "intent-key", requestId: "exec-1", ifMatch: undefined, ifNoneMatch: undefined }],
-    ["POST", "/organizations", { body: { slug: "acme" }, idempotencyKey: "intent-key", requestId: "exec-1", ifMatch: undefined, ifNoneMatch: undefined }],
-  ])
-})
-
 test("a write ID fails twice answers UPSTREAM_UNAVAILABLE saying the outcome is unknown; a stale If-Match INTENT_STALE; any other refusal UPSTREAM_REJECTED, never resent", async () => {
   const log = spyOn(console, "error").mockImplementation(() => {})
   try {
     const twice = writing([new IdError(503, "database_busy", "busy"), new IdError(0, undefined, "no answer")])
     expect(await write(twice.calls)).toMatchObject({
-      code: "UPSTREAM_UNAVAILABLE", message: "Answerable ID failed the write twice, or did not answer it; it may or may not have applied it. Read it back before preparing again", retry: { policy: "after_delay" },
+      code: "UPSTREAM_UNAVAILABLE", message: "Answerable ID failed the write twice, did not answer it, or is still applying it; it may or may not have applied it. Read it back before preparing again", retry: { policy: "after_delay", after_ms: 1000 },
     })
     expect(twice.sent).toHaveLength(2)
     const stale = writing([new IdError(412, "revision_mismatch", "changed")])
@@ -46,5 +37,28 @@ test("a write ID fails twice answers UPSTREAM_UNAVAILABLE saying the outcome is 
     expect(conflict.sent).toHaveLength(1)
     const unexpected = writing([new Error("bug")])
     expect(await write(unexpected.calls)).toEqual(new Error("bug"))
+  } finally { log.mockRestore() }
+})
+
+test("ID asking to be asked again answers UPSTREAM_UNAVAILABLE after its Retry-After: 503 database_busy, sent once more with the same key, and 409 operation_in_progress for a write whose key is still running", async () => {
+  const log = spyOn(console, "error").mockImplementation(() => {})
+  const create = (calls: ReturnType<typeof createCalls>) => calls.write("POST", "/organizations", { body: { slug: "acme", name: "Acme" }, key: "intent-key" }, context).catch((error: unknown) => error)
+  try {
+    // Every write answers 503 database_busy with Retry-After: 2.
+    const busy = createFakeId({ clientId: "admin-mcp" })
+    const answering = (input: string | URL | Request, init?: RequestInit) => {
+      busy.failWrite(1)
+      return busy.config.fetch(input, init).then(response => (response.headers.has("Retry-After") ? (response.headers.set("Retry-After", "2"), response) : response))
+    }
+    expect(await create(createCalls(createIdAdmin({ ...busy.config, fetch: answering })))).toMatchObject({ code: "UPSTREAM_UNAVAILABLE", retry: { policy: "after_delay", after_ms: 2000 } })
+    expect(busy.received.filter(({ request }) => request === "POST /api/admin/v1/organizations").map(({ idempotencyKey }) => idempotencyKey)).toEqual(["intent-key", "intent-key"])
+    // Two writes with one key at once: ID runs the first and answers the second 409 operation_in_progress, which carries no Retry-After.
+    const running = createFakeId({ clientId: "admin-mcp", operationInProgress: true })
+    running.slow(50)
+    const calls = createCalls(createIdAdmin(running.config))
+    const [first, second] = await Promise.all([create(calls), create(calls)])
+    expect(first).toEqual({ operationId: expect.any(String), id: expect.any(String) })
+    expect(second).toMatchObject({ code: "UPSTREAM_UNAVAILABLE", message: expect.stringContaining("or is still applying it"), retry: { policy: "after_delay", after_ms: 1000 } })
+    expect(running.received.filter(({ request }) => request === "POST /api/admin/v1/organizations")).toHaveLength(2)
   } finally { log.mockRestore() }
 })

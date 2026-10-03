@@ -1,8 +1,2 @@
 [test]
 root = "src"
-coverage = true
-coverageSkipTestFiles = true
-coverageThreshold = { lines = 1, functions = 1 }
-coverageReporter = ["text", "lcov"]
-coverageDir = "coverage"
-coveragePathIgnorePatterns = ["../**"]

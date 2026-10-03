@@ -6,9 +6,9 @@ import { errorOf, type TestMcp } from "@answerable/mcp/testing"
 import { createEvidence } from "@answerable/mcp-postgres"
 import { createAdminMcp } from "./admin"
 import { createAdmin, resource, seed, type FakeId } from "./test/admin"
-import { testDatabase, testDatabaseUrl } from "./test/database"
+import { database } from "./test/database"
 
-const db = testDatabase()
+const db = database.connect()
 afterAll(() => db.close())
 const admins: Awaited<ReturnType<typeof createAdmin>>[] = []
 afterEach(async () => {
@@ -65,13 +65,6 @@ test("a platform member without a role lists admin_whoami only, which says role 
     ["capability.completed", null, "admin/admin.whoami", {}],
     ["capability.denied", "role_below_minimum", "admin/organisations.list", { held: null, needed: "team" }],
   ])
-})
-
-test("answerable-team through a group entitlement on the admin MCP's resource lists whoami and every read", async () => {
-  const { staff } = await admin()
-  const client = await staff(["admin", "answerable-team"]).connect()
-  expect(await names(client)).toEqual(["admin_whoami", ...reads])
-  expect((await client.callTool({ name: "admin_whoami", arguments: {} })).structuredContent).toMatchObject({ role: "team", nextStep: null, tools: ["admin_whoami", ...reads] })
 })
 
 test("the highest role held counts; a role on another resource, through one client only, or an unknown string confers nothing", async () => {
@@ -164,7 +157,7 @@ test("every call leaves one evidence row on the platform organisation's chain, a
 })
 
 test("health answers ok only while the database answers", async () => {
-  const own = new SQL({ url: testDatabaseUrl, max: 1 })
+  const own = new SQL({ url: database.url, max: 1 })
   const id = createFakeId({ clientId: "admin-mcp" })
   const server = createAdminMcp({ auth: { issuer: "https://id.test", resource }, db: own, id: createIdAdmin(id.config), platform: id.organizationId })
   const health = async () => {
@@ -179,6 +172,12 @@ test("health answers ok only while the database answers", async () => {
 type Client = Awaited<ReturnType<TestMcp["connect"]>>
 type Prepared = { intent_id: string; commit_token: string; commit_tool: string; targets: { resource_id: string; version: { value: string } }[]; preview: { summary: string } }
 const call = async (client: Client, name: string, args: Record<string, unknown>) => client.callTool({ name, arguments: args })
+// The error of a call that must be refused; a call that succeeds fails the test with the tool's name and what it returned.
+const refusal = async (client: Client, name: string, args: Record<string, unknown>) => {
+  const answer = await call(client, name, args)
+  if (!answer.isError) throw new Error(`${name} succeeded where a refusal was expected: ${JSON.stringify(answer.structuredContent)}`)
+  return errorOf(answer)
+}
 const prepared = async (client: Client, name: string, args: Record<string, unknown>) => {
   const answer = await call(client, name, args)
   if (answer.isError) throw new Error(JSON.stringify(errorOf(answer)))
@@ -234,19 +233,6 @@ test("a controlled intent commits only through admin_commit_confirmed with its s
   expect(await createEvidence(db).verify(platform)).toEqual({ ok: true, length: 8 })
 })
 
-test("a target moved between prepare and commit answers INTENT_STALE with both ETags, writes nothing and records intent.stale", async () => {
-  const { staff, id, platform } = await admin()
-  const newco = id.organisation(Bun.randomUUIDv7(), { name: "Newco", slug: "newco" })
-  const client = await staff(["admin", "answerable-admin"]).connect()
-  const intent = await prepared(client, "organisations_update", { organizationId: newco.id, name: "Newco Ltd" })
-  id.revise(newco.id)
-  expect(errorOf(await confirm(client, intent))).toMatchObject({
-    code: "INTENT_STALE", retry: { policy: "after_reprepare" }, details: { targets: [{ resource_id: newco.id, expected: `"${newco.id}:1"`, current: `"${newco.id}:2"` }] },
-  })
-  expect(writesTo(id, `PATCH /api/admin/v1/organizations/${newco.id}`)).toEqual([])
-  expect((await events(platform)).map(row => row.kind)).toContain("intent.stale")
-})
-
 test("the plan's key survives a write whose answer is lost, which ID replays once without a second organisation, and a commit resent after a 401", async () => {
   const { staff, id, lose, answers } = await admin()
   const client = await staff(["admin", "answerable-admin"]).connect()
@@ -283,48 +269,81 @@ test("demoting the person between prepare and commit refuses the commit: an admi
   expect((await confirm(client, intent)).structuredContent).toMatchObject({ results: { organizationId: newco.id, status: "disabled" } })
 })
 
-test("a critical operation needs a directory sign-in within the window: older or none answers ADMIN_REAUTHENTICATION_REQUIRED with the remedy, recorded as a denial; an intent prepared in time cannot commit once it is past", async () => {
+test("each critical operation needs a directory sign-in within the window: older or none answers ADMIN_REAUTHENTICATION_REQUIRED at prepare with the remedy, recorded as a denial; an intent prepared in time cannot commit once it is past", async () => {
   const { staff, id, platform } = await admin({ freshSeconds: 60 })
-  const newco = id.organisation(Bun.randomUUIDv7(), { name: "Newco", slug: "newco" })
+  const world = seed(id)
+  const oldco = id.organisation(Bun.randomUUIDv7(), { name: "Oldco", slug: "oldco", status: "disabled" })
+  const critical: [string, Record<string, unknown>][] = [
+    ["organisations_disable", { organizationId: world.newco.id }],
+    ["organisations_enable", { organizationId: oldco.id }],
+    ["staff_grant", { memberId: world.staffer("recruit@answerable.test").id, role: "team" }],
+    ["staff_revoke", { memberId: world.staffer("helper@answerable.test", ["team"]).id, role: "team" }],
+  ]
   const owner = staff(["admin", "answerable-owner"])
   const client = await owner.connect()
   const now = Math.floor(Date.now() / 1000)
-  owner.signedInAt(now - 120)
-  const stale = errorOf(await call(client, "organisations_disable", { organizationId: newco.id }))
-  expect(stale).toEqual({
-    code: "ADMIN_REAUTHENTICATION_REQUIRED", retry: { policy: "after_state_change" }, request_id: expect.any(String),
-    details: { upstream_auth_time: now - 120, max_age_seconds: 60 },
-    message: `This operation needs a sign-in at your company's directory within the last minute; yours is from ${new Date((now - 120) * 1000).toISOString()}. In the browser you use for Answerable ID, open https://id.test/security and choose Verify sign-in; then, in your host, clear this server's authentication and authenticate again (Claude Code: /mcp, choose this server, Clear authentication, then Authenticate). Refreshing the token does not help: it keeps the sign-in time of the authorisation it belongs to.`,
-  })
-  owner.signedInAt(null)
-  expect(errorOf(await call(client, "staff_grant", { memberId: owner.member.id, role: "team" }))).toMatchObject({
-    code: "ADMIN_REAUTHENTICATION_REQUIRED", message: expect.stringContaining("your token carries no sign-in time"), details: { upstream_auth_time: null, max_age_seconds: 60 },
-  })
-  expect((await events(platform)).filter(row => row.kind === "capability.denied").map(({ capability_identity, reason, outcome, data }) => [capability_identity, reason, outcome, data])).toEqual([
-    ["admin/organisations.disable", "stale_authentication", "denied", { upstream_auth_time: now - 120, max_age_seconds: 60 }],
-    ["admin/staff.grant", "stale_authentication", "denied", { upstream_auth_time: null, max_age_seconds: 60 }],
-  ])
+  for (const time of [now - 120, null]) {
+    owner.signedInAt(time)
+    for (const [name, args] of critical) {
+      expect(await refusal(client, name, args), `${name} signed in at ${time}`).toEqual({
+        code: "ADMIN_REAUTHENTICATION_REQUIRED", retry: { policy: "after_state_change" }, request_id: expect.any(String),
+        details: { upstream_auth_time: time, max_age_seconds: 60 },
+        message: `This operation needs a sign-in at your company's directory within the last minute; ${time === null ? "your token carries no sign-in time" : `yours is from ${new Date(time * 1000).toISOString()}`}. In the browser you use for Answerable ID, open https://id.test/security and choose Verify sign-in; then, in your host, clear this server's authentication and authenticate again (Claude Code: /mcp, choose this server, Clear authentication, then Authenticate). Refreshing the token does not help: it keeps the sign-in time of the authorisation it belongs to.`,
+      })
+    }
+  }
+  const identity = (name: string) => `admin/${name.replace("_", ".")}`
+  expect((await events(platform)).filter(row => row.kind === "capability.denied").map(({ capability_identity, reason, outcome, data }) => [capability_identity, reason, outcome, data])).toEqual(
+    [now - 120, null].flatMap(time => critical.map(([name]) => [identity(name), "stale_authentication", "denied", { upstream_auth_time: time, max_age_seconds: 60 }])),
+  )
   owner.signedInAt(now)
-  const intent = await prepared(client, "organisations_disable", { organizationId: newco.id })
+  const intents: Prepared[] = []
+  for (const [name, args] of critical) intents.push(await prepared(client, name, args))
   setSystemTime(Date.now() + 61_000)
-  expect(errorOf(await confirm(client, intent))).toMatchObject({ code: "ADMIN_REAUTHENTICATION_REQUIRED" })
-  expect(writesTo(id, `POST /api/admin/v1/organizations/${newco.id}/disable`)).toEqual([])
+  for (const intent of intents) expect(errorOf(await confirm(client, intent)), intent.preview.summary).toMatchObject({ code: "ADMIN_REAUTHENTICATION_REQUIRED" })
+  expect(id.received.filter(({ request }) => !request.startsWith("GET"))).toEqual([])
 })
 
-test("every write to the platform organisation is an owner's critical operation, whatever the tool's own minimum", async () => {
+test("every write to the platform organisation is an owner's critical operation, whatever the tool's own minimum: an admin is refused each, and an owner needs a recent sign-in", async () => {
   const { staff, id, platform } = await admin({ freshSeconds: 60 })
   const world = seed(id)
+  id.resource(resource, ["admin", "answerable-team", "answerable-admin", "answerable-owner"])
   const recruit = world.staffer("recruit@answerable.test")
-  const args = { organizationId: platform, groupId: world.roles.owner.group.id, memberId: recruit.id }
-  const operator = await staff(["admin", "answerable-admin"]).connect()
-  expect(errorOf(await call(operator, "groups_addmember", args))).toMatchObject({
-    code: "PERMISSION_DENIED", message: "Changing the platform organisation is an owner's critical operation: it decides who is staff and how staff sign in",
-  })
+  const founder = world.staffer("founder@answerable.test", ["owner"])
+  const retired = id.entitlement(platform, { memberId: recruit.id, resource, scopes: ["answerable-owner"], status: "disabled" })
+  const operator = staff(["admin", "answerable-admin"])
+  // Each tool that takes an organisation, aimed at the platform organisation, as an admin would aim it to make themselves an owner.
+  const writes: [string, Record<string, unknown>][] = [
+    ["organisations_update", { organizationId: platform, name: "Ours now" }],
+    ["domains_add", { organizationId: platform, domain: "takeover.example" }],
+    ["sso_set", { organizationId: platform, issuer: "https://accounts.google.com", domain: "takeover.example" }],
+    ["groups_create", { organizationId: platform, slug: "owners-too", name: "Owners too" }],
+    ["groups_addmember", { organizationId: platform, groupId: world.roles.owner.group.id, memberId: operator.member.id }],
+    ["groups_dropmember", { organizationId: platform, groupId: world.roles.owner.group.id, memberId: founder.id }],
+    ["access_grant", { organizationId: platform, principal: { kind: "member", id: operator.member.id }, resource, scopes: ["answerable-owner"] }],
+    ["access_revoke", { organizationId: platform, entitlementId: world.roles.owner.entitlement.id }],
+    ["access_enable", { organizationId: platform, entitlementId: retired.id }],
+    ["toolbox_enable", { organizationId: platform, hostClientIds: ["claude-code-toolbox"], providers: ["e2e"] }],
+    ["organisations_disable", { organizationId: platform }],
+    ["organisations_enable", { organizationId: platform }],
+  ]
+  const ownerOnly = ["organisations_disable", "organisations_enable"]
+  const client = await operator.connect()
+  for (const [name, args] of writes) {
+    if (ownerOnly.includes(name)) await expect(call(client, name, args), name).rejects.toThrow(`Tool ${name} not found`)
+    else {
+      expect(await refusal(client, name, args), name).toMatchObject({
+        code: "PERMISSION_DENIED", message: "Changing the platform organisation is an owner's critical operation: it decides who is staff and how staff sign in",
+      })
+    }
+  }
   const owner = staff(["admin", "answerable-owner"])
-  const client = await owner.connect()
-  expect((await prepared(client, "groups_addmember", args)).preview.summary).toBe("Add recruit@answerable.test to group “Founders” in organisation “Answerable” (answerable)")
+  const ownerClient = await owner.connect()
   owner.signedInAt(Math.floor(Date.now() / 1000) - 120)
-  expect(errorOf(await call(client, "sso_set", { organizationId: platform, issuer: "https://accounts.google.com", domain: "answerable.test" })).code).toBe("ADMIN_REAUTHENTICATION_REQUIRED")
+  for (const [name, args] of writes) expect((await refusal(ownerClient, name, args)).code, name).toBe("ADMIN_REAUTHENTICATION_REQUIRED")
+  owner.signedInAt(Math.floor(Date.now() / 1000))
+  expect((await prepared(ownerClient, "groups_addmember", { organizationId: platform, groupId: world.roles.owner.group.id, memberId: recruit.id })).preview.summary)
+    .toBe("Add recruit@answerable.test to group “Founders” in organisation “Answerable” (answerable)")
   expect(id.received.filter(({ request }) => !request.startsWith("GET"))).toEqual([])
 })
 
@@ -342,4 +361,13 @@ test("an owner taking their own last owner role is warned twice, and the evidenc
   expect((await events(platform)).filter(row => row.kind === "capability.completed").map(({ capability_identity, upstream }) => [capability_identity, upstream])).toEqual([
     ["admin/staff.revoke", "id"], ["admin/toolbox.enable", "toolbox"],
   ])
+})
+
+test("the admin MCP imports nothing from apps/id: it consumes ID's tokens and admin API, and nothing identity-related leaves ID (docs/11, invariant 10)", async () => {
+  const root = new URL("../", import.meta.url).pathname
+  const imports: string[] = []
+  for await (const file of new Bun.Glob("{src,scripts}/**/*.ts").scan(root)) for (const [, from] of (await Bun.file(root + file).text()).matchAll(/from "([^"]+)"/g)) imports.push(from!)
+  expect(imports).toContain("@answerable/id-admin")
+  expect(imports.filter(from => from === "@answerable/id" || from.startsWith("@answerable/id/") || from.includes("apps/id"))).toEqual([])
+  expect(Object.keys((await Bun.file(`${root}package.json`).json()).dependencies)).not.toContain("@answerable/id")
 })

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.3
+
+ID asking to be asked again is no longer a refusal. No tool changes its schema.
+
+- `409 operation_in_progress` (a write with the same key still running) and `503 database_busy` answer `UPSTREAM_UNAVAILABLE` with `retry.after_ms` from ID's `Retry-After` when it sends one, else 1,000. `409 operation_in_progress` used to answer `UPSTREAM_REJECTED`. A write that meets it is not sent again: the commit says ID may or may not have applied it.
+- The test audit's tables: every tool that takes an organisation is refused on the platform organisation to an admin and to an owner with a stale sign-in, and each critical tool needs a recent sign-in at prepare and at commit. Dropping the guard from `access_grant`, or freshness from `staff_revoke`, failed no test before. A test reads the workspace's imports: nothing comes from `apps/id`.
+- The test helper for the test database comes from `@answerable/mcp-postgres/testing`; the read tests are one table of the query string each read sends to ID.
+
 ## 0.2.2
 
 The goal's cleanup pass. No tool changes behaviour or schema.

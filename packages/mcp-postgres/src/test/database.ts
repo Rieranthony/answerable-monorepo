@@ -1,16 +1,4 @@
-import { SQL } from "bun"
+import { testDatabase } from "../testing"
 
-const testDatabaseName = "answerable_mcp_postgres_test"
-export const testDatabaseUrl = process.env.MCP_POSTGRES_TEST_DATABASE_URL ?? `postgres://answerable:answerable@localhost:47432/${testDatabaseName}`
-
-/** Refuse to reset or migrate anything but the disposable test database. */
-export function assertDisposable(action: string, url = testDatabaseUrl) {
-  const name = new URL(url).pathname.slice(1)
-  if (name !== testDatabaseName) throw new Error(`Refusing to ${action} ${name || "an unnamed database"}; expected ${testDatabaseName}`)
-}
-
-/** A connection to the test database, closed by the caller. Refuses to connect to anything else. */
-export function testDatabase() {
-  assertDisposable("connect to")
-  return new SQL({ url: testDatabaseUrl, max: 4 })
-}
+/** This package's disposable test database, `answerable_mcp_postgres_test` (`MCP_POSTGRES_TEST_DATABASE_URL`). */
+export const database = testDatabase("answerable_mcp_postgres_test", process.env.MCP_POSTGRES_TEST_DATABASE_URL)

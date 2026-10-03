@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.0
+
+`@answerable/mcp-postgres/testing` exports `testDatabase(name, url?)`, the one helper for a server's disposable test database: its URL, `connect()` and `assertDisposable(action)`, each of which refuses a URL that names another database. The admin MCP and the Toolbox used two copies of it, and this package a third; each now names its database in `src/test/database.ts`.
+
 ## 0.1.1
 
 `migrate` creates `schema_migrations` under its advisory lock too. Two migrators starting on a fresh database at once collided in Postgres's catalogue (`pg_type_typname_nsp_index`), so one of them failed; now both succeed and each file is applied once.

@@ -68,7 +68,7 @@ test("manage reads and writes with a token of its own for platform:read and plat
   expect(id.scopesAsked).toEqual(["platform:read platform:write", "platform:read"])
 })
 
-test("a failure of manage throws an IdError with the status, ID's problem code and title, and what was called; a body that is not a problem leaves the code out", async () => {
+test("a failure of manage throws an IdError with the status, ID's problem code and title, and what was called, and ID's Retry-After in milliseconds; a body that is not a problem leaves the code out", async () => {
   const id = createFakeId()
   const admin = createIdAdmin(id.config)
   id.resource(toolbox, ["toolbox"])
@@ -76,7 +76,9 @@ test("a failure of manage throws an IdError with the status, ID's problem code a
   expect(missing).toBeInstanceOf(IdError)
   expect(missing).toMatchObject({ status: 404, code: "not_found", message: "Answerable ID answered GET /api/admin/v1/resources/https%3A%2F%2Fnothing.test with 404 not_found: Resource not found" })
   const stale = await admin.manage("PATCH", toolboxPath, { body: { allowedScopes: ["toolbox"] }, ifMatch: '"old:1"' }).catch(error => error)
-  expect(stale).toMatchObject({ status: 412, code: "revision_mismatch" })
+  expect(stale).toMatchObject({ status: 412, code: "revision_mismatch", retryAfterMs: undefined })
+  id.failWrite(1)
+  expect(await admin.manage("PATCH", toolboxPath, { body: { allowedScopes: ["toolbox"] } }).catch(error => error)).toMatchObject({ status: 503, code: "database_busy", retryAfterMs: 1000 })
   id.outage(true)
   const down = await admin.manage("GET", toolboxPath).catch(error => error)
   expect(down).toMatchObject({ status: 503, code: undefined, message: `Answerable ID answered GET /api/admin/v1${toolboxPath} with 503` })

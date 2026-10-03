@@ -4,11 +4,16 @@ import { ToolError, type ToolContext } from "@answerable/mcp"
 const query = (params: Record<string, unknown>) => new URLSearchParams(Object.entries(params).flatMap(([key, value]) => (value === undefined ? [] : [[key, String(value)]])))
 const join = (path: string, params: Record<string, unknown>) => `${path}${path.includes("?") ? "&" : "?"}${query(params)}`
 
-// ID's failure as the error a model acts on: no answer or a 5xx is UPSTREAM_UNAVAILABLE; any other refusal is UPSTREAM_REJECTED with ID's status and code.
+// ID asking to be asked again later: no answer, a 5xx such as 503 database_busy, or 409 operation_in_progress, a write with the same key still running.
+const later = ({ status, code }: IdError) => status === 0 || status >= 500 || code === "operation_in_progress"
+// After ID's Retry-After when it sends one, else the SDK's default delay.
+const delay = (error: IdError) => ({ retry: { policy: "after_delay" as const, after_ms: error.retryAfterMs } })
+
+// ID's failure as the error a model acts on: asked to come back later, UPSTREAM_UNAVAILABLE; any other refusal is UPSTREAM_REJECTED with ID's status and code.
 function upstream(error: unknown): never {
   if (!(error instanceof IdError)) throw error
   console.error("[admin] Answerable ID failed", error)
-  if (error.status === 0 || error.status >= 500) throw new ToolError("UPSTREAM_UNAVAILABLE", "Answerable ID did not answer; try again shortly")
+  if (later(error)) throw new ToolError("UPSTREAM_UNAVAILABLE", "Answerable ID did not answer; try again shortly", delay(error))
   throw new ToolError("UPSTREAM_REJECTED", error.message, { details: { upstream: { status: error.status, code: error.code ?? null } } })
 }
 
@@ -54,8 +59,9 @@ export function createCalls(id: IdAdmin) {
     return answer
   }
   /**
-   * A write with the plan's idempotency key and the call's execution id. When ID does not answer, it is sent once more with the same key, which
-   * ID replays if the first one was applied. ID refusing a stale `If-Match` answers `INTENT_STALE`. Returns the `Operation-Id` ID sends with
+   * A write with the plan's idempotency key and the call's execution id. When ID does not answer, or answers with a 5xx, it is sent once more with
+   * the same key, which ID replays if the first one was applied; when it still fails, or ID answers that a write with the key is still running,
+   * `UPSTREAM_UNAVAILABLE` says the outcome is unknown. ID refusing a stale `If-Match` answers `INTENT_STALE`. Returns the `Operation-Id` ID sends with
    * every command (`apps/id/src/http/admin/command.ts`) and the id of the row it made or changed, which a replayed answer carries in its
    * receipt; a `204` has none.
    */
@@ -74,9 +80,9 @@ export function createCalls(id: IdAdmin) {
           details: { upstream: { status: 412, code: error.code ?? null } },
         })
       }
-      if (error instanceof IdError && (error.status === 0 || error.status >= 500)) {
+      if (error instanceof IdError && later(error)) {
         console.error("[admin] Answerable ID failed", error)
-        throw new ToolError("UPSTREAM_UNAVAILABLE", "Answerable ID failed the write twice, or did not answer it; it may or may not have applied it. Read it back before preparing again")
+        throw new ToolError("UPSTREAM_UNAVAILABLE", "Answerable ID failed the write twice, did not answer it, or is still applying it; it may or may not have applied it. Read it back before preparing again", delay(error))
       }
       return upstream(error)
     }

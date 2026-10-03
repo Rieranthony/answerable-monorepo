@@ -27,11 +27,7 @@ export async function tool(client: Client, name: string, args: Record<string, un
   return result.structuredContent as Record<string, unknown>
 }
 
-/** Call a tool that must fail and return the `error` of its envelope: `code`, `message`, `retry`, `details` and `request_id`. */
+/** Call a tool that must fail and return the `error` of its envelope: `code`, `message`, `retry`, `details` and `request_id`. A call that succeeds throws. */
 export async function refusal(client: Client, name: string, args: Record<string, unknown> = {}) {
-  try {
-    return errorOf(await client.callTool({ name, arguments: args }))
-  } catch (problem) {
-    throw new Error(`${name}: ${(problem as Error).message}`)
-  }
+  return errorOf(await client.callTool({ name, arguments: args }))
 }

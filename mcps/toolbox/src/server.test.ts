@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { testDatabaseUrl } from "./test/database"
+import { database } from "./test/database"
 
 const directory = new URL("../", import.meta.url).pathname
 const e2e = new URL("../", import.meta.resolve("@answerable/mcp-e2e/mcp")).pathname
@@ -13,7 +13,7 @@ test("the entry point serves against the database, answers /health and stops on 
   const origin = `http://127.0.0.1:${port}`
   const id = "http://127.0.0.1:1"
   const env = {
-    ...process.env, TOOLBOX_DATABASE_URL: testDatabaseUrl, TOOLBOX_ID_ISSUER: id, TOOLBOX_RESOURCE_URL: `${origin}/mcp`, TOOLBOX_PORT: String(port),
+    ...process.env, TOOLBOX_DATABASE_URL: database.url, TOOLBOX_ID_ISSUER: id, TOOLBOX_RESOURCE_URL: `${origin}/mcp`, TOOLBOX_PORT: String(port),
     TOOLBOX_ID_CLIENT_ID: "toolbox-hub", TOOLBOX_ID_CLIENT_SECRET: "secret", TOOLBOX_ID_ADMIN_RESOURCE: `${id}/api/admin`,
   }
   // ID is not there: the poller logs that it failed, and nothing here reads grants.

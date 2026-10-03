@@ -51,7 +51,7 @@ async function chooseOrganisation(page: Page, authorizationUrl: string, email: s
 }
 
 /** Complete ID's pages for one person: email, company sign-in, organisation, consent. Returns the callback's query. On failure, prints the page ID showed. */
-export function approve(browser: Where, authorizationUrl: string, target: Pick<SignInTarget, "callback" | "scopes">, tenant: SignInTenant) {
+function approve(browser: Where, authorizationUrl: string, target: Pick<SignInTarget, "callback" | "scopes">, tenant: SignInTenant) {
   return onPage(browser, async page => {
     await chooseOrganisation(page, authorizationUrl, tenant.email)
     await page.getByRole("heading", { name: "Access it will receive" }).waitFor()
