@@ -15,6 +15,10 @@
 | 4 | Implementation briefs (delete, simplify) | complete: C 7dfc0a2, D 48aef85, A 4e4776c, B 30f44d8 |
 | 5 | Gates, land on main, memory update | complete |
 
+## Conclusions
+
+The answers to the goal's questions, with the evidence, are in [conclusions.md](conclusions.md).
+
 ## Decisions
 
 Taken by the coordinator as recommended defaults (reversible), recorded in the report (https://claude.ai/artifact/HAESyzd6MvfxpRLJYcQRpC) and in `findings.md`: C1–C7 (kit), D1–D7 (admin MCP, Toolbox, acceptance), A1–A8 (ID auth), B1–B8 (ID admin). Coordinator additions while landing: the acceptance fixture runs ID with Better Auth's origin and CSRF checks on; `tier` stays as the middleware tests' observation point; `http/authorize.test.ts` stays (the two authorisation layers cannot be told apart through HTTP); the kit keeps `mcps/example`'s paging test and e2e's prompt/resource test (their facts had no other holder in the workspace).

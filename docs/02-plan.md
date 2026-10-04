@@ -10,7 +10,7 @@ This is the dependency order, not a deployment claim. The [design](03-answerable
 
 - Bun 1.3.1, Hono, Postgres and pinned Better Auth 1.7.2; Redis is reserved for later.
 - Admin API first, typed OpenAPI and explicit authentication-route allowlisting.
-- Behaviour changes need meaningful regression/fault tests. ID requires 100% application line/function coverage; a test that exists only to light a line goes together with the branch it lit, and a fact is proved once, at the layer closest to the consumer ([test audit](goals/test-audit/findings.md)).
+- Behaviour changes need meaningful regression/fault tests. ID requires 100% application line/function coverage; a test that exists only to light a line goes together with the branch it lit, and a fact is proved once, at the layer closest to the consumer ([test audit](goals/test-audit/conclusions.md)).
 - Bun in production, TLS at ingress, no CDN/WAF for now.
 - No opportunistic hardening loop. Reproduce an existing invariant violation before adding runtime work.
 
