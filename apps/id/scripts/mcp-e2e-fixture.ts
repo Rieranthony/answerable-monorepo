@@ -95,6 +95,11 @@ const runtime = createDatabase({
   databaseUrl: runtimeUrl.href,
 });
 const auth = createAuth(runtime.db, environment);
+// The acceptance runs this fixture under bun test, so NODE_ENV is test and Better Auth would skip its
+// origin and CSRF checks; the journeys prove ID as deployed, with the checks on.
+const authContext = await auth.$context;
+authContext.skipOriginCheck = false;
+authContext.skipCSRFCheck = false;
 const app = createApp({ auth, db: runtime.db, environment });
 Bun.serve({ hostname: "127.0.0.1", port: 47_600, fetch: app.fetch });
 

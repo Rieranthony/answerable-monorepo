@@ -544,6 +544,24 @@ Tree: branch `goal/admin-b4`, cut from `claude/admin-mcp` at 20ed8d6 after B3b, 
 
 **Not yet tested**, kept as such: Claude Code asking before `admin_commit_confirmed` in a session with a model (only the `anthropic/requiresUserInteraction` marking is asserted), and `sso_set` with a real Entra tenant on the owner's ID.
 
+## 4 October 2026: the test audit
+
+Tree: branch `claude/test-audit` at 30f44d8 plus the acceptance fixture change, before landing on `main`. Versions as on 2 October. Four audits (`docs/goals/test-audit/audits/`) classified every test of ID, the kit, the admin MCP, the Toolbox and the acceptance and broke 149 checks on purpose; 129 failed a test, 20 failed none. The change sets then deleted what held no fact, added tests for the gaps and fixed what the probes found wrong. Measured on the landing tree with the owner's machine otherwise idle, except where noted.
+
+| Check | Before (main 491c9e9) | After |
+| --- | --- | --- |
+| `bun --filter @answerable/id test` | 2,040 pass in 528 s; 3 fail when the root `.env` is loaded | 1,555 pass across 127 files, 0 fail, 100% lines and functions, in 525 s and 558 s at load averages 10 to 22 (the implementation agents measured 446 to 450 s and 418 to 427 s for their halves on a quieter machine); every file runs alone; the environment no longer reaches the suite |
+| `bun run mcp:test` | 701 registered (670 run, 31 todo) in 8 s | 471 run (admin 126, mcp 111, toolbox 79, auth 62, mcp-postgres 24, e2e 21, id-admin 16, example 16, scripts 16), 0 todo, 6 to 8 s |
+| `bun run mcp:test:e2e` | 78 pass in 87 to 90 s, ID with Better Auth's origin checks off | 53 pass in 82 to 83 s, three runs, ID with the origin and CSRF checks on; the staff tools and the admin MCP's audience refusal now run against real ID |
+| Root typecheck, lint, build | 14, 14 and 3 tasks | 14, 14 and 3 tasks |
+| `bun --filter web test`, `@answerable/countries` | 88, 5 | 88, 5 |
+
+**Probes that were caught by nothing and now fail a test** (each re-run after the change): the JWT algorithm allow-list, zero clock tolerance, discovery redirects, a raw commit token in the store, a lost commit claim, the evidence chain link, two migrators at once, the ID client's timeouts, a JSON-RPC batch, the policy class rising after prepare, the escalation guard on `access_grant`, freshness on `staff_revoke`, a missing `email_verified`, a second linked resource at token exchange, a re-signed forged flow query, an erased group in its list, a foreign child id on every organisation route, and the fourteen authorisation probes of the admin API (middleware and transaction layers each held on their own).
+
+**Production code found wrong by the probes and fixed:** the memory intent store never evicted; commit did not recheck the policy class; batches hid calls from `allow`; two migrators collided on a fresh database; a test-only SSO probe bypass rode a production object; `NODE_ENV=test` was accepted by the runtime; the Toolbox poller ignored `capability.*` and `user.*` events; the admin MCP reported ID's retryable answers as final; the fake ID diverged from real ID in seven ways.
+
+**Not measured here:** the per-case fixture cost of `createAdminFixture` (a median 619 ms before each of the ID auth files' cases in the audit) was left as it is; CI's wall time after this change is read from the first run on `main`.
+
 ## Limits
 
 The acceptance uses local test issuers for company directories, a pre-registered public client and loopback HTTP. It does not certify Claude.ai, another host, another company directory or a production deployment; the host lane above records LibreChat and Claude Code by hand.
