@@ -31,14 +31,17 @@ export type AppServices = {
   auth: Auth;
   db: Database;
   environment: Environment;
-  readinessCheck?: typeof checkReadiness;
-  ssoTest?: { allowPrivateHosts: boolean };
   metrics?: OperationalMetrics;
 };
 
-export function createApp(services: AppServices) {
+/** Seams for the test fixture only; the server entry point never passes them. */
+export type AppTesting = {
+  /** Lets the SSO probe reach an in-process issuer on a private HTTP host. */
+  ssoTest?: { allowPrivateHosts: boolean };
+};
+
+export function createApp(services: AppServices, testing: AppTesting = {}) {
   const app = new Hono<AppEnvironment>();
-  const readinessCheck = services.readinessCheck ?? checkReadiness;
 
   app.use("*", async (context, next) => {
     const suppliedRequestId = context.req.header("x-request-id");
@@ -50,7 +53,7 @@ export function createApp(services: AppServices) {
     context.set("environment", services.environment);
     context.set("auth", services.auth);
     context.set("db", services.db);
-    context.set("ssoTest", services.ssoTest);
+    context.set("ssoTest", testing.ssoTest);
     context.set("requestId", requestId);
     context.header("x-request-id", requestId);
 
@@ -162,7 +165,7 @@ export function createApp(services: AppServices) {
     }),
     async (context) => {
       try {
-        await readinessCheck(context.get("db"));
+        await checkReadiness(context.get("db"));
         return context.json({ status: "ok" as const }, 200);
       } catch {
         return context.json({ status: "unavailable" as const }, 503);

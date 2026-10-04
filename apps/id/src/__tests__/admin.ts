@@ -52,6 +52,10 @@ export type AdminFixture = Awaited<ReturnType<typeof createAdminFixture>>;
 
 export async function createAdminFixture(
   overrides: Partial<import("../env.ts").Environment> = {},
+  options: {
+    /** Better Auth skips its origin and CSRF checks under NODE_ENV=test; turn them back on. */
+    originChecks?: boolean;
+  } = {},
 ) {
   const issuer = await startOidcIssuer();
   const trustedOrigin = "https://console.example.com";
@@ -85,12 +89,16 @@ export async function createAdminFixture(
       oauth_client_resources, oauth_resources, oauth_clients, jwks,
       invitations, members, sessions, accounts, verifications, organizations, users cascade
     `);
-    const app = createApp({
-      auth: createAuth(db, environment),
-      ssoTest: { allowPrivateHosts: true },
-      db,
-      environment,
-    });
+    const auth = createAuth(db, environment);
+    if (options.originChecks) {
+      const context = await auth.$context;
+      context.skipOriginCheck = false;
+      context.skipCSRFCheck = false;
+    }
+    const app = createApp(
+      { auth, db, environment },
+      { ssoTest: { allowPrivateHosts: true } },
+    );
     const bootstrapped = await bootstrap(db, systemActor("fixture"), {
       platformOrganizationSlug: environment.platformOrganizationSlug,
       platformOrganizationName: "Answerable",

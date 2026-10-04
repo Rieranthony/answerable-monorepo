@@ -27,6 +27,7 @@ import {
   startOidcIssuer,
   type OidcClaims,
   type OidcIssuer,
+  type OidcTokenFault,
 } from "../__tests__/oidc-issuer.ts";
 import { isUuidV7, testEnvironment } from "../__tests__/support.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
@@ -847,67 +848,184 @@ describe("integration: federated sign-in", () => {
     },
   );
 
-  test("rejects a token from a foreign issuer before user resolution", async () => {
-    await seedProvider();
-    issuer.enqueue(entraClaims({ iss: "https://foreign.example.com" }));
-
-    const result = await signIn();
-    expect(errorCode(result.location)).toBe("invalid_provider");
-    expect(
-      new URL(result.location!).searchParams.get("error_description"),
-    ).toBe("token_not_verified");
-    expect(await connection.db.select().from(users)).toHaveLength(0);
+  const google = "https://accounts.google.com";
+  const googleClaims = (claims: Partial<OidcClaims>): OidcClaims => ({
+    sub: "google-subject",
+    email: "person@contoso.com",
+    name: "Google Person",
+    iss: google,
+    ...claims,
   });
+  const oidcClaims = (claims: Partial<OidcClaims>): OidcClaims => ({
+    sub: "oidc-subject",
+    email: "person@contoso.com",
+    name: "OIDC Person",
+    ...claims,
+  });
+  const rejections: {
+    name: string;
+    code: string;
+    description?: string;
+    provider?: "entra" | "google" | "oidc";
+    claims: () => OidcClaims;
+    fault?: OidcTokenFault;
+  }[] = [
+    {
+      name: "a token from a foreign issuer",
+      code: "invalid_provider",
+      description: "token_not_verified",
+      claims: () => entraClaims({ iss: "https://foreign.example.com" }),
+    },
+    {
+      name: "a token for another audience",
+      code: "invalid_provider",
+      description: "token_not_verified",
+      claims: () => entraClaims(),
+      fault: { audience: "another-client" },
+    },
+    {
+      name: "an expired token",
+      code: "invalid_provider",
+      description: "token_not_verified",
+      claims: () => entraClaims(),
+      fault: { expired: true },
+    },
+    {
+      name: "a token signed by an unpublished key",
+      code: "invalid_provider",
+      description: "token_not_verified",
+      claims: () => entraClaims(),
+      fault: { unknownKey: true },
+    },
+    {
+      name: "an Entra account from another tenant",
+      code: "directory_mismatch",
+      claims: () => entraClaims({ tid: "foreign-tenant" }),
+    },
+    {
+      name: "an Entra guest named by idp",
+      code: "guest_account",
+      claims: () => entraClaims({ idp: "https://guest.example.com" }),
+    },
+    {
+      name: "an Entra guest named by acct",
+      code: "guest_account",
+      claims: () => entraClaims({ acct: 1 }),
+    },
+    {
+      name: "a personal Google account",
+      code: "personal_account",
+      provider: "google",
+      claims: () => googleClaims({ email_verified: true }),
+    },
+    {
+      name: "a Google hosted domain that differs from the email",
+      code: "hosted_domain_mismatch",
+      provider: "google",
+      claims: () => googleClaims({ hd: "other.example", email_verified: true }),
+    },
+    {
+      name: "an unverified Google email",
+      code: "email_unverified",
+      provider: "google",
+      claims: () => googleClaims({ hd: "contoso.com", email_verified: false }),
+    },
+    {
+      name: "a Google email without a verification claim",
+      code: "email_unverified",
+      provider: "google",
+      claims: () => googleClaims({ hd: "contoso.com" }),
+    },
+    {
+      name: "an unverified OIDC email",
+      code: "email_unverified",
+      provider: "oidc",
+      claims: () => oidcClaims({ email_verified: false }),
+    },
+    {
+      name: "an OIDC email without a verification claim",
+      code: "email_unverified",
+      provider: "oidc",
+      claims: () => oidcClaims({}),
+    },
+    {
+      name: "an email outside the organisation's active domains",
+      code: "domain_not_allowed",
+      claims: () => entraClaims({ email: "person@other.example" }),
+    },
+    {
+      name: "a malformed email, atomically",
+      code: "SSO_USER_RESOLUTION_FAILED",
+      claims: () => entraClaims({ email: "malformed" }),
+    },
+  ];
+  test.each(rejections)(
+    "rejects $name without writing an identity",
+    async ({ code, description, provider = "entra", claims, fault }) => {
+      await seedProvider({
+        providerIssuer: { entra: entraIssuer, google, oidc: issuer.origin }[
+          provider
+        ],
+      });
+      issuer.enqueue(claims(), fault);
 
-  test.each([
-    ["directory_mismatch", { tid: "foreign-tenant" }],
-    ["guest_account", { idp: "https://guest.example.com" }],
-    ["guest_account", { acct: 1 }],
-  ] as const)("rejects Entra claim policy: %s", async (code, claims) => {
+      const location = new URL((await signIn()).location!);
+      expect(location.searchParams.get("error")).toBe(code);
+      if (description)
+        expect(location.searchParams.get("error_description")).toBe(
+          description,
+        );
+      for (const table of [users, accounts, sessions])
+        expect(await connection.db.select().from(table)).toHaveLength(0);
+      const rejected = await connection.db
+        .select()
+        .from(auditEvents)
+        .where(eq(auditEvents.action, "auth.signin.rejected"));
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0]).toMatchObject({
+        reason:
+          code === "SSO_USER_RESOLUTION_FAILED" ? "sso_callback_failed" : code,
+        outcome: "failure",
+        schemaVersion: 2,
+        data: null,
+      });
+    },
+  );
+
+  test("a callback carrying another sign-in's state cookie is refused", async () => {
     await seedProvider();
-    issuer.enqueue(entraClaims(claims));
-
-    const result = await signIn();
-    expect(errorCode(result.location)).toBe(code);
-    const rejected = await connection.db
-      .select()
-      .from(auditEvents)
-      .where(eq(auditEvents.action, "auth.signin.rejected"));
-    expect(rejected).toHaveLength(1);
-    expect(rejected[0]).toMatchObject({
-      reason: code,
-      outcome: "failure",
-      schemaVersion: 2,
-      data: null,
+    issuer.enqueue(entraClaims());
+    const begin = () =>
+      app.request("/auth/sign-in/sso", {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          Origin: new URL(callbackURL).origin,
+        },
+        body: JSON.stringify({
+          providerId: "contoso",
+          callbackURL,
+          errorCallbackURL,
+        }),
+      });
+    const first = await begin();
+    const second = await begin();
+    const authorization = await fetch((await second.json()).url, {
+      redirect: "manual",
     });
-    expect(await connection.db.select().from(users)).toHaveLength(0);
-  });
-
-  test.each([
-    ["personal_account", { email_verified: true }],
-    ["hosted_domain_mismatch", { hd: "other.example", email_verified: true }],
-    ["email_unverified", { hd: "contoso.com", email_verified: false }],
-  ] as const)("rejects Google claim policy: %s", async (code, claims) => {
-    await seedProvider({ providerIssuer: "https://accounts.google.com" });
-    issuer.enqueue({
-      sub: "google-subject",
-      email: "person@contoso.com",
-      name: "Google Person",
-      iss: "https://accounts.google.com",
-      ...claims,
+    const callback = new URL(authorization.headers.get("location")!);
+    const response = await app.request(callback.pathname + callback.search, {
+      headers: {
+        Cookie: first.headers
+          .getSetCookie()
+          .map((value) => value.split(";", 1)[0])
+          .join("; "),
+      },
     });
-
-    const result = await signIn();
-    expect(errorCode(result.location)).toBe(code);
-    expect(await connection.db.select().from(users)).toHaveLength(0);
-  });
-
-  test("rejects an email outside the organization's active domains", async () => {
-    await seedProvider();
-    issuer.enqueue(entraClaims({ email: "person@other.example" }));
-
-    expect(errorCode((await signIn()).location)).toBe("domain_not_allowed");
-    expect(await connection.db.select().from(users)).toHaveLength(0);
+    expect(errorCode(response.headers.get("location"))).toBe("state_mismatch");
+    for (const table of [users, accounts, sessions])
+      expect(await connection.db.select().from(table)).toHaveLength(0);
   });
 
   test("does not borrow another organization's active domain", async () => {
@@ -925,32 +1043,16 @@ describe("integration: federated sign-in", () => {
     expect(errorCode((await signIn()).location)).toBe("domain_not_allowed");
   });
 
-  test("binds an inert import by immutable directory identity", async () => {
-    const user = await insertUser("person@contoso.com", "inert");
+  test("refuses a directory identity already bound under another subject", async () => {
     await seedProvider();
-    await connection.db.insert(accounts).values({
-      id: createId(),
-      issuer: entraIssuer,
-      accountId: "import:entra-object",
-      providerId: "contoso",
-      userId: user.id,
-      directoryId: tenantId,
-      directoryUserId: "entra-object",
-    });
     issuer.enqueue(entraClaims());
-
     expect((await signIn()).location).toBe(callbackURL);
-    const [updatedUser] = await connection.db
-      .select()
-      .from(users)
-      .where(eq(users.id, user.id));
-    const boundAccounts = await connection.db.select().from(accounts);
-    expect(updatedUser).toMatchObject({
-      status: "active",
-      emailVerified: true,
-    });
-    expect(boundAccounts).toHaveLength(1);
-    expect(boundAccounts[0]!.accountId).toBe("entra-subject");
+    // Entra subjects are per application; the object id stays with the person.
+    issuer.enqueue(entraClaims({ sub: "entra-subject-after-switch" }));
+
+    expect(errorCode((await signIn()).location)).toBe("identity_conflict");
+    expect(await connection.db.select().from(accounts)).toHaveLength(1);
+    expect(await connection.db.select().from(sessions)).toHaveLength(1);
   });
 
   test("releases a disabled holder's recycled email for a new identity", async () => {
@@ -1028,53 +1130,6 @@ describe("integration: federated sign-in", () => {
 
     expect((await signIn()).location).toBe(callbackURL);
     expect(await connection.db.select().from(users)).toHaveLength(1);
-  });
-
-  test("turns a thrown resolver error into an error redirect atomically", async () => {
-    await seedProvider();
-    issuer.enqueue(entraClaims({ email: "malformed" }));
-
-    const result = await signIn();
-    expect(errorCode(result.location)).toBe("SSO_USER_RESOLUTION_FAILED");
-    expect(await connection.db.select().from(users)).toHaveLength(0);
-    expect(await connection.db.select().from(accounts)).toHaveLength(0);
-  });
-
-  test("fills empty directory columns when the exact account is active", async () => {
-    const user = await insertUser("person@contoso.com", "active");
-    await seedProvider();
-    await connection.db.insert(accounts).values({
-      id: createId(),
-      issuer: entraIssuer,
-      accountId: "entra-subject",
-      providerId: "contoso",
-      userId: user.id,
-    });
-    issuer.enqueue(entraClaims());
-
-    expect((await signIn()).location).toBe(callbackURL);
-    const [account] = await connection.db.select().from(accounts);
-    expect(account).toMatchObject({
-      directoryId: tenantId,
-      directoryUserId: "entra-object",
-    });
-  });
-
-  test("reactivates an inert user already bound to the exact account", async () => {
-    const user = await insertUser("person@contoso.com", "inert");
-    await seedProvider();
-    await connection.db.insert(accounts).values({
-      id: createId(),
-      issuer: entraIssuer,
-      accountId: "entra-subject",
-      providerId: "contoso",
-      userId: user.id,
-    });
-    issuer.enqueue(entraClaims());
-
-    expect((await signIn()).location).toBe(callbackURL);
-    const [active] = await connection.db.select().from(users);
-    expect(active).toMatchObject({ status: "active", emailVerified: true });
   });
 
   test("keeps provider selection stable by organization slug", async () => {

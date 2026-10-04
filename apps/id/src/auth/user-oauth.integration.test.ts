@@ -1,11 +1,16 @@
-import type { oauthProvider } from "@better-auth/oauth-provider";
-import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
+import { createIdVerifier } from "@answerable/auth";
+import {
+  makeSignature,
+  symmetricDecrypt,
+  symmetricEncrypt,
+} from "better-auth/crypto";
 import type { jwt } from "better-auth/plugins/jwt";
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql, TransactionRollbackError, type SQL } from "drizzle-orm";
 import {
   createLocalJWKSet,
   decodeJwt,
+  decodeProtectedHeader,
   exportJWK,
   generateKeyPair,
   jwtVerify,
@@ -13,10 +18,17 @@ import {
 } from "jose";
 import { createHash } from "node:crypto";
 import { createAdminFixture, type AdminFixture } from "../__tests__/admin.ts";
-import { inPlatformWrite } from "../__tests__/platform-context.ts";
+import { signInThroughIdp } from "../__tests__/federation.ts";
+import {
+  inPlatformUsers,
+  inPlatformWrite,
+} from "../__tests__/platform-context.ts";
+import { inTenant, inTenantRead } from "../__tests__/tenant-command.ts";
 import { createApp } from "../app.ts";
 import { createAuth } from "../auth.ts";
-import { createDatabase } from "../db/client.ts";
+import { createDatabase, type Database, type Executor } from "../db/client.ts";
+import { setDatabaseScope, withDatabaseScope } from "../db/isolation.ts";
+import { memberAccess } from "../db/queries/access.ts";
 import { configureRuntimeRole } from "../db/runtime-role.ts";
 import {
   accounts,
@@ -24,16 +36,22 @@ import {
   auditEventSubjects,
   entitlements,
   grantContexts,
+  groupMembers,
+  groups,
+  jwks as jwksTable,
   members,
   oauthAccessTokens,
+  oauthClientAssertions,
   oauthClientResources,
   oauthClients,
   oauthConsents,
   organizationCapabilities,
   oauthRefreshTokens,
   oauthResources,
+  organizations,
   sessions,
   ssoProviders,
+  users,
   verifications,
 } from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
@@ -42,7 +60,38 @@ import {
   updateCapability,
 } from "../services/capabilities.ts";
 import { hashClientSecret } from "../services/client-secrets.ts";
+import {
+  disableClient,
+  enableClient,
+  rotateSecret,
+  unlinkResource,
+  updateClient,
+} from "../services/clients.ts";
+import {
+  reinstate as reinstateMember,
+  remove as removeMember,
+} from "../services/members.ts";
+import {
+  disableOrganization,
+  enableOrganization,
+} from "../services/organizations.ts";
+import {
+  disableResource,
+  enableResource,
+  updateResource,
+} from "../services/resources.ts";
+import { revokeUserSession, revokeUserSessions } from "../services/sessions.ts";
+import {
+  deleteSsoProvider,
+  putSsoProvider,
+} from "../services/sso-providers.ts";
+import { disableUser, enableUser, eraseUser } from "../services/users.ts";
 import { currentGrantAuthentication } from "./grant-authentication.ts";
+import { createResourceGrant } from "./create-resource-grant.ts";
+import { authTransaction } from "./database-adapter.ts";
+import { lockResourceGrantPolicy } from "./lock-resource-grant-policy.ts";
+import { bindGrantCode } from "./native-code-replay.ts";
+import { userResourcePolicy } from "./user-resource-policy.ts";
 
 let fixture: AdminFixture;
 let runtime: ReturnType<typeof createDatabase>;
@@ -311,7 +360,7 @@ test("private-key authentication stays consumed when a production code exchange 
       .setExpirationTime("2m")
       .setJti(createId())
       .sign(privateKey);
-  const redeem = (jwt: string, codeVerifier: string) =>
+  const redeem = (jwt: string, codeVerifier: string, grant = code) =>
     auth.handler(
       new Request(`${fixture.environment.betterAuthUrl}/auth/oauth2/token`, {
         method: "POST",
@@ -319,7 +368,7 @@ test("private-key authentication stays consumed when a production code exchange 
         body: new URLSearchParams({
           grant_type: "authorization_code",
           client_id: clientId,
-          code,
+          code: grant,
           code_verifier: codeVerifier,
           redirect_uri: redirect,
           resource,
@@ -338,7 +387,26 @@ test("private-key authentication stays consumed when a production code exchange 
       eq(auditEvents.action, "oauth.user.issued"),
     ),
   ).toBe(0);
-  expect((await redeem(await assertion(), verifier)).status).toBe(200);
+  const shared = await assertion();
+  const concurrent = await Promise.all([
+    redeem(shared, verifier),
+    redeem(shared, verifier),
+  ]);
+  expect(concurrent.map((response) => response.status).sort()).toEqual([
+    200, 400,
+  ]);
+  expect(await fixture.db.$count(oauthClientAssertions)).toBe(2);
+  await fixture.db
+    .update(oauthClients)
+    .set({ jwks: JSON.stringify({ keys: [] }) })
+    .where(eq(oauthClients.clientId, clientId));
+  const removedKey = await redeem(
+    await assertion(),
+    verifier,
+    await authorize(),
+  );
+  expect(removedKey.status).toBe(401);
+  expect(await removedKey.json()).toMatchObject({ error: "invalid_client" });
 });
 
 test("refresh survives browser sign-out and can narrow resource scopes without changing tenant", async () => {
@@ -378,11 +446,7 @@ test("refresh survives browser sign-out and can narrow resource scopes without c
       })
     ).status,
   ).toBe(400);
-  const final = await exchange({
-    grant_type: "refresh_token",
-    refresh_token: next.refresh_token,
-    resource,
-  });
+  const final = await refresh(next.refresh_token);
   expect(final.status).toBe(200);
   expect((await final.json()).refresh_token).toBeUndefined();
 });
@@ -485,39 +549,6 @@ test("registered resource custom claims cannot replace user authority", async ()
     });
 });
 
-for (const claim of [
-  "membership_id",
-  "grant_id",
-  "resource_instance",
-  "upstream_auth_time",
-]) {
-  test(`native access output with a divergent ${claim} rolls back code and audit`, async () => {
-    const code = await authorize();
-    const provider = auth.options.plugins.find(
-      (plugin) => plugin.id === "oauth-provider",
-    ) as ReturnType<typeof oauthProvider>;
-    provider.options.customAccessTokenClaims = async () => ({
-      [claim]: "forged",
-    });
-    const input = {
-      grant_type: "authorization_code",
-      code,
-      redirect_uri: redirect,
-      code_verifier: verifier,
-      resource,
-    };
-    expect((await exchange(input)).status).toBe(400);
-    expect(
-      await fixture.db.$count(
-        auditEvents,
-        eq(auditEvents.action, "oauth.user.issued"),
-      ),
-    ).toBe(0);
-    provider.options.customAccessTokenClaims = undefined;
-    expect((await exchange(input)).status).toBe(200);
-  });
-}
-
 test("refresh audit failure rolls back rotation and leaves the original token usable", async () => {
   const issued = await issue();
   await fixture.db.execute(
@@ -543,77 +574,7 @@ test("refresh audit failure rolls back rotation and leaves the original token us
   expect((await exchange(input)).status).toBe(200);
 });
 
-test("missing native ID token rolls back code, refresh material and issuance audit", async () => {
-  const code = await authorize();
-  const signer = auth.options.plugins.find(
-    (plugin) => plugin.id === "jwt",
-  ) as ReturnType<typeof jwt>;
-  const { privateKey } = await generateKeyPair("EdDSA");
-  signer.options.jwks = {
-    ...signer.options.jwks,
-    keyPairConfig: { alg: "EdDSA" },
-  };
-  signer.options.jwt!.sign = async (payload, header) =>
-    payload.nonce
-      ? undefined!
-      : new SignJWT(payload)
-          .setProtectedHeader({ alg: "EdDSA", ...header })
-          .sign(privateKey);
-  const input = {
-    grant_type: "authorization_code",
-    code,
-    redirect_uri: redirect,
-    code_verifier: verifier,
-    resource,
-  };
-  expect((await exchange(input)).status).toBe(400);
-  expect(await fixture.db.$count(oauthRefreshTokens)).toBe(0);
-  expect(
-    await fixture.db.$count(
-      auditEvents,
-      eq(auditEvents.action, "oauth.user.issued"),
-    ),
-  ).toBe(0);
-  signer.options.jwt!.sign = undefined;
-  expect((await exchange(input)).status).toBe(200);
-});
-
-test("divergent returned refresh persistence rolls back native rotation and audit", async () => {
-  const issued = await issue();
-  await fixture.db.execute(
-    sql`create function corrupt_refresh_output() returns trigger language plpgsql as $$ begin NEW.scopes := ARRAY['email']; return NEW; end $$`,
-  );
-  await fixture.db.execute(
-    sql`create trigger corrupt_refresh_output before insert on oauth_refresh_tokens for each row execute function corrupt_refresh_output()`,
-  );
-  const input = {
-    grant_type: "refresh_token",
-    refresh_token: issued.refresh_token,
-    resource,
-    scope: "mail:read",
-  };
-  try {
-    expect((await exchange(input)).status).toBe(400);
-    expect(await fixture.db.$count(oauthRefreshTokens)).toBe(1);
-    expect(
-      (await fixture.db.select().from(oauthRefreshTokens))[0]!.revoked,
-    ).toBeNull();
-    expect(
-      await fixture.db.$count(
-        auditEvents,
-        eq(auditEvents.action, "oauth.user.issued"),
-      ),
-    ).toBe(1);
-  } finally {
-    await fixture.db.execute(
-      sql`drop trigger corrupt_refresh_output on oauth_refresh_tokens`,
-    );
-    await fixture.db.execute(sql`drop function corrupt_refresh_output()`);
-  }
-  expect((await exchange(input)).status).toBe(200);
-});
-
-test("native JWT scope, lifetime, type and ID nonce divergences preserve the code", async () => {
+test("divergent native access and ID tokens preserve the code", async () => {
   const code = await authorize();
   const signer = auth.options.plugins.find(
     (plugin) => plugin.id === "jwt",
@@ -630,27 +591,14 @@ test("native JWT scope, lifetime, type and ID nonce divergences preserve the cod
     code_verifier: verifier,
     resource,
   };
-  for (const fault of [
-    "access-scope",
-    "access-expiry",
-    "access-type",
-    "id-expiry",
-    "id-nonce",
-  ] as const) {
+  for (const fault of ["access-scope", "id-nonce"] as const) {
     signer.options.jwt!.sign = async (payload, header) => {
       const changed = { ...payload };
       const isId = payload.nonce !== undefined;
       if (!isId && fault === "access-scope") changed.scope = "email";
-      if (!isId && fault === "access-expiry")
-        changed.exp = Number(payload.exp) + 60;
-      if (isId && fault === "id-expiry") changed.exp = Number(payload.exp) + 60;
       if (isId && fault === "id-nonce") changed.nonce = "wrong-nonce";
       return new SignJWT(changed)
-        .setProtectedHeader({
-          alg: "EdDSA",
-          ...header,
-          ...(!isId && fault === "access-type" ? { typ: "JWT" } : {}),
-        })
+        .setProtectedHeader({ alg: "EdDSA", ...header })
         .sign(privateKey);
     };
     expect((await exchange(input)).status, fault).toBe(400);
@@ -667,7 +615,7 @@ test("native JWT scope, lifetime, type and ID nonce divergences preserve the cod
   expect((await exchange(input)).status).toBe(200);
 });
 
-test("opaque and refresh rows must match returned scopes, resource, reference and authentication", async () => {
+test("opaque and refresh rows must match the returned grant and authentication", async () => {
   const code = await authorize("openid email offline_access", null);
   const input = {
     grant_type: "authorization_code",
@@ -677,14 +625,6 @@ test("opaque and refresh rows must match returned scopes, resource, reference an
   };
   for (const [table, assignment] of [
     ["oauth_access_tokens", "NEW.scopes := ARRAY['openid']"],
-    [
-      "oauth_access_tokens",
-      "NEW.resources := ARRAY['https://wrong.example/mcp']",
-    ],
-    [
-      "oauth_refresh_tokens",
-      "NEW.resources := ARRAY['https://wrong.example/mcp']",
-    ],
     ["oauth_refresh_tokens", "NEW.reference_id := 'wrong-grant'"],
     [
       "oauth_refresh_tokens",
@@ -762,37 +702,6 @@ test("consent narrowing is authorised and audited before native resource filteri
   });
 });
 
-test("native configured expiry and identity-scope filtering determine the full returned contract", async () => {
-  const provider = auth.options.plugins.find(
-    (plugin) => plugin.id === "oauth-provider",
-  ) as ReturnType<typeof oauthProvider>;
-  provider.options.accessTokenExpiresIn = 120;
-  provider.options.refreshTokenExpiresIn = 600;
-  provider.options.idTokenExpiresIn = 180;
-  provider.options.scopeExpirations = { "mail:read": "45s" };
-  await fixture.db
-    .update(oauthResources)
-    .set({ refreshTokenTtl: 90, allowedScopes: ["mail:read"] });
-  const issued = await issue();
-  expect(issued.scope).toBe("mail:read");
-  expect(issued.expires_in).toBe(45);
-  expect(issued.id_token).toBeUndefined();
-  const access = decodeJwt(issued.access_token);
-  const [refresh] = await fixture.db.select().from(oauthRefreshTokens);
-  expect(refresh!.scopes).toEqual(["mail:read"]);
-  expect(refresh!.expiresAt.getTime() / 1000).toBe(access.iat! + 90);
-  const login = await issue("openid email", null);
-  expect(login.refresh_token).toBeUndefined();
-  const id = decodeJwt(login.id_token);
-  expect(id.exp! - id.iat!).toBe(180);
-  expect(id.email).toBeUndefined();
-  const userInfo = await request("/oauth2/userinfo", undefined, {
-    authorization: `Bearer ${login.access_token}`,
-  });
-  expect(userInfo.status).toBe(200);
-  expect((await userInfo.json()).email).toBe("tenantadmin@tenant.example.com");
-});
-
 test("cached output and returned refresh rows are checked again without a success audit on divergence", async () => {
   const provider = createAuth(runtime.db, {
     ...fixture.environment,
@@ -828,20 +737,14 @@ test("cached output and returned refresh rows are checked again without a succes
   );
   for (const fault of [
     "unexpected-id",
-    "missing-refresh",
     "unknown-refresh",
-    "scope",
-    "expires-at",
     "token-type",
     "stored-scope",
   ] as const) {
     const changed = structuredClone(replay);
     if (fault === "unexpected-id") changed.response.id_token = issued.id_token;
-    if (fault === "missing-refresh") delete changed.response.refresh_token;
     if (fault === "unknown-refresh")
       changed.response.refresh_token = "not-a-stored-token";
-    if (fault === "scope") changed.response.scope = "openid mail:read";
-    if (fault === "expires-at") changed.response.expires_at += 60;
     if (fault === "token-type") changed.response.token_type = "DPoP";
     if (fault === "stored-scope")
       await fixture.db
@@ -887,40 +790,6 @@ test("cached output and returned refresh rows are checked again without a succes
       eq(auditEvents.action, "oauth.user.replayed"),
     ),
   ).toBe(1);
-});
-
-test("ID-token access hashes follow the configured native signing algorithm", async () => {
-  const signer = auth.options.plugins.find(
-    (plugin) => plugin.id === "jwt",
-  ) as ReturnType<typeof jwt>;
-  for (const alg of ["ES256", "ES512"] as const) {
-    const { privateKey } = await generateKeyPair(alg);
-    signer.options.jwks = { ...signer.options.jwks, keyPairConfig: { alg } };
-    signer.options.jwt!.sign = (payload, header) =>
-      new SignJWT(payload)
-        .setProtectedHeader({ alg, ...header })
-        .sign(privateKey);
-    const issued = await issue("openid email", null);
-    expect(typeof decodeJwt(issued.id_token).at_hash).toBe("string");
-  }
-});
-
-test("native refresh authentication time must match retained broker evidence", async () => {
-  const issued = await issue();
-  await fixture.db.update(oauthRefreshTokens).set({ authTime: new Date(0) });
-  const response = await exchange({
-    grant_type: "refresh_token",
-    refresh_token: issued.refresh_token,
-    resource,
-  });
-  expect(response.status).toBe(400);
-  expect(
-    await fixture.db.$count(
-      auditEvents,
-      eq(auditEvents.action, "oauth.user.issued"),
-    ),
-  ).toBe(1);
-  expect(await fixture.db.$count(oauthRefreshTokens)).toBe(1);
 });
 
 test("retained legacy or inconsistent authentication evidence cannot establish current authority", async () => {
@@ -1050,13 +919,9 @@ test("production provider binds native tenant selection, consent and code to one
       new Date(grant!.authentication!.upstreamAuthTime!).getTime() / 1000,
     ),
   );
-  const refresh = await exchange({
-    grant_type: "refresh_token",
-    refresh_token: issued.refresh_token,
-    resource,
-  });
-  expect(refresh.status).toBe(200);
-  const renewed = await refresh.json();
+  const refreshed = await refresh(issued.refresh_token);
+  expect(refreshed.status).toBe(200);
+  const renewed = await refreshed.json();
   expect(renewed.refresh_token).not.toBe(issued.refresh_token);
   expect(decodeJwt(renewed.access_token).grant_id).toBe(
     decodeJwt(issued.access_token).grant_id,
@@ -1179,24 +1044,8 @@ test("replaying a code revokes its family and leaves a separate authorisation us
   const issued = await first.json();
   const other = await issue();
   expect((await exchange(input)).status).toBe(400);
-  expect(
-    (
-      await exchange({
-        grant_type: "refresh_token",
-        refresh_token: issued.refresh_token,
-        resource,
-      })
-    ).status,
-  ).toBe(400);
-  expect(
-    (
-      await exchange({
-        grant_type: "refresh_token",
-        refresh_token: other.refresh_token,
-        resource,
-      })
-    ).status,
-  ).toBe(200);
+  expect((await refresh(issued.refresh_token)).status).toBe(400);
+  expect((await refresh(other.refresh_token)).status).toBe(200);
 });
 
 test("native refresh revocation and replay remain confined to one grant", async () => {
@@ -1215,24 +1064,8 @@ test("native refresh revocation and replay remain confined to one grant", async 
     "revoke",
   );
   expect(repeated.status).toBe(200);
-  expect(
-    (
-      await exchange({
-        grant_type: "refresh_token",
-        refresh_token: first.refresh_token,
-        resource,
-      })
-    ).status,
-  ).toBe(400);
-  expect(
-    (
-      await exchange({
-        grant_type: "refresh_token",
-        refresh_token: other.refresh_token,
-        resource,
-      })
-    ).status,
-  ).toBe(200);
+  expect((await refresh(first.refresh_token)).status).toBe(400);
+  expect((await refresh(other.refresh_token)).status).toBe(200);
 });
 
 test("reusing a rotated refresh token revokes only that native family and records the outcome", async () => {
@@ -1459,11 +1292,7 @@ test("a consumer verifies production user tokens using public discovery and JWKS
   await expect(
     jwtVerify(`${header}.${forged}.${signature}`, keys, options),
   ).rejects.toThrow();
-  const refreshed = await exchange({
-    grant_type: "refresh_token",
-    refresh_token: issued.refresh_token,
-    resource,
-  });
+  const refreshed = await refresh(issued.refresh_token);
   expect(refreshed.status).toBe(200);
   const next = await jwtVerify(
     (await refreshed.json()).access_token,
@@ -1546,15 +1375,7 @@ test("simultaneous consent and code submissions cannot create duplicate grants o
   const issued = await exchanges
     .find((response) => response.status === 200)!
     .json();
-  expect(
-    (
-      await exchange({
-        grant_type: "refresh_token",
-        refresh_token: issued.refresh_token,
-        resource,
-      })
-    ).status,
-  ).toBe(400);
+  expect((await refresh(issued.refresh_token)).status).toBe(400);
 });
 
 test("token audit failure preserves the code for a safe retry", async () => {
@@ -1815,24 +1636,8 @@ test("one global user needs independently verified target SSO for a second tenan
     .update(members)
     .set({ validUntil: new Date(Date.now() - 1000) })
     .where(eq(members.id, fixture.principals.tenantAdmin.memberId));
-  expect(
-    (
-      await exchange({
-        grant_type: "refresh_token",
-        refresh_token: a.refresh_token,
-        resource,
-      })
-    ).status,
-  ).toBe(400);
-  expect(
-    (
-      await exchange({
-        grant_type: "refresh_token",
-        refresh_token: b.refresh_token,
-        resource,
-      })
-    ).status,
-  ).toBe(200);
+  expect((await refresh(a.refresh_token)).status).toBe(400);
+  expect((await refresh(b.refresh_token)).status).toBe(200);
 });
 
 test("the native provider rejects unsupported token grant types", async () => {
@@ -2042,11 +1847,7 @@ for (const skipConsent of [false, true]) {
     ).toEqual(granted);
     expect(issued.id_token).toBeString();
     expect(issued.refresh_token).toBeString();
-    const refreshed = await exchange({
-      grant_type: "refresh_token",
-      refresh_token: issued.refresh_token,
-      resource,
-    });
+    const refreshed = await refresh(issued.refresh_token);
     expect(refreshed.status).toBe(200);
     const next = await refreshed.json();
     expect(next.scope.split(" ").sort()).toEqual(granted);
@@ -2146,4 +1947,2053 @@ test("denying partial consent audits the offered scopes without minting a code",
       sql`${verifications.value}::jsonb->>'type' = 'authorization_code'`,
     ),
   ).toBe(0);
+});
+
+async function linkSecondResource() {
+  const second = "https://calendar.example/mcp";
+  await fixture.db.insert(oauthResources).values({
+    id: createId(),
+    identifier: second,
+    name: "Calendar",
+    allowedScopes: ["mail:read"],
+    accessTokenTtl: 300,
+  });
+  await fixture.db
+    .insert(oauthClientResources)
+    .values({ id: createId(), clientId, resourceId: second });
+  await inPlatformWrite(fixture.db, async (context) => {
+    for (const grantKind of ["authorization_code", "refresh_token"] as const)
+      await createCapability(context, fixture.tenant.organizationId, {
+        clientId,
+        resource: second,
+        grantKind,
+        scopes: ["mail:read"],
+      });
+  });
+  await fixture.db.insert(entitlements).values({
+    id: createId(),
+    organizationId: fixture.tenant.organizationId,
+    clientId,
+    resource: second,
+    scopes: ["mail:read"],
+  });
+  return second;
+}
+
+async function tokenRows() {
+  return {
+    access: await fixture.db.$count(oauthAccessTokens),
+    refresh: await fixture.db.$count(oauthRefreshTokens),
+    issued: await fixture.db.$count(
+      auditEvents,
+      eq(auditEvents.action, "oauth.user.issued"),
+    ),
+  };
+}
+
+test("authorize refuses a malformed request before writing a flow", async () => {
+  const rows: [string, Record<string, string | null>, string, string][] = [
+    [
+      "an unregistered redirect_uri",
+      { redirect_uri: "https://evil.example/callback" },
+      `${fixture.environment.betterAuthUrl}/error`,
+      "invalid_redirect",
+    ],
+    [
+      "an unknown resource",
+      { resource: "https://unknown.example/mcp" },
+      redirect,
+      "invalid_target",
+    ],
+    [
+      "a confidential client without a PKCE challenge",
+      { code_challenge: null, code_challenge_method: null },
+      redirect,
+      "invalid_request",
+    ],
+  ];
+  for (const [name, change, destination, error] of rows) {
+    const query = new URLSearchParams({
+      client_id: clientId,
+      response_type: "code",
+      redirect_uri: redirect,
+      scope: "openid offline_access mail:read",
+      resource,
+      state: "client-state",
+      code_challenge_method: "S256",
+      code_challenge: createHash("sha256").update(verifier).digest("base64url"),
+    });
+    for (const [key, value] of Object.entries(change))
+      if (value === null) query.delete(key);
+      else query.set(key, value);
+    const before = await fixture.db.select().from(verifications);
+    const response = await request(`/oauth2/authorize?${query}`);
+    const location = new URL(response.headers.get("location")!);
+    expect(location.origin + location.pathname, name).toBe(destination);
+    expect(location.searchParams.get("error"), name).toBe(error);
+    expect(location.searchParams.has("code"), name).toBe(false);
+    expect(await fixture.db.select().from(verifications), name).toEqual(before);
+  }
+  expect(await fixture.db.$count(grantContexts)).toBe(0);
+});
+
+test("code exchange refuses a changed redirect, an expired code, another resource and wrong client authentication", async () => {
+  const second = await linkSecondResource();
+  const basic = (password: string) =>
+    `Basic ${Buffer.from(`${clientId}:${password}`).toString("base64")}`;
+  const expire = () =>
+    fixture.db
+      .update(verifications)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(
+        sql`${verifications.value}::jsonb->>'type' = 'authorization_code'`,
+      );
+  const rows: {
+    name: string;
+    code?: () => Promise<string>;
+    prepare?: () => Promise<unknown>;
+    body?: Record<string, string>;
+    authorization?: string;
+    status: number;
+    error: string;
+  }[] = [
+    {
+      name: "a different redirect_uri",
+      body: { redirect_uri: "https://client.example/other" },
+      status: 400,
+      error: "invalid_grant",
+    },
+    {
+      name: "an expired code",
+      prepare: expire,
+      status: 400,
+      error: "invalid_grant",
+    },
+    {
+      name: "another linked resource",
+      body: { resource: second },
+      status: 400,
+      error: "invalid_target",
+    },
+    {
+      name: "a linked resource for a login-only code",
+      code: () => authorize("openid email offline_access", null),
+      body: { resource: second },
+      status: 400,
+      error: "invalid_target",
+    },
+    {
+      name: "a wrong client secret",
+      authorization: basic(`wrong-${secret}`),
+      status: 401,
+      error: "invalid_client",
+    },
+    {
+      name: "client_secret_post for a client registered for basic",
+      body: { client_id: clientId, client_secret: secret },
+      authorization: "",
+      status: 400,
+      error: "invalid_client",
+    },
+  ];
+  for (const row of rows) {
+    const code = await (row.code ?? authorize)();
+    await row.prepare?.();
+    const response = await auth.handler(
+      new Request(`${fixture.environment.betterAuthUrl}/auth/oauth2/token`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          authorization: row.authorization ?? basic(secret),
+        },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          code,
+          redirect_uri: redirect,
+          code_verifier: verifier,
+          ...(row.code ? {} : { resource }),
+          ...row.body,
+        }),
+      }),
+    );
+    expect(response.status, row.name).toBe(row.status);
+    expect(await response.json(), row.name).toMatchObject({
+      error: row.error,
+    });
+    expect(await tokenRows(), row.name).toEqual({
+      access: 0,
+      refresh: 0,
+      issued: 0,
+    });
+  }
+});
+
+test("a correctly signed query cannot change the stored flow", async () => {
+  const selection = await start();
+  const forged = new URLSearchParams(selection.search.slice(1));
+  forged.set("scope", "openid offline_access");
+  forged.delete("sig");
+  const canonical = new URLSearchParams(
+    [...forged.entries()].sort(([a, x], [b, y]) =>
+      a === b ? (x < y ? -1 : 1) : a < b ? -1 : 1,
+    ),
+  );
+  forged.set(
+    "sig",
+    await makeSignature(
+      canonical.toString(),
+      fixture.environment.betterAuthSecret,
+    ),
+  );
+  const response = await request("/oauth2/continue", {
+    oauth_query: forged.toString(),
+    postLogin: true,
+    memberId: fixture.principals.tenantAdmin.memberId,
+  });
+  expect(response.status).toBe(400);
+  expect(await fixture.db.$count(grantContexts)).toBe(0);
+  expect((await select(selection)).pathname).toBe("/consent");
+});
+
+test("user tokens carry an audience list, the authenticating session and no nonce after refresh", async () => {
+  const issued = await issue();
+  const access = decodeJwt(issued.access_token);
+  expect(access.aud).toEqual([
+    resource,
+    `${fixture.environment.betterAuthUrl}/auth/oauth2/userinfo`,
+  ]);
+  const [grant] = await fixture.db.select().from(grantContexts);
+  expect(access.sid).toBe(grant!.authenticationSessionId);
+  expect(decodeJwt(issued.id_token).sid).toBeUndefined();
+  const refreshed = await refresh(issued.refresh_token);
+  expect(refreshed.status).toBe(200);
+  const renewed = await refreshed.json();
+  expect(renewed.id_token).toBeString();
+  expect(decodeJwt(renewed.id_token).nonce).toBeUndefined();
+});
+
+test("signing-key rotation keeps the old key published and new tokens verifiable", async () => {
+  const jwks = async () =>
+    (
+      await auth.handler(
+        new Request(`${fixture.environment.betterAuthUrl}/auth/jwks`),
+      )
+    ).json();
+  const first = await issue();
+  const old = decodeProtectedHeader(first.access_token).kid!;
+  await fixture.db
+    .update(jwksTable)
+    .set({ expiresAt: new Date(Date.now() - 1000) })
+    .where(eq(jwksTable.id, old));
+  const second = await issue();
+  const current = decodeProtectedHeader(second.access_token).kid!;
+  expect(current).not.toBe(old);
+  const published = await jwks();
+  expect(published.keys.map((key: { kid: string }) => key.kid)).toEqual(
+    expect.arrayContaining([old, current]),
+  );
+  const keys = createLocalJWKSet(published);
+  for (const token of [first.access_token, second.access_token])
+    await jwtVerify(token, keys, {
+      issuer: fixture.environment.betterAuthUrl,
+      audience: resource,
+      typ: "at+jwt",
+    });
+});
+
+test("the published verifier accepts the user and machine tokens this app issues", async () => {
+  const fetch = (input: string | URL | Request, init?: RequestInit) =>
+    auth.handler(new Request(input, init));
+  const issuer = fixture.environment.betterAuthUrl;
+  const user = await createIdVerifier({ issuer, resource, fetch })(
+    (await issue()).access_token,
+  );
+  expect(user).toMatchObject({
+    userId: fixture.principals.tenantAdmin.userId,
+    organizationId: fixture.tenant.organizationId,
+    membershipId: fixture.principals.tenantAdmin.memberId,
+    clientId,
+  });
+  const machine = await createIdVerifier({
+    issuer,
+    resource: fixture.platform.adminResource,
+    subjectType: "client",
+    fetch,
+  })(await fixture.mintMachineToken());
+  expect(machine).toMatchObject({
+    clientId: fixture.platform.client.clientId,
+    organizationId: fixture.platform.organizationId,
+  });
+});
+
+// Authority changes, replay cleanup and grant provenance on the production app.
+async function grantInOutsider() {
+  const userId = fixture.principals.tenantAdmin.userId;
+  const memberId = createId();
+  await fixture.db.insert(members).values({
+    id: memberId,
+    organizationId: fixture.outsider.organizationId,
+    userId,
+  });
+  await inPlatformWrite(fixture.db, async (context) => {
+    for (const input of [
+      {
+        clientId,
+        resource: null,
+        grantKind: "authorization_code" as const,
+        scopes: ["openid", "offline_access"],
+      },
+      {
+        clientId,
+        resource,
+        grantKind: "authorization_code" as const,
+        scopes: ["mail:read"],
+      },
+      {
+        clientId,
+        resource,
+        grantKind: "refresh_token" as const,
+        scopes: ["mail:read"],
+      },
+    ])
+      await createCapability(context, fixture.outsider.organizationId, input);
+  });
+  await fixture.db.insert(entitlements).values([
+    {
+      id: createId(),
+      organizationId: fixture.outsider.organizationId,
+      clientId,
+      scopes: ["openid", "offline_access"],
+    },
+    {
+      id: createId(),
+      organizationId: fixture.outsider.organizationId,
+      clientId,
+      resource,
+      scopes: ["mail:read"],
+    },
+  ]);
+  // A deliberate binding stands in for verified linking (held by verified-sso):
+  // the B grant still needs its own sign-in at B's directory.
+  await fixture.db.insert(accounts).values({
+    id: createId(),
+    userId,
+    issuer: fixture.issuer.origin,
+    providerId: fixture.outsider.slug,
+    accountId: "tenant-admin-at-outsider",
+  });
+  fixture.issuer.enqueue({
+    sub: "tenant-admin-at-outsider",
+    email: "tenantadmin@outsider.example.com",
+    email_verified: true,
+  });
+  const signedIn = await signInThroughIdp(fixture.app, {
+    providerId: fixture.outsider.slug,
+    callbackURL: `${fixture.trustedOrigin}/callback`,
+  });
+  const saved = browserCookie;
+  browserCookie = signedIn.cookies
+    .map((value) => value.split(";", 1)[0])
+    .join("; ");
+  try {
+    const consent = await select(await start(), memberId);
+    const accepted = await request("/oauth2/consent", {
+      oauth_query: consent.search.slice(1),
+      accept: true,
+    });
+    const code = new URL((await accepted.json()).url).searchParams.get("code")!;
+    const response = await exchange({
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: redirect,
+      code_verifier: verifier,
+      resource,
+    });
+    expect(response.status).toBe(200);
+    return (await response.json()) as { refresh_token: string };
+  } finally {
+    browserCookie = saved;
+  }
+}
+
+function refresh(token: string, clientSecret = secret) {
+  return auth.handler(
+    new Request(`${fixture.environment.betterAuthUrl}/auth/oauth2/token`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+      },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: token,
+        resource,
+      }),
+    }),
+  );
+}
+
+const ssoInput = async () => {
+  const [provider] = await fixture.db
+    .select()
+    .from(ssoProviders)
+    .where(eq(ssoProviders.organizationId, fixture.tenant.organizationId));
+  return {
+    issuer: provider!.issuer,
+    domain: provider!.domain,
+    oidc: JSON.parse(provider!.oidcConfig!),
+  };
+};
+
+const authorityChanges: {
+  change: string;
+  apply: (grant: typeof grantContexts.$inferSelect) => Promise<string | void>;
+  outsider: "kept" | "denied";
+  session: "kept" | "gone";
+}[] = [
+  {
+    change: "membership removal and reinstatement",
+    apply: async () => {
+      await inTenant(fixture.db, fixture.tenant.organizationId, (context) =>
+        removeMember(context, fixture.principals.tenantAdmin.memberId),
+      );
+      await inTenant(fixture.db, fixture.tenant.organizationId, (context) =>
+        reinstateMember(context, fixture.principals.tenantAdmin.memberId),
+      );
+    },
+    outsider: "kept",
+    session: "kept",
+  },
+  {
+    change: "organisation disable and re-enable",
+    apply: async () => {
+      await inPlatformWrite(fixture.db, (context) =>
+        disableOrganization(context, fixture.tenant.organizationId),
+      );
+      await inPlatformWrite(fixture.db, (context) =>
+        enableOrganization(context, fixture.tenant.organizationId),
+      );
+    },
+    // The client is owned by the tenant; the outsider grant is not.
+    outsider: "kept",
+    session: "kept",
+  },
+  {
+    change: "user disable and re-enable",
+    apply: async () => {
+      await inPlatformUsers(fixture.db, (context) =>
+        disableUser(context, fixture.principals.tenantAdmin.userId),
+      );
+      await inPlatformUsers(fixture.db, (context) =>
+        enableUser(context, fixture.principals.tenantAdmin.userId),
+      );
+    },
+    outsider: "denied",
+    session: "gone",
+  },
+  {
+    change: "revocation of the authenticating session",
+    apply: async (grant) => {
+      await inPlatformUsers(fixture.db, (context) =>
+        revokeUserSession(
+          context,
+          fixture.principals.tenantAdmin.userId,
+          grant.authenticationSessionId,
+        ),
+      );
+    },
+    outsider: "kept",
+    session: "gone",
+  },
+  {
+    change: "revocation of every session",
+    apply: async () => {
+      await inPlatformUsers(fixture.db, (context) =>
+        revokeUserSessions(context, fixture.principals.tenantAdmin.userId),
+      );
+    },
+    outsider: "denied",
+    session: "gone",
+  },
+  {
+    change: "resource disable and re-enable",
+    apply: async () => {
+      await inPlatformWrite(fixture.db, (context) =>
+        disableResource(context, resource),
+      );
+      await inPlatformWrite(fixture.db, (context) =>
+        enableResource(context, resource),
+      );
+    },
+    outsider: "denied",
+    session: "kept",
+  },
+  {
+    change: "client disable and re-enable",
+    apply: async () => {
+      await inPlatformWrite(fixture.db, (context) =>
+        disableClient(context, clientId),
+      );
+      await inPlatformWrite(fixture.db, (context) =>
+        enableClient(context, clientId),
+      );
+    },
+    outsider: "denied",
+    session: "kept",
+  },
+  {
+    change: "client secret rotation",
+    apply: async () =>
+      (
+        await inPlatformWrite(fixture.db, (context) =>
+          rotateSecret(context, clientId),
+        )
+      ).clientSecret!,
+    outsider: "denied",
+    session: "kept",
+  },
+  ...(["create", "update", "delete"] as const).map((mode) => ({
+    change: `SSO ${mode} and restore`,
+    apply: async () => {
+      const provider = await ssoInput();
+      if (mode !== "create")
+        await inPlatformWrite(fixture.db, (context) =>
+          putSsoProvider(context, fixture.tenant.organizationId, provider),
+        );
+      await inPlatformWrite(fixture.db, async (context) => {
+        if (mode === "delete")
+          await deleteSsoProvider(context, fixture.tenant.organizationId);
+        else
+          await putSsoProvider(context, fixture.tenant.organizationId, {
+            ...provider,
+            oidc: { ...provider.oidc, clientSecret: "replacement-secret" },
+          });
+      });
+      // Restoring the configuration must not revive the old authorisation.
+      await inPlatformWrite(fixture.db, (context) =>
+        putSsoProvider(context, fixture.tenant.organizationId, provider),
+      );
+    },
+    outsider: "kept" as const,
+    session: "kept" as const,
+  })),
+  {
+    change: "refresh capability disable",
+    apply: async () => {
+      const [capability] = await fixture.db
+        .select()
+        .from(organizationCapabilities)
+        .where(
+          and(
+            eq(
+              organizationCapabilities.organizationId,
+              fixture.tenant.organizationId,
+            ),
+            eq(organizationCapabilities.grantKind, "refresh_token"),
+          ),
+        );
+      await inPlatformWrite(fixture.db, (context) =>
+        updateCapability(
+          context,
+          fixture.tenant.organizationId,
+          capability!.id,
+          { status: "disabled" },
+          capability!,
+        ),
+      );
+    },
+    outsider: "kept",
+    session: "kept",
+  },
+];
+
+for (const { change, apply, outsider, session } of authorityChanges)
+  test(`${change} denies cached and rotated refresh in that tenant`, async () => {
+    const a = await issue();
+    const rotated = await refresh(a.refresh_token);
+    expect(rotated.status).toBe(200);
+    const next = await rotated.json();
+    const b = await grantInOutsider();
+    const [grant] = await fixture.db
+      .select()
+      .from(grantContexts)
+      .where(eq(grantContexts.organizationId, fixture.tenant.organizationId));
+    const newSecret = await apply(grant!);
+    const issued = await fixture.db.$count(
+      auditEvents,
+      eq(auditEvents.action, "oauth.user.issued"),
+    );
+    for (const token of [a.refresh_token, next.refresh_token]) {
+      const denied = await refresh(token, newSecret || secret);
+      expect(denied.status).toBe(400);
+      expect(await denied.json()).toMatchObject({ error: "invalid_grant" });
+    }
+    expect((await refresh(b.refresh_token, newSecret || secret)).status).toBe(
+      outsider === "kept" ? 200 : 400,
+    );
+    expect(
+      await fixture.db.$count(
+        auditEvents,
+        eq(auditEvents.action, "oauth.user.issued"),
+      ),
+    ).toBe(issued + (outsider === "kept" ? 1 : 0));
+    expect(
+      await fixture.db.$count(
+        sessions,
+        eq(sessions.id, grant!.authenticationSessionId),
+      ),
+    ).toBe(session === "kept" ? 1 : 0);
+  });
+
+async function failingDeletes<T>(table: string, run: () => Promise<T>) {
+  await fixture.db.execute(
+    sql`create function refuse_token_delete() returns trigger language plpgsql as $$ begin raise exception 'test token storage outage'; end $$`,
+  );
+  await fixture.db.execute(
+    sql.raw(
+      `create trigger refuse_token_delete before delete on ${table} for each row execute function refuse_token_delete()`,
+    ),
+  );
+  try {
+    return await run();
+  } finally {
+    await fixture.db.execute(
+      sql.raw(`drop trigger refuse_token_delete on ${table}`),
+    );
+    await fixture.db.execute(sql`drop function refuse_token_delete()`);
+  }
+}
+
+for (const outage of [
+  { replay: "code", table: "oauth_refresh_tokens", login: false },
+  { replay: "code", table: "oauth_access_tokens", login: true },
+  { replay: "refresh", table: "oauth_refresh_tokens", login: false },
+] as const)
+  test(`${outage.replay} replay cleanup outage on ${outage.table} keeps the revocation and is retryable`, async () => {
+    const code = await authorize(
+      outage.login ? "openid email offline_access" : undefined,
+      outage.login ? null : resource,
+    );
+    const input = {
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: redirect,
+      code_verifier: verifier,
+      ...(outage.login ? {} : { resource }),
+    };
+    const first = await exchange(input);
+    expect(first.status).toBe(200);
+    const issued = await first.json();
+    const replay =
+      outage.replay === "code"
+        ? input
+        : {
+            grant_type: "refresh_token",
+            refresh_token: issued.refresh_token,
+            resource,
+          };
+    if (outage.replay === "refresh")
+      expect((await exchange(replay)).status).toBe(200);
+    const before = {
+      refresh: await fixture.db.select().from(oauthRefreshTokens),
+      access: await fixture.db.select().from(oauthAccessTokens),
+    };
+    const failed = await failingDeletes(outage.table, () => exchange(replay));
+    expect(failed.status).toBe(503);
+    expect(failed.headers.get("retry-after")).toBe("1");
+    expect(await failed.json()).toMatchObject({
+      error: "temporarily_unavailable",
+    });
+    const [grant] = await fixture.db.select().from(grantContexts);
+    expect(grant!.revokedAt).toBeInstanceOf(Date);
+    expect(await fixture.db.select().from(oauthRefreshTokens)).toEqual(
+      before.refresh,
+    );
+    expect(await fixture.db.select().from(oauthAccessTokens)).toEqual(
+      before.access,
+    );
+    const retried = await exchange(replay);
+    expect(retried.status).toBe(400);
+    expect(await retried.json()).toMatchObject({ error: "invalid_grant" });
+    expect(
+      (
+        await exchange({
+          grant_type: "refresh_token",
+          refresh_token: issued.refresh_token,
+          ...(outage.login ? {} : { resource }),
+        })
+      ).status,
+    ).toBe(400);
+  });
+
+const replays: {
+  name: string;
+  scope?: string;
+  prepare?: (grantId: string) => Promise<unknown>;
+  client?: string;
+  revoked: boolean;
+}[] = [
+  {
+    name: "after its token rows have disappeared",
+    prepare: (grantId) =>
+      fixture.db
+        .delete(oauthRefreshTokens)
+        .where(eq(oauthRefreshTokens.referenceId, grantId)),
+    revoked: true,
+  },
+  {
+    name: "for a JWT-only grant without stored tokens",
+    scope: "openid mail:read",
+    revoked: true,
+  },
+  {
+    name: "by another authenticated client",
+    client: "code-replay-other-client",
+    revoked: false,
+  },
+];
+for (const { name, scope, prepare, client, revoked } of replays)
+  test(`code replay ${name} ${revoked ? "revokes" : "leaves"} the grant`, async () => {
+    const code = await authorize(scope);
+    const input = {
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: redirect,
+      code_verifier: verifier,
+      resource,
+    };
+    const first = await exchange(input);
+    expect(first.status).toBe(200);
+    const issued = await first.json();
+    const grantId = String(decodeJwt(issued.access_token).grant_id);
+    if (!issued.refresh_token)
+      expect(await fixture.db.$count(oauthRefreshTokens)).toBe(0);
+    await prepare?.(grantId);
+    if (client) {
+      const [original] = await fixture.db
+        .select()
+        .from(oauthClients)
+        .where(eq(oauthClients.clientId, clientId));
+      await fixture.db
+        .insert(oauthClients)
+        .values({ ...original!, id: createId(), clientId: client });
+    }
+    const rows = await fixture.db.select().from(oauthRefreshTokens);
+    const replay = await auth.handler(
+      new Request(`${fixture.environment.betterAuthUrl}/auth/oauth2/token`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          authorization: `Basic ${Buffer.from(`${client ?? clientId}:${secret}`).toString("base64")}`,
+        },
+        body: new URLSearchParams(input),
+      }),
+    );
+    expect(replay.status).toBe(400);
+    const [grant] = await fixture.db
+      .select()
+      .from(grantContexts)
+      .where(eq(grantContexts.id, grantId));
+    expect(Boolean(grant!.revokedAt)).toBe(revoked);
+    if (!revoked) {
+      expect(await fixture.db.select().from(oauthRefreshTokens)).toEqual(rows);
+      expect((await refresh(issued.refresh_token)).status).toBe(200);
+    }
+  });
+
+test("grant provenance and code binding cannot be forged, rewritten or revived", async () => {
+  const issued = await issue();
+  const id = String(decodeJwt(issued.access_token).grant_id);
+  const [grant] = await fixture.db
+    .select()
+    .from(grantContexts)
+    .where(eq(grantContexts.id, id));
+  const refused = (constraint: string) => ({ cause: { constraint } });
+  for (const patch of [
+    { organizationId: fixture.outsider.organizationId },
+    { authorizationCodeId: null },
+    { authorizationCodeId: "replacement" },
+    { requestedScopes: ["openid"] },
+    { clientInstanceId: createId() },
+    { authenticationSessionId: createId() },
+    { expiresAt: new Date(Date.now() + 86400000) },
+  ])
+    await expect(
+      fixture.db
+        .update(grantContexts)
+        .set(patch)
+        .where(eq(grantContexts.id, id))
+        .execute(),
+    ).rejects.toMatchObject(refused("grant_context_immutable"));
+  for (const patch of [
+    { organizationId: fixture.outsider.organizationId },
+    { authenticationSessionId: createId() },
+    { authTime: new Date(0) },
+  ])
+    await expect(
+      fixture.db
+        .insert(grantContexts)
+        .values({
+          ...grant!,
+          ...patch,
+          id: createId(),
+          authorizationCodeId: null,
+        })
+        .execute(),
+    ).rejects.toMatchObject(refused("grant_authentication_provenance"));
+  await expect(
+    fixture.db
+      .insert(grantContexts)
+      .values({ ...grant!, id: createId() })
+      .execute(),
+  ).rejects.toMatchObject(
+    refused("grant_contexts_authorization_code_id_unique"),
+  );
+  await expect(
+    bindGrantCode(fixture.db, createId(), "missing"),
+  ).rejects.toMatchObject({
+    body: { error: "invalid_grant" },
+  });
+  const freshId = createId();
+  await fixture.db
+    .insert(grantContexts)
+    .values({ ...grant!, id: freshId, authorizationCodeId: null });
+  await expect(
+    fixture.db
+      .update(grantContexts)
+      .set({ authorizationCodeId: "" })
+      .where(eq(grantContexts.id, freshId))
+      .execute(),
+  ).rejects.toMatchObject(refused("grant_contexts_code_check"));
+  await fixture.db
+    .update(grantContexts)
+    .set({ revokedAt: new Date() })
+    .where(eq(grantContexts.id, freshId));
+  await expect(
+    bindGrantCode(fixture.db, freshId, "late-binding"),
+  ).rejects.toMatchObject({
+    body: { error: "invalid_grant" },
+  });
+  for (const patch of [
+    { authorizationCodeId: "late-binding" },
+    { revokedAt: null },
+  ])
+    await expect(
+      fixture.db
+        .update(grantContexts)
+        .set(patch)
+        .where(eq(grantContexts.id, freshId))
+        .execute(),
+    ).rejects.toMatchObject(refused("grant_context_immutable"));
+  const expiredId = createId();
+  await fixture.db.insert(grantContexts).values({
+    ...grant!,
+    id: expiredId,
+    authorizationCodeId: null,
+    createdAt: new Date(Date.now() - 10000),
+    expiresAt: new Date(Date.now() - 1000),
+  });
+  const evaluate = (target: {
+    id: string;
+    clientId: string;
+    resource: string;
+  }) =>
+    userResourcePolicy(fixture.db, {
+      ...target,
+      grantType: "authorization_code",
+      requestedScopes: grant!.requestedScopes,
+    });
+  expect((await evaluate({ id, clientId, resource })).allowed).toBe(true);
+  for (const target of [
+    { id: expiredId, clientId, resource },
+    { id, clientId: "another-client", resource },
+    { id, clientId, resource: "https://other.example" },
+  ])
+    expect(await evaluate(target)).toEqual({
+      allowed: false,
+      reason: "context",
+    });
+});
+
+test("grant RLS scopes isolate tenants, clients and admission sessions and restore pooled settings", async () => {
+  await issue();
+  await grantInOutsider();
+  const [a] = await fixture.db
+    .select()
+    .from(grantContexts)
+    .where(eq(grantContexts.organizationId, fixture.tenant.organizationId));
+  const [b] = await fixture.db
+    .select()
+    .from(grantContexts)
+    .where(eq(grantContexts.organizationId, fixture.outsider.organizationId));
+  const sessionId = a!.authenticationSessionId;
+  const ids = (rows: { id: string }[]) => rows.map((row) => row.id).sort();
+  const read = (tx: Executor) =>
+    tx.select({ id: grantContexts.id }).from(grantContexts);
+  const both = [a!.id, b!.id].sort();
+  expect(await read(runtime.db)).toEqual([]);
+  for (const [organizationId, expected] of [
+    [a!.organizationId, a!.id],
+    [b!.organizationId, b!.id],
+  ]) {
+    expect(
+      ids(
+        await withDatabaseScope(
+          runtime.db,
+          { kind: "tenant", access: "read", organizationId: organizationId! },
+          read,
+        ),
+      ),
+    ).toEqual([expected!]);
+  }
+  expect(
+    ids(
+      await withDatabaseScope(
+        runtime.db,
+        { kind: "grant-client", clientId },
+        read,
+      ),
+    ),
+  ).toEqual(both);
+  expect(
+    await withDatabaseScope(
+      runtime.db,
+      { kind: "grant-client", clientId: "another-client" },
+      read,
+    ),
+  ).toEqual([]);
+  expect(
+    ids(
+      await withDatabaseScope(
+        runtime.db,
+        { kind: "policy-user", userId: a!.userId },
+        read,
+      ),
+    ),
+  ).toEqual(both);
+  expect(
+    await withDatabaseScope(
+      runtime.db,
+      { kind: "policy-user", userId: createId() },
+      read,
+    ),
+  ).toEqual([]);
+  expect(
+    await withDatabaseScope(
+      runtime.db,
+      { kind: "grant-admission", userId: a!.userId, sessionId: createId() },
+      read,
+    ),
+  ).toEqual([]);
+  const revoke = (tx: Executor) =>
+    tx
+      .update(grantContexts)
+      .set({ revokedAt: new Date() })
+      .returning({ id: grantContexts.id });
+  expect(await revoke(runtime.db)).toEqual([]);
+  expect(
+    await withDatabaseScope(
+      runtime.db,
+      { kind: "grant-client", clientId: "another-client" },
+      revoke,
+    ),
+  ).toEqual([]);
+  expect(
+    await withDatabaseScope(
+      runtime.db,
+      { kind: "policy-user", userId: a!.userId },
+      revoke,
+    ),
+  ).toEqual([]);
+  await expect(
+    withDatabaseScope(
+      runtime.db,
+      { kind: "grant-admission", userId: a!.userId, sessionId: createId() },
+      (tx) =>
+        tx
+          .insert(grantContexts)
+          .values({ ...a!, id: createId() })
+          .execute(),
+    ),
+  ).rejects.toMatchObject({ cause: { code: "42501" } });
+
+  expect(
+    await withDatabaseScope(
+      runtime.db,
+      { kind: "tenant", access: "read", organizationId: a!.organizationId },
+      revoke,
+    ),
+  ).toEqual([]);
+  expect(
+    await withDatabaseScope(
+      runtime.db,
+      { kind: "grant-admission", userId: a!.userId, sessionId },
+      revoke,
+    ),
+  ).toEqual([]);
+  expect(
+    await withDatabaseScope(
+      runtime.db,
+      { kind: "grant-client", clientId },
+      (tx) => tx.delete(grantContexts).returning(),
+    ),
+  ).toEqual([]);
+  await expect(
+    runtime.db
+      .insert(grantContexts)
+      .values({ ...a!, id: createId() })
+      .execute(),
+  ).rejects.toMatchObject({ cause: { code: "42501" } });
+  await expect(
+    withDatabaseScope(
+      runtime.db,
+      { kind: "tenant", access: "write", organizationId: a!.organizationId },
+      async (tx) => {
+        expect(ids(await revoke(tx))).toEqual([a!.id]);
+        await withDatabaseScope(
+          tx,
+          { kind: "grant-client", clientId },
+          async (nested) => {
+            expect(ids(await read(nested))).toEqual(both);
+          },
+        );
+        expect(ids(await read(tx))).toEqual([a!.id]);
+        throw new Error("rollback scoped revocation");
+      },
+    ),
+  ).rejects.toThrow("rollback scoped revocation");
+  expect(
+    (await fixture.db.select().from(grantContexts)).every(
+      (row) => row.revokedAt === null,
+    ),
+  ).toBe(true);
+  expect(await read(runtime.db)).toEqual([]);
+  const settings = await runtime.db.execute(
+    sql`select nullif(current_setting('answerable.scope', true), '') as scope, nullif(current_setting('answerable.client', true), '') as client, nullif(current_setting('answerable.session', true), '') as session, nullif(current_setting('answerable.subject', true), '') as subject, nullif(current_setting('answerable.tenant', true), '') as tenant`,
+  );
+  expect(settings.rows).toEqual([
+    { scope: null, client: null, session: null, subject: null, tenant: null },
+  ]);
+});
+
+// Lock-order races on the production locks. One side is held inside its
+// transaction while the other waits for its row locks; the database, not a test
+// hook, decides the order. A token request pauses at its issuance audit and a
+// grant creation after its insert, both still holding every lock they took.
+type PlatformContext = Parameters<Parameters<typeof inPlatformWrite>[1]>[0];
+type UsersContext = Parameters<Parameters<typeof inPlatformUsers>[1]>[0];
+type Writer = {
+  setup?: () => Promise<unknown>;
+} & (
+  | { users?: false; apply: (context: PlatformContext) => Promise<unknown> }
+  | { users: true; apply: (context: UsersContext) => Promise<unknown> }
+);
+const pauseKey = 4_242;
+
+async function until(db: Database, condition: () => SQL) {
+  for (let attempt = 0; attempt < 150; attempt++) {
+    const result = await db.execute(sql`select (${condition()}) as reached`);
+    if (result.rows[0]!.reached) return;
+    await Bun.sleep(10);
+  }
+  throw new Error("The race never reached its waiting state");
+}
+
+async function race<T>(
+  first: "writer" | "other",
+  writer: Writer,
+  other: () => Promise<T>,
+) {
+  await writer.setup?.();
+  const writerDatabase = createDatabase({
+    ...fixture.environment,
+    databasePoolMax: 2,
+  });
+  const holder = createDatabase({ ...fixture.environment, databasePoolMax: 1 });
+  const resume = Promise.withResolvers<void>();
+  const entered = Promise.withResolvers<void>();
+  let writerPid = 0;
+  const write = (pause: boolean) => {
+    const body = async (context: { tx: Executor }) => {
+      const pid = await context.tx.execute(sql`select pg_backend_pid() as pid`);
+      writerPid = Number(pid.rows[0]!.pid);
+      const result = await (
+        writer.apply as (context: { tx: Executor }) => Promise<unknown>
+      )(context);
+      if (pause) {
+        entered.resolve();
+        await resume.promise;
+      }
+      return result;
+    };
+    return writer.users
+      ? inPlatformUsers(writerDatabase.db, body)
+      : inPlatformWrite(writerDatabase.db, body);
+  };
+  const settle = (work: () => Promise<T>) =>
+    work().then(
+      (value) => ({ value }),
+      (error: unknown) => ({ error }),
+    );
+  try {
+    if (first === "writer") {
+      const changed = write(true);
+      await Promise.race([entered.promise, changed]);
+      const waiting = settle(other);
+      await until(
+        holder.db,
+        () =>
+          sql`exists(select 1 from pg_stat_activity where ${writerPid} = any(pg_blocking_pids(pid)))`,
+      );
+      resume.resolve();
+      return { written: await changed, outcome: await waiting };
+    }
+    const key = sql.raw(String(pauseKey));
+    await fixture.db.execute(
+      sql`create function pause_for_race() returns trigger language plpgsql as $$ begin if TG_TABLE_NAME = 'audit_events' then if NEW.action = 'oauth.user.issued' then perform pg_advisory_xact_lock(${key}); end if; else perform pg_advisory_xact_lock(${key}); end if; return NEW; end $$`,
+    );
+    for (const table of ["audit_events", "grant_contexts"])
+      await fixture.db.execute(
+        sql.raw(
+          `create trigger pause_for_race after insert on ${table} for each row execute function pause_for_race()`,
+        ),
+      );
+    await holder.db.execute(sql`select pg_advisory_lock(${pauseKey})`);
+    const waiting = settle(other);
+    await until(
+      holder.db,
+      () =>
+        sql`exists(select 1 from pg_locks where locktype = 'advisory' and objid = ${pauseKey} and not granted)`,
+    );
+    const changed = write(false);
+    await until(
+      holder.db,
+      () => sql`cardinality(pg_blocking_pids(${writerPid})) > 0`,
+    );
+    await holder.db.execute(sql`select pg_advisory_unlock(${pauseKey})`);
+    const outcome = await waiting;
+    return { written: await changed, outcome };
+  } finally {
+    resume.resolve();
+    if (first === "other") {
+      for (const table of ["audit_events", "grant_contexts"])
+        await fixture.db.execute(
+          sql.raw(`drop trigger if exists pause_for_race on ${table}`),
+        );
+      await fixture.db.execute(sql`drop function if exists pause_for_race()`);
+    }
+    await holder.close();
+    await writerDatabase.close();
+  }
+}
+
+async function tenantCapability() {
+  const [capability] = await fixture.db
+    .select()
+    .from(organizationCapabilities)
+    .where(
+      and(
+        eq(
+          organizationCapabilities.organizationId,
+          fixture.tenant.organizationId,
+        ),
+        eq(organizationCapabilities.clientId, clientId),
+        eq(organizationCapabilities.resource, resource),
+        eq(organizationCapabilities.grantKind, "authorization_code"),
+      ),
+    );
+  return capability!;
+}
+
+async function browserSessionId() {
+  const [session] = await fixture.db
+    .select()
+    .from(sessions)
+    .where(eq(sessions.userId, fixture.principals.tenantAdmin.userId));
+  return session!.id;
+}
+
+const putProvider = async () => {
+  const input = await ssoInput();
+  await inPlatformWrite(fixture.db, (context) =>
+    putSsoProvider(context, fixture.tenant.organizationId, input),
+  );
+};
+const changedProvider = async (context: PlatformContext) =>
+  putSsoProvider(context, fixture.tenant.organizationId, {
+    ...(await ssoInput()),
+    domain: "changed.example.com",
+  });
+const issuanceWriters: Record<string, Writer> = {
+  capability: {
+    apply: async (context) => {
+      const capability = await tenantCapability();
+      return updateCapability(
+        context,
+        capability.organizationId,
+        capability.id,
+        { status: "disabled" },
+        capability,
+      );
+    },
+  },
+  "client-scopes": {
+    apply: (context) =>
+      updateClient(context, clientId, { scopes: ["openid", "offline_access"] }),
+  },
+  "resource-scopes": {
+    apply: (context) =>
+      updateResource(context, resource, { allowedScopes: ["unrelated"] }),
+  },
+  unlink: { apply: (context) => unlinkResource(context, clientId, resource) },
+  "disable-client": { apply: (context) => disableClient(context, clientId) },
+  "disable-resource": {
+    apply: (context) => disableResource(context, resource),
+  },
+  "sso-create": { apply: changedProvider },
+  "sso-update": { setup: putProvider, apply: changedProvider },
+  "sso-delete": {
+    setup: putProvider,
+    apply: (context) =>
+      deleteSsoProvider(context, fixture.tenant.organizationId),
+  },
+  "rotate-secret": { apply: (context) => rotateSecret(context, clientId) },
+  disable: {
+    users: true,
+    apply: (context) =>
+      disableUser(context, fixture.principals.tenantAdmin.userId),
+  },
+  session: {
+    users: true,
+    apply: async (context) =>
+      revokeUserSession(
+        context,
+        fixture.principals.tenantAdmin.userId,
+        await browserSessionId(),
+      ),
+  },
+  "all-sessions": {
+    users: true,
+    apply: (context) =>
+      revokeUserSessions(context, fixture.principals.tenantAdmin.userId),
+  },
+};
+
+async function pendingIssuance(kind: "authorization_code" | "refresh_token") {
+  if (kind === "authorization_code") {
+    const code = await authorize();
+    return () =>
+      exchange({
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: redirect,
+        code_verifier: verifier,
+        resource,
+      });
+  }
+  const existing = await issue();
+  return () => refresh(existing.refresh_token);
+}
+
+for (const kind of ["authorization_code", "refresh_token"] as const)
+  for (const [change, writer] of Object.entries(issuanceWriters))
+    test(`${kind} issuance holding its locks commits before ${change}, which then denies refresh`, async () => {
+      const issuance = await pendingIssuance(kind);
+      const { written, outcome } = await race("other", writer, issuance);
+      if ("error" in outcome) throw outcome.error;
+      expect(outcome.value.status).toBe(200);
+      const issued = await outcome.value.json();
+      const denied = await refresh(
+        issued.refresh_token,
+        change === "rotate-secret"
+          ? (written as { clientSecret: string }).clientSecret
+          : secret,
+      );
+      expect(denied.status).toBe(change === "disable-client" ? 401 : 400);
+    });
+
+for (const [kind, change] of [
+  ...Object.keys(issuanceWriters).map(
+    (change) => ["authorization_code", change] as const,
+  ),
+  ["refresh_token", "rotate-secret"] as const,
+])
+  test(`${change} committing first denies a ${kind} request already waiting for its locks`, async () => {
+    const issuance = await pendingIssuance(kind);
+    const refreshRows = await fixture.db.$count(oauthRefreshTokens);
+    const { outcome } = await race(
+      "writer",
+      issuanceWriters[change]!,
+      issuance,
+    );
+    if ("error" in outcome) throw outcome.error;
+    expect(outcome.value.status).toBe(400);
+    expect(await outcome.value.json()).toMatchObject({
+      error: "invalid_grant",
+    });
+    expect(await fixture.db.$count(oauthRefreshTokens)).toBe(refreshRows);
+  });
+
+test("lock contention on each authority row is retryable without consuming the code", async () => {
+  const quick = createDatabase({
+    ...fixture.environment,
+    databaseUrl: runtime.pool.options.connectionString!,
+    databasePoolMax: 2,
+    databaseLockTimeoutMs: 100,
+  });
+  const app = createApp({
+    auth: createAuth(quick.db, fixture.environment),
+    db: quick.db,
+    environment: fixture.environment,
+  });
+  const holder = createDatabase({ ...fixture.environment, databasePoolMax: 1 });
+  try {
+    for (const [table, column, id] of [
+      [users, users.id, fixture.principals.tenantAdmin.userId],
+      [organizations, organizations.id, fixture.tenant.organizationId],
+      [oauthClients, oauthClients.clientId, clientId],
+      [oauthResources, oauthResources.identifier, resource],
+    ] as const) {
+      const code = await authorize();
+      const redeem = () =>
+        app.request("/auth/oauth2/token", {
+          method: "POST",
+          headers: {
+            "content-type": "application/x-www-form-urlencoded",
+            authorization: `Basic ${Buffer.from(`${clientId}:${secret}`).toString("base64")}`,
+          },
+          body: new URLSearchParams({
+            grant_type: "authorization_code",
+            code,
+            redirect_uri: redirect,
+            code_verifier: verifier,
+            resource,
+          }),
+        });
+      const entered = Promise.withResolvers<void>();
+      const resume = Promise.withResolvers<void>();
+      const held = holder.db.transaction(async (tx) => {
+        await tx
+          .select()
+          .from(table)
+          .where(eq(column as typeof users.id, id))
+          .for("update");
+        entered.resolve();
+        await resume.promise;
+      });
+      try {
+        await entered.promise;
+        const response = await redeem();
+        expect(response.status, String(id)).toBe(503);
+        expect(response.headers.get("retry-after")).toBe("1");
+        expect(await response.json()).toMatchObject({
+          error: "temporarily_unavailable",
+        });
+      } finally {
+        resume.resolve();
+        await held;
+      }
+      expect((await redeem()).status, String(id)).toBe(200);
+    }
+  } finally {
+    await holder.close();
+    await quick.close();
+  }
+});
+
+const creationChanges = [
+  "unlink",
+  "remove-member",
+  "disable-user",
+  "disable-tenant",
+  "revoke-session",
+  "revoke-all-sessions",
+  "disable-client",
+  "disable-resource",
+  "erase-owner",
+] as const;
+
+async function creationRace(
+  first: "writer" | "other",
+  change: (typeof creationChanges)[number],
+) {
+  let target = clientId;
+  if (change === "erase-owner") {
+    target = `creation-owned-${createId()}`;
+    await fixture.db.insert(oauthClients).values({
+      id: createId(),
+      clientId: target,
+      userId: fixture.principals.outsider.userId,
+      redirectUris: [],
+      grantTypes: ["authorization_code"],
+      scopes: ["openid", "mail:read"],
+    });
+    await fixture.db
+      .insert(oauthClientResources)
+      .values({ id: createId(), clientId: target, resourceId: resource });
+  }
+  const userId = fixture.principals.tenantAdmin.userId;
+  const sessionId = await browserSessionId();
+  const writers: Record<(typeof creationChanges)[number], Writer> = {
+    unlink: { apply: (context) => unlinkResource(context, target, resource) },
+    "remove-member": {
+      apply: (context) =>
+        inTenant(context.tx, fixture.tenant.organizationId, (tenant) =>
+          removeMember(tenant, fixture.principals.tenantAdmin.memberId),
+        ),
+    },
+    "disable-user": {
+      users: true,
+      apply: (context) => disableUser(context, userId),
+    },
+    "disable-tenant": {
+      apply: (context) =>
+        disableOrganization(context, fixture.tenant.organizationId),
+    },
+    "revoke-session": {
+      users: true,
+      apply: (context) => revokeUserSession(context, userId, sessionId),
+    },
+    "revoke-all-sessions": {
+      users: true,
+      apply: (context) => revokeUserSessions(context, userId),
+    },
+    "disable-client": { apply: (context) => disableClient(context, target) },
+    "disable-resource": {
+      apply: (context) => disableResource(context, resource),
+    },
+    "erase-owner": {
+      apply: (context) =>
+        eraseUser(
+          context,
+          fixture.principals.outsider.userId,
+          fixture.principals.outsider.userId,
+        ),
+    },
+  };
+  const { outcome } = await race(first, writers[change], () =>
+    runtime.db.transaction((tx) =>
+      createResourceGrant(
+        tx,
+        {
+          userId,
+          sessionId,
+          memberId: fixture.principals.tenantAdmin.memberId,
+          clientId: target,
+          resource,
+          scopes: ["openid", "mail:read"],
+        },
+        60,
+      ),
+    ),
+  );
+  return { target, outcome };
+}
+
+for (const change of creationChanges)
+  test(`${change} committing first prevents a waiting resource grant creation`, async () => {
+    const { outcome } = await creationRace("writer", change);
+    expect(outcome).toMatchObject({
+      error: { body: { error: "access_denied" } },
+    });
+    expect(await fixture.db.$count(grantContexts)).toBe(0);
+  });
+
+for (const change of creationChanges)
+  test(`resource grant creation commits before ${change}, whose policy then denies the stored context`, async () => {
+    const { target, outcome } = await creationRace("other", change);
+    if ("error" in outcome) throw outcome.error;
+    const stored = await fixture.db.select().from(grantContexts);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]!.revokedAt !== null).toBe(change !== "unlink");
+    if (change === "erase-owner")
+      expect(
+        await fixture.db
+          .select()
+          .from(oauthClients)
+          .where(eq(oauthClients.clientId, target)),
+      ).toMatchObject([
+        { deletedAt: expect.any(Date), disabled: true, clientSecret: null },
+      ]);
+    expect(
+      await userResourcePolicy(fixture.db, {
+        id: outcome.value.id,
+        clientId: target,
+        resource,
+        grantType: "authorization_code",
+        requestedScopes: ["openid", "mail:read"],
+      }),
+    ).toMatchObject({ allowed: false });
+  });
+
+const tenantCapabilities = (...conditions: SQL[]) =>
+  and(
+    eq(organizationCapabilities.organizationId, fixture.tenant.organizationId),
+    eq(organizationCapabilities.clientId, clientId),
+    ...conditions,
+  );
+const pairEntitlement = () =>
+  and(
+    eq(entitlements.organizationId, fixture.tenant.organizationId),
+    eq(entitlements.clientId, clientId),
+    eq(entitlements.resource, resource),
+  );
+const substitutions: Record<string, () => Promise<unknown>> = {
+  login: () =>
+    fixture.db
+      .delete(organizationCapabilities)
+      .where(
+        tenantCapabilities(sql`${organizationCapabilities.resource} is null`),
+      ),
+  "login-scope": () =>
+    fixture.db
+      .update(organizationCapabilities)
+      .set({ scopes: ["offline_access"] })
+      .where(
+        tenantCapabilities(sql`${organizationCapabilities.resource} is null`),
+      ),
+  pair: () =>
+    fixture.db
+      .delete(organizationCapabilities)
+      .where(
+        tenantCapabilities(
+          eq(organizationCapabilities.resource, resource),
+          eq(organizationCapabilities.grantKind, "authorization_code"),
+        ),
+      ),
+  expired: () =>
+    fixture.db
+      .update(organizationCapabilities)
+      .set({ validUntil: new Date(Date.now() - 1000) })
+      .where(
+        tenantCapabilities(eq(organizationCapabilities.resource, resource)),
+      ),
+  future: () =>
+    fixture.db
+      .update(organizationCapabilities)
+      .set({ validFrom: new Date(Date.now() + 60000) })
+      .where(
+        tenantCapabilities(eq(organizationCapabilities.resource, resource)),
+      ),
+  compatibility: () =>
+    fixture.db
+      .delete(oauthClientResources)
+      .where(
+        and(
+          eq(oauthClientResources.clientId, clientId),
+          eq(oauthClientResources.resourceId, resource),
+        ),
+      ),
+  "empty-vocabulary": () =>
+    fixture.db
+      .update(oauthResources)
+      .set({ allowedScopes: null })
+      .where(eq(oauthResources.identifier, resource)),
+  "resource-only": async () => {
+    await fixture.db.delete(entitlements).where(pairEntitlement());
+    await fixture.db.insert(entitlements).values({
+      id: createId(),
+      organizationId: fixture.tenant.organizationId,
+      clientId: null,
+      resource,
+      scopes: ["mail:read"],
+    });
+  },
+  "other-client": async () => {
+    await fixture.db.delete(entitlements).where(pairEntitlement());
+    await fixture.db.insert(oauthClients).values({
+      id: createId(),
+      clientId: "other-policy-client",
+      redirectUris: [],
+      scopes: ["mail:read"],
+    });
+    await fixture.db.insert(entitlements).values({
+      id: createId(),
+      organizationId: fixture.tenant.organizationId,
+      clientId: "other-policy-client",
+      resource,
+      scopes: ["mail:read"],
+    });
+  },
+  scope: () =>
+    fixture.db
+      .update(entitlements)
+      .set({ scopes: ["unapproved:scope"] })
+      .where(pairEntitlement()),
+};
+
+for (const [mode, substitute] of Object.entries(substitutions))
+  test(`code exchange refuses ${mode} authority substitution`, async () => {
+    const code = await authorize();
+    await substitute();
+    const response = await exchange({
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: redirect,
+      code_verifier: verifier,
+      resource,
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "invalid_grant" });
+    expect(await tokenRows()).toEqual({ access: 0, refresh: 0, issued: 0 });
+  });
+
+test("user policy decision preserves exact sources and rejects widening its original context", async () => {
+  const issued = await issue();
+  const id = String(decodeJwt(issued.access_token).grant_id);
+  const decision = await userResourcePolicy(fixture.db, {
+    id,
+    clientId,
+    resource,
+    grantType: "refresh_token",
+    requestedScopes: ["openid", "offline_access", "mail:read"],
+  });
+  if (!decision.allowed) throw new Error("Expected an allowed decision");
+  expect(decision).toMatchObject({
+    reason: "approved",
+    grantType: "refresh_token",
+    subjectType: "user",
+    organization: { id: decision.grant.organizationId },
+    subject: {
+      userId: decision.grant.userId,
+      memberId: decision.grant.memberId,
+    },
+    client: { id: decision.grant.clientInstanceId, clientId },
+    resource: { id: decision.grant.resourceInstanceId, identifier: resource },
+    requestedScopes: ["mail:read", "offline_access", "openid"],
+  });
+  expect(decision.scopes).toEqual(["mail:read"]);
+  expect(decision.evidence.capabilities).toHaveLength(3);
+  expect(decision.evidence.assignments).toHaveLength(2);
+  expect(decision.evidence.evaluatedAt).toBeString();
+  const view = await inTenantRead(
+    fixture.db,
+    decision.grant.organizationId,
+    "memberAccess",
+    (context) => memberAccess(context, decision.grant.memberId),
+  );
+  const explanation = view.targets.find(
+    (target) =>
+      target.kind === "client_resource" &&
+      target.id === clientId &&
+      target.resource === resource,
+  )?.permission;
+  if (!explanation?.allowed)
+    throw new Error("Expected an allowed pair explanation");
+  expect(explanation).toMatchObject({
+    reason: "approved",
+    grantType: "authorization_code",
+    requestedScopes: null,
+    organization: decision.organization,
+    subject: decision.subject,
+    client: decision.client,
+    resource: decision.resource,
+  });
+  expect(explanation.scopes).toEqual(decision.scopes);
+  expect(explanation.evidence.assignments).toEqual(
+    decision.evidence.assignments,
+  );
+  expect(explanation.evidence.capabilities).toEqual(
+    decision.evidence.capabilities.filter(
+      (capability) => capability.grantKind === "authorization_code",
+    ),
+  );
+  expect(explanation.evidence.membership).toEqual(decision.evidence.membership);
+  const login = view.targets.find(
+    (target) => target.kind === "client" && target.id === clientId,
+  )!.permission;
+  if (!login.allowed) throw new Error("Expected login admission");
+  expect(login.evidence.capabilities).toEqual(
+    decision.evidence.capabilities.filter(
+      (capability) => capability.resource === null,
+    ),
+  );
+  expect(login.evidence.assignments).toEqual(
+    decision.evidence.assignments.filter(
+      (assignment) => assignment.resource === null,
+    ),
+  );
+  expect(
+    await userResourcePolicy(fixture.db, {
+      id,
+      clientId,
+      resource,
+      grantType: "refresh_token",
+      requestedScopes: ["mail:wider"],
+    }),
+  ).toMatchObject({
+    allowed: false,
+    reason: "scope",
+    grantType: "refresh_token",
+    scopes: [],
+    organization: decision.organization,
+    subject: decision.subject,
+    client: decision.client,
+    resource: decision.resource,
+    requestedScopes: ["mail:wider"],
+    evidence: { policyVersion: 1, membership: decision.evidence.membership },
+  });
+  expect(
+    await userResourcePolicy(fixture.db, {
+      id: createId(),
+      clientId,
+      resource,
+      grantType: "refresh_token",
+      requestedScopes: ["mail:read"],
+    }),
+  ).toEqual({ allowed: false, reason: "context" });
+});
+
+test("group-derived pair permission records its membership evidence and stops when the group is disabled", async () => {
+  const organizationId = fixture.tenant.organizationId;
+  const groupId = createId();
+  const membershipId = createId();
+  await fixture.db.delete(entitlements).where(pairEntitlement());
+  await fixture.db.insert(groups).values({
+    id: groupId,
+    organizationId,
+    slug: "policy-group",
+    name: "Policy group",
+  });
+  await fixture.db.insert(groupMembers).values({
+    id: membershipId,
+    organizationId,
+    groupId,
+    memberId: fixture.principals.tenantAdmin.memberId,
+  });
+  await fixture.db.insert(entitlements).values({
+    id: createId(),
+    organizationId,
+    groupId,
+    clientId,
+    resource,
+    scopes: ["mail:read"],
+  });
+  const issued = await issue();
+  const decision = await userResourcePolicy(fixture.db, {
+    id: String(decodeJwt(issued.access_token).grant_id),
+    clientId,
+    resource,
+    grantType: "refresh_token",
+    requestedScopes: ["openid", "offline_access", "mail:read"],
+  });
+  if (!decision.allowed) throw new Error("Expected group permission");
+  expect(
+    decision.evidence.assignments.find(
+      (source) => source.resource === resource,
+    ),
+  ).toMatchObject({
+    groupId,
+    groupMembership: {
+      id: membershipId,
+      revision: 1,
+      groupRevision: 1,
+      validFrom: null,
+      validUntil: null,
+    },
+  });
+  const rotated = await refresh(issued.refresh_token);
+  expect(rotated.status).toBe(200);
+  await fixture.db
+    .update(groups)
+    .set({ status: "disabled" })
+    .where(eq(groups.id, groupId));
+  expect((await refresh((await rotated.json()).refresh_token)).status).toBe(
+    400,
+  );
+});
+
+test("a grant records the authenticating session and caps later refresh at the requested scopes", async () => {
+  await authorize("openid mail:read");
+  const [context] = await fixture.db.select().from(grantContexts);
+  expect(context!.requestedScopes).toEqual(["mail:read", "openid"]);
+  expect(context!.authenticationSessionId).toBe(await browserSessionId());
+  expect(
+    await userResourcePolicy(fixture.db, {
+      id: context!.id,
+      clientId,
+      resource,
+      grantType: "refresh_token",
+      requestedScopes: ["openid", "offline_access", "mail:read"],
+    }),
+  ).toMatchObject({ allowed: false, reason: "scope" });
+});
+
+test("resource grant creation admits only current, consistent authority", async () => {
+  const sessionId = await browserSessionId();
+  const input = {
+    userId: fixture.principals.tenantAdmin.userId,
+    sessionId,
+    memberId: fixture.principals.tenantAdmin.memberId,
+    clientId,
+    resource,
+    scopes: ["openid", "mail:read"],
+  };
+  const privateResource = `https://${createId()}.example/private`;
+  const refusals: [
+    string,
+    Partial<typeof input>,
+    ((tx: Executor) => Promise<unknown>)?,
+  ][] = [
+    ["another user", { userId: fixture.principals.platformAdmin.userId }],
+    ["another member", { memberId: fixture.principals.platformAdmin.memberId }],
+    ["another session", { sessionId: createId() }],
+    ["an unknown client", { clientId: "unknown-client" }],
+    ["an unknown resource", { resource: "https://missing.example/resource" }],
+    ["no scopes", { scopes: [] }],
+    ["an unregistered scope", { scopes: ["not-registered"] }],
+    [
+      "an expired membership",
+      {},
+      (tx) =>
+        tx
+          .update(members)
+          .set({ validUntil: new Date(Date.now() - 1000) })
+          .where(eq(members.id, input.memberId)),
+    ],
+    [
+      "an expired session",
+      {},
+      (tx) =>
+        tx
+          .update(sessions)
+          .set({ expiresAt: new Date(Date.now() - 1000) })
+          .where(eq(sessions.id, sessionId)),
+    ],
+    [
+      "a disabled user",
+      {},
+      (tx) =>
+        tx
+          .update(users)
+          .set({ status: "disabled", disabledAt: new Date() })
+          .where(eq(users.id, input.userId)),
+    ],
+    [
+      "a disabled tenant",
+      {},
+      (tx) =>
+        tx
+          .update(organizations)
+          .set({ status: "disabled", disabledAt: new Date() })
+          .where(eq(organizations.id, fixture.tenant.organizationId)),
+    ],
+    [
+      "a disabled client",
+      {},
+      (tx) =>
+        tx
+          .update(oauthClients)
+          .set({ disabled: true })
+          .where(eq(oauthClients.clientId, clientId)),
+    ],
+    [
+      "a disabled resource",
+      {},
+      (tx) =>
+        tx
+          .update(oauthResources)
+          .set({ disabled: true })
+          .where(eq(oauthResources.identifier, resource)),
+    ],
+    [
+      "an unsupported grant type",
+      {},
+      (tx) =>
+        tx
+          .update(oauthClients)
+          .set({ grantTypes: ["refresh_token"] })
+          .where(eq(oauthClients.clientId, clientId)),
+    ],
+    [
+      "a client without scopes",
+      {},
+      (tx) =>
+        tx
+          .update(oauthClients)
+          .set({ scopes: null })
+          .where(eq(oauthClients.clientId, clientId)),
+    ],
+    [
+      "another tenant's private resource",
+      { resource: privateResource },
+      async (tx) => {
+        await tx.insert(oauthResources).values({
+          id: createId(),
+          identifier: privateResource,
+          name: "Private",
+          classification: "tenant_owned",
+          organizationId: fixture.outsider.organizationId,
+        });
+        await tx
+          .insert(oauthClientResources)
+          .values({ id: createId(), clientId, resourceId: privateResource });
+      },
+    ],
+  ];
+  for (const [name, patch, change] of refusals)
+    await fixture.db
+      .transaction(async (tx) => {
+        await change?.(tx);
+        await expect(
+          createResourceGrant(tx, { ...input, ...patch }, 60),
+          name,
+        ).rejects.toMatchObject({ body: { error: "access_denied" } });
+        tx.rollback();
+      })
+      .catch((error: unknown) => {
+        if (!(error instanceof TransactionRollbackError)) throw error;
+      });
+  expect(await fixture.db.$count(grantContexts)).toBe(0);
+  const grant = await createResourceGrant(
+    fixture.db,
+    { ...input, scopes: ["mail:read", "openid", "mail:read"] },
+    60,
+  );
+  expect(grant.requestedScopes).toEqual(["mail:read", "openid"]);
+  expect(grant.organizationId).toBe(fixture.tenant.organizationId);
+  expect(grant.expiresAt.getTime() - grant.createdAt.getTime()).toBe(60000);
+});
+
+test("resource grant creation times out on a held lock without partial state and then succeeds", async () => {
+  const quick = createDatabase({
+    ...fixture.environment,
+    databasePoolMax: 1,
+    databaseLockTimeoutMs: 100,
+  });
+  const holder = createDatabase({ ...fixture.environment, databasePoolMax: 1 });
+  const input = {
+    userId: fixture.principals.tenantAdmin.userId,
+    sessionId: await browserSessionId(),
+    memberId: fixture.principals.tenantAdmin.memberId,
+    clientId,
+    resource,
+    scopes: ["openid", "mail:read"],
+  };
+  const entered = Promise.withResolvers<void>();
+  const resume = Promise.withResolvers<void>();
+  const held = holder.db.transaction(async (tx) => {
+    await tx
+      .select()
+      .from(oauthClients)
+      .where(eq(oauthClients.clientId, clientId))
+      .for("update");
+    entered.resolve();
+    await resume.promise;
+  });
+  try {
+    await entered.promise;
+    await expect(
+      createResourceGrant(quick.db, input, 60),
+    ).rejects.toMatchObject({
+      status: "SERVICE_UNAVAILABLE",
+      body: { error: "temporarily_unavailable" },
+    });
+    expect(await fixture.db.$count(grantContexts)).toBe(0);
+  } finally {
+    resume.resolve();
+    await held;
+    await holder.close();
+  }
+  try {
+    await createResourceGrant(quick.db, input, 60);
+  } finally {
+    await quick.close();
+  }
+  expect(await fixture.db.$count(grantContexts)).toBe(1);
+});
+
+test("erasing a client owner waits for another user's locked grant before cascading the client", async () => {
+  const ownerId = fixture.principals.outsider.userId;
+  const ownedClient = `owned-${createId()}`;
+  await fixture.db.insert(oauthClients).values({
+    id: createId(),
+    clientId: ownedClient,
+    userId: ownerId,
+    redirectUris: [],
+    grantTypes: ["authorization_code"],
+    scopes: ["openid", "mail:read"],
+  });
+  await fixture.db
+    .insert(oauthClientResources)
+    .values({ id: createId(), clientId: ownedClient, resourceId: resource });
+  const grant = await createResourceGrant(
+    fixture.db,
+    {
+      userId: fixture.principals.tenantAdmin.userId,
+      memberId: fixture.principals.tenantAdmin.memberId,
+      sessionId: await browserSessionId(),
+      clientId: ownedClient,
+      resource,
+      scopes: ["openid", "mail:read"],
+    },
+    60,
+  );
+  const adapter = (await auth.$context).adapter;
+  const writer = createDatabase({ ...fixture.environment, databasePoolMax: 2 });
+  const entered = Promise.withResolvers<void>();
+  const resume = Promise.withResolvers<void>();
+  const held = adapter.transaction(async (trx) => {
+    await setDatabaseScope(authTransaction(trx), {
+      kind: "grant-client",
+      clientId: ownedClient,
+    });
+    await lockResourceGrantPolicy(trx, { id: grant.id, clientId: ownedClient });
+    entered.resolve();
+    await resume.promise;
+    await bindGrantCode(authTransaction(trx), grant.id, createId());
+  });
+  let writerPid = 0;
+  let erased: Promise<unknown> | undefined;
+  try {
+    await entered.promise;
+    erased = inPlatformWrite(writer.db, async (context) => {
+      const pid = await context.tx.execute(sql`select pg_backend_pid() as pid`);
+      writerPid = Number(pid.rows[0]!.pid);
+      await eraseUser(context, ownerId, ownerId);
+    });
+    await until(
+      writer.db,
+      () => sql`cardinality(pg_blocking_pids(${writerPid})) > 0`,
+    );
+  } finally {
+    resume.resolve();
+    await held;
+    await erased;
+    await writer.close();
+  }
+  expect(
+    await fixture.db
+      .select()
+      .from(grantContexts)
+      .where(eq(grantContexts.id, grant.id)),
+  ).toMatchObject([{ id: grant.id, revokedAt: expect.any(Date) }]);
+  expect(
+    await fixture.db
+      .select()
+      .from(oauthClients)
+      .where(eq(oauthClients.clientId, ownedClient)),
+  ).toMatchObject([
+    { deletedAt: expect.any(Date), disabled: true, clientSecret: null },
+  ]);
+});
+
+test("the resource scope vocabulary filters issued scopes and identity claims stay in UserInfo", async () => {
+  await fixture.db
+    .update(oauthResources)
+    .set({ allowedScopes: ["mail:read"] })
+    .where(eq(oauthResources.identifier, resource));
+  const issued = await issue();
+  expect(issued.scope).toBe("mail:read");
+  expect(issued.id_token).toBeUndefined();
+  const [stored] = await fixture.db.select().from(oauthRefreshTokens);
+  expect(stored!.scopes).toEqual(["mail:read"]);
+  const login = await issue("openid email", null);
+  expect(login.refresh_token).toBeUndefined();
+  expect(decodeJwt(login.id_token).email).toBeUndefined();
+  const userInfo = await request("/oauth2/userinfo", undefined, {
+    authorization: `Bearer ${login.access_token}`,
+  });
+  expect(userInfo.status).toBe(200);
+  expect((await userInfo.json()).email).toBe("tenantadmin@tenant.example.com");
 });

@@ -963,3 +963,27 @@ test("sign-in audit failure rolls back the new session", async () => {
     previous,
   );
 });
+
+test("a disabled organisation refuses sign-in without creating a session", async () => {
+  const disabled = await fixture.app.request(
+    `/api/admin/v1/organizations/${fixture.tenant.organizationId}/disable`,
+    { method: "POST", headers: fixture.headers("root") },
+  );
+  expect(disabled.status).toBe(200);
+  const previous = await fixture.db.select({ id: sessions.id }).from(sessions);
+  fixture.issuer.enqueue({
+    sub: "tenantAdmin-subject",
+    email: "tenantadmin@tenant.example.com",
+    email_verified: true,
+  });
+  const result = await signInThroughIdp(app, {
+    providerId: "tenant",
+    callbackURL: `${fixture.trustedOrigin}/callback`,
+  });
+  expect(new URL(result.location!).searchParams.get("error")).toBe(
+    "organization_disabled",
+  );
+  expect(await fixture.db.select({ id: sessions.id }).from(sessions)).toEqual(
+    previous,
+  );
+});

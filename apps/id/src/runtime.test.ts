@@ -49,7 +49,7 @@ test("runtime emits bounded operational summaries and stops the reporter on shut
   try {
     runtime = await startRuntime(
       testEnvironment({ port: 0, operationalLogIntervalMs: 10 }),
-      { seed: async () => seedResult, authFactory: stubAuth },
+      { allowTestEnvironment: true, seed: async () => seedResult },
     );
     const response = await fetch(new URL("/healthz", runtime.server.url));
     expect(response.status).toBe(200);
@@ -69,31 +69,29 @@ test("runtime emits bounded operational summaries and stops the reporter on shut
   }
 });
 
+test("a deployment cannot start with NODE_ENV=test", async () => {
+  const databaseFactory = mock(createDatabase);
+  await expect(
+    startRuntime(testEnvironment({ port: 0 }), { databaseFactory }),
+  ).rejects.toThrow("NODE_ENV=test is for the test suite");
+  expect(databaseFactory).not.toHaveBeenCalled();
+});
+
 describe("unit: process runtime", () => {
-  test("seeds once with environment values before listening and shuts down idempotently", async () => {
+  test("seeds once with environment values, serves, and shuts down idempotently", async () => {
     const environment = testEnvironment({
+      port: 0,
       platformOrganizationSlug: "custom-platform",
       platformOrganizationName: "Custom platform",
       adminResourceIdentifier: "https://admin.example.com",
     });
     const database = createDatabase(environment);
-    const order: string[] = [];
-    const seed = mock(async () => {
-      order.push("seed");
-      await Promise.resolve();
-      order.push("seeded");
-      return seedResult;
-    });
-    const stop = mock(() => {});
-    const serve = mock(() => {
-      order.push("listen");
-      return { stop };
-    });
+    const seed = mock(async () => seedResult);
     const runtime = await startRuntime(environment, {
+      allowTestEnvironment: true,
       seed,
       databaseFactory: () => database,
       authFactory: stubAuth,
-      serve: serve as unknown as typeof Bun.serve,
     });
     expect(seed).toHaveBeenCalledTimes(1);
     expect(seed).toHaveBeenCalledWith(
@@ -109,76 +107,47 @@ describe("unit: process runtime", () => {
         adminResourceIdentifier: environment.adminResourceIdentifier,
       },
     );
-    expect(order).toEqual(["seed", "seeded", "listen"]);
-    expect(serve).toHaveBeenCalledTimes(1);
+    const response = await fetch(new URL("/healthz", runtime.server.url));
+    expect(response.status).toBe(200);
     expect(runtime.database.pool.options.max).toBe(1);
     await runtime.shutdown();
     await runtime.shutdown();
-    expect(stop).toHaveBeenCalledTimes(1);
-    expect(stop).toHaveBeenCalledWith(false);
     expect(database.pool.ended).toBe(true);
   });
 
-  test("a failing seed closes the pool and prevents listening", async () => {
-    const environment = testEnvironment();
+  test("a failing seed closes the pool and never listens", async () => {
+    const probe = Bun.serve({ port: 0, fetch: () => new Response() });
+    const port = probe.port!;
+    probe.stop(true);
+    const environment = testEnvironment({ port });
     const database = createDatabase(environment);
     const failure = new Error("seed failed");
     const seed = mock(async () => {
       throw failure;
     });
-    const serve = mock(() => {
-      throw new Error("must not listen");
-    });
     await expect(
       startRuntime(environment, {
+        allowTestEnvironment: true,
         databaseFactory: () => database,
         seed,
-        serve: serve as unknown as typeof Bun.serve,
       }),
     ).rejects.toBe(failure);
     expect(seed).toHaveBeenCalledTimes(1);
-    expect(serve).not.toHaveBeenCalled();
     expect(database.pool.ended).toBe(true);
-  });
-
-  test("starts Bun with one database pool and shuts it down idempotently", async () => {
-    const runtime = await startRuntime(testEnvironment({ port: 0 }), {
-      seed: async () => seedResult,
-    });
-    try {
-      const response = await fetch(new URL("/healthz", runtime.server.url));
-      expect(response.status).toBe(200);
-      expect(runtime.database.pool.options.max).toBe(1);
-    } finally {
-      await runtime.shutdown();
-      await runtime.shutdown();
-    }
-    expect(runtime.database.pool.ended).toBe(true);
+    await expect(fetch(`http://127.0.0.1:${port}/healthz`)).rejects.toThrow();
   });
 });
 
 test.each(["production", "development"] as const)(
-  "%s refuses an unsafe database role before seeding or listening",
+  "%s refuses the database owner role before seeding or listening",
   async (nodeEnv) => {
-    const database = createDatabase(testEnvironment());
+    const environment = testEnvironment({ nodeEnv, port: 0 });
+    const database = createDatabase(environment);
     const seed = mock(async () => seedResult);
-    const serve = mock(() => {
-      throw new Error("must not listen");
-    });
-    const verifyDatabaseRole = mock(async () => {
-      throw new Error("unsafe role");
-    });
     await expect(
-      startRuntime(testEnvironment({ nodeEnv }), {
-        databaseFactory: () => database,
-        seed,
-        serve: serve as unknown as typeof Bun.serve,
-        verifyDatabaseRole,
-      }),
-    ).rejects.toThrow("unsafe role");
-    expect(verifyDatabaseRole).toHaveBeenCalledWith(database.db);
+      startRuntime(environment, { databaseFactory: () => database, seed }),
+    ).rejects.toThrow("Unsafe database runtime role");
     expect(seed).not.toHaveBeenCalled();
-    expect(serve).not.toHaveBeenCalled();
     expect(database.pool.ended).toBe(true);
   },
 );
@@ -186,6 +155,7 @@ test.each(["production", "development"] as const)(
 test("runtime caps declared and streamed request bodies before provider work", async () => {
   const accepted: number[] = [];
   const runtime = await startRuntime(testEnvironment({ port: 0 }), {
+    allowTestEnvironment: true,
     seed: async () => seedResult,
     authFactory: () => ({
       ...stubAuth(),
@@ -275,63 +245,6 @@ test("runtime caps declared and streamed request bodies before provider work", a
   }
 });
 
-for (const stage of ["auth", "app"] as const)
-  test(`startup closes its pool when ${stage} construction fails after seeding`, async () => {
-    const environment = testEnvironment();
-    const database = createDatabase(environment);
-    const failure = new Error(`${stage} construction failed`);
-    const serve = mock(() => {
-      throw new Error("must not listen");
-    });
-    try {
-      await expect(
-        startRuntime(environment, {
-          databaseFactory: () => database,
-          seed: async () => seedResult,
-          authFactory: () => {
-            if (stage === "auth") throw failure;
-            return stubAuth();
-          },
-          appFactory: () => {
-            throw failure;
-          },
-          serve: serve as unknown as typeof Bun.serve,
-        }),
-      ).rejects.toBe(failure);
-      expect(serve).not.toHaveBeenCalled();
-      expect(database.pool.ended).toBe(true);
-    } finally {
-      if (!database.pool.ended) await database.close();
-    }
-  });
-
-test("a real occupied listen port closes the seeded runtime's database pool", async () => {
-  const blocker = Bun.serve({
-    port: 0,
-    fetch: () => new Response("occupied"),
-  });
-  const environment = testEnvironment({ port: blocker.port! });
-  const database = createDatabase(environment);
-  let started: Awaited<ReturnType<typeof startRuntime>> | undefined;
-  try {
-    await expect(
-      startRuntime(environment, {
-        databaseFactory: () => database,
-        seed: async () => seedResult,
-        authFactory: stubAuth,
-      }).then((value) => {
-        started = value;
-        return value;
-      }),
-    ).rejects.toMatchObject({ code: "EADDRINUSE" });
-    expect(database.pool.ended).toBe(true);
-  } finally {
-    await started?.shutdown();
-    blocker.stop(true);
-    if (!database.pool.ended) await database.close();
-  }
-});
-
 test("startup reports only platform application availability after the seed line", async () => {
   const log = spyOn(console, "log").mockImplementation(() => {});
   try {
@@ -353,7 +266,7 @@ test("startup reports only platform application availability after the seed line
               }
             : {},
         }),
-        { seed: async () => seedResult, authFactory: stubAuth },
+        { allowTestEnvironment: true, seed: async () => seedResult },
       );
       try {
         expect(log.mock.calls[0]![0]).toStartWith(

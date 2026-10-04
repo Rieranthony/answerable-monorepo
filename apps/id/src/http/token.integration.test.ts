@@ -1,6 +1,12 @@
 import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
-import { decodeJwt, decodeProtectedHeader } from "jose";
+import {
+  decodeJwt,
+  decodeProtectedHeader,
+  exportJWK,
+  generateKeyPair,
+  SignJWT,
+} from "jose";
 import { approveMachineCapability } from "../__tests__/capabilities.ts";
 import { startOidcIssuer, type OidcIssuer } from "../__tests__/oidc-issuer.ts";
 import { platformWriteService } from "../__tests__/platform-context.ts";
@@ -328,3 +334,90 @@ for (const malformed of [
       }
   });
 }
+
+test("private-key client credentials refuse a replayed, misaddressed or expired assertion", async () => {
+  const privateKeyClient = "token-private-key";
+  await createClient(connection.db, systemActor("token-test"), {
+    clientId: privateKeyClient,
+    name: "Private key test",
+    organizationId: bootstrapped.organization.id,
+    grantTypes: ["client_credentials"],
+    tokenEndpointAuthMethod: "client_secret_basic",
+    redirectUris: [],
+    clientCredentialsScopes: [...platformScopes],
+  });
+  await linkResource(
+    connection.db,
+    systemActor("token-test"),
+    privateKeyClient,
+    environment.adminResourceIdentifier,
+  );
+  await approveMachineCapability(connection.db, {
+    organizationId: bootstrapped.organization.id,
+    clientId: privateKeyClient,
+    resource: environment.adminResourceIdentifier,
+    scopes: [...platformScopes],
+  });
+  const { privateKey, publicKey } = await generateKeyPair("RS256");
+  await connection.db
+    .update(oauthClients)
+    .set({
+      tokenEndpointAuthMethod: "private_key_jwt",
+      jwks: JSON.stringify({
+        keys: [
+          { ...(await exportJWK(publicKey)), kid: "machine", alg: "RS256" },
+        ],
+      }),
+    })
+    .where(eq(oauthClients.clientId, privateKeyClient));
+  const assertion = ({
+    audience = `${environment.betterAuthUrl}/auth/oauth2/token`,
+    expiresAt = Math.floor(Date.now() / 1000) + 120,
+  } = {}) =>
+    new SignJWT({})
+      .setProtectedHeader({ alg: "RS256", kid: "machine" })
+      .setIssuer(privateKeyClient)
+      .setSubject(privateKeyClient)
+      .setAudience(audience)
+      .setIssuedAt(expiresAt - 120)
+      .setExpirationTime(expiresAt)
+      .setJti(createId())
+      .sign(privateKey);
+  const request = (proof: string) =>
+    app.request("/auth/oauth2/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        ...tokenBody(),
+        client_id: privateKeyClient,
+        client_assertion_type:
+          "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+        client_assertion: proof,
+      }),
+    });
+  const proof = await assertion();
+  const issued = await request(proof);
+  expect(issued.status).toBe(200);
+  expect(decodeJwt((await issued.json()).access_token).sub).toBe(
+    privateKeyClient,
+  );
+  for (const [name, refused, status] of [
+    ["replayed", proof, 400],
+    [
+      "misaddressed",
+      await assertion({ audience: "https://other.example/token" }),
+      401,
+    ],
+    [
+      "expired",
+      await assertion({ expiresAt: Math.floor(Date.now() / 1000) - 60 }),
+      401,
+    ],
+  ] as const) {
+    const response = await request(refused);
+    expect(response.status, name).toBe(status);
+    expect(await response.json(), name).toMatchObject({
+      error: "invalid_client",
+    });
+  }
+});

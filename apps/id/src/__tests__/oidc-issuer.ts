@@ -13,6 +13,16 @@ export type OidcClaims = JWTPayload & {
   iss?: string;
 };
 
+/** Defects the issuer writes into one ID token. */
+export type OidcTokenFault = {
+  /** Audience other than the requesting client. */
+  audience?: string;
+  /** Expired before it is issued. */
+  expired?: boolean;
+  /** Signed by a key the issuer does not publish. */
+  unknownKey?: boolean;
+};
+
 export async function startOidcIssuer(
   options: {
     beforeTokenResponse?: () => Promise<void>;
@@ -28,8 +38,9 @@ export async function startOidcIssuer(
     use: "sig",
   };
   const tokenRequests: { clientId: string; clientSecret: string | null }[] = [];
-  const queued: OidcClaims[] = [];
-  const codes = new Map<string, OidcClaims>();
+  const queued: { claims: OidcClaims; fault: OidcTokenFault }[] = [];
+  const codes = new Map<string, (typeof queued)[number]>();
+  const unpublished = await generateKeyPair("RS256");
   let origin = "";
 
   const server = Bun.serve({
@@ -61,12 +72,12 @@ export async function startOidcIssuer(
       if (request.method === "GET" && url.pathname === "/authorize") {
         const redirectUri = url.searchParams.get("redirect_uri");
         const state = url.searchParams.get("state");
-        const claims = queued.shift();
-        if (!redirectUri || !state || !claims) {
+        const entry = queued.shift();
+        if (!redirectUri || !state || !entry) {
           return new Response("missing authorization input", { status: 400 });
         }
         const code = crypto.randomUUID();
-        codes.set(code, claims);
+        codes.set(code, entry);
         const location = new URL(redirectUri);
         location.searchParams.set("code", code);
         location.searchParams.set("state", state);
@@ -75,7 +86,7 @@ export async function startOidcIssuer(
       if (request.method === "POST" && url.pathname === "/token") {
         const body = await request.formData();
         const code = String(body.get("code") ?? "");
-        const claims = codes.get(code);
+        const entry = codes.get(code);
         const basic = request.headers.get("authorization");
         const decoded = basic?.startsWith("Basic ") ? atob(basic.slice(6)) : "";
         const separator = decoded.indexOf(":");
@@ -88,20 +99,25 @@ export async function startOidcIssuer(
             ? decodeURIComponent(decoded.slice(separator + 1))
             : null;
         tokenRequests.push({ clientId, clientSecret });
-        if (!claims || !clientId) {
+        if (!entry || !clientId) {
           return Response.json({ error: "invalid_grant" }, { status: 400 });
         }
         codes.delete(code);
         await options.beforeTokenResponse?.();
         const now = Math.floor(Date.now() / 1000);
+        const { claims, fault } = entry;
         const { iss, ...payload } = claims;
+        const issuedAt = fault.expired ? now - 600 : now;
         const idToken = await new SignJWT({ ...payload, azp: clientId })
-          .setProtectedHeader({ alg: "RS256", kid })
+          .setProtectedHeader({
+            alg: "RS256",
+            kid: fault.unknownKey ? crypto.randomUUID() : kid,
+          })
           .setIssuer(iss ?? origin)
-          .setAudience(clientId)
-          .setIssuedAt(now)
-          .setExpirationTime(now + 300)
-          .sign(privateKey);
+          .setAudience(fault.audience ?? clientId)
+          .setIssuedAt(issuedAt)
+          .setExpirationTime(issuedAt + 300)
+          .sign(fault.unknownKey ? unpublished.privateKey : privateKey);
         return Response.json({
           access_token: crypto.randomUUID(),
           token_type: "Bearer",
@@ -124,8 +140,8 @@ export async function startOidcIssuer(
       queued.length = 0;
       codes.clear();
     },
-    enqueue(claims: OidcClaims) {
-      queued.push(claims);
+    enqueue(claims: OidcClaims, fault: OidcTokenFault = {}) {
+      queued.push({ claims, fault });
     },
     stop() {
       server.stop(true);

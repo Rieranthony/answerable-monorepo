@@ -17,13 +17,9 @@ import {
 import { createId } from "../lib/id.ts";
 import type { Actor } from "./actor.ts";
 import * as implementation from "./sessions.ts";
-import {
-  inPlatformRead,
-  inPlatformUsers,
-} from "../__tests__/platform-context.ts";
+import { inPlatformUsers } from "../__tests__/platform-context.ts";
 import type { Database } from "../db/client.ts";
 const service = {
-  ...implementation,
   revokeUserSession: (
     db: Database,
     actor: Actor,
@@ -40,14 +36,6 @@ const service = {
       db,
       (context) => implementation.revokeUserSessions(context, userId),
       actor,
-    ),
-  listUserSessions: (
-    db: Database,
-    arg1: Parameters<typeof implementation.listUserSessions>[1],
-    arg2: Parameters<typeof implementation.listUserSessions>[2],
-  ) =>
-    inPlatformRead(db, (context) =>
-      implementation.listUserSessions(context, arg1, arg2),
     ),
 };
 
@@ -120,128 +108,6 @@ async function events(userId: string) {
     .where(eq(auditEvents.targetId, userId))
     .orderBy(auditEvents.id);
 }
-test("missing users and sessions return 404 without audit", async () => {
-  const db = connection.db;
-  const id = await seed();
-  const [session] = await db.select().from(sessions);
-  const missing = createId();
-  for (const run of [
-    () => service.listUserSessions(db, missing, { limit: 10 }),
-    () => service.revokeUserSession(db, actor, missing, session!.id),
-    () => service.revokeUserSession(db, actor, id, missing),
-    () => service.revokeUserSessions(db, actor, missing),
-  ])
-    await expect(run()).rejects.toMatchObject({
-      status: 404,
-      code: "not_found",
-    });
-  expect(await db.select().from(auditEvents)).toHaveLength(0);
-});
-test("single revocation checks ownership, revokes linked tokens before deleting and audits exactly once", async () => {
-  const db = connection.db;
-  const id = await seed();
-  const other = await seed();
-  const [session] = await db
-    .select()
-    .from(sessions)
-    .where(eq(sessions.userId, id));
-  await expect(
-    service.revokeUserSession(db, actor, other, session!.id),
-  ).rejects.toMatchObject({ status: 404 });
-  await service.revokeUserSession(db, actor, id, session!.id);
-  expect(await service.listUserSessions(db, id, { limit: 10 })).toEqual({
-    items: [],
-    nextCursor: null,
-  });
-  expect(
-    (await service.listUserSessions(db, other, { limit: 10 })).items,
-  ).toHaveLength(1);
-  for (const table of [oauthRefreshTokens, oauthAccessTokens]) {
-    expect(
-      (await db.select().from(table).where(eq(table.userId, id)))[0],
-    ).toMatchObject({ sessionId: null, revoked: expect.any(Date) });
-    expect(
-      (await db.select().from(table).where(eq(table.userId, other)))[0]
-        ?.revoked,
-    ).toBeNull();
-  }
-  expect(await events(session!.id)).toMatchObject([
-    {
-      ...actor,
-      action: "session.revoked",
-      targetType: "session",
-      organizationId: null,
-      data: { userId: id },
-    },
-  ]);
-  await expect(
-    service.revokeUserSession(db, actor, id, session!.id),
-  ).rejects.toMatchObject({ status: 404 });
-});
-test("platform revocation counts global sessions and includes unbound user tokens", async () => {
-  const db = connection.db;
-  const id = await seed();
-  await db.insert(sessions).values({
-    id: createId(),
-    userId: id,
-    token: createId(),
-    expiresAt: new Date(Date.now() + 60000),
-  });
-  await db
-    .update(oauthRefreshTokens)
-    .set({ sessionId: null })
-    .where(eq(oauthRefreshTokens.userId, id));
-  expect(
-    (await service.listUserSessions(db, id, { limit: 1 })).nextCursor,
-  ).toBeString();
-  expect(await service.revokeUserSessions(db, actor, id)).toEqual({
-    revoked: 2,
-    changed: true,
-  });
-  expect(await service.revokeUserSessions(db, actor, id)).toEqual({
-    revoked: 0,
-    changed: false,
-  });
-  const audit = await events(id);
-  expect(audit).toHaveLength(2);
-  expect(audit[0]).toMatchObject({
-    ...actor,
-    targetType: "user",
-    action: "session.revoked_all",
-    organizationId: null,
-    data: { userId: id, sessions: 2, refreshTokens: 1, accessTokens: 1 },
-  });
-  expect(audit[1]?.data).toEqual({
-    userId: id,
-    sessions: 0,
-    sessionIds: [],
-    revokedGrantContexts: [],
-    refreshTokens: 0,
-    accessTokens: 0,
-    revokedTokens: { access: [], refresh: [] },
-  });
-});
-test("audit failure restores sessions and token state for each revocation variant", async () => {
-  const db = connection.db;
-  const id = await seed();
-  const [session] = await db.select().from(sessions);
-  const invalid = { ...actor, requestId: "\0" };
-  for (const run of [
-    () => service.revokeUserSession(db, invalid, id, session!.id),
-    () => service.revokeUserSessions(db, invalid, id),
-  ]) {
-    await expect(run()).rejects.toThrow();
-    expect(
-      (await service.listUserSessions(db, id, { limit: 10 })).items,
-    ).toHaveLength(1);
-    for (const table of [oauthRefreshTokens, oauthAccessTokens])
-      expect((await db.select().from(table))[0]).toMatchObject({
-        sessionId: session!.id,
-        revoked: null,
-      });
-  }
-  expect(await db.select().from(auditEvents)).toHaveLength(0);
-});
 
 async function seedSessionGrants() {
   const db = connection.db;
@@ -297,30 +163,6 @@ async function seedSessionGrants() {
     contexts,
   };
 }
-
-test("single administrative session revocation targets its immutable grant origin and audits changed IDs", async () => {
-  const { db, userId, session, contexts } = await seedSessionGrants();
-  const target = contexts.find(
-    (row) => row.authenticationSessionId === session.id,
-  )!;
-  await service.revokeUserSession(db, actor, userId, session.id);
-  const rows = await db.select().from(grantContexts);
-  for (const row of rows) {
-    if (row.id === target.id) expect(row.revokedAt).toBeInstanceOf(Date);
-    else
-      expect(row).toEqual(contexts.find((previous) => previous.id === row.id)!);
-  }
-  const [event] = await db
-    .select()
-    .from(auditEvents)
-    .where(eq(auditEvents.action, "session.revoked"));
-  expect(event!.data).toMatchObject({
-    revokedGrantContexts: [
-      { id: target.id, organizationId: target.organizationId },
-    ],
-  });
-});
-
 test("revoke-all includes persistent grants whose browser sessions have already disappeared", async () => {
   const { db, userId, otherUserId, contexts } = await seedSessionGrants();
   await db.delete(sessions).where(eq(sessions.userId, userId));

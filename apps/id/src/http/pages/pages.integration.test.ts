@@ -31,7 +31,7 @@ const secret = "page-client-secret";
 const verifier = "v".repeat(64);
 beforeEach(async () => {
   fixture = undefined!;
-  fixture = await createAdminFixture();
+  fixture = await createAdminFixture({}, { originChecks: true });
   await createOrganizationDomain(fixture.db, {
     organizationId: fixture.tenant.organizationId,
     domain: "second.example.com",
@@ -256,6 +256,76 @@ test("security renders both actions and forwards verification state cookies", as
     fixture.issuer.origin,
   );
   expect(cookie(verify)).not.toBe("");
+});
+
+test("cross-site requests with a session and off-origin callbacks are refused", async () => {
+  const session = fixture.principals.tenantAdmin.cookie;
+  const evil = "https://evil.example";
+  const api = (path: string, body: object, origin = evil) =>
+    fixture.app.request(path, {
+      method: "POST",
+      headers: { cookie: session, origin, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  const form = (path: string, fields: Record<string, string>) =>
+    fixture.app.request(path, {
+      method: "POST",
+      headers: {
+        cookie: session,
+        origin: evil,
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams(fields),
+    });
+  const login = await start();
+  const selection = new URL(
+    (await page(login.pathname + login.search, session)).headers.get(
+      "location",
+    )!,
+    fixture.environment.betterAuthUrl,
+  );
+  const member = fixture.principals.tenantAdmin.memberId;
+  const query = selection.search.slice(1);
+  const refused = [
+    [
+      "/auth/oauth2/continue",
+      { oauth_query: query, postLogin: true, memberId: member },
+    ],
+    ["/auth/oauth2/consent", { oauth_query: query, accept: true }],
+    ["/auth/sign-out", {}],
+  ] as const;
+  for (const [path, body] of refused)
+    expect((await api(path, body)).status, path).toBe(403);
+  for (const field of ["callbackURL", "errorCallbackURL"])
+    expect(
+      (
+        await api(
+          "/auth/sign-in/sso",
+          {
+            providerId: fixture.tenant.slug,
+            callbackURL: `${fixture.trustedOrigin}/callback`,
+            [field]: `${evil}/landing`,
+          },
+          fixture.trustedOrigin,
+        )
+      ).status,
+      field,
+    ).toBe(403);
+  for (const [path, fields] of [
+    [selection.pathname + selection.search, { member }],
+    ["/sign-out", {}],
+    ["/security/verify", {}],
+  ] as const) {
+    const response = await form(path, fields);
+    expect(response.status, path).toBe(200);
+    expect(response.headers.get("location"), path).toBeNull();
+  }
+  // Nothing was consumed: the same flow and session continue from this origin.
+  const continued = await page(selection.pathname + selection.search, session, {
+    member,
+  });
+  expect(continued.status).toBe(302);
+  expect(new URL(continued.headers.get("location")!).pathname).toBe("/consent");
 });
 
 type Reply = {

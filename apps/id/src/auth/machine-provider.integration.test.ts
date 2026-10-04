@@ -8,7 +8,10 @@ import { APIError } from "better-auth/api";
 import { jwt } from "better-auth/plugins/jwt";
 import { eq, sql } from "drizzle-orm";
 import { decodeJwt, exportJWK, generateKeyPair, SignJWT } from "jose";
-import type { OAuthProviderExtension } from "@better-auth/oauth-provider";
+import {
+  oauthProvider,
+  type OAuthProviderExtension,
+} from "@better-auth/oauth-provider";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import * as schema from "../db/schema/index.ts";
@@ -64,6 +67,12 @@ function testAuth(
   accessToken?: NonNullable<OAuthProviderExtension["claims"]>["accessToken"],
   failSigning = false,
 ) {
+  const options = {
+    loginPage: "https://pages.example/login",
+    consentPage: "https://pages.example/consent",
+    storeClientSecret: "hashed" as const,
+    extensions: [machineIdentity(), { claims: { accessToken } }],
+  };
   return betterAuth({
     baseURL: environment.betterAuthUrl,
     basePath: "/auth",
@@ -93,12 +102,7 @@ function testAuth(
         },
         schema: { jwks: { modelName: "jwk" } },
       }),
-      machineOAuthProvider(connection.db, {
-        loginPage: "https://pages.example/login",
-        consentPage: "https://pages.example/consent",
-        storeClientSecret: "hashed",
-        extensions: [machineIdentity(), { claims: { accessToken } }],
-      }),
+      machineOAuthProvider(connection.db, options, oauthProvider(options)),
     ],
   });
 }

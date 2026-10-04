@@ -144,11 +144,7 @@ export async function enableUser(
       "User email has been retired",
     );
   if (existing.status === "inert")
-    throw new ProblemError(
-      409,
-      "user_inert",
-      "Inert users activate at first login",
-    );
+    throw new ProblemError(409, "user_inert", "Inert users cannot be enabled");
   const changed = existing.status !== "active";
   const row = changed
     ? (await queries.setUserStatus(context, userId, "active"))!

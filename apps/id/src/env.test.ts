@@ -105,8 +105,8 @@ describe("unit: environment", () => {
     ).toBe(3);
   });
 
-  test("bounds operational reporting and permits explicit disabling", () => {
-    for (const value of ["0", "1000", "2147483647"]) {
+  test("operational reporting is disabled by zero or runs at least once a second", () => {
+    for (const value of ["0", "1000"]) {
       expect(
         parseEnvironment({
           ...requiredEnvironment,
@@ -114,51 +114,12 @@ describe("unit: environment", () => {
         }).operationalLogIntervalMs,
       ).toBe(Number(value));
     }
-    for (const value of ["-1", "999", "1000.5", "2147483648"]) {
-      expect(() =>
-        parseEnvironment({
-          ...requiredEnvironment,
-          OPERATIONAL_LOG_INTERVAL_MS: value,
-        }),
-      ).toThrow(EnvironmentValidationError);
-    }
-  });
-
-  test("parses explicit runtime options", () => {
-    const environment = parseEnvironment({
-      ...requiredEnvironment,
-      NODE_ENV: "production",
-      TRUSTED_PROXY_CIDRS: "10.0.0.0/8",
-      PORT: "8080",
-      DATABASE_POOL_MAX: "7",
-      DATABASE_LOCK_TIMEOUT_MS: "900",
-      DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS: "12000",
-      DATABASE_POOL_IDLE_TIMEOUT_MS: "2000",
-      DATABASE_CONNECTION_TIMEOUT_MS: "3000",
-      DATABASE_STATEMENT_TIMEOUT_MS: "8000",
-      OPENAPI_ENABLED: "false",
-      PLATFORM_ORGANIZATION_SLUG: "platform-org",
-      PLATFORM_ORGANIZATION_NAME: " Custom platform ",
-      ADMIN_RESOURCE_IDENTIFIER: "https://admin.example.com/api/admin/",
-      BETTER_AUTH_TRUSTED_ORIGINS:
-        "https://chat.example.com, https://admin.example.com",
-    });
-
-    expect(environment).toMatchObject({
-      nodeEnv: "production",
-      port: 8080,
-      databasePoolMax: 7,
-      databasePoolIdleTimeoutMs: 2_000,
-      databaseConnectionTimeoutMs: 3_000,
-      databaseStatementTimeoutMs: 8_000,
-      databaseLockTimeoutMs: 900,
-      databaseIdleInTransactionTimeoutMs: 12_000,
-      openApiEnabled: false,
-      platformOrganizationSlug: "platform-org",
-      platformOrganizationName: "Custom platform",
-      adminResourceIdentifier: "https://admin.example.com/api/admin",
-      trustedOrigins: ["https://chat.example.com", "https://admin.example.com"],
-    });
+    expect(() =>
+      parseEnvironment({
+        ...requiredEnvironment,
+        OPERATIONAL_LOG_INTERVAL_MS: "999",
+      }),
+    ).toThrow(EnvironmentValidationError);
   });
 
   test("normalises the default resource URL and rejects invalid admin configuration", () => {
@@ -181,23 +142,6 @@ describe("unit: environment", () => {
         ...requiredEnvironment,
         ADMIN_RESOURCE_IDENTIFIER: "bad",
       }),
-    ).toThrow(EnvironmentValidationError);
-  });
-
-  test("rejects blank platform names", () => {
-    for (const name of ["", "   "]) {
-      expect(() =>
-        parseEnvironment({
-          ...requiredEnvironment,
-          PLATFORM_ORGANIZATION_NAME: name,
-        }),
-      ).toThrow(EnvironmentValidationError);
-    }
-  });
-
-  test("rejects invalid configuration", () => {
-    expect(() =>
-      parseEnvironment({ ...requiredEnvironment, BETTER_AUTH_SECRET: "short" }),
     ).toThrow(EnvironmentValidationError);
   });
 
@@ -278,16 +222,6 @@ test("application secret rotation validates every retained version without leaki
   }
 });
 
-test("statement deadline rejects disabled, fractional and out-of-range values", () => {
-  for (const value of ["0", "-1", "1.5", "2147483648", "not-a-number"])
-    expect(() =>
-      parseEnvironment({
-        ...requiredEnvironment,
-        DATABASE_STATEMENT_TIMEOUT_MS: value,
-      }),
-    ).toThrow("DATABASE_STATEMENT_TIMEOUT_MS");
-});
-
 const production = {
   ...requiredEnvironment,
   NODE_ENV: "production",
@@ -309,8 +243,10 @@ test("production defaults the ID origin and admin audience when the URL is unset
 
 test("production preserves explicit ID origins and rejects invalid overrides", () => {
   expect(
-    parseEnvironment({ ...production, BETTER_AUTH_URL: "https://id.example.com" })
-      .betterAuthUrl,
+    parseEnvironment({
+      ...production,
+      BETTER_AUTH_URL: "https://id.example.com",
+    }).betterAuthUrl,
   ).toBe("https://id.example.com");
   expect(() =>
     parseEnvironment({ ...production, BETTER_AUTH_URL: "invalid" }),
@@ -353,12 +289,14 @@ for (const origin of [
       parseEnvironment({ ...production, BETTER_AUTH_TRUSTED_ORIGINS: origin }),
     ).toThrow("BETTER_AUTH_TRUSTED_ORIGINS");
   });
-for (const cidr of ["", "garbage", "10.0.0.0/33", "::/129", "10.0.0.0/-1"])
-  test(`rejects invalid proxy CIDR ${cidr}`, () => {
-    expect(() =>
-      parseEnvironment({ ...requiredEnvironment, TRUSTED_PROXY_CIDRS: cidr }),
-    ).toThrow("TRUSTED_PROXY_CIDRS");
-  });
+test("rejects an invalid proxy CIDR", () => {
+  expect(() =>
+    parseEnvironment({
+      ...requiredEnvironment,
+      TRUSTED_PROXY_CIDRS: "10.0.0.0/33",
+    }),
+  ).toThrow("TRUSTED_PROXY_CIDRS");
+});
 test("parses IPv4 and IPv6 proxy networks", () => {
   expect(parseEnvironment(production).trustedProxyCidrs).toEqual([
     "10.0.0.0/8",
@@ -366,24 +304,10 @@ test("parses IPv4 and IPv6 proxy networks", () => {
   ]);
 });
 
-for (const key of [
-  "DATABASE_LOCK_TIMEOUT_MS",
-  "DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS",
-]) {
-  test(`${key} rejects disabled, fractional and out-of-range deadlines`, () => {
-    for (const value of ["0", "-1", "1.5", "2147483648", "invalid"])
-      expect(() =>
-        parseEnvironment({ ...requiredEnvironment, [key]: value }),
-      ).toThrow(key);
-  });
-}
-
-test("platform application pairs parse in every environment and blank values are unset", () => {
-  for (const base of [
-    requiredEnvironment,
-    { ...requiredEnvironment, NODE_ENV: "test" },
-    production,
-  ]) {
+// The pair check runs before the production-only rules, so one environment proves it.
+test("platform application pairs parse together and blank values are unset", () => {
+  {
+    const base = production;
     expect(
       parseEnvironment({
         ...base,

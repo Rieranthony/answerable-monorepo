@@ -8,7 +8,7 @@ const FALLBACK: ErrorDescription = {
   body: "Something interrupted sign-in. Try again with your work email. If it keeps happening, ask your IT team for help.",
 };
 
-const ERRORS: Record<string, ErrorDescription> = {
+export const ERRORS: Record<string, ErrorDescription> = {
   reauthentication_required: {
     title: "Verify your sign-in",
     body: "Verify your current company sign-in, then try your action again. Your provider must confirm when you authenticated; if verification keeps failing, ask your IT team for help.",

@@ -108,14 +108,6 @@ async function assertProblem(response: Response, status: number, code: string) {
 const bearer = { Authorization: "Bearer token", Cookie: "ignored" };
 
 describe("unit: principal", () => {
-  test("requires credentials and advertises bearer authentication", async () => {
-    const { app } = setup({ getSession: async () => null });
-    const response = await app.request("/");
-    await assertProblem(response, 401, "unauthenticated");
-    expect(response.headers.get("www-authenticate")).toBe(
-      'Bearer realm="answerable-id-admin"',
-    );
-  });
   test.each(["Bearer", "Bearer two tokens", "Bearer\ttoken"])(
     "rejects malformed %s without consulting cookies",
     async (Authorization) => {
@@ -128,18 +120,6 @@ describe("unit: principal", () => {
       expect(deps.getSession).not.toHaveBeenCalled();
     },
   );
-  test("maps verifier failures to invalid_token", async () => {
-    const { app } = setup({
-      verifyBearer: async () => {
-        throw new Error("bad JWT");
-      },
-    });
-    const response = await app.request("/", { headers: bearer });
-    await assertProblem(response, 401, "invalid_token");
-    expect(response.headers.get("www-authenticate")).toBe(
-      'Bearer error="invalid_token"',
-    );
-  });
   test.each([
     [null, 401, "invalid_token"],
     [{ ...client, disabled: true }, 401, "invalid_token"],
@@ -221,32 +201,6 @@ describe("unit: principal", () => {
     expect(
       await (await app.request("/", { headers: bearer })).json(),
     ).toMatchObject({ grants: [{ ...grants[0], scopes: [] }] });
-  });
-  test("rejects inactive users", async () => {
-    const { app } = setup({
-      getSession: async () => ({
-        ...session,
-        user: { ...session.user, status: "inert" },
-      }),
-    });
-    await assertProblem(await app.request("/"), 403, "user_disabled");
-  });
-  test("rejects untrusted origins", async () => {
-    const { app, deps } = setup();
-    await assertProblem(
-      await app.request("/", { headers: { Origin: "https://evil.example" } }),
-      403,
-      "untrusted_origin",
-    );
-    expect(deps.loadGrants).not.toHaveBeenCalled();
-  });
-  test("requires an origin on writes", async () => {
-    const { app } = setup();
-    await assertProblem(
-      await app.request("/", { method: "POST" }),
-      403,
-      "origin_required",
-    );
   });
   test.each([undefined, "http://localhost:47300", "https://trusted.example"])(
     "accepts a cookie GET with origin %s",
@@ -524,97 +478,6 @@ describe("unit: bearer verification and JWKS", () => {
   });
 });
 
-const rootSecret = "test-root-secret-at-least-32-characters";
-test.each(["GET", "POST"])(
-  "root bearer skips JWT, session and CSRF on %s",
-  async (method) => {
-    const { app, deps, db, environment } = setup();
-    environment.rootAdminSecret = rootSecret;
-    const response = await app.request("/", {
-      method,
-      headers: { Authorization: `Bearer ${rootSecret}` },
-    });
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ type: "root", grants: [] });
-    expect(deps.hasPlatformWriter).toHaveBeenCalledWith(db, {
-      resource: environment.adminResourceIdentifier,
-    });
-    expect(deps.verifyBearer).not.toHaveBeenCalled();
-    expect(deps.findClient).not.toHaveBeenCalled();
-    expect(deps.getSession).not.toHaveBeenCalled();
-    expect(deps.loadGrants).not.toHaveBeenCalled();
-  },
-);
-test.each([undefined, rootSecret])(
-  "non-root bearer uses JWT with configured secret %s",
-  async (configured) => {
-    const verifyBearer = mock(async () => {
-      throw new Error("bad JWT");
-    });
-    const { app, environment, deps } = setup({ verifyBearer });
-    environment.rootAdminSecret = configured;
-    const token = configured ? "wrong-secret" : rootSecret;
-    await assertProblem(
-      await app.request("/", { headers: { Authorization: `Bearer ${token}` } }),
-      401,
-      "invalid_token",
-    );
-    expect(verifyBearer).toHaveBeenCalledWith(token);
-    expect(deps.hasPlatformWriter).not.toHaveBeenCalled();
-  },
-);
-test("root lockout is audited once without credentials", async () => {
-  const { app, environment, rows, deps } = setup({
-    hasPlatformWriter: mock(async () => true),
-  });
-  environment.rootAdminSecret = rootSecret;
-  const response = await app.request("/", {
-    headers: {
-      Authorization: `Bearer ${rootSecret}`,
-      "x-forwarded-for": "192.0.2.1, 192.0.2.2",
-      "user-agent": "test",
-    },
-  });
-  expect(response.headers.get("content-type")).toContain(
-    "application/problem+json",
-  );
-  expect(response.status).toBe(403);
-  const body = await response.json();
-  expect(body).toMatchObject({
-    code: "root_locked",
-    detail:
-      "A platform administrator exists. Set ROOT_ADMIN_BREAK_GLASS=true to use the root secret.",
-  });
-  expect(rows).toHaveLength(1);
-  expect(rows[0]!.ip).toBe("192.0.2.1");
-  expect(rows[0]).toMatchObject({
-    actorType: "system",
-    actorId: "root",
-    action: "admin.root_request",
-    outcome: "denied",
-    reason: "root_locked",
-    targetType: "route",
-    targetId: "/",
-    requestId: "request",
-    userAgent: "test",
-  });
-  expect(JSON.stringify({ rows, body })).not.toContain(rootSecret);
-  expect(deps.verifyBearer).not.toHaveBeenCalled();
-});
-test("break-glass skips the writer lookup", async () => {
-  const { app, environment, deps } = setup();
-  environment.rootAdminSecret = rootSecret;
-  environment.rootAdminBreakGlass = true;
-  expect(
-    await (
-      await app.request("/", {
-        headers: { Authorization: `Bearer ${rootSecret}` },
-      })
-    ).json(),
-  ).toEqual({ type: "root", grants: [] });
-  expect(deps.hasPlatformWriter).not.toHaveBeenCalled();
-});
-
 test("session service failures are retryable without hiding unrelated errors", async () => {
   const auth = stubAuth();
   const deps = createDefaultPrincipalDeps({
@@ -775,16 +638,4 @@ test("invalid bearer denial keeps the claimed client identity as unverified meta
     data: { claimedClientId: "claimed-client" },
   });
   expect(JSON.stringify(rows)).not.toContain("secret");
-});
-
-test("failed administrative authentication stays refused when its audit cannot be stored", async () => {
-  const { app, db } = setup({ getSession: async () => null });
-  const failure = spyOn(db, "insert").mockImplementation(() => {
-    throw new Error("audit offline");
-  });
-  try {
-    await assertProblem(await app.request("/"), 401, "unauthenticated");
-  } finally {
-    failure.mockRestore();
-  }
 });

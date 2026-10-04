@@ -1,8 +1,10 @@
 [test]
 root = "src"
+preload = ["./src/__tests__/preload.ts"]
 coverage = true
 coverageSkipTestFiles = true
 coverageThreshold = { lines = 1, functions = 1 }
 coverageReporter = ["text", "lcov"]
 coverageDir = "coverage"
-coveragePathIgnorePatterns = ["src/**/*.test.ts", "src/__tests__/**", "src/server.ts"]
+# @answerable/auth is measured by its own suite; ID only imports its verifier.
+coveragePathIgnorePatterns = ["src/**/*.test.ts", "src/__tests__/**", "src/server.ts", "../../packages/auth/**"]

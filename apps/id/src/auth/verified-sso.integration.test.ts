@@ -359,48 +359,6 @@ async function independentTargetIssuer(
   return extraIssuer;
 }
 
-for (const invalid of [
-  "missing-time",
-  "old-time",
-  "different-identity",
-] as const) {
-  test(`reauthentication rejects ${invalid} without changing the binding or issuing a session`, async () => {
-    const started = await begin(
-      "reauthenticate",
-      fixture.principals.tenantAdmin.cookie,
-    );
-    const before = await fixture.db.select().from(sessions);
-    const completed = await complete(started, {
-      sub:
-        invalid === "different-identity"
-          ? "tenantReader-subject"
-          : "tenantAdmin-subject",
-      email: "tenantadmin@tenant.example.com",
-      ...(invalid === "missing-time"
-        ? {}
-        : {
-            auth_time:
-              Math.floor(Date.now() / 1000) - (invalid === "old-time" ? 10 : 0),
-          }),
-    });
-    const location = new URL(completed.response.headers.get("location")!);
-    expect(location.searchParams.get("error")).toBe(
-      invalid === "different-identity"
-        ? "authentication_identity_mismatch"
-        : "reauthentication_required",
-    );
-    expect(await fixture.db.select().from(sessions)).toHaveLength(
-      before.length,
-    );
-    expect(
-      await fixture.db
-        .select()
-        .from(auditEvents)
-        .where(eq(auditEvents.action, "identity.linked")),
-    ).toHaveLength(0);
-  });
-}
-
 test("linking requires fresh initiating evidence and preserves normal login semantics", async () => {
   const cookie = await login();
   const denied = await app.request("/auth/sso/link", {
@@ -459,30 +417,84 @@ test("linking requires fresh initiating evidence and preserves normal login sema
   ).toHaveLength(0);
 });
 
-for (const conflict of [
-  "owned",
-  "imported",
-  "deleted-binding",
-  "revoked-member",
-  "deleted-member",
-  "future-member",
-] as const) {
-  test(`verified linking rejects ${conflict} without transfer or reinstatement`, async () => {
-    const userId = fixture.principals.tenantAdmin.userId;
-    let subject = "unowned-target";
-    if (conflict === "owned" || conflict === "deleted-binding") {
-      subject = "outsider-subject";
-      if (conflict === "deleted-binding")
-        await fixture.db
-          .update(accounts)
-          .set({
-            deletedAt: new Date(),
-            accessToken: null,
-            refreshToken: null,
-            idToken: null,
-          })
-          .where(eq(accounts.accountId, subject));
-    } else if (conflict === "imported") {
+type Started = Awaited<ReturnType<typeof begin>>;
+let agedTime = 0;
+const swapSession = (started: Started, cookie: string) => {
+  const token = cookie
+    .split("; ")
+    .find((value) => value.startsWith("better-auth.session_token="));
+  started.cookie = started.cookie
+    .split("; ")
+    .flatMap((value) =>
+      value.startsWith("better-auth.session_token=")
+        ? token
+          ? [token]
+          : []
+        : [value],
+    )
+    .join("; ");
+};
+const deleteAccount = (accountId: string) =>
+  fixture.db
+    .update(accounts)
+    .set({
+      deletedAt: new Date(),
+      accessToken: null,
+      refreshToken: null,
+      idToken: null,
+    })
+    .where(eq(accounts.accountId, accountId));
+const outsiderMember = (values: Partial<typeof members.$inferInsert>) =>
+  fixture.db.insert(members).values({
+    id: createId(),
+    userId: fixture.principals.tenantAdmin.userId,
+    organizationId: fixture.outsider.organizationId,
+    ...values,
+  });
+const changeProvider = (organizationId: string) =>
+  fixture.db
+    .update(ssoProviders)
+    .set({ domain: "changed.example.com" })
+    .where(eq(ssoProviders.organizationId, organizationId));
+const tenantAdmin = () => eq(users.id, fixture.principals.tenantAdmin.userId);
+
+const refusals: {
+  name: string;
+  purpose?: "link" | "reauthenticate";
+  before?: () => Promise<unknown>;
+  after?: (started: Started) => Promise<unknown>;
+  subject?: string;
+  authTime?: "now" | "before-start" | "missing";
+  refused: string | { status: number; code: string } | "redirect";
+}[] = [
+  {
+    name: "a reauthentication without upstream time",
+    purpose: "reauthenticate",
+    subject: "tenantAdmin-subject",
+    authTime: "missing",
+    refused: "reauthentication_required",
+  },
+  {
+    name: "a reauthentication proven before the flow began",
+    purpose: "reauthenticate",
+    subject: "tenantAdmin-subject",
+    authTime: "before-start",
+    refused: "reauthentication_required",
+  },
+  {
+    name: "a reauthentication by a different identity",
+    purpose: "reauthenticate",
+    subject: "tenantReader-subject",
+    refused: "authentication_identity_mismatch",
+  },
+  {
+    name: "linking an identity another user owns",
+    subject: "outsider-subject",
+    refused: "identity_conflict",
+  },
+  {
+    name: "linking an identity reserved by an import",
+    before: async () => {
       const imported = createId();
       await fixture.db.insert(users).values({
         id: imported,
@@ -496,26 +508,146 @@ for (const conflict of [
         providerId: "outsider",
         issuer: fixture.issuer.origin,
         accountId: "placeholder",
-        directoryUserId: subject,
+        directoryUserId: "refused-target",
       });
-    } else {
-      await fixture.db.insert(members).values({
-        id: createId(),
-        userId,
-        organizationId: fixture.outsider.organizationId,
-        ...(conflict === "future-member"
-          ? { validFrom: new Date(Date.now() + 60_000) }
-          : { status: "revoked", revokedAt: new Date() }),
-        ...(conflict === "deleted-member" ? { deletedAt: new Date() } : {}),
-      });
-    }
-    const beforeAccounts = await fixture.db.select().from(accounts);
-    const beforeSessions = await fixture.db.select().from(sessions);
-    if (conflict.endsWith("member")) {
+    },
+    refused: "identity_conflict",
+  },
+  {
+    name: "linking a deleted binding",
+    before: () => deleteAccount("outsider-subject"),
+    subject: "outsider-subject",
+    refused: "identity_conflict",
+  },
+  ...(
+    [
+      ["a revoked", { status: "revoked", revokedAt: new Date() }],
+      [
+        "a deleted",
+        { status: "revoked", revokedAt: new Date(), deletedAt: new Date() },
+      ],
+      ["a future", { validFrom: new Date(Date.now() + 60_000) }],
+    ] as const
+  ).map(([kind, values]) => ({
+    name: `linking into ${kind} target membership`,
+    before: () => outsiderMember(values),
+    refused: { status: 403, code: "membership_revoked" },
+  })),
+  ...(
+    [
+      [
+        "a changed source provider",
+        () => changeProvider(fixture.tenant.organizationId),
+      ],
+      [
+        "a changed target provider",
+        () => changeProvider(fixture.outsider.organizationId),
+      ],
+      [
+        "a revoked target membership",
+        () => outsiderMember({ status: "revoked", revokedAt: new Date() }),
+      ],
+      [
+        "a disabled source user",
+        () =>
+          fixture.db
+            .update(users)
+            .set({ status: "disabled", disabledAt: new Date() })
+            .where(tenantAdmin()),
+      ],
+      [
+        "a deleted source user",
+        () =>
+          fixture.db
+            .update(users)
+            .set({
+              status: "disabled",
+              disabledAt: new Date(),
+              deletedAt: new Date(),
+            })
+            .where(tenantAdmin()),
+      ],
+      [
+        "a revoked source membership",
+        () =>
+          fixture.db
+            .update(members)
+            .set({ status: "revoked", revokedAt: new Date() })
+            .where(eq(members.id, fixture.principals.tenantAdmin.memberId)),
+      ],
+      ["a deleted source account", () => deleteAccount("tenantAdmin-subject")],
+      [
+        "a deleted source session",
+        () =>
+          fixture.db
+            .delete(sessions)
+            .where(eq(sessions.userId, fixture.principals.tenantAdmin.userId)),
+      ],
+      [
+        "an expired flow",
+        () =>
+          fixture.db
+            .update(verifications)
+            .set({ expiresAt: new Date(0) })
+            .where(
+              sql`${verifications.identifier} like 'answerable-identity-flow:%'`,
+            ),
+      ],
+    ] as const
+  ).map(([change, after]) => ({
+    name: `${change} after the link began`,
+    after,
+    refused: "redirect" as const,
+  })),
+  {
+    name: "a callback without the initiating browser session",
+    after: async (started) => swapSession(started, ""),
+    refused: { status: 403, code: "identity_flow_invalid" },
+  },
+  {
+    name: "a callback carrying another user's session",
+    after: async (started) =>
+      swapSession(started, fixture.principals.tenantReader.cookie),
+    refused: { status: 403, code: "identity_flow_invalid" },
+  },
+  {
+    name: "a callback carrying another session of the same user",
+    after: async (started) => swapSession(started, await login()),
+    refused: { status: 403, code: "identity_flow_invalid" },
+  },
+  {
+    name: "an initiating proof that ages past five minutes upstream",
+    before: async () => {
+      setClock(new Date());
+      agedTime = Math.floor(Date.now() / 1000) - 240;
+      return login(agedTime);
+    },
+    after: async () => setClock(new Date((agedTime + 301) * 1000)),
+    refused: "redirect",
+  },
+];
+
+test.each(refusals)(
+  "verified flow refuses $name without binding or a session",
+  async ({
+    purpose = "link",
+    before,
+    after,
+    subject = "refused-target",
+    authTime = "now",
+    refused,
+  }) => {
+    const prepared = await before?.();
+    const cookie =
+      typeof prepared === "string"
+        ? prepared
+        : fixture.principals.tenantAdmin.cookie;
+    const accountsBefore = await fixture.db.select().from(accounts);
+    if (typeof refused === "object" && refused.code === "membership_revoked") {
       const response = await app.request("/auth/sso/link", {
         method: "POST",
         headers: {
-          Cookie: fixture.principals.tenantAdmin.cookie,
+          Cookie: cookie,
           Origin: fixture.trustedOrigin,
           "Content-Type": "application/json",
         },
@@ -524,31 +656,40 @@ for (const conflict of [
           callbackURL: `${fixture.trustedOrigin}/callback`,
         }),
       });
-      expect(response.status).toBe(403);
-      expect(await response.json()).toMatchObject({
-        code: "membership_revoked",
-      });
+      expect(response.status).toBe(refused.status);
+      expect(await response.json()).toMatchObject({ code: refused.code });
     } else {
-      const started = await begin(
-        "link",
-        fixture.principals.tenantAdmin.cookie,
-      );
+      const started = await begin(purpose, cookie);
+      await after?.(started);
+      const sessionsBefore = await fixture.db.select().from(sessions);
+      const now = Math.floor(Date.now() / 1000);
       const completed = await complete(started, {
         sub: subject,
-        email: "proof@outsider.example.com",
-        auth_time: Math.floor(Date.now() / 1000),
+        email:
+          purpose === "reauthenticate"
+            ? "tenantadmin@tenant.example.com"
+            : "proof@outsider.example.com",
+        ...(authTime === "missing"
+          ? {}
+          : { auth_time: authTime === "before-start" ? now - 10 : now }),
       });
-      expect(
-        new URL(completed.response.headers.get("location")!).searchParams.get(
-          "error",
-        ),
-      ).toBe("identity_conflict");
+      const location = completed.response.headers.get("location");
+      if (refused === "redirect")
+        expect(location).not.toBe(`${fixture.trustedOrigin}/callback`);
+      else if (typeof refused === "string")
+        expect(new URL(location!).searchParams.get("error")).toBe(refused);
+      else {
+        expect(completed.response.status).toBe(refused.status);
+        expect(await completed.response.json()).toMatchObject({
+          code: refused.code,
+        });
+      }
+      expect(await fixture.db.select().from(sessions)).toHaveLength(
+        sessionsBefore.length,
+      );
     }
     expect(await fixture.db.select().from(accounts)).toHaveLength(
-      beforeAccounts.length,
-    );
-    expect(await fixture.db.select().from(sessions)).toHaveLength(
-      beforeSessions.length,
+      accountsBefore.length,
     );
     expect(
       await fixture.db
@@ -556,183 +697,8 @@ for (const conflict of [
         .from(auditEvents)
         .where(eq(auditEvents.action, "identity.linked")),
     ).toHaveLength(0);
-  });
-}
-
-for (const change of [
-  "source-provider",
-  "target-provider",
-  "target-membership",
-  "source-user",
-  "source-deleted-user",
-  "source-member",
-  "source-account",
-  "session",
-  "expiry",
-] as const) {
-  test(`link callback rejects ${change} changes after initiation`, async () => {
-    const started = await begin("link", fixture.principals.tenantAdmin.cookie);
-    if (change.endsWith("provider"))
-      await fixture.db
-        .update(ssoProviders)
-        .set({ domain: "changed.example.com" })
-        .where(
-          eq(
-            ssoProviders.organizationId,
-            change === "source-provider"
-              ? fixture.tenant.organizationId
-              : fixture.outsider.organizationId,
-          ),
-        );
-    else if (change === "target-membership")
-      await fixture.db.insert(members).values({
-        id: createId(),
-        userId: fixture.principals.tenantAdmin.userId,
-        organizationId: fixture.outsider.organizationId,
-        status: "revoked",
-        revokedAt: new Date(),
-      });
-    else if (change === "source-deleted-user")
-      await fixture.db
-        .update(users)
-        .set({
-          status: "disabled",
-          disabledAt: new Date(),
-          deletedAt: new Date(),
-        })
-        .where(eq(users.id, fixture.principals.tenantAdmin.userId));
-    else if (change === "source-member")
-      await fixture.db
-        .update(members)
-        .set({ status: "revoked", revokedAt: new Date() })
-        .where(eq(members.id, fixture.principals.tenantAdmin.memberId));
-    else if (change === "source-account")
-      await fixture.db
-        .update(accounts)
-        .set({
-          deletedAt: new Date(),
-          accessToken: null,
-          refreshToken: null,
-          idToken: null,
-        })
-        .where(eq(accounts.accountId, "tenantAdmin-subject"));
-    else if (change === "source-user")
-      await fixture.db
-        .update(users)
-        .set({ status: "disabled", disabledAt: new Date() })
-        .where(eq(users.id, fixture.principals.tenantAdmin.userId));
-    else if (change === "session")
-      await fixture.db
-        .delete(sessions)
-        .where(eq(sessions.userId, fixture.principals.tenantAdmin.userId));
-    else
-      await fixture.db
-        .update(verifications)
-        .set({ expiresAt: new Date(0) })
-        .where(
-          sql`${verifications.identifier} like 'answerable-identity-flow:%'`,
-        );
-    const beforeSessions = await fixture.db.select().from(sessions);
-    const completed = await complete(started, {
-      sub: "changed-target",
-      email: "proof@outsider.example.com",
-      auth_time: Math.floor(Date.now() / 1000),
-    });
-    expect(completed.response.headers.get("location")).not.toBe(
-      `${fixture.trustedOrigin}/callback`,
-    );
-    expect(
-      await fixture.db
-        .select()
-        .from(accounts)
-        .where(eq(accounts.accountId, "changed-target")),
-    ).toHaveLength(0);
-    expect(await fixture.db.select().from(sessions)).toHaveLength(
-      beforeSessions.length,
-    );
-  });
-}
-
-test("link callback requires the initiating browser session", async () => {
-  const started = await begin("link", fixture.principals.tenantAdmin.cookie);
-  started.cookie = started.cookie
-    .split("; ")
-    .filter((value) => !value.startsWith("better-auth.session_token="))
-    .join("; ");
-  const completed = await complete(started, {
-    sub: "substituted",
-    email: "proof@outsider.example.com",
-    auth_time: Math.floor(Date.now() / 1000),
-  });
-  expect(completed.response.status).toBe(403);
-  expect(await completed.response.json()).toMatchObject({
-    code: "identity_flow_invalid",
-  });
-  expect(
-    await fixture.db
-      .select()
-      .from(accounts)
-      .where(eq(accounts.accountId, "substituted")),
-  ).toHaveLength(0);
-});
-
-for (const replacement of ["another-user", "another-session"] as const) {
-  test(`purpose state rejects ${replacement} even with the original native state cookie`, async () => {
-    const alternate =
-      replacement === "another-user"
-        ? fixture.principals.tenantReader.cookie
-        : await login();
-    const started = await begin("link", fixture.principals.tenantAdmin.cookie);
-    const token = alternate
-      .split("; ")
-      .find((value) => value.startsWith("better-auth.session_token="))!;
-    started.cookie = started.cookie
-      .split("; ")
-      .map((value) =>
-        value.startsWith("better-auth.session_token=") ? token : value,
-      )
-      .join("; ");
-    const completed = await complete(started, {
-      sub: "substituted-purpose",
-      email: "proof@outsider.example.com",
-      auth_time: Math.floor(Date.now() / 1000),
-    });
-    expect(completed.response.status).toBe(403);
-    expect(await completed.response.json()).toMatchObject({
-      code: "identity_flow_invalid",
-    });
-    expect(
-      await fixture.db
-        .select()
-        .from(accounts)
-        .where(eq(accounts.accountId, "substituted-purpose")),
-    ).toHaveLength(0);
-  });
-}
-
-test("initiating proof expiring upstream prevents the subsequent binding", async () => {
-  setClock(new Date());
-  const time = Math.floor(Date.now() / 1000) - 240;
-  const cookie = await login(time);
-  const started = await begin("link", cookie);
-  setClock(new Date((time + 301) * 1000));
-  const before = await fixture.db.select().from(sessions);
-  const completed = await complete(started, {
-    sub: "aged-source",
-    email: "proof@outsider.example.com",
-    auth_time: Math.floor(Date.now() / 1000),
-  });
-  expect(completed.response.headers.get("location")).not.toBe(
-    `${fixture.trustedOrigin}/callback`,
-  );
-  expect(
-    await fixture.db
-      .select()
-      .from(accounts)
-      .where(eq(accounts.accountId, "aged-source")),
-  ).toHaveLength(0);
-  expect(await fixture.db.select().from(sessions)).toHaveLength(before.length);
-});
+  },
+);
 
 for (const failure of ["lost-authority", "database-failure"] as const) {
   test(`native resolution rolls back when callback revalidation reports ${failure}`, async () => {

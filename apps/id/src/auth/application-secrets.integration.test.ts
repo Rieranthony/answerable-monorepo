@@ -51,7 +51,6 @@ test("application secret rotation retains signing custody and requires new brows
       auth: createAuth(db, promoted),
       db,
       environment: promoted,
-      ssoTest: { allowPrivateHosts: true },
     });
     fixture.issuer.enqueue({
       sub: "platformAdmin-subject",

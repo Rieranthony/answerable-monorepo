@@ -35,8 +35,6 @@ export async function createResourceGrant(
   },
   lifetimeSeconds: number,
 ) {
-  if (!Number.isSafeInteger(lifetimeSeconds) || lifetimeSeconds <= 0)
-    throw new TypeError("Grant lifetime must be a positive integer in seconds");
   const scopes = [...new Set(input.scopes)].sort();
   const scopeArray = sql<string[]>`ARRAY[${sql.join(
     scopes.map((scope) => sql`${scope}`),

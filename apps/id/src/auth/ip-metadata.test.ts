@@ -66,7 +66,7 @@ for (const path of [
     import { stubAuth, stubDatabase, testEnvironment } from "./src/__tests__/support.ts";
     let calls = 0;
     const auth = { ...stubAuth(), handler: () => { calls++; return Response.json({ ok: true }); } };
-    const app = createApp({ db: stubDatabase(), auth, environment: testEnvironment({ nodeEnv: "production" }), readinessCheck: async () => {} });
+    const app = createApp({ db: { ...stubDatabase(), execute: async () => ({ rows: [] }) }, auth, environment: testEnvironment({ nodeEnv: "production" }) });
     const response = await app.request(${JSON.stringify(path)}, { headers: { "x-request-id": "ingress-test" } });
     console.log(JSON.stringify({ status: response.status, body: await response.json(), headers: Object.fromEntries(response.headers), calls }));
   `,
@@ -108,4 +108,44 @@ test("unresolved client context refuses authentication before dispatch", async (
     environment: { ...environment, nodeEnv: "production" },
   });
   expect((await app.request("/auth/ok")).status).toBe(403);
+});
+
+test("production rate-limits token requests per client address", async () => {
+  // Better Auth enables its limiter from NODE_ENV at module load, so production needs a fresh process.
+  const child = Bun.spawn(
+    [
+      process.execPath,
+      "-e",
+      `
+    import { createApp } from "./src/app.ts";
+    import { createAuth } from "./src/auth.ts";
+    import { createDatabase } from "./src/db/client.ts";
+    import { testEnvironment } from "./src/__tests__/support.ts";
+    const environment = testEnvironment({ nodeEnv: "production", trustedProxyCidrs: ["10.0.0.0/8"] });
+    const connection = createDatabase(environment);
+    const app = createApp({ auth: createAuth(connection.db, environment), db: connection.db, environment });
+    const token = (client) => app.request("/auth/oauth2/token", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", "x-forwarded-for": client + ", 10.0.0.1" },
+      body: "grant_type=client_credentials",
+    });
+    const statuses = [];
+    for (let attempt = 0; attempt < 21; attempt++) statuses.push((await token("198.51.100.7")).status);
+    const other = (await token("192.0.2.1")).status;
+    await connection.close();
+    console.log(JSON.stringify({ statuses, other }));
+  `,
+    ],
+    {
+      cwd: import.meta.dir + "/../..",
+      env: { ...process.env, NODE_ENV: "production", TEST: "" },
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+  const result = JSON.parse(await new Response(child.stdout).text());
+  expect(await child.exited).toBe(0);
+  // The default burst for the token endpoint is 20 requests a minute.
+  expect(result.statuses).toEqual([...Array(20).fill(400), 429]);
+  expect(result.other).toBe(400);
 });

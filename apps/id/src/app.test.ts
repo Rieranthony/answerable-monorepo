@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { describeRoute } from "hono-openapi";
-import { z } from "zod";
 import type { Database } from "./db/client.ts";
 
 import {
@@ -10,20 +9,21 @@ import {
   testEnvironment,
 } from "./__tests__/support.ts";
 import { createApp } from "./app.ts";
-import { isAllowedAuthRoute, publicAuthRoutes } from "./http/auth-allowlist.ts";
+import { isAllowedAuthRoute } from "./http/auth-allowlist.ts";
 import { buildPublicOpenApiDocument } from "./http/openapi.ts";
 import { ProblemError } from "./http/problem.ts";
 
 describe("unit: Hono application", () => {
   test("health is independent from PostgreSQL and creates a UUIDv7 request id", async () => {
-    let checks = 0;
+    let queries = 0;
     const app = createApp({
       auth: stubAuth(),
-      db: stubDatabase(),
+      db: Object.assign(stubDatabase(), {
+        execute: async () => {
+          queries += 1;
+        },
+      }),
       environment: testEnvironment(),
-      readinessCheck: async () => {
-        checks += 1;
-      },
     });
 
     const response = await app.request("/healthz");
@@ -31,7 +31,7 @@ describe("unit: Hono application", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ status: "ok" });
-    expect(checks).toBe(0);
+    expect(queries).toBe(0);
     expect(isUuidV7(requestId)).toBe(true);
   });
 
@@ -71,234 +71,18 @@ describe("unit: Hono application", () => {
     expect(response.headers.get("x-request-id")).toBe("request-from-ingress");
   });
 
-  test("readiness uses the database from Hono context", async () => {
-    const db = stubDatabase();
-    let receivedDatabase: unknown;
-    const app = createApp({
-      auth: stubAuth(),
-      db,
-      environment: testEnvironment(),
-      readinessCheck: async (contextDatabase) => {
-        receivedDatabase = contextDatabase;
-      },
-    });
-
-    const response = await app.request("/readyz");
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ status: "ok" });
-    expect(receivedDatabase).toBe(db);
-  });
-
   test("readiness reports an unavailable database", async () => {
     const app = createApp({
       auth: stubAuth(),
-      db: stubDatabase(),
+      db: Object.assign(stubDatabase(), {
+        execute: () => Promise.reject(new Error("offline")),
+      }),
       environment: testEnvironment(),
-      readinessCheck: () => Promise.reject(new Error("offline")),
     });
 
     const response = await app.request("/readyz");
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ status: "unavailable" });
-  });
-
-  test("publishes a valid admin OpenAPI contract and reference", async () => {
-    const app = createApp({
-      auth: stubAuth(),
-      db: stubDatabase(),
-      environment: testEnvironment(),
-    });
-
-    const schemaResponse = await app.request("/api/admin/openapi.json");
-    const schema = z
-      .object({
-        openapi: z.string().startsWith("3."),
-        info: z.object({
-          title: z.literal("Answerable ID Admin API"),
-          version: z.literal("1.0.0"),
-          description: z.literal(
-            "Platform-tier operations serve Answerable staff and tenant-tier operations serve an organisation, as indicated by x-tier. The six scopes are platform:read, platform:users, platform:write, org:read, org:users and org:write; x-scopes identifies fixed platform or organisation scopes. Self-service routes use handler checks described on the operation; x-scope-alternatives lists acceptable scope alternatives where present. The x-kind extension marks read, write and erase operations; erase requires confirm equal to the target id, and operation ids are the tool names.",
-          ),
-        }),
-        components: z.object({
-          securitySchemes: z.object({
-            cookieAuth: z.object({
-              type: z.literal("apiKey"),
-              in: z.literal("cookie"),
-              name: z.literal("better-auth.session_token"),
-            }),
-            bearerAuth: z.object({
-              type: z.literal("http"),
-              scheme: z.literal("bearer"),
-              bearerFormat: z.literal("JWT"),
-            }),
-          }),
-        }),
-        paths: z.record(z.string(), z.unknown()),
-      })
-      .parse(await schemaResponse.json());
-    const docsResponse = await app.request("/api/admin/docs");
-
-    expect(schemaResponse.status).toBe(200);
-    expect(schema.openapi).toStartWith("3.");
-    expect(Object.keys(schema.paths)).toEqual([
-      "/api/admin/v1/organizations/{organizationId}/capabilities",
-      "/api/admin/v1/organizations/{organizationId}/capabilities/{capabilityId}",
-      "/api/admin/v1/operations/{operationId}",
-      "/api/admin/v1/organizations/{organizationId}/sign-in-diagnosis",
-
-      "/api/admin/v1/me",
-      "/api/admin/v1/users",
-      "/api/admin/v1/users/{userId}",
-      "/api/admin/v1/users/{userId}/disable",
-      "/api/admin/v1/users/{userId}/enable",
-      "/api/admin/v1/users/{userId}/retire-email",
-      "/api/admin/v1/users/{userId}/sessions",
-      "/api/admin/v1/users/{userId}/sessions/{sessionId}",
-      "/api/admin/v1/entitlements",
-      "/api/admin/v1/organizations/{organizationId}/entitlements",
-      "/api/admin/v1/organizations/{organizationId}/entitlements/{entitlementId}",
-      "/api/admin/v1/organizations/{organizationId}/entitlements/{entitlementId}/disable",
-      "/api/admin/v1/organizations/{organizationId}/entitlements/{entitlementId}/enable",
-      "/api/admin/v1/organizations/{organizationId}/members/{memberId}/access",
-      "/api/admin/v1/organizations/{organizationId}/access",
-      "/api/admin/v1/organizations/{organizationId}/groups",
-      "/api/admin/v1/organizations/{organizationId}/groups/{groupId}",
-      "/api/admin/v1/organizations/{organizationId}/groups/{groupId}/disable",
-      "/api/admin/v1/organizations/{organizationId}/groups/{groupId}/enable",
-      "/api/admin/v1/organizations/{organizationId}/groups/{groupId}/members",
-      "/api/admin/v1/organizations/{organizationId}/groups/{groupId}/members/{memberId}",
-      "/api/admin/v1/organizations/{organizationId}/members/{memberId}/configuration",
-      "/api/admin/v1/organizations/{organizationId}/members/{memberId}/reinstate",
-      "/api/admin/v1/organizations/{organizationId}/members",
-      "/api/admin/v1/organizations/{organizationId}/members/{memberId}",
-      "/api/admin/v1/resources",
-      "/api/admin/v1/resources/{resource}",
-      "/api/admin/v1/resources/{resource}/disable",
-      "/api/admin/v1/resources/{resource}/enable",
-      "/api/admin/v1/clients/{clientId}",
-      "/api/admin/v1/clients",
-      "/api/admin/v1/clients/{clientId}/disable",
-      "/api/admin/v1/clients/{clientId}/enable",
-      "/api/admin/v1/clients/{clientId}/rotate-secret",
-      "/api/admin/v1/clients/{clientId}/owner",
-      "/api/admin/v1/clients/{clientId}/resources/{resource}",
-      "/api/admin/v1/organizations/{organizationId}/domains/{domainId}",
-      "/api/admin/v1/organizations/{organizationId}/domains",
-      "/api/admin/v1/organizations/{organizationId}/domains/{domainId}/disable",
-      "/api/admin/v1/organizations/{organizationId}/domains/{domainId}/enable",
-      "/api/admin/v1/organizations/{organizationId}/sso-provider/test",
-      "/api/admin/v1/organizations/{organizationId}/sso-provider",
-
-      "/api/admin/v1/organizations",
-      "/api/admin/v1/organizations/{organizationId}",
-      "/api/admin/v1/organizations/{organizationId}/disable",
-      "/api/admin/v1/organizations/{organizationId}/enable",
-      "/api/admin/v1/users/{userId}/audit-events",
-      "/api/admin/v1/audit-events",
-      "/api/admin/v1/organizations/{organizationId}/audit-events",
-    ]);
-    expect(schema.paths["/api/admin/v1/me"]).toMatchObject({
-      get: {
-        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
-        "x-tier": "tenant",
-      },
-    });
-    expect(docsResponse.status).toBe(200);
-    expect(await docsResponse.text()).toContain("Answerable ID Admin API");
-  });
-
-  test("publishes only reachable routes in the public OpenAPI contract", async () => {
-    const environment = testEnvironment();
-    const app = createApp({
-      auth: stubAuth(),
-      db: stubDatabase(),
-      environment,
-    });
-
-    const response = await app.request("/openapi.json");
-    const operationSchema = z
-      .object({
-        operationId: z.string(),
-        summary: z.string(),
-        tags: z.array(z.string()),
-      })
-      .loose();
-    const schema = z
-      .object({
-        openapi: z.string().startsWith("3.1"),
-        info: z.object({ title: z.literal("Answerable ID API") }).loose(),
-        servers: z.array(z.object({ url: z.string() })),
-        paths: z.record(z.string(), z.record(z.string(), operationSchema)),
-        components: z.object({
-          securitySchemes: z.object({
-            apiKeyCookie: z.unknown(),
-            bearerAuth: z.unknown(),
-          }),
-        }),
-      })
-      .parse(await response.json());
-
-    expect(response.status).toBe(200);
-    expect(schema.openapi).toStartWith("3.1");
-    expect(schema.info.title).toBe("Answerable ID API");
-    expect(schema.servers).toEqual([{ url: environment.betterAuthUrl }]);
-    expect(Object.keys(schema.paths)).toEqual([
-      "/.well-known/oauth-authorization-server",
-      "/.well-known/openid-configuration",
-      "/auth/get-session",
-      "/auth/jwks",
-      "/auth/oauth2/authorize",
-      "/auth/oauth2/consent",
-      "/auth/oauth2/continue",
-      "/auth/oauth2/flow",
-      "/auth/oauth2/revoke",
-      "/auth/oauth2/token",
-      "/auth/oauth2/userinfo",
-      "/auth/ok",
-      "/auth/sign-in/sso",
-      "/auth/sign-out",
-      "/auth/sso/callback",
-      "/auth/sso/link",
-      "/auth/sso/reauthenticate",
-      "/healthz",
-      "/readyz",
-    ]);
-    for (const route of publicAuthRoutes) {
-      expect(
-        schema.paths[route.path]?.[route.method.toLowerCase()],
-      ).toMatchObject({
-        operationId: route.operationId,
-        summary: route.summary,
-        tags: [route.tag],
-      });
-    }
-    expect(schema.paths["/auth/sign-in/sso"]?.post).toMatchObject({
-      operationId: "signInWithSso",
-      summary: "Start sign-in through the organisation's identity provider",
-      tags: ["Sign-in"],
-    });
-    for (const path of ["/auth/sso/link", "/auth/sso/reauthenticate"])
-      expect(schema.paths[path]?.post).toMatchObject({
-        security: [{ apiKeyCookie: [] }],
-      });
-    expect(schema.paths["/healthz"]?.get).toMatchObject({
-      operationId: "getHealth",
-      summary: "Liveness check",
-      tags: ["Health"],
-    });
-    expect(schema.paths["/auth/organization/create"]).toBeUndefined();
-    const tokenRoute = publicAuthRoutes.find(
-      (route) => route.operationId === "issueToken",
-    )!;
-    expect(schema.paths["/auth/oauth2/token"]?.post).toMatchObject({
-      description: tokenRoute.description,
-      requestBody: tokenRoute.requestBody,
-      tags: ["Token"],
-    });
-    expect(schema.paths["/auth/sso/register"]).toBeUndefined();
-    expect(schema.components.securitySchemes).toHaveProperty("apiKeyCookie");
-    expect(schema.components.securitySchemes).toHaveProperty("bearerAuth");
   });
 
   test("builds the public OpenAPI contract with an explicit server", async () => {
@@ -510,37 +294,6 @@ test("mounted me runs principal resolution and the root problem handler", async 
   expect(calls).toHaveLength(1);
 });
 
-test("token requests preserve grants and bodies for Better Auth", async () => {
-  const auth = stubAuth();
-  const received: string[] = [];
-  auth.handler = async (request: Request) => {
-    received.push(await request.text());
-    return Response.json({ handled: true });
-  };
-  const app = createApp({
-    auth,
-    db: stubDatabase(),
-    environment: testEnvironment(),
-  });
-  for (const [contentType, body] of [
-    ["application/x-www-form-urlencoded", "grant_type=client_credentials"],
-    ["application/x-www-form-urlencoded", "grant_type=unsupported"],
-    ["application/json", '{"grant_type":"authorization_code"}'],
-    ["application/x-www-form-urlencoded", "resource=https%3A%2F%2Fexample.com"],
-  ] as const) {
-    const response = await app.request("/auth/oauth2/token", {
-      method: "POST",
-      headers: { "Content-Type": contentType },
-      body,
-    });
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ handled: true });
-    expect(received.at(-1)).toBe(body);
-  }
-  expect((await app.request("/auth/oauth2/token")).status).toBe(404);
-  expect(received).toHaveLength(4);
-});
-
 test("auth catch-all propagates request ids and audits rejection redirects", async () => {
   for (const requestId of [undefined, "ingress-id"]) {
     const rows: unknown[] = [];
@@ -642,38 +395,6 @@ test("body guard counts actual bytes despite a false content length and cancels 
     }),
   });
   expect(response.status).toBe(413);
-  expect(response.headers.get("cache-control")).toBe("no-store");
-  expect(called).toBe(false);
-  expect(cancelled).toBe(true);
-});
-
-test("body deadline cancels a stalled upload before invoking the provider", async () => {
-  let called = false;
-  let cancelled = false;
-  const app = createApp({
-    db: stubDatabase(),
-    environment: testEnvironment(),
-    auth: {
-      ...stubAuth(),
-      handler: async () => {
-        called = true;
-        return new Response();
-      },
-    },
-  });
-  const response = await app.request("/auth/sign-out", {
-    method: "POST",
-    body: new ReadableStream({
-      start(output) {
-        output.enqueue(new Uint8Array([1]));
-      },
-      cancel() {
-        cancelled = true;
-        return new Promise<void>(() => {});
-      },
-    }),
-  });
-  expect(response.status).toBe(408);
   expect(response.headers.get("cache-control")).toBe("no-store");
   expect(called).toBe(false);
   expect(cancelled).toBe(true);

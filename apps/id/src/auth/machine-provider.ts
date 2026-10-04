@@ -7,7 +7,7 @@ import {
 } from "@better-auth/core/context";
 import {
   getOAuthProviderApi,
-  oauthProvider,
+  type oauthProvider,
   type OAuthOptions,
 } from "@better-auth/oauth-provider";
 import { APIError, createAuthEndpoint } from "better-auth/api";
@@ -23,7 +23,7 @@ import { prepareMachineGrant } from "./machine-identity.ts";
 export function machineOAuthProvider(
   db: Database,
   options: OAuthOptions<string[]>,
-  provider = oauthProvider(options),
+  provider: ReturnType<typeof oauthProvider>,
 ) {
   const token = provider.endpoints.oauth2Token;
   return {

@@ -10,26 +10,27 @@ import { createOperationalMetrics } from "./operations/metrics.ts";
 export async function startRuntime(
   environment: Environment,
   {
+    allowTestEnvironment = false,
     seed = bootstrap,
     databaseFactory = createDatabase,
     authFactory = createAuth,
-    appFactory = createApp,
-    serve = Bun.serve,
-    verifyDatabaseRole = assertRuntimeRole,
   }: {
+    /** Tests only: NODE_ENV=test drops Better Auth's origin checks and the role check. */
+    allowTestEnvironment?: boolean;
     seed?: typeof bootstrap;
     databaseFactory?: typeof createDatabase;
     authFactory?: typeof createAuth;
-    appFactory?: typeof createApp;
-    serve?: typeof Bun.serve;
-    verifyDatabaseRole?: typeof assertRuntimeRole;
   } = {},
 ) {
+  if (environment.nodeEnv === "test" && !allowTestEnvironment)
+    throw new Error(
+      "NODE_ENV=test is for the test suite: it turns off Better Auth's origin checks and the runtime role check",
+    );
   const database = databaseFactory(environment);
   let server: Bun.Server<undefined>;
   const metrics = createOperationalMetrics(database.pool);
   try {
-    if (environment.nodeEnv !== "test") await verifyDatabaseRole(database.db);
+    if (environment.nodeEnv !== "test") await assertRuntimeRole(database.db);
     const seeded = await seed(database.db, systemActor("startup"), {
       platformOrganizationSlug: environment.platformOrganizationSlug,
       platformOrganizationName: environment.platformOrganizationName,
@@ -52,8 +53,8 @@ export async function startRuntime(
       }),
     );
     const auth = authFactory(database.db, environment);
-    const app = appFactory({ auth, db: database.db, environment, metrics });
-    server = serve({
+    const app = createApp({ auth, db: database.db, environment, metrics });
+    server = Bun.serve({
       port: environment.port,
       maxRequestBodySize: maxRequestBodyBytes,
       fetch: app.fetch,

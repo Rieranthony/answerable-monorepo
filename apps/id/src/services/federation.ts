@@ -75,29 +75,6 @@ function stringClaim(
   return typeof value === "string" ? value : undefined;
 }
 
-function userFrom(account: AccountRow): UserRow {
-  if (!account.user) throw new Error("Federated account has no owner");
-  return account.user;
-}
-
-async function fillDirectoryColumns(
-  database: DBTransactionAdapter,
-  account: AccountRow,
-  directoryId: string | undefined,
-  directoryUserId: string,
-) {
-  const update: Record<string, string> = {};
-  if (!account.directoryId && directoryId) update.directoryId = directoryId;
-  if (!account.directoryUserId) update.directoryUserId = directoryUserId;
-  if (Object.keys(update).length > 0) {
-    await database.update({
-      model: "account",
-      where: [{ field: "id", value: account.id }],
-      update,
-    });
-  }
-}
-
 async function membershipRevoked(
   database: DBTransactionAdapter,
   organizationId: string,
@@ -121,9 +98,7 @@ export async function resolveFederatedUser(
   database: DBTransactionAdapter,
   linkUserId?: string,
 ): Promise<SSOUserResolution> {
-  if (input.protocol !== "oidc") {
-    return reject("provider_not_found", "OIDC provider required");
-  }
+  if (input.protocol !== "oidc") throw new Error("OIDC provider required");
   const provider = await database.findOne<ProviderRow>({
     model: "ssoProvider",
     where: [{ field: "providerId", value: input.providerId }],
@@ -203,71 +178,32 @@ export async function resolveFederatedUser(
   if (exactAccount) {
     if (linkUserId)
       return reject("identity_conflict", "Identity is already bound");
-    const owner = userFrom(exactAccount);
+    const owner = exactAccount.user;
+    // Inert (imported) users activate here once import tooling exists: docs/02-plan.md.
     if (
+      !owner ||
       exactAccount.deletedAt ||
       owner.deletedAt ||
-      owner.status === "disabled"
+      owner.status !== "active"
     ) {
       return reject("user_disabled", "User is disabled");
     }
     if (await membershipRevoked(database, provider.organizationId, owner.id))
       return reject("membership_revoked", "Organisation membership is revoked");
-    if (owner.status === "inert") {
-      await database.update({
-        model: "user",
-        where: [{ field: "id", value: owner.id }],
-        update: { status: "active", emailVerified: true },
-      });
-    }
-    await fillDirectoryColumns(
-      database,
-      exactAccount,
-      directoryId,
-      directoryUserId,
-    );
     return { action: "continue" };
   }
 
-  const placeholder = await database.findOne<AccountRow>({
+  // Another account already holds this directory identity, for example an
+  // Entra object whose subject changed with the application. Binding imported
+  // placeholders instead waits for import tooling: docs/02-plan.md.
+  const holder = await database.findOne<AccountRow>({
     model: "account",
     where: [
       { field: "issuer", value: input.accountKey.issuer },
       { field: "directoryUserId", value: directoryUserId },
     ],
-    join: { user: true },
   });
-  if (placeholder) {
-    if (linkUserId)
-      return reject("identity_conflict", "Identity is already reserved");
-    const owner = userFrom(placeholder);
-    if (
-      placeholder.deletedAt ||
-      owner.deletedAt ||
-      owner.status === "disabled"
-    ) {
-      return reject("user_disabled", "User is disabled");
-    }
-    if (await membershipRevoked(database, provider.organizationId, owner.id))
-      return reject("membership_revoked", "Organisation membership is revoked");
-    if (owner.status !== "inert") {
-      return reject("identity_conflict", "Identity is already bound");
-    }
-    await database.update({
-      model: "account",
-      where: [{ field: "id", value: placeholder.id }],
-      update: {
-        accountId: input.accountKey.accountId,
-        ...(directoryId ? { directoryId } : {}),
-      },
-    });
-    await database.update({
-      model: "user",
-      where: [{ field: "id", value: owner.id }],
-      update: { status: "active", emailVerified: true },
-    });
-    return { action: "continue" };
-  }
+  if (holder) return reject("identity_conflict", "Identity is already bound");
 
   if (linkUserId) {
     // Only the verified-purpose boundary can supply this independently proven

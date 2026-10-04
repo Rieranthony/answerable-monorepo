@@ -6,7 +6,7 @@ import { jsxRenderer } from "hono/jsx-renderer";
 import { secureHeaders } from "hono/secure-headers";
 import { tailwind } from "hono-tailwind";
 import type { AppEnvironment } from "../context.ts";
-import fontPath from "./fonts/PublicSans-Variable.woff2";
+import fontPath from "./fonts/PublicSans-Variable.woff2" with { type: "file" };
 import { Document } from "./views/layout.tsx";
 import { registerLogin } from "./routes/login.ts";
 import { registerOAuth } from "./routes/oauth.ts";

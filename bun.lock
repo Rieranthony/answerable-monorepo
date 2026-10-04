@@ -29,6 +29,7 @@
         "zod": "4.5.4",
       },
       "devDependencies": {
+        "@answerable/auth": "workspace:*",
         "@eslint/js": "9.39.5",
         "@types/bun": "1.3.1",
         "@types/pg": "8.15.6",
@@ -87,7 +88,7 @@
     },
     "mcps/admin": {
       "name": "@answerable/mcp-admin",
-      "version": "0.2.0",
+      "version": "0.2.2",
       "dependencies": {
         "@answerable/auth": "workspace:*",
         "@answerable/id-admin": "workspace:*",
@@ -164,7 +165,7 @@
     },
     "packages/acceptance": {
       "name": "@answerable/acceptance",
-      "version": "0.3.0",
+      "version": "0.4.1",
       "dependencies": {
         "@answerable/id-admin": "workspace:*",
         "@answerable/mcp": "workspace:*",

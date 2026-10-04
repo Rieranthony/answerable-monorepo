@@ -6,7 +6,6 @@ import { federationFailureCodes } from "../services/federation.ts";
 
 const failureCodes = new Set<string>([
   ...federationFailureCodes,
-  "sso_provider_changed",
   "invalid_provider",
   "invalid_state",
   "access_denied",

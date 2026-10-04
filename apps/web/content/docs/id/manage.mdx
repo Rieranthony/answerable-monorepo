@@ -312,7 +312,7 @@ curl -X DELETE "https://id.answerable.org/api/admin/v1/users/$USER_ID?confirm=$U
 | `resource_protected`        | The admin resource cannot be changed this way.                                      | Leave the protected resource in place.                                                        |
 | `resource_has_clients`      | Client links prevent resource erasure.                                              | Explicitly unlink every client, then retry the erase command.                                 |
 | `resource_has_entitlements` | Entitlements prevent resource erasure.                                              | Remove those entitlements first.                                                              |
-| `user_inert`                | The imported user has not signed in.                                                | Let the user activate through their first sign-in.                                            |
+| `user_inert`                | The user is an import placeholder.                                                  | Not yet: imported users cannot sign in or be enabled until import tooling exists.             |
 | `user_not_disabled`         | Email retirement requires a disabled user.                                          | Disable the user first.                                                                       |
 | `user_email_retired`        | Email retirement is terminal.                                                       | Do not try to re-enable this account.                                                         |
 | `conflict`                  | A client or resource identifier was used before and remains reserved after erasure. | Create the replacement with a new identifier.                                                 |
@@ -621,7 +621,7 @@ curl -X POST "https://id.answerable.org/api/admin/v1/users/$USER/disable" \
   -H "Idempotency-Key: $USER_DISABLE_KEY"
 ```
 
-Set `USER_DISABLE_KEY` once for this command. Reuse it after a lost response: recovery returns the receipt, including after later lifecycle changes or erasure. New commands record noops only when both lifecycle state and required cleanup are already satisfied; unchanged user status preserves its timestamps. Inert users still activate at first login; a retired email still prevents re-enabling the user.
+Set `USER_DISABLE_KEY` once for this command. Reuse it after a lost response: recovery returns the receipt, including after later lifecycle changes or erasure. New commands record noops only when both lifecycle state and required cleanup are already satisfied; unchanged user status preserves its timestamps. A retired email still prevents re-enabling the user.
 
 **Disabled-user reconciliation.** A new disable command always removes remaining browser sessions and revokes remaining stored tokens and grant contexts, even if the user is already disabled. The operation is applied when any local effect occurs; otherwise it is a no-op. Existing user status timestamps are preserved when status does not change. Replaying an old key returns that command’s receipt and does not reconcile later state; use a new key for a new reconciliation. Audit failure rolls back all local effects and the receipt. Token effects retain counts and exact row IDs; see [token revocation history](#token-revocation-history). Local cleanup is not proof of remote session termination.
 

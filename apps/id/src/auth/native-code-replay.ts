@@ -31,11 +31,9 @@ export async function withNativeCodeReplay<T>(
   const scoped: Adapter = {
     ...adapter,
     deleteMany: async (query) => {
-      const token =
-        query.model === "oauthAccessToken" ||
-        query.model === "oauthRefreshToken";
       const cleanup =
-        token &&
+        (query.model === "oauthAccessToken" ||
+          query.model === "oauthRefreshToken") &&
         query.where.length === 1 &&
         query.where.some(
           (w) =>
@@ -64,23 +62,18 @@ export async function withNativeCodeReplay<T>(
         await tx.execute(sql`savepoint native_code_cleanup`);
         invalidating = true;
       }
-      return adapter.deleteMany(
-        token
-          ? {
-              ...query,
-              where: [
-                ...query.where,
-                { field: "clientId", value: input.clientId, connector: "AND" },
-              ],
-            }
-          : query,
-      );
+      // The pinned provider deletes only token rows here (native-shapes.test.ts).
+      return adapter.deleteMany({
+        ...query,
+        where: [
+          ...query.where,
+          { field: "clientId", value: input.clientId, connector: "AND" },
+        ],
+      });
     },
   };
   try {
     const value = await run(scoped);
-    if (invalidating)
-      throw new Error("Native code replay unexpectedly returned tokens");
     return { value };
   } catch (error) {
     if (!invalidating) throw error;

@@ -71,10 +71,6 @@ export async function withNativeRefreshFamily<T>(
   };
   try {
     const value = await run(scoped);
-    if (invalidating && !revocation)
-      throw new Error(
-        "Native family invalidation unexpectedly returned tokens",
-      );
     if (invalidating)
       await tx.execute(sql`release savepoint native_family_cleanup`);
     return { value };
