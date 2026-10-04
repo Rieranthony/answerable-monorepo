@@ -66,7 +66,7 @@ Two guard tables in the admin MCP instead of single-tool tests; one idempotency 
 
 ## Considered and left as it is
 
-The per-case cost of `createAdminFixture` (a median 619 ms before each ID auth case, about 160 s of the suite): optimising is the lowest preference and the suite now fits CI with 257 s to spare. The ten runtime-role isolation tests as a table: each also asserts write refusals and secret exclusions, so a plain table would drop facts. The middleware's `tier` variable and `authorize.test.ts`: the only way to tell ID's two authorisation layers apart. `mcps/example`: the docs include its files. The migration catalogue and CI's fresh-install proof. Stale local branches and worktrees from finished work: listed, not deleted.
+The per-case cost of `createAdminFixture` (a median 619 ms before each ID auth case, about 160 s of the suite): optimising is the lowest preference and the suite now fits CI with 257 s to spare. The ten runtime-role isolation tests as a table: each also asserts write refusals and secret exclusions, so a plain table would drop facts. The middleware's `tier` variable and `authorize.test.ts`: the only way to tell ID's two authorisation layers apart. `mcps/example`: the docs include its files. The migration catalogue and CI's fresh-install proof. Stale local branches and worktrees from finished work were deleted afterwards at the owner's request: ten clean worktrees (six Codex, four Claude), nineteen local branches whose commits are in `main` by patch or belong to a closed pull request, and seven remote branches with merged or closed pull requests.
 
 ## Measured result
 
