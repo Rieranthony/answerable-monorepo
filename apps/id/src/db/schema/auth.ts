@@ -72,8 +72,6 @@ export const organizations = pgTable(
     id: id(),
     name: text("name").notNull(),
     slug: text("slug").notNull().unique(),
-    logo: text("logo"),
-    metadata: text("metadata"),
     status: text("status", { enum: lifecycleStatuses })
       .default("active")
       .notNull(),
@@ -127,16 +125,9 @@ export const sessions = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    // Organization plugin state for Better Auth's own routes. Never an
-    // authorization input: the token's organization comes from membership.
-    activeOrganizationId: uuid("active_organization_id").references(
-      () => organizations.id,
-      { onDelete: "set null" },
-    ),
   },
   (table) => [
     index("sessions_user_id_idx").on(table.userId),
-    index("sessions_active_organization_id_idx").on(table.activeOrganizationId),
     index("sessions_expires_at_idx").on(table.expiresAt),
     check(
       "sessions_upstream_auth_time_check",

@@ -83,7 +83,6 @@ test("provider queries create, find, update, redact and delete", async () => {
     revision: updated.revision + 1,
     deletedAt: expect.any(Date),
     oidcConfig: null,
-    samlConfig: null,
   });
   expect(await queries.deleteSsoProvider(db, org.id)).toBeNull();
   expect(await queries.findSsoProviderByOrganization(db, org.id)).toBeNull();

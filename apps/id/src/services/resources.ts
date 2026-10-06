@@ -31,10 +31,7 @@ function auditResource(row: ResourceRow) {
     refreshTokenTtl: row.refreshTokenTtl,
     allowedScopes: row.allowedScopes,
     signingAlgorithm: row.signingAlgorithm,
-    signingKeyId: row.signingKeyId,
     disabled: row.disabled,
-    policyVersion: row.policyVersion,
-    dpopBoundAccessTokensRequired: row.dpopBoundAccessTokensRequired,
   };
 }
 function requireResource<T>(row: T | null): T {

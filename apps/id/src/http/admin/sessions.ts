@@ -27,15 +27,20 @@ const sessionSchema = z.object({
     .string()
     .nullable()
     .describe(
-      "New sessions store null. Legacy values are unverified metadata, not proof of client origin.",
+      "The client address resolved from X-Forwarded-For through the trusted proxies at sign-in. Descriptive metadata, not proof of client origin.",
     ),
   userAgent: z
     .string()
     .nullable()
     .describe(
-      "Caller-supplied descriptive metadata. New sessions accept only 1–512 printable ASCII characters; other values become null. Legacy values may be unbounded.",
+      "Caller-supplied descriptive metadata: 1–512 printable ASCII characters, otherwise null.",
     ),
-  activeOrganizationId: z.uuid().nullable(),
+  authenticationOrganizationId: z
+    .uuid()
+    .nullable()
+    .describe(
+      "The organisation whose identity provider authenticated the session.",
+    ),
 });
 const revokedSchema = z.object({ revoked: z.number().int() });
 const userParams = uuidParam("userId");

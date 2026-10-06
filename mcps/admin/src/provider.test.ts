@@ -17,7 +17,7 @@ function fixture(config: { clientSecret?: string } = {}) {
     id: admin, authority: createRoles({ id: admin, platform, resource }), platform, resource, issuer: "https://id.test", freshSeconds: 1800,
     toolbox: createToolboxAdmin({ id: admin, resource: toolboxResource, fetch: createFakeToolbox(id).fetch }),
   })
-  const newco = id.organisation(crypto.randomUUID(), { name: "Newco", slug: "newco", metadata: "{\"plan\":\"pilot\"}" })
+  const newco = id.organisation(crypto.randomUUID(), { name: "Newco", slug: "newco" })
   const domain = id.domain(newco.id, "newco.example")
   id.ssoProvider(newco.id, { issuer: entraIssuer, domain: "newco.example" })
   const ada = id.member(newco.id, { email: "ada@newco.example", name: "Ada Lovelace" })
@@ -123,7 +123,7 @@ test("each read sends its filters to ID as the query string and answers ID's row
   const reads: [string, Record<string, unknown>, string[], unknown][] = [
     ["organisations_list", { q: "NEWCO", status: "active" }, [at("/organizations?q=NEWCO&status=active&limit=20")], page([{ id: newco.id, slug: "newco", name: "Newco", status: "active", createdAt: newco.createdAt }])],
     ["organisations_get", { organizationId: newco.id }, [at(`/organizations/${newco.id}`), at(`/organizations/${newco.id}/domains?limit=200`), at(`/organizations/${newco.id}/sso-provider`)], {
-      id: newco.id, slug: "newco", name: "Newco", status: "active", logo: null, metadata: "{\"plan\":\"pilot\"}", disabledAt: null, createdAt: newco.createdAt, updatedAt: newco.updatedAt,
+      id: newco.id, slug: "newco", name: "Newco", status: "active", disabledAt: null, createdAt: newco.createdAt, updatedAt: newco.updatedAt,
       domains: [{ id: domain.id, domain: "newco.example", status: "active" }], sso: { issuer: entraIssuer, domain: "newco.example", oidc: { credentials: "platform", hasClientSecret: false } },
     }],
     ["organisations_get", { organizationId: bare }, [at(`/organizations/${bare}`), at(`/organizations/${bare}/domains?limit=200`), at(`/organizations/${bare}/sso-provider`)], expect.objectContaining({ domains: [], sso: null })],
@@ -135,7 +135,7 @@ test("each read sends its filters to ID as the query string and answers ID's row
       access: [{ kind: "client_resource", id: "claude-code-toolbox", resource: toolbox, scopes: ["e2e", "toolbox"], via: [via] }],
     }],
     ["groups_list", { organizationId: newco.id, q: "engin", status: "active" }, [at(`/organizations/${newco.id}/groups?q=engin&status=active&limit=20`)],
-      page([{ id: engineers.id, slug: "engineers", name: "Engineers", status: "active", externalId: null }])],
+      page([{ id: engineers.id, slug: "engineers", name: "Engineers", status: "active" }])],
     ["access_list", { organizationId: newco.id }, [at(`/organizations/${newco.id}/entitlements?limit=20`)], page([entitlement(direct), entitlement(grouped), entitlement(everyone)])],
     ["access_list", { organizationId: newco.id, groupId: engineers.id, resource: toolbox }, [at(`/organizations/${newco.id}/entitlements?resource=${encodeURIComponent(toolbox)}&groupId=${engineers.id}&limit=20`)], page([entitlement(grouped)])],
     ["audit_list", audit, [at(`/audit-events?${new URLSearchParams({ ...audit, limit: "20" })}`)], page([event(created)])],

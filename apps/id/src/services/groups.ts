@@ -27,7 +27,6 @@ function configuration(
     organizationId: row.organizationId,
     slug: row.slug,
     name: row.name,
-    externalId: row.externalId,
     status: row.status,
   };
 }
@@ -230,14 +229,6 @@ export async function listGroupMembers(
       rows.length > query.limit ? items[items.length - 1].memberId : null,
   };
 }
-function requireManual(group: Awaited<ReturnType<typeof getGroup>>) {
-  if (group.externalId !== null)
-    throw new ProblemError(
-      409,
-      "group_directory_managed",
-      "Directory group membership cannot be edited by hand",
-    );
-}
 export async function getGroupMember(
   context: TenantReadContext<"directory">,
   groupId: string,
@@ -254,7 +245,7 @@ export async function putMember(
   expected?: { id: string; revision: number } | null,
 ) {
   const { tx, actor } = requirePlatformWriteContext(context);
-  const group = await lockedGroup(context, organizationId, groupId);
+  await lockedGroup(context, organizationId, groupId);
   const member = requireRow(
     await findMemberForAssignment(context, organizationId, memberId),
   );
@@ -264,7 +255,6 @@ export async function putMember(
       "membership_revoked",
       "Reinstate the membership before assigning access",
     );
-  requireManual(group);
   const before = await queries.findGroupMemberForCommand(
     context,
     organizationId,
@@ -325,7 +315,7 @@ export async function removeMember(
   memberId: string,
 ) {
   const { tx, actor } = requirePlatformWriteContext(context);
-  requireManual(await lockedGroup(context, organizationId, groupId));
+  await lockedGroup(context, organizationId, groupId);
   const before = requireRow(
     await queries.findGroupMemberForCommand(
       context,

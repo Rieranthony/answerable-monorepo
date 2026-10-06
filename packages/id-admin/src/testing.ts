@@ -151,7 +151,6 @@ export function createFakeId({
     if (request.method === "GET") return current ? tagged(current) : notFound()
     const person = rows(members, organisation).find(row => row.id === memberId)
     if (!person) return notFound()
-    if (group.externalId !== null) return problem(409, "group_directory_managed", "Directory group membership cannot be edited by hand")
     if (request.method === "DELETE") {
       if (!current) return notFound()
       assignments(groupId).delete(memberId)
@@ -272,7 +271,7 @@ export function createFakeId({
       }
       if (!slug.test(String(body.slug)) || typeof body.name !== "string" || !body.name) return invalid("The request is invalid")
       if (rows(groups, organisation).some(group => group.slug === body.slug)) return problem(409, "conflict", "Conflict")
-      const created = { id: Bun.randomUUIDv7(), revision: 1, organizationId: organisation, slug: body.slug, name: body.name, externalId: body.externalId ?? null, status: "active", createdAt: now(), updatedAt: now() }
+      const created = { id: Bun.randomUUIDv7(), revision: 1, organizationId: organisation, slug: body.slug, name: body.name, status: "active", createdAt: now(), updatedAt: now() }
       rows(groups, organisation).push(created)
       changes++
       return Response.json(created, { status: 201 })
@@ -378,7 +377,7 @@ export function createFakeId({
       if (!slug.test(String(body.slug)) || typeof body.name !== "string" || !body.name || body.name.length > 200) return invalid("The request is invalid")
       if ([...organisations.values()].some(row => row.slug === body.slug)) return problem(409, "conflict", "Conflict")
       changes++
-      return Response.json(organisation(Bun.randomUUIDv7(), { slug: body.slug, name: body.name, logo: body.logo ?? null, metadata: body.metadata ?? null }), { status: 201 })
+      return Response.json(organisation(Bun.randomUUIDv7(), { slug: body.slug, name: body.name }), { status: 201 })
     }
     const organisationTable = /^\/organizations\/([^/]+)\/(capabilities|entitlements)$/.exec(path)
     if (organisationTable) {
@@ -459,7 +458,7 @@ export function createFakeId({
     return row
   }
   const organisation = (id: string, fields: Record<string, unknown> = {}) => {
-    const row = { id, revision: 1, name: "Organisation", slug: `org-${id.slice(0, 8)}`, logo: null, metadata: null, status: "active", authorizationVersion: 1, disabledAt: null, createdAt: now(), updatedAt: now(), ...organisations.get(id), ...fields }
+    const row = { id, revision: 1, name: "Organisation", slug: `org-${id.slice(0, 8)}`, status: "active", authorizationVersion: 1, disabledAt: null, createdAt: now(), updatedAt: now(), ...organisations.get(id), ...fields }
     organisations.set(id, row)
     return row
   }
@@ -500,8 +499,7 @@ export function createFakeId({
     resource(identifier: string, allowedScopes: string[]) {
       resources.set(identifier, {
         classification: "platform_shared", organizationId: null, id: crypto.randomUUID(), name: identifier, accessTokenTtl: null, refreshTokenTtl: null,
-        signingAlgorithm: null, signingKeyId: null, allowedScopes, customClaims: null, dpopBoundAccessTokensRequired: false, disabled: false, revision: 1,
-        policyVersion: 1, metadata: null, createdAt: now(), updatedAt: now(), clients: [],
+        signingAlgorithm: null, allowedScopes, disabled: false, revision: 1, createdAt: now(), updatedAt: now(), clients: [],
       })
     },
     /** What ID holds for a resource. */
@@ -509,13 +507,12 @@ export function createFakeId({
     /** Register a client, as staff do. */
     client(clientId: string) {
       const unset = Object.fromEntries([
-        "userId", "organizationId", "metadata", "clientDiscoveryId", "referenceId", "uri", "icon", "tos", "policy", "softwareId", "softwareVersion", "softwareStatement",
-        "backchannelLogoutUri", "tokenEndpointAuthMethod", "applicationType", "jwks", "jwksUri", "subjectType", "contacts", "postLogoutRedirectUris", "grantTypes",
-        "responseTypes", "scopes", "clientCredentialsScopes", "backchannelLogoutSessionRequired", "requirePKCE", "skipConsent", "enableEndSession",
+        "organizationId", "uri", "tokenEndpointAuthMethod", "jwks", "jwksUri", "contacts", "grantTypes", "responseTypes", "scopes", "clientCredentialsScopes",
+        "requirePKCE", "skipConsent",
       ].map(field => [field, null]))
       clients.set(clientId, {
         ...unset, id: crypto.randomUUID(), clientId, name: clientId, revision: 1, authorizationVersion: 1, hasClientSecret: true, redirectUris: [],
-        dpopBoundAccessTokens: false, disabled: false, createdAt: now(), updatedAt: now(),
+        disabled: false, createdAt: now(), updatedAt: now(),
       })
     },
     /** Create an organisation, or change the fields of one, and return its row. */
@@ -545,7 +542,7 @@ export function createFakeId({
     }),
     /** Add a group to an organisation and return its row. */
     group: (organizationId: string, fields: Record<string, unknown> & { slug: string }) => add(groups, organizationId, {
-      id: Bun.randomUUIDv7(), revision: 1, organizationId, name: fields.slug, externalId: null, status: "active", createdAt: now(), updatedAt: now(), ...fields,
+      id: Bun.randomUUIDv7(), revision: 1, organizationId, name: fields.slug, status: "active", createdAt: now(), updatedAt: now(), ...fields,
     }),
     /** Put a member in a group and return the assignment, which carries its own revision. */
     join(groupId: string, memberId: string, fields: Record<string, unknown> = {}) {

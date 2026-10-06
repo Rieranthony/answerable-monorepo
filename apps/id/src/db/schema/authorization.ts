@@ -78,10 +78,8 @@ export const organizationDomains = pgTable(
   ],
 ).enableRLS();
 /**
- * A set of members within one organization. Enterprise customers assign
- * access by group; a group either mirrors an upstream directory group
- * (`external_id` set, membership synced from the directory) or is managed in
- * Answerable ID.
+ * A set of members within one organization, managed in Answerable ID.
+ * Enterprise customers assign access by group.
  */
 export const groups = pgTable(
   "groups",
@@ -93,8 +91,6 @@ export const groups = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     slug: text("slug").notNull(),
     name: text("name").notNull(),
-    /** The upstream directory's group id (an Entra object id, a Google group id). */
-    externalId: text("external_id"),
     status: text("status", { enum: lifecycleStatuses })
       .default("active")
       .notNull(),
@@ -121,9 +117,6 @@ export const groups = pgTable(
       table.organizationId,
       table.id,
     ),
-    uniqueIndex("groups_organization_id_external_id_idx")
-      .on(table.organizationId, table.externalId)
-      .where(sql`${table.externalId} is not null`),
     slugCheck("groups_slug_normalized_check", table.slug),
     vocabularyCheck("groups_status_check", table.status, lifecycleStatuses),
   ],

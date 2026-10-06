@@ -46,47 +46,24 @@ export const oauthClients = pgTable(
     id: id(),
     clientId: text("client_id").notNull().unique(),
     clientSecret: text("client_secret"),
-    clientDiscoveryId: text("client_discovery_id"),
-    referenceId: text("reference_id"),
     name: text("name"),
     uri: text("uri"),
-    icon: text("icon"),
     contacts: text("contacts").array(),
-    tos: text("tos"),
-    policy: text("policy"),
-    softwareId: text("software_id"),
-    softwareVersion: text("software_version"),
-    softwareStatement: text("software_statement"),
     redirectUris: text("redirect_uris").array().notNull(),
-    postLogoutRedirectUris: text("post_logout_redirect_uris").array(),
-    backchannelLogoutUri: text("backchannel_logout_uri"),
-    backchannelLogoutSessionRequired: boolean(
-      "backchannel_logout_session_required",
-    ),
     tokenEndpointAuthMethod: text("token_endpoint_auth_method"),
-    applicationType: text("application_type"),
     jwks: text("jwks"),
     jwksUri: text("jwks_uri"),
     grantTypes: text("grant_types").array(),
     responseTypes: text("response_types").array(),
     requirePKCE: boolean("require_pkce"),
-    dpopBoundAccessTokens: boolean("dpop_bound_access_tokens")
-      .default(false)
-      .notNull(),
-    subjectType: text("subject_type"),
     scopes: text("scopes").array(),
     /** Server-owned ceiling for client_credentials; null or empty denies machine tokens. */
     clientCredentialsScopes: text("client_credentials_scopes").array(),
     skipConsent: boolean("skip_consent"),
-    enableEndSession: boolean("enable_end_session"),
     disabled: boolean("disabled").default(false).notNull(),
-    userId: uuid("user_id").references(() => users.id, {
-      onDelete: "cascade",
-    }),
     organizationId: uuid("organization_id").references(() => organizations.id, {
       onDelete: "restrict",
     }),
-    metadata: jsonb("metadata"),
     ...timestamps(),
     revision: integer("revision").default(1).notNull(),
     authorizationVersion: integer("authorization_version").default(1).notNull(),
@@ -111,7 +88,6 @@ export const oauthClients = pgTable(
       "oauth_clients_authorization_version_check",
       sql`${table.authorizationVersion} > 0`,
     ),
-    index("oauth_clients_user_id_idx").on(table.userId),
     index("oauth_clients_organization_id_idx").on(table.organizationId),
   ],
 );
@@ -136,16 +112,9 @@ export const oauthResources = pgTable(
     accessTokenTtl: integer("access_token_ttl"),
     refreshTokenTtl: integer("refresh_token_ttl"),
     signingAlgorithm: text("signing_algorithm"),
-    signingKeyId: text("signing_key_id"),
     allowedScopes: text("allowed_scopes").array(),
-    customClaims: jsonb("custom_claims"),
-    dpopBoundAccessTokensRequired: boolean("dpop_bound_access_tokens_required")
-      .default(false)
-      .notNull(),
     disabled: boolean("disabled").default(false).notNull(),
     revision: integer("revision").default(1).notNull(),
-    policyVersion: integer("policy_version").default(1).notNull(),
-    metadata: jsonb("metadata"),
     ...timestamps(),
   },
   (table) => [
@@ -166,11 +135,6 @@ export const oauthResources = pgTable(
     ),
     index("oauth_resources_organization_id_idx").on(table.organizationId),
     check("oauth_resources_revision_check", sql`${table.revision} > 0`),
-    // The provider merges resource custom claims after extension claims.
-    check(
-      "oauth_resources_identity_claims_check",
-      sql`NOT (${table.customClaims} ?| ARRAY['client_instance', 'organization_id', 'authorization_version', 'organization_authorization_version', 'subject_type', 'membership_id', 'grant_id', 'resource_instance', 'upstream_auth_time'])`,
-    ),
   ],
 );
 
@@ -185,7 +149,6 @@ export const oauthClientResources = pgTable(
       .references(() => oauthClients.clientId, { onDelete: "cascade" }),
     /** Holds the resource identifier, not its row id; the property keeps the plugin's naming. */
     resourceId: text("resource").notNull(),
-    metadata: jsonb("metadata"),
     createdAt: timestampColumn("created_at").defaultNow().notNull(),
   },
   (table) => [

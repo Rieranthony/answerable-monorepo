@@ -1,4 +1,4 @@
-import { revokeUserAndOwnedClientGrantContexts } from "./grant-contexts.ts";
+import { revokeErasedUserGrantContexts } from "./grant-contexts.ts";
 import {
   requirePlatformReadContext,
   requirePlatformUsersContext,
@@ -28,9 +28,6 @@ import {
   sessions,
   groupMembers,
   entitlements,
-  ssoProviders,
-  oauthClients,
-  oauthClientResources,
   oauthAccessTokens,
   oauthRefreshTokens,
   oauthConsents,
@@ -211,7 +208,7 @@ export async function deleteUser(
 ) {
   const { tx } = requirePlatformWriteContext(context);
   // Lock indirect parents before capturing any children, including grants.
-  for (const table of [oauthClients, members, sessions] as const) {
+  for (const table of [members, sessions, oauthRefreshTokens] as const) {
     await tx
       .select({ id: table.id })
       .from(table)
@@ -219,29 +216,7 @@ export async function deleteUser(
       .orderBy(table.id)
       .for("update");
   }
-  await tx
-    .select({ id: oauthRefreshTokens.id })
-    .from(oauthRefreshTokens)
-    .where(
-      or(
-        eq(oauthRefreshTokens.userId, userId),
-        inArray(
-          oauthRefreshTokens.clientId,
-          tx
-            .select({ clientId: oauthClients.clientId })
-            .from(oauthClients)
-            .where(
-              and(
-                sql`${oauthClients.deletedAt} is null`,
-                eq(oauthClients.userId, userId),
-              ),
-            ),
-        ),
-      ),
-    )
-    .orderBy(oauthRefreshTokens.id)
-    .for("update");
-  const revokedGrantContexts = await revokeUserAndOwnedClientGrantContexts(
+  const revokedGrantContexts = await revokeErasedUserGrantContexts(
     context,
     userId,
   );
@@ -249,19 +224,7 @@ export async function deleteUser(
     .select({ id: members.id })
     .from(members)
     .where(and(sql`${members.deletedAt} is null`, eq(members.userId, userId)));
-  const ownedClientIds = tx
-    .select({ clientId: oauthClients.clientId })
-    .from(oauthClients)
-    .where(
-      and(
-        sql`${oauthClients.deletedAt} is null`,
-        eq(oauthClients.userId, userId),
-      ),
-    );
-  const refreshWhere = or(
-    eq(oauthRefreshTokens.userId, userId),
-    inArray(oauthRefreshTokens.clientId, ownedClientIds),
-  );
+  const refreshWhere = eq(oauthRefreshTokens.userId, userId);
   const erasedRefreshIds = tx
     .select({ id: oauthRefreshTokens.id })
     .from(oauthRefreshTokens)
@@ -271,7 +234,6 @@ export async function deleteUser(
     .where(
       or(
         eq(oauthAccessTokens.userId, userId),
-        inArray(oauthAccessTokens.clientId, ownedClientIds),
         inArray(oauthAccessTokens.refreshId, erasedRefreshIds),
       ),
     )
@@ -305,10 +267,7 @@ export async function deleteUser(
     .where(
       and(
         sql`${oauthConsents.deletedAt} is null`,
-        or(
-          eq(oauthConsents.userId, userId),
-          inArray(oauthConsents.clientId, ownedClientIds),
-        ),
+        eq(oauthConsents.userId, userId),
       ),
     )
     .returning({
@@ -414,47 +373,6 @@ export async function deleteUser(
       validFrom: members.validFrom,
       validUntil: members.validUntil,
     });
-  const softDeletedClientResources = await tx
-    .update(oauthClientResources)
-    .set({ deletedAt: sql`now()` })
-    .where(
-      and(
-        sql`${oauthClientResources.deletedAt} is null`,
-        inArray(oauthClientResources.clientId, ownedClientIds),
-      ),
-    )
-    .returning({
-      deletedAt: oauthClientResources.deletedAt,
-      id: oauthClientResources.id,
-      clientId: oauthClientResources.clientId,
-      resourceId: oauthClientResources.resourceId,
-    });
-  const softDeletedClients = await tx
-    .update(oauthClients)
-    .set({ deletedAt: sql`now()`, disabled: true, clientSecret: null })
-    .where(
-      and(
-        sql`${oauthClients.deletedAt} is null`,
-        eq(oauthClients.userId, userId),
-      ),
-    )
-    .returning({
-      deletedAt: oauthClients.deletedAt,
-      id: oauthClients.id,
-      clientId: oauthClients.clientId,
-      userId: oauthClients.userId,
-      organizationId: oauthClients.organizationId,
-      revision: oauthClients.revision,
-      authorizationVersion: oauthClients.authorizationVersion,
-      disabled: oauthClients.disabled,
-      scopes: oauthClients.scopes,
-      clientCredentialsScopes: oauthClients.clientCredentialsScopes,
-      grantTypes: oauthClients.grantTypes,
-      redirectUris: oauthClients.redirectUris,
-      tokenEndpointAuthMethod: oauthClients.tokenEndpointAuthMethod,
-      requirePKCE: oauthClients.requirePKCE,
-      skipConsent: oauthClients.skipConsent,
-    });
   const deletedSessions = await tx
     .delete(sessions)
     .where(eq(sessions.userId, userId))
@@ -484,48 +402,6 @@ export async function deleteUser(
       id: accounts.id,
       userId: accounts.userId,
     });
-  const providerBefore = await tx
-    .select({
-      id: ssoProviders.id,
-      userId: ssoProviders.userId,
-      revision: ssoProviders.revision,
-    })
-    .from(ssoProviders)
-    .where(
-      and(
-        sql`${ssoProviders.deletedAt} is null`,
-        eq(ssoProviders.userId, userId),
-      ),
-    )
-    .orderBy(ssoProviders.id)
-    .for("update");
-  const providers = await tx
-    .update(ssoProviders)
-    .set({ userId: null, updatedAt: sql`${ssoProviders.updatedAt}` })
-    .where(
-      and(
-        sql`${ssoProviders.deletedAt} is null`,
-        eq(ssoProviders.userId, userId),
-      ),
-    )
-    .returning({
-      id: ssoProviders.id,
-      organizationId: ssoProviders.organizationId,
-      userId: ssoProviders.userId,
-      revision: ssoProviders.revision,
-    });
-  const beforeById = new Map(
-    providerBefore.map(({ id, ...before }) => [id, before]),
-  );
-  const detachedSsoProviders = providers.map((row) => {
-    const before = beforeById.get(row.id)!;
-    return {
-      id: row.id,
-      organizationId: row.organizationId,
-      before: { userId: before.userId, revision: before.revision },
-      after: { userId: row.userId, revision: row.revision },
-    };
-  });
   const [row] = await tx
     .update(users)
     .set({
@@ -550,11 +426,8 @@ export async function deleteUser(
       softDeletedEntitlements,
       softDeletedAssignments,
       softDeletedMembers,
-      softDeletedClientResources,
-      softDeletedClients,
       deletedSessions,
       softDeletedAccounts,
-      detachedSsoProviders,
     },
   };
 }

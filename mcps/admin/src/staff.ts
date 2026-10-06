@@ -43,7 +43,7 @@ export function staffWrites({ calls, role, platform, resource, fresh }: Writes) 
       if (held.includes(grantString(granted))) throw precondition(`${member.email} already holds ${granted}`, { memberId, role: granted })
       const candidates = (await roleEntitlements(context)).filter(item => item.groupId !== null && item.memberId === null && item.scopes.includes(grantString(granted)))
       const groups = (await Promise.all(candidates.map(async item => ({ entitlement: item, group: await group(item.groupId!, context) }))))
-        .filter(({ group }) => group.status === "active" && group.externalId === null)
+        .filter(({ group }) => group.status === "active")
         // The group that confers the least beyond the role, then the oldest.
         .sort((a, b) => rank(a.entitlement.scopes) - rank(b.entitlement.scopes) || (a.group.id < b.group.id ? -1 : 1))
       if (!groups.length) {

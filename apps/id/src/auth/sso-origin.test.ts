@@ -44,7 +44,6 @@ test("session input cannot manufacture origin without trusted resolution", async
         userAgent: null,
         authenticationAccountId: null,
         upstreamAuthTime: null,
-        activeOrganizationId: null,
         authenticationOrganizationId: null,
         authenticationProviderId: null,
         authenticationProviderRevision: null,

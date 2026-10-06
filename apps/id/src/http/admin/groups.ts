@@ -41,7 +41,6 @@ const groupSchema = z.object({
   organizationId: z.uuid(),
   slug: z.string(),
   name: z.string(),
-  externalId: z.string().nullable(),
   status: z.enum(lifecycleStatuses),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
@@ -72,12 +71,10 @@ const querySchema = pageQuerySchema.extend({
 const createSchema = z.object({
   slug: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/),
   name: z.string().min(1).max(200),
-  externalId: z.string().min(1).max(200).optional(),
 });
 const patchSchema = z
   .object({
     name: z.string().min(1).max(200).optional(),
-    externalId: z.string().min(1).max(200).nullable().optional(),
   })
   .refine(
     (input) => Object.keys(input).length > 0,
@@ -342,7 +339,7 @@ export const routes = {
     operationId: "putGroupMember",
     summary: "Add or update a group member",
     description:
-      "Requires Idempotency-Key. Accepts the strong If-Match ETag from getGroupMember for conditional replacement; conflicting/malformed headers return 400; stale or recreated state returns 412. Committed replay precedes the precondition check. Identical authorised retries return the receipt without repeating effects; changed-input reuse conflicts. Create or update a manual group membership validity window and return the membership, with 201 for creation and 200 for an update. Prefer removeGroupMember to end membership; validation_failed rejects malformed input, not_found means a parent is missing, and group_directory_managed prevents manual changes to directory groups.",
+      "Requires Idempotency-Key. Accepts the strong If-Match ETag from getGroupMember for conditional replacement; conflicting/malformed headers return 400; stale or recreated state returns 412. Committed replay precedes the precondition check. Identical authorised retries return the receipt without repeating effects; changed-input reuse conflicts. Create or update a group membership validity window and return the membership, with 201 for creation and 200 for an update. Prefer removeGroupMember to end membership; validation_failed rejects malformed input and not_found means a parent is missing.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
@@ -392,7 +389,7 @@ export const routes = {
     operationId: "removeGroupMember",
     summary: "Remove a group member",
     description:
-      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects; changed-input reuse conflicts. Remove a manual group membership and return no content, removing access inherited through that membership. Prefer putGroupMember to change its validity window; not_found means a parent or membership is missing and group_directory_managed prevents manual changes to directory groups.",
+      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects; changed-input reuse conflicts. Remove a group membership and return no content, removing access inherited through that membership. Prefer putGroupMember to change its validity window; not_found means a parent or membership is missing.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",

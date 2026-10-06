@@ -88,7 +88,7 @@ Each write is a prepare tool: it changes nothing and returns an intent, which `a
 | Tool | Prepares | Least role | Writes to Answerable ID |
 | --- | --- | --- | --- |
 | `organisations_create` | A new organisation: `slug`, `name`. Refused when the slug is taken | `admin` | [createOrganization](/docs/id/admin-api/organizations/createOrganization) |
-| `organisations_update` | A new `name`, `logo` or `metadata`; `null` removes the last two | `admin` | [updateOrganization](/docs/id/admin-api/organizations/updateOrganization) |
+| `organisations_update` | A new `name` | `admin` | [updateOrganization](/docs/id/admin-api/organizations/updateOrganization) |
 | `domains_add` | An email `domain` routed to the organisation | `admin` | [createOrganizationDomain](/docs/id/admin-api/domains/createOrganizationDomain) |
 | `sso_set` | The SSO provider, `issuer` and `domain`, through Answerable's Microsoft or Google application | `admin` | [putSsoProvider](/docs/id/admin-api/sso-provider/putSsoProvider) |
 | `groups_create` | A group: `slug`, `name` | `admin` | [createGroup](/docs/id/admin-api/groups/createGroup) |
@@ -260,7 +260,6 @@ Read from the root `.env` by `bun run admin:dev`; every variable is listed in `d
 | Writes without a precondition at ID | Creating an organisation, a domain, a group or an entitlement; disabling or enabling an organisation or an entitlement; removing a group member. The admin MCP reads the target again just before the write |
 | Entitlements | ID keeps one per principal and target, whatever its scopes or status: `access_grant` refuses a second, naming the one there. A disabled one comes back with `access_enable`; its scopes change only with [updateEntitlement](/docs/id/admin-api/entitlements/updateEntitlement) |
 | `toolbox_enable` | Not atomic: if the Toolbox fails part-way, what it made stays. Safe to repeat: prepare and commit the same request again, and it makes only what is missing |
-| Directory groups | Groups the organisation's directory keeps in step (`externalId` set) are refused by `groups_addmember` and `groups_dropmember` |
 | The platform organisation | `organisations_disable` refuses it: every member of staff would lose access |
 | Intents | Controlled class, 30 minutes from prepare to commit |
 | Evidence of a commit call | Its `capability.completed` row names `upstream: "id"` whichever tool the intent is for; the `intent.committed` row names that tool |

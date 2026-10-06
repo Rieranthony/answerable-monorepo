@@ -9,7 +9,6 @@ import {
   auditEvents,
   oauthAccessTokens,
   oauthRefreshTokens,
-  oauthClients,
   sessions,
   users,
 } from "../../db/schema/index.ts";
@@ -33,37 +32,21 @@ function request(
   return fixture.app.request(`/api/admin/v1${path}`, { method, headers });
 }
 
-import {
-  members,
-  groups,
-  groupMembers,
-  grantContexts,
-} from "../../db/schema/index.ts";
-for (const parent of ["client", "refresh", "session", "member"] as const) {
+import { members, groups, groupMembers } from "../../db/schema/index.ts";
+for (const parent of ["refresh", "session", "member"] as const) {
   test(`global user erasure records children committed while waiting for a ${parent} parent`, async () => {
     const db = fixture.db,
       userId = createId(),
       parentId = createId(),
-      lateId = createId(),
-      grantId = createId();
+      lateId = createId();
     const other = fixture.principals.outsider;
     await db.insert(users).values({
       id: userId,
       name: "Erased",
       email: `${userId}@cascade.example`,
     });
-    const clientId = createId(),
-      groupId = createId(),
+    const groupId = createId(),
       expiresAt = new Date(Date.now() + 60000);
-    if (parent === "client")
-      await db.insert(oauthClients).values({
-        id: parentId,
-        clientId,
-        userId,
-        organizationId: fixture.tenant.organizationId,
-        redirectUris: [],
-        scopes: ["read"],
-      });
     if (parent === "refresh")
       await db.insert(oauthRefreshTokens).values({
         id: parentId,
@@ -90,11 +73,6 @@ for (const parent of ["client", "refresh", "session", "member"] as const) {
         name: "Preserved",
       });
     }
-    const [otherSession] = await db
-      .select()
-      .from(sessions)
-      .where(eq(sessions.userId, other.userId))
-      .limit(1);
     const blocker = createDatabase(fixture.environment);
     let erasure: Promise<Response> | undefined;
     const key = createId();
@@ -106,13 +84,11 @@ for (const parent of ["client", "refresh", "session", "member"] as const) {
         );
         const pid = state.rows[0]!.pid;
         const table =
-          parent === "client"
-            ? oauthClients
-            : parent === "refresh"
-              ? oauthRefreshTokens
-              : parent === "session"
-                ? sessions
-                : members;
+          parent === "refresh"
+            ? oauthRefreshTokens
+            : parent === "session"
+              ? sessions
+              : members;
         await tx
           .select({ id: table.id })
           .from(table)
@@ -143,23 +119,10 @@ for (const parent of ["client", "refresh", "session", "member"] as const) {
           await tx.insert(oauthAccessTokens).values({
             id: lateId,
             userId: other.userId,
-            clientId:
-              parent === "client" ? clientId : fixture.platform.client.clientId,
+            clientId: fixture.platform.client.clientId,
             refreshId: parent === "refresh" ? parentId : null,
             sessionId: parent === "session" ? parentId : null,
             scopes: [],
-            expiresAt,
-          });
-        if (parent === "client")
-          await tx.insert(grantContexts).values({
-            id: grantId,
-            userId: other.userId,
-            organizationId: other.organizationId,
-            memberId: other.memberId,
-            clientInstanceId: parentId,
-            authenticationSessionId: otherSession!.id,
-            authTime: otherSession!.createdAt,
-            requestedScopes: ["read"],
             expiresAt,
           });
       });
@@ -182,10 +145,6 @@ for (const parent of ["client", "refresh", "session", "member"] as const) {
             ? "clearedAccessTokenSessions"
             : "deletedAccessTokens";
       expect(effect[field]!.map((row) => row.id)).toContain(lateId);
-      if (parent === "client")
-        expect(events[0]!.data!.revokedGrantContexts).toEqual([
-          expect.objectContaining({ id: grantId, userId: other.userId }),
-        ]);
       if (parent === "session") {
         expect(effect[field]).toEqual([
           expect.objectContaining({

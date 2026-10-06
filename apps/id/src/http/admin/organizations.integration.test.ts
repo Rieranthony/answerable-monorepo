@@ -123,8 +123,6 @@ test("createOrganization: cookie and machine writes return 201 and attributed au
       {
         slug,
         name: "Created",
-        logo: "https://example.com/logo",
-        metadata: "{}",
       },
       kind,
     );
@@ -194,9 +192,9 @@ test("getOrganization: own tenant reader succeeds and outsider is hidden; platfo
   ).toBe(200);
 });
 
-test("updateOrganization: nullable fields and audit changes", async () => {
+test("updateOrganization: renames and audits the change", async () => {
   const row = await create("patch-me");
-  const patch = { name: "Patched", logo: null, metadata: null };
+  const patch = { name: "Patched" };
   const response = await request("/" + row.id, "PATCH", patch);
   expect(response.status).toBe(200);
   expect(organizationSchema.parse(await response.json())).toMatchObject(patch);
@@ -211,11 +209,9 @@ test("updateOrganization: nullable fields and audit changes", async () => {
     );
   expect(event?.data).toMatchObject({
     before: { name: "patch-me" },
-    after: { name: "Patched", logo: null },
-    metadataChanged: false,
+    after: { name: "Patched" },
   });
   expect(event?.data).not.toHaveProperty("changes");
-  expect(event?.data).not.toHaveProperty("after.metadata");
   expect((await request("/" + row.id, "PATCH", {})).status).toBe(400);
 });
 
@@ -360,8 +356,6 @@ test("organisation paths validate UUIDs and platform writes return 404 for missi
   for (const body of [
     { slug: "Bad_slug", name: "Bad" },
     { slug: "valid", name: "" },
-    { slug: "valid", name: "Bad", logo: "not-url" },
-    { slug: "valid", name: "Bad", metadata: "x".repeat(4001) },
   ]) {
     expect((await request("", "POST", body)).status).toBe(400);
   }

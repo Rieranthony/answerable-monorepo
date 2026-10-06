@@ -128,10 +128,7 @@ test("group lifecycle and membership writes emit one attributed audit each and e
     nextCursor: null,
   });
   expect(
-    await service.updateGroup(db, actor, org.id, row.id, {
-      name: "Team",
-      externalId: null,
-    }),
+    await service.updateGroup(db, actor, org.id, row.id, { name: "Team" }),
   ).toMatchObject({ row: { name: "Team" }, changed: true });
   expect(await service.enableGroup(db, actor, org.id, row.id)).toMatchObject({
     changed: false,
@@ -208,7 +205,7 @@ test("group lifecycle and membership writes emit one attributed audit each and e
     });
   expect(events[1]!.data).toMatchObject({
     before: { name: "Finance" },
-    after: { name: "Team", externalId: null },
+    after: { name: "Team" },
   });
   for (const event of events.filter((e) => e.targetType === "group_member"))
     expect(event.data).toMatchObject({ groupId: row.id });

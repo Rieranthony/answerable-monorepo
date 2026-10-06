@@ -26,8 +26,8 @@ export const memberId = z.uuid().describe("The member's id, from members_list")
 export const slug = z.string().max(100).regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "Lowercase letters and digits, words joined by single hyphens")
 
 /** ID's rows, as far as the mutations read them. */
-export type Organisation = { id: string; slug: string; name: string; status: "active" | "disabled"; logo: string | null; metadata: string | null }
-export type Group = { id: string; slug: string; name: string; externalId: string | null; status: "active" | "disabled" }
+export type Organisation = { id: string; slug: string; name: string; status: "active" | "disabled" }
+export type Group = { id: string; slug: string; name: string; status: "active" | "disabled" }
 export type Member = { id: string; userId: string; email: string; name: string; effective: boolean; membershipStatus: "active" | "revoked" }
 export type Entitlement = { id: string; memberId: string | null; groupId: string | null; clientId: string | null; resource: string | null; scopes: string[]; status: "active" | "disabled" }
 export type Assignment = { id: string; validFrom: string | null; validUntil: string | null }

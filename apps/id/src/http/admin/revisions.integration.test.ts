@@ -341,7 +341,7 @@ const cases = [
       const beforeRaw = await read(group.id);
       const rawTag = beforeRaw.headers.get("ETag")!;
       await fixture.db.execute(
-        sql`update groups set external_id = 'directory-revision' where id = ${group.id}`,
+        sql`update groups set name = 'Changed externally' where id = ${group.id}`,
       );
       const raw = await read(group.id);
       expect(raw.headers.get("ETag")).not.toBe(rawTag);
@@ -538,7 +538,7 @@ const cases = [
       const activeTag = active.headers.get("ETag")!;
       const activeRow = await active.json();
       await fixture.db.execute(
-        sql`update organizations set metadata = 'changed externally' where id = ${before.id}`,
+        sql`update organizations set name = 'Changed externally' where id = ${before.id}`,
       );
       const external = await read();
       expect(external.headers.get("ETag")).not.toBe(activeTag);
@@ -548,7 +548,7 @@ const cases = [
       );
       const externalTag = external.headers.get("ETag")!;
       await fixture.db.execute(
-        sql`update organizations set metadata = metadata where id = ${before.id}`,
+        sql`update organizations set name = name where id = ${before.id}`,
       );
       expect((await read()).headers.get("ETag")).toBe(externalTag);
       const competing = await Promise.all([

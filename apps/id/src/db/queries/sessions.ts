@@ -27,7 +27,7 @@ const selection = {
   expiresAt: sessions.expiresAt,
   ipAddress: sessions.ipAddress,
   userAgent: sessions.userAgent,
-  activeOrganizationId: sessions.activeOrganizationId,
+  authenticationOrganizationId: sessions.authenticationOrganizationId,
 };
 
 export function listUserSessions(

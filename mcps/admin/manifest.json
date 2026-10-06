@@ -1332,7 +1332,7 @@
       "name": "groups_list",
       "version": "2026-10-01",
       "kind": "read",
-      "description": "List the groups of an organisation, newest first, 20 per page by default and at most 100: id, slug, name, status and external id. Filter by q, text in the name or slug, and by status. When has_more is true, pass next_cursor as cursor. Changes nothing; members_get shows the groups of one member.",
+      "description": "List the groups of an organisation, newest first, 20 per page by default and at most 100: id, slug, name and status. Filter by q, text in the name or slug, and by status. When has_more is true, pass next_cursor as cursor. Changes nothing; members_get shows the groups of one member.",
       "scopes": [
         "admin"
       ],
@@ -1410,20 +1410,13 @@
                     "active",
                     "disabled"
                   ]
-                },
-                "externalId": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
                 }
               },
               "required": [
                 "id",
                 "slug",
                 "name",
-                "status",
-                "externalId"
+                "status"
               ],
               "additionalProperties": false
             }
@@ -2055,7 +2048,7 @@
       "name": "organisations_get",
       "version": "2026-10-01",
       "kind": "read",
-      "description": "Read one organisation from Answerable ID: its slug, name, status, logo and metadata, every email domain routed to it, and its SSO provider: issuer, domain, whether it signs in through Answerable's platform application or its own credentials, and whether a client secret is set. sso is null when it has none. Changes nothing.",
+      "description": "Read one organisation from Answerable ID: its slug, name and status, every email domain routed to it, and its SSO provider: issuer, domain, whether it signs in through Answerable's platform application or its own credentials, and whether a client secret is set. sso is null when it has none. Changes nothing.",
       "scopes": [
         "admin"
       ],
@@ -2101,19 +2094,6 @@
             "enum": [
               "active",
               "disabled"
-            ]
-          },
-          "logo": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "metadata": {
-            "description": "JSON text, or null",
-            "type": [
-              "string",
-              "null"
             ]
           },
           "disabledAt": {
@@ -2219,8 +2199,6 @@
           "slug",
           "name",
           "status",
-          "logo",
-          "metadata",
           "disabledAt",
           "createdAt",
           "updatedAt",
@@ -2350,7 +2328,7 @@
       "name": "organisations_update",
       "version": "2026-10-01",
       "kind": "mutate",
-      "description": "Prepare changing an organisation's name, logo or metadata in Answerable ID; the slug never changes. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. The commit sends the organisation's version as If-Match, so a change made meanwhile is refused.",
+      "description": "Prepare renaming an organisation in Answerable ID; the slug never changes. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. The commit sends the organisation's version as If-Match, so a change made meanwhile is refused.",
       "scopes": [
         "admin"
       ],
@@ -2376,38 +2354,15 @@
             "description": "The organisation's id in Answerable ID, from organisations_list"
           },
           "name": {
-            "description": "The new name, 1 to 200 characters",
             "type": "string",
             "minLength": 1,
-            "maxLength": 200
-          },
-          "logo": {
-            "description": "The logo's URL, or null to remove it",
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uri"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "metadata": {
-            "description": "Free text, often JSON, up to 4,000 characters, or null to remove it",
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 4000
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "maxLength": 200,
+            "description": "The new name, 1 to 200 characters"
           }
         },
         "required": [
-          "organizationId"
+          "organizationId",
+          "name"
         ],
         "additionalProperties": false
       },

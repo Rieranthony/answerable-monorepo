@@ -44,7 +44,6 @@ test("group CRUD is scoped, filtered and paginated", async () => {
     organizationId: org.id,
     slug: "finance",
     name: "Accounts",
-    externalId: "directory",
   });
   const b = await queries.createGroup(db, {
     organizationId: org.id,
@@ -55,7 +54,6 @@ test("group CRUD is scoped, filtered and paginated", async () => {
     organizationId: other.id,
     slug: "finance",
     name: "Other",
-    externalId: "directory",
   });
   expect(await queries.findGroup(db, org.id, a.id)).toEqual(a);
   expect(
@@ -73,11 +71,8 @@ test("group CRUD is scoped, filtered and paginated", async () => {
       ),
     ).toEqual([a.id]);
   expect(
-    await queries.updateGroup(db, org.id, a.id, {
-      name: "New",
-      externalId: null,
-    }),
-  ).toMatchObject({ name: "New", externalId: null });
+    await queries.updateGroup(db, org.id, a.id, { name: "New" }),
+  ).toMatchObject({ name: "New" });
   expect(
     await queries.setGroupStatus(db, org.id, a.id, "disabled"),
   ).toMatchObject({ status: "disabled" });

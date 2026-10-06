@@ -20,8 +20,7 @@ const paged = <Item extends z.ZodObject>(item: Item) => z.object({ items: z.arra
 
 // What each tool returns is ID's own answer, with ID's field names; the output schemas keep the fields named here and drop the rest.
 const organisation = z.object({
-  id: z.uuid(), slug: z.string(), name: z.string(), status, logo: z.string().nullable(), metadata: z.string().nullable().describe("JSON text, or null"),
-  disabledAt: time.nullable(), createdAt: time, updatedAt: time,
+  id: z.uuid(), slug: z.string(), name: z.string(), status, disabledAt: time.nullable(), createdAt: time, updatedAt: time,
 })
 const member = z.object({
   id: z.uuid().describe("The member id: the person's membership of this organisation"), userId: z.uuid(), email: z.string(), name: z.string(),
@@ -94,7 +93,7 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
 
   const organisationsGet = role("team", defineTool({
     name: "organisations.get",
-    description: "Read one organisation from Answerable ID: its slug, name, status, logo and metadata, every email domain routed to it, and its SSO provider: issuer, domain, whether it signs in through Answerable's platform application or its own credentials, and whether a client secret is set. sso is null when it has none. Changes nothing.",
+    description: "Read one organisation from Answerable ID: its slug, name and status, every email domain routed to it, and its SSO provider: issuer, domain, whether it signs in through Answerable's platform application or its own credentials, and whether a client secret is set. sso is null when it has none. Changes nothing.",
     scopes,
     input: z.object({ organizationId }),
     output: organisation.extend({
@@ -148,10 +147,10 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
 
   const groupsList = role("team", defineTool({
     name: "groups.list",
-    description: "List the groups of an organisation, newest first, 20 per page by default and at most 100: id, slug, name, status and external id. Filter by q, text in the name or slug, and by status. When has_more is true, pass next_cursor as cursor. Changes nothing; members_get shows the groups of one member.",
+    description: "List the groups of an organisation, newest first, 20 per page by default and at most 100: id, slug, name and status. Filter by q, text in the name or slug, and by status. When has_more is true, pass next_cursor as cursor. Changes nothing; members_get shows the groups of one member.",
     scopes,
     input: z.object({ organizationId, q: z.string().trim().min(1).max(100).optional().describe("Text to find in the name or slug"), status: status.optional(), ...page }),
-    output: paged(z.object({ id: z.uuid(), slug: z.string(), name: z.string(), status, externalId: z.string().nullable() })),
+    output: paged(z.object({ id: z.uuid(), slug: z.string(), name: z.string(), status })),
     execute: ({ organizationId, ...params }, context) => list(`/organizations/${organizationId}/groups`, params, context, missingOrganisation(organizationId)),
   }))
 

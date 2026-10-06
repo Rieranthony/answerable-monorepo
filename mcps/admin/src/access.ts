@@ -15,12 +15,6 @@ export function accessWrites(writes: Writes) {
   const missingGroup = (organizationId: string, id: string) => `Answerable ID has no group ${id} in organisation ${organizationId}; groups_list lists them`
   const group = (organizationId: string, id: string, context: ToolContext) =>
     calls.need<Group>(`/organizations/${organizationId}/groups/${id}`, context, missingGroup(organizationId, id))
-  // A group whose members the directory decides cannot be changed by hand (apps/id/src/services/groups.ts requireManual).
-  async function manualGroup(organizationId: string, id: string, context: ToolContext) {
-    const row = await group(organizationId, id, context)
-    if (row.externalId !== null) throw precondition(`Group “${row.name}” is kept in step with the organisation's directory; change its members there`, { groupId: id, externalId: row.externalId })
-    return row
-  }
   // A member whose membership is in force: ID refuses to assign access to a revoked one.
   async function member(organizationId: string, id: string, context: ToolContext) {
     const row = await calls.need<Member>(`/organizations/${organizationId}/members/${id}`, context, missingMember(organizationId, id))
@@ -66,7 +60,7 @@ export function accessWrites(writes: Writes) {
     output: z.object({ groupId: z.uuid(), memberId: z.uuid(), operationId: z.uuid() }),
     async prepare({ organizationId: id, groupId: groupOf, memberId: person, validUntil }, context) {
       const { organisation: row } = await organisation(id, context)
-      const joined = await manualGroup(id, groupOf, context)
+      const joined = await group(id, groupOf, context)
       const who = await member(id, person, context)
       const current = await assignment(id, groupOf, person, context)
       const until = validUntil ?? null
@@ -101,7 +95,7 @@ export function accessWrites(writes: Writes) {
     output: z.object({ groupId: z.uuid(), memberId: z.uuid(), operationId: z.uuid() }),
     async prepare({ organizationId: id, groupId: groupOf, memberId: person }, context) {
       const { organisation: row } = await organisation(id, context)
-      const joined = await manualGroup(id, groupOf, context)
+      const joined = await group(id, groupOf, context)
       const who = await calls.need<Member>(`/organizations/${id}/members/${person}`, context, missingMember(id, person))
       const current = await assignment(id, groupOf, person, context)
       if (!current) throw precondition(`${who.email} is not in group “${joined.name}”`, { groupId: groupOf, memberId: person })

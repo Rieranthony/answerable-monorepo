@@ -22,7 +22,6 @@ import {
   organizationCapabilities,
   organizationDomains,
   ssoProviders,
-  sessions,
 } from "../schema/index.ts";
 import type { LifecycleStatus } from "../schema/vocabulary.ts";
 import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
@@ -31,13 +30,9 @@ import { createId } from "../../lib/id.ts";
 export type OrganizationInput = {
   slug: string;
   name: string;
-  logo?: string;
-  metadata?: string;
 };
 export type OrganizationPatch = {
   name?: string;
-  logo?: string | null;
-  metadata?: string | null;
 };
 export type OrganizationQuery = PageQuery & {
   q?: string;
@@ -326,7 +321,7 @@ export async function deleteOrganization(
     });
   const softDeletedSsoProviders = await tx
     .update(ssoProviders)
-    .set({ deletedAt: sql`now()`, oidcConfig: null, samlConfig: null })
+    .set({ deletedAt: sql`now()`, oidcConfig: null })
     .where(
       and(
         sql`${ssoProviders.deletedAt} is null`,
@@ -341,16 +336,6 @@ export async function deleteOrganization(
       providerId: ssoProviders.providerId,
       issuer: ssoProviders.issuer,
       domain: ssoProviders.domain,
-    });
-  // This mirrors the FK's SET NULL effect; browser sessions are not revoked.
-  const clearedSessionSelections = await tx
-    .update(sessions)
-    .set({ activeOrganizationId: null, updatedAt: sql`${sessions.updatedAt}` })
-    .where(eq(sessions.activeOrganizationId, organizationId))
-    .returning({
-      id: sessions.id,
-      userId: sessions.userId,
-      organizationId: sql<string>`${organizationId}::uuid`,
     });
   const [row] = await tx
     .update(organizations)
@@ -372,7 +357,6 @@ export async function deleteOrganization(
       softDeletedCapabilities,
       softDeletedDomains,
       softDeletedSsoProviders,
-      clearedSessionSelections,
     },
   };
 }

@@ -180,7 +180,6 @@ export function createSsoOriginBoundary(verifiedSso?: VerifiedSso) {
         ...session,
         id,
         userAgent: boundedUserAgent(session.userAgent),
-        activeOrganizationId: origin?.authenticationOrganizationId ?? null,
         authenticationAccountId: origin?.authenticationAccountId ?? null,
         upstreamAuthTime: origin?.upstreamAuthTime ?? null,
         authenticationOrganizationId:

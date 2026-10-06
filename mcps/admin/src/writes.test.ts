@@ -75,25 +75,25 @@ test("organisations_create previews the organisation, changes nothing until comm
   expect(id.received.find(({ request }) => request.startsWith("GET /api/admin/v1/organizations?"))!.request).toBe("GET /api/admin/v1/organizations?q=acme&limit=200")
 })
 
-test("organisations_update previews each changed field, binds the organisation's ETag and sends it as If-Match; a moved organisation is stale", async () => {
+test("organisations_update previews the new name, binds the organisation's ETag and sends it as If-Match; a moved organisation is stale", async () => {
   const { id, world: { newco }, prepare, refusal, commit, committed, writes } = await setup()
-  const intent = await prepare("organisations_update", { organizationId: newco.id, name: "Newco Ltd", metadata: null })
+  const intent = await prepare("organisations_update", { organizationId: newco.id, name: "Newco Ltd" })
   expect(intent.targets).toEqual([{ resource_type: "organization", resource_id: newco.id, label: "“Newco” (newco)", version: { kind: "etag", value: etag(newco) } }])
   expect(intent.preview).toMatchObject({
-    summary: "Update organisation “Newco” (newco): name “Newco” → “Newco Ltd”", changes: [{ path: `organizations[${newco.id}].name`, from: "Newco", to: "Newco Ltd" }], effects: [], warnings: [],
+    summary: "Rename organisation “Newco” (newco) to “Newco Ltd”", changes: [{ path: `organizations[${newco.id}].name`, from: "Newco", to: "Newco Ltd" }], effects: [], warnings: [],
   })
   expect((await committed(intent)).results).toEqual({ organizationId: newco.id, operationId: expect.any(String) })
   expect(writes()).toEqual([expect.objectContaining({ request: `PATCH /api/admin/v1/organizations/${newco.id}`, ifMatch: `"${newco.id}:1"` })])
   expect(id.organisation(newco.id)).toMatchObject({ name: "Newco Ltd", revision: 2 })
-  const logo = await prepare("organisations_update", { organizationId: newco.id, logo: "https://newco.example/logo.png" })
-  expect(logo.preview.summary).toBe("Update organisation “Newco Ltd” (newco): logo none → “https://newco.example/logo.png”")
+  const rename = await prepare("organisations_update", { organizationId: newco.id, name: "Newco Group" })
+  expect(rename.preview.summary).toBe("Rename organisation “Newco Ltd” (newco) to “Newco Group”")
   id.revise(newco.id)
-  expect(errorOf(await commit(logo))).toMatchObject({
+  expect(errorOf(await commit(rename))).toMatchObject({
     code: "INTENT_STALE", retry: { policy: "after_reprepare" }, details: { targets: [{ resource_id: newco.id, expected: `"${newco.id}:2"`, current: `"${newco.id}:3"` }] },
   })
   expect(writes()).toHaveLength(1)
-  expect(await refusal("organisations_update", { organizationId: newco.id, name: "Newco Ltd" })).toMatchObject({ code: "PRECONDITION_FAILED", message: "Organisation “Newco Ltd” (newco) already has these values; nothing would change" })
-  expect(await refusal("organisations_update", { organizationId: newco.id })).toMatchObject({ code: "INVALID_INPUT", details: { field_violations: [{ field: "name", message: "Name at least one of name, logo and metadata to change" }] } })
+  expect(await refusal("organisations_update", { organizationId: newco.id, name: "Newco Ltd" })).toMatchObject({ code: "PRECONDITION_FAILED", message: "Organisation “Newco Ltd” (newco) is already named “Newco Ltd”; nothing would change" })
+  expect((await refusal("organisations_update", { organizationId: newco.id })).code).toBe("INVALID_INPUT")
   const unknown = crypto.randomUUID()
   expect(await refusal("organisations_update", { organizationId: unknown, name: "x" })).toMatchObject({ code: "NOT_FOUND", message: `Answerable ID has no organisation ${unknown}; organisations_list lists them` })
 })
@@ -203,8 +203,6 @@ test("groups_addmember adds with If-None-Match, changes an end with If-Match, an
   expect(await refusal("groups_addmember", { organizationId: newco.id, groupId: engineers.id, memberId: grace.id, validUntil: "2027-06-30T00:00:00.000Z" })).toMatchObject({ code: "PRECONDITION_FAILED" })
   const gone = id.member(newco.id, { email: "gone@newco.example", membershipStatus: "revoked" })
   expect(await refusal("groups_addmember", { organizationId: newco.id, groupId: engineers.id, memberId: gone.id })).toMatchObject({ code: "PRECONDITION_FAILED", message: "gone@newco.example's membership is revoked; Answerable ID gives it no access until it is reinstated" })
-  const synced = id.group(newco.id, { slug: "synced", name: "Synced", externalId: "directory-group-1" })
-  expect(await refusal("groups_addmember", { organizationId: newco.id, groupId: synced.id, memberId: grace.id })).toMatchObject({ code: "PRECONDITION_FAILED", message: "Group “Synced” is kept in step with the organisation's directory; change its members there" })
   expect(await refusal("groups_addmember", { organizationId: newco.id, groupId: crypto.randomUUID(), memberId: grace.id })).toMatchObject({ code: "NOT_FOUND" })
   expect(await refusal("groups_addmember", { organizationId: newco.id, groupId: engineers.id, memberId: crypto.randomUUID() })).toMatchObject({ code: "NOT_FOUND" })
 })
@@ -365,12 +363,12 @@ test("staff_grant finds the role's group by its entitlement on the admin MCP's r
   })
 })
 
-test("staff_grant prefers the group that confers the least beyond the role, and skips a group the directory keeps", async () => {
+test("staff_grant prefers the group that confers the least beyond the role, and skips a disabled group", async () => {
   const { id, world: { platform, roles, staffer }, prepare } = await setup()
   const leaders = id.group(platform, { slug: "leaders", name: "Leaders" })
   id.entitlement(platform, { groupId: leaders.id, resource, scopes: ["answerable-admin", "answerable-owner"] })
-  const synced = id.group(platform, { slug: "synced", name: "Synced", externalId: "directory-1" })
-  id.entitlement(platform, { groupId: synced.id, resource, scopes: ["answerable-admin"] })
+  const retired = id.group(platform, { slug: "retired", name: "Retired", status: "disabled" })
+  id.entitlement(platform, { groupId: retired.id, resource, scopes: ["answerable-admin"] })
   expect((await prepare("staff_grant", { memberId: staffer("a@answerable.test").id, role: "admin" })).preview.summary).toContain("group “Operations”")
   expect(roles.admin.group.name).toBe("Operations")
 })

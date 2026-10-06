@@ -111,11 +111,9 @@ test("client lifecycle hides digests, returns secrets once, revokes tokens, chan
     uri: "https://app.example",
     contacts: ["owner@example.com"],
     redirectUris: [],
-    postLogoutRedirectUris: ["https://app.example/logout"],
     scopes: ["openid"],
     clientCredentialsScopes: ["read", "write"],
     skipConsent: true,
-    backchannelLogoutUri: "https://app.example/backchannel",
   };
   const updated = await service.updateClient(
     db,

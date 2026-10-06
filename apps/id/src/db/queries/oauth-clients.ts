@@ -50,13 +50,11 @@ export type ClientPatch = Partial<
     | "uri"
     | "contacts"
     | "redirectUris"
-    | "postLogoutRedirectUris"
     | "scopes"
     | "clientCredentialsScopes"
     | "jwks"
     | "jwksUri"
     | "skipConsent"
-    | "backchannelLogoutUri"
   >
 >;
 export type ClientQuery = PageQuery & {

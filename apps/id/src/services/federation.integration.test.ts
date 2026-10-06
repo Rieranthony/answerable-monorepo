@@ -557,7 +557,6 @@ describe("integration: federated sign-in", () => {
         expect(retained.find((row) => row.id === provider!.id)).toMatchObject({
           deletedAt: expect.any(Date),
           oidcConfig: null,
-          samlConfig: null,
         });
       if (change === "delete") expect(current).toHaveLength(0);
       else if (change === "recreate")

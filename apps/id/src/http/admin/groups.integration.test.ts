@@ -315,72 +315,6 @@ test("platform administrator and machine perform the complete group lifecycle wi
     );
   }
 });
-test("directory groups reject both membership edits and external IDs are unique", async () => {
-  const id = fixture.tenant.organizationId;
-  const created = await request(
-    id,
-    "",
-    "POST",
-    { slug: "directory", name: "Directory", externalId: "upstream" },
-    "platformAdmin",
-    "group.created",
-  );
-  expect(created.status).toBe(201);
-  const group = await created.json();
-  expect(
-    (
-      await request(id, "", "POST", {
-        slug: "duplicate-external",
-        name: "Duplicate",
-        externalId: "upstream",
-      })
-    ).status,
-  ).toBe(409);
-  const memberId = fixture.principals.tenantReader.memberId;
-  await addGroupMember(fixture.db, {
-    organizationId: id,
-    groupId: group.id,
-    memberId,
-  });
-  for (const method of ["PUT", "DELETE"]) {
-    const response = await request(
-      id,
-      `/${group.id}/members/${memberId}`,
-      method,
-      method === "PUT" ? {} : undefined,
-    );
-    expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({
-      code: "group_directory_managed",
-    });
-  }
-  expect(
-    (
-      await request(
-        id,
-        `/${group.id}`,
-        "PATCH",
-        { externalId: null },
-        "platformAdmin",
-        "group.updated",
-        group.id,
-      )
-    ).status,
-  ).toBe(200);
-  expect(
-    (
-      await request(
-        id,
-        `/${group.id}/members/${memberId}`,
-        "PUT",
-        {},
-        "platformAdmin",
-        "group_member.update_unchanged",
-        memberId,
-      )
-    ).status,
-  ).toBe(200);
-});
 test("group validation, filters and membership cursors", async () => {
   const id = fixture.tenant.organizationId;
   for (const slug of ["UPPER", "bad--slug", "-bad", "bad_"])
@@ -392,7 +326,7 @@ test("group validation, filters and membership cursors", async () => {
     slug: "pagination",
     name: "Pagination",
   });
-  for (const body of [{}, { name: "" }, { externalId: "" }])
+  for (const body of [{}, { name: "" }])
     expect((await request(id, `/${group.id}`, "PATCH", body)).status).toBe(400);
   expect((await request("bad-id")).status).toBe(400);
   expect((await request(id, "/bad-id")).status).toBe(400);

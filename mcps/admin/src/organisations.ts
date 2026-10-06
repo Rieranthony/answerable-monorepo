@@ -43,31 +43,21 @@ export function organisationWrites(writes: Writes) {
     },
   }))
 
-  const fields = ["name", "logo", "metadata"] as const
   const update = role("admin", defineMutation({
     name: "organisations.update", risk: "normal", scopes, errors,
-    description: `Prepare changing an organisation's name, logo or metadata in Answerable ID; the slug never changes. ${commitWith} The commit sends the organisation's version as If-Match, so a change made meanwhile is refused.`,
-    input: z.object({
-      organizationId, name: name.optional().describe("The new name, 1 to 200 characters"),
-      logo: z.url().nullable().optional().describe("The logo's URL, or null to remove it"),
-      metadata: z.string().max(4000).nullable().optional().describe("Free text, often JSON, up to 4,000 characters, or null to remove it"),
-    }),
+    description: `Prepare renaming an organisation in Answerable ID; the slug never changes. ${commitWith} The commit sends the organisation's version as If-Match, so a change made meanwhile is refused.`,
+    input: z.object({ organizationId, name: name.describe("The new name, 1 to 200 characters") }),
     output: z.object({ organizationId: z.uuid(), operationId: z.uuid() }),
     async prepare(input, context) {
-      const given = fields.filter(field => input[field] !== undefined)
-      if (!given.length) throw invalid("name", "Name at least one of name, logo and metadata to change")
       const { organisation: row, target: version } = await organisation(input.organizationId, context)
-      const changed = given.filter(field => input[field] !== row[field])
-      if (!changed.length) throw precondition(`Organisation ${named(row)} already has these values; nothing would change`, { organizationId: row.id })
-      const patch = Object.fromEntries(changed.map(field => [field, input[field]]))
-      const shown = (value: unknown) => (value === null ? "none" : `“${value}”`)
+      if (input.name === row.name) throw precondition(`Organisation ${named(row)} is already named “${row.name}”; nothing would change`, { organizationId: row.id })
       return {
         targets: [version],
         preview: {
-          summary: `Update organisation ${named(row)}: ${changed.map(field => `${field} ${shown(row[field])} → ${shown(input[field])}`).join(", ")}`,
-          changes: changed.map(field => ({ path: `organizations[${row.id}].${field}`, from: row[field], to: input[field] })),
+          summary: `Rename organisation ${named(row)} to “${input.name}”`,
+          changes: [{ path: `organizations[${row.id}].name`, from: row.name, to: input.name }],
         },
-        plan: { key: newKey(), patch },
+        plan: { key: newKey(), patch: { name: input.name } },
       }
     },
     async commit({ targets: [version], plan: { key, patch }, preview }, context) {

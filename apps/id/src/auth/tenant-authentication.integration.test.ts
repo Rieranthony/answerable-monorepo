@@ -185,10 +185,6 @@ test("native session records the accepted account UUID and leaves absent upstrea
 
 test("restricted grant creation rejects A authentication when B membership is selected", async () => {
   const session = await currentSession();
-  await fixture.db
-    .update(sessions)
-    .set({ activeOrganizationId: fixture.outsider.organizationId })
-    .where(eq(sessions.id, session.id));
   await expect(
     createResourceGrant(
       runtime.db,
@@ -282,7 +278,6 @@ test("independently verified B account evidence admits the same global user to B
     async (tx) => {
       await lockResourceGrantTargets(tx, {
         userId,
-        ownerUserId: null,
         organizationId: fixture.outsider.organizationId,
         clientId,
         resource,

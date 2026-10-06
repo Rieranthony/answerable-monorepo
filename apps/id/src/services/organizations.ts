@@ -27,7 +27,6 @@ function configuration(
     revision: row.revision,
     slug: row.slug,
     name: row.name,
-    logo: row.logo,
     status: row.status,
     authorizationVersion: row.authorizationVersion,
     disabledAt: row.disabledAt,
@@ -110,11 +109,7 @@ export async function updateOrganization(
     actor,
     id,
     changed ? "organization.updated" : "organization.update_unchanged",
-    {
-      before: configuration(before),
-      after: configuration(row),
-      metadataChanged: before.metadata !== row.metadata,
-    },
+    { before: configuration(before), after: configuration(row) },
   );
   return { organization: row, changed };
 }

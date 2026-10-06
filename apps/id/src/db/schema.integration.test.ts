@@ -8,7 +8,11 @@ import {
 } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 
-import { createClient } from "../__tests__/client-queries.ts";
+import {
+  createClient,
+  linkClientResource,
+} from "../__tests__/client-queries.ts";
+import { createResource } from "../__tests__/resource-queries.ts";
 import {
   createOrganizationDomain,
   organizationAcceptsDomain,
@@ -101,31 +105,25 @@ async function insertMember(organizationId: string, userId: string) {
   return member!;
 }
 
-async function registerTutor(auth: ReturnType<typeof createAuth>) {
-  // The plugin's admin endpoints require a Better Auth session and privilege
-  // hooks, which arrive with the admin API milestone. Its adapter paths
-  // exercise the same tables, field mapping, and id generation.
-  const { adapter } = await auth.$context;
+// ID registers clients and resources itself; the plugin's own registration
+// routes are not served.
+async function registerTutor() {
   const clientId = "omnichat-test-cell";
   const resource = "https://mcp.example.com";
-  await adapter.create({
-    model: "oauthClient",
-    data: {
-      clientId,
-      name: "OmniChat test cell",
-      redirectUris: ["https://chat.example.com/callback"],
-      tokenEndpointAuthMethod: "private_key_jwt",
-      grantTypes: ["authorization_code", "refresh_token"],
-    },
+  await createClient(connection.db, {
+    clientId,
+    name: "OmniChat test cell",
+    redirectUris: ["https://chat.example.com/callback"],
+    tokenEndpointAuthMethod: "private_key_jwt",
+    grantTypes: ["authorization_code", "refresh_token"],
   });
-  await adapter.create({
-    model: "oauthResource",
-    data: { identifier: resource, name: "Tutor MCP", accessTokenTtl: 300 },
+  await createResource(connection.db, {
+    identifier: resource,
+    name: "Tutor MCP",
+    accessTokenTtl: 300,
+    allowedScopes: ["tutor:read"],
   });
-  await adapter.create({
-    model: "oauthClientResource",
-    data: { clientId, resourceId: resource },
-  });
+  await linkClientResource(connection.db, clientId, resource);
   return { clientId, resource };
 }
 
@@ -222,7 +220,14 @@ describe("integration: PostgreSQL schema", () => {
 
   test("stores OAuth clients, resources, links, and signing keys with UUIDv7", async () => {
     const auth = createAuth(connection.db, environment);
-    const { clientId, resource } = await registerTutor(auth);
+    const { clientId, resource } = await registerTutor();
+    // The plugin's own registration would write client columns ID does not store.
+    await expect(
+      (await auth.$context).adapter.create({
+        model: "oauthClient",
+        data: { clientId: "plugin-registered", redirectUris: [] },
+      }),
+    ).rejects.toThrow('The field "dpopBoundAccessTokens" does not exist');
 
     const [client] = await connection.db.select().from(oauthClients);
     const [tutor] = await connection.db.select().from(oauthResources);
@@ -533,7 +538,7 @@ describe("integration: PostgreSQL schema", () => {
     });
     const providerGraph = await connection.db.query.ssoProviders.findFirst({
       where: eq(ssoProviders.id, firstProvider.id),
-      with: { organization: true, user: true },
+      with: { organization: true },
     });
     const organizationGraph = await connection.db.query.organizations.findFirst(
       {
@@ -542,7 +547,6 @@ describe("integration: PostgreSQL schema", () => {
       },
     );
     expect(providerGraph?.organization.id).toBe(first.id);
-    expect(providerGraph?.user).toBeNull();
     expect(organizationGraph?.ssoProvider?.id).toBe(firstProvider.id);
     await expect(
       createSsoProvider(connection.db, {
@@ -691,28 +695,18 @@ describe("integration: PostgreSQL schema", () => {
       organizationId: first.id,
       slug: "sales",
       name: "Sales",
-      externalId: "entra-group-1",
     });
     expect(isUuidV7(sales.id)).toBe(true);
     await createGroup(connection.db, {
       organizationId: second.id,
       slug: "sales",
       name: "Sales",
-      externalId: "entra-group-1",
     });
     await expect(
       createGroup(connection.db, {
         organizationId: first.id,
         slug: "sales",
         name: "Duplicate slug",
-      }),
-    ).rejects.toThrow();
-    await expect(
-      createGroup(connection.db, {
-        organizationId: first.id,
-        slug: "mirror",
-        name: "Duplicate external id",
-        externalId: "entra-group-1",
       }),
     ).rejects.toThrow();
     await expect(
@@ -861,8 +855,7 @@ describe("integration: PostgreSQL schema", () => {
   });
 
   test("orders effective windows", async () => {
-    const auth = createAuth(connection.db, environment);
-    const { resource } = await registerTutor(auth);
+    const { resource } = await registerTutor();
     const organization = await insertOrganization();
     const user = await insertUser();
     const member = await insertMember(organization.id, user.id);
@@ -954,8 +947,7 @@ describe("integration: PostgreSQL schema", () => {
   });
 
   test("enforces entitlement principals, targets, uniqueness, and organization binding", async () => {
-    const auth = createAuth(connection.db, environment);
-    const { clientId, resource } = await registerTutor(auth);
+    const { clientId, resource } = await registerTutor();
     const first = await insertOrganization("first");
     const second = await insertOrganization("second");
     const user = await insertUser();

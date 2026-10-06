@@ -35,8 +35,6 @@ const organizationSchema = z.object({
   revision: z.number().int().positive(),
   name: z.string(),
   slug: z.string(),
-  logo: z.string().nullable(),
-  metadata: z.string().nullable(),
   status: z.enum(lifecycleStatuses),
   authorizationVersion: z.number().int().positive(),
   disabledAt: z.iso.datetime().nullable(),
@@ -51,14 +49,10 @@ const name = z.string().min(1).max(200);
 const createSchema = z.object({
   slug: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/),
   name,
-  logo: z.url().optional(),
-  metadata: z.string().max(4000).optional(),
 });
 const patchSchema = z
   .object({
     name: name.optional(),
-    logo: z.url().nullable().optional(),
-    metadata: z.string().max(4000).nullable().optional(),
   })
   .refine(
     (patch) => Object.keys(patch).length > 0,

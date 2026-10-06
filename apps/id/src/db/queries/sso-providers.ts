@@ -217,7 +217,7 @@ export async function deleteSsoProvider(
   const { tx: executor } = requirePlatformWriteContext(context);
   const [row] = await executor
     .update(ssoProviders)
-    .set({ deletedAt: sql`now()`, oidcConfig: null, samlConfig: null })
+    .set({ deletedAt: sql`now()`, oidcConfig: null })
     .where(
       and(
         sql`${ssoProviders.deletedAt} is null`,

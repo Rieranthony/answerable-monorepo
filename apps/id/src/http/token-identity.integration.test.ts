@@ -20,7 +20,6 @@ import {
   oauthClients,
   oauthResources,
 } from "../db/schema/index.ts";
-import { machineIdentitySchema } from "../auth/machine-identity.ts";
 import * as clientsImplementation from "../services/clients.ts";
 const clients = {
   ...clientsImplementation,
@@ -119,25 +118,6 @@ test("machine JWT binds immutable client instance, owner and authorization versi
     subject_type: "client",
   });
   expect((await me(token)).status).toBe(200);
-});
-test("resource custom claims cannot replace machine identity claims", async () => {
-  for (const claim of Object.keys(machineIdentitySchema.shape)) {
-    await expect(
-      connection.db
-        .update(oauthResources)
-        .set({
-          customClaims: { [claim]: "forged" },
-        })
-        .execute(),
-    ).rejects.toThrow();
-  }
-  await connection.db.update(oauthResources).set({
-    customClaims: { department: "engineering" },
-  });
-  expect(decodeJwt(await mint())).toMatchObject({
-    department: "engineering",
-    organization_id: orgId,
-  });
 });
 test("an out-of-band ownership update is rejected and leaves the token in its original tenant", async () => {
   const token = await mint();

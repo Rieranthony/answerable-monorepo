@@ -26,7 +26,6 @@ export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
   accounts: many(accounts),
   members: many(members),
-  oauthClients: many(oauthClients),
   oauthRefreshTokens: many(oauthRefreshTokens),
   oauthAccessTokens: many(oauthAccessTokens),
   oauthConsents: many(oauthConsents),
@@ -36,10 +35,6 @@ export const sessionsRelations = relations(sessions, ({ many, one }) => ({
   user: one(users, {
     fields: [sessions.userId],
     references: [users.id],
-  }),
-  activeOrganization: one(organizations, {
-    fields: [sessions.activeOrganizationId],
-    references: [organizations.id],
   }),
   oauthRefreshTokens: many(oauthRefreshTokens),
   oauthAccessTokens: many(oauthAccessTokens),
@@ -55,7 +50,6 @@ export const accountsRelations = relations(accounts, ({ one }) => ({
 export const organizationsRelations = relations(
   organizations,
   ({ many, one }) => ({
-    sessions: many(sessions),
     members: many(members),
     domains: many(organizationDomains),
     auditEvents: many(auditEvents),
@@ -70,10 +64,6 @@ export const ssoProvidersRelations = relations(ssoProviders, ({ one }) => ({
   organization: one(organizations, {
     fields: [ssoProviders.organizationId],
     references: [organizations.id],
-  }),
-  user: one(users, {
-    fields: [ssoProviders.userId],
-    references: [users.id],
   }),
 }));
 
@@ -123,10 +113,6 @@ export const groupMembersRelations = relations(groupMembers, ({ one }) => ({
 export const oauthClientsRelations = relations(
   oauthClients,
   ({ many, one }) => ({
-    user: one(users, {
-      fields: [oauthClients.userId],
-      references: [users.id],
-    }),
     organization: one(organizations, {
       fields: [oauthClients.organizationId],
       references: [organizations.id],

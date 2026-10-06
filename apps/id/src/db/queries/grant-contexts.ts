@@ -8,8 +8,8 @@ import {
   requireTenantMemberContext,
   type TenantMemberContext,
 } from "../../services/tenant-context.ts";
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
-import { grantContexts, oauthClients } from "../schema/index.ts";
+import { and, eq, isNull, sql } from "drizzle-orm";
+import { grantContexts } from "../schema/index.ts";
 
 /** Irreversible tenant-local revocation; returning rows are the actual audit effects. */
 export function revokeMemberGrantContexts(
@@ -47,8 +47,8 @@ export function revokeUserGrantContexts(
     });
 }
 
-/** Revoke contexts belonging to the user and to their owned clients. */
-export function revokeUserAndOwnedClientGrantContexts(
+/** Erasure's revocation: the same rows as revokeUserGrantContexts, under platform write. */
+export function revokeErasedUserGrantContexts(
   context: PlatformWriteContext,
   userId: string,
 ) {
@@ -57,24 +57,7 @@ export function revokeUserAndOwnedClientGrantContexts(
     .update(grantContexts)
     .set({ revokedAt: sql`statement_timestamp()` })
     .where(
-      and(
-        isNull(grantContexts.revokedAt),
-        or(
-          eq(grantContexts.userId, userId),
-          inArray(
-            grantContexts.clientInstanceId,
-            executor
-              .select({ id: oauthClients.id })
-              .from(oauthClients)
-              .where(
-                and(
-                  isNull(oauthClients.deletedAt),
-                  eq(oauthClients.userId, userId),
-                ),
-              ),
-          ),
-        ),
-      ),
+      and(eq(grantContexts.userId, userId), isNull(grantContexts.revokedAt)),
     )
     .returning({
       id: grantContexts.id,

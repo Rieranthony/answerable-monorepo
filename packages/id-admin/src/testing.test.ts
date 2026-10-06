@@ -31,7 +31,6 @@ test("every answer the fake gives is one Answerable ID's admin contract declares
   const joiner = id.member(organisation, { email: "bob@newco.example" }).id
   const revoked = id.member(organisation, { email: "eve@newco.example", membershipStatus: "revoked", revokedAt: new Date().toISOString() }).id
   const group = id.group(organisation, { slug: "engineers" }).id
-  const directory = id.group(organisation, { slug: "directory", externalId: "directory-1" }).id
   const assignment = id.join(group, member)
   id.domain(organisation, "newco.example")
   const provider = id.ssoProvider(organisation, { issuer: google, domain: "newco.example" })
@@ -105,7 +104,6 @@ test("every answer the fake gives is one Answerable ID's admin contract declares
     [201, "PUT", at(`/groups/${group}/members/${joiner}`), { key: "join-bob", body: {}, ifNoneMatch: "*" }, receipt("applied", "group")],
     [200, "PUT", at(`/groups/${group}/members/${member}`), { body: { validUntil: "2027-01-01T00:00:00.000Z" }, ifMatch: `"${assignment.id}:1"` }],
     [412, "PUT", at(`/groups/${group}/members/${member}`), { body: {}, ifNoneMatch: "*" }],
-    [409, "PUT", at(`/groups/${directory}/members/${member}`), { body: {} }],
     [409, "PUT", at(`/groups/${group}/members/${revoked}`), { body: {} }],
     [405, "POST", at(`/groups/${group}/members/${member}`), { body: {} }],
     [204, "DELETE", at(`/groups/${group}/members/${joiner}`)],

@@ -53,7 +53,6 @@ export async function createResourceGrant(
         .select({
           userId: members.userId,
           organizationId: members.organizationId,
-          ownerUserId: oauthClients.userId,
           clientId: oauthClients.clientId,
           resource: oauthResources.identifier,
         })

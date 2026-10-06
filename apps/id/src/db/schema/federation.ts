@@ -10,7 +10,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-import { organizations, users } from "./auth.ts";
+import { organizations } from "./auth.ts";
 import { id, softDeletion, softDeletionChecks, timestamps } from "./columns.ts";
 
 // Persisted configuration owned by @better-auth/sso. The organization and
@@ -22,10 +22,6 @@ export const ssoProviders = pgTable(
     id: id(),
     issuer: text("issuer").notNull(),
     oidcConfig: text("oidc_config"),
-    samlConfig: text("saml_config"),
-    userId: uuid("user_id").references(() => users.id, {
-      onDelete: "set null",
-    }),
     providerId: text("provider_id").notNull().unique(),
     organizationId: uuid("organization_id")
       .notNull()

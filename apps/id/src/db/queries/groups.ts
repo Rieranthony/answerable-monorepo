@@ -24,8 +24,6 @@ export type CreateGroupInput = {
   organizationId: string;
   slug: string;
   name: string;
-  /** Set when the group mirrors an upstream directory group. */
-  externalId?: string;
 };
 
 export async function createGroup(
@@ -42,7 +40,7 @@ export async function createGroup(
 }
 
 export type GroupQuery = PageQuery & { q?: string; status?: LifecycleStatus };
-export type GroupPatch = { name?: string; externalId?: string | null };
+export type GroupPatch = { name?: string };
 export type MemberWindow = {
   validFrom?: Date | null;
   validUntil?: Date | null;

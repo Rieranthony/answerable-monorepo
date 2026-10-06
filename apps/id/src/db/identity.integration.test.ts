@@ -236,7 +236,7 @@ test("resource link insertion, movement and explicit removal advance affected cl
   );
   expect(await revision()).toBe(2);
   await connection.db.execute(
-    sql`update oauth_client_resources set metadata = '{"note":"unchanged visible link"}'`,
+    sql`update oauth_client_resources set created_at = created_at`,
   );
   expect(await revision()).toBe(2);
   await connection.db
