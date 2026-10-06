@@ -45,7 +45,7 @@ See [fresh authentication](#fresh-authentication) for the additional requirement
 | Command                                                                                                                                          | Fresh upstream authentication                      |
 | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
 | Domain, SSO, credentials, client/resource security configuration, capabilities, assignments, memberships, account/session lifecycle and deletion | Required                                           |
-| Reads and organisation `name`, `logo` or `metadata` edits                                                                                        | Not required                                       |
+| Reads and organisation `name` edits                                                                                                              | Not required                                       |
 | Client edits containing only `name`, `uri` or `contacts`; resource/group edits containing only `name`                                            | Not required                                       |
 | Machine and root requests                                                                                                                        | Existing credential and current-authority contract |
 
@@ -62,7 +62,7 @@ curl https://id.answerable.org/api/admin/v1/me \
 
 **Grants.** This endpoint works even with zero grants. The response identifies the caller and their organisation IDs and scopes. Set `ORGANIZATION_ID` to your organisation's ID.
 
-**Sign-in history.** Version 2 `auth.signin.succeeded` attributes the event to the session's verified SSO organisation, even when the user has several memberships. Its actor is the global user UUID and its target is the session UUID. `data` contains the accepted account UUID, provider UUID/revision and nullable upstream `auth_time`. The selected organisation and email are not attribution evidence. Earlier version 1 events retain their historical membership-based attribution.
+**Sign-in history.** `auth.signin.succeeded` attributes the event to the session's verified SSO organisation, even when the user has several memberships. Its actor is the global user UUID and its target is the session UUID. `data` contains the accepted account UUID, provider UUID/revision and nullable upstream `auth_time`. Email is not attribution evidence.
 
 ## List members
 
@@ -99,11 +99,11 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORGANIZATION_ID/memb
 
 **Limited public denials.** A denied `permission` contains only `allowed: false` and its coarse `reason`. Internal native policy decisions can retain the trusted identity snapshot, requested scopes and available effective sources for a located grant context. Missing or mismatched grant contexts return a context denial without fabricating an identity. Those internal facts are not returned through public denial views and are recorded with successful production user-grant issuance.
 
-**Removal history.** Member-removal audits already retain this public access projection under `data.before.access`. New allowed snapshots therefore include these identity fields; older version 1 audit rows remain unchanged and can lack them. Internal denied snapshots are not copied into that public projection.
+**Removal history.** Member-removal audits retain this public access projection under `data.before.access`, so allowed snapshots include these identity fields. Internal denied snapshots are not copied into that public projection.
 
-**Unattributed machine attempts.** Version 3 `oauth.token.rejected` records failed client authentication with system actor `oauth-client-authentication`, no tenant, and null `data.authenticatedClient` and `data.decision`. Invalid credentials produce a denial; authentication infrastructure errors produce a failure. These events are platform-only and omit supplied identity, credentials, scope/resource values and exception details. Audit-storage failure preserves rejection and emits the fixed operational signal `token_rejection_audit_unavailable`. Requests rejected by parsing, route filtering or provider rate limiting before this handler are outside this event contract.
+**Unattributed machine attempts.** `oauth.token.rejected` records failed client authentication with system actor `oauth-client-authentication`, no tenant, and null `data.authenticatedClient` and `data.decision`. Invalid credentials produce a denial; authentication infrastructure errors produce a failure. These events are platform-only and omit supplied identity, credentials, scope/resource values and exception details. Audit-storage failure preserves rejection and emits the fixed operational signal `token_rejection_audit_unavailable`. Requests rejected by parsing, route filtering or provider rate limiting before this handler are outside this event contract.
 
-**Membership history.** Version 2 `member.updated`, `member.reinstated` and `member.reinstatement_unchanged`, and version 3 `member.removed` and `member.removal_unchanged` events retain this access projection under both `data.before.access` and `data.after.access`. `permission.scopes` is the approved intersection; top-level target scopes remain assignments. Removal records ineffective access after revocation even if organisation-wide assignments survive; its actual deletion/revocation effects remain separately recorded. Reinstatement can restore an organisation-wide permission without recreating removed direct assignments. An unchanged reinstatement means the membership was already active, not that every permission was unchanged.
+**Membership history.** `member.updated`, `member.reinstated`, `member.reinstatement_unchanged`, `member.removed` and `member.removal_unchanged` events retain this access projection under both `data.before.access` and `data.after.access`. `permission.scopes` is the approved intersection; top-level target scopes remain assignments. Removal records ineffective access after revocation even if organisation-wide assignments survive; its actual deletion/revocation effects remain separately recorded. Reinstatement can restore an organisation-wide permission without recreating removed direct assignments. An unchanged reinstatement means the membership was already active, not that every permission was unchanged.
 
 **Observation limits.** These reads share the membership command transaction and tenant lock. Each is a separate database statement: elapsed validity windows and independently changed endpoint configuration can affect the result. Allowed decisions retain their evaluation time and source revisions. An empty snapshot has no allowed target decision; it does not carry a fabricated decision time. These observations are not an isolated causal delta, token issuance evidence or proof of remote session termination. Audit/subject failure rolls back the membership change and operation receipt; replay returns the receipt without another event. Version 1 history is not backfilled.
 
@@ -137,9 +137,7 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORGANIZATION_ID/audi
 
 **Current authority and retained history.** The organisation read transaction rechecks `org:read` or staff `platform:read`. Fleet-wide and user audit reads require current `platform:read` inside their own transaction. Responses use `Cache-Control: no-store`. Authorised staff can still read retained events after organisation erasure. An unknown organisation with no retained history returns 404; erasure does not bypass permission checks.
 
-**Client-resource links.** Versions 2 and 3 `client.resource_linked`, `client.resource_unlinked` and `client.resource_unchanged` events record `resourceInstanceId`, `resourceClassification` and `resourceOrganizationId` alongside the resource identifier and link before/after state. Version 3 also records the changed relationship UUID and `deletedAt` under `data.relationship`; an unchanged command has a null relationship effect. Links to shared resources or resources owned by the client's organisation appear in that organisation's history. A foreign private resource, an unknown target on unlink, or a client without an organisation produces a platform-only event.
-
-**Older link history.** Organisation history excludes other versions of these three link actions before filtering pages. Their visibility was not established by the old payload, so the service does not guess from current resource rows. Platform auditors can retrieve the unchanged records through `/api/admin/v1/audit-events`, including after target erasure. This restriction also applies to staff using the organisation endpoint; use the platform endpoint for the complete retained record.
+**Client-resource links.** `client.resource_linked`, `client.resource_unlinked` and `client.resource_unchanged` events record `resourceInstanceId`, `resourceClassification` and `resourceOrganizationId` alongside the resource identifier and link before/after state, and the changed relationship UUID and `deletedAt` under `data.relationship`; an unchanged command has a null relationship effect. Links to shared resources or resources owned by the client's organisation appear in that organisation's history. A foreign private resource, an unknown target on unlink, or a client without an organisation produces a platform-only event.
 
 ## Read machine issuance evidence
 
@@ -148,13 +146,13 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORGANIZATION_ID/audi
   -H "Authorization: Bearer $TOKEN"
 ```
 
-**Version 2.** New machine issuance records store `data.decision` plus `data.issuedAt` and `data.expiresAt`. The decision contains its approved outcome, grant and subject type, tenant UUID/version, client UUID/public ID/revision/version, resource UUID/identifier/revision, scope ceilings, approved scopes, and contributing capability ID/revision/window. `decision.evidence.evaluatedAt` is the database evaluation instant; `policyVersion` identifies the permission calculation and is separate from the event payload's `schemaVersion`.
+**Issuance record.** Machine issuance records store `data.decision` plus `data.issuedAt` and `data.expiresAt`. The decision contains its approved outcome, grant and subject type, tenant UUID/version, client UUID/public ID/revision/version, resource UUID/identifier/revision, scope ceilings, approved scopes, and contributing capability ID/revision/window. `decision.evidence.evaluatedAt` is the database evaluation instant; `policyVersion` identifies the permission calculation and is separate from the event payload's `schemaVersion`.
 
 **Requested scopes.** `decision.requestedScopes: null` means the request omitted `scope` and the policy selected the permitted intersection. An explicit request is stored as a sorted, deduplicated list. `decision.scopes` is the approved result.
 
 **Matching the token.** Before recording success or returning the token, issuance checks the signed client ID, subject, audience, immutable client/tenant identity, authorization versions and scope set against that decision. A mismatch returns 500, releases no token and rolls back the transaction. Audit storage failure retains its `503 temporarily_unavailable` response. This protects the issuance integration from producing evidence for different authority; it is not an authentication endpoint for arbitrary JWTs.
 
-**Retained history.** Version 1 machine records keep their original flat fields and `data.policy`; version 2 records use `data.decision`. Readers must support both. The snapshot is not reconstructed from later client/resource configuration. Neither format contains bearer tokens or client secrets. Rejected requests retain their available trusted decision; production user outcomes use version 4 as described in [OAuth](/docs/id/oauth).
+**Retained history.** The snapshot is not reconstructed from later client/resource configuration. It contains no bearer tokens or client secrets. Rejected requests retain their available trusted decision; user outcomes are described in [OAuth](/docs/id/oauth).
 
 ## Read rejected machine requests
 
@@ -163,15 +161,15 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORGANIZATION_ID/audi
   -H "Authorization: Bearer $TOKEN"
 ```
 
-**After credential verification.** A rejected machine request records a version 2 `oauth.token.rejected` event after its issuance transaction exits with an error. Its actor and tenant come from the provider-authenticated client. `data.authenticatedClient` retains the immutable client UUID, public ID and owner UUID from that authentication; these identify the attempt and do not prove that the client still has authority. No token was released by this request.
+**After credential verification.** A rejected machine request records an `oauth.token.rejected` event after its issuance transaction exits with an error. Its actor and tenant come from the provider-authenticated client. `data.authenticatedClient` retains the immutable client UUID, public ID and owner UUID from that authentication; these identify the attempt and do not prove that the client still has authority. No token was released by this request.
 
 **Outcome and stage.** `denied` identifies a protocol rejection with a 4xx status; `failure` identifies an operational or unexpected failure. `reason` retains an allowlisted OAuth error code, otherwise `request_rejected` or `issuance_failed`. `data.stage` distinguishes request validation, authorisation and issuance. The event excludes rejected request scopes, untrusted targets, foreign private resource configuration, secrets, assertions and tokens. A `failure` does not prove that PostgreSQL rejected a commit: if a commit acknowledgement is lost, inspect retained issuance evidence before drawing that conclusion.
 
-**Evaluated policy.** `data.decision` retains the decision returned before the failed issuance transaction exited. A scope denial includes the trusted tenant/client/resource revisions, ceilings and eligible capability; rejected scope values are omitted. No eligible capability produces a minimal `unauthorized_client` decision with an empty capability list, not a diagnosis of missing versus disabled or expired policy. Failure before evaluation records null. A later issuance failure can carry an approved decision and approved requested scopes; approval is not proof of a committed or delivered token. Version 1 history has no decision snapshot and is not rewritten.
+**Evaluated policy.** `data.decision` retains the decision returned before the failed issuance transaction exited. A scope denial includes the trusted tenant/client/resource revisions, ceilings and eligible capability; rejected scope values are omitted. No eligible capability produces a minimal `unauthorized_client` decision with an empty capability list, not a diagnosis of missing versus disabled or expired policy. Failure before evaluation records null. A later issuance failure can carry an approved decision and approved requested scopes; approval is not proof of a committed or delivered token.
 
 **Audit outage.** If recording the rejection also fails, the original error still reaches the caller. The service emits the safe `token_rejection_audit_unavailable` operational signal. There is no retry queue or guarantee of a durable failed-attempt record during a database outage.
 
-**Authentication failures.** Native failed client authentication records version 3 with a system actor and null client/tenant/decision. Transport and body refusals occur before that boundary. An unverified client ID never attributes an event to a tenant. [User OAuth](/docs/id/oauth) has separate atomic outcome events for authorisation, issuance, response replay and revocation.
+**Authentication failures.** Native failed client authentication records the same action with a system actor and null client/tenant/decision. Transport and body refusals occur before that boundary. An unverified client ID never attributes an event to a tenant. [User OAuth](/docs/id/oauth) has separate atomic outcome events for authorisation, issuance, response replay and revocation.
 
 ## Request boundaries
 
@@ -187,9 +185,9 @@ These transport errors can be plain text rather than OAuth JSON or problem detai
 
 **Correlation IDs.** `x-request-id` accepts 1–128 ASCII letters, digits, dots, underscores, colons or hyphens. Missing, empty, oversized or otherwise invalid values are replaced with a UUIDv7. The accepted/generated value is used consistently by the response, provider and application audit context. It is caller-controlled correlation, not proof of identity or an idempotency key.
 
-**Rejected callback attribution.** A failed SSO callback does not verify the `providerId` query parameter, so rejection events leave `targetId` null. Client addresses use the configured trusted ingress boundary, as described in [Network attribution](/docs/id/sign-in). Administrative and sign-in events record that address. Sign-out leaves IP null; historical addresses remain unverified metadata. User-agent is caller-supplied metadata.
+**Rejected callback attribution.** A failed SSO callback does not verify the `providerId` query parameter, so rejection events leave `targetId` null. Client addresses use the configured trusted ingress boundary, as described in [Network attribution](/docs/id/sign-in). Administrative and sign-in events record that address. Sign-out leaves IP null. User-agent is caller-supplied metadata.
 
-**Bounded audit metadata.** New HTTP/session audit user-agent values contain at most 512 printable ASCII characters. Empty, oversized, control-character and non-ASCII values are omitted, not truncated; user-agent never proves identity. Callback rejection events with `schemaVersion: 2` contain a recognised failure category or `sso_callback_failed` for an unknown error. Free-form `error_description` is not retained. Older events may contain it. These categories describe reported callback failures, not a verified provider identity or independently established root cause.
+**Bounded audit metadata.** HTTP/session audit user-agent values contain at most 512 printable ASCII characters. Empty, oversized, control-character and non-ASCII values are omitted, not truncated; user-agent never proves identity. Callback rejection events contain a recognised failure category or `sso_callback_failed` for an unknown error. Free-form `error_description` is not retained. These categories describe reported callback failures, not a verified provider identity or independently established root cause.
 
 **Not yet.** Body limits do not establish tenant/client/IP rates or overall cluster capacity. Separate pool/statement deadlines apply as documented in [sign-in](/docs/id/sign-in). Transport rejections are outside durable failed-attempt auditing.
 
@@ -228,7 +226,7 @@ Every [operation page](/docs/id/admin-api) has a Markdown twin: append `.md` to 
 | --------------------------------- | ----------------------------------- | ------------------------------------------------------------------------ |
 | Add or verify domains             | [Not yet.](/docs/id#today-and-next) | Ask Answerable staff to configure domains.                               |
 | Configure your own SSO            | [Not yet.](/docs/id#today-and-next) | Ask Answerable staff to configure the provider.                          |
-| Manage groups or group membership | [Not yet.](/docs/id#today-and-next) | Ask Answerable staff; directory-managed groups cannot be edited by hand. |
+| Manage groups or group membership | [Not yet.](/docs/id#today-and-next) | Ask Answerable staff. |
 | Assign apps through entitlements  | [Not yet.](/docs/id#today-and-next) | Ask Answerable staff to change entitlements.                             |
 | Manage users beyond your members  | [Not yet.](/docs/id#today-and-next) | Ask Answerable staff for account changes.                                |
 
@@ -246,7 +244,7 @@ curl -X DELETE "https://id.answerable.org/api/admin/v1/users/$USER_ID?confirm=$U
 
 | Command                                                              | Retained product records                                                                                                                 | Immediate local effect                                                                                                                                                                                           |
 | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Delete a user                                                        | Profile, upstream account bindings, memberships, direct assignments, owned clients, client links and consents                            | Disable the profile, retire its email, clear upstream/password/client credentials, revoke user and owned-client grant contexts, and delete affected session and token rows.                                      |
+| Delete a user                                                        | Profile, upstream account bindings, memberships, direct assignments and consents                                                         | Disable the profile, retire its email, clear upstream/password credentials, revoke the user's grant contexts, and delete affected session and token rows.                                                        |
 | Delete an organisation                                               | Organisation, memberships, groups, assignments, capabilities, domains and provider                                                       | Disable or revoke the retained rows, clear provider credentials, revoke tenant grant contexts and clear browser-session organisation selections. Global profiles and sessions remain available to other tenants. |
 | Delete a group                                                       | Group, assignments and group entitlements                                                                                                | Disable the group and entitlements; retire assignments.                                                                                                                                                          |
 | Delete a client                                                      | Registration, resource links and consents                                                                                                | Disable the registration, clear its secret, revoke its grant contexts and delete token rows.                                                                                                                     |
@@ -263,7 +261,7 @@ curl -X DELETE "https://id.answerable.org/api/admin/v1/users/$USER_ID?confirm=$U
 
 **Cleanup later.** Physical cleanup jobs and their retention period are [Not yet.](/docs/id#today-and-next). They are separate from session expiry, one-time code/assertion consumption, credential revocation and existing encrypted command-result expiry. Local revocation does not prove that a downstream session ended; offline tokens retain their documented expiry limits.
 
-**Deletion audit.** New user, organisation, group and client deletion events use schema version 3 with `deletionMode: "soft"` and retained after-state. `client.grants_erased` version 3 remains platform-only. Domain, provider, resource and capability deletion events use version 2; entitlement and group-assignment removals use version 3. Relationship manifests name `softDeleted*` arrays and include deletion timestamps. Membership removal uses version 3 while the membership remains eligible for explicit reinstatement. Its effect keys are `removedGrants` for retired direct entitlements, `softDeletedGroups` for retired group assignments and `revokedGrantContexts`. Physically removed sessions/tokens retain `deleted*` names; grant-context effects use `revokedGrantContexts`. The older event versions described below remain historical and are not rewritten.
+**Deletion audit.** Deletion events record `deletionMode: "soft"` and retained after-state. `client.grants_erased` remains platform-only. Relationship manifests name `softDeleted*` arrays and include deletion timestamps. Membership removal leaves the membership eligible for explicit reinstatement. Its effect keys are `removedGrants` for retired direct entitlements, `softDeletedGroups` for retired group assignments and `revokedGrantContexts`. Physically removed sessions/tokens retain `deleted*` names; grant-context effects use `revokedGrantContexts`.
 
 ## Errors
 
@@ -305,7 +303,6 @@ curl -X DELETE "https://id.answerable.org/api/admin/v1/users/$USER_ID?confirm=$U
 | Code                        | Meaning                                                                             | What to do                                                                                    |
 | --------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | `organization_has_clients`  | Owned clients prevent erasure.                                                      | Delete owned clients after removing their policy references. Ownership cannot be transferred. |
-| `group_directory_managed`   | Group membership comes from a directory.                                            | Change membership in the upstream directory.                                                  |
 | `client_has_entitlements`   | Entitlements prevent client erasure.                                                | Remove all referencing entitlements first.                                                    |
 | `provider_not_found`        | No provider exists for the SSO test.                                                | Ask staff to configure the provider.                                                          |
 | `client_has_no_secret`      | Client does not use a shared secret.                                                | Check the client's authentication method.                                                     |
@@ -321,14 +318,14 @@ curl -X DELETE "https://id.answerable.org/api/admin/v1/users/$USER_ID?confirm=$U
 
 **Platform identity.** Grants returned by `/me` include `isPlatform`, derived from the persisted platform organisation ID. Organisation slugs are labels and do not confer platform authority.
 
-**Operation audit.** Filter platform or organisation audit history by `operationId` to trace a journalled client creation or rotation. Events expose `schemaVersion`: 0 is the retained unversioned format, 1 identifies original event payloads, and `oauth.token.issued` version 2 carries the evaluated machine decision. Interpret the version together with the action; retained events are not rewritten. An unlinked event has `operationId: null`; old links are not reconstructed from timestamps. Client creation/update snapshots include selected security settings and omit raw JWK configuration. Rotation records its authorisation version change. Other action payloads remain in their existing formats.
+**Operation audit.** Filter platform or organisation audit history by `operationId` to trace a journalled client creation or rotation. Every event has `schemaVersion: 1`, and each action one `data` shape. An unlinked event has `operationId: null`. Client creation/update snapshots include selected security settings and omit raw JWK configuration. Rotation records its authorisation version change.
 
 ```bash
 curl "$ID_ORIGIN/api/admin/v1/audit-events?operationId=$OPERATION_ID" \
   -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
-**Historical audit.** User and organisation audit endpoints can return retained history after erasure. A UUID with neither a live record nor retained history returns `not_found`. Person links captured before deletion survive through durable subject references; older missing links cannot be recovered. Platform user history also includes users named in recorded grant-erasure effects, even after their live rows are removed. These global events remain excluded from tenant history because their payload can contain other tenants' details. Older events without recorded affected-user IDs are not reconstructed.
+**Historical audit.** User and organisation audit endpoints can return retained history after erasure. A UUID with neither a live record nor retained history returns `not_found`. A person's history is recorded with each event, so it survives deletion. Platform user history also includes users named in recorded grant-erasure effects, even after their live rows are removed. These global events remain excluded from tenant history because their payload can contain other tenants' details.
 
 ## Operation status
 
@@ -627,7 +624,7 @@ Set `USER_DISABLE_KEY` once for this command. Reuse it after a lost response: re
 
 **Stored grant contexts.** Global disable irreversibly revokes the user's contexts across organisations; enable does not restore them. A disabled user with unrevoked contexts still has work to apply. The audit records newly revoked context IDs and their organisations. Deletion records newly revoked contexts, including those bound to a user-owned client. These changes share the lifecycle transaction: audit failure rolls them back. [Production user OAuth](/docs/id/oauth) enforces these conditions before code exchange and renewal.
 
-**Deletion consistency.** Concurrent writes through owned clients, tokens, memberships and sessions are ordered before local effects are captured. Product rows receive terminal tombstones; credential records are cleared, revoked or consumed according to their contract. Audit, subjects and receipt commit together.
+**Deletion consistency.** Concurrent writes through tokens, memberships and sessions are ordered before local effects are captured. Product rows receive terminal tombstones; credential records are cleared, revoked or consumed according to their contract. Audit, its users and the receipt commit together.
 
 **Deletion and retained data.** Deleted database rows can retain identifying fields. New audit facts do not copy names or emails; historical facts are not rewritten. Physical cleanup and its retention duration are deferred.
 
@@ -786,7 +783,7 @@ The platform ceiling is seeded under the immutable system binding. Restart prese
 
 ### Token revocation history
 
-Version 2 records exact changed token rows under `data.revokedTokens.access` and `data.revokedTokens.refresh`. Each entry contains `id` and `userId`; machine access tokens have a null user. Existing counts remain. Already-revoked and unrelated rows are excluded, as are token values, scopes and credentials.
+These events record exact changed token rows under `data.revokedTokens.access` and `data.revokedTokens.refresh`. Each entry contains `id` and `userId`; machine access tokens have a null user. Existing counts remain. Already-revoked and unrelated rows are excluded, as are token values, scopes and credentials.
 
 | Event                                     | Visibility                                  |
 | ----------------------------------------- | ------------------------------------------- |
@@ -796,12 +793,12 @@ Version 2 records exact changed token rows under `data.revokedTokens.access` and
 
 Client disable and secret rotation leave counts and `grantEffectsEventId` in the owner's event. Individual users and tokens remain in the restricted effect event. Affected-user UUIDs remain searchable after live rows are erased.
 
-Older events are not backfilled. Mutation, subjects, event and receipt commit together; historical replay adds no revocation.
+Mutation, event, its users and receipt commit together; historical replay adds no revocation.
 
 This records local stored-token revocation. It does not prove termination of downstream sessions or rejection of an already-issued self-contained token. Representative token fan-out capacity remains a release requirement.
 
 ### Client erasure history
 
-Current `client.grants_erased` version 3 is platform-only. It records revoked grant contexts, actual removed token records and soft-deleted client-resource/consent rows. The owner's `client.erased` version 3 retains counts and `grantEffectsEventId`; individual users and foreign resource details remain restricted.
+`client.grants_erased` is platform-only. It records revoked grant contexts, actual removed token records and soft-deleted client-resource/consent rows. The owner's `client.erased` retains counts and `grantEffectsEventId`; individual users and foreign resource details remain restricted.
 
-Audit, subjects, effects and receipt commit together. Replay recovers that command without repeating deletion. Users and their browser sessions survive standalone client deletion. Older version-two physical-erasure records retain their original payload; new commands do not use that format.
+Audit, its users, effects and receipt commit together. Replay recovers that command without repeating deletion. Users and their browser sessions survive standalone client deletion.

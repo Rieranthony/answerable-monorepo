@@ -1,6 +1,6 @@
 # Answerable ID database isolation inventory
 
-The single initial migration protects eleven tables: `groups`, `group_members`, `entitlements`, `organization_capabilities`, `grant_contexts`, `members`, `invitations`, `organization_domains`, `sso_providers`, `audit_events` and `audit_event_subjects`. Runtime startup checks protection/privileges. Service contexts, database predicates, native broker verification and parent locks remain necessary; this is not universal RLS.
+The migrations protect ten tables: `groups`, `group_members`, `entitlements`, `organization_capabilities`, `grant_contexts`, `members`, `organization_domains`, `sso_providers`, `audit_events` and `audit_event_users`. Runtime startup checks protection/privileges. Service contexts, database predicates, native broker verification and parent locks remain necessary; this is not universal RLS.
 
 ## Current query boundary review
 
@@ -8,7 +8,7 @@ Query functions use typed contexts, with explicit broker/health/audit and pure-h
 
 | Function                                                             | Boundary                                                                                                                |
 | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `recordAuditEvent`                                                   | Transaction-owned insertion; trusted caller supplies attribution, owner trigger supplies subjects.                      |
+| `recordAuditEvent`                                                   | Transaction-owned insertion; trusted caller supplies attribution, owner triggers record the users it concerns.          |
 | `findMachineCapability`                                              | Broker query after authenticated ownership and scoped policy preparation.                                               |
 | `effectiveGrants`                                                    | Authenticated user policy read, own-tenant SSO, locks and post-wait current checks. A UUID alone is not authentication. |
 | `hasPlatformWriter`                                                  | Explicit policy-root read for immutable platform bootstrap/root locking and global user deletion.                       |
@@ -29,23 +29,22 @@ The query boundary does not cover every native adapter or broker query. See [ten
 | Grant contexts | Immutable authentication/user/member/tenant/client/resource binding, native code binding and retained revocation.        |
 
 | Members | Tenant-owned membership, terminal revocation/deletion and effective windows. |
-| Invitations | Tenant-owned invitation and user references. |
 | Organisation domains | Unrestricted routing reads; scoped writes. |
 | SSO providers | Unrestricted routing reads; scoped writes, including protocol writes. |
 | Audit events | Unrestricted INSERT policy; administrative SELECT only, append-only runtime grants. |
-| Audit event subjects | Unrestricted INSERT policy; administrative SELECT only; runtime INSERT is revoked and subjects are trigger-owned. |
+| Audit event users | Platform SELECT only; no INSERT policy, runtime INSERT is revoked and the triggers fill it as the owner. |
 
 ## Database scopes
 
 Assignment/group reads use selected tenant, explicit platform or authenticated policy-user scope; policy-root reads only the bound platform. Missing/unknown scope denies assignment/group rows. Tenant writes stay in their tenant; capabilities require platform write. The actual policies remain in [the baseline SQL](../apps/id/drizzle/0000_initial.sql), with catalogue/role tests.
 
-Every Better Auth adapter transaction starts in `protocol` scope. Standalone member/invitation adapter operations also run in their own protocol-scoped transaction; see [database-adapter.ts](../apps/id/src/auth/database-adapter.ts). This is trusted broker access, not per-tenant isolation for protocol work.
+Every Better Auth adapter transaction starts in `protocol` scope; see [database-adapter.ts](../apps/id/src/auth/database-adapter.ts). ID inserts the membership itself in the sign-in callback's transaction. This is trusted broker access, not per-tenant isolation for protocol work.
 
-Membership and invitation writes allow `platform-write`, `protocol`, or `tenant-write` for the selected organisation. Their SELECT policies additionally allow `platform-read`, `platform-users`, selected `tenant-read` and `policy-root` for the bound platform organisation. Members also allow `policy-user` and `grant-admission` SELECT for the supplied subject; invitations do not have that subject exception. These membership predicates do not themselves filter status or deletion.
+Membership writes allow `platform-write`, `protocol`, or `tenant-write` for the selected organisation. Their SELECT policies additionally allow `platform-read`, `platform-users`, selected `tenant-read` and `policy-root` for the bound platform organisation, and `policy-user` and `grant-admission` SELECT for the supplied subject. These membership predicates do not themselves filter status or deletion.
 
-Routing SELECT is unrestricted. Domain/provider writes require `platform-write` or selected `tenant-write`; SSO providers additionally permit `protocol` writes. Domain writes do not permit protocol scope. Audit SELECT allows `platform-read`, `platform-write`, `platform-users`, or matching-organisation `tenant-read`/`tenant-write`. Audit INSERT policies have `WITH CHECK (true)`, independently of scope; runtime grants still prohibit direct subject insertion. Audit policies do not grant UPDATE or DELETE.
+Routing SELECT is unrestricted. Domain/provider writes require `platform-write` or selected `tenant-write`; SSO providers additionally permit `protocol` writes. Domain writes do not permit protocol scope. Audit SELECT allows `platform-read`, `platform-write`, `platform-users`, or matching-organisation `tenant-read`/`tenant-write`. The audit event INSERT policy has `WITH CHECK (true)`, independently of scope; runtime grants prohibit inserting audit users. Audit policies do not grant UPDATE or DELETE.
 
-`protect_grant_context` and `validate_grant_authentication` run as `SECURITY DEFINER` with fixed `pg_catalog, public` search paths. They validate grant provenance and lock parents as the owner; direct execution is revoked from PUBLIC. They do not grant callers unrestricted access to those parents.
+`protect_grant_context` runs as `SECURITY DEFINER` with a fixed `pg_catalog, public` search path. It validates grant provenance and locks the member and session as the owner; direct execution is revoked from PUBLIC. It does not grant callers unrestricted access to those parents.
 
 ## Grant-context database scopes
 
@@ -54,7 +53,7 @@ Routing SELECT is unrestricted. Domain/provider writes require `platform-write` 
 | Missing/unknown, policy-root | None                                 | None                                                                                  |
 | Tenant read/write            | Selected tenant                      | Write scope updates its rows; no insert/delete.                                       |
 | Platform read                | All                                  | Read.                                                                                 |
-| Platform write               | All                                  | Insert/update/delete permitted by policy; service lifecycle retains revoked contexts. |
+| Platform write               | All                                  | Insert/update; no delete: runtime has no DELETE and grants are permanent.             |
 | Platform users               | All for explicit global lifecycle    | Update; no insert/delete.                                                             |
 | Policy user                  | Supplied authenticated user's grants | Read.                                                                                 |
 | Grant admission              | Authenticated user and session       | Insert matching provenance; no update/delete.                                         |

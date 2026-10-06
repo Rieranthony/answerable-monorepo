@@ -20,7 +20,7 @@ erDiagram
   organizations ||--o{ entitlements : assigns
   organizations ||--o{ organization_capabilities : bounds
   members ||--o{ grant_contexts : authorises
-  audit_events ||--o{ audit_event_subjects : attributes
+  audit_events ||--o{ audit_event_users : concerns
 ```
 
 Relations describe ownership, not physical deletion.
@@ -50,9 +50,9 @@ Live uniqueness permits replacements only where explicitly defined. Group assign
 - **A deleted row holds no authority.** Per-table CHECKs require a disabled or revoked status, and no client secret, account tokens, password or OIDC configuration. A trigger keeps deletion terminal and assigns `live`; writers never set it.
 - **Sessions and tokens carry no liveness guard.** The issuing transaction checks and locks the user and client, and erasure deletes their sessions and tokens.
 - **Trigger functions cannot be shadowed.** They schema-qualify every relation and search `pg_temp` last; the runtime role cannot create temporary tables.
-- Session authentication and grant provenance cannot be rewritten by tenant selection.
+- Session authentication and grant provenance cannot be rewritten.
 - Native transaction/savepoint scope restores on success/failure; pooled connections retain no tenant authority.
-- Successful effects, audit, subjects and command reservations commit together.
+- Successful effects, audit, audit users and command reservations commit together.
 
 ## Lifecycle values
 
@@ -64,15 +64,69 @@ Registration limits vocabulary and identity; it does not grant permission. User 
 
 ## Durable audit subjects
 
-Audit tenant and subject references do not depend on live product eligibility. Trigger-owned subjects retain actor, target and affected-user UUIDs. Runtime cannot rewrite facts or invoke subject capture directly. Action plus schema version defines a payload; retained old versions do not imply missing historical facts exist.
+Audit tenant and user references do not depend on live product eligibility. `audit_event_users (user_id, event_id)` lists the users each event concerns: a user actor; the user, membership, group-membership, session or grant target; the member an entitlement names; and the users the action's manifests name (`audience`, `policySources.assignments`, revoked grant contexts, revoked, deleted or cleared tokens, consents and members). The two audit triggers fill it as the table owner; runtime cannot write it, and only platform scopes read it.
 
 Current deletion manifests describe product tombstones and actual credential clearing/revocation. Tenant client history exposes counts and a link to platform-only grant effects. The nullable indexed `operation_id` has a deferrable, initially deferred foreign key to permanent receipts: audit can precede the receipt inside the transaction but no dangling reference can commit.
 
+### Audit actions
+
+Every event has `schema_version` 1, and each action one `data` shape; the first payload change after launch adds version 2. `reason` holds a refusal or failure code. Optional keys are marked. A [test](../apps/id/src/db/queries/audit.test.ts) keeps this table equal to the actions ID writes.
+
+| Action | `data` |
+| ------ | ------ |
+| `admin.auth_failed` | `claimedClientId` when a bearer named a client, otherwise null. |
+| `admin.denied` | `organizationId` when the path names an organisation the principal holds no grant for, otherwise null. |
+| `admin.root_request` | `organizationId` from the path, otherwise null. |
+| `auth.signin.succeeded` | `userId`, `authenticationAccountId`, `authenticationProviderId`, `authenticationProviderRevision`, `upstreamAuthTime`. |
+| `auth.signin.rejected`, `auth.signout` | Null. |
+| `bootstrap.applied` | What the start created or updated: `organization`, `resource`, `capability`, `group`, `entitlement`. |
+| `capability.created`, `capability.updated`, `capability.update_unchanged` | `before` (null on creation), `after`. |
+| `capability.removed`, `domain.deleted`, `group_member.removed` | `before`, `after`, `deletionMode: "soft"`; `group_member.removed` adds `groupId`. |
+| `client.created`, `resource.created` | `before: null`, `after`. |
+| `client.updated`, `client.update_unchanged`, `resource.updated`, `resource.update_unchanged` | `requestedFields`, `before`, `after`. |
+| `client.enabled`, `client.disabled`, `client.state_unchanged` | `before`, `after`, `effects` (token counts), optional `grantEffectsEventId`. |
+| `client.secret_rotated` | `before` and `after` `authorizationVersion`, `effects` (`credentialChanged`, token counts), optional `grantEffectsEventId`. |
+| `client.owner_unchanged` | `before` and `after` `organizationId`, `changed: false`. |
+| `client.resource_linked`, `client.resource_unlinked`, `client.resource_unchanged` | `resource`, `relationship` (`id`, `deletedAt`; null without an effect), `resourceInstanceId`, `resourceClassification`, `resourceOrganizationId`, `before` and `after` `linked`. |
+| `client.grants_revoked` | Platform only: `clientInstanceId`, `grantContexts`, `revokedTokens` (`access`, `refresh`: row and user IDs). |
+| `client.grants_erased` | Platform only: `clientInstanceId`, `grantContexts`, `effects` (deleted tokens, soft-deleted consents and links), `deletionMode`. |
+| `client.erased` | `before`, `after`, `deletionMode`, `effects` (counts), optional `grantEffectsEventId`. |
+| `domain.created` | `domain`, `before: null`, `after`. |
+| `domain.enabled`, `domain.disabled`, `domain.enable_unchanged`, `domain.disable_unchanged` | `status`, `before`, `after`. |
+| `entitlement.created`, `entitlement.updated`, `entitlement.enabled`, `entitlement.disabled` | `before` (null on creation), `after`, `audience`: the memberships the entitlement reaches (its member, its group's assignments, or every member). |
+| `entitlement.removed` | `before`, `after`, `deletionMode`, `audience`. |
+| `entitlement.update_unchanged`, `entitlement.enable_unchanged`, `entitlement.disable_unchanged` | `before`, `after`. |
+| `group.created`, `group.updated`, `group.update_unchanged`, `group.enable_unchanged`, `group.disable_unchanged` | `before` (null on creation), `after`. |
+| `group.enabled`, `group.disabled` | `before`, `after`, `policySources` (`assignments`, `entitlements`). |
+| `group.erased` | `before`, `after`, `deletionMode`, `effects` (`softDeletedAssignments`, `softDeletedEntitlements`). |
+| `group_member.added`, `group_member.updated`, `group_member.update_unchanged` | `groupId`, `before` (null when added), `after`. |
+| `identity.linked` | `initiatingSessionId`, `initiatingAccountId`, `authenticationProviderId`, `authenticationProviderRevision`, `upstreamAuthTime`, `flowId`. |
+| `member.updated` | `changes`, `before`, `after`, each state with its `access`. |
+| `member.removed`, `member.removal_unchanged` | `userId`, `reason`, `before`, `after` (with `access`), `effects` (`removedGrants`, `softDeletedGroups`, `revokedGrantContexts`). |
+| `member.reinstated`, `member.reinstatement_unchanged` | `userId`, `reason`, `before`, `after` (with `access`). |
+| `oauth.token.issued` | `decision`, `issuedAt`, `expiresAt`. |
+| `oauth.token.rejected` | `grantType`, `stage`, `authenticatedClient` and `decision` (both null when client authentication failed). |
+| `oauth.user.authorized`, `oauth.user.denied` | `scopes`, `decision`. |
+| `oauth.user.issued`, `oauth.user.replayed` | `grantType`, `scopes`, `decision`. |
+| `oauth.user.revoked` | `reason` (`authorization_code_replay`, `refresh_token_replay`, `revocation_request`), `effect` (`grant`, `refresh_family`, `access_token`). |
+| `organization.created`, `organization.updated`, `organization.update_unchanged`, `organization.enabled`, `organization.enable_unchanged` | `before` (null on creation), `after`. |
+| `organization.disabled`, `organization.disable_unchanged` | `before` and `after` (`status`, `authorizationVersion`), `effects` (`revokedMachineAccessTokenIds`, `revokedGrantContexts`). |
+| `organization.erased` | `before`, `after`, `deletionMode`, `revokedGrantContexts`, `effects` (the soft-deleted entitlements, assignments, members, groups, capabilities, domains and SSO providers). |
+| `resource.enabled`, `resource.disabled`, `resource.state_unchanged` | `before`, `after`, `effects.revokedGrantContexts`. |
+| `resource.erased` | `before`, `after`, `deletionMode`, `revokedGrantContexts`. |
+| `session.revoked` | `userId`, `before`, `after: null`, `sessionIds`, `revokedGrantContexts`, token counts, `revokedTokens`. |
+| `session.revoked_all` | `userId`, `sessions`, `sessionIds`, `revokedGrantContexts`, token counts, `revokedTokens`. |
+| `sso_provider.created`, `sso_provider.updated`, `sso_provider.update_unchanged` | `before` (null on creation), `after`, `credentialsChanged`, `effects.revokedGrantContexts`. |
+| `sso_provider.deleted` | `before`, `after` (with `credentialsCleared`), `deletionMode`, `effects.revokedGrantContexts`. |
+| `user.enabled`, `user.enable_unchanged`, `user.email_retired`, `user.email_retirement_unchanged` | `before`, `after`. |
+| `user.disabled`, `user.disable_unchanged` | `before`, `after`, `sessions`, `sessionIds`, `revokedGrantContexts`, token counts, `revokedTokens`. |
+| `user.erased` | `before`, `after`, `deletionMode`, `revokedGrantContexts`, `effects` (deleted tokens and sessions, soft-deleted consents, entitlements, assignments, members and accounts, cleared token sessions). |
+
 ## Runtime database permissions
 
-Schema owner and runtime roles are separate. Runtime cannot DELETE/TRUNCATE product rows, rewrite audit, directly alter subjects/reservations, change system binding or create temporary tables. Those privileges, not triggers, keep bindings and operation receipts immutable. Protocol records retain their consumption contract. Startup checks protected privileges, ownership, `TEMP` and required RLS before listening.
+Schema owner and runtime roles are separate. Runtime cannot DELETE/TRUNCATE product rows or grant contexts, rewrite audit, write audit users, alter reservations, change system binding or create temporary tables. Those privileges, not triggers, keep bindings and operation receipts immutable. Protocol records retain their consumption contract. Startup checks protected privileges, ownership, `TEMP` and required RLS before listening.
 
-RLS protects `groups`, `group_members`, `entitlements`, `organization_capabilities`, `grant_contexts`, `members`, `organization_domains`, `sso_providers`, `audit_events` and `audit_event_subjects`. Routing SELECT and audit INSERT remain available without scope. Native broker transactions use protocol scope; the fixed grant-provenance triggers run as their owner to validate parents and retain locks without granting membership writes to grant admission. This is targeted protection, not universal RLS. The [isolation inventory](../reports/answerable-id-isolation-inventory.md) records scopes and trusted exceptions.
+RLS protects `groups`, `group_members`, `entitlements`, `organization_capabilities`, `grant_contexts`, `members`, `organization_domains`, `sso_providers`, `audit_events` and `audit_event_users`. Routing SELECT and audit INSERT remain available without scope. Native broker transactions use protocol scope; the grant-provenance trigger runs as its owner to validate parents and lock the member and session without granting membership writes to grant admission. This is targeted protection, not universal RLS. The [isolation inventory](../reports/answerable-id-isolation-inventory.md) records scopes and trusted exceptions.
 
 ## Completed administrative operations
 
@@ -106,11 +160,11 @@ Security transitions advance the version. Re-enable alone cannot restore old tok
 
 ## Global session boundary
 
-Browser sessions are global. Tenant APIs cannot enumerate/revoke them globally. Tenant deletion clears selection; platform session/user commands apply their explicit global effects.
+Browser sessions are global. Tenant APIs cannot enumerate/revoke them globally. Tenant deletion leaves them in place; platform session/user commands apply their explicit global effects.
 
 ## Authentication transaction boundary
 
-Verified SSO provenance enters the session through the native callback transaction. Production OAuth binds current policy, actual signed/opaque output, persistence and mandatory version-four user audit before success. Client assertion replay protection stays consumed if later issuance rolls back.
+Verified SSO provenance enters the session through the native callback transaction. Production OAuth binds current policy, actual signed/opaque output, persistence and mandatory user OAuth audit before success. Client assertion replay protection stays consumed if later issuance rolls back.
 
 ## Resource link deletion boundary
 
@@ -130,7 +184,7 @@ Lifecycle commands use current platform authority, routing state and repeat-safe
 
 ## Organisation command receipts
 
-Creation/configuration/lifecycle share the journal. Deletion retains tenant children as tombstones, clears selections and preserves global people.
+Creation/configuration/lifecycle share the journal. Deletion retains tenant children as tombstones and preserves global people.
 
 ## Keyed command fingerprints
 
@@ -154,7 +208,7 @@ Original keys return receipts; replay cannot broaden permission.
 
 ### Entitlement revisions
 
-PATCH uses ETags. Changed broad assignments record actual audience sources without claiming every observed user gained/lost access.
+PATCH uses ETags. Changed entitlements record their audience (the member, the group's assignments or every member) without claiming every observed user gained/lost access.
 
 ### Global session command recovery
 
@@ -174,7 +228,7 @@ Only platform writers approve ceilings. Registration, assignment and approval re
 
 ## User grant context
 
-One server-bound flow creates one immutable grant. Account, provider/revision, tenant and verified time stay fixed across code/refresh. Missing provenance cannot be upgraded from a current browser session.
+One server-bound flow creates one immutable grant. Its authentication evidence is copied from the session's origin into four columns named as on `sessions`: `authentication_account_id`, `authentication_provider_id`, `authentication_provider_revision` and nullable `upstream_auth_time`. One insert trigger checks them against the session, with the member, user, organisation and client, under the member and session locks. Account, provider revision, tenant and verified time stay fixed across code and refresh. Grants are never deleted: runtime has no DELETE on `grant_contexts`, and its five foreign keys restrict.
 
 ### User-capability administration
 

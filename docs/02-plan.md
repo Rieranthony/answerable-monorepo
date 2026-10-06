@@ -113,3 +113,6 @@ RFC 8693 token exchange (built off the critical path, contributed upstream) · S
 - `NODE_ENV=test` outside the test runner: Better Auth drops its origin and CSRF checks under it, so the runtime refuses to start.
 - A generic dynamic-SQL parent guard on ID's protocol tables (sessions, tokens): the issuing transaction already checks and locks the user and client, and the guard's share lock stalled every token insert behind a client or user update. Configuration tables hold the rule with live foreign keys.
 - Unqualified relation names in ID's trigger functions, or a function `search_path` without `pg_temp` last: a caller's temporary table would shadow the lookup.
+- A second audit payload version before launch: every event is version 1 with one `data` shape per action; the first change after launch adds version 2.
+- Personal (user-owned) OAuth clients: a client belongs to an organisation, and user erasure has no owned-client branch.
+- Directory-managed groups before a directory sync exists: a group nothing syncs would stay empty and grant nothing.

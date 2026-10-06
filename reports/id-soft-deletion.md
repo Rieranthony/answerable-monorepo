@@ -4,6 +4,8 @@ Historical evidence from the v0 candidate (tree da6acc8, tag id-v0-evidence). Th
 
 **Migration baseline:** the development chain and its upgrade/cutover procedures below are historical. First installation now uses one initial migration; see the [consolidation record](id-initial-migration.md). Retained-key custody, native OAuth, deletion and recovery contracts still apply.
 
+**Superseded manifests (schema audit, 2026-10-06):** the `invitations` table, personal (user-owned) clients and SSO provider attribution no longer exist, so user deletion no longer retains invitations or owned clients and their links/consents, revokes no owned-client contexts and clears no provider attribution (`softDeletedClients`, `softDeletedClientResources` and `detachedSsoProviders` are gone). Sessions hold no organisation selection, so organisation deletion clears none (`clearedSessionSelections` is gone). Every audit event is version 1, and its users are recorded in `audit_event_users`. [docs/04](../docs/04-answerable-id-schema.md#durable-audit-subjects) holds the current contract; the [schema audit](../docs/goals/schema-audit/task_plan.md) records the decisions.
+
 Status: implementation and verification complete; ready for coordinator review and local integration. Local integration handoff only. No production deployment, push, retention-duration decision or release certification.
 
 Base: `7d48cf5c5ede3aca0773f7166309a2c6aedf4dda`, including the accepted SSO initiation fix. Branch: `codex/id-soft-deletion`. Only this worktree and the assigned disposable `answerable_id_test` database were modified.
