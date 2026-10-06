@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   pgTable,
@@ -17,6 +18,8 @@ import {
   effectiveWindow,
   id,
   slugCheck,
+  softDeletion,
+  softDeletionChecks,
   timestampColumn,
   timestamps,
   vocabularyCheck,
@@ -36,7 +39,7 @@ import {
 export const users = pgTable(
   "users",
   {
-    deletedAt: timestampColumn("deleted_at"),
+    ...softDeletion(),
     id: id(),
     name: text("name").notNull(),
     email: text("email").notNull().unique(),
@@ -48,6 +51,8 @@ export const users = pgTable(
     ...timestamps(),
   },
   (table) => [
+    ...softDeletionChecks("users", table, sql`${table.status} = 'disabled'`),
+    unique("users_id_live_unique").on(table.id, table.live),
     vocabularyCheck("users_status_check", table.status, userStatuses),
     check(
       "users_email_normalized_check",
@@ -64,7 +69,7 @@ export const users = pgTable(
 export const organizations = pgTable(
   "organizations",
   {
-    deletedAt: timestampColumn("deleted_at"),
+    ...softDeletion(),
     id: id(),
     name: text("name").notNull(),
     slug: text("slug").notNull().unique(),
@@ -79,6 +84,12 @@ export const organizations = pgTable(
     revision: integer("revision").default(1).notNull(),
   },
   (table) => [
+    ...softDeletionChecks(
+      "organizations",
+      table,
+      sql`${table.status} = 'disabled'`,
+    ),
+    unique("organizations_id_live_unique").on(table.id, table.live),
     check("organizations_revision_check", sql`${table.revision} > 0`),
     check(
       "organizations_authorization_version_check",
@@ -145,7 +156,7 @@ export const sessions = pgTable(
 export const accounts = pgTable(
   "accounts",
   {
-    deletedAt: timestampColumn("deleted_at"),
+    ...softDeletion(),
     id: id(),
     issuer: text("issuer").notNull(),
     accountId: text("account_id").notNull(),
@@ -165,6 +176,16 @@ export const accounts = pgTable(
     ...timestamps(),
   },
   (table) => [
+    ...softDeletionChecks(
+      "accounts",
+      table,
+      sql`num_nonnulls(${table.accessToken}, ${table.refreshToken}, ${table.idToken}, ${table.password}) = 0`,
+    ),
+    foreignKey({
+      name: "accounts_user_live_fk",
+      columns: [table.userId, table.live],
+      foreignColumns: [users.id, users.live],
+    }).onDelete("cascade"),
     unique("accounts_issuer_account_id_unique").on(
       table.issuer,
       table.accountId,
@@ -196,7 +217,7 @@ export const verifications = pgTable(
 export const members = pgTable(
   "members",
   {
-    deletedAt: timestampColumn("deleted_at"),
+    ...softDeletion(),
     id: id(),
     revision: integer("revision").default(1).notNull(),
     organizationId: uuid("organization_id")
@@ -217,6 +238,18 @@ export const members = pgTable(
   },
   (table) => [
     ...membershipPolicies(table.organizationId, table.userId),
+    ...softDeletionChecks("members", table, sql`${table.status} = 'revoked'`),
+    unique("members_id_live_unique").on(table.id, table.live),
+    foreignKey({
+      name: "members_organization_live_fk",
+      columns: [table.organizationId, table.live],
+      foreignColumns: [organizations.id, organizations.live],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "members_user_live_fk",
+      columns: [table.userId, table.live],
+      foreignColumns: [users.id, users.live],
+    }).onDelete("cascade"),
     check("members_revision_check", sql`${table.revision} > 0`),
     vocabularyCheck("members_status_check", table.status, membershipStatuses),
     check(

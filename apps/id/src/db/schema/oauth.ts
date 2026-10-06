@@ -8,12 +8,19 @@ import {
   jsonb,
   pgTable,
   text,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
 import { organizations, sessions, users } from "./auth.ts";
-import { id, timestampColumn, timestamps } from "./columns.ts";
+import {
+  id,
+  softDeletion,
+  softDeletionChecks,
+  timestampColumn,
+  timestamps,
+} from "./columns.ts";
 
 // Tables in this file are owned by Better Auth's JWT plugin and by
 // @better-auth/oauth-provider 1.7.2. Property names are the plugins' own field
@@ -35,7 +42,7 @@ export const jwks = pgTable("jwks", {
 export const oauthClients = pgTable(
   "oauth_clients",
   {
-    deletedAt: timestampColumn("deleted_at"),
+    ...softDeletion(),
     id: id(),
     clientId: text("client_id").notNull().unique(),
     clientSecret: text("client_secret"),
@@ -85,6 +92,20 @@ export const oauthClients = pgTable(
     authorizationVersion: integer("authorization_version").default(1).notNull(),
   },
   (table) => [
+    ...softDeletionChecks(
+      "oauth_clients",
+      table,
+      sql`${table.disabled} and ${table.clientSecret} is null`,
+    ),
+    unique("oauth_clients_client_id_live_unique").on(
+      table.clientId,
+      table.live,
+    ),
+    foreignKey({
+      name: "oauth_clients_organization_live_fk",
+      columns: [table.organizationId, table.live],
+      foreignColumns: [organizations.id, organizations.live],
+    }),
     check("oauth_clients_revision_check", sql`${table.revision} > 0`),
     check(
       "oauth_clients_authorization_version_check",
@@ -99,7 +120,7 @@ export const oauthClients = pgTable(
 export const oauthResources = pgTable(
   "oauth_resources",
   {
-    deletedAt: timestampColumn("deleted_at"),
+    ...softDeletion(),
     id: id(),
     classification: text("classification", {
       enum: ["platform_shared", "tenant_owned"],
@@ -128,6 +149,17 @@ export const oauthResources = pgTable(
     ...timestamps(),
   },
   (table) => [
+    ...softDeletionChecks("oauth_resources", table, sql`${table.disabled}`),
+    unique("oauth_resources_id_live_unique").on(table.id, table.live),
+    unique("oauth_resources_identifier_live_unique").on(
+      table.identifier,
+      table.live,
+    ),
+    foreignKey({
+      name: "oauth_resources_organization_live_fk",
+      columns: [table.organizationId, table.live],
+      foreignColumns: [organizations.id, organizations.live],
+    }),
     check(
       "oauth_resources_ownership_check",
       sql`(${table.classification} = 'platform_shared' and ${table.organizationId} is null) or (${table.classification} = 'tenant_owned' and ${table.organizationId} is not null)`,
@@ -146,7 +178,7 @@ export const oauthResources = pgTable(
 export const oauthClientResources = pgTable(
   "oauth_client_resources",
   {
-    deletedAt: timestampColumn("deleted_at"),
+    ...softDeletion(),
     id: id(),
     clientId: text("client_id")
       .notNull()
@@ -157,6 +189,17 @@ export const oauthClientResources = pgTable(
     createdAt: timestampColumn("created_at").defaultNow().notNull(),
   },
   (table) => [
+    ...softDeletionChecks("oauth_client_resources", table),
+    foreignKey({
+      name: "oauth_client_resources_client_live_fk",
+      columns: [table.clientId, table.live],
+      foreignColumns: [oauthClients.clientId, oauthClients.live],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "oauth_client_resources_resource_live_fk",
+      columns: [table.resourceId, table.live],
+      foreignColumns: [oauthResources.identifier, oauthResources.live],
+    }),
     // Named explicitly: the generated name would exceed 63 characters and
     // PostgreSQL would silently truncate it.
     foreignKey({
@@ -257,7 +300,7 @@ export const oauthAccessTokens = pgTable(
 export const oauthConsents = pgTable(
   "oauth_consents",
   {
-    deletedAt: timestampColumn("deleted_at"),
+    ...softDeletion(),
     id: id(),
     clientId: text("client_id")
       .notNull()
@@ -272,6 +315,17 @@ export const oauthConsents = pgTable(
     ...timestamps(),
   },
   (table) => [
+    ...softDeletionChecks("oauth_consents", table),
+    foreignKey({
+      name: "oauth_consents_client_live_fk",
+      columns: [table.clientId, table.live],
+      foreignColumns: [oauthClients.clientId, oauthClients.live],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "oauth_consents_user_live_fk",
+      columns: [table.userId, table.live],
+      foreignColumns: [users.id, users.live],
+    }).onDelete("cascade"),
     index("oauth_consents_client_id_idx").on(table.clientId),
     index("oauth_consents_user_id_idx").on(table.userId),
   ],

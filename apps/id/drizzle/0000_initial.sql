@@ -1,5 +1,6 @@
 CREATE TABLE "accounts" (
 	"deleted_at" timestamp with time zone,
+	"live" boolean DEFAULT true,
 	"id" uuid PRIMARY KEY NOT NULL,
 	"issuer" text NOT NULL,
 	"account_id" text NOT NULL,
@@ -16,7 +17,9 @@ CREATE TABLE "accounts" (
 	"password" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "accounts_issuer_account_id_unique" UNIQUE("issuer","account_id")
+	CONSTRAINT "accounts_issuer_account_id_unique" UNIQUE("issuer","account_id"),
+	CONSTRAINT "accounts_live_check" CHECK ("accounts"."live" is not distinct from case when "accounts"."deleted_at" is null then true end),
+	CONSTRAINT "accounts_deleted_check" CHECK ("accounts"."deleted_at" is null or (num_nonnulls("accounts"."access_token", "accounts"."refresh_token", "accounts"."id_token", "accounts"."password") = 0))
 );
 --> statement-breakpoint
 CREATE TABLE "invitations" (
@@ -35,6 +38,7 @@ CREATE TABLE "invitations" (
 ALTER TABLE "invitations" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "members" (
 	"deleted_at" timestamp with time zone,
+	"live" boolean DEFAULT true,
 	"id" uuid PRIMARY KEY NOT NULL,
 	"revision" integer DEFAULT 1 NOT NULL,
 	"organization_id" uuid NOT NULL,
@@ -45,8 +49,11 @@ CREATE TABLE "members" (
 	"valid_from" timestamp with time zone,
 	"valid_until" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "members_id_live_unique" UNIQUE("id","live"),
 	CONSTRAINT "members_organization_id_user_id_unique" UNIQUE("organization_id","user_id"),
 	CONSTRAINT "members_organization_id_id_unique" UNIQUE("organization_id","id"),
+	CONSTRAINT "members_live_check" CHECK ("members"."live" is not distinct from case when "members"."deleted_at" is null then true end),
+	CONSTRAINT "members_deleted_check" CHECK ("members"."deleted_at" is null or ("members"."status" = 'revoked')),
 	CONSTRAINT "members_revision_check" CHECK ("members"."revision" > 0),
 	CONSTRAINT "members_status_check" CHECK ("members"."status" in ('active', 'revoked')),
 	CONSTRAINT "members_revoked_check" CHECK (("members"."status" = 'revoked') = ("members"."revoked_at" is not null)),
@@ -56,6 +63,7 @@ CREATE TABLE "members" (
 ALTER TABLE "members" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "organizations" (
 	"deleted_at" timestamp with time zone,
+	"live" boolean DEFAULT true,
 	"id" uuid PRIMARY KEY NOT NULL,
 	"name" text NOT NULL,
 	"slug" text NOT NULL,
@@ -68,6 +76,9 @@ CREATE TABLE "organizations" (
 	"authorization_version" integer DEFAULT 1 NOT NULL,
 	"revision" integer DEFAULT 1 NOT NULL,
 	CONSTRAINT "organizations_slug_unique" UNIQUE("slug"),
+	CONSTRAINT "organizations_id_live_unique" UNIQUE("id","live"),
+	CONSTRAINT "organizations_live_check" CHECK ("organizations"."live" is not distinct from case when "organizations"."deleted_at" is null then true end),
+	CONSTRAINT "organizations_deleted_check" CHECK ("organizations"."deleted_at" is null or ("organizations"."status" = 'disabled')),
 	CONSTRAINT "organizations_revision_check" CHECK ("organizations"."revision" > 0),
 	CONSTRAINT "organizations_authorization_version_check" CHECK ("organizations"."authorization_version" > 0),
 	CONSTRAINT "organizations_slug_normalized_check" CHECK ("organizations"."slug" ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
@@ -100,6 +111,7 @@ CREATE TABLE "sessions" (
 --> statement-breakpoint
 CREATE TABLE "users" (
 	"deleted_at" timestamp with time zone,
+	"live" boolean DEFAULT true,
 	"id" uuid PRIMARY KEY NOT NULL,
 	"name" text NOT NULL,
 	"email" text NOT NULL,
@@ -111,6 +123,9 @@ CREATE TABLE "users" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "users_email_unique" UNIQUE("email"),
+	CONSTRAINT "users_id_live_unique" UNIQUE("id","live"),
+	CONSTRAINT "users_live_check" CHECK ("users"."live" is not distinct from case when "users"."deleted_at" is null then true end),
+	CONSTRAINT "users_deleted_check" CHECK ("users"."deleted_at" is null or ("users"."status" = 'disabled')),
 	CONSTRAINT "users_status_check" CHECK ("users"."status" in ('inert', 'active', 'disabled')),
 	CONSTRAINT "users_email_normalized_check" CHECK ("users"."email" = lower(btrim("users"."email"))),
 	CONSTRAINT "users_disabled_check" CHECK (("users"."status" = 'disabled') = ("users"."disabled_at" is not null)),
@@ -162,15 +177,18 @@ CREATE TABLE "oauth_client_assertions" (
 --> statement-breakpoint
 CREATE TABLE "oauth_client_resources" (
 	"deleted_at" timestamp with time zone,
+	"live" boolean DEFAULT true,
 	"id" uuid PRIMARY KEY NOT NULL,
 	"client_id" text NOT NULL,
 	"resource" text NOT NULL,
 	"metadata" jsonb,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "oauth_client_resources_live_check" CHECK ("oauth_client_resources"."live" is not distinct from case when "oauth_client_resources"."deleted_at" is null then true end)
 );
 --> statement-breakpoint
 CREATE TABLE "oauth_clients" (
 	"deleted_at" timestamp with time zone,
+	"live" boolean DEFAULT true,
 	"id" uuid PRIMARY KEY NOT NULL,
 	"client_id" text NOT NULL,
 	"client_secret" text,
@@ -211,12 +229,16 @@ CREATE TABLE "oauth_clients" (
 	"revision" integer DEFAULT 1 NOT NULL,
 	"authorization_version" integer DEFAULT 1 NOT NULL,
 	CONSTRAINT "oauth_clients_client_id_unique" UNIQUE("client_id"),
+	CONSTRAINT "oauth_clients_client_id_live_unique" UNIQUE("client_id","live"),
+	CONSTRAINT "oauth_clients_live_check" CHECK ("oauth_clients"."live" is not distinct from case when "oauth_clients"."deleted_at" is null then true end),
+	CONSTRAINT "oauth_clients_deleted_check" CHECK ("oauth_clients"."deleted_at" is null or ("oauth_clients"."disabled" and "oauth_clients"."client_secret" is null)),
 	CONSTRAINT "oauth_clients_revision_check" CHECK ("oauth_clients"."revision" > 0),
 	CONSTRAINT "oauth_clients_authorization_version_check" CHECK ("oauth_clients"."authorization_version" > 0)
 );
 --> statement-breakpoint
 CREATE TABLE "oauth_consents" (
 	"deleted_at" timestamp with time zone,
+	"live" boolean DEFAULT true,
 	"id" uuid PRIMARY KEY NOT NULL,
 	"client_id" text NOT NULL,
 	"user_id" uuid,
@@ -225,7 +247,8 @@ CREATE TABLE "oauth_consents" (
 	"requested_user_info_claims" text[],
 	"scopes" text[] NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "oauth_consents_live_check" CHECK ("oauth_consents"."live" is not distinct from case when "oauth_consents"."deleted_at" is null then true end)
 );
 --> statement-breakpoint
 CREATE TABLE "oauth_refresh_tokens" (
@@ -252,6 +275,7 @@ CREATE TABLE "oauth_refresh_tokens" (
 --> statement-breakpoint
 CREATE TABLE "oauth_resources" (
 	"deleted_at" timestamp with time zone,
+	"live" boolean DEFAULT true,
 	"id" uuid PRIMARY KEY NOT NULL,
 	"classification" text DEFAULT 'platform_shared' NOT NULL,
 	"organization_id" uuid,
@@ -271,6 +295,10 @@ CREATE TABLE "oauth_resources" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "oauth_resources_identifier_unique" UNIQUE("identifier"),
+	CONSTRAINT "oauth_resources_id_live_unique" UNIQUE("id","live"),
+	CONSTRAINT "oauth_resources_identifier_live_unique" UNIQUE("identifier","live"),
+	CONSTRAINT "oauth_resources_live_check" CHECK ("oauth_resources"."live" is not distinct from case when "oauth_resources"."deleted_at" is null then true end),
+	CONSTRAINT "oauth_resources_deleted_check" CHECK ("oauth_resources"."deleted_at" is null or ("oauth_resources"."disabled")),
 	CONSTRAINT "oauth_resources_ownership_check" CHECK (("oauth_resources"."classification" = 'platform_shared' and "oauth_resources"."organization_id" is null) or ("oauth_resources"."classification" = 'tenant_owned' and "oauth_resources"."organization_id" is not null)),
 	CONSTRAINT "oauth_resources_revision_check" CHECK ("oauth_resources"."revision" > 0),
 	CONSTRAINT "oauth_resources_identity_claims_check" CHECK (NOT ("oauth_resources"."custom_claims" ?| ARRAY['client_instance', 'organization_id', 'authorization_version', 'organization_authorization_version', 'subject_type', 'membership_id', 'grant_id', 'resource_instance', 'upstream_auth_time']))
@@ -278,6 +306,7 @@ CREATE TABLE "oauth_resources" (
 --> statement-breakpoint
 CREATE TABLE "entitlements" (
 	"deleted_at" timestamp with time zone,
+	"live" boolean DEFAULT true,
 	"id" uuid PRIMARY KEY NOT NULL,
 	"organization_id" uuid NOT NULL,
 	"member_id" uuid,
@@ -291,6 +320,8 @@ CREATE TABLE "entitlements" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"revision" integer DEFAULT 1 NOT NULL,
+	CONSTRAINT "entitlements_live_check" CHECK ("entitlements"."live" is not distinct from case when "entitlements"."deleted_at" is null then true end),
+	CONSTRAINT "entitlements_deleted_check" CHECK ("entitlements"."deleted_at" is null or ("entitlements"."status" = 'disabled')),
 	CONSTRAINT "entitlements_revision_check" CHECK ("entitlements"."revision" > 0),
 	CONSTRAINT "entitlements_principal_check" CHECK (num_nonnulls("entitlements"."member_id", "entitlements"."group_id") <= 1),
 	CONSTRAINT "entitlements_target_check" CHECK (num_nonnulls("entitlements"."client_id", "entitlements"."resource") >= 1),
@@ -302,6 +333,7 @@ CREATE TABLE "entitlements" (
 ALTER TABLE "entitlements" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "group_members" (
 	"deleted_at" timestamp with time zone,
+	"live" boolean DEFAULT true,
 	"organization_id" uuid NOT NULL,
 	"group_id" uuid NOT NULL,
 	"member_id" uuid NOT NULL,
@@ -311,6 +343,7 @@ CREATE TABLE "group_members" (
 	"id" uuid NOT NULL,
 	"revision" integer DEFAULT 1 NOT NULL,
 	CONSTRAINT "group_members_pkey" PRIMARY KEY("id"),
+	CONSTRAINT "group_members_live_check" CHECK ("group_members"."live" is not distinct from case when "group_members"."deleted_at" is null then true end),
 	CONSTRAINT "group_members_revision_check" CHECK ("group_members"."revision" > 0),
 	CONSTRAINT "group_members_window_check" CHECK ("group_members"."valid_from" < "group_members"."valid_until")
 );
@@ -318,6 +351,7 @@ CREATE TABLE "group_members" (
 ALTER TABLE "group_members" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "groups" (
 	"deleted_at" timestamp with time zone,
+	"live" boolean DEFAULT true,
 	"id" uuid PRIMARY KEY NOT NULL,
 	"organization_id" uuid NOT NULL,
 	"slug" text NOT NULL,
@@ -327,8 +361,11 @@ CREATE TABLE "groups" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"revision" integer DEFAULT 1 NOT NULL,
+	CONSTRAINT "groups_id_live_unique" UNIQUE("id","live"),
 	CONSTRAINT "groups_organization_id_slug_unique" UNIQUE("organization_id","slug"),
 	CONSTRAINT "groups_organization_id_id_unique" UNIQUE("organization_id","id"),
+	CONSTRAINT "groups_live_check" CHECK ("groups"."live" is not distinct from case when "groups"."deleted_at" is null then true end),
+	CONSTRAINT "groups_deleted_check" CHECK ("groups"."deleted_at" is null or ("groups"."status" = 'disabled')),
 	CONSTRAINT "groups_revision_check" CHECK ("groups"."revision" > 0),
 	CONSTRAINT "groups_slug_normalized_check" CHECK ("groups"."slug" ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
 	CONSTRAINT "groups_status_check" CHECK ("groups"."status" in ('active', 'disabled'))
@@ -337,12 +374,15 @@ CREATE TABLE "groups" (
 ALTER TABLE "groups" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "organization_domains" (
 	"deleted_at" timestamp with time zone,
+	"live" boolean DEFAULT true,
 	"id" uuid PRIMARY KEY NOT NULL,
 	"organization_id" uuid NOT NULL,
 	"domain" text NOT NULL,
 	"status" text DEFAULT 'active' NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "organization_domains_live_check" CHECK ("organization_domains"."live" is not distinct from case when "organization_domains"."deleted_at" is null then true end),
+	CONSTRAINT "organization_domains_deleted_check" CHECK ("organization_domains"."deleted_at" is null or ("organization_domains"."status" = 'disabled')),
 	CONSTRAINT "organization_domains_status_check" CHECK ("organization_domains"."status" in ('active', 'disabled')),
 	CONSTRAINT "organization_domains_domain_normalized_check" CHECK ("organization_domains"."domain" ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$')
 );
@@ -350,6 +390,7 @@ CREATE TABLE "organization_domains" (
 ALTER TABLE "organization_domains" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "sso_providers" (
 	"deleted_at" timestamp with time zone,
+	"live" boolean DEFAULT true,
 	"id" uuid PRIMARY KEY NOT NULL,
 	"issuer" text NOT NULL,
 	"oidc_config" text,
@@ -362,6 +403,8 @@ CREATE TABLE "sso_providers" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"revision" integer DEFAULT 1 NOT NULL,
 	CONSTRAINT "sso_providers_provider_id_unique" UNIQUE("provider_id"),
+	CONSTRAINT "sso_providers_live_check" CHECK ("sso_providers"."live" is not distinct from case when "sso_providers"."deleted_at" is null then true end),
+	CONSTRAINT "sso_providers_deleted_check" CHECK ("sso_providers"."deleted_at" is null or ("sso_providers"."oidc_config" is null)),
 	CONSTRAINT "sso_providers_revision_check" CHECK ("sso_providers"."revision" > 0),
 	CONSTRAINT "sso_providers_domain_normalized_check" CHECK ("sso_providers"."domain" ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$')
 );
@@ -406,7 +449,9 @@ CREATE TABLE "system_bindings" (
 	"organization_id" uuid NOT NULL,
 	"resource_instance_id" uuid NOT NULL,
 	"group_id" uuid NOT NULL,
-	CONSTRAINT "system_bindings_name_check" CHECK ("system_bindings"."name" in ('platform'))
+	"live" boolean DEFAULT true NOT NULL,
+	CONSTRAINT "system_bindings_name_check" CHECK ("system_bindings"."name" in ('platform')),
+	CONSTRAINT "system_bindings_live_check" CHECK ("system_bindings"."live")
 );
 --> statement-breakpoint
 CREATE TABLE "admin_operations" (
@@ -426,6 +471,7 @@ CREATE TABLE "admin_operations" (
 --> statement-breakpoint
 CREATE TABLE "organization_capabilities" (
 	"deleted_at" timestamp with time zone,
+	"live" boolean DEFAULT true,
 	"id" uuid PRIMARY KEY NOT NULL,
 	"organization_id" uuid NOT NULL,
 	"client_id" text,
@@ -438,6 +484,8 @@ CREATE TABLE "organization_capabilities" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"revision" integer DEFAULT 1 NOT NULL,
+	CONSTRAINT "organization_capabilities_live_check" CHECK ("organization_capabilities"."live" is not distinct from case when "organization_capabilities"."deleted_at" is null then true end),
+	CONSTRAINT "organization_capabilities_deleted_check" CHECK ("organization_capabilities"."deleted_at" is null or ("organization_capabilities"."status" = 'disabled')),
 	CONSTRAINT "organization_capabilities_revision_check" CHECK ("organization_capabilities"."revision" > 0),
 	CONSTRAINT "organization_capabilities_kind_check" CHECK ("organization_capabilities"."grant_kind" in ('admin_session', 'authorization_code', 'refresh_token', 'client_credentials')),
 	CONSTRAINT "organization_capabilities_status_check" CHECK ("organization_capabilities"."status" in ('active', 'disabled')),
@@ -473,10 +521,13 @@ CREATE TABLE "grant_contexts" (
 --> statement-breakpoint
 ALTER TABLE "grant_contexts" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "accounts" ADD CONSTRAINT "accounts_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "accounts" ADD CONSTRAINT "accounts_user_live_fk" FOREIGN KEY ("user_id","live") REFERENCES "public"."users"("id","live") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "invitations" ADD CONSTRAINT "invitations_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "invitations" ADD CONSTRAINT "invitations_inviter_id_users_id_fk" FOREIGN KEY ("inviter_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "members" ADD CONSTRAINT "members_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "members" ADD CONSTRAINT "members_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "members" ADD CONSTRAINT "members_organization_live_fk" FOREIGN KEY ("organization_id","live") REFERENCES "public"."organizations"("id","live") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "members" ADD CONSTRAINT "members_user_live_fk" FOREIGN KEY ("user_id","live") REFERENCES "public"."users"("id","live") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sessions" ADD CONSTRAINT "sessions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sessions" ADD CONSTRAINT "sessions_active_organization_id_organizations_id_fk" FOREIGN KEY ("active_organization_id") REFERENCES "public"."organizations"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "oauth_access_tokens" ADD CONSTRAINT "oauth_access_tokens_client_id_oauth_clients_client_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."oauth_clients"("client_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -484,33 +535,56 @@ ALTER TABLE "oauth_access_tokens" ADD CONSTRAINT "oauth_access_tokens_session_id
 ALTER TABLE "oauth_access_tokens" ADD CONSTRAINT "oauth_access_tokens_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "oauth_access_tokens" ADD CONSTRAINT "oauth_access_tokens_refresh_id_oauth_refresh_tokens_id_fk" FOREIGN KEY ("refresh_id") REFERENCES "public"."oauth_refresh_tokens"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "oauth_client_resources" ADD CONSTRAINT "oauth_client_resources_client_id_oauth_clients_client_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."oauth_clients"("client_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "oauth_client_resources" ADD CONSTRAINT "oauth_client_resources_client_live_fk" FOREIGN KEY ("client_id","live") REFERENCES "public"."oauth_clients"("client_id","live") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "oauth_client_resources" ADD CONSTRAINT "oauth_client_resources_resource_live_fk" FOREIGN KEY ("resource","live") REFERENCES "public"."oauth_resources"("identifier","live") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "oauth_client_resources" ADD CONSTRAINT "oauth_client_resources_resource_fk" FOREIGN KEY ("resource") REFERENCES "public"."oauth_resources"("identifier") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "oauth_clients" ADD CONSTRAINT "oauth_clients_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "oauth_clients" ADD CONSTRAINT "oauth_clients_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "oauth_clients" ADD CONSTRAINT "oauth_clients_organization_live_fk" FOREIGN KEY ("organization_id","live") REFERENCES "public"."organizations"("id","live") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "oauth_consents" ADD CONSTRAINT "oauth_consents_client_id_oauth_clients_client_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."oauth_clients"("client_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "oauth_consents" ADD CONSTRAINT "oauth_consents_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "oauth_consents" ADD CONSTRAINT "oauth_consents_client_live_fk" FOREIGN KEY ("client_id","live") REFERENCES "public"."oauth_clients"("client_id","live") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "oauth_consents" ADD CONSTRAINT "oauth_consents_user_live_fk" FOREIGN KEY ("user_id","live") REFERENCES "public"."users"("id","live") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "oauth_refresh_tokens" ADD CONSTRAINT "oauth_refresh_tokens_client_id_oauth_clients_client_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."oauth_clients"("client_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "oauth_refresh_tokens" ADD CONSTRAINT "oauth_refresh_tokens_session_id_sessions_id_fk" FOREIGN KEY ("session_id") REFERENCES "public"."sessions"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "oauth_refresh_tokens" ADD CONSTRAINT "oauth_refresh_tokens_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "oauth_resources" ADD CONSTRAINT "oauth_resources_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "oauth_resources" ADD CONSTRAINT "oauth_resources_organization_live_fk" FOREIGN KEY ("organization_id","live") REFERENCES "public"."organizations"("id","live") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "entitlements" ADD CONSTRAINT "entitlements_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "entitlements" ADD CONSTRAINT "entitlements_client_id_oauth_clients_client_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."oauth_clients"("client_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "entitlements" ADD CONSTRAINT "entitlements_resource_oauth_resources_identifier_fk" FOREIGN KEY ("resource") REFERENCES "public"."oauth_resources"("identifier") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "entitlements" ADD CONSTRAINT "entitlements_organization_live_fk" FOREIGN KEY ("organization_id","live") REFERENCES "public"."organizations"("id","live") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "entitlements" ADD CONSTRAINT "entitlements_member_live_fk" FOREIGN KEY ("member_id","live") REFERENCES "public"."members"("id","live") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "entitlements" ADD CONSTRAINT "entitlements_group_live_fk" FOREIGN KEY ("group_id","live") REFERENCES "public"."groups"("id","live") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "entitlements" ADD CONSTRAINT "entitlements_client_live_fk" FOREIGN KEY ("client_id","live") REFERENCES "public"."oauth_clients"("client_id","live") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "entitlements" ADD CONSTRAINT "entitlements_resource_live_fk" FOREIGN KEY ("resource","live") REFERENCES "public"."oauth_resources"("identifier","live") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "entitlements" ADD CONSTRAINT "entitlements_organization_id_member_id_fk" FOREIGN KEY ("organization_id","member_id") REFERENCES "public"."members"("organization_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "entitlements" ADD CONSTRAINT "entitlements_organization_id_group_id_fk" FOREIGN KEY ("organization_id","group_id") REFERENCES "public"."groups"("organization_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "group_members" ADD CONSTRAINT "group_members_organization_live_fk" FOREIGN KEY ("organization_id","live") REFERENCES "public"."organizations"("id","live") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "group_members" ADD CONSTRAINT "group_members_group_live_fk" FOREIGN KEY ("group_id","live") REFERENCES "public"."groups"("id","live") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "group_members" ADD CONSTRAINT "group_members_member_live_fk" FOREIGN KEY ("member_id","live") REFERENCES "public"."members"("id","live") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "group_members" ADD CONSTRAINT "group_members_organization_id_group_id_fk" FOREIGN KEY ("organization_id","group_id") REFERENCES "public"."groups"("organization_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "group_members" ADD CONSTRAINT "group_members_organization_id_member_id_fk" FOREIGN KEY ("organization_id","member_id") REFERENCES "public"."members"("organization_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "groups" ADD CONSTRAINT "groups_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "groups" ADD CONSTRAINT "groups_organization_live_fk" FOREIGN KEY ("organization_id","live") REFERENCES "public"."organizations"("id","live") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organization_domains" ADD CONSTRAINT "organization_domains_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "organization_domains" ADD CONSTRAINT "organization_domains_organization_live_fk" FOREIGN KEY ("organization_id","live") REFERENCES "public"."organizations"("id","live") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sso_providers" ADD CONSTRAINT "sso_providers_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sso_providers" ADD CONSTRAINT "sso_providers_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "sso_providers" ADD CONSTRAINT "sso_providers_organization_live_fk" FOREIGN KEY ("organization_id","live") REFERENCES "public"."organizations"("id","live") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "audit_event_subjects" ADD CONSTRAINT "audit_event_subjects_event_id_audit_events_id_fk" FOREIGN KEY ("event_id") REFERENCES "public"."audit_events"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "audit_events" ADD CONSTRAINT "audit_events_operation_id_admin_operations_id_fk" FOREIGN KEY ("operation_id") REFERENCES "public"."admin_operations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "system_bindings" ADD CONSTRAINT "system_bindings_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "system_bindings" ADD CONSTRAINT "system_bindings_resource_instance_id_oauth_resources_id_fk" FOREIGN KEY ("resource_instance_id") REFERENCES "public"."oauth_resources"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "system_bindings" ADD CONSTRAINT "system_bindings_organization_group_fk" FOREIGN KEY ("organization_id","group_id") REFERENCES "public"."groups"("organization_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "system_bindings" ADD CONSTRAINT "system_bindings_organization_live_fk" FOREIGN KEY ("organization_id","live") REFERENCES "public"."organizations"("id","live") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "system_bindings" ADD CONSTRAINT "system_bindings_resource_instance_live_fk" FOREIGN KEY ("resource_instance_id","live") REFERENCES "public"."oauth_resources"("id","live") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "system_bindings" ADD CONSTRAINT "system_bindings_group_live_fk" FOREIGN KEY ("group_id","live") REFERENCES "public"."groups"("id","live") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organization_capabilities" ADD CONSTRAINT "organization_capabilities_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organization_capabilities" ADD CONSTRAINT "organization_capabilities_client_id_oauth_clients_client_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."oauth_clients"("client_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "organization_capabilities" ADD CONSTRAINT "organization_capabilities_organization_live_fk" FOREIGN KEY ("organization_id","live") REFERENCES "public"."organizations"("id","live") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "organization_capabilities" ADD CONSTRAINT "organization_capabilities_client_live_fk" FOREIGN KEY ("client_id","live") REFERENCES "public"."oauth_clients"("client_id","live") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "organization_capabilities" ADD CONSTRAINT "organization_capabilities_resource_live_fk" FOREIGN KEY ("resource","live") REFERENCES "public"."oauth_resources"("identifier","live") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organization_capabilities" ADD CONSTRAINT "organization_capabilities_resource_fk" FOREIGN KEY ("resource") REFERENCES "public"."oauth_resources"("identifier") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "grant_contexts" ADD CONSTRAINT "grant_contexts_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "grant_contexts" ADD CONSTRAINT "grant_contexts_member_id_members_id_fk" FOREIGN KEY ("member_id") REFERENCES "public"."members"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

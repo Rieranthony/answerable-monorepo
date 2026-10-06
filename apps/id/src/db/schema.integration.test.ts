@@ -777,6 +777,117 @@ describe("integration: PostgreSQL schema", () => {
     expect(await connection.db.select().from(groupMembers)).toHaveLength(0);
   });
 
+  test("live foreign keys keep live rows under live parents and deletion is terminal", async () => {
+    const organization = await insertOrganization();
+    const group = { id: createId(), organizationId: organization.id };
+    const insertGroup = (values: Partial<typeof groups.$inferInsert> = {}) =>
+      connection.db
+        .insert(groups)
+        .values({ ...group, slug: "team", name: "Team", ...values })
+        .execute();
+    const deleted = { status: "disabled" as const, deletedAt: new Date() };
+    const deleteOrganization = () =>
+      connection.db
+        .update(organizations)
+        .set({ ...deleted, disabledAt: new Date() })
+        .where(eq(organizations.id, organization.id))
+        .execute();
+    const refusal = (code: string, constraint: string) => ({
+      cause: { code, constraint },
+    });
+    await insertGroup();
+    await expect(deleteOrganization()).rejects.toMatchObject(
+      refusal("23503", "groups_organization_live_fk"),
+    );
+    // Children first; writers set deleted_at and the trigger clears live.
+    await connection.db.update(groups).set(deleted);
+    await deleteOrganization();
+    expect(
+      await connection.db
+        .select({ live: organizations.live })
+        .from(organizations)
+        .union(connection.db.select({ live: groups.live }).from(groups)),
+    ).toEqual([{ live: null }]);
+    await expect(
+      insertGroup({ id: createId(), slug: "late" }),
+    ).rejects.toMatchObject(refusal("23503", "groups_organization_live_fk"));
+    await insertGroup({ id: createId(), slug: "tombstone", ...deleted });
+    await expect(
+      connection.db.update(groups).set({ deletedAt: null }).execute(),
+    ).rejects.toMatchObject(refusal("23514", "product_deletion_terminal"));
+    // The CHECK holds live to deleted_at even where the trigger does not run.
+    await expect(
+      connection.db.transaction(async (tx) => {
+        await tx.execute(sql`set local session_replication_role = replica`);
+        await tx.update(groups).set({ live: true });
+      }),
+    ).rejects.toMatchObject(refusal("23514", "groups_live_check"));
+  });
+
+  test("deleted rows hold no authority or credentials", async () => {
+    const user = await insertUser();
+    const organization = await insertOrganization();
+    const deletedAt = new Date();
+    for (const [write, constraint] of [
+      [
+        () =>
+          connection.db
+            .update(users)
+            .set({ deletedAt })
+            .where(eq(users.id, user.id)),
+        "users_deleted_check",
+      ],
+      [
+        () =>
+          connection.db.insert(members).values({
+            id: createId(),
+            organizationId: organization.id,
+            userId: user.id,
+            deletedAt,
+          }),
+        "members_deleted_check",
+      ],
+      [
+        () =>
+          connection.db.insert(accounts).values({
+            id: createId(),
+            issuer: "https://issuer.example",
+            accountId: "subject",
+            providerId: "tenant",
+            userId: user.id,
+            refreshToken: "retained",
+            deletedAt,
+          }),
+        "accounts_deleted_check",
+      ],
+      [
+        () =>
+          connection.db.insert(oauthClients).values({
+            id: createId(),
+            clientId: "deleted",
+            redirectUris: [],
+            disabled: true,
+            clientSecret: "digest",
+            deletedAt,
+          }),
+        "oauth_clients_deleted_check",
+      ],
+      [
+        () =>
+          connection.db.insert(oauthResources).values({
+            id: createId(),
+            identifier: "https://deleted.example",
+            name: "Deleted",
+            deletedAt,
+          }),
+        "oauth_resources_deleted_check",
+      ],
+    ] as const)
+      await expect(Promise.resolve(write())).rejects.toMatchObject({
+        cause: { code: "23514", constraint },
+      });
+  });
+
   test("orders effective windows", async () => {
     const auth = createAuth(connection.db, environment);
     const { resource } = await registerTutor(auth);

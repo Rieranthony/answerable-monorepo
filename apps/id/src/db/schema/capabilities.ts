@@ -14,7 +14,8 @@ import { oauthClients, oauthResources } from "./oauth.ts";
 import {
   effectiveWindow,
   id,
-  timestampColumn,
+  softDeletion,
+  softDeletionChecks,
   timestamps,
   vocabularyCheck,
   windowCheck,
@@ -32,7 +33,7 @@ export const capabilityGrantKinds = [
 export const organizationCapabilities = pgTable(
   "organization_capabilities",
   {
-    deletedAt: timestampColumn("deleted_at"),
+    ...softDeletion(),
     id: id(),
     organizationId: uuid("organization_id")
       .notNull()
@@ -51,6 +52,26 @@ export const organizationCapabilities = pgTable(
     revision: integer("revision").default(1).notNull(),
   },
   (table) => [
+    ...softDeletionChecks(
+      "organization_capabilities",
+      table,
+      sql`${table.status} = 'disabled'`,
+    ),
+    foreignKey({
+      name: "organization_capabilities_organization_live_fk",
+      columns: [table.organizationId, table.live],
+      foreignColumns: [organizations.id, organizations.live],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "organization_capabilities_client_live_fk",
+      columns: [table.clientId, table.live],
+      foreignColumns: [oauthClients.clientId, oauthClients.live],
+    }),
+    foreignKey({
+      name: "organization_capabilities_resource_live_fk",
+      columns: [table.resource, table.live],
+      foreignColumns: [oauthResources.identifier, oauthResources.live],
+    }),
     foreignKey({
       name: "organization_capabilities_resource_fk",
       columns: [table.resource],

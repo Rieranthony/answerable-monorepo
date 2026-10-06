@@ -2,6 +2,7 @@ import { routingPolicies } from "./tenant-policies.ts";
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   integer,
   pgTable,
   text,
@@ -10,14 +11,14 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { organizations, users } from "./auth.ts";
-import { id, timestampColumn, timestamps } from "./columns.ts";
+import { id, softDeletion, softDeletionChecks, timestamps } from "./columns.ts";
 
 // Persisted configuration owned by @better-auth/sso. The organization and
 // normalized domain constraints are Answerable's tenant-boundary additions.
 export const ssoProviders = pgTable(
   "sso_providers",
   {
-    deletedAt: timestampColumn("deleted_at"),
+    ...softDeletion(),
     id: id(),
     issuer: text("issuer").notNull(),
     oidcConfig: text("oidc_config"),
@@ -35,6 +36,16 @@ export const ssoProviders = pgTable(
   },
   (table) => [
     ...routingPolicies(table.organizationId, true),
+    ...softDeletionChecks(
+      "sso_providers",
+      table,
+      sql`${table.oidcConfig} is null`,
+    ),
+    foreignKey({
+      name: "sso_providers_organization_live_fk",
+      columns: [table.organizationId, table.live],
+      foreignColumns: [organizations.id, organizations.live],
+    }).onDelete("cascade"),
     check("sso_providers_revision_check", sql`${table.revision} > 0`),
     uniqueIndex("sso_providers_organization_id_unique")
       .on(table.organizationId)

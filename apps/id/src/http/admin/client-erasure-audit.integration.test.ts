@@ -204,13 +204,20 @@ test("restricted client erasure records exact cascades with private cross-client
   expect(after.consents).toEqual(
     before.consents.map((row) =>
       row.id === consentId
-        ? { ...row, deletedAt: expect.any(Date), updatedAt: expect.any(Date) }
+        ? {
+            ...row,
+            deletedAt: expect.any(Date),
+            live: null,
+            updatedAt: expect.any(Date),
+          }
         : row,
     ),
   );
   expect(after.links).toEqual(
     before.links.map((row) =>
-      row.id === linkId ? { ...row, deletedAt: expect.any(Date) } : row,
+      row.id === linkId
+        ? { ...row, deletedAt: expect.any(Date), live: null }
+        : row,
     ),
   );
   expect(after.clients).toHaveLength(before.clients.length);

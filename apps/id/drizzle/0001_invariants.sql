@@ -2,6 +2,10 @@
 -- this file adds what drizzle-orm 0.45.2 cannot express in the schema modules: the deferrable
 -- audit-to-operation foreign key, NULLS NOT DISTINCT on two partial unique indexes, and the
 -- functions, triggers and execution grants. `bun run db:regenerate` keeps this file.
+-- The live foreign keys, `(parent_id, live)` onto a parent's `unique (id, live)`, are in
+-- 0000: drizzle-kit orders them correctly from an empty snapshot. An incremental migration
+-- that adds one to an existing table emits the foreign key before its unique constraint,
+-- which Postgres refuses (42830); move the unique constraint first by hand.
 ALTER TABLE "audit_events" ALTER CONSTRAINT "audit_events_operation_id_admin_operations_id_fk" DEFERRABLE INITIALLY DEFERRED;
 --> statement-breakpoint
 DROP INDEX "entitlements_principal_target_unique";
@@ -433,6 +437,17 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
+CREATE FUNCTION protect_soft_deletion() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND OLD.deleted_at IS NOT NULL AND NEW.deleted_at IS DISTINCT FROM OLD.deleted_at THEN
+    RAISE EXCEPTION 'Product deletion is terminal' USING ERRCODE = '23514', CONSTRAINT = 'product_deletion_terminal';
+  END IF;
+  NEW.live := CASE WHEN NEW.deleted_at IS NULL THEN true END;
+  RETURN NEW;
+END;
+$$;
+--> statement-breakpoint
 CREATE FUNCTION protect_session_authentication_origin() RETURNS trigger
 LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
 BEGIN
@@ -474,87 +489,6 @@ BEGIN
     NEW.revision := OLD.revision + 1;
   ELSE
     NEW.updated_at := OLD.updated_at;
-  END IF;
-  RETURN NEW;
-END;
-$$;
---> statement-breakpoint
-CREATE FUNCTION protect_product_deletion() RETURNS trigger
-LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
-BEGIN
-  IF TG_OP = 'UPDATE' AND OLD.deleted_at IS NOT NULL AND NEW.deleted_at IS DISTINCT FROM OLD.deleted_at THEN
-    RAISE EXCEPTION 'Product deletion is terminal' USING ERRCODE = '23514', CONSTRAINT = 'product_deletion_terminal';
-  END IF;
-  IF TG_OP = 'UPDATE' AND OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL THEN
-    IF TG_TABLE_NAME IN ('organizations', 'groups', 'oauth_resources') AND EXISTS (
-      SELECT 1 FROM public.system_bindings b WHERE
-        (TG_TABLE_NAME = 'organizations' AND b.organization_id = OLD.id)
-        OR (TG_TABLE_NAME = 'groups' AND b.group_id = OLD.id)
-        OR (TG_TABLE_NAME = 'oauth_resources' AND b.resource_instance_id = OLD.id)
-    ) THEN
-      RAISE EXCEPTION 'Bound platform objects cannot be deleted' USING ERRCODE = '23514', CONSTRAINT = 'system_binding_protected';
-    END IF;
-  END IF;
-  IF TG_OP = 'UPDATE' AND OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL THEN
-    IF TG_TABLE_NAME = 'organizations' AND (
-      EXISTS (SELECT 1 FROM public.oauth_clients WHERE organization_id = OLD.id AND deleted_at IS NULL)
-      OR EXISTS (SELECT 1 FROM public.oauth_resources WHERE organization_id = OLD.id AND deleted_at IS NULL)
-    ) OR TG_TABLE_NAME = 'oauth_clients' AND (
-      EXISTS (SELECT 1 FROM public.entitlements WHERE client_id = to_jsonb(OLD)->>'client_id' AND deleted_at IS NULL)
-      OR EXISTS (SELECT 1 FROM public.organization_capabilities WHERE client_id = to_jsonb(OLD)->>'client_id' AND deleted_at IS NULL)
-    ) OR TG_TABLE_NAME = 'oauth_resources' AND (
-      EXISTS (SELECT 1 FROM public.entitlements WHERE resource = to_jsonb(OLD)->>'identifier' AND deleted_at IS NULL)
-      OR EXISTS (SELECT 1 FROM public.organization_capabilities WHERE resource = to_jsonb(OLD)->>'identifier' AND deleted_at IS NULL)
-      OR EXISTS (SELECT 1 FROM public.oauth_client_resources WHERE resource = to_jsonb(OLD)->>'identifier' AND deleted_at IS NULL)
-    ) THEN
-      RAISE EXCEPTION 'Remove live product references before deletion' USING ERRCODE = '23503', CONSTRAINT = 'product_live_references';
-    END IF;
-  END IF;
-  IF NEW.deleted_at IS NOT NULL THEN
-    IF TG_TABLE_NAME IN ('users', 'organizations', 'groups', 'entitlements', 'organization_domains', 'organization_capabilities')
-      AND to_jsonb(NEW)->>'status' <> 'disabled'
-      OR TG_TABLE_NAME = 'members' AND to_jsonb(NEW)->>'status' <> 'revoked'
-      OR TG_TABLE_NAME IN ('oauth_clients', 'oauth_resources') AND to_jsonb(NEW)->>'disabled' <> 'true'
-      OR TG_TABLE_NAME = 'accounts' AND (to_jsonb(NEW)->>'access_token' IS NOT NULL OR to_jsonb(NEW)->>'refresh_token' IS NOT NULL OR to_jsonb(NEW)->>'id_token' IS NOT NULL OR to_jsonb(NEW)->>'password' IS NOT NULL)
-      OR TG_TABLE_NAME = 'oauth_clients' AND to_jsonb(NEW)->>'client_secret' IS NOT NULL
-      OR TG_TABLE_NAME = 'sso_providers' AND (to_jsonb(NEW)->>'oidc_config' IS NOT NULL OR to_jsonb(NEW)->>'saml_config' IS NOT NULL) THEN
-      RAISE EXCEPTION 'Deleted product objects cannot confer authority or retain credentials' USING ERRCODE = '23514', CONSTRAINT = 'product_deletion_inactive';
-    END IF;
-  END IF;
-  RETURN NEW;
-END;
-$$;
---> statement-breakpoint
-CREATE FUNCTION require_present_parent(parent_table regclass, parent_column name, parent_value text) RETURNS void
-LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
-DECLARE present boolean;
-BEGIN
-  IF parent_value IS NULL THEN RETURN; END IF;
-  EXECUTE format('SELECT true FROM %s WHERE %I = $1::%s AND deleted_at IS NULL FOR SHARE', parent_table, parent_column, CASE WHEN parent_column = 'id' THEN 'uuid' ELSE 'text' END)
-    INTO present USING parent_value;
-  IF present IS DISTINCT FROM true THEN
-    RAISE EXCEPTION 'Parent is unavailable' USING ERRCODE = '23503', CONSTRAINT = 'product_parent_unavailable';
-  END IF;
-END;
-$$;
---> statement-breakpoint
-CREATE FUNCTION protect_product_parents() RETURNS trigger
-LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
-DECLARE row_data jsonb := to_jsonb(NEW);
-BEGIN
-  IF row_data->>'deleted_at' IS NOT NULL OR row_data->>'revoked' IS NOT NULL OR row_data->>'revoked_at' IS NOT NULL THEN RETURN NEW; END IF;
-  PERFORM public.require_present_parent('public.organizations', 'id', row_data->>'organization_id');
-  IF TG_TABLE_NAME <> 'sso_providers' THEN
-    PERFORM public.require_present_parent('public.users', 'id', row_data->>'user_id');
-  END IF;
-  PERFORM public.require_present_parent('public.users', 'id', row_data->>'inviter_id');
-  PERFORM public.require_present_parent('public.members', 'id', row_data->>'member_id');
-  PERFORM public.require_present_parent('public.groups', 'id', row_data->>'group_id');
-  IF TG_TABLE_NAME <> 'oauth_clients' THEN
-    PERFORM public.require_present_parent('public.oauth_clients', 'client_id', row_data->>'client_id');
-  END IF;
-  IF TG_TABLE_NAME <> 'oauth_resources' THEN
-    PERFORM public.require_present_parent('public.oauth_resources', 'identifier', row_data->>'resource');
   END IF;
   RETURN NEW;
 END;
@@ -696,61 +630,33 @@ FOR EACH ROW EXECUTE FUNCTION protect_grant_context();
 CREATE TRIGGER sessions_authentication_origin_guard BEFORE INSERT OR UPDATE ON sessions
 FOR EACH ROW EXECUTE FUNCTION protect_session_authentication_origin();
 --> statement-breakpoint
-CREATE TRIGGER users_deletion_guard BEFORE INSERT OR UPDATE ON users FOR EACH ROW EXECUTE FUNCTION protect_product_deletion();
+CREATE TRIGGER users_deletion_guard BEFORE INSERT OR UPDATE ON users FOR EACH ROW EXECUTE FUNCTION protect_soft_deletion();
 --> statement-breakpoint
-CREATE TRIGGER organizations_deletion_guard BEFORE INSERT OR UPDATE ON organizations FOR EACH ROW EXECUTE FUNCTION protect_product_deletion();
+CREATE TRIGGER organizations_deletion_guard BEFORE INSERT OR UPDATE ON organizations FOR EACH ROW EXECUTE FUNCTION protect_soft_deletion();
 --> statement-breakpoint
-CREATE TRIGGER accounts_deletion_guard BEFORE INSERT OR UPDATE ON accounts FOR EACH ROW EXECUTE FUNCTION protect_product_deletion();
+CREATE TRIGGER accounts_deletion_guard BEFORE INSERT OR UPDATE ON accounts FOR EACH ROW EXECUTE FUNCTION protect_soft_deletion();
 --> statement-breakpoint
-CREATE TRIGGER members_deletion_guard BEFORE INSERT OR UPDATE ON members FOR EACH ROW EXECUTE FUNCTION protect_product_deletion();
+CREATE TRIGGER members_deletion_guard BEFORE INSERT OR UPDATE ON members FOR EACH ROW EXECUTE FUNCTION protect_soft_deletion();
 --> statement-breakpoint
-CREATE TRIGGER invitations_deletion_guard BEFORE INSERT OR UPDATE ON invitations FOR EACH ROW EXECUTE FUNCTION protect_product_deletion();
+CREATE TRIGGER organization_domains_deletion_guard BEFORE INSERT OR UPDATE ON organization_domains FOR EACH ROW EXECUTE FUNCTION protect_soft_deletion();
 --> statement-breakpoint
-CREATE TRIGGER organization_domains_deletion_guard BEFORE INSERT OR UPDATE ON organization_domains FOR EACH ROW EXECUTE FUNCTION protect_product_deletion();
+CREATE TRIGGER groups_deletion_guard BEFORE INSERT OR UPDATE ON groups FOR EACH ROW EXECUTE FUNCTION protect_soft_deletion();
 --> statement-breakpoint
-CREATE TRIGGER groups_deletion_guard BEFORE INSERT OR UPDATE ON groups FOR EACH ROW EXECUTE FUNCTION protect_product_deletion();
+CREATE TRIGGER group_members_deletion_guard BEFORE INSERT OR UPDATE ON group_members FOR EACH ROW EXECUTE FUNCTION protect_soft_deletion();
 --> statement-breakpoint
-CREATE TRIGGER group_members_deletion_guard BEFORE INSERT OR UPDATE ON group_members FOR EACH ROW EXECUTE FUNCTION protect_product_deletion();
+CREATE TRIGGER entitlements_deletion_guard BEFORE INSERT OR UPDATE ON entitlements FOR EACH ROW EXECUTE FUNCTION protect_soft_deletion();
 --> statement-breakpoint
-CREATE TRIGGER entitlements_deletion_guard BEFORE INSERT OR UPDATE ON entitlements FOR EACH ROW EXECUTE FUNCTION protect_product_deletion();
+CREATE TRIGGER oauth_clients_deletion_guard BEFORE INSERT OR UPDATE ON oauth_clients FOR EACH ROW EXECUTE FUNCTION protect_soft_deletion();
 --> statement-breakpoint
-CREATE TRIGGER oauth_clients_deletion_guard BEFORE INSERT OR UPDATE ON oauth_clients FOR EACH ROW EXECUTE FUNCTION protect_product_deletion();
+CREATE TRIGGER oauth_resources_deletion_guard BEFORE INSERT OR UPDATE ON oauth_resources FOR EACH ROW EXECUTE FUNCTION protect_soft_deletion();
 --> statement-breakpoint
-CREATE TRIGGER oauth_resources_deletion_guard BEFORE INSERT OR UPDATE ON oauth_resources FOR EACH ROW EXECUTE FUNCTION protect_product_deletion();
+CREATE TRIGGER oauth_client_resources_deletion_guard BEFORE INSERT OR UPDATE ON oauth_client_resources FOR EACH ROW EXECUTE FUNCTION protect_soft_deletion();
 --> statement-breakpoint
-CREATE TRIGGER oauth_client_resources_deletion_guard BEFORE INSERT OR UPDATE ON oauth_client_resources FOR EACH ROW EXECUTE FUNCTION protect_product_deletion();
+CREATE TRIGGER oauth_consents_deletion_guard BEFORE INSERT OR UPDATE ON oauth_consents FOR EACH ROW EXECUTE FUNCTION protect_soft_deletion();
 --> statement-breakpoint
-CREATE TRIGGER oauth_consents_deletion_guard BEFORE INSERT OR UPDATE ON oauth_consents FOR EACH ROW EXECUTE FUNCTION protect_product_deletion();
+CREATE TRIGGER sso_providers_deletion_guard BEFORE INSERT OR UPDATE ON sso_providers FOR EACH ROW EXECUTE FUNCTION protect_soft_deletion();
 --> statement-breakpoint
-CREATE TRIGGER sso_providers_deletion_guard BEFORE INSERT OR UPDATE ON sso_providers FOR EACH ROW EXECUTE FUNCTION protect_product_deletion();
---> statement-breakpoint
-CREATE TRIGGER organization_capabilities_deletion_guard BEFORE INSERT OR UPDATE ON organization_capabilities FOR EACH ROW EXECUTE FUNCTION protect_product_deletion();
---> statement-breakpoint
-CREATE TRIGGER zz_accounts_present_parents BEFORE INSERT OR UPDATE ON accounts FOR EACH ROW EXECUTE FUNCTION protect_product_parents();
---> statement-breakpoint
-CREATE TRIGGER zz_members_present_parents BEFORE INSERT OR UPDATE ON members FOR EACH ROW EXECUTE FUNCTION protect_product_parents();
---> statement-breakpoint
-CREATE TRIGGER zz_invitations_present_parents BEFORE INSERT OR UPDATE ON invitations FOR EACH ROW EXECUTE FUNCTION protect_product_parents();
---> statement-breakpoint
-CREATE TRIGGER zz_organization_domains_present_parents BEFORE INSERT OR UPDATE ON organization_domains FOR EACH ROW EXECUTE FUNCTION protect_product_parents();
---> statement-breakpoint
-CREATE TRIGGER zz_groups_present_parents BEFORE INSERT OR UPDATE ON groups FOR EACH ROW EXECUTE FUNCTION protect_product_parents();
---> statement-breakpoint
-CREATE TRIGGER zz_group_members_present_parents BEFORE INSERT OR UPDATE ON group_members FOR EACH ROW EXECUTE FUNCTION protect_product_parents();
---> statement-breakpoint
-CREATE TRIGGER zz_entitlements_present_parents BEFORE INSERT OR UPDATE ON entitlements FOR EACH ROW EXECUTE FUNCTION protect_product_parents();
---> statement-breakpoint
-CREATE TRIGGER zz_oauth_clients_present_parents BEFORE INSERT OR UPDATE ON oauth_clients FOR EACH ROW EXECUTE FUNCTION protect_product_parents();
---> statement-breakpoint
-CREATE TRIGGER zz_oauth_resources_present_parents BEFORE INSERT OR UPDATE ON oauth_resources FOR EACH ROW EXECUTE FUNCTION protect_product_parents();
---> statement-breakpoint
-CREATE TRIGGER zz_oauth_client_resources_present_parents BEFORE INSERT OR UPDATE ON oauth_client_resources FOR EACH ROW EXECUTE FUNCTION protect_product_parents();
---> statement-breakpoint
-CREATE TRIGGER zz_oauth_consents_present_parents BEFORE INSERT OR UPDATE ON oauth_consents FOR EACH ROW EXECUTE FUNCTION protect_product_parents();
---> statement-breakpoint
-CREATE TRIGGER zz_sso_providers_present_parents BEFORE INSERT OR UPDATE ON sso_providers FOR EACH ROW EXECUTE FUNCTION protect_product_parents();
---> statement-breakpoint
-CREATE TRIGGER zz_organization_capabilities_present_parents BEFORE INSERT OR UPDATE ON organization_capabilities FOR EACH ROW EXECUTE FUNCTION protect_product_parents();
+CREATE TRIGGER organization_capabilities_deletion_guard BEFORE INSERT OR UPDATE ON organization_capabilities FOR EACH ROW EXECUTE FUNCTION protect_soft_deletion();
 --> statement-breakpoint
 CREATE TRIGGER grant_authentication_provenance BEFORE INSERT ON grant_contexts
 FOR EACH ROW EXECUTE FUNCTION validate_grant_authentication();

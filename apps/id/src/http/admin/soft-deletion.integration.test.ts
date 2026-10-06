@@ -1,6 +1,6 @@
 import { withDatabaseScope } from "../../db/isolation.ts";
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   createAdminFixture,
   type AdminFixture,
@@ -562,13 +562,50 @@ test("parent deletion committed first denies a waiting SQL relationship creation
     resume.resolve();
     await deletion;
   }
-  expect(await settled).toMatchObject({ cause: { code: "23503" } });
+  expect(await settled).toMatchObject({
+    cause: { code: "23503", constraint: "group_members_group_live_fk" },
+  });
   expect(
     await fixture.db
       .select()
       .from(groupMembers)
       .where(eq(groupMembers.id, insertedId)),
   ).toEqual([]);
+});
+
+test("the bound platform group and admin resource cannot be erased", async () => {
+  const { organizationId, groupId, adminResource } = fixture.platform;
+  const group = `/organizations/${organizationId}/groups/${groupId}`;
+  const groupErasure = await request(`${group}?confirm=${groupId}`, "DELETE");
+  expect(groupErasure.status).toBe(409);
+  expect(await groupErasure.json()).toMatchObject({
+    code: "reference_violation",
+  });
+  const resource = `/resources/${encodeURIComponent(adminResource)}`;
+  const resourceErasure = await request(
+    `${resource}?confirm=${encodeURIComponent(adminResource)}`,
+    "DELETE",
+  );
+  expect(resourceErasure.status).toBe(409);
+  expect(await resourceErasure.json()).toMatchObject({
+    code: "resource_protected",
+  });
+  expect(
+    (
+      await fixture.db
+        .select({ deletedAt: groups.deletedAt })
+        .from(groups)
+        .where(eq(groups.id, groupId))
+    )[0],
+  ).toEqual({ deletedAt: null });
+  expect(
+    await fixture.db
+      .select({ id: groupMembers.id })
+      .from(groupMembers)
+      .where(
+        and(eq(groupMembers.groupId, groupId), isNull(groupMembers.deletedAt)),
+      ),
+  ).not.toEqual([]);
 });
 
 test("startup refuses domain DELETE privileges even when audit permissions are protected", async () => {

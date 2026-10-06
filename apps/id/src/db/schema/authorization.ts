@@ -18,6 +18,8 @@ import {
   effectiveWindow,
   id,
   slugCheck,
+  softDeletion,
+  softDeletionChecks,
   timestampColumn,
   timestamps,
   vocabularyCheck,
@@ -32,7 +34,7 @@ import { lifecycleStatuses } from "./vocabulary.ts";
 export const organizationDomains = pgTable(
   "organization_domains",
   {
-    deletedAt: timestampColumn("deleted_at"),
+    ...softDeletion(),
     id: id(),
     organizationId: uuid("organization_id")
       .notNull()
@@ -45,6 +47,16 @@ export const organizationDomains = pgTable(
   },
   (table) => [
     ...routingPolicies(table.organizationId),
+    ...softDeletionChecks(
+      "organization_domains",
+      table,
+      sql`${table.status} = 'disabled'`,
+    ),
+    foreignKey({
+      name: "organization_domains_organization_live_fk",
+      columns: [table.organizationId, table.live],
+      foreignColumns: [organizations.id, organizations.live],
+    }).onDelete("cascade"),
     uniqueIndex("organization_domains_organization_id_domain_unique")
       .on(table.organizationId, table.domain)
       .where(sql`${table.deletedAt} is null`),
@@ -74,7 +86,7 @@ export const organizationDomains = pgTable(
 export const groups = pgTable(
   "groups",
   {
-    deletedAt: timestampColumn("deleted_at"),
+    ...softDeletion(),
     id: id(),
     organizationId: uuid("organization_id")
       .notNull()
@@ -91,6 +103,13 @@ export const groups = pgTable(
   },
   (table) => [
     ...tenantPolicies(table.organizationId),
+    ...softDeletionChecks("groups", table, sql`${table.status} = 'disabled'`),
+    unique("groups_id_live_unique").on(table.id, table.live),
+    foreignKey({
+      name: "groups_organization_live_fk",
+      columns: [table.organizationId, table.live],
+      foreignColumns: [organizations.id, organizations.live],
+    }).onDelete("cascade"),
     check("groups_revision_check", sql`${table.revision} > 0`),
     unique("groups_organization_id_slug_unique").on(
       table.organizationId,
@@ -117,7 +136,7 @@ export const groups = pgTable(
 export const groupMembers = pgTable(
   "group_members",
   {
-    deletedAt: timestampColumn("deleted_at"),
+    ...softDeletion(),
     organizationId: uuid("organization_id").notNull(),
     groupId: uuid("group_id").notNull(),
     memberId: uuid("member_id").notNull(),
@@ -128,6 +147,22 @@ export const groupMembers = pgTable(
   },
   (table) => [
     ...tenantPolicies(table.organizationId),
+    ...softDeletionChecks("group_members", table),
+    foreignKey({
+      name: "group_members_organization_live_fk",
+      columns: [table.organizationId, table.live],
+      foreignColumns: [organizations.id, organizations.live],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "group_members_group_live_fk",
+      columns: [table.groupId, table.live],
+      foreignColumns: [groups.id, groups.live],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "group_members_member_live_fk",
+      columns: [table.memberId, table.live],
+      foreignColumns: [members.id, members.live],
+    }).onDelete("cascade"),
     uniqueIndex("group_members_live_assignment_unique")
       .on(table.groupId, table.memberId)
       .where(sql`${table.deletedAt} is null`),
@@ -167,7 +202,7 @@ export const groupMembers = pgTable(
 export const entitlements = pgTable(
   "entitlements",
   {
-    deletedAt: timestampColumn("deleted_at"),
+    ...softDeletion(),
     id: id(),
     organizationId: uuid("organization_id")
       .notNull()
@@ -190,6 +225,36 @@ export const entitlements = pgTable(
   },
   (table) => [
     ...tenantPolicies(table.organizationId),
+    ...softDeletionChecks(
+      "entitlements",
+      table,
+      sql`${table.status} = 'disabled'`,
+    ),
+    foreignKey({
+      name: "entitlements_organization_live_fk",
+      columns: [table.organizationId, table.live],
+      foreignColumns: [organizations.id, organizations.live],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "entitlements_member_live_fk",
+      columns: [table.memberId, table.live],
+      foreignColumns: [members.id, members.live],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "entitlements_group_live_fk",
+      columns: [table.groupId, table.live],
+      foreignColumns: [groups.id, groups.live],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "entitlements_client_live_fk",
+      columns: [table.clientId, table.live],
+      foreignColumns: [oauthClients.clientId, oauthClients.live],
+    }),
+    foreignKey({
+      name: "entitlements_resource_live_fk",
+      columns: [table.resource, table.live],
+      foreignColumns: [oauthResources.identifier, oauthResources.live],
+    }),
     check("entitlements_revision_check", sql`${table.revision} > 0`),
     foreignKey({
       name: "entitlements_organization_id_member_id_fk",

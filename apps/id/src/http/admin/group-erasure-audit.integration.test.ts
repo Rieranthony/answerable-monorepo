@@ -212,6 +212,7 @@ test("group erasure records actual removed policy rows, preserves another tenant
         ...row,
         revision: row.revision + 1,
         deletedAt: expect.any(Date),
+        live: null,
       })),
   );
   expect(
@@ -224,6 +225,7 @@ test("group erasure records actual removed policy rows, preserves another tenant
         status: "disabled",
         revision: row.revision + 1,
         deletedAt: expect.any(Date),
+        live: null,
         updatedAt: expect.any(Date),
       })),
   );

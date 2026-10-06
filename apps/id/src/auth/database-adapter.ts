@@ -4,6 +4,7 @@ import {
 } from "./platform-applications.ts";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import type { BetterAuthOptions } from "better-auth";
+import { eq } from "drizzle-orm";
 import type { Database, Executor } from "../db/client.ts";
 import * as schema from "../db/schema/index.ts";
 
@@ -50,7 +51,7 @@ export function authDatabaseAdapter(
             ],
           }
         : input;
-    const wrap = (base: typeof adapter): typeof adapter => ({
+    const wrap = (base: typeof adapter, tx?: Executor): typeof adapter => ({
       ...base,
       findOne: async <T>(input: Parameters<typeof adapter.findOne>[0]) => {
         let row = await base.findOne<T>(visible(input));
@@ -72,7 +73,24 @@ export function authDatabaseAdapter(
       },
       // Better Auth locks the provider with an update and compares its returned
       // identity boundary with the configuration read before token exchange.
+      // Its organisation is locked first, the order tenant commands lock in, so
+      // the membership and session inserts that follow cannot deadlock with a
+      // provider command waiting on the provider row.
       update: async <T>(input: Parameters<typeof adapter.update>[0]) => {
+        if (tx && input.model === "ssoProvider") {
+          const providerId = input.where.find(
+            (clause) => clause.field === "providerId",
+          )?.value;
+          await tx
+            .select({ id: schema.organizations.id })
+            .from(schema.organizations)
+            .innerJoin(
+              schema.ssoProviders,
+              eq(schema.ssoProviders.organizationId, schema.organizations.id),
+            )
+            .where(eq(schema.ssoProviders.providerId, String(providerId)))
+            .for("key share", { of: schema.organizations });
+        }
         const row = await base.update<T>(input);
         return input.model === "ssoProvider"
           ? hydrateSsoProviderRow(row, platformApplications)
@@ -117,7 +135,7 @@ export function authDatabaseAdapter(
         db.transaction(async (tx) => {
           await setDatabaseScope(tx, { kind: "protocol" });
           await beforeTransaction?.(tx);
-          const bound = wrap(drizzleAdapter(tx, config)(options));
+          const bound = wrap(drizzleAdapter(tx, config)(options), tx);
           transactions.set(bound, tx);
           try {
             return await run(bound);

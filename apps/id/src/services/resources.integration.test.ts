@@ -174,13 +174,20 @@ test("resource erasure requires explicit unlinking in both the service and datab
     service.eraseResource(db, actor, row.identifier, row.identifier),
   ).rejects.toMatchObject({ status: 409, code: "resource_has_clients" });
   await expect(
-    db.delete(oauthResources).where(eq(oauthResources.id, row.id)).execute(),
+    db
+      .update(oauthResources)
+      .set({ deletedAt: new Date(), disabled: true })
+      .where(eq(oauthResources.id, row.id))
+      .execute(),
   ).rejects.toMatchObject({
     cause: {
       code: "23503",
-      constraint: "oauth_client_resources_resource_fk",
+      constraint: "oauth_client_resources_resource_live_fk",
     },
   });
+  await expect(
+    db.delete(oauthResources).where(eq(oauthResources.id, row.id)).execute(),
+  ).rejects.toMatchObject({ cause: { code: "23503" } });
   expect(await db.select().from(oauthClientResources)).toHaveLength(1);
   expect(await db.select().from(auditEvents)).toHaveLength(1);
   await db

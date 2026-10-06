@@ -20,6 +20,10 @@ import { createHash } from "node:crypto";
 import { createAdminFixture, type AdminFixture } from "../__tests__/admin.ts";
 import { signInThroughIdp } from "../__tests__/federation.ts";
 import {
+  softDeleteClient,
+  softDeleteUser,
+} from "../__tests__/soft-deletion.ts";
+import {
   inPlatformUsers,
   inPlatformWrite,
 } from "../__tests__/platform-context.ts";
@@ -2545,32 +2549,11 @@ for (const { change, apply, outsider, session } of authorityChanges)
     ).toBe(session === "kept" ? 1 : 0);
   });
 
-// Soft deletion written child-first and directly, leaving the sessions, codes and
-// token rows that erasure would remove, so only the issuing transaction can refuse.
+// Erasure would remove the sessions, codes and token rows; a direct soft deletion
+// leaves them, so only the issuing transaction can refuse.
 const softDeletions = {
-  user: async () => {
-    const userId = fixture.principals.tenantAdmin.userId;
-    const memberIds = sql`(select id from members where user_id = ${userId})`;
-    for (const statement of [
-      sql`update entitlements set deleted_at = now(), status = 'disabled' where deleted_at is null and member_id in ${memberIds}`,
-      sql`update group_members set deleted_at = now() where deleted_at is null and member_id in ${memberIds}`,
-      sql`update members set deleted_at = now(), status = 'revoked', revoked_at = coalesce(revoked_at, now()) where deleted_at is null and user_id = ${userId}`,
-      sql`update accounts set deleted_at = now(), access_token = null, refresh_token = null, id_token = null, password = null where deleted_at is null and user_id = ${userId}`,
-      sql`update oauth_consents set deleted_at = now() where deleted_at is null and user_id = ${userId}`,
-      sql`update users set deleted_at = now(), status = 'disabled', disabled_at = now() where id = ${userId}`,
-    ])
-      await fixture.db.execute(statement);
-  },
-  client: async () => {
-    for (const statement of [
-      sql`update entitlements set deleted_at = now(), status = 'disabled' where deleted_at is null and client_id = ${clientId}`,
-      sql`update organization_capabilities set deleted_at = now(), status = 'disabled' where deleted_at is null and client_id = ${clientId}`,
-      sql`update oauth_client_resources set deleted_at = now() where deleted_at is null and client_id = ${clientId}`,
-      sql`update oauth_consents set deleted_at = now() where deleted_at is null and client_id = ${clientId}`,
-      sql`update oauth_clients set deleted_at = now(), disabled = true, client_secret = null where client_id = ${clientId}`,
-    ])
-      await fixture.db.execute(statement);
-  },
+  user: () => softDeleteUser(fixture.db, fixture.principals.tenantAdmin.userId),
+  client: () => softDeleteClient(fixture.db, clientId),
 };
 
 for (const [deleted, softDelete] of Object.entries(softDeletions))

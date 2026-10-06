@@ -11,6 +11,7 @@ import { createAdminFixture, type AdminFixture } from "../__tests__/admin.ts";
 import { databaseClock } from "../__tests__/database-clock.ts";
 import { signInThroughIdp } from "../__tests__/federation.ts";
 import { startOidcIssuer, type OidcIssuer } from "../__tests__/oidc-issuer.ts";
+import { softDeleteUser } from "../__tests__/soft-deletion.ts";
 import { inPlatformWrite } from "../__tests__/platform-context.ts";
 import { createApp } from "../app.ts";
 import { createAuth } from "../auth.ts";
@@ -557,15 +558,7 @@ const refusals: {
       ],
       [
         "a deleted source user",
-        () =>
-          fixture.db
-            .update(users)
-            .set({
-              status: "disabled",
-              disabledAt: new Date(),
-              deletedAt: new Date(),
-            })
-            .where(tenantAdmin()),
+        () => softDeleteUser(fixture.db, fixture.principals.tenantAdmin.userId),
       ],
       [
         "a revoked source membership",

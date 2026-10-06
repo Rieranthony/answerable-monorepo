@@ -9,6 +9,7 @@ import {
   generateKeyPair,
   SignJWT,
 } from "jose";
+import { softDeleteClient } from "../__tests__/soft-deletion.ts";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createApp } from "../app.ts";
 import { createAuth } from "../auth.ts";
@@ -171,13 +172,7 @@ test("a deleted client identifier cannot be recreated and its old token is rejec
     .select()
     .from(oauthClients)
     .where(eq(oauthClients.clientId, client.clientId));
-  await connection.db
-    .delete(organizationCapabilities)
-    .where(eq(organizationCapabilities.clientId, client.clientId));
-  await connection.db
-    .update(oauthClients)
-    .set({ deletedAt: new Date(), disabled: true, clientSecret: null })
-    .where(eq(oauthClients.clientId, client.clientId));
+  await softDeleteClient(connection.db, client.clientId);
   await expect(
     connection.db
       .insert(oauthClients)

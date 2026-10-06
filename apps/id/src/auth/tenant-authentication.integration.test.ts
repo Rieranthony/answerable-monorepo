@@ -4,6 +4,7 @@ import { createAdminFixture, type AdminFixture } from "../__tests__/admin.ts";
 import { afterBrokerRead } from "../__tests__/after-broker-read.ts";
 import { databaseClock } from "../__tests__/database-clock.ts";
 import { signInThroughIdp } from "../__tests__/federation.ts";
+import { softDeleteUser } from "../__tests__/soft-deletion.ts";
 import { inPlatformWrite } from "../__tests__/platform-context.ts";
 import { createApp } from "../app.ts";
 import { createAuth } from "../auth.ts";
@@ -15,6 +16,7 @@ import {
   accounts,
   auditEvents,
   entitlements,
+  groupMembers,
   grantContexts,
   members,
   oauthClientResources,
@@ -845,7 +847,16 @@ for (const missing of [
           idToken: null,
         })
         .where(eq(accounts.userId, input.userId));
-    else if (missing === "member")
+    else if (missing === "member") {
+      // The member's assignments go first: a live one would need a live member.
+      await fixture.db
+        .update(entitlements)
+        .set({ deletedAt: new Date(), status: "disabled" })
+        .where(eq(entitlements.memberId, input.memberId));
+      await fixture.db
+        .update(groupMembers)
+        .set({ deletedAt: new Date() })
+        .where(eq(groupMembers.memberId, input.memberId));
       await fixture.db
         .update(members)
         .set({
@@ -854,10 +865,7 @@ for (const missing of [
           revokedAt: new Date(),
         })
         .where(eq(members.id, input.memberId));
-    else
-      await fixture.db.execute(
-        sql`update users set deleted_at=now(), status='disabled', disabled_at=now() where id=${input.userId}`,
-      );
+    } else await softDeleteUser(fixture.db, input.userId);
     await expect(
       createResourceGrant(runtime.db, input, 60),
     ).rejects.toMatchObject({ body: { error: "access_denied" } });

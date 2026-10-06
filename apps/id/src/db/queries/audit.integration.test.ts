@@ -435,7 +435,10 @@ test("UUID audit lookups retain session subjects and ignore non-UUID member targ
       const plan = await tx.execute(
         sql`explain (format json) select * from ${sql.identifier(table)} where id = public.try_uuid(${sessionId})`,
       );
-      expect(JSON.stringify(plan.rows)).toContain(`${table}_pkey`);
+      // members also has its live key, `(id, live)`; either index serves the lookup.
+      expect(JSON.stringify(plan.rows)).toMatch(
+        new RegExp(`"Index Name":"${table}_(pkey|id_live_unique)"`),
+      );
     }
     expect(
       (
