@@ -132,7 +132,7 @@ test("window audit observes lost and restored access, preserves another tenant a
     scopes: ["org:read"],
   });
   expect(structuredClone(event)).toMatchObject({
-    schemaVersion: 2,
+    schemaVersion: 1,
     action: "member.updated",
     organizationId: fixture.tenant.organizationId,
     targetId: person.memberId,
@@ -217,7 +217,7 @@ test("reinstatement observes surviving organisation permission without recreatin
   });
   expect(removed.status).toBe(204);
   expect(await eventFor(removed)).toMatchObject({
-    schemaVersion: 3,
+    schemaVersion: 1,
     action: "member.removed",
     data: {
       before: { access: approvedRead() },
@@ -233,7 +233,7 @@ test("reinstatement observes surviving organisation permission without recreatin
   });
   expect(noop.status).toBe(204);
   expect(await eventFor(noop)).toMatchObject({
-    schemaVersion: 3,
+    schemaVersion: 1,
     action: "member.removal_unchanged",
     data: {
       before: { access: { effective: false, targets: [] } },
@@ -256,7 +256,7 @@ test("reinstatement observes surviving organisation permission without recreatin
   expect(restored.status).toBe(200);
   const event = await eventFor(restored);
   expect(structuredClone(event)).toMatchObject({
-    schemaVersion: 2,
+    schemaVersion: 1,
     action: "member.reinstated",
     data: {
       before: {
@@ -293,7 +293,7 @@ test("reinstatement observes surviving organisation permission without recreatin
   expect(unchanged.status).toBe(200);
   expect(await eventFor(unchanged)).toMatchObject({
     action: "member.reinstatement_unchanged",
-    schemaVersion: 2,
+    schemaVersion: 1,
     data: {
       before: { access: approvedRead() },
       after: { access: approvedRead() },

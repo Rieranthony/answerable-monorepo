@@ -136,7 +136,7 @@ test("restricted client erasure records exact cascades with private cross-client
     await db.execute(
       sql.raw(
         fault === "subject"
-          ? `alter table audit_event_subjects add constraint client_erasure_fault check (entity_id <> '${indirectUserId}') not valid`
+          ? `alter table audit_event_users add constraint client_erasure_fault check (user_id <> '${indirectUserId}') not valid`
           : `alter table audit_events add constraint client_erasure_fault check (action <> 'client.erased') not valid`,
       ),
     );
@@ -146,7 +146,7 @@ test("restricted client erasure records exact cascades with private cross-client
     } finally {
       await db.execute(
         sql.raw(
-          `alter table ${fault === "subject" ? "audit_event_subjects" : "audit_events"} drop constraint client_erasure_fault`,
+          `alter table ${fault === "subject" ? "audit_event_users" : "audit_events"} drop constraint client_erasure_fault`,
         ),
       );
     }
@@ -161,7 +161,7 @@ test("restricted client erasure records exact cascades with private cross-client
   expect(events).toHaveLength(2);
   const effect = events.find((row) => row.action === "client.grants_erased")!;
   expect(effect).toMatchObject({
-    schemaVersion: 3,
+    schemaVersion: 1,
     organizationId: null,
     data: { clientInstanceId, grantContexts: [] },
   });

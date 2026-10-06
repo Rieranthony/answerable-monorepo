@@ -65,197 +65,62 @@ EXCEPTION WHEN invalid_text_representation THEN
 END;
 $$;
 --> statement-breakpoint
-CREATE FUNCTION capture_audit_subjects(event public.audit_events, origin text) RETURNS void
-LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
-DECLARE related_user text; user_effects jsonb; entitlement_state jsonb;
-BEGIN
-  INSERT INTO public.audit_event_subjects (event_id, entity_type, entity_id, relationship, organization_id, provenance)
-  VALUES (event.id, event.actor_type, event.actor_id, 'actor', event.organization_id, origin);
-  IF event.target_id IS NOT NULL THEN
-    INSERT INTO public.audit_event_subjects (event_id, entity_type, entity_id, relationship, organization_id, provenance)
-    VALUES (event.id, event.target_type, event.target_id, 'target', event.organization_id, origin);
-  END IF;
-  IF event.target_type = 'entitlement' THEN
-    entitlement_state := CASE WHEN event.action = 'entitlement.created'
-      THEN event.data->'after' ELSE event.data->'before' END;
-  END IF;
-  IF event.target_type IN ('member', 'group_member') THEN
-    SELECT user_id::text INTO related_user FROM public.members
-    WHERE id = public.try_uuid(event.target_id) AND (event.organization_id IS NULL OR organization_id = event.organization_id);
-    related_user := coalesce(related_user, event.data->>'userId');
-  ELSIF (event.schema_version = 1 OR (event.schema_version = 3 AND event.action = 'entitlement.removed' AND event.data->>'deletionMode' = 'soft')) AND event.outcome = 'success'
-    AND event.organization_id IS NOT NULL AND event.target_type = 'entitlement'
-    AND event.target_id IS NOT NULL AND event.action IN (
-      'entitlement.created', 'entitlement.updated', 'entitlement.update_unchanged',
-      'entitlement.enabled', 'entitlement.disabled', 'entitlement.enable_unchanged',
-      'entitlement.disable_unchanged', 'entitlement.removed'
-    ) THEN
-    SELECT user_id::text INTO related_user FROM public.members
-    WHERE id = public.try_uuid(entitlement_state->>'memberId')
-      AND organization_id = event.organization_id
-      AND entitlement_state->>'organizationId' = event.organization_id::text
-      AND entitlement_state->>'id' = event.target_id;
-  ELSIF event.target_type = 'session' THEN
-    SELECT user_id::text INTO related_user FROM public.sessions WHERE id = public.try_uuid(event.target_id);
-    related_user := coalesce(related_user, event.data->>'userId');
-  END IF;
-  IF related_user IS NOT NULL THEN
-    INSERT INTO public.audit_event_subjects (event_id, entity_type, entity_id, relationship, organization_id, provenance)
-    VALUES (event.id, 'user', related_user, 'affected', event.organization_id, origin);
-  END IF;
-  user_effects := CASE
-    WHEN event.schema_version = 3 AND event.outcome = 'success' AND event.data->>'deletionMode' = 'soft'
-      AND event.organization_id IS NULL AND event.target_type = 'user' AND event.action = 'user.erased'
-      AND event.data->'before'->>'id' = event.target_id AND event.data->'after'->>'id' = event.target_id
-      AND event.data->'after'->>'deletedAt' IS NOT NULL
-      THEN (CASE WHEN jsonb_typeof(event.data->'revokedGrantContexts') = 'array' THEN event.data->'revokedGrantContexts' ELSE '[]'::jsonb END)
-        || (CASE WHEN jsonb_typeof(event.data->'effects'->'deletedAccessTokens') = 'array' THEN event.data->'effects'->'deletedAccessTokens' ELSE '[]'::jsonb END)
-        || (CASE WHEN jsonb_typeof(event.data->'effects'->'deletedRefreshTokens') = 'array' THEN event.data->'effects'->'deletedRefreshTokens' ELSE '[]'::jsonb END)
-        || (CASE WHEN jsonb_typeof(event.data->'effects'->'softDeletedConsents') = 'array' THEN event.data->'effects'->'softDeletedConsents' ELSE '[]'::jsonb END)
-        || (CASE WHEN jsonb_typeof(event.data->'effects'->'clearedAccessTokenSessions') = 'array' THEN event.data->'effects'->'clearedAccessTokenSessions' ELSE '[]'::jsonb END)
-        || (CASE WHEN jsonb_typeof(event.data->'effects'->'clearedRefreshTokenSessions') = 'array' THEN event.data->'effects'->'clearedRefreshTokenSessions' ELSE '[]'::jsonb END)
-    WHEN event.schema_version = 3 AND event.outcome = 'success' AND event.data->>'deletionMode' = 'soft'
-      AND event.organization_id IS NOT NULL AND event.target_type = 'organization' AND event.action = 'organization.erased'
-      AND event.target_id = event.organization_id::text AND event.data->'after'->>'id' = event.target_id
-      AND event.data->'after'->>'deletedAt' IS NOT NULL
-      THEN (CASE WHEN jsonb_typeof(event.data->'revokedGrantContexts') = 'array' THEN event.data->'revokedGrantContexts' ELSE '[]'::jsonb END)
-        || (CASE WHEN jsonb_typeof(event.data->'effects'->'softDeletedMembers') = 'array' THEN event.data->'effects'->'softDeletedMembers' ELSE '[]'::jsonb END)
-        || (CASE WHEN jsonb_typeof(event.data->'effects'->'clearedSessionSelections') = 'array' THEN event.data->'effects'->'clearedSessionSelections' ELSE '[]'::jsonb END)
-    WHEN event.schema_version = 3 AND event.outcome = 'success' AND event.data->>'deletionMode' = 'soft'
-      AND event.organization_id IS NOT NULL AND event.target_type = 'group' AND event.action = 'group.erased'
-      AND event.data->'after'->>'id' = event.target_id AND event.data->'after'->>'deletedAt' IS NOT NULL
-      THEN event.data->'effects'->'softDeletedAssignments'
-    WHEN event.schema_version = 3 AND event.outcome = 'success' AND event.data->>'deletionMode' = 'soft'
-      AND event.organization_id IS NULL AND event.target_type = 'client' AND event.action = 'client.grants_erased'
-      AND event.target_id IS NOT NULL AND jsonb_typeof(event.data->'clientInstanceId') = 'string'
-      AND event.data->>'clientInstanceId' <> ''
-      THEN (CASE WHEN jsonb_typeof(event.data->'grantContexts') = 'array' THEN event.data->'grantContexts' ELSE '[]'::jsonb END)
-        || (CASE WHEN jsonb_typeof(event.data->'effects'->'deletedAccessTokens') = 'array' THEN event.data->'effects'->'deletedAccessTokens' ELSE '[]'::jsonb END)
-        || (CASE WHEN jsonb_typeof(event.data->'effects'->'deletedRefreshTokens') = 'array' THEN event.data->'effects'->'deletedRefreshTokens' ELSE '[]'::jsonb END)
-        || (CASE WHEN jsonb_typeof(event.data->'effects'->'softDeletedConsents') = 'array' THEN event.data->'effects'->'softDeletedConsents' ELSE '[]'::jsonb END)
-    WHEN event.schema_version = 2 AND event.outcome = 'success' AND event.data->>'deletionMode' = 'soft'
-      AND event.organization_id IS NULL AND event.target_type = 'resource' AND event.action = 'resource.erased'
-      AND event.data->'after'->>'deletedAt' IS NOT NULL
-      THEN event.data->'revokedGrantContexts'
-    WHEN event.schema_version = 2 AND event.outcome = 'success' AND event.data->>'deletionMode' = 'soft'
-      AND event.organization_id IS NOT NULL AND event.target_type = 'sso_provider' AND event.action = 'sso_provider.deleted'
-      AND event.data->'after'->>'deletedAt' IS NOT NULL
-      THEN event.data->'effects'->'revokedGrantContexts'
-    WHEN event.schema_version = 2 AND event.outcome = 'success'
-      AND event.organization_id IS NULL AND event.target_type = 'user'
-      AND event.target_id IS NOT NULL AND event.action = 'user.erased'
-      AND event.data->'before'->>'id' = event.target_id
-      THEN
-        (CASE WHEN jsonb_typeof(event.data->'deletedGrantContexts') = 'array' THEN event.data->'deletedGrantContexts' ELSE '[]'::jsonb END)
-        || (CASE WHEN jsonb_typeof(event.data->'effects'->'deletedAccessTokens') = 'array' THEN event.data->'effects'->'deletedAccessTokens' ELSE '[]'::jsonb END)
-        || (CASE WHEN jsonb_typeof(event.data->'effects'->'deletedRefreshTokens') = 'array' THEN event.data->'effects'->'deletedRefreshTokens' ELSE '[]'::jsonb END)
-        || (CASE WHEN jsonb_typeof(event.data->'effects'->'deletedConsents') = 'array' THEN event.data->'effects'->'deletedConsents' ELSE '[]'::jsonb END)
-        || (CASE WHEN jsonb_typeof(event.data->'effects'->'clearedAccessTokenSessions') = 'array' THEN event.data->'effects'->'clearedAccessTokenSessions' ELSE '[]'::jsonb END)
-        || (CASE WHEN jsonb_typeof(event.data->'effects'->'clearedRefreshTokenSessions') = 'array' THEN event.data->'effects'->'clearedRefreshTokenSessions' ELSE '[]'::jsonb END)
-    WHEN event.schema_version = 2 AND event.outcome = 'success'
-      AND event.organization_id IS NOT NULL AND event.target_type = 'organization'
-      AND event.target_id = event.organization_id::text AND event.action = 'organization.erased'
-      THEN
-        (CASE WHEN jsonb_typeof(event.data->'effects'->'removedMembers') = 'array'
-          THEN event.data->'effects'->'removedMembers' ELSE '[]'::jsonb END)
-        || (CASE WHEN jsonb_typeof(event.data->'effects'->'clearedSessionSelections') = 'array'
-          THEN event.data->'effects'->'clearedSessionSelections' ELSE '[]'::jsonb END)
-        || (CASE WHEN jsonb_typeof(event.data->'deletedGrantContexts') = 'array'
-          THEN event.data->'deletedGrantContexts' ELSE '[]'::jsonb END)
-    WHEN event.schema_version = 2 AND event.outcome = 'success'
-      AND event.organization_id IS NOT NULL AND event.target_type = 'group'
-      AND event.target_id IS NOT NULL AND event.action = 'group.erased'
-      THEN event.data->'effects'->'removedAssignments'
-    WHEN event.schema_version = 2 AND event.outcome = 'success'
-      AND event.organization_id IS NOT NULL AND event.target_type = 'group'
-      AND event.target_id IS NOT NULL AND event.action IN ('group.enabled', 'group.disabled')
-      THEN event.data->'policySources'->'assignments'
-    WHEN (event.schema_version = 2 OR (event.schema_version = 3 AND event.action = 'entitlement.removed' AND event.data->>'deletionMode' = 'soft')) AND event.outcome = 'success'
-      AND event.organization_id IS NOT NULL AND event.target_type = 'entitlement'
-      AND event.target_id IS NOT NULL AND event.action IN (
-        'entitlement.created', 'entitlement.updated', 'entitlement.enabled',
-        'entitlement.disabled', 'entitlement.removed'
-      )
-      AND entitlement_state->>'id' = event.target_id
-      AND entitlement_state->>'organizationId' = event.organization_id::text
-      AND entitlement_state->'memberId' = 'null'::jsonb
-      AND jsonb_typeof(entitlement_state->'groupId') IN ('null', 'string')
-      THEN event.data->'audience'
-    WHEN event.schema_version = 2 AND event.outcome = 'success'
-      AND event.organization_id IS NULL AND event.target_type = 'client'
-      AND event.target_id IS NOT NULL AND event.action = 'client.grants_revoked'
-      AND jsonb_typeof(event.data->'clientInstanceId') = 'string'
-      AND event.data->>'clientInstanceId' <> ''
-      THEN
-        (CASE WHEN jsonb_typeof(event.data->'grantContexts') = 'array' THEN event.data->'grantContexts' ELSE '[]'::jsonb END)
-        || (CASE WHEN jsonb_typeof(event.data->'revokedTokens'->'access') = 'array' THEN event.data->'revokedTokens'->'access' ELSE '[]'::jsonb END)
-        || (CASE WHEN jsonb_typeof(event.data->'revokedTokens'->'refresh') = 'array' THEN event.data->'revokedTokens'->'refresh' ELSE '[]'::jsonb END)
-    WHEN event.schema_version = 2 AND event.outcome = 'success'
-      AND event.organization_id IS NULL AND event.target_type = 'client'
-      AND event.target_id IS NOT NULL AND event.action = 'client.grants_erased'
-      AND jsonb_typeof(event.data->'clientInstanceId') = 'string'
-      AND event.data->>'clientInstanceId' <> ''
-      THEN
-        (CASE WHEN jsonb_typeof(event.data->'grantContexts') = 'array' THEN event.data->'grantContexts' ELSE '[]'::jsonb END)
-        || (CASE WHEN jsonb_typeof(event.data->'effects'->'deletedAccessTokens') = 'array' THEN event.data->'effects'->'deletedAccessTokens' ELSE '[]'::jsonb END)
-        || (CASE WHEN jsonb_typeof(event.data->'effects'->'deletedRefreshTokens') = 'array' THEN event.data->'effects'->'deletedRefreshTokens' ELSE '[]'::jsonb END)
-        || (CASE WHEN jsonb_typeof(event.data->'effects'->'deletedConsents') = 'array' THEN event.data->'effects'->'deletedConsents' ELSE '[]'::jsonb END)
-    WHEN event.schema_version <> 1 OR event.outcome <> 'success' THEN '[]'::jsonb
-    WHEN event.organization_id IS NULL AND event.target_type = 'user' AND event.action = 'user.erased'
-      THEN event.data->'deletedGrantContexts'
-    WHEN event.organization_id IS NULL AND event.target_type = 'client'
-      AND event.action IN ('client.grants_revoked', 'client.grants_erased')
-      THEN event.data->'grantContexts'
-    WHEN event.organization_id IS NULL AND event.target_type = 'resource' AND event.action = 'resource.disabled'
-      THEN event.data->'effects'->'revokedGrantContexts'
-    WHEN event.organization_id IS NULL AND event.target_type = 'resource' AND event.action = 'resource.erased'
-      THEN event.data->'deletedGrantContexts'
-    WHEN event.organization_id IS NOT NULL AND event.target_type = 'organization'
-      AND event.target_id = event.organization_id::text AND event.action = 'organization.disabled'
-      THEN event.data->'effects'->'revokedGrantContexts'
-    WHEN event.organization_id IS NOT NULL AND event.target_type = 'organization'
-      AND event.target_id = event.organization_id::text AND event.action = 'organization.erased'
-      THEN event.data->'deletedGrantContexts'
-    WHEN event.organization_id IS NOT NULL AND event.target_type = 'sso_provider'
-      AND event.action IN ('sso_provider.created', 'sso_provider.updated', 'sso_provider.deleted')
-      THEN event.data->'effects'->'revokedGrantContexts'
-    ELSE '[]'::jsonb
-  END;
-  IF jsonb_typeof(user_effects) = 'array' THEN
-    INSERT INTO public.audit_event_subjects
-      (event_id, entity_type, entity_id, relationship, organization_id, provenance)
-    SELECT DISTINCT event.id, 'user', effect->>'userId', 'affected', event.organization_id, origin
-    FROM jsonb_array_elements(user_effects) AS effects(effect)
-    WHERE jsonb_typeof(effect->'userId') = 'string' AND effect->>'userId' <> ''
-      AND (event.schema_version NOT IN (2, 3) OR event.target_type NOT IN ('user', 'client') OR (
-        jsonb_typeof(effect->'id') = 'string' AND effect->>'id' <> ''
-      ))
-      AND (event.schema_version NOT IN (2, 3) OR event.target_type <> 'organization' OR (
-        effect->>'organizationId' = event.organization_id::text
-        AND jsonb_typeof(effect->'id') = 'string' AND effect->>'id' <> ''
-      ))
-      AND (event.action NOT IN ('group.erased', 'group.enabled', 'group.disabled') OR (
-        effect->>'organizationId' = event.organization_id::text
-        AND effect->>'groupId' = event.target_id
-      ))
-      AND (event.target_type <> 'entitlement' OR (
-        effect->>'organizationId' = event.organization_id::text
-        AND jsonb_typeof(effect->'memberId') = 'string' AND effect->>'memberId' <> ''
-        AND (
-          (entitlement_state->'groupId' = 'null'::jsonb AND effect->'groupAssignment' = 'null'::jsonb)
-          OR (jsonb_typeof(entitlement_state->'groupId') = 'string'
-            AND effect->'groupAssignment'->>'groupId' = entitlement_state->>'groupId')
-        )
-      ))
-    ON CONFLICT (event_id, entity_type, entity_id, relationship) DO NOTHING;
-  END IF;
-END;
-$$;
---> statement-breakpoint
-CREATE FUNCTION record_audit_subjects() RETURNS trigger
+-- The users an audit event concerns: a user actor or target, the user behind a member,
+-- group-member or session target or a member entitlement, and the users the action's
+-- manifests name.
+CREATE FUNCTION capture_audit_subjects() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
 BEGIN
-  PERFORM public.capture_audit_subjects(NEW, 'recorded');
+  INSERT INTO public.audit_event_users (user_id, event_id)
+  SELECT DISTINCT subject.user_id, NEW.id FROM (
+    SELECT public.try_uuid(NEW.actor_id) WHERE NEW.actor_type = 'user'
+    UNION ALL SELECT public.try_uuid(NEW.target_id) WHERE NEW.target_type = 'user'
+    UNION ALL SELECT m.user_id FROM public.members m
+      WHERE NEW.target_type IN ('member', 'group_member') AND m.id = public.try_uuid(NEW.target_id)
+    UNION ALL SELECT m.user_id FROM public.members m
+      WHERE NEW.target_type = 'entitlement'
+        AND m.id = public.try_uuid(coalesce(NEW.data->'after'->>'memberId', NEW.data->'before'->>'memberId'))
+    UNION ALL SELECT coalesce(
+        (SELECT s.user_id FROM public.sessions s WHERE s.id = public.try_uuid(NEW.target_id)),
+        public.try_uuid(NEW.data->>'userId'))
+      WHERE NEW.target_type = 'session'
+    UNION ALL SELECT public.try_uuid(entry->>'userId')
+      FROM (VALUES
+        ('user.erased', '{effects,deletedAccessTokens}'::text[]),
+        ('user.erased', '{effects,deletedRefreshTokens}'),
+        ('user.erased', '{effects,softDeletedConsents}'),
+        ('user.erased', '{effects,clearedAccessTokenSessions}'),
+        ('user.erased', '{effects,clearedRefreshTokenSessions}'),
+        ('organization.disabled', '{effects,revokedGrantContexts}'),
+        ('organization.erased', '{revokedGrantContexts}'),
+        ('organization.erased', '{effects,softDeletedMembers}'),
+        ('group.enabled', '{policySources,assignments}'),
+        ('group.disabled', '{policySources,assignments}'),
+        ('group.erased', '{effects,softDeletedAssignments}'),
+        ('entitlement.created', '{audience}'),
+        ('entitlement.updated', '{audience}'),
+        ('entitlement.enabled', '{audience}'),
+        ('entitlement.disabled', '{audience}'),
+        ('entitlement.removed', '{audience}'),
+        ('client.grants_revoked', '{grantContexts}'),
+        ('client.grants_revoked', '{revokedTokens,access}'),
+        ('client.grants_revoked', '{revokedTokens,refresh}'),
+        ('client.grants_erased', '{grantContexts}'),
+        ('client.grants_erased', '{effects,deletedAccessTokens}'),
+        ('client.grants_erased', '{effects,deletedRefreshTokens}'),
+        ('client.grants_erased', '{effects,softDeletedConsents}'),
+        ('resource.disabled', '{effects,revokedGrantContexts}'),
+        ('resource.erased', '{revokedGrantContexts}'),
+        ('sso_provider.created', '{effects,revokedGrantContexts}'),
+        ('sso_provider.updated', '{effects,revokedGrantContexts}'),
+        ('sso_provider.deleted', '{effects,revokedGrantContexts}')
+      ) AS manifest(action, path)
+      CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(NEW.data #> manifest.path) = 'array'
+        THEN NEW.data #> manifest.path ELSE '[]'::jsonb END) AS entries(entry)
+      WHERE manifest.action = NEW.action
+  ) AS subject(user_id)
+  WHERE subject.user_id IS NOT NULL
+  ON CONFLICT DO NOTHING;
   RETURN NEW;
 END;
 $$;
@@ -538,7 +403,7 @@ CREATE TRIGGER oauth_resources_identity_guard BEFORE UPDATE ON oauth_resources
 FOR EACH ROW EXECUTE FUNCTION protect_oauth_resource_identity();
 --> statement-breakpoint
 CREATE TRIGGER audit_events_capture_subjects AFTER INSERT ON audit_events
-FOR EACH ROW EXECUTE FUNCTION record_audit_subjects();
+FOR EACH ROW EXECUTE FUNCTION capture_audit_subjects();
 --> statement-breakpoint
 CREATE TRIGGER oauth_clients_revision_guard BEFORE UPDATE ON oauth_clients
 FOR EACH ROW EXECUTE FUNCTION protect_configuration_revision();

@@ -300,7 +300,6 @@ export async function removeCapability(
     targetId: id,
     action: "capability.removed",
     outcome: "success",
-    schemaVersion: 2,
     data: { before, after, deletionMode: "soft" },
   });
 }

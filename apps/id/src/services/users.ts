@@ -13,7 +13,7 @@ import {
 import { type PlatformReadContext } from "./platform-context.ts";
 import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/users.ts";
-import { recordAuditEvent } from "../db/queries/audit.ts";
+import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
 import { deleteUserSessionIds } from "../db/queries/sessions.ts";
 import { revokeUserTokens } from "../db/queries/oauth-tokens.ts";
 import { cursorPage } from "../http/pagination.ts";
@@ -37,7 +37,7 @@ function audit(
   tx: Executor,
   actor: Actor,
   userId: string,
-  action: string,
+  action: AuditAction,
   data: Record<string, unknown>,
 ) {
   return recordAuditEvent(tx, {
@@ -48,14 +48,6 @@ function audit(
     action,
     data,
     outcome: "success",
-    schemaVersion:
-      data.deletionMode === "soft"
-        ? 3
-        : ["user.erased", "user.disabled", "user.disable_unchanged"].includes(
-              action,
-            )
-          ? 2
-          : 1,
   });
 }
 export async function listUsers(

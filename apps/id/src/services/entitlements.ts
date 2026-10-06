@@ -10,7 +10,7 @@ import { findGroupForCommand } from "../db/queries/groups.ts";
 import { readClientForPolicy } from "../db/queries/oauth-clients.ts";
 import { readResourceForPolicy } from "../db/queries/oauth-resources.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
-import { recordAuditEvent } from "../db/queries/audit.ts";
+import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
 import { cursorPage } from "../http/pagination.ts";
 import { ProblemError } from "../http/problem.ts";
 function requireRow<T>(row: T | null): T {
@@ -39,7 +39,7 @@ const scopeSet = (scopes: string[]) => [...new Set(scopes)].sort();
 type Configuration = ReturnType<typeof configuration>;
 async function audit(
   context: PlatformWriteContext,
-  action: string,
+  action: AuditAction,
   data:
     | {
         before: Configuration;
@@ -50,23 +50,21 @@ async function audit(
 ) {
   const { tx, actor } = requirePlatformWriteContext(context);
   const target = data.before ?? data.after;
-  const captureAudience =
-    target.memberId === null && !action.endsWith("_unchanged");
-  const audience = captureAudience
-    ? await queries.readEntitlementAudience(
+  // A change names the memberships it reaches; a no-op names none.
+  const audience = action.endsWith("_unchanged")
+    ? undefined
+    : await queries.readEntitlementAudience(
         context,
         target.organizationId,
-        target.groupId,
-      )
-    : undefined;
+        target,
+      );
   return recordAuditEvent(tx, {
     ...actor,
     organizationId: target.organizationId,
     targetId: target.id,
     targetType: "entitlement",
     action,
-    schemaVersion: data.deletionMode === "soft" ? 3 : captureAudience ? 2 : 1,
-    data: { ...data, ...(captureAudience ? { audience } : {}) },
+    data: audience === undefined ? data : { ...data, audience },
     outcome: "success",
   });
 }

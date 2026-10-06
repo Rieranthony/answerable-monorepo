@@ -55,7 +55,6 @@ export async function recordMachineIssuance(
       actorId: decision.client.clientId,
       organizationId: decision.organization.id,
       action: "oauth.token.issued",
-      schemaVersion: 2,
       targetType: "access_token",
       targetId: claims.jti,
       outcome: "success",
@@ -123,7 +122,6 @@ export async function recordMachineRejection(
     actorId: client?.clientId ?? "oauth-client-authentication",
     organizationId: client?.organizationId ?? null,
     action: "oauth.token.rejected",
-    schemaVersion: client ? 2 : 3,
     targetType: "oauth_request",
     outcome: denied ? "denied" : "failure",
     reason: reason.success

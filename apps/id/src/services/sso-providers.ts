@@ -12,7 +12,7 @@ import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/sso-providers.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { revokeOrganizationGrantContexts } from "../db/queries/grant-contexts.ts";
-import { recordAuditEvent } from "../db/queries/audit.ts";
+import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
 import { ProblemError } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
 
@@ -51,7 +51,7 @@ function audit(
   actor: Actor,
   organizationId: string,
   id: string,
-  action: string,
+  action: AuditAction,
   data: Record<string, unknown>,
 ) {
   return recordAuditEvent(tx, {
@@ -61,7 +61,6 @@ function audit(
     targetId: id,
     action,
     outcome: "success",
-    schemaVersion: data.deletionMode === "soft" ? 2 : 1,
     data,
   });
 }

@@ -8,7 +8,7 @@ import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import {
   adminOperations,
   auditEvents,
-  auditEventSubjects,
+  auditEventUsers,
   entitlements,
   groupMembers,
   groups,
@@ -103,22 +103,17 @@ async function snapshot() {
       .orderBy(auditEvents.id),
     subjects: await fixture.db
       .select()
-      .from(auditEventSubjects)
+      .from(auditEventUsers)
       .where(
         inArray(
-          auditEventSubjects.eventId,
+          auditEventUsers.eventId,
           fixture.db
             .select({ id: auditEvents.id })
             .from(auditEvents)
             .where(eq(auditEvents.action, "group.erased")),
         ),
       )
-      .orderBy(
-        auditEventSubjects.eventId,
-        auditEventSubjects.entityType,
-        auditEventSubjects.entityId,
-        auditEventSubjects.relationship,
-      ),
+      .orderBy(auditEventUsers.eventId, auditEventUsers.userId),
     operations: await fixture.db
       .select()
       .from(adminOperations)
@@ -156,7 +151,7 @@ test("group erasure records actual removed policy rows, preserves another tenant
     .where(eq(auditEvents.operationId, response.headers.get("Operation-Id")!));
   expect(structuredClone(event)).toMatchObject({
     action: "group.erased",
-    schemaVersion: 3,
+    schemaVersion: 1,
     organizationId: a.group.organizationId,
     targetId: a.group.id,
     data: {
@@ -236,21 +231,10 @@ test("group erasure records actual removed policy rows, preserves another tenant
     state.entitlements.filter((row) => row.groupId === b.group.id),
   ).toEqual(b.grants.sort((x, y) => x.id.localeCompare(y.id)));
   expect(
-    state.subjects.filter(
-      (row) => row.eventId === event!.id && row.entityType === "user",
-    ),
-  ).toEqual(
-    [person.userId, fixture.principals.tenantAdmin.userId]
-      .sort()
-      .map((entityId) =>
-        expect.objectContaining({
-          entityId,
-          relationship: "affected",
-          organizationId: a.group.organizationId,
-          provenance: "recorded",
-        }),
-      ),
-  );
+    state.subjects
+      .filter((row) => row.eventId === event!.id)
+      .map((row) => row.userId),
+  ).toEqual([person.userId, fixture.principals.tenantAdmin.userId].sort());
   const replay = await erase(a.group, key);
   expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
   expect(await snapshot()).toEqual(state);
@@ -321,7 +305,7 @@ test("group status changes retain their policy sources and affected users after 
         eq(auditEvents.operationId, response.headers.get("Operation-Id")!),
       );
     expect(event).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 1,
       action: status === "disable" ? "group.disabled" : "group.enabled",
       data: {
         before: { status: status === "disable" ? "active" : "disabled" },

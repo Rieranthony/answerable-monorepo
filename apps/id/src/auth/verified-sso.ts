@@ -234,7 +234,6 @@ export function createVerifiedSso(db: Database) {
         ),
       );
     await recordAuditEvent(tx, {
-      schemaVersion: 1,
       actorType: "user",
       actorId: flow.userId,
       organizationId: flow.targetOrganizationId,

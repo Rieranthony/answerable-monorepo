@@ -1,8 +1,11 @@
 import { auditPolicies } from "./tenant-policies.ts";
+import { sql } from "drizzle-orm";
 import {
+  check,
   index,
   integer,
   jsonb,
+  pgPolicy,
   pgTable,
   primaryKey,
   text,
@@ -62,46 +65,27 @@ export const auditEvents = pgTable(
       auditActorTypes,
     ),
     vocabularyCheck("audit_events_outcome_check", table.outcome, auditOutcomes),
+    // One payload shape per action before launch; the first change adds 2.
+    check("audit_events_schema_version_check", sql`${table.schemaVersion} = 1`),
   ],
 ).enableRLS();
-/** Subject references outlive operational identities; provenance marks legacy derivation. */
-export const auditEventSubjects = pgTable(
-  "audit_event_subjects",
+/**
+ * The users each audit event concerns, filled by the audit triggers as the
+ * table owner. A user's history outlives erasure: no foreign key to users.
+ */
+export const auditEventUsers = pgTable(
+  "audit_event_users",
   {
+    userId: uuid("user_id").notNull(),
     eventId: uuid("event_id")
       .notNull()
-      .references(() => auditEvents.id, { onDelete: "cascade" }),
-    entityType: text("entity_type").notNull(),
-    entityId: text("entity_id").notNull(),
-    relationship: text("relationship").notNull(),
-    organizationId: uuid("organization_id"),
-    provenance: text("provenance").notNull().default("recorded"),
+      .references(() => auditEvents.id),
   },
   (table) => [
-    ...auditPolicies(table.organizationId),
-    primaryKey({
-      name: "audit_event_subjects_pkey",
-      columns: [
-        table.eventId,
-        table.entityType,
-        table.entityId,
-        table.relationship,
-      ],
+    primaryKey({ columns: [table.userId, table.eventId] }),
+    pgPolicy("audit_users_read", {
+      for: "select",
+      using: sql`current_setting('answerable.scope', true) in ('platform-read', 'platform-write', 'platform-users')`,
     }),
-    index("audit_event_subjects_entity_idx").on(
-      table.entityType,
-      table.entityId,
-      table.eventId,
-    ),
-    index("audit_event_subjects_tenant_entity_idx").on(
-      table.organizationId,
-      table.entityType,
-      table.entityId,
-      table.eventId,
-    ),
-    vocabularyCheck("audit_event_subjects_provenance_check", table.provenance, [
-      "recorded",
-      "legacy_derived",
-    ]),
   ],
 ).enableRLS();

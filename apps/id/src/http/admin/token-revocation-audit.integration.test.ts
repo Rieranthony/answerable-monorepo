@@ -118,7 +118,7 @@ for (const mode of ["user", "session", "all", "client", "rotate"] as const) {
     const key = createId();
     await db.execute(
       sql.raw(
-        `alter table audit_event_subjects add constraint token_manifest_fault check (entity_id <> '${ids[0]!}') not valid`,
+        `alter table audit_event_users add constraint token_manifest_fault check (user_id <> '${ids[0]!}') not valid`,
       ),
     );
     try {
@@ -126,7 +126,7 @@ for (const mode of ["user", "session", "all", "client", "rotate"] as const) {
       expect(await snapshot()).toEqual(before);
     } finally {
       await db.execute(
-        sql`alter table audit_event_subjects drop constraint token_manifest_fault`,
+        sql`alter table audit_event_users drop constraint token_manifest_fault`,
       );
     }
     const applied = await request(path, method, key);
@@ -141,7 +141,7 @@ for (const mode of ["user", "session", "all", "client", "rotate"] as const) {
     const effect = events.find(
       (row) => !clientWide || row.action === "client.grants_revoked",
     )!;
-    expect(effect.schemaVersion).toBe(2);
+    expect(effect.schemaVersion).toBe(1);
     expect(effect.organizationId).toBeNull();
     const actual = effect.data!.revokedTokens as typeof expected;
     expect({

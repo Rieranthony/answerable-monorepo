@@ -160,7 +160,7 @@ for (const failure of ["none", "policy", "signing", "credentials"] as const) {
     expect(events).toHaveLength(1);
     if (failure === "credentials")
       expect(events[0]).toMatchObject({
-        schemaVersion: 3,
+        schemaVersion: 1,
         action: "oauth.token.rejected",
         organizationId: null,
         outcome: "denied",

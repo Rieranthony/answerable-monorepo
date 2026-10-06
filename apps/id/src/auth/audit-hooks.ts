@@ -1,22 +1,26 @@
 import { boundedUserAgent } from "../lib/user-agent.ts";
 import type { Executor } from "../db/client.ts";
-import { recordAuditEvent } from "../db/queries/audit.ts";
+import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
 
 type Session = {
   id: string;
   userId: string;
-  activeOrganizationId?: string | null;
+  authenticationOrganizationId?: string | null;
   ipAddress?: string | null;
   userAgent?: string | null;
 };
 type Context = { headers?: Headers } | null;
 
 export function sessionAuditHooks(db: Executor) {
-  async function record(session: Session, context: Context, action: string) {
+  async function record(
+    session: Session,
+    context: Context,
+    action: AuditAction,
+  ) {
     await recordAuditEvent(db, {
       actorType: "user",
       actorId: session.userId,
-      organizationId: session.activeOrganizationId ?? null,
+      organizationId: session.authenticationOrganizationId ?? null,
       action,
       targetType: "session",
       targetId: session.id,

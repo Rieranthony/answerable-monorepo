@@ -7,7 +7,7 @@ import { type PlatformReadContext } from "./platform-context.ts";
 import { type TenantReadContext } from "./tenant-context.ts";
 import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/organizations.ts";
-import { recordAuditEvent } from "../db/queries/audit.ts";
+import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
 import { revokeOrganizationMachineTokens } from "../db/queries/oauth-tokens.ts";
 import { cursorPage } from "../http/pagination.ts";
 import { ProblemError } from "../http/problem.ts";
@@ -37,7 +37,7 @@ function audit(
   executor: Executor,
   actor: Actor,
   id: string,
-  action: string,
+  action: AuditAction,
   data: Record<string, unknown>,
 ) {
   return recordAuditEvent(executor, {
@@ -47,7 +47,6 @@ function audit(
     targetType: "organization",
     targetId: id,
     outcome: "success",
-    schemaVersion: action === "organization.erased" ? 3 : 1,
     data,
   });
 }

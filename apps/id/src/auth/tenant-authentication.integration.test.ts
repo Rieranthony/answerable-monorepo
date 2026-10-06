@@ -311,7 +311,7 @@ test("independently verified B account evidence admits the same global user to B
       ),
     );
   expect(event).toMatchObject({
-    schemaVersion: 2,
+    schemaVersion: 1,
     actorId: userId,
     organizationId: fixture.outsider.organizationId,
     data: {

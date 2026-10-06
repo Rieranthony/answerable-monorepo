@@ -15,7 +15,7 @@ import { createId } from "../../lib/id.ts";
 import { createDatabase, type DatabaseConnection } from "../client.ts";
 import {
   auditEvents,
-  auditEventSubjects,
+  auditEventUsers,
   organizations,
 } from "../schema/index.ts";
 
@@ -23,7 +23,7 @@ let connection: DatabaseConnection;
 const event: AuditEventInput = {
   actorType: "user",
   actorId: "administrator",
-  action: "organization.update",
+  action: "organization.updated",
   targetType: "organization",
   outcome: "success",
 };
@@ -252,131 +252,63 @@ test("rejects unknown actor and outcome vocabularies through CHECK constraints",
   }
 });
 
-test("grant effect subjects accept only the global successful erasure contract and deduplicate users", async () => {
+test("audit users come from the action's manifests, once each, and skip malformed entries", async () => {
   const db = connection.db;
-  const affected = createId();
-  const organization = await insertOrganization("effect-tenant");
+  const target = createId(),
+    affected = createId();
+  const tokens = [
+    { id: createId(), userId: affected },
+    { id: createId(), userId: affected },
+    { id: createId(), userId: target },
+    null,
+    "bad",
+    { userId: 7 },
+    { userId: "" },
+    { userId: "not-a-uuid" },
+  ];
   const base: AuditEventInput = {
     ...event,
     actorType: "system",
     actorId: "root",
     action: "user.erased",
     targetType: "user",
-    targetId: createId(),
-    data: {
-      deletedGrantContexts: [
-        { userId: affected },
-        { userId: affected },
-        null,
-        "bad",
-        { userId: 7 },
-        { userId: "" },
-      ],
-    },
+    targetId: target,
+    data: { effects: { deletedAccessTokens: tokens } },
   };
-  const valid = await recordAuditEvent(db, base);
+  const users = async (eventId: string) =>
+    (
+      await db
+        .select({ userId: auditEventUsers.userId })
+        .from(auditEventUsers)
+        .where(eq(auditEventUsers.eventId, eventId))
+    )
+      .map((row) => row.userId)
+      .sort();
+  expect(await users((await recordAuditEvent(db, base)).id)).toEqual(
+    [target, affected].sort(),
+  );
+  // Another action does not read the manifest; a malformed one names nobody.
   for (const patch of [
-    { action: "user.disabled" },
-    { targetType: "client" },
-    { outcome: "failure" as const },
-    { organizationId: organization.id },
-    { data: { deletedGrantContexts: {} } },
+    { action: "user.disabled" as const },
+    { data: { effects: { deletedAccessTokens: {} } } },
   ])
-    await recordAuditEvent(db, { ...base, ...patch });
-  await db
-    .insert(auditEvents)
-    .values({ ...base, id: createId(), schemaVersion: 0 });
+    expect(
+      await users((await recordAuditEvent(db, { ...base, ...patch })).id),
+    ).toEqual([target]);
   expect(
-    (await listUserAuditEvents(db, affected, {}, { limit: 20 })).items.map(
-      (row) => row.id,
-    ),
-  ).toEqual([valid.id]);
-  expect(
-    await db
-      .select()
-      .from(auditEventSubjects)
-      .where(eq(auditEventSubjects.entityId, affected)),
-  ).toMatchObject([
-    {
-      eventId: valid.id,
-      relationship: "affected",
-      organizationId: null,
-      provenance: "recorded",
-    },
-  ]);
+    (await listUserAuditEvents(db, affected, {}, { limit: 20 })).items,
+  ).toHaveLength(1);
 });
 
-test("client erasure subjects accept only the explicit global v2 cascade contract", async () => {
-  const db = connection.db,
-    affected = createId(),
-    ignored = createId();
-  const organization = await insertOrganization("client-erasure-subjects");
-  const base: AuditEventInput = {
-    ...event,
-    actorType: "system",
-    actorId: "root",
-    targetType: "client",
-    targetId: "erased-client",
-    action: "client.grants_erased",
-    schemaVersion: 2,
-    organizationId: null,
-    data: {
-      clientInstanceId: createId(),
-      grantContexts: [],
-      effects: {
-        deletedAccessTokens: [
-          { id: createId(), userId: affected },
-          { id: createId(), userId: null },
-          null,
-          "bad",
-          { userId: ignored },
-          { id: "", userId: ignored },
-        ],
-        deletedRefreshTokens: [],
-        deletedConsents: [{ id: createId(), userId: affected }],
-        deletedClientResources: [{ id: createId(), userId: ignored }],
-      },
-    },
-  };
-  const valid = await recordAuditEvent(db, base);
-  for (const patch of [
-    { schemaVersion: 1 as const },
-    { schemaVersion: 3 as const },
-    { organizationId: organization.id },
-    { targetType: "resource" },
-    { action: "client.erased" },
-    { outcome: "failure" as const },
-    { targetId: null },
-    { data: { ...base.data, clientInstanceId: "" } },
-    {
-      data: {
-        ...base.data,
-        effects: { deletedAccessTokens: { id: createId(), userId: affected } },
-      },
-    },
-  ])
-    await recordAuditEvent(db, { ...base, ...patch });
-  expect(
-    (await listUserAuditEvents(db, affected, {}, { limit: 30 })).items.map(
-      (row) => row.id,
-    ),
-  ).toEqual([valid.id]);
-  expect(
-    (await listUserAuditEvents(db, ignored, {}, { limit: 30 })).items,
-  ).toEqual([]);
-  expect(
-    await db
-      .select()
-      .from(auditEventSubjects)
-      .where(eq(auditEventSubjects.entityId, affected)),
-  ).toMatchObject([
-    {
-      eventId: valid.id,
-      relationship: "affected",
-      organizationId: null,
-      provenance: "recorded",
-    },
-  ]);
+test("one payload shape per action: every event is version 1", async () => {
+  await expect(
+    connection.db
+      .insert(auditEvents)
+      .values({ ...event, id: createId(), schemaVersion: 2 })
+      .execute(),
+  ).rejects.toMatchObject({
+    cause: { code: "23514", constraint: "audit_events_schema_version_check" },
+  });
 });
 
 test("UUID audit lookups retain session subjects and ignore non-UUID member targets", async () => {
@@ -403,17 +335,9 @@ test("UUID audit lookups retain session subjects and ignore non-UUID member targ
   expect(
     await connection.db
       .select()
-      .from(auditEventSubjects)
-      .where(eq(auditEventSubjects.eventId, session.id)),
-  ).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        entityType: "user",
-        entityId: userId,
-        relationship: "affected",
-      }),
-    ]),
-  );
+      .from(auditEventUsers)
+      .where(eq(auditEventUsers.eventId, session.id)),
+  ).toEqual([{ userId, eventId: session.id }]);
   const member = await recordAuditEvent(connection.db, {
     ...event,
     targetType: "member",
@@ -422,13 +346,9 @@ test("UUID audit lookups retain session subjects and ignore non-UUID member targ
   expect(
     await connection.db
       .select()
-      .from(auditEventSubjects)
-      .where(eq(auditEventSubjects.eventId, member.id)),
-  ).not.toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ relationship: "affected" }),
-    ]),
-  );
+      .from(auditEventUsers)
+      .where(eq(auditEventUsers.eventId, member.id)),
+  ).toEqual([]);
   await connection.db.transaction(async (tx) => {
     await tx.execute(sql`set local enable_seqscan = off`);
     for (const table of ["members", "sessions", "grant_contexts"]) {

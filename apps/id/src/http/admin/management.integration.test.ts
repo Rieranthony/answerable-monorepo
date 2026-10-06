@@ -357,7 +357,7 @@ for (const machine of [false, true]) {
     ).toEqual([
       expect.objectContaining({
         action: "entitlement.created",
-        schemaVersion: 2,
+        schemaVersion: 1,
         organizationId: person.organizationId,
         targetId: grants[0]!.id,
         data: expect.objectContaining({

@@ -15,7 +15,7 @@ import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import { configureRuntimeRole } from "../db/runtime-role.ts";
 import {
   auditEvents,
-  auditEventSubjects,
+  auditEventUsers,
   oauthClients,
   oauthResources,
   organizationCapabilities,
@@ -138,7 +138,7 @@ test("successful machine issuance commits one attributed, secret-free audit fact
     outcome: "success",
     requestId: response.headers.get("x-request-id"),
     operationId: null,
-    schemaVersion: 2,
+    schemaVersion: 1,
     data: {
       decision: {
         allowed: true,
@@ -176,26 +176,13 @@ test("successful machine issuance commits one attributed, secret-free audit fact
   expect(encoded).not.toContain(token);
   expect(encoded).not.toContain(client.clientSecret!);
   expect(encoded).not.toContain("untrusted-marker");
+  // A machine issuance concerns no user.
   expect(
     await connection.db
       .select()
-      .from(auditEventSubjects)
-      .where(eq(auditEventSubjects.eventId, events[0]!.id)),
-  ).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        entityType: "client",
-        entityId: client.clientId,
-        relationship: "actor",
-        organizationId: tenantId,
-      }),
-      expect.objectContaining({
-        entityType: "access_token",
-        entityId: claims.jti,
-        relationship: "target",
-      }),
-    ]),
-  );
+      .from(auditEventUsers)
+      .where(eq(auditEventUsers.eventId, events[0]!.id)),
+  ).toEqual([]);
 });
 
 test("audit failure prevents token release; a new request succeeds after recovery", async () => {
@@ -373,24 +360,7 @@ for (const field of [
   });
 }
 
-test("versioned machine decision history preserves legacy events and the evaluated snapshot", async () => {
-  const { recordAuditEvent } = await import("../db/queries/audit.ts");
-  const legacyData = {
-    grantType: "client_credentials",
-    grantedScopes: ["org:read"],
-    policy: { policyVersion: 1, capabilityId: createId() },
-  };
-  const legacy = await recordAuditEvent(connection.db, {
-    actorType: "client",
-    actorId: client.clientId,
-    organizationId: tenantId,
-    action: "oauth.token.issued",
-    targetType: "access_token",
-    targetId: createId(),
-    outcome: "success",
-    schemaVersion: 1,
-    data: legacyData,
-  });
+test("machine decision history retains the evaluated snapshot after policy changes", async () => {
   const minted = await mint();
   expect(minted.status).toBe(200);
   const token = (await minted.json()).access_token;
@@ -400,13 +370,8 @@ test("versioned machine decision history preserves legacy events and the evaluat
   );
   expect(response.status).toBe(200);
   const events = (await response.json()).items;
-  expect(events).toHaveLength(2);
-  expect(
-    events.find((event: { id: string }) => event.id === legacy.id),
-  ).toMatchObject({ schemaVersion: 1, data: legacyData });
-  const current = events.find(
-    (event: { schemaVersion: number }) => event.schemaVersion === 2,
-  );
+  expect(events).toHaveLength(1);
+  const current = events[0];
   expect(current.data.decision).toMatchObject({
     allowed: true,
     reason: "approved",
@@ -427,9 +392,6 @@ test("versioned machine decision history preserves legacy events and the evaluat
     .from(auditEvents)
     .where(eq(auditEvents.id, current.id));
   expect(retained!.data).toEqual(current.data);
-  expect(
-    (await issuedEvents()).find((event) => event.id === legacy.id)!.data,
-  ).toEqual(legacyData);
 });
 
 function rejectedEvents() {
@@ -449,7 +411,7 @@ test("verified client denial is durable and does not attribute a claimed client"
   const events = await rejectedEvents();
   expect(events).toHaveLength(1);
   expect(events[0]).toMatchObject({
-    schemaVersion: 2,
+    schemaVersion: 1,
     actorType: "client",
     actorId: client.clientId,
     organizationId: tenantId,
@@ -497,7 +459,7 @@ test("verified client denial is durable and does not attribute a claimed client"
     (event) => event.requestId === "forged-client",
   )!;
   expect(unauthenticated).toMatchObject({
-    schemaVersion: 3,
+    schemaVersion: 1,
     actorType: "system",
     actorId: "oauth-client-authentication",
     organizationId: null,
@@ -633,7 +595,7 @@ test("client authentication storage failure is unattributed and excludes excepti
     const events = await rejectedEvents();
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 1,
       actorType: "system",
       actorId: "oauth-client-authentication",
       organizationId: null,
@@ -682,22 +644,17 @@ test("restricted runtime records failed authentication without a claimed-client 
     ).toBe(401);
     const [event] = await rejectedEvents();
     expect(event).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 1,
       organizationId: null,
       outcome: "denied",
     });
-    const subjects = await connection.db
-      .select()
-      .from(auditEventSubjects)
-      .where(eq(auditEventSubjects.eventId, event!.id));
     expect(
-      subjects.some(
-        (subject) =>
-          subject.entityType === "client" ||
-          subject.entityType === "organization",
-      ),
-    ).toBe(false);
-    expect(JSON.stringify(subjects)).not.toContain(client.clientId);
+      await connection.db
+        .select()
+        .from(auditEventUsers)
+        .where(eq(auditEventUsers.eventId, event!.id)),
+    ).toEqual([]);
+    expect(JSON.stringify(event)).not.toContain(client.clientId);
     expect(await issuedEvents()).toHaveLength(0);
   } finally {
     await runtime.close();
@@ -719,7 +676,7 @@ test("malformed targets and missing capabilities retain distinct rejection stage
   expect(await response.json()).toMatchObject({ error: "invalid_target" });
   expect(await rejectedEvents()).toMatchObject([
     {
-      schemaVersion: 2,
+      schemaVersion: 1,
       reason: "invalid_target",
       data: { stage: "request", decision: null },
     },
@@ -755,7 +712,7 @@ test("pre-evaluation scope refusal records no invented policy decision", async (
   const events = await rejectedEvents();
   expect(events).toHaveLength(1);
   expect(events[0]).toMatchObject({
-    schemaVersion: 2,
+    schemaVersion: 1,
     reason: "invalid_scope",
     data: { stage: "authorization", decision: null },
   });
@@ -763,24 +720,8 @@ test("pre-evaluation scope refusal records no invented policy decision", async (
   expect(await issuedEvents()).toHaveLength(0);
 });
 
-test("versioned denial history keeps the evaluated ceilings after policy changes", async () => {
-  const { recordAuditEvent } = await import("../db/queries/audit.ts");
+test("denial history keeps the evaluated ceilings after policy changes", async () => {
   const reader = (await (await mint()).json()).access_token;
-  const legacyData = {
-    grantType: "client_credentials",
-    stage: "authorization",
-  };
-  const legacy = await recordAuditEvent(connection.db, {
-    actorType: "client",
-    actorId: client.clientId,
-    organizationId: tenantId,
-    action: "oauth.token.rejected",
-    targetType: "oauth_request",
-    outcome: "denied",
-    reason: "invalid_scope",
-    schemaVersion: 1,
-    data: legacyData,
-  });
   const [capability] = await connection.db
     .select()
     .from(organizationCapabilities);
@@ -833,18 +774,11 @@ test("versioned denial history keeps the evaluated ceilings after policy changes
   );
   expect(response.status).toBe(200);
   const events = (await response.json()).items;
-  expect(events).toHaveLength(2);
-  expect(
-    events.find((event: { id: string }) => event.id === captured.id),
-  ).toMatchObject({
-    schemaVersion: 2,
-    data: captured.data,
-  });
-  expect(
-    events.find((event: { id: string }) => event.id === legacy.id),
-  ).toMatchObject({
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    id: captured.id,
     schemaVersion: 1,
-    data: legacyData,
+    data: captured.data,
   });
   expect(
     (await mint("ceiling-now-approved", { scope: "org:write" })).status,

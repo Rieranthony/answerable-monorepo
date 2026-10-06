@@ -333,7 +333,7 @@ test("administrative RLS isolates rows while retaining routing and append-only b
     ssoProviders,
     organizations,
     users,
-    auditEventSubjects,
+    auditEventUsers,
   } = await import("./schema/index.ts");
   const { recordAuditEvent } = await import("./queries/audit.ts");
   const userId = createId();
@@ -369,7 +369,7 @@ test("administrative RLS isolates rows while retaining routing and append-only b
       organizationId,
       actorType: "system",
       actorId: "rls-proof",
-      action: "rls.proof",
+      action: "user.enabled",
       targetType: "user",
       targetId: userId,
       outcome: "success",
@@ -381,7 +381,9 @@ test("administrative RLS isolates rows while retaining routing and append-only b
       { kind: "tenant", access: "read", organizationId },
       async (tx) => {
         // Deliberately omit application tenant predicates.
-        for (const table of [members, auditEvents, auditEventSubjects]) {
+        // Audit users have no tenant branch: only platform scopes read them.
+        expect(await tx.select().from(auditEventUsers)).toEqual([]);
+        for (const table of [members, auditEvents]) {
           const rows = await tx
             .select({ organizationId: table.organizationId })
             .from(table);
@@ -435,7 +437,7 @@ test("administrative RLS isolates rows while retaining routing and append-only b
     ).rejects.toMatchObject({ cause: { code: "42501" } });
   expect(await runtime.db.select().from(members)).toEqual([]);
   expect(await runtime.db.select().from(auditEvents)).toEqual([]);
-  expect(await runtime.db.select().from(auditEventSubjects)).toEqual([]);
+  expect(await runtime.db.select().from(auditEventUsers)).toEqual([]);
   for (const table of [organizationDomains, ssoProviders])
     expect(
       (
@@ -452,7 +454,7 @@ test("administrative RLS isolates rows while retaining routing and append-only b
         organizationId: foreign,
         actorType: "system",
         actorId: "rls-proof",
-        action: "rls.append",
+        action: "user.enabled",
         targetType: "user",
         targetId: userId,
         outcome: "success",
@@ -466,13 +468,9 @@ test("administrative RLS isolates rows while retaining routing and append-only b
   ).toEqual([event]);
   await expect(
     Promise.resolve(
-      runtime.db.insert(auditEventSubjects).values({
-        eventId: event.id,
-        entityType: "user",
-        entityId: userId,
-        relationship: "forged",
-        organizationId: foreign,
-      }),
+      runtime.db
+        .insert(auditEventUsers)
+        .values({ eventId: event.id, userId: createId() }),
     ),
   ).rejects.toMatchObject({ cause: { code: "42501" } });
   for (const table of [
@@ -480,7 +478,7 @@ test("administrative RLS isolates rows while retaining routing and append-only b
     "organization_domains",
     "sso_providers",
     "audit_events",
-    "audit_event_subjects",
+    "audit_event_users",
   ]) {
     await owner.db.execute(
       sql`alter table ${sql.identifier(table)} disable row level security`,

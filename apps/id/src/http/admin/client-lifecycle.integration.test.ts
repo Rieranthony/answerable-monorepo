@@ -124,7 +124,7 @@ test("resource links, immutable owner verification and erasure replay without re
   expect(events[0]).toMatchObject({
     action: "client.erased",
     organizationId: fixture.tenant.organizationId,
-    schemaVersion: 3,
+    schemaVersion: 1,
     data: {
       before: { id: ownerBody.id },
       after: {

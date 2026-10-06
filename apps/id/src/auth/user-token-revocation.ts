@@ -150,7 +150,10 @@ export function revokeUserToken(ctx: Context, provider: Provider) {
               clientId: client.clientId,
               grant,
               requestId: ctx.headers?.get("x-request-id"),
-              data: { effect: refresh ? "refresh_family" : "access_token" },
+              data: {
+                reason: "revocation_request",
+                effect: refresh ? "refresh_family" : "access_token",
+              },
             });
           }
           // The pinned provider reports its completed revoked-family cleanup as

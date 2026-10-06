@@ -109,7 +109,7 @@ test("real runtime login can bootstrap, audit and issue a machine token", async 
       actorType: "client",
       actorId: client.clientId,
       outcome: "success",
-      schemaVersion: 2,
+      schemaVersion: 1,
       data: {
         decision: {
           allowed: true,
@@ -175,11 +175,12 @@ test("runtime cannot mutate evidence, forge subjects, truncate, alter schema or 
     "update admin_operations set outcome = 'noop'",
     "truncate admin_operations",
     "truncate audit_events cascade",
-    "delete from audit_event_subjects",
-    "insert into audit_event_subjects select * from audit_event_subjects",
+    "delete from audit_event_users",
+    "insert into audit_event_users select * from audit_event_users",
+    "delete from grant_contexts",
     "alter table audit_events disable trigger all",
     "create table public.runtime_forgery (id int)",
-    "select capture_audit_subjects(event, 'recorded') from audit_events event limit 1",
+    "select capture_audit_subjects()",
     "set role answerable",
   ])
     await expect(
@@ -725,7 +726,11 @@ test("runtime erasure audit creates protected indirect subject references throug
     targetType: "user",
     targetId: crypto.randomUUID(),
     outcome: "success",
-    data: { deletedGrantContexts: [{ userId: affected }] },
+    data: {
+      effects: {
+        deletedAccessTokens: [{ id: crypto.randomUUID(), userId: affected }],
+      },
+    },
   });
   expect(
     (await listUserAuditEvents(runtime.db, affected, {}, { limit: 10 })).items,
@@ -738,7 +743,7 @@ test("runtime lifecycle audit indexes recorded users without direct subject writ
     await import("../__tests__/audit-queries.ts");
   const affected = crypto.randomUUID();
   const expected = [];
-  for (const targetType of ["client", "resource", "organization"]) {
+  for (const targetType of ["client", "resource", "organization"] as const) {
     for (const erased of [false, true]) {
       const targetId = crypto.randomUUID();
       const effects = [{ userId: affected }, { userId: affected }];
@@ -749,18 +754,19 @@ test("runtime lifecycle audit indexes recorded users without direct subject writ
           targetType,
           targetId,
           organizationId: targetType === "organization" ? targetId : null,
-          action:
-            targetType === "client"
-              ? erased
-                ? "client.grants_erased"
-                : "client.grants_revoked"
-              : `${targetType}.${erased ? "erased" : "disabled"}`,
+          action: (
+            {
+              client: ["client.grants_revoked", "client.grants_erased"],
+              resource: ["resource.disabled", "resource.erased"],
+              organization: ["organization.disabled", "organization.erased"],
+            } as const
+          )[targetType][Number(erased)]!,
           outcome: "success",
           data:
             targetType === "client"
               ? { grantContexts: effects }
               : erased
-                ? { deletedGrantContexts: effects }
+                ? { revokedGrantContexts: effects }
                 : { effects: { revokedGrantContexts: effects } },
         }),
       );

@@ -10,7 +10,7 @@ import {
 import { type PlatformReadContext } from "./platform-context.ts";
 import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/oauth-resources.ts";
-import { recordAuditEvent } from "../db/queries/audit.ts";
+import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
 import { cursorPage } from "../http/pagination.ts";
 import { ProblemError } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
@@ -54,7 +54,7 @@ function audit(
   tx: Executor,
   actor: Actor,
   identifier: string,
-  action: string,
+  action: AuditAction,
   data: Record<string, unknown>,
 ) {
   return recordAuditEvent(tx, {
@@ -63,7 +63,6 @@ function audit(
     targetId: identifier,
     action,
     outcome: "success",
-    schemaVersion: data.deletionMode === "soft" ? 2 : 1,
     data,
   });
 }

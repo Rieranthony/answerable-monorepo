@@ -1010,7 +1010,7 @@ describe("integration: federated sign-in", () => {
         reason:
           code === "SSO_USER_RESOLUTION_FAILED" ? "sso_callback_failed" : code,
         outcome: "failure",
-        schemaVersion: 2,
+        schemaVersion: 1,
         data: null,
       });
     },

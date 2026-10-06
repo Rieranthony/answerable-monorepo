@@ -10,7 +10,7 @@ import {
   type TenantReadContext,
   type TenantMemberContext,
 } from "./tenant-context.ts";
-import { recordAuditEvent } from "../db/queries/audit.ts";
+import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
 import { cursorPage } from "../http/pagination.ts";
 import { ProblemError } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
@@ -28,7 +28,7 @@ function audit(
   actor: Actor,
   organizationId: string,
   targetId: string,
-  action: string,
+  action: AuditAction,
   data: Record<string, unknown>,
 ) {
   return recordAuditEvent(tx, {
@@ -37,10 +37,6 @@ function audit(
     targetId,
     targetType: "member",
     action,
-    schemaVersion:
-      action === "member.removed" || action === "member.removal_unchanged"
-        ? 3
-        : 2,
     data,
     outcome: "success",
   });

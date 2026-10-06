@@ -6,7 +6,13 @@ import { eq, sql } from "drizzle-orm";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createId } from "../lib/id.ts";
 import { createDatabase, type DatabaseConnection } from "./client.ts";
-import { auditEvents, members, organizations, users } from "./schema/index.ts";
+import {
+  auditEvents,
+  auditEventUsers,
+  members,
+  organizations,
+  users,
+} from "./schema/index.ts";
 import { recordAuditEvent } from "../__tests__/audit-queries.ts";
 import {
   listOrganizationAuditEvents as readOrganizationAudit,
@@ -63,7 +69,7 @@ test("person and tenant audit history survive membership and identity erasure", 
   ).toEqual([event.id]);
 });
 
-test("recorded subjects do not invent a removed membership's user", async () => {
+test("recorded users do not invent a removed membership's user", async () => {
   const db = connection.db;
   const eventId = createId(),
     missingMemberId = createId();
@@ -71,26 +77,17 @@ test("recorded subjects do not invent a removed membership's user", async () => 
     id: eventId,
     actorType: "system",
     actorId: "subject-test",
-    action: "test",
+    action: "member.updated",
     targetType: "member",
     targetId: missingMemberId,
     outcome: "success",
   });
-  const subjects = await db.execute(
-    sql`select entity_type, entity_id, provenance from audit_event_subjects where event_id = ${eventId} order by entity_type`,
-  );
-  expect(subjects.rows).toEqual([
-    {
-      entity_type: "member",
-      entity_id: missingMemberId,
-      provenance: "recorded",
-    },
-    {
-      entity_type: "system",
-      entity_id: "subject-test",
-      provenance: "recorded",
-    },
-  ]);
+  expect(
+    await db
+      .select()
+      .from(auditEventUsers)
+      .where(eq(auditEventUsers.eventId, eventId)),
+  ).toEqual([]);
 });
 
 const listOrganizationAuditEvents = (

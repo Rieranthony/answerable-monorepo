@@ -374,7 +374,7 @@ export function createUserTokenBoundary() {
                   actor: "client",
                   action: "oauth.user.revoked",
                   requestId: ctx.headers?.get("x-request-id"),
-                  data: { reason: `${kind}_replay` },
+                  data: { reason: `${kind}_replay`, effect: "grant" },
                 });
               return result;
             }

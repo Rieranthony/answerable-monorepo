@@ -1,4 +1,3 @@
-import { withDatabaseScope } from "../../db/isolation.ts";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import {
@@ -252,7 +251,7 @@ test("group deletion retains only newly retired assignment effects, denies reuse
     .from(auditEvents)
     .where(eq(auditEvents.operationId, response.headers.get("Operation-Id")!));
   expect(event).toMatchObject({
-    schemaVersion: 3,
+    schemaVersion: 1,
     data: {
       deletionMode: "soft",
       after: { id, deletedAt: expect.any(String) },
@@ -307,7 +306,7 @@ test("unlink and explicit relink allocate a new relationship; client deletion re
     .from(auditEvents)
     .where(eq(auditEvents.operationId, unlink.headers.get("Operation-Id")!));
   expect(unlinkEvent).toMatchObject({
-    schemaVersion: 3,
+    schemaVersion: 1,
     data: { relationship: { id: linkId, deletedAt: expect.any(String) } },
   });
   expect((await request(linkPath, "PUT")).status).toBe(201);
@@ -418,7 +417,6 @@ test("domain and provider deletion remove native discovery while retaining their
   ).toMatchObject({
     deletedAt: expect.any(Date),
     oidcConfig: null,
-    samlConfig: null,
   });
   const adapter = (
     await createAuth(fixture.appDb, fixture.environment).$context
@@ -446,8 +444,6 @@ import {
   linkClientResource,
   unlinkClientResource,
 } from "../../db/queries/oauth-clients.ts";
-import { recordAuditEvent } from "../../db/queries/audit.ts";
-import { auditEventSubjects } from "../../db/schema/index.ts";
 import { assertRuntimeRole } from "../../db/runtime-role.ts";
 
 test("live uniqueness permits repeated replacements at one database timestamp and rejects duplicate null principals", async () => {
@@ -623,72 +619,3 @@ test("startup refuses domain DELETE privileges even when audit permissions are p
   }
   await assertRuntimeRole(fixture.appDb);
 });
-
-for (const targetType of ["user", "organization", "group"] as const) {
-  test(`${targetType} soft-deletion subjects require the complete new event envelope`, async () => {
-    const id = createId(),
-      userId = createId(),
-      organizationId =
-        targetType === "user"
-          ? null
-          : targetType === "organization"
-            ? id
-            : createId();
-    const field =
-      targetType === "user"
-        ? "deletedAccessTokens"
-        : targetType === "organization"
-          ? "softDeletedMembers"
-          : "softDeletedAssignments";
-    const effect = { id: createId(), userId, organizationId, groupId: id };
-    const data = {
-      deletionMode: "soft",
-      before: { id },
-      after: { id, deletedAt: new Date().toISOString() },
-      effects: { [field]: [effect] },
-    };
-    const base = {
-      schemaVersion: 3 as const,
-      actorType: "system" as const,
-      actorId: "contract-test",
-      organizationId,
-      action: `${targetType}.erased`,
-      targetType,
-      targetId: id,
-      outcome: "success" as const,
-      data,
-    };
-    const valid = await recordAuditEvent(fixture.appDb, base);
-    for (const patch of [
-      { outcome: "failure" as const },
-      { data: { ...data, deletionMode: "physical" } },
-      { data: { ...data, after: { id } } },
-      {
-        data: {
-          ...data,
-          after: { id: createId(), deletedAt: data.after.deletedAt },
-        },
-      },
-      { data: { ...data, effects: { [field]: effect } } },
-    ])
-      await recordAuditEvent(fixture.appDb, { ...base, ...patch });
-    expect(await fixture.appDb.select().from(auditEventSubjects)).toEqual([]);
-    expect(
-      await withDatabaseScope(
-        fixture.appDb,
-        { kind: "platform", access: "read" },
-        (tx) =>
-          tx
-            .select()
-            .from(auditEventSubjects)
-            .where(eq(auditEventSubjects.entityId, userId)),
-      ),
-    ).toEqual([
-      expect.objectContaining({
-        eventId: valid.id,
-        relationship: "affected",
-        organizationId,
-      }),
-    ]);
-  });
-}

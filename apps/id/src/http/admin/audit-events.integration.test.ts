@@ -171,7 +171,7 @@ test("staff read retained tenant history after erasure without opening unknown h
     organizationId: org.id,
     targetType: "organization",
     targetId: org.id,
-    action: "history.test",
+    action: "organization.updated",
     outcome: "success",
     data: {},
   });
@@ -211,18 +211,12 @@ test("indirect global erasure history is visible to staff but not through tenant
     targetId: createId(),
     outcome: "success",
     data: {
-      deletedGrantContexts: [
-        {
-          id: createId(),
-          userId,
-          organizationId: fixture.tenant.organizationId,
-        },
-        {
-          id: createId(),
-          userId: fixture.principals.outsider.userId,
-          organizationId: fixture.outsider.organizationId,
-        },
-      ],
+      effects: {
+        clearedAccessTokenSessions: [
+          { id: createId(), userId },
+          { id: createId(), userId: fixture.principals.outsider.userId },
+        ],
+      },
     },
   });
   const staff = await read(`/users/${userId}/audit-events`, {

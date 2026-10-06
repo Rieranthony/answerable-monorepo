@@ -14,7 +14,7 @@ import {
 } from "../db/queries/oauth-resources.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { revokeClientTokens } from "../db/queries/oauth-tokens.ts";
-import { recordAuditEvent } from "../db/queries/audit.ts";
+import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
 import { cursorPage } from "../http/pagination.ts";
 import { ProblemError } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
@@ -80,15 +80,13 @@ function audit(
   tx: Executor,
   actor: Actor,
   clientId: string,
-  action: string,
+  action: AuditAction,
   data: Record<string, unknown>,
   organizationId?: string | null,
-  schemaVersion: 1 | 2 | 3 = 1,
 ) {
   return recordAuditEvent(tx, {
     ...actor,
     organizationId,
-    schemaVersion,
     targetType: "client",
     targetId: clientId,
     action,
@@ -129,7 +127,6 @@ function auditResourceLink(
       resource?.organizationId === client.organizationId
       ? client.organizationId
       : null,
-    3,
   );
 }
 /** A client's owner is not entitled to its other tenants' grant identities. */
@@ -169,7 +166,6 @@ async function auditGrantEffects(
       ...(action === "client.grants_erased" ? { deletionMode: "soft" } : {}),
     },
     null,
-    action === "client.grants_erased" ? 3 : 2,
   );
   return event.id;
 }
@@ -584,7 +580,6 @@ export async function eraseClient(
     targetId: clientId,
     action: "client.erased",
     outcome: "success",
-    schemaVersion: 3,
     data: {
       deletionMode: "soft",
       effects: {

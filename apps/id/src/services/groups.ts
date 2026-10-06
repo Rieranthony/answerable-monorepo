@@ -8,7 +8,7 @@ import { findMemberForAssignment } from "../db/queries/members.ts";
 import type { PageQuery } from "../http/pagination.ts";
 import type { Executor } from "../db/client.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
-import { recordAuditEvent } from "../db/queries/audit.ts";
+import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
 import { cursorPage } from "../http/pagination.ts";
 import { ProblemError } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
@@ -49,7 +49,7 @@ function audit(
   actor: Actor,
   organizationId: string,
   targetId: string,
-  action: string,
+  action: AuditAction,
   data: Record<string, unknown>,
   targetType = "group",
 ) {
@@ -59,12 +59,6 @@ function audit(
     targetId,
     targetType,
     action,
-    schemaVersion:
-      data.deletionMode === "soft"
-        ? 3
-        : ["group.erased", "group.enabled", "group.disabled"].includes(action)
-          ? 2
-          : 1,
     data,
     outcome: "success",
   });

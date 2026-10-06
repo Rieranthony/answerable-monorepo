@@ -32,7 +32,6 @@ export async function recordRejectedSignIn(
       actorType: "system",
       actorId: "sso-callback",
       action: "auth.signin.rejected",
-      schemaVersion: 2,
       targetType: "sso_provider",
       // Neither the query nor an opaque callback state verifies a provider identity.
       targetId: null,

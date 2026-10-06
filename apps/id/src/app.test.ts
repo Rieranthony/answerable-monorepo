@@ -331,7 +331,7 @@ test("auth catch-all propagates request ids and audits rejection redirects", asy
         action: "auth.signin.rejected",
         reason: "directory_mismatch",
         requestId: received,
-        schemaVersion: 2,
+        schemaVersion: 1,
       }),
     ]);
   }

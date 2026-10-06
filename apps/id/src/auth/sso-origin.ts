@@ -155,7 +155,6 @@ export function createSsoOriginBoundary(verifiedSso?: VerifiedSso) {
       // The native create.after hook is deferred until commit. Insert here using
       // the transaction and reserve the session ID before the adapter creates it.
       await recordAuditEvent(authTransaction(adapter!), {
-        schemaVersion: 2,
         actorType: "user",
         actorId: session.userId,
         organizationId: origin.authenticationOrganizationId,

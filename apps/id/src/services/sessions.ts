@@ -14,7 +14,7 @@ import {
   revokeSessionTokens,
   revokeUserTokens,
 } from "../db/queries/oauth-tokens.ts";
-import { recordAuditEvent } from "../db/queries/audit.ts";
+import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
 import { cursorPage, type PageQuery } from "../http/pagination.ts";
 import { ProblemError } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
@@ -28,7 +28,7 @@ function audit(
   tx: Executor,
   actor: Actor,
   targetId: string,
-  action: string,
+  action: AuditAction,
   data: Record<string, unknown>,
   targetType = "session",
 ) {
@@ -40,7 +40,6 @@ function audit(
     action,
     data,
     outcome: "success",
-    schemaVersion: 2,
   });
 }
 export async function listUserSessions(

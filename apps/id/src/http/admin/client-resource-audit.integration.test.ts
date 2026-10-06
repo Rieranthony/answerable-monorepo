@@ -89,7 +89,7 @@ test("private foreign link evidence is platform-only for creation, no-op, unlink
       (row) => row.operationId === response.headers.get("Operation-Id"),
     )!;
     expect(event).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 1,
       organizationId: null,
       data: {
         resource: target.identifier,
@@ -116,7 +116,7 @@ for (const kind of ["shared", "own"] as const) {
     expect(events).toHaveLength(2);
     for (const event of events)
       expect(event).toMatchObject({
-        schemaVersion: 3,
+        schemaVersion: 1,
         organizationId: fixture.tenant.organizationId,
         data: {
           resourceInstanceId: target.id,
@@ -139,68 +139,13 @@ for (const kind of ["shared", "own"] as const) {
   });
 }
 
-test("legacy link events remain available to staff but cannot leak through tenant filters or pagination", async () => {
-  const foreign = await resource("foreign");
-  const shared = await resource("shared");
-  const legacy = [];
-  for (const [version, action] of [0, 1, 4].flatMap(
-    (version) =>
-      [
-        [version, "client.resource_linked"],
-        [version, "client.resource_unlinked"],
-        [version, "client.resource_unchanged"],
-      ] as const,
-  )) {
-    const [event] = await fixture.db
-      .insert(auditEvents)
-      .values({
-        id: createId(),
-        schemaVersion: version,
-        actorType: "system",
-        actorId: "root",
-        organizationId: fixture.tenant.organizationId,
-        action,
-        targetType: "client",
-        targetId: clientId,
-        outcome: "success",
-        data: {
-          resource: foreign.identifier,
-          before: { linked: false },
-          after: { linked: true },
-        },
-      })
-      .returning();
-    legacy.push(event!);
-  }
-  expect((await history("tenantReader")).items).toEqual([]);
-  expect((await command(shared.identifier, "PUT")).status).toBe(201);
-  const visible = await history("tenantReader", { limit: "1" });
-  expect(visible.items).toHaveLength(1);
-  expect(visible.nextCursor).toBeNull();
-  expect(visible.items[0]!.schemaVersion).toBe(3);
-  expect(
-    (
-      await history("tenantReader", {
-        action: "client.resource_linked",
-        cursor: visible.items[0]!.id,
-      })
-    ).items,
-  ).toEqual([]);
-  const retained = (await history("platformReader")).items;
-  expect(retained).toHaveLength(legacy.length + 1);
-  for (const event of legacy)
-    expect(retained.find((row) => row.id === event.id)?.data).toEqual(
-      event.data,
-    );
-});
-
 test("unlink of an unclassified missing target stays platform-only", async () => {
   const target = "https://missing.private-resource.example";
   expect((await command(target, "DELETE")).status).toBe(204);
   expect((await history("tenantReader")).items).toEqual([]);
   expect((await history("platformReader")).items).toMatchObject([
     {
-      schemaVersion: 3,
+      schemaVersion: 1,
       organizationId: null,
       action: "client.resource_unchanged",
       data: {

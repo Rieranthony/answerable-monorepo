@@ -47,7 +47,7 @@ test("redirect failure records correlation without trusting claimed provider or 
         actorType: "system",
         actorId: "sso-callback",
         action: "auth.signin.rejected",
-        schemaVersion: 2,
+        schemaVersion: 1,
         targetId: null,
         reason: "directory_mismatch",
 

@@ -137,7 +137,7 @@ test("failed mutation or journal insertion rolls back its audit and releases the
           await recordAuditEvent(tx, {
             actorType: "system",
             actorId: "test",
-            action: "test.changed",
+            action: "organization.updated",
             targetType: "operation",
             targetId: id,
             outcome: "success",
@@ -160,7 +160,7 @@ test("failed mutation or journal insertion rolls back its audit and releases the
       await recordAuditEvent(tx, {
         actorType: "system",
         actorId: "test",
-        action: "test.noop",
+        action: "organization.update_unchanged",
         targetType: "operation",
         targetId: id,
         outcome: "success",
@@ -259,7 +259,7 @@ for (const phase of ["authority", "mutation"] as const) {
       await recordAuditEvent(tx, {
         actorType: "system",
         actorId: "test",
-        action: "test.timeout",
+        action: "organization.updated",
         targetType: "test",
         outcome: "success",
       });

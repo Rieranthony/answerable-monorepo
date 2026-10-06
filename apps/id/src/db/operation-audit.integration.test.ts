@@ -35,7 +35,7 @@ test("an audit event can precede its operation inside the transaction and be que
       await recordAuditEvent(tx, {
         actorType: "system",
         actorId: "test",
-        action: "test.applied",
+        action: "organization.updated",
         targetType: "operation",
         targetId: operationId,
         operationId,
@@ -83,7 +83,7 @@ test("a dangling operation link rejects commit and rolls back its local data and
       await recordAuditEvent(tx, {
         actorType: "system",
         actorId: "test",
-        action: "test.applied",
+        action: "organization.updated",
         targetType: "operation",
         operationId: id,
         outcome: "success",

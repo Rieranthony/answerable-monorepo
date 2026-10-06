@@ -215,9 +215,7 @@ for (const principal of ["group", "organisation"] as const) {
         .where(
           eq(auditEvents.operationId, response.headers.get("Operation-Id")!),
         );
-      expect(event!.schemaVersion).toBe(
-        event!.action === "entitlement.removed" ? 3 : 2,
-      );
+      expect(event!.schemaVersion).toBe(1);
       expect(event!.data!.audience).toEqual(expected);
       events.push(event!);
     }

@@ -6,33 +6,119 @@ import {
   requireTenantHistoryContext,
   type TenantReadContext,
 } from "../../services/tenant-context.ts";
-import {
-  and,
-  desc,
-  eq,
-  gte,
-  lt,
-  inArray,
-  notInArray,
-  or,
-  sql,
-  type SQL,
-} from "drizzle-orm";
+import { and, desc, eq, gte, lt, inArray, sql } from "drizzle-orm";
 
 import { createId } from "../../lib/id.ts";
 import type { Executor } from "../client.ts";
-import { auditEvents, auditEventSubjects } from "../schema/index.ts";
+import { auditEvents, auditEventUsers } from "../schema/index.ts";
 import type { AuditActorType, AuditOutcome } from "../schema/vocabulary.ts";
 
 export type AuditEvent = typeof auditEvents.$inferSelect;
 
+/** Every action ID writes. Each has one payload shape, described in docs/04's
+ * "Audit actions" table; a test keeps the two lists equal. */
+export const auditActions = [
+  "admin.auth_failed",
+  "admin.denied",
+  "admin.root_request",
+  "auth.signin.rejected",
+  "auth.signin.succeeded",
+  "auth.signout",
+  "bootstrap.applied",
+  "capability.created",
+  "capability.removed",
+  "capability.update_unchanged",
+  "capability.updated",
+  "client.created",
+  "client.disabled",
+  "client.enabled",
+  "client.erased",
+  "client.grants_erased",
+  "client.grants_revoked",
+  "client.owner_unchanged",
+  "client.resource_linked",
+  "client.resource_unchanged",
+  "client.resource_unlinked",
+  "client.secret_rotated",
+  "client.state_unchanged",
+  "client.update_unchanged",
+  "client.updated",
+  "domain.created",
+  "domain.deleted",
+  "domain.disable_unchanged",
+  "domain.disabled",
+  "domain.enable_unchanged",
+  "domain.enabled",
+  "entitlement.created",
+  "entitlement.disable_unchanged",
+  "entitlement.disabled",
+  "entitlement.enable_unchanged",
+  "entitlement.enabled",
+  "entitlement.removed",
+  "entitlement.update_unchanged",
+  "entitlement.updated",
+  "group.created",
+  "group.disable_unchanged",
+  "group.disabled",
+  "group.enable_unchanged",
+  "group.enabled",
+  "group.erased",
+  "group.update_unchanged",
+  "group.updated",
+  "group_member.added",
+  "group_member.removed",
+  "group_member.update_unchanged",
+  "group_member.updated",
+  "identity.linked",
+  "member.reinstated",
+  "member.reinstatement_unchanged",
+  "member.removal_unchanged",
+  "member.removed",
+  "member.updated",
+  "oauth.token.issued",
+  "oauth.token.rejected",
+  "oauth.user.authorized",
+  "oauth.user.denied",
+  "oauth.user.issued",
+  "oauth.user.replayed",
+  "oauth.user.revoked",
+  "organization.created",
+  "organization.disable_unchanged",
+  "organization.disabled",
+  "organization.enable_unchanged",
+  "organization.enabled",
+  "organization.erased",
+  "organization.update_unchanged",
+  "organization.updated",
+  "resource.created",
+  "resource.disabled",
+  "resource.enabled",
+  "resource.erased",
+  "resource.state_unchanged",
+  "resource.update_unchanged",
+  "resource.updated",
+  "session.revoked",
+  "session.revoked_all",
+  "sso_provider.created",
+  "sso_provider.deleted",
+  "sso_provider.update_unchanged",
+  "sso_provider.updated",
+  "user.disable_unchanged",
+  "user.disabled",
+  "user.email_retired",
+  "user.email_retirement_unchanged",
+  "user.enable_unchanged",
+  "user.enabled",
+  "user.erased",
+] as const;
+export type AuditAction = (typeof auditActions)[number];
+
 export type AuditEventInput = {
-  schemaVersion?: 1 | 2 | 3 | 4;
   operationId?: string;
   actorType: AuditActorType;
   actorId: string;
   organizationId?: string | null;
-  action: string;
+  action: AuditAction;
   targetType: string;
   targetId?: string | null;
   outcome: AuditOutcome;
@@ -59,7 +145,7 @@ export async function recordAuditEvent(
     action: event.action,
     targetType: event.targetType,
     outcome: event.outcome,
-    schemaVersion: event.schemaVersion ?? 1,
+    schemaVersion: 1,
     organizationId: event.organizationId ?? null,
     targetId: event.targetId ?? null,
     reason: event.reason ?? null,
@@ -100,35 +186,19 @@ export function listOrganizationAuditEvents(
   page: { cursor?: string; limit: number },
 ) {
   const { tx, organizationId } = requireTenantHistoryContext(context);
-  return queryAuditEvents(
-    tx,
-    { ...filters, organizationId },
-    page,
-    // Legacy link payloads did not establish the target's visibility. Retain
-    // them for platform auditors without consulting mutable/live target rows.
-    or(
-      inArray(auditEvents.schemaVersion, [2, 3]),
-      notInArray(auditEvents.action, [
-        "client.resource_linked",
-        "client.resource_unlinked",
-        "client.resource_unchanged",
-      ]),
-    ),
-  );
+  return queryAuditEvents(tx, { ...filters, organizationId }, page);
 }
 
 async function queryAuditEvents(
   executor: Executor,
   filters: AuditEventFilters,
   page: { cursor?: string; limit: number },
-  visibility?: SQL,
 ): Promise<{ items: AuditEvent[]; nextCursor: string | null }> {
   const rows = await executor
     .select()
     .from(auditEvents)
     .where(
       and(
-        visibility,
         filters.operationId === undefined
           ? undefined
           : eq(auditEvents.operationId, filters.operationId),
@@ -183,14 +253,9 @@ export async function listUserAuditEvents(
         inArray(
           auditEvents.id,
           executor
-            .select({ id: auditEventSubjects.eventId })
-            .from(auditEventSubjects)
-            .where(
-              and(
-                eq(auditEventSubjects.entityType, "user"),
-                eq(auditEventSubjects.entityId, userId),
-              ),
-            ),
+            .select({ id: auditEventUsers.eventId })
+            .from(auditEventUsers)
+            .where(eq(auditEventUsers.userId, userId)),
         ),
         filters.outcome === undefined
           ? undefined

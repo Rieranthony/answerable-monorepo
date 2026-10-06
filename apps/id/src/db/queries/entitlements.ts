@@ -186,13 +186,16 @@ export async function deleteEntitlement(
   return row ?? null;
 }
 
-/** The command holds the organisation lock. Capture current source membership,
- * including ineligible rows, and order parent erasure through audit commit. */
+/** The command holds the organisation lock. Capture the principal's current
+ * memberships (one for a member, the group's assignments for a group, every
+ * member for the organisation), including ineligible rows, and order parent
+ * erasure through audit commit. */
 export async function readEntitlementAudience(
   context: PlatformWriteContext,
   organizationId: string,
-  groupId: string | null,
+  principal: { memberId: string | null; groupId: string | null },
 ) {
+  const { groupId, memberId } = principal;
   const { tx } = requirePlatformWriteContext(context);
   const membership = {
     memberId: members.id,
@@ -243,6 +246,7 @@ export async function readEntitlementAudience(
       and(
         sql`${members.deletedAt} is null`,
         eq(members.organizationId, organizationId),
+        memberId === null ? undefined : eq(members.id, memberId),
       ),
     )
     .orderBy(members.id)
