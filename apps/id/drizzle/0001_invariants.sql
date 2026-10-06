@@ -752,12 +752,6 @@ CREATE TRIGGER zz_sso_providers_present_parents BEFORE INSERT OR UPDATE ON sso_p
 --> statement-breakpoint
 CREATE TRIGGER zz_organization_capabilities_present_parents BEFORE INSERT OR UPDATE ON organization_capabilities FOR EACH ROW EXECUTE FUNCTION protect_product_parents();
 --> statement-breakpoint
-CREATE TRIGGER zz_sessions_present_parents BEFORE INSERT OR UPDATE ON sessions FOR EACH ROW EXECUTE FUNCTION protect_product_parents();
---> statement-breakpoint
-CREATE TRIGGER zz_oauth_access_tokens_present_parents BEFORE INSERT OR UPDATE ON oauth_access_tokens FOR EACH ROW EXECUTE FUNCTION protect_product_parents();
---> statement-breakpoint
-CREATE TRIGGER zz_oauth_refresh_tokens_present_parents BEFORE INSERT OR UPDATE ON oauth_refresh_tokens FOR EACH ROW EXECUTE FUNCTION protect_product_parents();
---> statement-breakpoint
 CREATE TRIGGER grant_authentication_provenance BEFORE INSERT ON grant_contexts
 FOR EACH ROW EXECUTE FUNCTION validate_grant_authentication();
 --> statement-breakpoint
