@@ -19,7 +19,7 @@ DROP INDEX "organization_capabilities_target_kind_unique";
 CREATE UNIQUE INDEX "organization_capabilities_target_kind_unique" ON "organization_capabilities" USING btree ("organization_id","client_id","resource","grant_kind") NULLS NOT DISTINCT WHERE "organization_capabilities"."deleted_at" is null;
 --> statement-breakpoint
 CREATE FUNCTION protect_oauth_client_identity() RETURNS trigger
-LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
+LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF NEW.id IS DISTINCT FROM OLD.id OR NEW.client_id IS DISTINCT FROM OLD.client_id
      OR NEW.organization_id IS DISTINCT FROM OLD.organization_id THEN
@@ -42,7 +42,7 @@ END;
 $$;
 --> statement-breakpoint
 CREATE FUNCTION protect_oauth_resource_identity() RETURNS trigger
-LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
+LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF NEW.id IS DISTINCT FROM OLD.id OR NEW.identifier IS DISTINCT FROM OLD.identifier THEN
     RAISE EXCEPTION 'Resource identity is immutable'
@@ -53,7 +53,7 @@ END;
 $$;
 --> statement-breakpoint
 CREATE FUNCTION protect_system_binding() RETURNS trigger
-LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
+LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   RAISE EXCEPTION 'System bindings are immutable'
     USING ERRCODE = '23514', CONSTRAINT = 'system_bindings_immutable';
@@ -265,7 +265,7 @@ END;
 $$;
 --> statement-breakpoint
 CREATE FUNCTION protect_admin_operation() RETURNS trigger
-LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
+LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   RAISE EXCEPTION 'Completed operations are immutable'
     USING ERRCODE = '23514', CONSTRAINT = 'admin_operations_immutable';
@@ -273,7 +273,7 @@ END;
 $$;
 --> statement-breakpoint
 CREATE FUNCTION protect_configuration_revision() RETURNS trigger
-LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
+LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF NEW.revision IS DISTINCT FROM OLD.revision THEN
     RAISE EXCEPTION 'Configuration revision is server controlled'
@@ -287,7 +287,7 @@ END;
 $$;
 --> statement-breakpoint
 CREATE FUNCTION touch_client_resource_revision() RETURNS trigger
-LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
+LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE target text;
 BEGIN
   IF TG_OP = 'UPDATE' AND NEW.client_id = OLD.client_id AND NEW.resource = OLD.resource AND NEW.deleted_at IS NOT DISTINCT FROM OLD.deleted_at THEN
@@ -318,7 +318,7 @@ END;
 $$;
 --> statement-breakpoint
 CREATE FUNCTION protect_member_identity() RETURNS trigger
-LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
+LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF NEW.id IS DISTINCT FROM OLD.id OR NEW.organization_id IS DISTINCT FROM OLD.organization_id
      OR NEW.user_id IS DISTINCT FROM OLD.user_id THEN
@@ -330,7 +330,7 @@ END;
 $$;
 --> statement-breakpoint
 CREATE FUNCTION protect_organization_authorization_version() RETURNS trigger
-LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
+LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF NEW.authorization_version < OLD.authorization_version THEN
     RAISE EXCEPTION 'Organization authorization version cannot decrease'
@@ -344,7 +344,7 @@ END;
 $$;
 --> statement-breakpoint
 CREATE FUNCTION protect_group_assignment_identity() RETURNS trigger
-LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
+LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF NEW.id IS DISTINCT FROM OLD.id
      OR NEW.organization_id IS DISTINCT FROM OLD.organization_id
@@ -357,7 +357,8 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
-CREATE FUNCTION protect_resource_ownership() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION protect_resource_ownership() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF NEW.classification IS DISTINCT FROM OLD.classification OR NEW.organization_id IS DISTINCT FROM OLD.organization_id THEN
     RAISE EXCEPTION 'Resource ownership is immutable' USING ERRCODE = '23514';
@@ -366,27 +367,29 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
-CREATE FUNCTION protect_private_resource_assignment() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION protect_private_resource_assignment() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM oauth_resources r WHERE r.identifier = NEW.resource AND r.classification = 'tenant_owned' AND r.organization_id <> NEW.organization_id) THEN
+  IF EXISTS (SELECT 1 FROM public.oauth_resources r WHERE r.identifier = NEW.resource AND r.classification = 'tenant_owned' AND r.organization_id <> NEW.organization_id) THEN
     RAISE EXCEPTION 'Private resource belongs to another organisation' USING ERRCODE = '23503';
   END IF;
   RETURN NEW;
 END;
 $$;
 --> statement-breakpoint
-CREATE FUNCTION protect_capability_target() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
+CREATE FUNCTION protect_capability_target() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF TG_OP = 'UPDATE' AND (NEW.id IS DISTINCT FROM OLD.id OR NEW.organization_id IS DISTINCT FROM OLD.organization_id OR NEW.client_id IS DISTINCT FROM OLD.client_id OR NEW.resource IS DISTINCT FROM OLD.resource OR NEW.grant_kind IS DISTINCT FROM OLD.grant_kind) THEN
     RAISE EXCEPTION 'Capability identity and target are immutable' USING ERRCODE = '23514';
   END IF;
-  IF NEW.grant_kind = 'admin_session' AND NOT EXISTS (SELECT 1 FROM system_bindings b JOIN oauth_resources r ON r.id = b.resource_instance_id WHERE r.identifier = NEW.resource) THEN
+  IF NEW.grant_kind = 'admin_session' AND NOT EXISTS (SELECT 1 FROM public.system_bindings b JOIN public.oauth_resources r ON r.id = b.resource_instance_id WHERE r.identifier = NEW.resource) THEN
     RAISE EXCEPTION 'Direct administration requires the bound admin resource' USING ERRCODE = '23514';
   END IF;
-  IF NEW.grant_kind = 'client_credentials' AND NOT EXISTS (SELECT 1 FROM oauth_clients c WHERE c.client_id = NEW.client_id AND c.organization_id = NEW.organization_id) THEN
+  IF NEW.grant_kind = 'client_credentials' AND NOT EXISTS (SELECT 1 FROM public.oauth_clients c WHERE c.client_id = NEW.client_id AND c.organization_id = NEW.organization_id) THEN
     RAISE EXCEPTION 'Machine capability requires the owning tenant' USING ERRCODE = '23503';
   END IF;
-  IF EXISTS (SELECT 1 FROM unnest(NEW.scopes) s WHERE s LIKE 'platform:%') AND NOT EXISTS (SELECT 1 FROM system_bindings b WHERE b.organization_id = NEW.organization_id) THEN
+  IF EXISTS (SELECT 1 FROM unnest(NEW.scopes) s WHERE s LIKE 'platform:%') AND NOT EXISTS (SELECT 1 FROM public.system_bindings b WHERE b.organization_id = NEW.organization_id) THEN
     RAISE EXCEPTION 'Platform scopes require the bound platform organisation' USING ERRCODE = '23514';
   END IF;
   RETURN NEW;
@@ -438,7 +441,7 @@ END;
 $$;
 --> statement-breakpoint
 CREATE FUNCTION protect_soft_deletion() RETURNS trigger
-LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
+LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF TG_OP = 'UPDATE' AND OLD.deleted_at IS NOT NULL AND NEW.deleted_at IS DISTINCT FROM OLD.deleted_at THEN
     RAISE EXCEPTION 'Product deletion is terminal' USING ERRCODE = '23514', CONSTRAINT = 'product_deletion_terminal';
@@ -449,7 +452,7 @@ END;
 $$;
 --> statement-breakpoint
 CREATE FUNCTION protect_session_authentication_origin() RETURNS trigger
-LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
+LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF TG_OP = 'UPDATE' THEN
     IF ROW(NEW.id, NEW.user_id, NEW.created_at, NEW.authentication_organization_id, NEW.authentication_provider_id, NEW.authentication_provider_revision, NEW.authentication_account_id, NEW.upstream_auth_time)
@@ -458,8 +461,8 @@ BEGIN
         USING ERRCODE = '23514', CONSTRAINT = 'session_authentication_origin_immutable';
     END IF;
   ELSIF NEW.authentication_provider_id IS NOT NULL THEN
-    PERFORM 1 FROM sso_providers p
-      JOIN accounts a ON a.id = NEW.authentication_account_id
+    PERFORM 1 FROM public.sso_providers p
+      JOIN public.accounts a ON a.id = NEW.authentication_account_id
         AND a.user_id = NEW.user_id AND a.issuer = p.issuer
         AND a.provider_id = p.provider_id AND a.deleted_at IS NULL
       WHERE p.id = NEW.authentication_provider_id
@@ -479,7 +482,7 @@ END;
 $$;
 --> statement-breakpoint
 CREATE FUNCTION protect_sso_provider_revision() RETURNS trigger
-LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
+LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF NEW.revision IS DISTINCT FROM OLD.revision THEN
     RAISE EXCEPTION 'Configuration revision is server controlled'

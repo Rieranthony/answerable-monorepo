@@ -98,7 +98,7 @@ CREATE ROLE answerable_id_runtime LOGIN PASSWORD '<strong password>'
   NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
 ```
 
-**2. Migrate and provision.** Two migrations install the whole schema in one transaction: `0000_initial.sql`, generated from the schema modules, and `0001_invariants.sql`, the functions, triggers, a deferred foreign key, two null-safe unique indexes and execution grants. The run then provisions the runtime role. Repeating it is safe: applied migrations are skipped. A migration file that changed after this database applied it stops the run with its name.
+**2. Migrate and provision.** Two migrations install the whole schema in one transaction: `0000_initial.sql`, generated from the schema modules, and `0001_invariants.sql`, the functions, triggers, a deferred foreign key, two null-safe unique indexes and execution grants. The run then provisions the runtime role and revokes `TEMP` on the database from `PUBLIC`, so the owner login must own the database; startup refuses a runtime role that can still create temporary tables. Repeating it is safe: applied migrations are skipped. A migration file that changed after this database applied it stops the run with its name.
 
 ```bash
 DATABASE_MIGRATION_URL='postgres://<owner>:…@host/answerable_id' \

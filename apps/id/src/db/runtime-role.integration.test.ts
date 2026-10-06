@@ -5,7 +5,7 @@ import {
 } from "../__tests__/capabilities.ts";
 import { platformWriteService } from "../__tests__/platform-context.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, type SQL } from "drizzle-orm";
 import { testEnvironment } from "../__tests__/support.ts";
 import { bootstrap, systemActor } from "../bootstrap.ts";
 import { createApp } from "../app.ts";
@@ -185,6 +185,79 @@ test("runtime cannot mutate evidence, forge subjects, truncate, alter schema or 
     await expect(
       Promise.resolve(runtime.db.execute(sql.raw(command))),
     ).rejects.toThrow();
+});
+
+test("a temporary table cannot shadow a guard, and the runtime cannot create one", async () => {
+  const { createId } = await import("../lib/id.ts");
+  const { organizations, oauthResources } = await import("./schema/index.ts");
+  await configureRuntimeRole(owner.db, roleName);
+  await expect(
+    Promise.resolve(
+      runtime.db.execute(sql`create temp table runtime_shadow (id integer)`),
+    ),
+  ).rejects.toMatchObject({ cause: { code: "42501" } });
+  const database = sql.identifier(
+    (
+      await owner.db.execute<{ name: string }>(
+        sql`select current_database() as name`,
+      )
+    ).rows[0]!.name,
+  );
+  const role = sql.identifier(roleName);
+  await owner.db.execute(
+    sql`grant temporary on database ${database} to ${role}`,
+  );
+  try {
+    await expect(assertRuntimeRole(runtime.db)).rejects.toThrow(
+      "Unsafe database runtime role",
+    );
+    // Even a role that can create temporary tables reaches the real relations.
+    const [owning, other] = [createId(), createId()];
+    await owner.db.insert(organizations).values([
+      { id: owning, slug: "shadow-owner", name: "Owner" },
+      { id: other, slug: "shadow-other", name: "Other" },
+    ]);
+    const privateResource = "https://shadow.example/private";
+    const sharedResource = "https://shadow.example/shared";
+    await owner.db.insert(oauthResources).values([
+      {
+        id: createId(),
+        identifier: privateResource,
+        name: "Private",
+        classification: "tenant_owned",
+        organizationId: owning,
+      },
+      { id: createId(), identifier: sharedResource, name: "Shared" },
+    ]);
+    const shadowed = (statements: SQL[]) =>
+      withDatabaseScope(
+        runtime.db,
+        { kind: "platform", access: "write" },
+        async (tx) => {
+          for (const statement of statements) await tx.execute(statement);
+        },
+      );
+    await expect(
+      shadowed([
+        sql`create temp table oauth_resources (identifier text, classification text, organization_id uuid) on commit drop`,
+        sql`insert into entitlements (id, organization_id, resource, scopes) values (${createId()}, ${other}, ${privateResource}, array['read'])`,
+      ]),
+    ).rejects.toMatchObject({ cause: { code: "23503" } });
+    await expect(
+      shadowed([
+        sql`create temp table system_bindings (organization_id uuid, resource_instance_id uuid) on commit drop`,
+        sql`create temp table oauth_resources (id uuid, identifier text) on commit drop`,
+        sql`insert into pg_temp.system_bindings values (${other}, ${owning})`,
+        sql`insert into pg_temp.oauth_resources values (${owning}, ${sharedResource})`,
+        sql`insert into organization_capabilities (id, organization_id, resource, grant_kind, scopes) values (${createId()}, ${other}, ${sharedResource}, 'admin_session', array['platform:write'])`,
+      ]),
+    ).rejects.toMatchObject({ cause: { code: "23514" } });
+  } finally {
+    await owner.db.execute(
+      sql`revoke temporary on database ${database} from ${role}`,
+    );
+  }
+  await assertRuntimeRole(runtime.db);
 });
 
 test("provisioning rejects invalid names, privileged roles and object owners", async () => {
