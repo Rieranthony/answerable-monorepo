@@ -12,7 +12,6 @@ import {
   grantContexts,
   groupMembers,
   groups,
-  invitations,
   members,
   oauthClients,
   organizationCapabilities,
@@ -60,13 +59,6 @@ async function seed() {
     scopes: ["org:read"],
     status: "disabled",
   });
-  await fixture.db.insert(invitations).values({
-    id: createId(),
-    organizationId,
-    inviterId: fixture.principals.tenantReader.userId,
-    email: "private-invite@example.com",
-    expiresAt: new Date("2100-01-01"),
-  });
   // Same global user, independent membership in B.
   await fixture.db.insert(members).values({
     id: createId(),
@@ -103,10 +95,6 @@ async function state() {
       .select()
       .from(ssoProviders)
       .orderBy(ssoProviders.id),
-    invitations: await fixture.db
-      .select()
-      .from(invitations)
-      .orderBy(invitations.id),
     users: await fixture.db.select().from(users).orderBy(users.id),
     sessions: await fixture.db.select().from(sessions).orderBy(sessions.id),
     operations: await fixture.db
@@ -150,7 +138,6 @@ test("organisation erasure records removed tenant configuration and member histo
     softDeletedCapabilities: before.capabilities,
     softDeletedDomains: before.domains,
     softDeletedSsoProviders: before.providers,
-    softDeletedInvitations: before.invitations,
   })) {
     expect(effects[name]!.map((row) => row.id).sort()).toEqual(
       rows
@@ -171,9 +158,6 @@ test("organisation erasure records removed tenant configuration and member histo
   expect(effects.softDeletedEntitlements).toContainEqual(
     expect.objectContaining({ status: "disabled", scopes: ["org:read"] }),
   );
-  expect(JSON.stringify(event!.data)).not.toContain(
-    "private-invite@example.com",
-  );
   expect(JSON.stringify(effects.softDeletedSsoProviders)).not.toContain(
     "oidcConfig",
   );
@@ -189,7 +173,6 @@ test("organisation erasure records removed tenant configuration and member histo
     "capabilities",
     "domains",
     "providers",
-    "invitations",
   ] as const) {
     expect(after[name]).toHaveLength(before[name].length);
     expect(after[name].filter((row) => row.organizationId !== id)).toEqual(

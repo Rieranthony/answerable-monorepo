@@ -26,7 +26,6 @@ import {
   windowCheck,
 } from "./columns.ts";
 import {
-  invitationStatuses,
   membershipStatuses,
   lifecycleStatuses,
   userStatuses,
@@ -226,9 +225,6 @@ export const members = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    // Better Auth role state; may hold a comma-separated list. Confers no
-    // authority in Answerable ID, where entitlements decide access.
-    role: text("role").default("member").notNull(),
     status: text("status", { enum: membershipStatuses })
       .default("active")
       .notNull(),
@@ -268,36 +264,5 @@ export const members = pgTable(
     ),
     index("members_user_id_idx").on(table.userId),
     windowCheck("members_window_check", table.validFrom, table.validUntil),
-  ],
-).enableRLS();
-export const invitations = pgTable(
-  "invitations",
-  {
-    deletedAt: timestampColumn("deleted_at"),
-    id: id(),
-    organizationId: uuid("organization_id")
-      .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
-    email: text("email").notNull(),
-    role: text("role"),
-    status: text("status", { enum: invitationStatuses })
-      .default("pending")
-      .notNull(),
-    expiresAt: timestampColumn("expires_at").notNull(),
-    createdAt: timestampColumn("created_at").defaultNow().notNull(),
-    inviterId: uuid("inviter_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-  },
-  (table) => [
-    ...membershipPolicies(table.organizationId),
-    index("invitations_organization_id_idx").on(table.organizationId),
-    index("invitations_inviter_id_idx").on(table.inviterId),
-    index("invitations_email_idx").on(table.email),
-    vocabularyCheck(
-      "invitations_status_check",
-      table.status,
-      invitationStatuses,
-    ),
   ],
 ).enableRLS();

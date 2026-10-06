@@ -19,17 +19,12 @@ export function tenantPolicies(organizationId: PgColumn) {
   ];
 }
 
-/** Native membership provisioning uses an explicit trusted protocol transaction. */
-export function membershipPolicies(
-  organizationId: PgColumn,
-  userId?: PgColumn,
-) {
+/** Sign-in provisions memberships in the callback's protocol transaction. */
+export function membershipPolicies(organizationId: PgColumn, userId: PgColumn) {
   const mode = sql`current_setting('answerable.scope', true)`;
   const tenant = sql`${organizationId} = nullif(current_setting('answerable.tenant', true), '')::uuid`;
   const write = sql`(${mode} in ('platform-write', 'protocol') or (${mode} = 'tenant-write' and ${tenant}))`;
-  const subject = userId
-    ? sql` or (${mode} in ('policy-user', 'grant-admission') and ${userId} = nullif(current_setting('answerable.subject', true), '')::uuid)`
-    : sql``;
+  const subject = sql` or (${mode} in ('policy-user', 'grant-admission') and ${userId} = nullif(current_setting('answerable.subject', true), '')::uuid)`;
   return [
     pgPolicy("tenant_write", { for: "all", using: write, withCheck: write }),
     pgPolicy("tenant_read", {

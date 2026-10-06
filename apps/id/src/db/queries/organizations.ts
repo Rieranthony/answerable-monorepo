@@ -22,7 +22,6 @@ import {
   organizationCapabilities,
   organizationDomains,
   ssoProviders,
-  invitations,
   sessions,
 } from "../schema/index.ts";
 import type { LifecycleStatus } from "../schema/vocabulary.ts";
@@ -197,7 +196,7 @@ export async function countOrganizationClients(
 
 /** Delete children explicitly so erasure evidence comes from actual removed rows.
  * Caller holds the organisation lock and removes grant contexts first.
- * Return only policy/identity fields; provider credentials and invitation email stay out.
+ * Return only policy/identity fields; provider credentials stay out.
  */
 export async function deleteOrganization(
   context: PlatformWriteContext,
@@ -343,22 +342,6 @@ export async function deleteOrganization(
       issuer: ssoProviders.issuer,
       domain: ssoProviders.domain,
     });
-  const softDeletedInvitations = await tx
-    .update(invitations)
-    .set({ deletedAt: sql`now()`, status: "canceled" })
-    .where(
-      and(
-        sql`${invitations.deletedAt} is null`,
-        eq(invitations.organizationId, organizationId),
-      ),
-    )
-    .returning({
-      deletedAt: invitations.deletedAt,
-      id: invitations.id,
-      organizationId: invitations.organizationId,
-      status: invitations.status,
-      expiresAt: invitations.expiresAt,
-    });
   // This mirrors the FK's SET NULL effect; browser sessions are not revoked.
   const clearedSessionSelections = await tx
     .update(sessions)
@@ -389,7 +372,6 @@ export async function deleteOrganization(
       softDeletedCapabilities,
       softDeletedDomains,
       softDeletedSsoProviders,
-      softDeletedInvitations,
       clearedSessionSelections,
     },
   };

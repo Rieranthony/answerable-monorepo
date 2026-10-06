@@ -14,7 +14,6 @@ import {
   grantContexts,
   groupMembers,
   groups,
-  invitations,
   members,
   oauthAccessTokens,
   oauthClientResources,
@@ -161,13 +160,6 @@ async function seed() {
     scopes: [],
     expiresAt,
   });
-  await fixture.db.insert(invitations).values({
-    id: createId(),
-    organizationId: other.organizationId,
-    inviterId: person.userId,
-    email: "private-invite@example.com",
-    expiresAt,
-  });
   await fixture.db
     .update(ssoProviders)
     .set({ userId: person.userId })
@@ -189,10 +181,6 @@ async function state() {
       .orderBy(entitlements.id),
     accounts: await fixture.db.select().from(accounts).orderBy(accounts.id),
     sessions: await fixture.db.select().from(sessions).orderBy(sessions.id),
-    invitations: await fixture.db
-      .select()
-      .from(invitations)
-      .orderBy(invitations.id),
     providers: await fixture.db
       .select()
       .from(ssoProviders)
@@ -254,7 +242,6 @@ test("global user erasure records actual cross-tenant and owned-client effects w
     softDeletedEntitlements: "entitlements",
     softDeletedAccounts: "accounts",
     deletedSessions: "sessions",
-    softDeletedInvitations: "invitations",
     softDeletedClients: "clients",
     softDeletedClientResources: "links",
     deletedAccessTokens: "access",
@@ -325,7 +312,6 @@ test("global user erasure records actual cross-tenant and owned-client effects w
     "clients",
     "links",
     "consents",
-    "invitations",
     "assignments",
     "entitlements",
   ] as const) {
@@ -400,7 +386,6 @@ test("global user erasure records actual cross-tenant and owned-client effects w
     "private-refresh-token",
     "private-access-token",
     "private-replay-body",
-    "private-invite@example.com",
     "oidcConfig",
     "accountId",
     "directoryUserId",

@@ -97,7 +97,7 @@ export async function createAdminFixture(
       organization_domains, sso_providers, oauth_client_assertions,
       oauth_access_tokens, oauth_refresh_tokens, oauth_consents,
       oauth_client_resources, oauth_resources, oauth_clients, jwks,
-      invitations, members, sessions, accounts, verifications, organizations, users cascade
+      members, sessions, accounts, verifications, organizations, users cascade
     `);
     if (options.restrictedRole) {
       role = `id_test_fixture_${crypto.randomUUID().replaceAll("-", "")}`;

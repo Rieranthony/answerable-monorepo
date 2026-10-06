@@ -41,7 +41,6 @@ export function authDatabaseAdapter(
         "oauthResource",
         "oauthClientResource",
         "oauthConsent",
-        "invitation",
       ].includes(input.model)
         ? {
             ...input,

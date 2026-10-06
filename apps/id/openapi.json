@@ -799,11 +799,6 @@
           },
           "inviterId": {
             "type": "string"
-          },
-          "deletedAt": {
-            "type": "string",
-            "format": "date-time",
-            "readOnly": true
           }
         },
         "required": [

@@ -11,15 +11,6 @@ export const membershipStatuses = ["active", "revoked"] as const;
 export const lifecycleStatuses = ["active", "disabled"] as const;
 export type LifecycleStatus = (typeof lifecycleStatuses)[number];
 
-/** Better Auth organization plugin (1.7.2) invitation vocabulary. */
-export const invitationStatuses = [
-  "pending",
-  "accepted",
-  "rejected",
-  "canceled",
-] as const;
-export type InvitationStatus = (typeof invitationStatuses)[number];
-
 /** The principal responsible for an audit event. */
 export const auditActorTypes = ["user", "client", "system"] as const;
 export type AuditActorType = (typeof auditActorTypes)[number];

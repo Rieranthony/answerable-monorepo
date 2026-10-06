@@ -28,7 +28,6 @@ import {
   sessions,
   groupMembers,
   entitlements,
-  invitations,
   ssoProviders,
   oauthClients,
   oauthClientResources,
@@ -485,22 +484,6 @@ export async function deleteUser(
       id: accounts.id,
       userId: accounts.userId,
     });
-  const softDeletedInvitations = await tx
-    .update(invitations)
-    .set({ deletedAt: sql`now()`, status: "canceled" })
-    .where(
-      and(
-        sql`${invitations.deletedAt} is null`,
-        eq(invitations.inviterId, userId),
-      ),
-    )
-    .returning({
-      deletedAt: invitations.deletedAt,
-      id: invitations.id,
-      organizationId: invitations.organizationId,
-      status: invitations.status,
-      expiresAt: invitations.expiresAt,
-    });
   const providerBefore = await tx
     .select({
       id: ssoProviders.id,
@@ -571,7 +554,6 @@ export async function deleteUser(
       softDeletedClients,
       deletedSessions,
       softDeletedAccounts,
-      softDeletedInvitations,
       detachedSsoProviders,
     },
   };

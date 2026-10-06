@@ -27,7 +27,6 @@ import {
   entitlements,
   groupMembers,
   groups,
-  invitations,
   jwks,
   members,
   oauthClientAssertions,
@@ -64,7 +63,6 @@ beforeEach(async () => {
       oauth_resources,
       oauth_clients,
       jwks,
-      invitations,
       members,
       sessions,
       accounts,
@@ -148,31 +146,36 @@ describe("integration: PostgreSQL schema", () => {
     expect((await adapter.findUserById(user.id))?.email).toBe(user.email);
     expect((await adapter.findSession(session.token))?.user.id).toBe(user.id);
 
-    const organization = await auth.api.createOrganization({
-      body: { name: "Contoso", slug: "contoso", userId: user.id },
-    });
+    const organization = await context.adapter.create<
+      { name: string; slug: string },
+      { id: string; status: string }
+    >({ model: "organization", data: { name: "Contoso", slug: "contoso" } });
 
-    expect(isUuidV7(organization!.id)).toBe(true);
-    expect(organization!.status).toBe("active");
+    expect(isUuidV7(organization.id)).toBe(true);
+    expect(organization.status).toBe("active");
+    // Memberships come from Answerable ID alone: the organisation plugin's
+    // member writes need the role column it declares, which ID does not keep.
+    await expect(
+      auth.api.addMember({
+        body: {
+          userId: user.id,
+          organizationId: organization.id,
+          role: "member",
+        },
+      }),
+    ).rejects.toThrow('The field "role" does not exist');
 
-    const [membership] = await connection.db
-      .select()
-      .from(members)
-      .where(eq(members.organizationId, organization!.id));
-    expect(isUuidV7(membership!.id)).toBe(true);
-    expect(membership!.validFrom).toBeNull();
-    expect(membership!.validUntil).toBeNull();
-
+    const membership = await insertMember(organization.id, user.id);
     const validUntil = new Date(Date.now() + 86_400_000);
     await context.adapter.update({
       model: "member",
-      where: [{ field: "id", value: membership!.id }],
+      where: [{ field: "id", value: membership.id }],
       update: { validUntil },
     });
     const [updatedMembership] = await connection.db
       .select()
       .from(members)
-      .where(eq(members.id, membership!.id));
+      .where(eq(members.id, membership.id));
     expect(updatedMembership!.validUntil).toEqual(validUntil);
 
     const openApi = await auth.api.generateOpenAPISchema();
@@ -304,13 +307,7 @@ describe("integration: PostgreSQL schema", () => {
   test("advances updated_at on Better Auth and Drizzle updates", async () => {
     const auth = createAuth(connection.db, environment);
     const context = await auth.$context;
-    const owner = await context.internalAdapter.createUser(
-      { name: "Owner", email: "owner@example.com" },
-      { method: "admin" },
-    );
-    const organization = (await auth.api.createOrganization({
-      body: { name: "Contoso", slug: "contoso", userId: owner.id },
-    }))!;
+    const organization = await insertOrganization("contoso");
     const domain = await createOrganizationDomain(connection.db, {
       organizationId: organization.id,
       domain: "contoso.com",
@@ -602,31 +599,6 @@ describe("integration: PostgreSQL schema", () => {
           name: "Disabled without timestamp",
           slug: "invalid-disabled",
           status: "disabled",
-        })
-        .execute(),
-    ).rejects.toThrow();
-  });
-
-  test("constrains invitation status to Better Auth's vocabulary", async () => {
-    const organization = await insertOrganization();
-    const inviter = await insertUser();
-    const invitation = {
-      organizationId: organization.id,
-      email: "invitee@example.com",
-      expiresAt: new Date(Date.now() + 60_000),
-      inviterId: inviter.id,
-    };
-
-    await connection.db
-      .insert(invitations)
-      .values({ id: createId(), ...invitation });
-    await expect(
-      connection.db
-        .insert(invitations)
-        .values({
-          id: createId(),
-          ...invitation,
-          status: "expired" as "pending",
         })
         .execute(),
     ).rejects.toThrow();

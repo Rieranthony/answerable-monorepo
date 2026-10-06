@@ -329,7 +329,6 @@ test("administrative RLS isolates rows while retaining routing and append-only b
   const { createId } = await import("../lib/id.ts");
   const {
     members,
-    invitations,
     organizationDomains,
     ssoProviders,
     organizations,
@@ -354,13 +353,6 @@ test("administrative RLS isolates rows while retaining routing and append-only b
     await owner.db
       .insert(members)
       .values({ id: createId(), organizationId, userId });
-    await owner.db.insert(invitations).values({
-      id: createId(),
-      organizationId,
-      email: "invite@example.com",
-      inviterId: userId,
-      expiresAt: new Date(Date.now() + 60000),
-    });
     await owner.db.insert(organizationDomains).values({
       id: createId(),
       organizationId,
@@ -389,12 +381,7 @@ test("administrative RLS isolates rows while retaining routing and append-only b
       { kind: "tenant", access: "read", organizationId },
       async (tx) => {
         // Deliberately omit application tenant predicates.
-        for (const table of [
-          members,
-          invitations,
-          auditEvents,
-          auditEventSubjects,
-        ]) {
+        for (const table of [members, auditEvents, auditEventSubjects]) {
           const rows = await tx
             .select({ organizationId: table.organizationId })
             .from(table);
@@ -422,14 +409,6 @@ test("administrative RLS isolates rows while retaining routing and append-only b
         .insert(members)
         .values({ id: createId(), organizationId: foreign, userId }),
     (tx: import("./client.ts").Executor) =>
-      tx.insert(invitations).values({
-        id: createId(),
-        organizationId: foreign,
-        email: "foreign@example.com",
-        inviterId: userId,
-        expiresAt: new Date(Date.now() + 60000),
-      }),
-    (tx: import("./client.ts").Executor) =>
       tx.insert(organizationDomains).values({
         id: createId(),
         organizationId: foreign,
@@ -455,7 +434,6 @@ test("administrative RLS isolates rows while retaining routing and append-only b
       ),
     ).rejects.toMatchObject({ cause: { code: "42501" } });
   expect(await runtime.db.select().from(members)).toEqual([]);
-  expect(await runtime.db.select().from(invitations)).toEqual([]);
   expect(await runtime.db.select().from(auditEvents)).toEqual([]);
   expect(await runtime.db.select().from(auditEventSubjects)).toEqual([]);
   for (const table of [organizationDomains, ssoProviders])
@@ -499,7 +477,6 @@ test("administrative RLS isolates rows while retaining routing and append-only b
   ).rejects.toMatchObject({ cause: { code: "42501" } });
   for (const table of [
     "members",
-    "invitations",
     "organization_domains",
     "sso_providers",
     "audit_events",

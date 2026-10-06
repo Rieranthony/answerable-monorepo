@@ -2,14 +2,7 @@ import { relations } from "drizzle-orm";
 
 import { auditEvents } from "./audit.ts";
 
-import {
-  accounts,
-  invitations,
-  members,
-  organizations,
-  sessions,
-  users,
-} from "./auth.ts";
+import { accounts, members, organizations, sessions, users } from "./auth.ts";
 import {
   entitlements,
   groupMembers,
@@ -33,7 +26,6 @@ export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
   accounts: many(accounts),
   members: many(members),
-  invitations: many(invitations),
   oauthClients: many(oauthClients),
   oauthRefreshTokens: many(oauthRefreshTokens),
   oauthAccessTokens: many(oauthAccessTokens),
@@ -65,7 +57,6 @@ export const organizationsRelations = relations(
   ({ many, one }) => ({
     sessions: many(sessions),
     members: many(members),
-    invitations: many(invitations),
     domains: many(organizationDomains),
     auditEvents: many(auditEvents),
     groups: many(groups),
@@ -97,17 +88,6 @@ export const membersRelations = relations(members, ({ many, one }) => ({
   }),
   groupMembers: many(groupMembers),
   entitlements: many(entitlements),
-}));
-
-export const invitationsRelations = relations(invitations, ({ one }) => ({
-  organization: one(organizations, {
-    fields: [invitations.organizationId],
-    references: [organizations.id],
-  }),
-  inviter: one(users, {
-    fields: [invitations.inviterId],
-    references: [users.id],
-  }),
 }));
 
 export const organizationDomainsRelations = relations(

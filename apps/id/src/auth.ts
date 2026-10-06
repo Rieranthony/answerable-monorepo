@@ -192,16 +192,6 @@ export function createAuth(db: Database, environment: Environment) {
       organization({
         allowUserToCreateOrganization: false,
         schema: {
-          invitation: {
-            additionalFields: {
-              deletedAt: {
-                type: "date",
-                required: false,
-                input: false,
-                returned: false,
-              },
-            },
-          },
           organization: {
             additionalFields: {
               deletedAt: {
