@@ -57,7 +57,7 @@ END;
 $$;
 --> statement-breakpoint
 CREATE FUNCTION try_uuid(value text) RETURNS uuid
-LANGUAGE plpgsql IMMUTABLE STRICT SET search_path = pg_catalog, public AS $$
+LANGUAGE plpgsql IMMUTABLE STRICT SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   RETURN value::uuid;
 EXCEPTION WHEN invalid_text_representation THEN
@@ -69,7 +69,7 @@ $$;
 -- group-member or session target or a member entitlement, and the users the action's
 -- manifests name.
 CREATE FUNCTION capture_audit_subjects() RETURNS trigger
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   INSERT INTO public.audit_event_users (user_id, event_id)
   SELECT DISTINCT subject.user_id, NEW.id FROM (
@@ -245,7 +245,7 @@ $$;
 -- The fixed provenance guard must lock members without granting admission callers UPDATE.
 -- Callers already hold the user, organisation, client and resource locks.
 CREATE FUNCTION protect_grant_context() RETURNS trigger
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF TG_OP = 'UPDATE' THEN
     IF (to_jsonb(NEW) - 'revoked_at' - 'authorization_code_id') IS DISTINCT FROM (to_jsonb(OLD) - 'revoked_at' - 'authorization_code_id')
@@ -335,7 +335,7 @@ $$;
 --> statement-breakpoint
 -- A user OAuth audit row names a real grant of its organisation and actor; its user is the subject.
 CREATE FUNCTION record_user_oauth_subjects() RETURNS trigger
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE g public.grant_contexts; public_client text;
 BEGIN
   IF NEW.action NOT IN (
