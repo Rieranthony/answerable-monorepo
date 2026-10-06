@@ -37,7 +37,7 @@ export type EvidenceEvent = {
 
 const genesis = "0".repeat(64)
 const batch = 1000
-// The chained fields, in the order of the byte layout in migrations/0002_evidence.sql.
+// The chained fields, in the order of the byte layout in migrations/0001_evidence.sql.
 const chained = [
   "schema_version", "organisation_id", "seq", "id", "occurred_at", "kind", "actor_type", "actor_id", "on_behalf_of", "client_id", "capability_identity",
   "capability_version", "execution_id", "intent_id", "receipt_id", "operation_id", "upstream", "target_type", "target_id", "outcome", "reason", "error_code",

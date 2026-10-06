@@ -1,7 +1,7 @@
 import type { SQL } from "bun"
 import { migrate as migrateFiles, migrations } from "@answerable/mcp-postgres"
 
-const directory = new URL("../../migrations/", import.meta.url)
+const toolbox = { name: "toolbox", url: new URL("../../migrations/", import.meta.url) }
 
-/** Apply the Toolbox's own migrations, `0001_catalogue.sql` and `0003_host_clients.sql`, and `@answerable/mcp-postgres`'s, in the order of their names, and return the names applied. */
-export const migrate = (db: SQL): Promise<string[]> => migrateFiles(db, [directory, migrations])
+/** Apply `@answerable/mcp-postgres`'s migrations, then the Toolbox's own, `0001_initial.sql`, and return the names applied. */
+export const migrate = (db: SQL): Promise<string[]> => migrateFiles(db, [migrations, toolbox])

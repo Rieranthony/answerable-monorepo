@@ -1,4 +1,5 @@
--- The capabilities the Toolbox serves, as their providers' manifests describe them, and which providers each organisation may use.
+-- The capabilities the Toolbox serves, as their providers' manifests describe them, which providers each organisation may use, and how the
+-- Toolbox serves each host.
 
 create table providers (
   id text primary key,
@@ -39,4 +40,11 @@ create table organisation_catalogue (
   overrides jsonb not null default '{"disabled": [], "policy_class": {}}',
   updated_at timestamptz not null default now(),
   primary key (organisation_id, provider_id)
+);
+
+-- The OAuth client of the token names the row. A client without a row gets the defaults.
+create table host_clients (
+  client_id text primary key,
+  projection text not null default 'auto' check (projection in ('direct', 'meta', 'auto')),
+  direct_limit integer not null default 40 check (direct_limit > 0)
 );

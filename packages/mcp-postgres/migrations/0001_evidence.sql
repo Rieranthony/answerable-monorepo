@@ -1,4 +1,4 @@
--- The Toolbox's evidence: an append-only chain of events per organisation, and erasable payloads that the chain holds only by hash.
+-- A server's evidence: an append-only chain of events per organisation, and erasable payloads that the chain holds only by hash.
 
 create table evidence_payloads (
   id uuid primary key,
