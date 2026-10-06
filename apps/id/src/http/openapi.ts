@@ -90,17 +90,19 @@ export async function buildPublicOpenApiDocument(input: {
   const routeByMethodAndPath = new Map(
     publicAuthRoutes.map((route) => [`${route.method} ${route.path}`, route]),
   );
-  // The native generator includes fields hidden by its runtime response filter.
+  // The native generator includes fields hidden by its runtime response filter,
+  // and the organisation plugin's session selection, which ID does not store.
   const sessionSchema = authDocument.components.schemas.Session!;
-  for (const [name, field] of Object.entries(
-    input.auth.options.session.additionalFields,
-  )) {
-    if (field.returned === false) {
-      delete sessionSchema.properties[name];
-      sessionSchema.required = sessionSchema.required?.filter(
-        (required) => required !== name,
-      );
-    }
+  for (const name of [
+    ...Object.entries(input.auth.options.session.additionalFields)
+      .filter(([, field]) => field.returned === false)
+      .map(([name]) => name),
+    "activeOrganizationId",
+  ]) {
+    delete sessionSchema.properties[name];
+    sessionSchema.required = sessionSchema.required?.filter(
+      (required) => required !== name,
+    );
   }
   const authPaths: Record<string, OpenApiPathItem> = {};
 
@@ -137,13 +139,29 @@ export async function buildPublicOpenApiDocument(input: {
     }
   }
 
+  const schemas: Record<string, unknown> = {
+    ...honoDocument.components.schemas,
+    ...authDocument.components.schemas,
+  };
+  // Better Auth describes every model it knows; keep only those a served path uses.
+  const used = new Set<string>();
+  const use = (value: unknown) => {
+    for (const [, name] of JSON.stringify(value).matchAll(
+      /"#\/components\/schemas\/([^"]+)"/g,
+    ))
+      if (!used.has(name!)) {
+        used.add(name!);
+        use(schemas[name!]);
+      }
+  };
+  use(authPaths);
+  use(honoDocument.paths);
   const components: OpenApiComponents = {
     ...honoDocument.components,
     ...authDocument.components,
-    schemas: {
-      ...honoDocument.components.schemas,
-      ...authDocument.components.schemas,
-    },
+    schemas: Object.fromEntries(
+      Object.entries(schemas).filter(([name]) => used.has(name)),
+    ),
     securitySchemes: {
       ...honoDocument.components.securitySchemes,
       ...authDocument.components.securitySchemes,

@@ -6181,20 +6181,20 @@
                                 "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                               },
                               "ipAddress": {
-                                "description": "New sessions store null. Legacy values are unverified metadata, not proof of client origin.",
+                                "description": "The client address resolved from X-Forwarded-For through the trusted proxies at sign-in. Descriptive metadata, not proof of client origin.",
                                 "type": [
                                   "string",
                                   "null"
                                 ]
                               },
                               "userAgent": {
-                                "description": "Caller-supplied descriptive metadata. New sessions accept only 1–512 printable ASCII characters; other values become null. Legacy values may be unbounded.",
+                                "description": "Caller-supplied descriptive metadata: 1–512 printable ASCII characters, otherwise null.",
                                 "type": [
                                   "string",
                                   "null"
                                 ]
                               },
-                              "activeOrganizationId": {
+                              "authenticationOrganizationId": {
                                 "anyOf": [
                                   {
                                     "type": "string",
@@ -6204,7 +6204,8 @@
                                   {
                                     "type": "null"
                                   }
-                                ]
+                                ],
+                                "description": "The organisation whose identity provider authenticated the session."
                               }
                             },
                             "required": [
@@ -6214,7 +6215,7 @@
                               "expiresAt",
                               "ipAddress",
                               "userAgent",
-                              "activeOrganizationId"
+                              "authenticationOrganizationId"
                             ]
                           }
                         },
@@ -13657,12 +13658,6 @@
                               "name": {
                                 "type": "string"
                               },
-                              "externalId": {
-                                "type": [
-                                  "string",
-                                  "null"
-                                ]
-                              },
                               "status": {
                                 "type": "string",
                                 "enum": [
@@ -13687,7 +13682,6 @@
                               "organizationId",
                               "slug",
                               "name",
-                              "externalId",
                               "status",
                               "createdAt",
                               "updatedAt"
@@ -14021,11 +14015,6 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 200
-                  },
-                  "externalId": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200
                   }
                 },
                 "required": [
@@ -14096,12 +14085,6 @@
                         "name": {
                           "type": "string"
                         },
-                        "externalId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "status": {
                           "type": "string",
                           "enum": [
@@ -14126,7 +14109,6 @@
                         "organizationId",
                         "slug",
                         "name",
-                        "externalId",
                         "status",
                         "createdAt",
                         "updatedAt"
@@ -14504,12 +14486,6 @@
                     "name": {
                       "type": "string"
                     },
-                    "externalId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
                     "status": {
                       "type": "string",
                       "enum": [
@@ -14534,7 +14510,6 @@
                     "organizationId",
                     "slug",
                     "name",
-                    "externalId",
                     "status",
                     "createdAt",
                     "updatedAt"
@@ -14818,18 +14793,6 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 200
-                  },
-                  "externalId": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 200
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
                   }
                 },
                 "additionalProperties": false
@@ -14901,12 +14864,6 @@
                         "name": {
                           "type": "string"
                         },
-                        "externalId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "status": {
                           "type": "string",
                           "enum": [
@@ -14931,7 +14888,6 @@
                         "organizationId",
                         "slug",
                         "name",
-                        "externalId",
                         "status",
                         "createdAt",
                         "updatedAt"
@@ -15707,12 +15663,6 @@
                         "name": {
                           "type": "string"
                         },
-                        "externalId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "status": {
                           "type": "string",
                           "enum": [
@@ -15737,7 +15687,6 @@
                         "organizationId",
                         "slug",
                         "name",
-                        "externalId",
                         "status",
                         "createdAt",
                         "updatedAt"
@@ -16139,12 +16088,6 @@
                         "name": {
                           "type": "string"
                         },
-                        "externalId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "status": {
                           "type": "string",
                           "enum": [
@@ -16169,7 +16112,6 @@
                         "organizationId",
                         "slug",
                         "name",
-                        "externalId",
                         "status",
                         "createdAt",
                         "updatedAt"
@@ -17286,7 +17228,7 @@
           }
         },
         "summary": "Add or update a group member",
-        "description": "Requires Idempotency-Key. Accepts the strong If-Match ETag from getGroupMember for conditional replacement; conflicting/malformed headers return 400; stale or recreated state returns 412. Committed replay precedes the precondition check. Identical authorised retries return the receipt without repeating effects; changed-input reuse conflicts. Create or update a manual group membership validity window and return the membership, with 201 for creation and 200 for an update. Prefer removeGroupMember to end membership; validation_failed rejects malformed input, not_found means a parent is missing, and group_directory_managed prevents manual changes to directory groups.",
+        "description": "Requires Idempotency-Key. Accepts the strong If-Match ETag from getGroupMember for conditional replacement; conflicting/malformed headers return 400; stale or recreated state returns 412. Committed replay precedes the precondition check. Identical authorised retries return the receipt without repeating effects; changed-input reuse conflicts. Create or update a group membership validity window and return the membership, with 201 for creation and 200 for an update. Prefer removeGroupMember to end membership; validation_failed rejects malformed input and not_found means a parent is missing.",
         "tags": [
           "Groups"
         ],
@@ -17926,7 +17868,7 @@
           }
         ],
         "summary": "Remove a group member",
-        "description": "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects; changed-input reuse conflicts. Remove a manual group membership and return no content, removing access inherited through that membership. Prefer putGroupMember to change its validity window; not_found means a parent or membership is missing and group_directory_managed prevents manual changes to directory groups.",
+        "description": "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects; changed-input reuse conflicts. Remove a group membership and return no content, removing access inherited through that membership. Prefer putGroupMember to change its validity window; not_found means a parent or membership is missing.",
         "tags": [
           "Groups"
         ],
@@ -21065,12 +21007,6 @@
                               "null"
                             ]
                           },
-                          "signingKeyId": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
                           "allowedScopes": {
                             "anyOf": [
                               {
@@ -21084,17 +21020,6 @@
                               }
                             ]
                           },
-                          "customClaims": {
-                            "anyOf": [
-                              {},
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "dpopBoundAccessTokensRequired": {
-                            "type": "boolean"
-                          },
                           "disabled": {
                             "type": "boolean"
                           },
@@ -21102,17 +21027,6 @@
                             "type": "integer",
                             "exclusiveMinimum": 0,
                             "maximum": 9007199254740991
-                          },
-                          "policyVersion": {
-                            "type": "number"
-                          },
-                          "metadata": {
-                            "anyOf": [
-                              {},
-                              {
-                                "type": "null"
-                              }
-                            ]
                           },
                           "createdAt": {
                             "type": "string",
@@ -21134,14 +21048,9 @@
                           "accessTokenTtl",
                           "refreshTokenTtl",
                           "signingAlgorithm",
-                          "signingKeyId",
                           "allowedScopes",
-                          "customClaims",
-                          "dpopBoundAccessTokensRequired",
                           "disabled",
                           "revision",
-                          "policyVersion",
-                          "metadata",
                           "createdAt",
                           "updatedAt"
                         ]
@@ -21519,12 +21428,6 @@
                             "null"
                           ]
                         },
-                        "signingKeyId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "allowedScopes": {
                           "anyOf": [
                             {
@@ -21538,17 +21441,6 @@
                             }
                           ]
                         },
-                        "customClaims": {
-                          "anyOf": [
-                            {},
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "dpopBoundAccessTokensRequired": {
-                          "type": "boolean"
-                        },
                         "disabled": {
                           "type": "boolean"
                         },
@@ -21556,17 +21448,6 @@
                           "type": "integer",
                           "exclusiveMinimum": 0,
                           "maximum": 9007199254740991
-                        },
-                        "policyVersion": {
-                          "type": "number"
-                        },
-                        "metadata": {
-                          "anyOf": [
-                            {},
-                            {
-                              "type": "null"
-                            }
-                          ]
                         },
                         "createdAt": {
                           "type": "string",
@@ -21588,14 +21469,9 @@
                         "accessTokenTtl",
                         "refreshTokenTtl",
                         "signingAlgorithm",
-                        "signingKeyId",
                         "allowedScopes",
-                        "customClaims",
-                        "dpopBoundAccessTokensRequired",
                         "disabled",
                         "revision",
-                        "policyVersion",
-                        "metadata",
                         "createdAt",
                         "updatedAt"
                       ]
@@ -22005,12 +21881,6 @@
                         "null"
                       ]
                     },
-                    "signingKeyId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
                     "allowedScopes": {
                       "anyOf": [
                         {
@@ -22024,17 +21894,6 @@
                         }
                       ]
                     },
-                    "customClaims": {
-                      "anyOf": [
-                        {},
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "dpopBoundAccessTokensRequired": {
-                      "type": "boolean"
-                    },
                     "disabled": {
                       "type": "boolean"
                     },
@@ -22042,17 +21901,6 @@
                       "type": "integer",
                       "exclusiveMinimum": 0,
                       "maximum": 9007199254740991
-                    },
-                    "policyVersion": {
-                      "type": "number"
-                    },
-                    "metadata": {
-                      "anyOf": [
-                        {},
-                        {
-                          "type": "null"
-                        }
-                      ]
                     },
                     "createdAt": {
                       "type": "string",
@@ -22080,14 +21928,9 @@
                     "accessTokenTtl",
                     "refreshTokenTtl",
                     "signingAlgorithm",
-                    "signingKeyId",
                     "allowedScopes",
-                    "customClaims",
-                    "dpopBoundAccessTokensRequired",
                     "disabled",
                     "revision",
-                    "policyVersion",
-                    "metadata",
                     "createdAt",
                     "updatedAt",
                     "clients"
@@ -22517,12 +22360,6 @@
                             "null"
                           ]
                         },
-                        "signingKeyId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "allowedScopes": {
                           "anyOf": [
                             {
@@ -22536,17 +22373,6 @@
                             }
                           ]
                         },
-                        "customClaims": {
-                          "anyOf": [
-                            {},
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "dpopBoundAccessTokensRequired": {
-                          "type": "boolean"
-                        },
                         "disabled": {
                           "type": "boolean"
                         },
@@ -22554,17 +22380,6 @@
                           "type": "integer",
                           "exclusiveMinimum": 0,
                           "maximum": 9007199254740991
-                        },
-                        "policyVersion": {
-                          "type": "number"
-                        },
-                        "metadata": {
-                          "anyOf": [
-                            {},
-                            {
-                              "type": "null"
-                            }
-                          ]
                         },
                         "createdAt": {
                           "type": "string",
@@ -22586,14 +22401,9 @@
                         "accessTokenTtl",
                         "refreshTokenTtl",
                         "signingAlgorithm",
-                        "signingKeyId",
                         "allowedScopes",
-                        "customClaims",
-                        "dpopBoundAccessTokensRequired",
                         "disabled",
                         "revision",
-                        "policyVersion",
-                        "metadata",
                         "createdAt",
                         "updatedAt"
                       ]
@@ -23379,12 +23189,6 @@
                             "null"
                           ]
                         },
-                        "signingKeyId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "allowedScopes": {
                           "anyOf": [
                             {
@@ -23398,17 +23202,6 @@
                             }
                           ]
                         },
-                        "customClaims": {
-                          "anyOf": [
-                            {},
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "dpopBoundAccessTokensRequired": {
-                          "type": "boolean"
-                        },
                         "disabled": {
                           "type": "boolean"
                         },
@@ -23416,17 +23209,6 @@
                           "type": "integer",
                           "exclusiveMinimum": 0,
                           "maximum": 9007199254740991
-                        },
-                        "policyVersion": {
-                          "type": "number"
-                        },
-                        "metadata": {
-                          "anyOf": [
-                            {},
-                            {
-                              "type": "null"
-                            }
-                          ]
                         },
                         "createdAt": {
                           "type": "string",
@@ -23448,14 +23230,9 @@
                         "accessTokenTtl",
                         "refreshTokenTtl",
                         "signingAlgorithm",
-                        "signingKeyId",
                         "allowedScopes",
-                        "customClaims",
-                        "dpopBoundAccessTokensRequired",
                         "disabled",
                         "revision",
-                        "policyVersion",
-                        "metadata",
                         "createdAt",
                         "updatedAt"
                       ]
@@ -23876,12 +23653,6 @@
                             "null"
                           ]
                         },
-                        "signingKeyId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "allowedScopes": {
                           "anyOf": [
                             {
@@ -23895,17 +23666,6 @@
                             }
                           ]
                         },
-                        "customClaims": {
-                          "anyOf": [
-                            {},
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "dpopBoundAccessTokensRequired": {
-                          "type": "boolean"
-                        },
                         "disabled": {
                           "type": "boolean"
                         },
@@ -23913,17 +23673,6 @@
                           "type": "integer",
                           "exclusiveMinimum": 0,
                           "maximum": 9007199254740991
-                        },
-                        "policyVersion": {
-                          "type": "number"
-                        },
-                        "metadata": {
-                          "anyOf": [
-                            {},
-                            {
-                              "type": "null"
-                            }
-                          ]
                         },
                         "createdAt": {
                           "type": "string",
@@ -23945,14 +23694,9 @@
                         "accessTokenTtl",
                         "refreshTokenTtl",
                         "signingAlgorithm",
-                        "signingKeyId",
                         "allowedScopes",
-                        "customClaims",
-                        "dpopBoundAccessTokensRequired",
                         "disabled",
                         "revision",
-                        "policyVersion",
-                        "metadata",
                         "createdAt",
                         "updatedAt"
                       ]
@@ -24645,23 +24389,8 @@
                         "type": "string"
                       }
                     },
-                    "dpopBoundAccessTokens": {
-                      "type": "boolean"
-                    },
                     "disabled": {
                       "type": "boolean"
-                    },
-                    "userId": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "format": "uuid",
-                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
                     },
                     "organizationId": {
                       "anyOf": [
@@ -24670,14 +24399,6 @@
                           "format": "uuid",
                           "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                         },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "metadata": {
-                      "anyOf": [
-                        {},
                         {
                           "type": "null"
                         }
@@ -24693,18 +24414,6 @@
                       "format": "date-time",
                       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                     },
-                    "clientDiscoveryId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "referenceId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
                     "name": {
                       "type": [
                         "string",
@@ -24717,55 +24426,7 @@
                         "null"
                       ]
                     },
-                    "icon": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "tos": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "policy": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "softwareId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "softwareVersion": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "softwareStatement": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "backchannelLogoutUri": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
                     "tokenEndpointAuthMethod": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "applicationType": {
                       "type": [
                         "string",
                         "null"
@@ -24783,26 +24444,7 @@
                         "null"
                       ]
                     },
-                    "subjectType": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
                     "contacts": {
-                      "anyOf": [
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "postLogoutRedirectUris": {
                       "anyOf": [
                         {
                           "type": "array",
@@ -24867,12 +24509,6 @@
                         }
                       ]
                     },
-                    "backchannelLogoutSessionRequired": {
-                      "type": [
-                        "boolean",
-                        "null"
-                      ]
-                    },
                     "requirePKCE": {
                       "type": [
                         "boolean",
@@ -24880,12 +24516,6 @@
                       ]
                     },
                     "skipConsent": {
-                      "type": [
-                        "boolean",
-                        "null"
-                      ]
-                    },
-                    "enableEndSession": {
                       "type": [
                         "boolean",
                         "null"
@@ -24905,39 +24535,22 @@
                     "authorizationVersion",
                     "hasClientSecret",
                     "redirectUris",
-                    "dpopBoundAccessTokens",
                     "disabled",
-                    "userId",
                     "organizationId",
-                    "metadata",
                     "createdAt",
                     "updatedAt",
-                    "clientDiscoveryId",
-                    "referenceId",
                     "name",
                     "uri",
-                    "icon",
-                    "tos",
-                    "policy",
-                    "softwareId",
-                    "softwareVersion",
-                    "softwareStatement",
-                    "backchannelLogoutUri",
                     "tokenEndpointAuthMethod",
-                    "applicationType",
                     "jwks",
                     "jwksUri",
-                    "subjectType",
                     "contacts",
-                    "postLogoutRedirectUris",
                     "grantTypes",
                     "responseTypes",
                     "scopes",
                     "clientCredentialsScopes",
-                    "backchannelLogoutSessionRequired",
                     "requirePKCE",
                     "skipConsent",
-                    "enableEndSession",
                     "resources"
                   ]
                 }
@@ -25280,20 +24893,6 @@
                       "format": "uri"
                     }
                   },
-                  "postLogoutRedirectUris": {
-                    "anyOf": [
-                      {
-                        "type": "array",
-                        "items": {
-                          "type": "string",
-                          "format": "uri"
-                        }
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
                   "scopes": {
                     "anyOf": [
                       {
@@ -25341,17 +24940,6 @@
                   },
                   "skipConsent": {
                     "type": "boolean"
-                  },
-                  "backchannelLogoutUri": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "format": "uri"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
                   }
                 },
                 "additionalProperties": false
@@ -25429,23 +25017,8 @@
                             "type": "string"
                           }
                         },
-                        "dpopBoundAccessTokens": {
-                          "type": "boolean"
-                        },
                         "disabled": {
                           "type": "boolean"
-                        },
-                        "userId": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "uuid",
-                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
                         },
                         "organizationId": {
                           "anyOf": [
@@ -25454,14 +25027,6 @@
                               "format": "uuid",
                               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "metadata": {
-                          "anyOf": [
-                            {},
                             {
                               "type": "null"
                             }
@@ -25477,18 +25042,6 @@
                           "format": "date-time",
                           "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                         },
-                        "clientDiscoveryId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "referenceId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "name": {
                           "type": [
                             "string",
@@ -25501,55 +25054,7 @@
                             "null"
                           ]
                         },
-                        "icon": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "tos": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "policy": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "softwareId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "softwareVersion": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "softwareStatement": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "backchannelLogoutUri": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "tokenEndpointAuthMethod": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "applicationType": {
                           "type": [
                             "string",
                             "null"
@@ -25567,26 +25072,7 @@
                             "null"
                           ]
                         },
-                        "subjectType": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "contacts": {
-                          "anyOf": [
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "postLogoutRedirectUris": {
                           "anyOf": [
                             {
                               "type": "array",
@@ -25651,12 +25137,6 @@
                             }
                           ]
                         },
-                        "backchannelLogoutSessionRequired": {
-                          "type": [
-                            "boolean",
-                            "null"
-                          ]
-                        },
                         "requirePKCE": {
                           "type": [
                             "boolean",
@@ -25664,12 +25144,6 @@
                           ]
                         },
                         "skipConsent": {
-                          "type": [
-                            "boolean",
-                            "null"
-                          ]
-                        },
-                        "enableEndSession": {
                           "type": [
                             "boolean",
                             "null"
@@ -25683,39 +25157,22 @@
                         "authorizationVersion",
                         "hasClientSecret",
                         "redirectUris",
-                        "dpopBoundAccessTokens",
                         "disabled",
-                        "userId",
                         "organizationId",
-                        "metadata",
                         "createdAt",
                         "updatedAt",
-                        "clientDiscoveryId",
-                        "referenceId",
                         "name",
                         "uri",
-                        "icon",
-                        "tos",
-                        "policy",
-                        "softwareId",
-                        "softwareVersion",
-                        "softwareStatement",
-                        "backchannelLogoutUri",
                         "tokenEndpointAuthMethod",
-                        "applicationType",
                         "jwks",
                         "jwksUri",
-                        "subjectType",
                         "contacts",
-                        "postLogoutRedirectUris",
                         "grantTypes",
                         "responseTypes",
                         "scopes",
                         "clientCredentialsScopes",
-                        "backchannelLogoutSessionRequired",
                         "requirePKCE",
-                        "skipConsent",
-                        "enableEndSession"
+                        "skipConsent"
                       ]
                     },
                     {
@@ -26167,23 +25624,8 @@
                               "type": "string"
                             }
                           },
-                          "dpopBoundAccessTokens": {
-                            "type": "boolean"
-                          },
                           "disabled": {
                             "type": "boolean"
-                          },
-                          "userId": {
-                            "anyOf": [
-                              {
-                                "type": "string",
-                                "format": "uuid",
-                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
                           },
                           "organizationId": {
                             "anyOf": [
@@ -26192,14 +25634,6 @@
                                 "format": "uuid",
                                 "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                               },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "metadata": {
-                            "anyOf": [
-                              {},
                               {
                                 "type": "null"
                               }
@@ -26215,18 +25649,6 @@
                             "format": "date-time",
                             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                           },
-                          "clientDiscoveryId": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "referenceId": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
                           "name": {
                             "type": [
                               "string",
@@ -26239,55 +25661,7 @@
                               "null"
                             ]
                           },
-                          "icon": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "tos": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "policy": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "softwareId": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "softwareVersion": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "softwareStatement": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "backchannelLogoutUri": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
                           "tokenEndpointAuthMethod": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "applicationType": {
                             "type": [
                               "string",
                               "null"
@@ -26305,26 +25679,7 @@
                               "null"
                             ]
                           },
-                          "subjectType": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
                           "contacts": {
-                            "anyOf": [
-                              {
-                                "type": "array",
-                                "items": {
-                                  "type": "string"
-                                }
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "postLogoutRedirectUris": {
                             "anyOf": [
                               {
                                 "type": "array",
@@ -26389,12 +25744,6 @@
                               }
                             ]
                           },
-                          "backchannelLogoutSessionRequired": {
-                            "type": [
-                              "boolean",
-                              "null"
-                            ]
-                          },
                           "requirePKCE": {
                             "type": [
                               "boolean",
@@ -26402,12 +25751,6 @@
                             ]
                           },
                           "skipConsent": {
-                            "type": [
-                              "boolean",
-                              "null"
-                            ]
-                          },
-                          "enableEndSession": {
                             "type": [
                               "boolean",
                               "null"
@@ -26421,39 +25764,22 @@
                           "authorizationVersion",
                           "hasClientSecret",
                           "redirectUris",
-                          "dpopBoundAccessTokens",
                           "disabled",
-                          "userId",
                           "organizationId",
-                          "metadata",
                           "createdAt",
                           "updatedAt",
-                          "clientDiscoveryId",
-                          "referenceId",
                           "name",
                           "uri",
-                          "icon",
-                          "tos",
-                          "policy",
-                          "softwareId",
-                          "softwareVersion",
-                          "softwareStatement",
-                          "backchannelLogoutUri",
                           "tokenEndpointAuthMethod",
-                          "applicationType",
                           "jwks",
                           "jwksUri",
-                          "subjectType",
                           "contacts",
-                          "postLogoutRedirectUris",
                           "grantTypes",
                           "responseTypes",
                           "scopes",
                           "clientCredentialsScopes",
-                          "backchannelLogoutSessionRequired",
                           "requirePKCE",
-                          "skipConsent",
-                          "enableEndSession"
+                          "skipConsent"
                         ]
                       }
                     },
@@ -26832,23 +26158,8 @@
                             "type": "string"
                           }
                         },
-                        "dpopBoundAccessTokens": {
-                          "type": "boolean"
-                        },
                         "disabled": {
                           "type": "boolean"
-                        },
-                        "userId": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "uuid",
-                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
                         },
                         "organizationId": {
                           "anyOf": [
@@ -26857,14 +26168,6 @@
                               "format": "uuid",
                               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "metadata": {
-                          "anyOf": [
-                            {},
                             {
                               "type": "null"
                             }
@@ -26880,18 +26183,6 @@
                           "format": "date-time",
                           "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                         },
-                        "clientDiscoveryId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "referenceId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "name": {
                           "type": [
                             "string",
@@ -26904,55 +26195,7 @@
                             "null"
                           ]
                         },
-                        "icon": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "tos": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "policy": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "softwareId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "softwareVersion": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "softwareStatement": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "backchannelLogoutUri": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "tokenEndpointAuthMethod": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "applicationType": {
                           "type": [
                             "string",
                             "null"
@@ -26970,26 +26213,7 @@
                             "null"
                           ]
                         },
-                        "subjectType": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "contacts": {
-                          "anyOf": [
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "postLogoutRedirectUris": {
                           "anyOf": [
                             {
                               "type": "array",
@@ -27054,12 +26278,6 @@
                             }
                           ]
                         },
-                        "backchannelLogoutSessionRequired": {
-                          "type": [
-                            "boolean",
-                            "null"
-                          ]
-                        },
                         "requirePKCE": {
                           "type": [
                             "boolean",
@@ -27067,12 +26285,6 @@
                           ]
                         },
                         "skipConsent": {
-                          "type": [
-                            "boolean",
-                            "null"
-                          ]
-                        },
-                        "enableEndSession": {
                           "type": [
                             "boolean",
                             "null"
@@ -27089,39 +26301,22 @@
                         "authorizationVersion",
                         "hasClientSecret",
                         "redirectUris",
-                        "dpopBoundAccessTokens",
                         "disabled",
-                        "userId",
                         "organizationId",
-                        "metadata",
                         "createdAt",
                         "updatedAt",
-                        "clientDiscoveryId",
-                        "referenceId",
                         "name",
                         "uri",
-                        "icon",
-                        "tos",
-                        "policy",
-                        "softwareId",
-                        "softwareVersion",
-                        "softwareStatement",
-                        "backchannelLogoutUri",
                         "tokenEndpointAuthMethod",
-                        "applicationType",
                         "jwks",
                         "jwksUri",
-                        "subjectType",
                         "contacts",
-                        "postLogoutRedirectUris",
                         "grantTypes",
                         "responseTypes",
                         "scopes",
                         "clientCredentialsScopes",
-                        "backchannelLogoutSessionRequired",
                         "requirePKCE",
-                        "skipConsent",
-                        "enableEndSession"
+                        "skipConsent"
                       ]
                     },
                     {
@@ -27529,23 +26724,8 @@
                             "type": "string"
                           }
                         },
-                        "dpopBoundAccessTokens": {
-                          "type": "boolean"
-                        },
                         "disabled": {
                           "type": "boolean"
-                        },
-                        "userId": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "uuid",
-                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
                         },
                         "organizationId": {
                           "anyOf": [
@@ -27554,14 +26734,6 @@
                               "format": "uuid",
                               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "metadata": {
-                          "anyOf": [
-                            {},
                             {
                               "type": "null"
                             }
@@ -27577,18 +26749,6 @@
                           "format": "date-time",
                           "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                         },
-                        "clientDiscoveryId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "referenceId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "name": {
                           "type": [
                             "string",
@@ -27601,55 +26761,7 @@
                             "null"
                           ]
                         },
-                        "icon": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "tos": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "policy": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "softwareId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "softwareVersion": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "softwareStatement": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "backchannelLogoutUri": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "tokenEndpointAuthMethod": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "applicationType": {
                           "type": [
                             "string",
                             "null"
@@ -27667,26 +26779,7 @@
                             "null"
                           ]
                         },
-                        "subjectType": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "contacts": {
-                          "anyOf": [
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "postLogoutRedirectUris": {
                           "anyOf": [
                             {
                               "type": "array",
@@ -27751,12 +26844,6 @@
                             }
                           ]
                         },
-                        "backchannelLogoutSessionRequired": {
-                          "type": [
-                            "boolean",
-                            "null"
-                          ]
-                        },
                         "requirePKCE": {
                           "type": [
                             "boolean",
@@ -27764,12 +26851,6 @@
                           ]
                         },
                         "skipConsent": {
-                          "type": [
-                            "boolean",
-                            "null"
-                          ]
-                        },
-                        "enableEndSession": {
                           "type": [
                             "boolean",
                             "null"
@@ -27783,39 +26864,22 @@
                         "authorizationVersion",
                         "hasClientSecret",
                         "redirectUris",
-                        "dpopBoundAccessTokens",
                         "disabled",
-                        "userId",
                         "organizationId",
-                        "metadata",
                         "createdAt",
                         "updatedAt",
-                        "clientDiscoveryId",
-                        "referenceId",
                         "name",
                         "uri",
-                        "icon",
-                        "tos",
-                        "policy",
-                        "softwareId",
-                        "softwareVersion",
-                        "softwareStatement",
-                        "backchannelLogoutUri",
                         "tokenEndpointAuthMethod",
-                        "applicationType",
                         "jwks",
                         "jwksUri",
-                        "subjectType",
                         "contacts",
-                        "postLogoutRedirectUris",
                         "grantTypes",
                         "responseTypes",
                         "scopes",
                         "clientCredentialsScopes",
-                        "backchannelLogoutSessionRequired",
                         "requirePKCE",
-                        "skipConsent",
-                        "enableEndSession"
+                        "skipConsent"
                       ]
                     },
                     {
@@ -28210,23 +27274,8 @@
                             "type": "string"
                           }
                         },
-                        "dpopBoundAccessTokens": {
-                          "type": "boolean"
-                        },
                         "disabled": {
                           "type": "boolean"
-                        },
-                        "userId": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "uuid",
-                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
                         },
                         "organizationId": {
                           "anyOf": [
@@ -28235,14 +27284,6 @@
                               "format": "uuid",
                               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "metadata": {
-                          "anyOf": [
-                            {},
                             {
                               "type": "null"
                             }
@@ -28258,18 +27299,6 @@
                           "format": "date-time",
                           "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                         },
-                        "clientDiscoveryId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "referenceId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "name": {
                           "type": [
                             "string",
@@ -28282,55 +27311,7 @@
                             "null"
                           ]
                         },
-                        "icon": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "tos": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "policy": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "softwareId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "softwareVersion": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "softwareStatement": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "backchannelLogoutUri": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "tokenEndpointAuthMethod": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "applicationType": {
                           "type": [
                             "string",
                             "null"
@@ -28348,26 +27329,7 @@
                             "null"
                           ]
                         },
-                        "subjectType": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "contacts": {
-                          "anyOf": [
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "postLogoutRedirectUris": {
                           "anyOf": [
                             {
                               "type": "array",
@@ -28432,12 +27394,6 @@
                             }
                           ]
                         },
-                        "backchannelLogoutSessionRequired": {
-                          "type": [
-                            "boolean",
-                            "null"
-                          ]
-                        },
                         "requirePKCE": {
                           "type": [
                             "boolean",
@@ -28445,12 +27401,6 @@
                           ]
                         },
                         "skipConsent": {
-                          "type": [
-                            "boolean",
-                            "null"
-                          ]
-                        },
-                        "enableEndSession": {
                           "type": [
                             "boolean",
                             "null"
@@ -28464,39 +27414,22 @@
                         "authorizationVersion",
                         "hasClientSecret",
                         "redirectUris",
-                        "dpopBoundAccessTokens",
                         "disabled",
-                        "userId",
                         "organizationId",
-                        "metadata",
                         "createdAt",
                         "updatedAt",
-                        "clientDiscoveryId",
-                        "referenceId",
                         "name",
                         "uri",
-                        "icon",
-                        "tos",
-                        "policy",
-                        "softwareId",
-                        "softwareVersion",
-                        "softwareStatement",
-                        "backchannelLogoutUri",
                         "tokenEndpointAuthMethod",
-                        "applicationType",
                         "jwks",
                         "jwksUri",
-                        "subjectType",
                         "contacts",
-                        "postLogoutRedirectUris",
                         "grantTypes",
                         "responseTypes",
                         "scopes",
                         "clientCredentialsScopes",
-                        "backchannelLogoutSessionRequired",
                         "requirePKCE",
-                        "skipConsent",
-                        "enableEndSession"
+                        "skipConsent"
                       ]
                     },
                     {
@@ -29300,23 +28233,8 @@
                             "type": "string"
                           }
                         },
-                        "dpopBoundAccessTokens": {
-                          "type": "boolean"
-                        },
                         "disabled": {
                           "type": "boolean"
-                        },
-                        "userId": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "uuid",
-                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
                         },
                         "organizationId": {
                           "anyOf": [
@@ -29325,14 +28243,6 @@
                               "format": "uuid",
                               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "metadata": {
-                          "anyOf": [
-                            {},
                             {
                               "type": "null"
                             }
@@ -29348,18 +28258,6 @@
                           "format": "date-time",
                           "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                         },
-                        "clientDiscoveryId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "referenceId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "name": {
                           "type": [
                             "string",
@@ -29372,55 +28270,7 @@
                             "null"
                           ]
                         },
-                        "icon": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "tos": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "policy": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "softwareId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "softwareVersion": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "softwareStatement": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "backchannelLogoutUri": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "tokenEndpointAuthMethod": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "applicationType": {
                           "type": [
                             "string",
                             "null"
@@ -29438,26 +28288,7 @@
                             "null"
                           ]
                         },
-                        "subjectType": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "contacts": {
-                          "anyOf": [
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "postLogoutRedirectUris": {
                           "anyOf": [
                             {
                               "type": "array",
@@ -29522,12 +28353,6 @@
                             }
                           ]
                         },
-                        "backchannelLogoutSessionRequired": {
-                          "type": [
-                            "boolean",
-                            "null"
-                          ]
-                        },
                         "requirePKCE": {
                           "type": [
                             "boolean",
@@ -29535,12 +28360,6 @@
                           ]
                         },
                         "skipConsent": {
-                          "type": [
-                            "boolean",
-                            "null"
-                          ]
-                        },
-                        "enableEndSession": {
                           "type": [
                             "boolean",
                             "null"
@@ -29554,39 +28373,22 @@
                         "authorizationVersion",
                         "hasClientSecret",
                         "redirectUris",
-                        "dpopBoundAccessTokens",
                         "disabled",
-                        "userId",
                         "organizationId",
-                        "metadata",
                         "createdAt",
                         "updatedAt",
-                        "clientDiscoveryId",
-                        "referenceId",
                         "name",
                         "uri",
-                        "icon",
-                        "tos",
-                        "policy",
-                        "softwareId",
-                        "softwareVersion",
-                        "softwareStatement",
-                        "backchannelLogoutUri",
                         "tokenEndpointAuthMethod",
-                        "applicationType",
                         "jwks",
                         "jwksUri",
-                        "subjectType",
                         "contacts",
-                        "postLogoutRedirectUris",
                         "grantTypes",
                         "responseTypes",
                         "scopes",
                         "clientCredentialsScopes",
-                        "backchannelLogoutSessionRequired",
                         "requirePKCE",
-                        "skipConsent",
-                        "enableEndSession"
+                        "skipConsent"
                       ]
                     },
                     {
@@ -34570,18 +33372,6 @@
                           "slug": {
                             "type": "string"
                           },
-                          "logo": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "metadata": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
                           "status": {
                             "type": "string",
                             "enum": [
@@ -34622,8 +33412,6 @@
                           "revision",
                           "name",
                           "slug",
-                          "logo",
-                          "metadata",
                           "status",
                           "authorizationVersion",
                           "disabledAt",
@@ -34853,14 +33641,6 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 200
-                  },
-                  "logo": {
-                    "type": "string",
-                    "format": "uri"
-                  },
-                  "metadata": {
-                    "type": "string",
-                    "maxLength": 4000
                   }
                 },
                 "required": [
@@ -34907,18 +33687,6 @@
                         "slug": {
                           "type": "string"
                         },
-                        "logo": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "metadata": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "status": {
                           "type": "string",
                           "enum": [
@@ -34959,8 +33727,6 @@
                         "revision",
                         "name",
                         "slug",
-                        "logo",
-                        "metadata",
                         "status",
                         "authorizationVersion",
                         "disabledAt",
@@ -35312,18 +34078,6 @@
                     "slug": {
                       "type": "string"
                     },
-                    "logo": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "metadata": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
                     "status": {
                       "type": "string",
                       "enum": [
@@ -35364,8 +34118,6 @@
                     "revision",
                     "name",
                     "slug",
-                    "logo",
-                    "metadata",
                     "status",
                     "authorizationVersion",
                     "disabledAt",
@@ -35650,28 +34402,6 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 200
-                  },
-                  "logo": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "format": "uri"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "metadata": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "maxLength": 4000
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
                   }
                 },
                 "additionalProperties": false
@@ -35713,18 +34443,6 @@
                         "slug": {
                           "type": "string"
                         },
-                        "logo": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "metadata": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "status": {
                           "type": "string",
                           "enum": [
@@ -35765,8 +34483,6 @@
                         "revision",
                         "name",
                         "slug",
-                        "logo",
-                        "metadata",
                         "status",
                         "authorizationVersion",
                         "disabledAt",
@@ -36523,18 +35239,6 @@
                         "slug": {
                           "type": "string"
                         },
-                        "logo": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "metadata": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "status": {
                           "type": "string",
                           "enum": [
@@ -36575,8 +35279,6 @@
                         "revision",
                         "name",
                         "slug",
-                        "logo",
-                        "metadata",
                         "status",
                         "authorizationVersion",
                         "disabledAt",
@@ -36966,18 +35668,6 @@
                         "slug": {
                           "type": "string"
                         },
-                        "logo": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "metadata": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "status": {
                           "type": "string",
                           "enum": [
@@ -37018,8 +35708,6 @@
                         "revision",
                         "name",
                         "slug",
-                        "logo",
-                        "metadata",
                         "status",
                         "authorizationVersion",
                         "disabledAt",
@@ -37424,7 +36112,7 @@
           }
         ],
         "summary": "List user audit events",
-        "description": "Return a person's audit trail as actor or user, membership or session target, newest first, without changing state. Filter by action, outcome, from or to and continue with limit and cursor. Prefer listAuditEvents for a platform-wide review; not_found means neither a live user nor retained user history exists and validation_failed rejects invalid ids, filters or cursors.",
+        "description": "Return the events that concern a person, newest first, without changing state: as actor; as the user, membership, group-membership, session or grant target; as an entitlement's member; or named in an event's effects. Filter by action, outcome, from or to and continue with limit and cursor. Prefer listAuditEvents for a platform-wide review; not_found means neither a live user nor retained user history exists and validation_failed rejects invalid ids, filters or cursors.",
         "tags": [
           "Audit"
         ],
@@ -37457,7 +36145,7 @@
                             "type": "integer",
                             "minimum": -9007199254740991,
                             "maximum": 9007199254740991,
-                            "description": "Interpret with action: 0 is legacy history, 1 is the original event payload, oauth.token.issued version 2 stores the evaluated machine decision under data.decision; oauth.token.rejected version 2 retains the returned machine policy decision, or null before evaluation. oauth.token.rejected version 3 records failed machine-client authentication with a system actor, null tenant/client/decision and authentication stage; supplied identity, credentials, scopes and resource are omitted. Scope denials omit rejected scope values; no eligible capability yields a minimal denial without a target snapshot. An approved decision on a failed attempt is not proof of commit; auth.signin.rejected version 2 records recognised failure categories without free-form descriptions. group.erased version 2 records removed assignments and entitlements under data.effects. group.enabled and group.disabled version 2 retain assignments and entitlements under data.policySources; these are policy sources, not an effective-permission delta. These group events index recorded affected users. Changed group/organisation entitlement events use version 2 with data.audience recording tenant-local membership and group-assignment sources; direct-member and unchanged entitlement events retain version 1. organization.erased version 2 records removed tenant configuration and cleared browser-session organisation selections under data.effects, alongside deletedGrantContexts containing each stored grant ID, user ID and organisation ID. Member and affected-session user UUIDs remain indexed after erasure; provider credentials are excluded. Browser sessions are preserved, not revoked. user.erased version 2 records actual global and owned-client cascade effects under data.effects, including safe policy identities, deleted token/consent records, cleared token session references and SSO attribution revision changes. It excludes credentials and account linkage identifiers; affected users remain indexed after erasure. member.updated, member.removed, member.removal_unchanged, member.reinstated and member.reinstatement_unchanged version 2 retain member-access observations under data.before.access and data.after.access. Assigned scopes differ from permission.scopes. These are observations at separate statements, not a causal delta or proof of remote revocation. client.resource_linked, client.resource_unlinked and client.resource_unchanged version 2 retain immutable resource identity/classification/owner. Foreign-private or unknown targets are platform-only; organisation history accepts versions 2 and 3 of these link actions. user.disabled, user.disable_unchanged, session.revoked and session.revoked_all version 2 retain exact changed token row IDs and nullable user IDs under data.revokedTokens.access and data.revokedTokens.refresh. client.grants_revoked version 2 retains the same token manifest alongside grantContexts in platform-only history; owner events retain counts and a grantEffectsEventId reference. Affected-user subjects survive erasure. Token values are excluded; local row revocation is not proof of remote termination. client.grants_erased version 2 records deleted token, consent and client-resource link rows under data.effects in platform-only history, including access tokens cascaded through a deleted refresh token. client.erased version 2 retains owner-safe counts and grantEffectsEventId. Affected users remain indexed after erasure. New user/organisation/group/client deletion events use version 3 with deletionMode soft, terminal deletedAt after-state, softDeleted relationship manifests, deleted session/token manifests and revoked grant contexts. Resource/domain/provider/capability deletion uses version 2; entitlement/group-assignment/member removal uses version 3. Client-resource link version 3 adds the changed relationship UUID and deletedAt; null means no relationship effect. These newer contracts supersede physical-erasure descriptions above; retained older events are not rewritten. User OAuth actions oauth.user.authorized, oauth.user.denied, oauth.user.issued, oauth.user.replayed and oauth.user.revoked use version 4. They retain the immutable grant authentication tuple under data.authentication and, for authorisation and issuance decisions, policy evidence under data.decision. Required outcomes and recorded UUID subjects commit with native protocol effects. Token values, authorization codes and client credentials are excluded."
+                            "description": "1 for every event. Each action has one data shape, listed per action in the Answerable ID schema document."
                           },
                           "id": {
                             "type": "string",
@@ -37525,14 +36213,14 @@
                             ]
                           },
                           "ip": {
-                            "description": "Historical metadata may be unverified. New HTTP-originated events leave this null because no trusted ingress address contract is configured. Never use it as proof of client origin.",
+                            "description": "The client address resolved from X-Forwarded-For through the trusted proxies, for events written while serving a request; otherwise null. Descriptive metadata, never proof of client origin.",
                             "type": [
                               "string",
                               "null"
                             ]
                           },
                           "userAgent": {
-                            "description": "Caller-supplied descriptive metadata, never identity. New HTTP/session audit values accept only 1–512 printable ASCII characters; other values are omitted. Legacy values may be unbounded.",
+                            "description": "Caller-supplied descriptive metadata, never identity: 1–512 printable ASCII characters, otherwise null.",
                             "type": [
                               "string",
                               "null"
@@ -37916,7 +36604,7 @@
           }
         ],
         "summary": "List audit events",
-        "description": "Return a cursor page of audit events, without changing state. Filter by operationId to trace a journalled command. Interpret schemaVersion with action: 0 is legacy history and supported new event contracts use 1, 2 or 3; operationId is null for unlinked events. Prefer listOrganizationAuditEvents for one organisation and use limit and cursor to continue through results; validation_failed rejects invalid filters or cursors.",
+        "description": "Return a cursor page of audit events, without changing state. Filter by operationId to trace a journalled command. Interpret data with action; operationId is null for unlinked events. Prefer listOrganizationAuditEvents for one organisation and use limit and cursor to continue through results; validation_failed rejects invalid filters or cursors.",
         "tags": [
           "Audit"
         ],
@@ -37949,7 +36637,7 @@
                             "type": "integer",
                             "minimum": -9007199254740991,
                             "maximum": 9007199254740991,
-                            "description": "Interpret with action: 0 is legacy history, 1 is the original event payload, oauth.token.issued version 2 stores the evaluated machine decision under data.decision; oauth.token.rejected version 2 retains the returned machine policy decision, or null before evaluation. oauth.token.rejected version 3 records failed machine-client authentication with a system actor, null tenant/client/decision and authentication stage; supplied identity, credentials, scopes and resource are omitted. Scope denials omit rejected scope values; no eligible capability yields a minimal denial without a target snapshot. An approved decision on a failed attempt is not proof of commit; auth.signin.rejected version 2 records recognised failure categories without free-form descriptions. group.erased version 2 records removed assignments and entitlements under data.effects. group.enabled and group.disabled version 2 retain assignments and entitlements under data.policySources; these are policy sources, not an effective-permission delta. These group events index recorded affected users. Changed group/organisation entitlement events use version 2 with data.audience recording tenant-local membership and group-assignment sources; direct-member and unchanged entitlement events retain version 1. organization.erased version 2 records removed tenant configuration and cleared browser-session organisation selections under data.effects, alongside deletedGrantContexts containing each stored grant ID, user ID and organisation ID. Member and affected-session user UUIDs remain indexed after erasure; provider credentials are excluded. Browser sessions are preserved, not revoked. user.erased version 2 records actual global and owned-client cascade effects under data.effects, including safe policy identities, deleted token/consent records, cleared token session references and SSO attribution revision changes. It excludes credentials and account linkage identifiers; affected users remain indexed after erasure. member.updated, member.removed, member.removal_unchanged, member.reinstated and member.reinstatement_unchanged version 2 retain member-access observations under data.before.access and data.after.access. Assigned scopes differ from permission.scopes. These are observations at separate statements, not a causal delta or proof of remote revocation. client.resource_linked, client.resource_unlinked and client.resource_unchanged version 2 retain immutable resource identity/classification/owner. Foreign-private or unknown targets are platform-only; organisation history accepts versions 2 and 3 of these link actions. user.disabled, user.disable_unchanged, session.revoked and session.revoked_all version 2 retain exact changed token row IDs and nullable user IDs under data.revokedTokens.access and data.revokedTokens.refresh. client.grants_revoked version 2 retains the same token manifest alongside grantContexts in platform-only history; owner events retain counts and a grantEffectsEventId reference. Affected-user subjects survive erasure. Token values are excluded; local row revocation is not proof of remote termination. client.grants_erased version 2 records deleted token, consent and client-resource link rows under data.effects in platform-only history, including access tokens cascaded through a deleted refresh token. client.erased version 2 retains owner-safe counts and grantEffectsEventId. Affected users remain indexed after erasure. New user/organisation/group/client deletion events use version 3 with deletionMode soft, terminal deletedAt after-state, softDeleted relationship manifests, deleted session/token manifests and revoked grant contexts. Resource/domain/provider/capability deletion uses version 2; entitlement/group-assignment/member removal uses version 3. Client-resource link version 3 adds the changed relationship UUID and deletedAt; null means no relationship effect. These newer contracts supersede physical-erasure descriptions above; retained older events are not rewritten. User OAuth actions oauth.user.authorized, oauth.user.denied, oauth.user.issued, oauth.user.replayed and oauth.user.revoked use version 4. They retain the immutable grant authentication tuple under data.authentication and, for authorisation and issuance decisions, policy evidence under data.decision. Required outcomes and recorded UUID subjects commit with native protocol effects. Token values, authorization codes and client credentials are excluded."
+                            "description": "1 for every event. Each action has one data shape, listed per action in the Answerable ID schema document."
                           },
                           "id": {
                             "type": "string",
@@ -38017,14 +36705,14 @@
                             ]
                           },
                           "ip": {
-                            "description": "Historical metadata may be unverified. New HTTP-originated events leave this null because no trusted ingress address contract is configured. Never use it as proof of client origin.",
+                            "description": "The client address resolved from X-Forwarded-For through the trusted proxies, for events written while serving a request; otherwise null. Descriptive metadata, never proof of client origin.",
                             "type": [
                               "string",
                               "null"
                             ]
                           },
                           "userAgent": {
-                            "description": "Caller-supplied descriptive metadata, never identity. New HTTP/session audit values accept only 1–512 printable ASCII characters; other values are omitted. Legacy values may be unbounded.",
+                            "description": "Caller-supplied descriptive metadata, never identity: 1–512 printable ASCII characters, otherwise null.",
                             "type": [
                               "string",
                               "null"
@@ -38370,7 +37058,7 @@
           }
         ],
         "summary": "List organisation audit events",
-        "description": "Return a cursor page of organisation-visible audit events, without changing state. Client-resource link actions are visible only at versions 2 and 3 and only when scoped to this organisation; legacy or unrecognised link versions remain available through the platform audit endpoint. Filter by operationId to trace a journalled command within this organisation. Prefer listAuditEvents for a platform-wide review and use limit and cursor to continue through results; validation_failed rejects invalid filters or cursors and not_found means neither a live organisation nor retained organisation history exists.",
+        "description": "Return a cursor page of organisation-visible audit events, without changing state. Client-resource link actions appear only when the resource is platform-shared or owned by this organisation. Filter by operationId to trace a journalled command within this organisation. Prefer listAuditEvents for a platform-wide review and use limit and cursor to continue through results; validation_failed rejects invalid filters or cursors and not_found means neither a live organisation nor retained organisation history exists.",
         "tags": [
           "Audit"
         ],
@@ -38403,7 +37091,7 @@
                             "type": "integer",
                             "minimum": -9007199254740991,
                             "maximum": 9007199254740991,
-                            "description": "Interpret with action: 0 is legacy history, 1 is the original event payload, oauth.token.issued version 2 stores the evaluated machine decision under data.decision; oauth.token.rejected version 2 retains the returned machine policy decision, or null before evaluation. oauth.token.rejected version 3 records failed machine-client authentication with a system actor, null tenant/client/decision and authentication stage; supplied identity, credentials, scopes and resource are omitted. Scope denials omit rejected scope values; no eligible capability yields a minimal denial without a target snapshot. An approved decision on a failed attempt is not proof of commit; auth.signin.rejected version 2 records recognised failure categories without free-form descriptions. group.erased version 2 records removed assignments and entitlements under data.effects. group.enabled and group.disabled version 2 retain assignments and entitlements under data.policySources; these are policy sources, not an effective-permission delta. These group events index recorded affected users. Changed group/organisation entitlement events use version 2 with data.audience recording tenant-local membership and group-assignment sources; direct-member and unchanged entitlement events retain version 1. organization.erased version 2 records removed tenant configuration and cleared browser-session organisation selections under data.effects, alongside deletedGrantContexts containing each stored grant ID, user ID and organisation ID. Member and affected-session user UUIDs remain indexed after erasure; provider credentials are excluded. Browser sessions are preserved, not revoked. user.erased version 2 records actual global and owned-client cascade effects under data.effects, including safe policy identities, deleted token/consent records, cleared token session references and SSO attribution revision changes. It excludes credentials and account linkage identifiers; affected users remain indexed after erasure. member.updated, member.removed, member.removal_unchanged, member.reinstated and member.reinstatement_unchanged version 2 retain member-access observations under data.before.access and data.after.access. Assigned scopes differ from permission.scopes. These are observations at separate statements, not a causal delta or proof of remote revocation. client.resource_linked, client.resource_unlinked and client.resource_unchanged version 2 retain immutable resource identity/classification/owner. Foreign-private or unknown targets are platform-only; organisation history accepts versions 2 and 3 of these link actions. user.disabled, user.disable_unchanged, session.revoked and session.revoked_all version 2 retain exact changed token row IDs and nullable user IDs under data.revokedTokens.access and data.revokedTokens.refresh. client.grants_revoked version 2 retains the same token manifest alongside grantContexts in platform-only history; owner events retain counts and a grantEffectsEventId reference. Affected-user subjects survive erasure. Token values are excluded; local row revocation is not proof of remote termination. client.grants_erased version 2 records deleted token, consent and client-resource link rows under data.effects in platform-only history, including access tokens cascaded through a deleted refresh token. client.erased version 2 retains owner-safe counts and grantEffectsEventId. Affected users remain indexed after erasure. New user/organisation/group/client deletion events use version 3 with deletionMode soft, terminal deletedAt after-state, softDeleted relationship manifests, deleted session/token manifests and revoked grant contexts. Resource/domain/provider/capability deletion uses version 2; entitlement/group-assignment/member removal uses version 3. Client-resource link version 3 adds the changed relationship UUID and deletedAt; null means no relationship effect. These newer contracts supersede physical-erasure descriptions above; retained older events are not rewritten. User OAuth actions oauth.user.authorized, oauth.user.denied, oauth.user.issued, oauth.user.replayed and oauth.user.revoked use version 4. They retain the immutable grant authentication tuple under data.authentication and, for authorisation and issuance decisions, policy evidence under data.decision. Required outcomes and recorded UUID subjects commit with native protocol effects. Token values, authorization codes and client credentials are excluded."
+                            "description": "1 for every event. Each action has one data shape, listed per action in the Answerable ID schema document."
                           },
                           "id": {
                             "type": "string",
@@ -38471,14 +37159,14 @@
                             ]
                           },
                           "ip": {
-                            "description": "Historical metadata may be unverified. New HTTP-originated events leave this null because no trusted ingress address contract is configured. Never use it as proof of client origin.",
+                            "description": "The client address resolved from X-Forwarded-For through the trusted proxies, for events written while serving a request; otherwise null. Descriptive metadata, never proof of client origin.",
                             "type": [
                               "string",
                               "null"
                             ]
                           },
                           "userAgent": {
-                            "description": "Caller-supplied descriptive metadata, never identity. New HTTP/session audit values accept only 1–512 printable ASCII characters; other values are omitted. Legacy values may be unbounded.",
+                            "description": "Caller-supplied descriptive metadata, never identity: 1–512 printable ASCII characters, otherwise null.",
                             "type": [
                               "string",
                               "null"
