@@ -159,3 +159,31 @@ test("capability constraints enforce immutable exact targets, ownership, kinds, 
       .execute(),
   ).rejects.toMatchObject({ cause: { code: "23514" } });
 });
+
+test("capability targets stay unique when the client or the resource is null", async () => {
+  // drizzle/0001_invariants.sql recreates the unique index with NULLS NOT DISTINCT.
+  await expect(
+    connection.db
+      .insert(caps)
+      .values({
+        id: createId(),
+        organizationId: foreignId,
+        resource: testEnvironment().adminResourceIdentifier,
+        grantKind: "admin_session",
+        scopes: ["org:read"],
+      })
+      .execute(),
+  ).rejects.toMatchObject({ cause: { code: "23505" } });
+  const anyResource = {
+    ...input(),
+    resource: null,
+    grantKind: "refresh_token" as const,
+  };
+  await connection.db.insert(caps).values(anyResource);
+  await expect(
+    connection.db
+      .insert(caps)
+      .values({ ...anyResource, id: createId() })
+      .execute(),
+  ).rejects.toMatchObject({ cause: { code: "23505" } });
+});
