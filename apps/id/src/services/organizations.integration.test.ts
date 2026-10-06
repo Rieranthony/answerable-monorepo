@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, isNull, sql } from "drizzle-orm";
 import {
+  insertGrantContext,
+  insertOriginSession,
+} from "../__tests__/grants.ts";
+import {
   inPlatformRead,
   inPlatformWrite,
 } from "../__tests__/platform-context.ts";
@@ -112,7 +116,7 @@ test("creates, lists, gets and updates with exactly one attributed audit per wri
     items: [row],
     nextCursor: null,
   });
-  const patch = { name: "Acme Ltd", logo: null, metadata: "{}" };
+  const patch = { name: "Acme Ltd" };
   expect(
     await service.updateOrganization(db, actor, row.id, patch),
   ).toMatchObject({ organization: patch, changed: true });
@@ -131,8 +135,7 @@ test("creates, lists, gets and updates with exactly one attributed audit per wri
     action: "organization.updated",
     data: {
       before: { name: "Acme" },
-      after: { name: "Acme Ltd", logo: null },
-      metadataChanged: true,
+      after: { name: "Acme Ltd" },
     },
   });
 });
@@ -385,21 +388,12 @@ async function seedTenantGrantContexts() {
     name: "B",
   });
   const userId = createId(),
-    sessionId = createId(),
     clientInstanceId = createId();
-  const authTime = new Date();
   await db.insert(users).values({
     id: userId,
     email: `${userId}@example.com`,
     name: "Shared",
     status: "active",
-  });
-  await db.insert(sessions).values({
-    id: sessionId,
-    userId,
-    token: createId(),
-    createdAt: authTime,
-    expiresAt: new Date(Date.now() + 60000),
   });
   await db.insert(oauthClients).values({
     id: clientInstanceId,
@@ -409,28 +403,31 @@ async function seedTenantGrantContexts() {
     scopes: ["read"],
   });
   const contexts = [];
+  const sessionIds = [];
   for (const org of [a, b]) {
     const memberId = createId();
     await db
       .insert(members)
       .values({ id: memberId, organizationId: org.id, userId });
-    const [grant] = await db
-      .insert(grantContexts)
-      .values({
+    const session = await insertOriginSession(db, {
+      userId,
+      organizationId: org.id,
+    });
+    sessionIds.push(session.id);
+    contexts.push(
+      await insertGrantContext(db, {
         id: createId(),
         organizationId: org.id,
         memberId,
         userId,
         clientInstanceId,
-        authenticationSessionId: sessionId,
-        authTime,
+        authenticationSessionId: session.id,
         requestedScopes: ["read"],
         expiresAt: new Date(Date.now() + 60000),
-      })
-      .returning();
-    contexts.push(grant!);
+      }),
+    );
   }
-  return { db, a, b, userId, sessionId, contexts };
+  return { db, a, b, userId, sessionId: sessionIds[0]!, contexts };
 }
 
 test("organisation disable irreversibly revokes only its tenant contexts and audits actual IDs", async () => {
@@ -495,7 +492,12 @@ test("organisation erasure records deleted contexts without deleting a shared us
     ],
   });
   const erasedUserId = contexts[0]!.userId;
-  await db.delete(users).where(eq(users.id, erasedUserId));
+  // Grants are permanent: a user with one cannot be physically deleted.
+  await expect(
+    db.delete(users).where(eq(users.id, erasedUserId)).execute(),
+  ).rejects.toMatchObject({
+    cause: { code: "23503", constraint: "grant_contexts_user_id_users_id_fk" },
+  });
   expect(
     (
       await inPlatformRead(db, (context) =>

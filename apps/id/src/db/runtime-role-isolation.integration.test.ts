@@ -343,7 +343,7 @@ test("restricted audit readers retain tenant isolation and person history after 
         organizationId,
         actorType: "system",
         actorId: "history-proof",
-        action: "history.retained",
+        action: "user.enabled",
         targetType: "user",
         targetId: userId,
         outcome: "success",
@@ -544,7 +544,6 @@ test("restricted organisation readers keep tenant detail, diagnosis and retained
         queries.createOrganization(context, {
           slug: `org-query-${prefix}-${i}`,
           name: `Org ${i}`,
-          metadata: `private-${i}`,
         }),
       ),
     );
@@ -621,7 +620,6 @@ test("restricted global user/session queries preserve global scope and exclude c
       id: sessionId,
       userId: id,
       token: `secret-${sessionId}`,
-      activeOrganizationId: tenantIds[0]!,
       expiresAt: new Date(Date.now() + 60000),
     });
   }
@@ -844,6 +842,8 @@ test("restricted revocation queries preserve their tenant, user, client and sess
   const { inPlatformUsers, inPlatformWrite } =
     await import("../__tests__/platform-context.ts");
   const { inTenant } = await import("../__tests__/tenant-command.ts");
+  const { insertGrantContext, insertOriginSession } =
+    await import("../__tests__/grants.ts");
   const {
     organizations,
     users,
@@ -947,6 +947,23 @@ test("restricted revocation queries preserve their tenant, user, client and sess
       expect(row!.revoked !== null).toBe(shouldRevoke);
     }
   }
+  // A grant needs a session its tenant's provider authenticated.
+  const origins = new Map<string, string>();
+  const origin = async (tenantIndex: number, userIndex: number) => {
+    const key = `${tenantIndex}:${userIndex}`;
+    if (!origins.has(key))
+      origins.set(
+        key,
+        (
+          await insertOriginSession(owner.db, {
+            userId: userIds[userIndex]!,
+            organizationId: tenantIds[tenantIndex]!,
+            createdAt: authTime,
+          })
+        ).id,
+      );
+    return origins.get(key)!;
+  };
   const grants: { id: string; memberId: string }[] = [];
   for (const [tenantIndex, userIndex] of [
     [0, 0],
@@ -961,14 +978,13 @@ test("restricted revocation queries preserve their tenant, user, client and sess
       status: "active",
     });
     const id = createId();
-    await owner.db.insert(grantContexts).values({
+    await insertGrantContext(owner.db, {
       id,
       organizationId: tenantIds[tenantIndex]!,
       memberId,
       userId: userIds[userIndex]!,
       clientInstanceId: clientIds[0]!,
-      authenticationSessionId: sessionIds[userIndex]!,
-      authTime,
+      authenticationSessionId: await origin(tenantIndex, userIndex),
       requestedScopes: ["openid"],
       expiresAt: new Date(Date.now() + 60000),
     });
@@ -1006,14 +1022,6 @@ test("restricted revocation queries preserve their tenant, user, client and sess
       name: "Revocation",
       allowedScopes: ["openid"],
     });
-  const ownedClientId = createId();
-  await owner.db.insert(oauthClients).values({
-    id: ownedClientId,
-    clientId: ownedClientId,
-    userId: userIds[0]!,
-    redirectUris: [],
-    scopes: ["openid"],
-  });
   const otherMemberId = createId();
   await owner.db.insert(members).values({
     id: otherMemberId,
@@ -1028,7 +1036,7 @@ test("restricted revocation queries preserve their tenant, user, client and sess
       userId: userIds[0]!,
       clientInstanceId: clientIds[0]!,
       resourceInstanceId: resourceIds[0]!,
-      authenticationSessionId: sessionIds[0]!,
+      authenticationSessionId: await origin(0, 0),
     },
     {
       organizationId: tenantIds[1]!,
@@ -1036,7 +1044,7 @@ test("restricted revocation queries preserve their tenant, user, client and sess
       userId: userIds[0]!,
       clientInstanceId: clientIds[0]!,
       resourceInstanceId: resourceIds[1]!,
-      authenticationSessionId: sessionIds[0]!,
+      authenticationSessionId: await origin(1, 0),
     },
     {
       organizationId: tenantIds[0]!,
@@ -1044,38 +1052,37 @@ test("restricted revocation queries preserve their tenant, user, client and sess
       userId: userIds[1]!,
       clientInstanceId: clientIds[1]!,
       resourceInstanceId: resourceIds[1]!,
-      authenticationSessionId: sessionIds[1]!,
+      authenticationSessionId: await origin(0, 1),
     },
     {
       organizationId: tenantIds[1]!,
       memberId: otherMemberId,
       userId: userIds[1]!,
-      clientInstanceId: ownedClientId,
+      clientInstanceId: clientIds[1]!,
       resourceInstanceId: resourceIds[0]!,
-      authenticationSessionId: sessionIds[1]!,
+      authenticationSessionId: await origin(1, 1),
     },
   ];
   for (const operation of [
     "revokeUser",
     "revokeSession",
-    "revokeUserAndOwnedClients",
+    "revokeErasedUser",
     "revokeOrganization",
     "revokeResource",
     "revokeClient",
   ] as const) {
     const ids = targets.map(() => createId());
     for (const [index, target] of targets.entries())
-      await owner.db.insert(grantContexts).values({
+      await insertGrantContext(owner.db, {
         ...target,
         id: ids[index]!,
-        authTime,
         requestedScopes: ["openid"],
         expiresAt: new Date(Date.now() + 60000),
       });
     const expected = ids.filter((_, index) =>
-      operation === "revokeUserAndOwnedClients"
-        ? index !== 2
-        : operation === "revokeUser" || operation === "revokeSession"
+      operation === "revokeSession"
+        ? index === 0
+        : operation === "revokeUser" || operation === "revokeErasedUser"
           ? index < 2
           : operation.includes("Resource")
             ? index === 0 || index === 3
@@ -1093,13 +1100,13 @@ test("restricted revocation queries preserve their tenant, user, client and sess
               grantQueries.revokeSessionGrantContexts(
                 context,
                 userIds[0]!,
-                sessionIds[0]!,
+                targets[0]!.authenticationSessionId,
               ),
             )
           : inPlatformWrite(runtime.db, (context) => {
               switch (operation) {
-                case "revokeUserAndOwnedClients":
-                  return grantQueries.revokeUserAndOwnedClientGrantContexts(
+                case "revokeErasedUser":
+                  return grantQueries.revokeErasedUserGrantContexts(
                     context,
                     userIds[0]!,
                   );

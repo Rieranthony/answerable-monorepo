@@ -7,9 +7,8 @@ import {
 import {
   adminOperations,
   auditEvents,
-  auditEventSubjects,
+  auditEventUsers,
   entitlements,
-  grantContexts,
   groupMembers,
   groups,
   members,
@@ -21,6 +20,7 @@ import {
   ssoProviders,
   users,
 } from "../../db/schema/index.ts";
+import { insertGrantContext } from "../../__tests__/grants.ts";
 import { createId } from "../../lib/id.ts";
 let fixture: AdminFixture;
 beforeEach(async () => {
@@ -125,7 +125,6 @@ test("organisation erasure records removed tenant configuration and member histo
     .select()
     .from(auditEvents)
     .where(eq(auditEvents.operationId, response.headers.get("Operation-Id")!));
-  expect(event!.schemaVersion).toBe(3);
   const effects = event!.data!.effects as Record<
     string,
     Array<{ id: string; organizationId: string }>
@@ -161,9 +160,6 @@ test("organisation erasure records removed tenant configuration and member histo
   expect(JSON.stringify(effects.softDeletedSsoProviders)).not.toContain(
     "oidcConfig",
   );
-  expect(JSON.stringify(effects.softDeletedSsoProviders)).not.toContain(
-    "samlConfig",
-  );
   const after = await state();
   for (const name of [
     "members",
@@ -189,19 +185,7 @@ test("organisation erasure records removed tenant configuration and member histo
     deletedAt: expect.any(Date),
   });
   expect(after.users).toEqual(before.users);
-  expect(after.sessions).toEqual(
-    before.sessions.map((row) =>
-      row.activeOrganizationId === id
-        ? { ...row, activeOrganizationId: null }
-        : row,
-    ),
-  );
-  expect(effects.clearedSessionSelections!.map((row) => row.id).sort()).toEqual(
-    before.sessions
-      .filter((row) => row.activeOrganizationId === id)
-      .map((row) => row.id)
-      .sort(),
-  );
+  expect(after.sessions).toEqual(before.sessions);
   const replay = await erase(id, key);
   expect(replay.status).toBe(204);
   expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
@@ -219,16 +203,12 @@ test("organisation erasure records removed tenant configuration and member histo
   ).toEqual([event!.id]);
   const subjects = await fixture.db
     .select()
-    .from(auditEventSubjects)
-    .where(eq(auditEventSubjects.eventId, event!.id));
-  expect(subjects).toContainEqual(
-    expect.objectContaining({
-      entityType: "user",
-      entityId: fixture.principals.tenantReader.userId,
-      relationship: "affected",
-      organizationId: id,
-    }),
-  );
+    .from(auditEventUsers)
+    .where(eq(auditEventUsers.eventId, event!.id));
+  expect(subjects).toContainEqual({
+    userId: fixture.principals.tenantReader.userId,
+    eventId: event!.id,
+  });
 });
 
 test("organisation erasure rolls back configuration and receipt when subject capture fails, then recovers the same key", async () => {
@@ -236,13 +216,13 @@ test("organisation erasure rolls back configuration and receipt when subject cap
   const before = await state();
   const key = createId();
   await fixture.db.execute(
-    sql`alter table audit_event_subjects add constraint org_erasure_fault check (relationship <> 'affected') not valid`,
+    sql`alter table audit_event_users add constraint org_erasure_fault check (user_id <> ${sql.raw(`'${fixture.principals.tenantReader.userId}'`)}::uuid) not valid`,
   );
   try {
     expect((await erase(id, key)).status).toBe(400);
   } finally {
     await fixture.db.execute(
-      sql`alter table audit_event_subjects drop constraint org_erasure_fault`,
+      sql`alter table audit_event_users drop constraint org_erasure_fault`,
     );
   }
   expect(await state()).toEqual(before);
@@ -251,7 +231,7 @@ test("organisation erasure rolls back configuration and receipt when subject cap
     .select()
     .from(auditEvents)
     .where(eq(auditEvents.action, "organization.erased"));
-  expect(event!.schemaVersion).toBe(3);
+  expect(event!.targetId).toBe(id);
   expect((await erase(id, key)).headers.get("Idempotency-Replayed")).toBe(
     "true",
   );
@@ -345,16 +325,11 @@ for (const order of ["organisation-first", "user-first"] as const) {
     ).toBe(order === "organisation-first");
     const subjects = await fixture.db
       .select()
-      .from(auditEventSubjects)
-      .where(eq(auditEventSubjects.eventId, event!.id));
-    expect(
-      subjects.some(
-        (row) =>
-          row.entityType === "user" &&
-          row.entityId === person.userId &&
-          row.relationship === "affected",
-      ),
-    ).toBe(order === "organisation-first");
+      .from(auditEventUsers)
+      .where(eq(auditEventUsers.eventId, event!.id));
+    expect(subjects.some((row) => row.userId === person.userId)).toBe(
+      order === "organisation-first",
+    );
     expect(
       (await erase(organizationId, key)).headers.get("Idempotency-Replayed"),
     ).toBe("true");
@@ -376,14 +351,13 @@ test("organisation erasure records each deleted grant with its stored tenant ide
     redirectUris: [],
     scopes: ["org:read"],
   });
-  await fixture.db.insert(grantContexts).values({
+  await insertGrantContext(fixture.db, {
     id,
     organizationId: person.organizationId,
     memberId: person.memberId,
     userId: person.userId,
     clientInstanceId,
     authenticationSessionId: session!.id,
-    authTime: sql`(select created_at from sessions where id = ${session!.id}::uuid)`,
     requestedScopes: ["org:read"],
     expiresAt: new Date("2100-01-01"),
   });

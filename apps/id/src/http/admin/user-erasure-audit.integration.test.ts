@@ -1,26 +1,28 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
+import {
+  insertGrantContext,
+  insertOriginSession,
+} from "../../__tests__/grants.ts";
 import { recordAuditEvent } from "../../db/queries/audit.ts";
 import {
   accounts,
   adminOperations,
   auditEvents,
-  auditEventSubjects,
+  auditEventUsers,
   entitlements,
   grantContexts,
   groupMembers,
   groups,
   members,
   oauthAccessTokens,
-  oauthClientResources,
   oauthClients,
   oauthConsents,
   oauthRefreshTokens,
-  organizationCapabilities,
   sessions,
   ssoProviders,
   users,
@@ -82,35 +84,19 @@ async function seed() {
       status: "disabled",
     });
   }
-  const owned = { id: createId(), clientId: createId() };
-  await fixture.db.insert(oauthClients).values({
-    ...owned,
-    userId: person.userId,
-    redirectUris: [],
-    scopes: ["read"],
-    clientSecret: "private-client-secret",
-  });
-  await fixture.db.insert(oauthClientResources).values({
-    id: createId(),
-    clientId: owned.clientId,
-    resourceId: fixture.platform.adminResource,
-  });
   const [session] = await fixture.db
     .select()
     .from(sessions)
     .where(eq(sessions.userId, person.userId));
-  const [otherSession] = await fixture.db
-    .select()
-    .from(sessions)
-    .where(eq(sessions.userId, other.userId));
   const expiresAt = new Date("2100-01-01");
+  const clientId = fixture.platform.client.clientId;
   const refreshId = createId();
   await fixture.db.insert(oauthRefreshTokens).values({
     id: refreshId,
     token: "private-refresh-token",
-    clientId: owned.clientId,
-    userId: other.userId,
-    sessionId: otherSession!.id,
+    clientId,
+    userId: person.userId,
+    sessionId: session!.id,
     scopes: ["read"],
     expiresAt,
     rotationReplayResponse: "private-replay-body",
@@ -118,30 +104,52 @@ async function seed() {
   await fixture.db.insert(oauthAccessTokens).values({
     id: createId(),
     token: "private-access-token",
-    clientId: owned.clientId,
-    userId: other.userId,
+    clientId,
+    userId: person.userId,
     refreshId,
-    sessionId: otherSession!.id,
+    sessionId: session!.id,
     scopes: ["read"],
     expiresAt,
   });
   await fixture.db.insert(oauthConsents).values({
     id: createId(),
-    clientId: owned.clientId,
-    userId: other.userId,
+    clientId,
+    userId: person.userId,
     scopes: ["read"],
   });
-  await fixture.db.insert(grantContexts).values({
-    id: createId(),
-    organizationId: other.organizationId,
-    memberId: other.memberId,
-    userId: other.userId,
-    clientInstanceId: owned.id,
-    authenticationSessionId: otherSession!.id,
-    authTime: sql`(select created_at from sessions where id = ${otherSession!.id}::uuid)`,
-    requestedScopes: ["read"],
-    expiresAt,
-  });
+  const [client] = await fixture.db
+    .insert(oauthClients)
+    .values({
+      id: createId(),
+      clientId: createId(),
+      redirectUris: [],
+      scopes: ["read"],
+    })
+    .returning();
+  for (const membership of [
+    { ...person, sessionId: session!.id },
+    {
+      ...person,
+      memberId: secondMember!.id,
+      organizationId: other.organizationId,
+      sessionId: (
+        await insertOriginSession(fixture.db, {
+          userId: person.userId,
+          organizationId: other.organizationId,
+        })
+      ).id,
+    },
+  ])
+    await insertGrantContext(fixture.db, {
+      id: createId(),
+      organizationId: membership.organizationId,
+      memberId: membership.memberId,
+      userId: person.userId,
+      clientInstanceId: client!.id,
+      authenticationSessionId: membership.sessionId,
+      requestedScopes: ["read"],
+      expiresAt,
+    });
   // These survive user erasure but lose the deleted session reference via SET NULL.
   await fixture.db.insert(oauthAccessTokens).values({
     id: createId(),
@@ -160,11 +168,7 @@ async function seed() {
     scopes: [],
     expiresAt,
   });
-  await fixture.db
-    .update(ssoProviders)
-    .set({ userId: person.userId })
-    .where(eq(ssoProviders.organizationId, other.organizationId));
-  return { person, other, owned };
+  return { person, other };
 }
 async function state() {
   return {
@@ -189,10 +193,6 @@ async function state() {
       .select()
       .from(oauthClients)
       .orderBy(oauthClients.id),
-    links: await fixture.db
-      .select()
-      .from(oauthClientResources)
-      .orderBy(oauthClientResources.id),
     access: await fixture.db
       .select()
       .from(oauthAccessTokens)
@@ -223,7 +223,7 @@ function erase(id: string, key: string) {
     headers,
   });
 }
-test("global user erasure records actual cross-tenant and owned-client effects without credentials", async () => {
+test("global user erasure records actual cross-tenant effects without credentials", async () => {
   const { person, other } = await seed();
   const before = await state();
   const key = createId();
@@ -233,7 +233,6 @@ test("global user erasure records actual cross-tenant and owned-client effects w
     .select()
     .from(auditEvents)
     .where(eq(auditEvents.operationId, response.headers.get("Operation-Id")!));
-  expect(event!.schemaVersion).toBe(3);
   const after = await state();
   const effects = event!.data!.effects as Record<string, Array<{ id: string }>>;
   for (const [effect, table] of Object.entries({
@@ -242,8 +241,6 @@ test("global user erasure records actual cross-tenant and owned-client effects w
     softDeletedEntitlements: "entitlements",
     softDeletedAccounts: "accounts",
     deletedSessions: "sessions",
-    softDeletedClients: "clients",
-    softDeletedClientResources: "links",
     deletedAccessTokens: "access",
     deletedRefreshTokens: "refresh",
     softDeletedConsents: "consents",
@@ -291,26 +288,34 @@ test("global user erasure records actual cross-tenant and owned-client effects w
     "deletedAccessTokens",
     "deletedRefreshTokens",
     "softDeletedConsents",
+  ])
+    expect(effects[name]).toContainEqual(
+      expect.objectContaining({ userId: person.userId }),
+    );
+  for (const name of [
     "clearedAccessTokenSessions",
     "clearedRefreshTokenSessions",
   ])
     expect(effects[name]).toContainEqual(
       expect.objectContaining({ userId: other.userId }),
     );
+  expect(
+    (event!.data!.revokedGrantContexts as { id: string }[])
+      .map((row) => row.id)
+      .sort(),
+  ).toEqual(
+    before.grants
+      .filter((row) => row.userId === person.userId)
+      .map((row) => row.id)
+      .sort(),
+  );
 
   expect(after.groups).toEqual(before.groups);
-  expect(after.providers).toEqual(
-    before.providers.map((row) =>
-      row.userId === person.userId
-        ? { ...row, userId: null, revision: row.revision + 1 }
-        : row,
-    ),
-  );
+  expect(after.providers).toEqual(before.providers);
+  expect(after.clients).toEqual(before.clients);
   for (const name of [
     "accounts",
     "sessions",
-    "clients",
-    "links",
     "consents",
     "assignments",
     "entitlements",
@@ -371,16 +376,6 @@ test("global user erasure records actual cross-tenant and owned-client effects w
       });
     }
   }
-  expect(effects.detachedSsoProviders).toEqual(
-    before.providers
-      .filter((row) => row.userId === person.userId)
-      .map((row) => ({
-        id: row.id,
-        organizationId: row.organizationId,
-        before: { userId: person.userId, revision: row.revision },
-        after: { userId: null, revision: row.revision + 1 },
-      })),
-  );
   for (const secret of [
     "private-client-secret",
     "private-refresh-token",
@@ -405,11 +400,8 @@ test("global user erasure records actual cross-tenant and owned-client effects w
     (await history.json()).items.map((row: { id: string }) => row.id),
   ).toEqual([event!.id]);
 
-  // Isolate each real producer array: another effect must not mask a missing subject contract.
+  // Isolate each manifest naming another user: one must not mask a missing extraction.
   for (const name of [
-    "deletedAccessTokens",
-    "deletedRefreshTokens",
-    "softDeletedConsents",
     "clearedAccessTokenSessions",
     "clearedRefreshTokenSessions",
   ]) {
@@ -420,7 +412,6 @@ test("global user erasure records actual cross-tenant and owned-client effects w
       targetType: "user",
       targetId: person.userId,
       action: "user.erased",
-      schemaVersion: 3,
       outcome: "success",
       data: {
         deletionMode: "soft",
@@ -431,52 +422,10 @@ test("global user erasure records actual cross-tenant and owned-client effects w
     });
     const subjects = await fixture.db
       .select()
-      .from(auditEventSubjects)
-      .where(eq(auditEventSubjects.eventId, isolated.id));
-    expect(
-      subjects
-        .filter((row) => row.relationship === "affected")
-        .map((row) => row.entityId),
-    ).toEqual([other.userId]);
+      .from(auditEventUsers)
+      .where(eq(auditEventUsers.eventId, isolated.id));
+    expect(subjects.map((row) => row.userId).sort()).toEqual(
+      [person.userId, other.userId].sort(),
+    );
   }
 });
-
-for (const reference of ["entitlement", "capability"] as const) {
-  test(`global user erasure preserves external ${reference} restrictions and rolls back earlier effects`, async () => {
-    const { person, other, owned } = await seed();
-    if (reference === "entitlement")
-      await fixture.db.insert(entitlements).values({
-        id: createId(),
-        organizationId: other.organizationId,
-        memberId: other.memberId,
-        clientId: owned.clientId,
-        scopes: ["read"],
-      });
-    else
-      await fixture.db.insert(organizationCapabilities).values({
-        id: createId(),
-        organizationId: other.organizationId,
-        clientId: owned.clientId,
-        grantKind: "authorization_code",
-        scopes: ["read"],
-      });
-    const before = await state();
-    const key = createId();
-    const refused = await erase(person.userId, key);
-    expect(refused.status).toBe(409);
-    expect(await refused.json()).toMatchObject({ code: "reference_violation" });
-    expect(await state()).toEqual(before);
-    if (reference === "entitlement")
-      await fixture.db
-        .delete(entitlements)
-        .where(eq(entitlements.clientId, owned.clientId));
-    else
-      await fixture.db
-        .delete(organizationCapabilities)
-        .where(eq(organizationCapabilities.clientId, owned.clientId));
-    expect((await erase(person.userId, key)).status).toBe(204);
-    expect(
-      (await erase(person.userId, key)).headers.get("Idempotency-Replayed"),
-    ).toBe("true");
-  });
-}

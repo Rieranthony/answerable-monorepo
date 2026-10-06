@@ -24,7 +24,6 @@ export type TenantAuthentication = Readonly<{
   authenticationProviderRevision: number;
   brokerAuthenticatedAt: Date;
   upstreamAuthTime: Date | null;
-  sessionExpiresAt: Date;
 }>;
 
 /** Trusted callers hold the user and target organisation locks in their existing
@@ -72,7 +71,6 @@ export async function tenantAuthentication(
         authenticationProviderRevision: ssoProviders.revision,
         brokerAuthenticatedAt: sessions.createdAt,
         upstreamAuthTime: sessions.upstreamAuthTime,
-        sessionExpiresAt: sessions.expiresAt,
       })
       .from(sessions)
       .innerJoin(users, eq(users.id, sessions.userId))

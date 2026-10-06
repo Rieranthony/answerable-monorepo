@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   check,
   index,
-  jsonb,
+  integer,
   pgTable,
   pgPolicy,
   text,
@@ -11,7 +11,6 @@ import {
 import { members, organizations, users } from "./auth.ts";
 import { oauthClients, oauthResources } from "./oauth.ts";
 import { id, timestampColumn } from "./columns.ts";
-import type { GrantAuthentication } from "../../auth/grant-authentication.ts";
 
 /** One immutable authority context per user authorisation, shared by its rotations. */
 export const grantContexts = pgTable(
@@ -20,25 +19,31 @@ export const grantContexts = pgTable(
     id: id(),
     organizationId: uuid("organization_id")
       .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
+      .references(() => organizations.id, { onDelete: "restrict" }),
     memberId: uuid("member_id")
       .notNull()
-      .references(() => members.id, { onDelete: "cascade" }),
+      .references(() => members.id, { onDelete: "restrict" }),
     userId: uuid("user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      .references(() => users.id, { onDelete: "restrict" }),
     clientInstanceId: uuid("client_instance_id")
       .notNull()
-      .references(() => oauthClients.id, { onDelete: "cascade" }),
+      .references(() => oauthClients.id, { onDelete: "restrict" }),
     resourceInstanceId: uuid("resource_instance_id").references(
       () => oauthResources.id,
-      { onDelete: "cascade" },
+      { onDelete: "restrict" },
     ),
     authorizationCodeId: text("authorization_code_id").unique(),
-    // Immutable authentication evidence, retained after the browser session ends.
+    // Immutable authentication evidence, copied from the session's origin and
+    // retained after the browser session ends; named as on `sessions`.
     authenticationSessionId: uuid("authentication_session_id").notNull(),
     authTime: timestampColumn("auth_time").notNull(),
-    authentication: jsonb("authentication").$type<GrantAuthentication>(),
+    authenticationAccountId: uuid("authentication_account_id").notNull(),
+    authenticationProviderId: uuid("authentication_provider_id").notNull(),
+    authenticationProviderRevision: integer(
+      "authentication_provider_revision",
+    ).notNull(),
+    upstreamAuthTime: timestampColumn("upstream_auth_time"),
     requestedScopes: text("requested_scopes").array().notNull(),
     createdAt: timestampColumn("created_at").defaultNow().notNull(),
     expiresAt: timestampColumn("expires_at").notNull(),
@@ -65,16 +70,16 @@ export const grantContexts = pgTable(
         using: write,
         withCheck: write,
       }),
-      pgPolicy("grant_delete", {
-        for: "delete",
-        using: sql`${mode} = 'platform-write'`,
-      }),
       index("grant_contexts_organization_id_idx").on(table.organizationId),
       index("grant_contexts_member_id_idx").on(table.memberId),
       index("grant_contexts_user_id_idx").on(table.userId),
       index("grant_contexts_client_instance_id_idx").on(table.clientInstanceId),
       index("grant_contexts_resource_instance_id_idx").on(
         table.resourceInstanceId,
+      ),
+      check(
+        "grant_contexts_authentication_provider_revision_check",
+        sql`${table.authenticationProviderRevision} > 0`,
       ),
       check(
         "grant_contexts_code_check",

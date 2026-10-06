@@ -5,6 +5,10 @@ import {
   inPlatformWrite,
   inPlatformRead,
 } from "../__tests__/platform-context.ts";
+import {
+  insertGrantContext,
+  insertOriginSession,
+} from "../__tests__/grants.ts";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import {
@@ -34,21 +38,13 @@ beforeEach(async () => {
 async function seed() {
   const db = connection.db;
   const userId = createId();
-  const authTime = new Date();
-  const sessionId = createId();
   await db.insert(users).values({
     id: userId,
     name: "User",
     email: `${userId}@example.com`,
     status: "active",
   });
-  await db.insert(sessions).values({
-    id: sessionId,
-    userId,
-    token: createId(),
-    createdAt: authTime,
-    expiresAt: new Date(Date.now() + 60000),
-  });
+  const sessionIds = [];
   const [client] = await db
     .insert(oauthClients)
     .values({
@@ -77,26 +73,24 @@ async function seed() {
       .insert(organizations)
       .values({ id: organizationId, slug: name, name });
     await db.insert(members).values({ id: memberId, organizationId, userId });
-    for (const resource of resources) {
-      const [context] = await db
-        .insert(grantContexts)
-        .values({
+    const session = await insertOriginSession(db, { userId, organizationId });
+    sessionIds.push(session.id);
+    for (const resource of resources)
+      contexts.push(
+        await insertGrantContext(db, {
           id: createId(),
           organizationId,
           memberId,
           userId,
           clientInstanceId: client!.id,
           resourceInstanceId: resource.id,
-          authenticationSessionId: sessionId,
-          authTime,
+          authenticationSessionId: session.id,
           requestedScopes: ["read"],
           expiresAt: new Date(Date.now() + 60000),
-        })
-        .returning();
-      contexts.push(context!);
-    }
+        }),
+      );
   }
-  return { db, target: resources[0]!, contexts, sessionId };
+  return { db, target: resources[0]!, contexts, sessionId: sessionIds[0]! };
 }
 
 test("resource disable revokes its contexts across tenants, preserves other resources and never revives old authority", async () => {
@@ -197,7 +191,6 @@ test("resource deletion records every revoked context, preserving unrelated auth
   );
   expect(event!.data!.revokedGrantContexts).toHaveLength(2);
   const erasedUserId = contexts[0]!.userId;
-  await db.delete(users).where(eq(users.id, erasedUserId));
   expect(
     (
       await inPlatformRead(db, (context) =>

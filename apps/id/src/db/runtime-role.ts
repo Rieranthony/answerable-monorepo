@@ -57,18 +57,14 @@ export function configureRuntimeRole(db: Database, roleName: string) {
       sql`grant select, insert, update, delete on all tables in schema public to ${role}`,
     );
     await tx.execute(
-      sql`revoke delete on users, organizations, accounts, members, organization_domains, groups, group_members, entitlements, oauth_clients, oauth_resources, oauth_client_resources, oauth_consents, sso_providers, organization_capabilities from ${role}`,
+      sql`revoke delete on users, organizations, accounts, members, organization_domains, groups, group_members, entitlements, oauth_clients, oauth_resources, oauth_client_resources, oauth_consents, sso_providers, organization_capabilities, grant_contexts from ${role}`,
     );
     await tx.execute(sql`revoke update, delete on audit_events from ${role}`);
     await tx.execute(
-      sql`revoke insert, update, delete on audit_event_subjects from ${role}`,
+      sql`revoke insert, update, delete on audit_event_users from ${role}`,
     );
     await tx.execute(
       sql`revoke update, delete on system_bindings, admin_operations from ${role}`,
-    );
-    // Trigger invocation needs no direct EXECUTE grant. Block calls that could forge subjects.
-    await tx.execute(
-      sql`revoke execute on function capture_audit_subjects(audit_events, text), record_audit_subjects() from public, ${role}`,
     );
   });
 }
@@ -79,15 +75,14 @@ export async function assertRuntimeRole(db: Database) {
     select
       (${elevatedRole}) or (${ownsObjects})
       or (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
-        where n.nspname = 'public' and c.relname in ('groups', 'group_members', 'entitlements', 'organization_capabilities', 'grant_contexts', 'members', 'organization_domains', 'sso_providers', 'audit_events', 'audit_event_subjects') and c.relrowsecurity) <> 10
-      or exists(select 1 from unnest(array['users','organizations','accounts','members','organization_domains','groups','group_members','entitlements','oauth_clients','oauth_resources','oauth_client_resources','oauth_consents','sso_providers','organization_capabilities']) as product(table_name) where has_table_privilege(current_user, product.table_name, 'DELETE,TRUNCATE,TRIGGER'))
+        where n.nspname = 'public' and c.relname in ('groups', 'group_members', 'entitlements', 'organization_capabilities', 'grant_contexts', 'members', 'organization_domains', 'sso_providers', 'audit_events', 'audit_event_users') and c.relrowsecurity) <> 10
+      or exists(select 1 from unnest(array['users','organizations','accounts','members','organization_domains','groups','group_members','entitlements','oauth_clients','oauth_resources','oauth_client_resources','oauth_consents','sso_providers','organization_capabilities','grant_contexts']) as product(table_name) where has_table_privilege(current_user, product.table_name, 'DELETE,TRUNCATE,TRIGGER'))
       or has_schema_privilege(current_user, 'public', 'CREATE')
       or has_database_privilege(current_user, current_database(), 'TEMP')
       or has_table_privilege(current_user, 'audit_events', 'UPDATE,DELETE,TRUNCATE,TRIGGER')
-      or has_table_privilege(current_user, 'audit_event_subjects', 'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER')
+      or has_table_privilege(current_user, 'audit_event_users', 'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER')
       or has_table_privilege(current_user, 'system_bindings', 'UPDATE,DELETE,TRUNCATE,TRIGGER')
       or has_table_privilege(current_user, 'admin_operations', 'UPDATE,DELETE,TRUNCATE,TRIGGER')
-      or has_function_privilege(current_user, 'capture_audit_subjects(audit_events,text)', 'EXECUTE')
       as unsafe
     from pg_roles r where rolname = current_user
   `);

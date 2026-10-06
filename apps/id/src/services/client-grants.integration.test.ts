@@ -5,6 +5,10 @@ import {
   inPlatformRead,
 } from "../__tests__/platform-context.ts";
 import { inTenantRead } from "../__tests__/tenant-command.ts";
+import {
+  insertGrantContext,
+  insertOriginSession,
+} from "../__tests__/grants.ts";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import {
@@ -60,9 +64,7 @@ async function seed() {
   const contexts = [];
   for (const tenant of tenants) {
     const userId = createId(),
-      sessionId = createId(),
       memberId = createId();
-    const authTime = new Date();
     await db.insert(users).values({
       id: userId,
       name: "User",
@@ -72,30 +74,23 @@ async function seed() {
     await db
       .insert(members)
       .values({ id: memberId, organizationId: tenant.id, userId });
-    await db.insert(sessions).values({
-      id: sessionId,
+    const session = await insertOriginSession(db, {
       userId,
-      token: createId(),
-      createdAt: authTime,
-      expiresAt: new Date(Date.now() + 60000),
+      organizationId: tenant.id,
     });
-    for (const client of clients) {
-      const [context] = await db
-        .insert(grantContexts)
-        .values({
+    for (const client of clients)
+      contexts.push(
+        await insertGrantContext(db, {
           id: createId(),
           organizationId: tenant.id,
           memberId,
           userId,
           clientInstanceId: client.id,
-          authenticationSessionId: sessionId,
-          authTime,
+          authenticationSessionId: session.id,
           requestedScopes: ["read"],
           expiresAt: new Date(Date.now() + 60000),
-        })
-        .returning();
-      contexts.push(context!);
-    }
+        }),
+      );
   }
   return {
     db,
@@ -201,7 +196,6 @@ for (const mode of ["disable", "erase"] as const) {
     const erasedUserId = affected.find(
       (row) => row.organizationId === otherTenantId,
     )!.userId;
-    await db.delete(users).where(eq(users.id, erasedUserId));
     expect(
       (
         await inPlatformRead(db, (context) =>

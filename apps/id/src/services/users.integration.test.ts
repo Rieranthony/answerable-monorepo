@@ -1,5 +1,9 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
+import {
+  insertGrantContext,
+  insertOriginSession,
+} from "../__tests__/grants.ts";
 import { inPlatformUsers } from "../__tests__/platform-context.ts";
 import { testEnvironment } from "../__tests__/support.ts";
 import type { Database } from "../db/client.ts";
@@ -13,7 +17,6 @@ import {
   oauthClients,
   oauthRefreshTokens,
   organizations,
-  sessions,
   users,
 } from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
@@ -68,12 +71,11 @@ async function seed(status: "active" | "inert" = "active") {
     providerId: "test",
     accountId: userId,
   });
-  await db.insert(sessions).values({
+  await insertOriginSession(db, {
     id: sessionId,
     userId,
-    token: createId(),
+    organizationId,
     createdAt: authTime,
-    expiresAt: new Date(Date.now() + 60000),
   });
   await db
     .insert(oauthClients)
@@ -102,7 +104,7 @@ async function events(userId: string) {
 async function seedGrantContexts() {
   const db = connection.db;
   const userId = await seed();
-  const otherUserId = await seed();
+  await seed();
   const extraOrg = createId();
   await db
     .insert(organizations)
@@ -111,46 +113,24 @@ async function seedGrantContexts() {
     .insert(members)
     .values({ id: createId(), organizationId: extraOrg, userId });
   await db.update(oauthClients).set({ scopes: ["read"] });
-  await db
-    .update(oauthClients)
-    .set({ userId })
-    .where(eq(oauthClients.clientId, userId));
   const [client] = await db
     .select()
     .from(oauthClients)
     .where(eq(oauthClients.clientId, userId));
-  const contexts: (typeof grantContexts.$inferSelect)[] = [];
   for (const membership of await db.select().from(members)) {
-    const [session] = await db
-      .select()
-      .from(sessions)
-      .where(eq(sessions.userId, membership.userId));
-    const [grant] = await db
-      .insert(grantContexts)
-      .values({
-        id: createId(),
-        organizationId: membership.organizationId,
-        memberId: membership.id,
-        userId: membership.userId,
-        clientInstanceId: client!.id,
-        authenticationSessionId: session!.id,
-        authTime: session!.createdAt,
-        requestedScopes: ["read"],
-        expiresAt: new Date(Date.now() + 60000),
-      })
-      .returning();
-    contexts.push(grant!);
+    const session = await insertOriginSession(db, membership);
+    await insertGrantContext(db, {
+      id: createId(),
+      organizationId: membership.organizationId,
+      memberId: membership.id,
+      userId: membership.userId,
+      clientInstanceId: client!.id,
+      authenticationSessionId: session.id,
+      requestedScopes: ["read"],
+      expiresAt: new Date(Date.now() + 60000),
+    });
   }
-  const [otherClient] = await db
-    .select()
-    .from(oauthClients)
-    .where(eq(oauthClients.clientId, otherUserId));
-  const template = contexts.find((row) => row.userId === otherUserId)!;
-  const [independent] = await db
-    .insert(grantContexts)
-    .values({ ...template, id: createId(), clientInstanceId: otherClient!.id })
-    .returning();
-  return { db, userId, otherUserId, contexts, independent: independent! };
+  return { db, userId };
 }
 test("disable reconciles unrevoked contexts on an already-disabled user as an applied effect", async () => {
   const { db, userId } = await seedGrantContexts();

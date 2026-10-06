@@ -6,7 +6,14 @@ import {
 } from "better-auth/crypto";
 import type { jwt } from "better-auth/plugins/jwt";
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { and, eq, sql, TransactionRollbackError, type SQL } from "drizzle-orm";
+import {
+  and,
+  eq,
+  like,
+  sql,
+  TransactionRollbackError,
+  type SQL,
+} from "drizzle-orm";
 import {
   createLocalJWKSet,
   decodeJwt,
@@ -31,13 +38,13 @@ import { inTenant, inTenantRead } from "../__tests__/tenant-command.ts";
 import { createApp } from "../app.ts";
 import { createAuth } from "../auth.ts";
 import { createDatabase, type Database, type Executor } from "../db/client.ts";
-import { setDatabaseScope, withDatabaseScope } from "../db/isolation.ts";
+import { withDatabaseScope } from "../db/isolation.ts";
 import { memberAccess } from "../db/queries/access.ts";
 import { configureRuntimeRole } from "../db/runtime-role.ts";
 import {
   accounts,
   auditEvents,
-  auditEventSubjects,
+  auditEventUsers,
   entitlements,
   grantContexts,
   groupMembers,
@@ -89,11 +96,9 @@ import {
   deleteSsoProvider,
   putSsoProvider,
 } from "../services/sso-providers.ts";
-import { disableUser, enableUser, eraseUser } from "../services/users.ts";
+import { disableUser, enableUser } from "../services/users.ts";
 import { currentGrantAuthentication } from "./grant-authentication.ts";
 import { createResourceGrant } from "./create-resource-grant.ts";
-import { authTransaction } from "./database-adapter.ts";
-import { lockResourceGrantPolicy } from "./lock-resource-grant-policy.ts";
 import { bindGrantCode } from "./native-code-replay.ts";
 import { userResourcePolicy } from "./user-resource-policy.ts";
 
@@ -535,24 +540,6 @@ test("expired, unselected and caller-supplied flows cannot authorise", async () 
   expect(await fixture.db.$count(grantContexts)).toBe(0);
 });
 
-test("registered resource custom claims cannot replace user authority", async () => {
-  for (const field of [
-    "membership_id",
-    "grant_id",
-    "resource_instance",
-    "upstream_auth_time",
-  ])
-    await expect(
-      fixture.db
-        .update(oauthResources)
-        .set({ customClaims: { [field]: "forged" } })
-        .where(eq(oauthResources.identifier, resource))
-        .execute(),
-    ).rejects.toMatchObject({
-      cause: { constraint: "oauth_resources_identity_claims_check" },
-    });
-});
-
 test("refresh audit failure rolls back rotation and leaves the original token usable", async () => {
   const issued = await issue();
   await fixture.db.execute(
@@ -796,27 +783,22 @@ test("cached output and returned refresh rows are checked again without a succes
   ).toBe(1);
 });
 
-test("retained legacy or inconsistent authentication evidence cannot establish current authority", async () => {
+test("inconsistent or revoked authentication evidence cannot establish current authority", async () => {
   await issue();
   const [grant] = await fixture.db.select().from(grantContexts);
-  expect(
-    await currentGrantAuthentication(fixture.db, {
-      ...grant!,
-      authentication: null,
-    }),
-  ).toBeNull();
-  expect(
-    await currentGrantAuthentication(fixture.db, {
-      ...grant!,
-      authentication: { ...grant!.authentication!, memberId: createId() },
-    }),
-  ).toBeNull();
-  expect(
-    await currentGrantAuthentication(fixture.db, {
-      ...grant!,
-      revokedAt: new Date(),
-    }),
-  ).toBeNull();
+  expect(await currentGrantAuthentication(fixture.db, grant!)).toBe(true);
+  for (const patch of [
+    { authenticationAccountId: createId() },
+    { authenticationProviderId: createId() },
+    {
+      authenticationProviderRevision: grant!.authenticationProviderRevision + 1,
+    },
+    { memberId: createId() },
+    { revokedAt: new Date() },
+  ])
+    expect(
+      await currentGrantAuthentication(fixture.db, { ...grant!, ...patch }),
+    ).toBe(false);
 });
 
 test("JSON authorisation starts and consent details retain the selected membership", async () => {
@@ -848,8 +830,7 @@ test("missing upstream authentication time stays unknown in tokens and retained 
   expect(decodeJwt(issued.id_token).upstream_auth_time).toBeNull();
   expect(decodeJwt(issued.id_token).auth_time).toBeNumber();
   expect(
-    (await fixture.db.select().from(grantContexts))[0]!.authentication!
-      .upstreamAuthTime,
+    (await fixture.db.select().from(grantContexts))[0]!.upstreamAuthTime,
   ).toBeNull();
 });
 
@@ -908,20 +889,25 @@ test("production provider binds native tenant selection, consent and code to one
     .where(
       eq(grantContexts.id, String(decodeJwt(issued.access_token).grant_id)),
     );
-  expect(grant!.authentication).toMatchObject({
+  const [session] = await fixture.db
+    .select()
+    .from(sessions)
+    .where(eq(sessions.id, grant!.authenticationSessionId));
+  expect(grant).toMatchObject({
     userId: fixture.principals.tenantAdmin.userId,
     memberId: fixture.principals.tenantAdmin.memberId,
-    authenticationOrganizationId: fixture.tenant.organizationId,
-    authenticationSessionId: grant!.authenticationSessionId,
-    brokerAuthenticatedAt: grant!.authTime.toISOString(),
+    organizationId: fixture.tenant.organizationId,
+    authTime: session!.createdAt,
+    authenticationAccountId: session!.authenticationAccountId,
+    authenticationProviderId: session!.authenticationProviderId,
+    authenticationProviderRevision: session!.authenticationProviderRevision,
+    upstreamAuthTime: session!.upstreamAuthTime,
   });
   expect(decodeJwt(issued.id_token).auth_time).toBe(
     Math.floor(grant!.authTime.getTime() / 1000),
   );
   expect(decodeJwt(issued.id_token).upstream_auth_time).toBe(
-    Math.floor(
-      new Date(grant!.authentication!.upstreamAuthTime!).getTime() / 1000,
-    ),
+    Math.floor(grant!.upstreamAuthTime!.getTime() / 1000),
   );
   const refreshed = await refresh(issued.refresh_token);
   expect(refreshed.status).toBe(200);
@@ -933,7 +919,7 @@ test("production provider binds native tenant selection, consent and code to one
   const events = await fixture.db
     .select()
     .from(auditEvents)
-    .where(eq(auditEvents.schemaVersion, 4));
+    .where(like(auditEvents.action, "oauth.user.%"));
   expect(events.map((event) => event.action).sort()).toEqual([
     "oauth.user.authorized",
     "oauth.user.issued",
@@ -944,41 +930,12 @@ test("production provider binds native tenant selection, consent and code to one
     expect(
       await fixture.db
         .select()
-        .from(auditEventSubjects)
-        .where(eq(auditEventSubjects.eventId, event.id)),
-    ).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          entityType: "user",
-          entityId: fixture.principals.tenantAdmin.userId,
-          relationship: "affected",
-        }),
-      ]),
-    );
+        .from(auditEventUsers)
+        .where(eq(auditEventUsers.eventId, event.id)),
+    ).toEqual([
+      { userId: fixture.principals.tenantAdmin.userId, eventId: event.id },
+    ]);
   }
-  const subjects = await fixture.db
-    .select()
-    .from(auditEventSubjects)
-    .where(
-      eq(
-        auditEventSubjects.eventId,
-        events.find((event) => event.action === "oauth.user.issued")!.id,
-      ),
-    );
-  expect(subjects).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        entityType: "member",
-        entityId: fixture.principals.tenantAdmin.memberId,
-        provenance: "recorded",
-      }),
-      expect.objectContaining({
-        entityType: "user",
-        entityId: fixture.principals.tenantAdmin.userId,
-        relationship: "affected",
-      }),
-    ]),
-  );
 });
 
 test("UserInfo validates resource access and returns the same tenant subject", async () => {
@@ -1169,7 +1126,7 @@ test("native consent denial is terminal without a code", async () => {
 test("code issuance audit failure rolls back native code, consent and terminal flow state", async () => {
   const consent = await select(await start());
   await fixture.db.execute(
-    sql`create function reject_oauth_audit() returns trigger language plpgsql as $$ begin if NEW.schema_version = 4 then raise exception 'test audit storage failure'; end if; return NEW; end $$`,
+    sql`create function reject_oauth_audit() returns trigger language plpgsql as $$ begin if NEW.action like 'oauth.user.%' then raise exception 'test audit storage failure'; end if; return NEW; end $$`,
   );
   await fixture.db.execute(
     sql`create trigger reject_oauth_audit before insert on audit_events for each row execute function reject_oauth_audit()`,
@@ -1939,7 +1896,7 @@ test("denying partial consent audits the offered scopes without minting a code",
     .select()
     .from(auditEvents)
     .where(eq(auditEvents.action, "oauth.user.denied"));
-  expect(event!.schemaVersion).toBe(4);
+  expect(event!.schemaVersion).toBe(1);
   expect(event!.data).toMatchObject({
     scopes: ["mail:read", "offline_access", "openid"],
     decision: { grantedScopes: ["mail:read", "offline_access", "openid"] },
@@ -2756,6 +2713,8 @@ test("grant provenance and code binding cannot be forged, rewritten or revived",
     { requestedScopes: ["openid"] },
     { clientInstanceId: createId() },
     { authenticationSessionId: createId() },
+    { authenticationAccountId: createId() },
+    { upstreamAuthTime: new Date(0) },
     { expiresAt: new Date(Date.now() + 86400000) },
   ])
     await expect(
@@ -2769,6 +2728,12 @@ test("grant provenance and code binding cannot be forged, rewritten or revived",
     { organizationId: fixture.outsider.organizationId },
     { authenticationSessionId: createId() },
     { authTime: new Date(0) },
+    { authenticationAccountId: createId() },
+    { authenticationProviderId: createId() },
+    {
+      authenticationProviderRevision: grant!.authenticationProviderRevision + 1,
+    },
+    { upstreamAuthTime: new Date(0) },
   ])
     await expect(
       fixture.db
@@ -2780,7 +2745,7 @@ test("grant provenance and code binding cannot be forged, rewritten or revived",
           authorizationCodeId: null,
         })
         .execute(),
-    ).rejects.toMatchObject(refused("grant_authentication_provenance"));
+    ).rejects.toMatchObject(refused("grant_context_provenance"));
   await expect(
     fixture.db
       .insert(grantContexts)
@@ -2971,13 +2936,12 @@ test("grant RLS scopes isolate tenants, clients and admission sessions and resto
       revoke,
     ),
   ).toEqual([]);
-  expect(
-    await withDatabaseScope(
-      runtime.db,
-      { kind: "grant-client", clientId },
-      (tx) => tx.delete(grantContexts).returning(),
+  // Grants are permanent: the runtime role cannot delete one in any scope.
+  await expect(
+    withDatabaseScope(runtime.db, { kind: "platform", access: "write" }, (tx) =>
+      tx.delete(grantContexts).returning(),
     ),
-  ).toEqual([]);
+  ).rejects.toMatchObject({ cause: { code: "42501" } });
   await expect(
     runtime.db
       .insert(grantContexts)
@@ -3350,28 +3314,13 @@ const creationChanges = [
   "revoke-all-sessions",
   "disable-client",
   "disable-resource",
-  "erase-owner",
 ] as const;
 
 async function creationRace(
   first: "writer" | "other",
   change: (typeof creationChanges)[number],
 ) {
-  let target = clientId;
-  if (change === "erase-owner") {
-    target = `creation-owned-${createId()}`;
-    await fixture.db.insert(oauthClients).values({
-      id: createId(),
-      clientId: target,
-      userId: fixture.principals.outsider.userId,
-      redirectUris: [],
-      grantTypes: ["authorization_code"],
-      scopes: ["openid", "mail:read"],
-    });
-    await fixture.db
-      .insert(oauthClientResources)
-      .values({ id: createId(), clientId: target, resourceId: resource });
-  }
+  const target = clientId;
   const userId = fixture.principals.tenantAdmin.userId;
   const sessionId = await browserSessionId();
   const writers: Record<(typeof creationChanges)[number], Writer> = {
@@ -3401,14 +3350,6 @@ async function creationRace(
     "disable-client": { apply: (context) => disableClient(context, target) },
     "disable-resource": {
       apply: (context) => disableResource(context, resource),
-    },
-    "erase-owner": {
-      apply: (context) =>
-        eraseUser(
-          context,
-          fixture.principals.outsider.userId,
-          fixture.principals.outsider.userId,
-        ),
     },
   };
   const { outcome } = await race(first, writers[change], () =>
@@ -3446,15 +3387,6 @@ for (const change of creationChanges)
     const stored = await fixture.db.select().from(grantContexts);
     expect(stored).toHaveLength(1);
     expect(stored[0]!.revokedAt !== null).toBe(change !== "unlink");
-    if (change === "erase-owner")
-      expect(
-        await fixture.db
-          .select()
-          .from(oauthClients)
-          .where(eq(oauthClients.clientId, target)),
-      ).toMatchObject([
-        { deletedAt: expect.any(Date), disabled: true, clientSecret: null },
-      ]);
     expect(
       await userResourcePolicy(fixture.db, {
         id: outcome.value.id,
@@ -3941,81 +3873,6 @@ test("resource grant creation times out on a held lock without partial state and
     await quick.close();
   }
   expect(await fixture.db.$count(grantContexts)).toBe(1);
-});
-
-test("erasing a client owner waits for another user's locked grant before cascading the client", async () => {
-  const ownerId = fixture.principals.outsider.userId;
-  const ownedClient = `owned-${createId()}`;
-  await fixture.db.insert(oauthClients).values({
-    id: createId(),
-    clientId: ownedClient,
-    userId: ownerId,
-    redirectUris: [],
-    grantTypes: ["authorization_code"],
-    scopes: ["openid", "mail:read"],
-  });
-  await fixture.db
-    .insert(oauthClientResources)
-    .values({ id: createId(), clientId: ownedClient, resourceId: resource });
-  const grant = await createResourceGrant(
-    fixture.db,
-    {
-      userId: fixture.principals.tenantAdmin.userId,
-      memberId: fixture.principals.tenantAdmin.memberId,
-      sessionId: await browserSessionId(),
-      clientId: ownedClient,
-      resource,
-      scopes: ["openid", "mail:read"],
-    },
-    60,
-  );
-  const adapter = (await auth.$context).adapter;
-  const writer = createDatabase({ ...fixture.environment, databasePoolMax: 2 });
-  const entered = Promise.withResolvers<void>();
-  const resume = Promise.withResolvers<void>();
-  const held = adapter.transaction(async (trx) => {
-    await setDatabaseScope(authTransaction(trx), {
-      kind: "grant-client",
-      clientId: ownedClient,
-    });
-    await lockResourceGrantPolicy(trx, { id: grant.id, clientId: ownedClient });
-    entered.resolve();
-    await resume.promise;
-    await bindGrantCode(authTransaction(trx), grant.id, createId());
-  });
-  let writerPid = 0;
-  let erased: Promise<unknown> | undefined;
-  try {
-    await entered.promise;
-    erased = inPlatformWrite(writer.db, async (context) => {
-      const pid = await context.tx.execute(sql`select pg_backend_pid() as pid`);
-      writerPid = Number(pid.rows[0]!.pid);
-      await eraseUser(context, ownerId, ownerId);
-    });
-    await until(
-      writer.db,
-      () => sql`cardinality(pg_blocking_pids(${writerPid})) > 0`,
-    );
-  } finally {
-    resume.resolve();
-    await held;
-    await erased;
-    await writer.close();
-  }
-  expect(
-    await fixture.db
-      .select()
-      .from(grantContexts)
-      .where(eq(grantContexts.id, grant.id)),
-  ).toMatchObject([{ id: grant.id, revokedAt: expect.any(Date) }]);
-  expect(
-    await fixture.db
-      .select()
-      .from(oauthClients)
-      .where(eq(oauthClients.clientId, ownedClient)),
-  ).toMatchObject([
-    { deletedAt: expect.any(Date), disabled: true, clientSecret: null },
-  ]);
 });
 
 test("the resource scope vocabulary filters issued scopes and identity claims stay in UserInfo", async () => {

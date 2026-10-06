@@ -1,5 +1,9 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
+import {
+  insertGrantContext,
+  insertOriginSession,
+} from "../__tests__/grants.ts";
 import { addGroupMember, createGroup } from "../__tests__/group-queries.ts";
 import { createOrganization } from "../__tests__/organization-queries.ts";
 import { platformWriteService } from "../__tests__/platform-context.ts";
@@ -15,7 +19,6 @@ import {
   members,
   oauthClients,
   oauthResources,
-  sessions,
   users,
 } from "../db/schema/index.ts";
 import { mapDatabaseError } from "../http/problem.ts";
@@ -421,14 +424,16 @@ async function seedUserGrants() {
     userId: member!.userId,
   });
   const authTime = new Date();
-  const sessionId = createId();
-  await db.insert(sessions).values({
-    id: sessionId,
-    userId: member!.userId,
-    token: createId(),
-    createdAt: authTime,
-    expiresAt: new Date(Date.now() + 60000),
-  });
+  const session = (organizationId: string) =>
+    insertOriginSession(db, {
+      userId: member!.userId,
+      organizationId,
+      createdAt: authTime,
+    });
+  const sessionIds = {
+    [org.id]: (await session(org.id)).id,
+    [other.id]: (await session(other.id)).id,
+  };
   const clientInstanceId = createId();
   const clientId = createId();
   await db.insert(oauthClients).values({
@@ -459,13 +464,12 @@ async function seedUserGrants() {
     },
     { id: b, organizationId: other.id, memberId: otherMemberId },
   ]) {
-    await db.insert(grantContexts).values({
+    await insertGrantContext(db, {
       ...input,
       userId: member!.userId,
       clientInstanceId,
       resourceInstanceId,
-      authenticationSessionId: sessionId,
-      authTime,
+      authenticationSessionId: sessionIds[input.organizationId]!,
       requestedScopes: ["read"],
       expiresAt: new Date(Date.now() + 60000),
     });

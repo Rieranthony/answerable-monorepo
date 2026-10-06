@@ -1,3 +1,7 @@
+import {
+  insertGrantContext,
+  insertOriginSession,
+} from "../../__tests__/grants.ts";
 import { expectReceipt } from "../../__tests__/operation-receipt.ts";
 import { createId } from "../../lib/id.ts";
 import { authorizeCommand } from "../../services/command-authority.ts";
@@ -115,33 +119,22 @@ test("rotation replay returns its receipt without revoking grants established af
     });
     expect(createdResponse.status).toBe(201);
     const client = await createdResponse.json();
-    const sessionId = createId(),
-      authTime = new Date();
     const principal = f.principals.tenantAdmin;
-    await f.db.insert(sessions).values({
-      id: sessionId,
+    const session = await insertOriginSession(f.db, {
       userId: principal.userId,
-      token: createId(),
-      createdAt: authTime,
-      expiresAt: new Date(Date.now() + 60000),
+      organizationId: f.tenant.organizationId,
     });
-    const grant = async () =>
-      (
-        await f.db
-          .insert(grantContexts)
-          .values({
-            id: createId(),
-            organizationId: f.tenant.organizationId,
-            memberId: principal.memberId,
-            userId: principal.userId,
-            clientInstanceId: client.id,
-            authenticationSessionId: sessionId,
-            authTime,
-            requestedScopes: ["read"],
-            expiresAt: new Date(Date.now() + 60000),
-          })
-          .returning()
-      )[0]!;
+    const grant = () =>
+      insertGrantContext(f.db, {
+        id: createId(),
+        organizationId: f.tenant.organizationId,
+        memberId: principal.memberId,
+        userId: principal.userId,
+        clientInstanceId: client.id,
+        authenticationSessionId: session.id,
+        requestedScopes: ["read"],
+        expiresAt: new Date(Date.now() + 60000),
+      });
     const original = await grant();
     const first = await post(
       `/${client.clientId}/rotate-secret`,

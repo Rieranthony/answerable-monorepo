@@ -17,7 +17,6 @@ import { createId } from "../lib/id.ts";
 import { lockResourceGrantTargets } from "./lock-resource-grant-policy.ts";
 import { rethrowGrantError } from "./grant-error.ts";
 import { tenantAuthentication } from "./tenant-authentication.ts";
-import { grantAuthenticationSnapshot } from "./grant-authentication.ts";
 
 /** Native callback supplies authenticated identity/session and validated request scopes.
  * This validates stored provenance; knowing these IDs is not authentication.
@@ -89,14 +88,14 @@ export async function createResourceGrant(
               resourceInstanceId: oauthResources.id,
               authorizationCodeId: sql<null>`null`.as("authorization_code_id"),
               authenticationSessionId: sessions.id,
-              // Existing context column records broker session creation only.
-              // T2 persists the complete authentication snapshot for user OAuth.
+              // auth_time is the broker session's creation; the next four
+              // columns copy the session's immutable origin.
               authTime: sessions.createdAt,
-              authentication: sql<
-                ReturnType<typeof grantAuthenticationSnapshot>
-              >`${JSON.stringify(grantAuthenticationSnapshot(authentication))}::jsonb`.as(
-                "authentication",
-              ),
+              authenticationAccountId: sessions.authenticationAccountId,
+              authenticationProviderId: sessions.authenticationProviderId,
+              authenticationProviderRevision:
+                sessions.authenticationProviderRevision,
+              upstreamAuthTime: sessions.upstreamAuthTime,
               requestedScopes: scopeArray.as("requested_scopes"),
               createdAt: sql<Date>`statement_timestamp()`.as("created_at"),
               expiresAt:

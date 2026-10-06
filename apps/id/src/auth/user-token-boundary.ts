@@ -69,13 +69,9 @@ export function createUserTokenBoundary() {
         decision.organization.authorizationVersion,
       authorization_version: decision.client!.authorizationVersion,
       upstream_auth_time:
-        decision.grant.authentication!.upstreamAuthTime === null
+        decision.grant.upstreamAuthTime === null
           ? null
-          : Math.floor(
-              new Date(
-                decision.grant.authentication!.upstreamAuthTime,
-              ).getTime() / 1000,
-            ),
+          : Math.floor(decision.grant.upstreamAuthTime.getTime() / 1000),
     };
   }
   async function readDecision(

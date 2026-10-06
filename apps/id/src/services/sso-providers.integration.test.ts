@@ -3,7 +3,11 @@ import { inPlatformWrite } from "../__tests__/platform-context.ts";
 import { inTenantRead } from "../__tests__/tenant-command.ts";
 import type { Database } from "../db/client.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+import {
+  insertGrantContext,
+  insertOriginSession,
+} from "../__tests__/grants.ts";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import { createOrganization } from "../__tests__/organization-queries.ts";
@@ -25,7 +29,7 @@ import {
   grantContexts,
   members,
   oauthClients,
-  sessions,
+  ssoProviders,
   users,
 } from "../db/schema/index.ts";
 import type { Actor } from "./actor.ts";
@@ -90,20 +94,11 @@ async function grantFixture(
       actor,
     );
   const userId = createId();
-  const sessionId = createId();
-  const authTime = new Date();
   await db.insert(users).values({
     id: userId,
     email: `${userId}@example.com`,
     name: "Shared user",
     status: "active",
-  });
-  await db.insert(sessions).values({
-    id: sessionId,
-    userId,
-    token: createId(),
-    createdAt: authTime,
-    expiresAt: new Date(Date.now() + 60000),
   });
   const [client] = await db
     .insert(oauthClients)
@@ -120,23 +115,30 @@ async function grantFixture(
     await db
       .insert(members)
       .values({ id: memberId, userId, organizationId: tenant.id });
-    const [grant] = await db
-      .insert(grantContexts)
-      .values({
+    const session = await insertOriginSession(db, {
+      userId,
+      organizationId: tenant.id,
+    });
+    contexts.push(
+      await insertGrantContext(db, {
         id: createId(),
         organizationId: tenant.id,
         memberId,
         userId,
         clientInstanceId: client!.id,
-        authenticationSessionId: sessionId,
-        authTime,
+        authenticationSessionId: session.id,
         requestedScopes: ["openid"],
         expiresAt: new Date(Date.now() + 60000),
-      })
-      .returning();
-    contexts.push(grant!);
+      }),
+    );
   }
-  return { db, org, other, userId, sessionId, contexts };
+  // Without a provider, the organisation's grant outlives the one that authenticated it.
+  if (!withProvider)
+    await db
+      .update(ssoProviders)
+      .set({ deletedAt: new Date() })
+      .where(eq(ssoProviders.organizationId, org.id));
+  return { db, org, other, userId, contexts };
 }
 const changedInput = {
   ...input,

@@ -3,7 +3,7 @@ import type { Executor } from "../db/client.ts";
 import { recordAuditEvent } from "../db/queries/audit.ts";
 import type { grantContexts } from "../db/schema/index.ts";
 
-/** Version four captures durable UUID subjects from the retained immutable grant. */
+/** The audit row targets the retained, immutable grant; its subject is the grant's user. */
 export async function recordUserOAuth(
   tx: Executor,
   input: {
@@ -22,7 +22,6 @@ export async function recordUserOAuth(
 ) {
   try {
     await recordAuditEvent(tx, {
-      schemaVersion: 4,
       actorType: input.actor,
       actorId: input.actor === "user" ? input.grant.userId : input.clientId,
       organizationId: input.grant.organizationId,
@@ -31,7 +30,7 @@ export async function recordUserOAuth(
       targetType: "grant_context",
       targetId: input.grant.id,
       requestId: input.requestId ?? null,
-      data: { ...input.data, authentication: input.grant.authentication },
+      data: input.data ?? null,
     });
   } catch {
     throw new APIError(

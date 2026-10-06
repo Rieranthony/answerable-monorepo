@@ -1,5 +1,9 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
+import {
+  insertGrantContext,
+  insertOriginSession,
+} from "../__tests__/grants.ts";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import {
@@ -78,13 +82,7 @@ async function seed(status: "active" | "inert" = "active") {
     providerId: "test",
     accountId: userId,
   });
-  await db.insert(sessions).values({
-    id: sessionId,
-    userId,
-    token: createId(),
-    createdAt: new Date(),
-    expiresAt: new Date(Date.now() + 60000),
-  });
+  await insertOriginSession(db, { id: sessionId, userId, organizationId });
   await db
     .insert(oauthClients)
     .values({ id: createId(), clientId: userId, redirectUris: [] });
@@ -117,16 +115,11 @@ async function seedSessionGrants() {
     .select()
     .from(sessions)
     .where(eq(sessions.userId, userId));
-  const [second] = await db
-    .insert(sessions)
-    .values({
-      id: createId(),
-      userId,
-      token: createId(),
-      createdAt: new Date(),
-      expiresAt: new Date(Date.now() + 60000),
-    })
-    .returning();
+  const [membership] = await db
+    .select()
+    .from(members)
+    .where(eq(members.userId, userId));
+  const second = await insertOriginSession(db, membership!);
   await db.update(oauthClients).set({ scopes: ["read"] });
   const contexts = [];
   for (const current of await db.select().from(sessions)) {
@@ -138,28 +131,25 @@ async function seedSessionGrants() {
       .select()
       .from(oauthClients)
       .where(eq(oauthClients.clientId, current.userId));
-    const [grant] = await db
-      .insert(grantContexts)
-      .values({
+    contexts.push(
+      await insertGrantContext(db, {
         id: createId(),
         organizationId: member!.organizationId,
         memberId: member!.id,
         userId: current.userId,
         clientInstanceId: client!.id,
         authenticationSessionId: current.id,
-        authTime: current.createdAt,
         requestedScopes: ["read"],
         expiresAt: new Date(Date.now() + 60000),
-      })
-      .returning();
-    contexts.push(grant!);
+      }),
+    );
   }
   return {
     db,
     userId,
     otherUserId,
     session: session!,
-    second: second!,
+    second,
     contexts,
   };
 }
