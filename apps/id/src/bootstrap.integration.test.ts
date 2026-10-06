@@ -162,6 +162,24 @@ test("creates the complete platform, repeats without changes and repairs drift",
   });
 });
 
+test("concurrent first starts seed and bind one platform", async () => {
+  const replicas = createDatabase(testEnvironment({ databasePoolMax: 2 }));
+  try {
+    const seeds = await Promise.all([
+      bootstrap(replicas.db, actor, options),
+      bootstrap(replicas.db, actor, options),
+    ]);
+    expect(seeds[1]!.organization.id).toBe(seeds[0]!.organization.id);
+    expect(
+      seeds.map(({ organization }) => organization.created).sort(),
+    ).toEqual([false, true]);
+    for (const table of Object.values(await rows()))
+      expect(table).toHaveLength(1);
+  } finally {
+    await replicas.close();
+  }
+});
+
 test("rolls back the organisation when the resource insert fails", async () => {
   await expect(
     bootstrap(db, actor, {
