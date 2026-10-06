@@ -2545,6 +2545,63 @@ for (const { change, apply, outsider, session } of authorityChanges)
     ).toBe(session === "kept" ? 1 : 0);
   });
 
+// Soft deletion written child-first and directly, leaving the sessions, codes and
+// token rows that erasure would remove, so only the issuing transaction can refuse.
+const softDeletions = {
+  user: async () => {
+    const userId = fixture.principals.tenantAdmin.userId;
+    const memberIds = sql`(select id from members where user_id = ${userId})`;
+    for (const statement of [
+      sql`update entitlements set deleted_at = now(), status = 'disabled' where deleted_at is null and member_id in ${memberIds}`,
+      sql`update group_members set deleted_at = now() where deleted_at is null and member_id in ${memberIds}`,
+      sql`update members set deleted_at = now(), status = 'revoked', revoked_at = coalesce(revoked_at, now()) where deleted_at is null and user_id = ${userId}`,
+      sql`update accounts set deleted_at = now(), access_token = null, refresh_token = null, id_token = null, password = null where deleted_at is null and user_id = ${userId}`,
+      sql`update oauth_consents set deleted_at = now() where deleted_at is null and user_id = ${userId}`,
+      sql`update users set deleted_at = now(), status = 'disabled', disabled_at = now() where id = ${userId}`,
+    ])
+      await fixture.db.execute(statement);
+  },
+  client: async () => {
+    for (const statement of [
+      sql`update entitlements set deleted_at = now(), status = 'disabled' where deleted_at is null and client_id = ${clientId}`,
+      sql`update organization_capabilities set deleted_at = now(), status = 'disabled' where deleted_at is null and client_id = ${clientId}`,
+      sql`update oauth_client_resources set deleted_at = now() where deleted_at is null and client_id = ${clientId}`,
+      sql`update oauth_consents set deleted_at = now() where deleted_at is null and client_id = ${clientId}`,
+      sql`update oauth_clients set deleted_at = now(), disabled = true, client_secret = null where client_id = ${clientId}`,
+    ])
+      await fixture.db.execute(statement);
+  },
+};
+
+for (const [deleted, softDelete] of Object.entries(softDeletions))
+  test(`the token endpoint issues nothing once the ${deleted} is soft-deleted`, async () => {
+    const issued = await issue();
+    const code = await authorize();
+    await softDelete();
+    const rows = async () => ({
+      access: await fixture.db.$count(oauthAccessTokens),
+      refresh: await fixture.db.$count(oauthRefreshTokens),
+    });
+    const before = await rows();
+    const refused = { status: 400, error: "invalid_grant" };
+    const expected =
+      deleted === "client" ? { status: 401, error: "invalid_client" } : refused;
+    for (const response of [
+      await exchange({
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: redirect,
+        code_verifier: verifier,
+        resource,
+      }),
+      await refresh(issued.refresh_token),
+    ]) {
+      expect(response.status).toBe(expected.status);
+      expect(await response.json()).toMatchObject({ error: expected.error });
+    }
+    expect(await rows()).toEqual(before);
+  });
+
 async function failingDeletes<T>(table: string, run: () => Promise<T>) {
   await fixture.db.execute(
     sql`create function refuse_token_delete() returns trigger language plpgsql as $$ begin raise exception 'test token storage outage'; end $$`,
