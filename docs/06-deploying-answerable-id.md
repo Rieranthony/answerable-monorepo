@@ -98,13 +98,15 @@ CREATE ROLE answerable_id_runtime LOGIN PASSWORD '<strong password>'
   NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
 ```
 
-**2. Migrate and provision.** One migration installs the whole schema, including functions, triggers, policies and privilege restrictions, then provisions the runtime role. Repeating it is safe.
+**2. Migrate and provision.** Two migrations install the whole schema in one transaction: `0000_initial.sql`, generated from the schema modules, and `0001_invariants.sql`, the functions, triggers, a deferred foreign key, two null-safe unique indexes and execution grants. The run then provisions the runtime role. Repeating it is safe: applied migrations are skipped. A migration file that changed after this database applied it stops the run with its name.
 
 ```bash
 DATABASE_MIGRATION_URL='postgres://<owner>:…@host/answerable_id' \
 DATABASE_RUNTIME_ROLE=answerable_id_runtime \
 bun --filter @answerable/id db:migrate
 ```
+
+The migration connection waits at most 5 s for a lock and 5 minutes for a statement. While DDL waits for a table lock, every later query on that table queues behind it, so on a live database a migration gives up rather than stall the service; rerun it once the blocking transaction ends. The statement bound stops a runaway statement from holding its locks indefinitely.
 
 **3. Start `apps/id`** with the configuration above. Startup verifies the runtime role, seeds the platform organisation, admin resource and `platform-admins` group, then listens. An unsafe role or missing variable fails the process before it listens; read the error, it names the variable or the privilege.
 

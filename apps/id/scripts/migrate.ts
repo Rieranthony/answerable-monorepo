@@ -15,7 +15,15 @@ if (isTest) assertDisposableTestDatabase("migrate");
 const databaseUrl = isTest
   ? testDatabaseUrl
   : z.url().parse(Bun.env.DATABASE_MIGRATION_URL);
-const pool = new Pool({ connectionString: databaseUrl, max: 1 });
+// While DDL waits for a table lock, every later query on that table queues behind it, so a
+// migration on a live database gives up after a few seconds rather than stall the service.
+// The statement bound stops a runaway statement from holding its locks indefinitely.
+const pool = new Pool({
+  connectionString: databaseUrl,
+  max: 1,
+  lock_timeout: 5_000,
+  statement_timeout: 300_000,
+});
 
 try {
   const db = drizzle({ client: pool, schema });
