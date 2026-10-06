@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.3
+
+The schema audit's reset of the Toolbox's tables, with `@answerable/mcp-postgres` 0.3.0. Recreate a database migrated before this version: drop its `public` schema, then run `db:migrate`.
+
+- `migrate(db)` applies `@answerable/mcp-postgres`'s migrations, then `migrations/0001_initial.sql`, which holds the catalogue and the host clients (`0001_catalogue.sql` and `0003_host_clients.sql` before). `schema_migrations` lists `mcp-postgres/<file>` and `toolbox/<file>`, each with its checksum.
+- `providers` keeps only `id`: `version`, `manifest`, `registered_at` and `status` were written at every boot and never read, since the manifest in process is the source of truth.
+- `capabilities.status`, never written, and the GIN index on `capabilities.search`, which the planner never used at this size, are gone; the generated column stays.
+- Intents are swept like the memory store's, payload bodies are verified, and evidence events lose four columns nothing wrote.
+
 ## 0.3.2
 
 The poller reads every audit event that can change what a member may use.

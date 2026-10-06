@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.0
+
+`Intent` loses `approval`, which the policy class gives and nothing read. Breaking for a custom `IntentStore` and for code that builds an `Intent`. A prepare tool still returns `approval` to the caller, derived from the class.
+
 ## 0.7.0
 
 The conformance kit keeps only the checks a provider built with the SDK can fail, and the server closes three gaps the test audit found. Breaking: ten kit checks and the three todo entries are gone, a JSON-RPC batch answers `400`, and `errorOf` reports a malformed envelope with the parser's own error.

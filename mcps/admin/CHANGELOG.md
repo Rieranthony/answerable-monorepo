@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.4
+
+`@answerable/mcp-postgres` 0.3.0. No tool changes. Recreate a database migrated before this version: drop its `public` schema, then run `db:migrate`, which records `mcp-postgres/0001_evidence.sql` and `mcp-postgres/0002_intents.sql` with their checksums. Intents are swept like the memory store's, so a committed one leaves the table a day after its commit; payload bodies are verified; evidence events lose four columns nothing wrote.
+
 ## 0.2.3
 
 ID asking to be asked again is no longer a refusal. No tool changes its schema.
