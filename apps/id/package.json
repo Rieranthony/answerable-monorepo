@@ -15,6 +15,7 @@
     "ops:preflight": "bun scripts/operations-preflight.ts",
     "openapi:export": "bun scripts/export-openapi.ts",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
+    "db:regenerate": "bun scripts/regenerate-migrations.ts",
     "db:migrate": "bun scripts/migrate.ts",
     "db:test:migrate": "bun scripts/reset-test-schema.ts && bun scripts/migrate.ts --test"
   },
