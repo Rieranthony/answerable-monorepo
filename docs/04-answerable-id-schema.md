@@ -72,7 +72,7 @@ Current deletion manifests describe product tombstones and actual credential cle
 
 Schema owner and runtime roles are separate. Runtime cannot DELETE/TRUNCATE product rows, rewrite audit, directly alter subjects/reservations, change system binding or create temporary tables. Those privileges, not triggers, keep bindings and operation receipts immutable. Protocol records retain their consumption contract. Startup checks protected privileges, ownership, `TEMP` and required RLS before listening.
 
-RLS protects `groups`, `group_members`, `entitlements`, `organization_capabilities`, `grant_contexts`, `members`, `invitations`, `organization_domains`, `sso_providers`, `audit_events` and `audit_event_subjects`. Routing SELECT and audit INSERT remain available without scope. Native broker transactions use protocol scope; the fixed grant-provenance triggers run as their owner to validate parents and retain locks without granting membership writes to grant admission. This is targeted protection, not universal RLS. The [isolation inventory](../reports/answerable-id-isolation-inventory.md) records scopes and trusted exceptions.
+RLS protects `groups`, `group_members`, `entitlements`, `organization_capabilities`, `grant_contexts`, `members`, `organization_domains`, `sso_providers`, `audit_events` and `audit_event_subjects`. Routing SELECT and audit INSERT remain available without scope. Native broker transactions use protocol scope; the fixed grant-provenance triggers run as their owner to validate parents and retain locks without granting membership writes to grant admission. This is targeted protection, not universal RLS. The [isolation inventory](../reports/answerable-id-isolation-inventory.md) records scopes and trusted exceptions.
 
 ## Completed administrative operations
 
@@ -186,6 +186,6 @@ Verified upstream `auth_time` is nullable and never replaced by broker creation 
 
 ## Soft deletion
 
-Fifteen product tables carry `deletedAt`: users, organisations, accounts, members, invitations, groups, assignments, entitlements, domains, SSO providers, clients, resources, client-resource links, consents and capabilities.
+Fourteen product tables carry `deletedAt`: users, organisations, accounts, members, groups, assignments, entitlements, domains, SSO providers, clients, resources, client-resource links, consents and capabilities.
 
 Ordinary reads/authentication/authorisation exclude them. User deletion retires email and retains profile/bindings. Credentials are cleared/revoked; native sessions/token rows can be physically consumed/deleted. Grant contexts retain revocation; audit, reservations and recovery survive. This retains identifying data and is not anonymisation. See the [deletion report](../reports/id-soft-deletion.md) for precise manifests.

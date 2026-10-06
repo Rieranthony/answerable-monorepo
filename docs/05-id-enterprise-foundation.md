@@ -30,7 +30,7 @@ Removing the last platform administrator through membership, group or capability
 
 ### Database isolation
 
-Service contexts and database predicates restrict administrative queries. Transaction-local RLS protects eleven tables, including memberships, invitations, routing configuration and audit history. Native broker transactions use protocol scope. Routing reads and audit inserts remain available without scope; audit-subject inserts remain trigger-owned. Scopes restore through savepoints, rollback and pool reuse. See the [current isolation inventory](../reports/answerable-id-isolation-inventory.md).
+Service contexts and database predicates restrict administrative queries. Transaction-local RLS protects ten tables, including memberships, routing configuration and audit history. Native broker transactions use protocol scope. Routing reads and audit inserts remain available without scope; audit-subject inserts remain trigger-owned. Scopes restore through savepoints, rollback and pool reuse. See the [current isolation inventory](../reports/answerable-id-isolation-inventory.md).
 
 ## 3. Immutable credentials and token policy
 
