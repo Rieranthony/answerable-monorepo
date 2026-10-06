@@ -17,7 +17,7 @@ function intent(organisation_id: string, overrides: Partial<Intent> = {}): Inten
     intent_id: Bun.randomUUIDv7(), organisation_id, principal: { user_id: "user-1", membership_id: "membership-1", client_id: "claude-code" },
     capability_identity: "e2e/records.delete", capability_version: "2026-09-29", input: { id: "5b0e" }, targets: [],
     preview: { summary: "Delete record “Q3 plan”", changes: [{ path: "records[5b0e]", from: { title: "Q3 plan" }, to: null }], effects: [], warnings: [], quantities: [] },
-    policy_class: "controlled", approval: { required: false, status: "not_required" }, commit_token_hash: "a".repeat(64), status: "prepared",
+    policy_class: "controlled", commit_token_hash: "a".repeat(64), status: "prepared",
     created_at: new Date(now).toISOString(), expires_at: new Date(now + 60_000).toISOString(), ...overrides,
   }
 }
@@ -38,7 +38,7 @@ test("an intent's preparation is evidence: its preview stored beside the chain b
     payload_ref: expect.any(String), payload_hash: expect.stringMatching(/^[0-9a-f]{64}$/),
   })
   expect<unknown>(await db`select body, hash from evidence_payloads where id = ${prepared.payload_ref}`).toEqual([{ body: agent.preview, hash: prepared.payload_hash }])
-  await intents.insert(intent(organisation, { policy_class: "human", approval: { required: true, status: "pending" }, status: "awaiting_approval" }))
+  await intents.insert(intent(organisation, { policy_class: "human", status: "awaiting_approval" }))
   expect(await kinds(organisation)).toEqual(["intent.prepared", "intent.prepared", "intent.approval_requested"])
   expect(await evidence.verify(organisation)).toEqual({ ok: true, length: 3 })
 })
@@ -78,6 +78,25 @@ test("an expiry is evidence once, whether a read or a claim finds it", async () 
   expect(await intents.now()).toBe(clock)
   const expired = (await events(organisation)).filter((row: { kind: string }) => row.kind === "intent.expired")
   expect(expired.map((row: { intent_id: string }) => row.intent_id)).toEqual([read.intent_id, claimed.intent_id])
+})
+
+test("each call reads the clock once: an intent whose expiry falls between two reads is expired by the next call, and recorded once", async () => {
+  let clock = Date.now()
+  let ticking = false
+  // Once ticking, every read of the clock moves it on by 1 ms, so that a call reading it twice would see two times.
+  const intents = setup(() => (ticking ? clock++ : clock))
+  const organisation = crypto.randomUUID()
+  const [read, claimed] = [intent(organisation), intent(organisation)]
+  for (const stored of [read, claimed]) await intents.insert(stored)
+  ticking = true
+  clock = Date.parse(read.expires_at) - 1
+  expect((await intents.get(read.intent_id))!.status).toBe("prepared")
+  expect((await intents.get(read.intent_id))!.status).toBe("expired")
+  expect((await intents.get(read.intent_id))!.status).toBe("expired")
+  clock = Date.parse(claimed.expires_at) - 1
+  expect(await intents.transition(claimed.intent_id, "prepared", "committing")).toBe(true)
+  const expired = (await events(organisation)).filter((row: { kind: string }) => row.kind === "intent.expired")
+  expect(expired.map((row: { intent_id: string }) => row.intent_id)).toEqual([read.intent_id])
 })
 
 test("a transition the store refuses writes no evidence", async () => {

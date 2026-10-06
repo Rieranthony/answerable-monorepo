@@ -8,7 +8,7 @@ function intent(overrides: Partial<Intent> = {}): Intent {
     capability_identity: "test/records.delete", capability_version: "2026-09-29", input: { id: "r1" },
     targets: [{ resource_type: "record", resource_id: "r1", label: "First", version: { kind: "serial", value: "1" } }],
     preview: { summary: "Delete record “First”", changes: [{ path: "records[r1]", from: { title: "First" }, to: null }], effects: [], warnings: [], quantities: [] },
-    plan: { id: "r1" }, policy_class: "controlled", approval: { required: false, status: "not_required" },
+    plan: { id: "r1" }, policy_class: "controlled",
     commit_token_hash: "0".repeat(64), status: "prepared",
     created_at: new Date(0).toISOString(), expires_at: new Date(1000).toISOString(),
     ...overrides,
@@ -39,7 +39,7 @@ test("the store decides expiry: a prepared or awaiting intent past expires_at is
   const store = createMemoryIntentStore({ now: () => clock })
   expect(store.now()).toBe(999)
   const prepared = intent()
-  const awaiting = intent({ status: "awaiting_approval", approval: { required: true, status: "pending" }, policy_class: "human" })
+  const awaiting = intent({ status: "awaiting_approval", policy_class: "human" })
   const committed = intent({ status: "committed" })
   for (const item of [prepared, awaiting, committed]) await store.insert(item)
   expect((await store.get(prepared.intent_id))!.status).toBe("prepared")
@@ -72,7 +72,7 @@ test("an insert sweeps the store at most once a minute: expired, failed and stal
   const day = 86_400_000
   const open = intent({ expires_at: new Date(2 * day).toISOString() })
   const lapsed = intent()
-  const waiting = intent({ status: "awaiting_approval", approval: { required: true, status: "pending" }, policy_class: "human" })
+  const waiting = intent({ status: "awaiting_approval", policy_class: "human" })
   const settled = (["expired", "failed", "stale"] as const).map(status => intent({ status }))
   const running = intent({ status: "committing" })
   const committed = intent({ status: "committed" })

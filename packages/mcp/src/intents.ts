@@ -33,7 +33,6 @@ export type Intent = {
   /** The author's own data for `commit`. */
   plan?: unknown
   policy_class: PolicyClass
-  approval: { required: boolean; status: "not_required" | "pending" }
   /** SHA-256 hex of the commit token; the token itself is never stored. */
   commit_token_hash: string
   status: IntentStatus

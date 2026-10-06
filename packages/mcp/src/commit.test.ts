@@ -243,7 +243,7 @@ test("a human-class intent waits for an approval: both commit tools answer APPRO
   const { connect, intents, docs } = await serve()
   const client = await connect()
   const intent = await ok(client, "docs_publish", { id: "d1" })
-  expect(await intents.get(intent.intent_id)).toMatchObject({ status: "awaiting_approval", policy_class: "human", approval: { required: true, status: "pending" } })
+  expect(await intents.get(intent.intent_id)).toMatchObject({ status: "awaiting_approval", policy_class: "human" })
   for (const [name, args] of [["test_commit", commitArgs(intent)], ["test_commit_confirmed", confirmedArgs(intent)]] as const) {
     expect(await refused(client, name, args)).toEqual({
       code: "APPROVAL_REQUIRED", message: `Intent ${intent.intent_id} is human class and needs a person's approval, which this server cannot record yet`,

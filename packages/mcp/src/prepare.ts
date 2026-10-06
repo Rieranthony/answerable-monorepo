@@ -34,7 +34,6 @@ export async function recordIntent({ mutation, input, plan, policyClass, commitT
   const now = store.now()
   const expires_at = new Date(now + Math.min(mutation.expiresInMs ?? Infinity, classExpiry[policyClass])).toISOString()
   const human = policyClass === "human"
-  const approval = human ? { required: true, status: "pending" as const } : { required: false, status: "not_required" as const }
   const intent_id = validateOnly ? null : Bun.randomUUIDv7()
   const commit_token = validateOnly ? null : `act_${Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url")}`
   if (intent_id && commit_token) {
@@ -42,13 +41,15 @@ export async function recordIntent({ mutation, input, plan, policyClass, commitT
       intent_id, organisation_id: principal.organizationId,
       principal: { user_id: principal.userId, membership_id: principal.membershipId, client_id: principal.clientId },
       capability_identity: mutation.identity, capability_version: mutation.version, input,
-      targets: plan.targets, preview: plan.preview, plan: plan.plan, policy_class: policyClass, approval,
+      targets: plan.targets, preview: plan.preview, plan: plan.plan, policy_class: policyClass,
       commit_token_hash: hashToken(commit_token), status: human ? "awaiting_approval" : "prepared",
       created_at: new Date(now).toISOString(), expires_at,
     })
   }
   return {
     intent_id, capability: mutation.identity, version: mutation.version, policy_class: policyClass, commit_tool: commitTool, commit_token,
-    expires_at, targets: plan.targets, preview: plan.preview, approval,
+    expires_at, targets: plan.targets, preview: plan.preview,
+    // Where approval stands, for the caller: the policy class gives it, so the intent does not keep it.
+    approval: human ? { required: true, status: "pending" as const } : { required: false, status: "not_required" as const },
   }
 }
