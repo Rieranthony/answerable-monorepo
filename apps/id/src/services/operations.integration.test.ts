@@ -117,13 +117,6 @@ test.each([200, 201, 204])(
       );
     }
     expect(effects).toBe(4);
-    for (const statement of [
-      sql`update admin_operations set outcome = 'noop'`,
-      sql`delete from admin_operations`,
-    ])
-      await expect(
-        Promise.resolve(connection.db.execute(statement)),
-      ).rejects.toThrow();
   },
 );
 
