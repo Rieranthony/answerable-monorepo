@@ -30,6 +30,8 @@ export function testEnvironment(
     trustedProxyCidrs: [],
     oauthRefreshReuseIntervalSeconds: 0,
     operationalLogIntervalMs: 0,
+    protocolSweepIntervalMs: 0,
+    protocolSweepBatchSize: 1_000,
     databasePoolMax: 1,
     databasePoolIdleTimeoutMs: 1_000,
     databaseConnectionTimeoutMs: 1_000,

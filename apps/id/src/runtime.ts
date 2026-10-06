@@ -6,6 +6,7 @@ import { createDatabase } from "./db/client.ts";
 import type { Environment } from "./env.ts";
 import { assertRuntimeRole } from "./db/runtime-role.ts";
 import { createOperationalMetrics } from "./operations/metrics.ts";
+import { startProtocolSweep } from "./operations/protocol-sweep.ts";
 
 export async function startRuntime(
   environment: Environment,
@@ -73,6 +74,10 @@ export async function startRuntime(
         )
       : undefined;
   reporter?.unref();
+  const sweep = startProtocolSweep(database.db, {
+    intervalMs: environment.protocolSweepIntervalMs,
+    batchSize: environment.protocolSweepBatchSize,
+  });
 
   async function shutdown(): Promise<void> {
     if (isShuttingDown) return;
@@ -80,6 +85,7 @@ export async function startRuntime(
     clearInterval(reporter);
 
     server.stop(false);
+    await sweep.stop();
     await database.close();
   }
 

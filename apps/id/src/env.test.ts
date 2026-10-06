@@ -76,6 +76,8 @@ describe("unit: environment", () => {
       trustedProxyCidrs: [],
       oauthRefreshReuseIntervalSeconds: 0,
       operationalLogIntervalMs: 30_000,
+      protocolSweepIntervalMs: 60_000,
+      protocolSweepBatchSize: 1_000,
       databasePoolMax: 20,
       databasePoolIdleTimeoutMs: 10_000,
       databaseConnectionTimeoutMs: 5_000,
@@ -120,6 +122,30 @@ describe("unit: environment", () => {
         OPERATIONAL_LOG_INTERVAL_MS: "999",
       }),
     ).toThrow(EnvironmentValidationError);
+  });
+
+  test("the protocol sweep is disabled by zero or runs at least once a second, in positive batches", () => {
+    for (const value of ["0", "1000"]) {
+      expect(
+        parseEnvironment({
+          ...requiredEnvironment,
+          PROTOCOL_SWEEP_INTERVAL_MS: value,
+        }).protocolSweepIntervalMs,
+      ).toBe(Number(value));
+    }
+    expect(
+      parseEnvironment({ ...requiredEnvironment, PROTOCOL_SWEEP_BATCH: "1" })
+        .protocolSweepBatchSize,
+    ).toBe(1);
+    for (const [name, value] of [
+      ["PROTOCOL_SWEEP_INTERVAL_MS", "999"],
+      ["PROTOCOL_SWEEP_INTERVAL_MS", "-1"],
+      ["PROTOCOL_SWEEP_BATCH", "0"],
+      ["PROTOCOL_SWEEP_BATCH", "1.5"],
+    ])
+      expect(() =>
+        parseEnvironment({ ...requiredEnvironment, [name]: value }),
+      ).toThrow(EnvironmentValidationError);
   });
 
   test("normalises the default resource URL and rejects invalid admin configuration", () => {

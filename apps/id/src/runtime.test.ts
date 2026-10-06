@@ -1,9 +1,11 @@
 import { describe, expect, mock, spyOn, test } from "bun:test";
+import { eq } from "drizzle-orm";
 import { createConnection } from "node:net";
 
 import { stubAuth, testEnvironment } from "./__tests__/support.ts";
 import type { BootstrapResult } from "./bootstrap.ts";
 import { createDatabase } from "./db/client.ts";
+import { oauthClientAssertions } from "./db/schema/index.ts";
 import { startRuntime } from "./runtime.ts";
 
 const seedResult: BootstrapResult = {
@@ -66,6 +68,69 @@ test("runtime emits bounded operational summaries and stops the reporter on shut
     console.log = log;
     interval.mockRestore();
     clear.mockRestore();
+  }
+});
+
+test("runtime sweeps expired protocol rows on its interval, unless disabled, and stops the sweep on shutdown", async () => {
+  const timers: { callback: () => void; ms: number; cleared: boolean }[] = [];
+  const interval = spyOn(globalThis, "setInterval").mockImplementation(((
+    callback: () => void,
+    ms: number,
+  ) => {
+    const timer = { callback, ms, cleared: false, unref() {} };
+    timers.push(timer);
+    return timer;
+  }) as unknown as typeof setInterval);
+  const clear = spyOn(globalThis, "clearInterval").mockImplementation(((
+    timer: { cleared: boolean } | undefined,
+  ) => {
+    if (timer) timer.cleared = true;
+  }) as unknown as typeof clearInterval);
+  const log = spyOn(console, "log").mockImplementation(() => {});
+  const probe = createDatabase(testEnvironment());
+  const id = `runtime-sweep-${crypto.randomUUID()}`;
+  try {
+    const options = {
+      allowTestEnvironment: true,
+      seed: async () => seedResult,
+      authFactory: stubAuth,
+    };
+    await (
+      await startRuntime(testEnvironment({ port: 0 }), options)
+    ).shutdown();
+    expect(timers).toEqual([]);
+
+    await probe.db
+      .insert(oauthClientAssertions)
+      .values({ id, expiresAt: new Date(Date.now() - 60_000) });
+    const runtime = await startRuntime(
+      testEnvironment({
+        port: 0,
+        protocolSweepIntervalMs: 1_000,
+        protocolSweepBatchSize: 10,
+      }),
+      options,
+    );
+    expect(timers.map((timer) => timer.ms)).toEqual([1_000]);
+    timers[0]!.callback();
+    while (!log.mock.calls.some(([line]) => line === "[id] protocol sweep"))
+      await Bun.sleep(5);
+    await runtime.shutdown();
+    expect(timers[0]!.cleared).toBe(true);
+    expect(
+      await probe.db
+        .select()
+        .from(oauthClientAssertions)
+        .where(eq(oauthClientAssertions.id, id)),
+    ).toEqual([]);
+  } finally {
+    await probe.db
+      .delete(oauthClientAssertions)
+      .where(eq(oauthClientAssertions.id, id));
+    await probe.close();
+    interval.mockRestore();
+    clear.mockRestore();
+    log.mockRestore();
   }
 });
 
