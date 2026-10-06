@@ -1,5 +1,7 @@
 # Initial migration consolidation
 
+> **Superseded on 2026-10-06** by the [schema audit](../docs/goals/schema-audit/task_plan.md) (decision D1). `0000_initial.sql` is now untouched drizzle-kit output and `0001_invariants.sql` holds the custom SQL. A catalogue-equivalence test replaces the hash catalogue, and `test:migrations` keeps only the fresh-install and repeated-run proofs; see [ID commands](../apps/id/README.md#commands). The text below is the original evidence.
+
 **Status:** implemented from the frozen T1–T4 integration at `fcea29774a69c888e97d17da774619fd7a3e9dcf`, on `codex/id-initial-migration`. All required repository gates and the T4 restore rehearsal pass. This is first-release installation work; ID has never shipped to production. No production database or original source checkout was changed.
 
 ## Baseline
@@ -13,7 +15,7 @@ The generated SQL required two deliberate additions beyond functions/triggers an
 - The audit-to-operation foreign key remains `DEFERRABLE INITIALLY DEFERRED` so an event and its later journal insertion commit atomically.
 - The partial unique indexes `entitlements_principal_target_unique` and `organization_capabilities_target_kind_unique` retain `NULLS NOT DISTINCT`. Pinned generation omits it for partial indexes. The unchanged constraint/index regression exposed duplicate nullable targets; the SQL was corrected, without weakening that assertion or changing the schema.
 
-The [custom catalogue](../apps/id/src/__tests__/migration-catalog.json) was captured from a clean installation of the complete pre-consolidation chain. It freezes normalised function definition hashes, security-definer/search-path settings, PUBLIC execution privileges, trigger definitions/enabled state, policy definitions, table RLS flags and FK deferral. The new install matches it exactly. The existing schema tests still freeze column definitions, defaults, constraints and indexes; only physical column order is ignored because initial generation changes ordinal positions without changing the contract.
+The [custom catalogue](https://github.com/Rieranthony/answerable-monorepo/blob/93cf95f9f25fb9369a2b4abba50345f992253b8a/apps/id/src/__tests__/migration-catalog.json) was captured from a clean installation of the complete pre-consolidation chain. It freezes normalised function definition hashes, security-definer/search-path settings, PUBLIC execution privileges, trigger definitions/enabled state, policy definitions, table RLS flags and FK deferral. The new install matches it exactly. The existing schema tests still freeze column definitions, defaults, constraints and indexes; only physical column order is ignored because initial generation changes ordinal positions without changing the contract.
 
 ## Removed development compatibility
 

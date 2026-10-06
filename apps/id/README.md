@@ -42,11 +42,24 @@ bun --filter @answerable/id test
 
 **Rotation.** First distribute a new key to every instance while leaving the old version first; only then promote the new version to first. Never reuse a version number for different key material. Retain old keys until every surviving token field and required backup can be read without them. See the [operations runbook](OPERATIONS.md) for custody and recovery checks.
 
-**Initial installation.** ID has never shipped to production. `drizzle/0000_initial.sql` installs the complete schema, including the custom security functions, triggers, RLS and privilege restrictions. It has one generated initial snapshot and one journal entry. Bootstrap establishes the platform binding once; repeated migration and startup preserve it. There is no development-database upgrade or binding-import command. Use an empty database for this baseline; non-disposable data requires a separate reviewed recovery plan.
+**Initial installation.** ID has never shipped to production. Two migrations install the complete schema in one transaction:
 
-`db:generate` generates migrations in `apps/id/drizzle` without a database connection. `db:migrate` applies committed migrations to `DATABASE_MIGRATION_URL`, then provisions permissions for `DATABASE_RUNTIME_ROLE` (default `answerable_id_runtime`). `db:test:migrate` drops the `public` and `drizzle` schemas, recreates `public`, and applies the committed migrations, so the catalogue contract test guards them. The reset script refuses any database whose name is not exactly `answerable_id_test`; data in that explicitly disposable database is not recoverable after a run.
+- `drizzle/0000_initial.sql` is untouched drizzle-kit output from `src/db/schema/index.ts`: tables, columns, constraints, indexes, policies and RLS.
+- `drizzle/0001_invariants.sql` is reviewed by hand. It holds what drizzle-orm 0.45.2 cannot express: the deferrable audit-to-operation foreign key, `NULLS NOT DISTINCT` on two partial unique indexes, the custom functions and triggers, and the execution grants.
 
-**Migration failure rehearsal.** `bun --filter @answerable/id test:migrations` uses only the explicitly disposable `answerable_id_test` database. It checks statement rollback, SIGKILL before and after commit, retry, concurrent bootstrap and repeated migration against the committed catalogue and receipts. It finishes with a clean migrated schema. Run it separately from database tests and restore; CI runs it before coverage. See the [consolidation evidence](../../reports/id-initial-migration.md).
+Bootstrap establishes the platform binding once; repeated migration and startup preserve it. There is no development-database upgrade or binding-import command. Use an empty database for this baseline; non-disposable data requires a separate reviewed recovery plan.
+
+**Changing the schema before production.** Edit the schema modules, and `0001_invariants.sql` for a function, trigger or grant. Run `bun --filter @answerable/id db:regenerate`, recreate existing databases, then run the tests. The script empties `drizzle/`, has drizzle-kit write `0000_initial.sql` and an empty custom `0001_invariants.sql`, and puts the invariants back. Without a schema change it leaves the folder as it was. Delete the script after the first production migration; from then on `db:generate` adds forward migrations and an applied file never changes.
+
+`db:generate` generates migrations in `apps/id/drizzle` without a database connection. `db:migrate` applies committed migrations to `DATABASE_MIGRATION_URL`, then provisions permissions for `DATABASE_RUNTIME_ROLE` (default `answerable_id_runtime`). Its connection waits at most 5 s for a lock and 5 minutes per statement ([why](../../docs/06-deploying-answerable-id.md#install-in-order)). `db:test:migrate` drops the `public` and `drizzle` schemas, recreates `public`, and applies the committed migrations. The reset script refuses any database whose name is not exactly `answerable_id_test`; data in that explicitly disposable database is not recoverable after a run.
+
+**Receipt check.** Drizzle's migrator records each applied file's hash and journal time but compares neither, and skips every file not newer than the last receipt: an edited applied file would be ignored silently, and a regenerated one would run again. Before applying anything, migration compares the receipts with the files in order and refuses, naming the file, when one changed or disappeared.
+
+**Migration proofs.**
+
+- `src/db/migrations.test.ts`: the last snapshot matches the schema modules.
+- `src/db/migrations.integration.test.ts`: the committed migrations, and `generateMigration(empty, schema)` followed by `0001_invariants.sql`, each build the schema inside a rolled-back transaction. Postgres' catalogue of the two must match: tables, columns, defaults, constraints, index definitions, functions with their grants, triggers, policies, RLS flags and foreign-key deferral.
+- `bun --filter @answerable/id test:migrations` uses only the explicitly disposable `answerable_id_test` database. A fresh install records the expected receipts and catalogue; a repeated run applies nothing and preserves real rows. It finishes with a clean migrated schema. Run it separately from database tests; CI runs it before coverage.
 
 Coverage thresholds require 100% of application lines and functions. Tests, fixtures, generated output, and the composition-only `src/server.ts` process entry are excluded; its runtime behavior lives in the fully tested `src/runtime.ts`.
 

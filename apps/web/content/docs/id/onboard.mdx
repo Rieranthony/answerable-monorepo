@@ -32,13 +32,15 @@ openssl rand -base64 48
 
    Also configure independent upstream token keys before sign-in: `UPSTREAM_TOKEN_SECRETS=[{"version":1,"value":"<canonical-base64url-encoded random 32-byte key>"}]`. The first version encrypts upstream access, refresh and ID tokens; retain previous versions for reads. Missing keys make sign-in fail with `500 authentication_unavailable`. For rotation, distribute the new key to every instance before making it the first entry. Do not reuse authentication keys.
 
-   Apply the initial migration, then provision the restricted runtime database role before starting the service. On an empty database, startup creates and binds the platform organisation, the admin API resource and the `platform-admins` group. Repeated migration and startup preserve those IDs. `PLATFORM_ORGANIZATION_NAME` names the organisation; the default is `Answerable`. Production key delivery, capacity and recovery objectives remain release work.
+   Apply the migrations, then provision the restricted runtime database role before starting the service. On an empty database, startup creates and binds the platform organisation, the admin API resource and the `platform-admins` group. Repeated migration and startup preserve those IDs. `PLATFORM_ORGANIZATION_NAME` names the organisation; the default is `Answerable`. Production key delivery, capacity and recovery objectives remain release work.
 
    ```bash
    bun --filter @answerable/id db:migrate
    # Using the schema-owner environment from the repository root:
    bun apps/id/scripts/configure-runtime-role.ts answerable_id_runtime
    ```
+
+   `Refusing to migrate: drizzle/<file>.sql is not the migration this database applied` means that file changed after this database applied it. Restore the applied file; before production, recreate the database instead.
 
    Give the runtime role login credentials through deployment tooling, then set the application's `DATABASE_URL` to that role. Keep `DATABASE_MIGRATION_URL` available only to migration and permission tooling.
 

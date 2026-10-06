@@ -102,15 +102,15 @@ Removing the last platform administrator through membership, group or capability
 | F4  | Own-tenant SSO, deliberate linking, tenant-local lifecycle and eleven-table RLS     | T1/T2/T3 restricted A/B tests; real multi-provider acceptance remains.                |
 | F5  | Shared exact-pair evaluator, scope narrowing and actual claim/audit binding         | Production code/refresh/machine and access tests; consumer denial matrix remains.     |
 | F6  | Fresh sensitive authority, local revocation, body limits, custody tooling | T1–T4 tests and measured limits; remote offboarding, capacity/ingress/custody remain. |
-| F7  | Exactly one migration, installation proof, reconciled docs and local gates          | Final report; production remains no-go until the external checklist closes.           |
+| F7  | One initial install, installation proof, reconciled docs and local gates            | Final report; production remains no-go until the external checklist closes.           |
 
 Mandatory fixtures remain two unrelated tenants, shared A+B user, platform staff, private/shared resources, shared login client, separate machine clients, unowned external registration, disabled/revoked/expired rows and duplicate display names with distinct IDs. Apply each where relevant; do not generate a redundant Cartesian product. Include duplicate commands, both grant/revocation orders, process death, pool reuse and restored state.
 
 ## 9. Initial migration and recovery
 
-ID has never shipped. Exactly one SQL migration, generated snapshot and journal entry replace the unshipped development chain. No legacy production conversion, backfill or mixed-version cutover is required. After first deployment, use ordinary forward migrations.
+ID has never shipped. A generated initial migration and a reviewed invariants migration replace the unshipped development chain. No legacy production conversion, backfill or mixed-version cutover is required. After first deployment, use ordinary forward migrations.
 
-Empty/repeat/interrupted install, catalogue, bootstrap, runtime roles have proof in [T5](../reports/id-initial-migration.md). Not yet. A restore drill against production-shaped data is a release input.
+Empty and repeated install, catalogue, concurrent bootstrap and runtime roles have proof in the ID tests ([commands](../apps/id/README.md#commands)). Not yet. A restore drill against production-shaped data is a release input.
 
 ## 10. Documentation is part of completion
 

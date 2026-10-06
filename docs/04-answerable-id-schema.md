@@ -1,10 +1,10 @@
 # Answerable ID schema foundation
 
-This is the current storage contract. [Design](03-answerable-id.md) describes behaviour; [F0–F7](05-id-enterprise-foundation.md) defines acceptance. The unshipped development history is consolidated into one [initial SQL migration](../apps/id/drizzle/0000_initial.sql), one generated snapshot and one journal entry.
+This is the current storage contract. [Design](03-answerable-id.md) describes behaviour; [F0–F7](05-id-enterprise-foundation.md) defines acceptance. The unshipped development history is consolidated into a generated [initial migration](../apps/id/drizzle/0000_initial.sql) and a reviewed [invariants migration](../apps/id/drizzle/0001_invariants.sql); see [the layout](../apps/id/README.md#commands).
 
 ## Service contract
 
-Bun, Hono and Better Auth 1.7.2 use Postgres for identity, sessions, protocol state, policy, audit and command recovery. The baseline has 26 tables, 23 custom functions, 57 triggers, 24 policies and eleven RLS-enabled tables. The [catalogue](../apps/id/src/__tests__/migration-catalog.json) preserves custom SQL that schema generation alone does not fully describe.
+Bun, Hono and Better Auth 1.7.2 use Postgres for identity, sessions, protocol state, policy, audit and command recovery. The baseline has 26 tables, 23 custom functions, 57 triggers, 24 policies and eleven RLS-enabled tables. The invariants migration holds the custom SQL that drizzle-orm cannot express. A [catalogue-equivalence test](../apps/id/src/db/migrations.integration.test.ts) proves the committed migrations build exactly what the schema modules generate plus that file.
 
 ## Entity relationship diagram
 
@@ -79,7 +79,7 @@ Reservations are permanent. Replays return receipts at the original status code,
 
 ## Contract test
 
-[Migration proof](../reports/id-initial-migration.md) covers empty installation, final-statement failure, SIGKILL before/after commit, retry, concurrent bootstrap and repeated startup preserving real writes. Catalogue checks cover functions, triggers, policies, constraints and permissions. A restore drill against production-shaped data remains a release input.
+`test:migrations` proves an empty installation and a repeated run that applies nothing and preserves real writes. The catalogue-equivalence test covers tables, constraints, indexes, functions, triggers, policies and permissions. Bootstrap tests cover concurrent first starts; migration refuses an applied file that changed. Statement failure and process death need no proof of ours: the migrator applies every pending file in one transaction. A restore drill against production-shaped data remains a release input.
 
 ## Deferred
 
