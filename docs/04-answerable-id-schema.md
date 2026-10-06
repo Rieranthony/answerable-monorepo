@@ -83,7 +83,7 @@ Reservations are permanent. Replays return receipts at the original status code,
 
 ## Deferred
 
-Physical product purge jobs and their duration are deferred. No named-identity recovery feature is required. DNS self-verification, guest opt-in, SCIM, external registration and remote logout delivery are outside this baseline; see the [plan](02-plan.md).
+ID deletes expired sessions, OAuth access and refresh tokens and client assertions on a timer: protocol expiry is not product deletion and records no audit. Physical product purge jobs and their duration remain deferred. No named-identity recovery feature is required. DNS self-verification, guest opt-in, SCIM, external registration and remote logout delivery are outside this baseline; see the [plan](02-plan.md).
 
 ## Client configuration revisions
 

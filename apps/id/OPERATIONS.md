@@ -28,6 +28,18 @@ derive latency percentiles, tenant fairness or peak pool usage from these aggreg
 An absent summary requires checking the process and collector; it is not zero load.
 Measure representative traffic and database sizing before changing existing limits.
 
+**Protocol sweep.** `PROTOCOL_SWEEP_INTERVAL_MS` defaults to 60000; zero disables the
+sweep, otherwise the minimum is 1000. Each run deletes rows whose `expires_at` has
+passed from `oauth_access_tokens`, `oauth_refresh_tokens` (with the access tokens
+that name them), `oauth_client_assertions` and `sessions`, as the runtime role, in
+transactions of at most `PROTOCOL_SWEEP_BATCH` rows (default 1000). Rotated refresh
+tokens stay until their own expiry. An advisory lock lets one process delete at a
+time; a process that finds it taken skips the rest of that run. A run that deleted
+rows writes `[id] protocol sweep` followed by JSON with the count per table; expiry
+records no audit. A failed run writes only `protocol_sweep_failed` and the next
+interval retries. Shutdown stops it after the running batch. Better Auth deletes
+expired `verifications` itself.
+
 **Monitoring handoff.** Configure the selected collector/scheduler to route these
 signals to an operator. No destination or numerical alert budget is configured here.
 
@@ -36,6 +48,7 @@ signals to an operator. No destination or numerical alert budget is configured h
 | Rising 503 counts, active work and pool waiters                         | Compare with traffic and database limits; inspect authorised audit/history for context                                                       |
 | `admin_denial_audit_unavailable` or `token_rejection_audit_unavailable` | Investigate database/audit availability; refusal remains refusal                                                                             |
 | `custody_preflight_failed`                                              | Keep recovery traffic closed and inspect key/source delivery                                                                                 |
+| `protocol_sweep_failed`, repeated                                       | Check database availability and lock waits; expired protocol rows accumulate until a sweep succeeds                                          |
 | Missing process summaries                                               | Check process health and collector delivery before interpreting demand                                                                       |
 | Backup age or retrieval failure                                         | Use the backup service's independently monitored completion/recovery evidence; `/readyz` cannot detect this                                  |
 
