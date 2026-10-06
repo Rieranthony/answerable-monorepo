@@ -111,3 +111,5 @@ RFC 8693 token exchange (built off the critical path, contributed upstream) · S
 - A test-built Better Auth beside the production fixture: ID's OAuth and federation facts run on the production `createAuth` and `createApp`.
 - Query-layer and service-layer tests of admin CRUD that the HTTP layer already proves, and route-independent middleware checks repeated per route.
 - `NODE_ENV=test` outside the test runner: Better Auth drops its origin and CSRF checks under it, so the runtime refuses to start.
+- A generic dynamic-SQL parent guard on ID's protocol tables (sessions, tokens): the issuing transaction already checks and locks the user and client, and the guard's share lock stalled every token insert behind a client or user update. Configuration tables hold the rule with live foreign keys.
+- Unqualified relation names in ID's trigger functions, or a function `search_path` without `pg_temp` last: a caller's temporary table would shadow the lookup.

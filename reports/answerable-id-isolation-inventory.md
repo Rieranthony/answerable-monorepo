@@ -60,7 +60,7 @@ Routing SELECT is unrestricted. Domain/provider writes require `platform-write` 
 | Grant admission              | Authenticated user and session       | Insert matching provenance; no update/delete.                                         |
 | Grant client                 | Authenticated client's grants        | Update/bind/revoke; no insert/delete.                                                 |
 
-Column immutability and parent guards remain independent. Scope is installed only by trusted code, not by accepting a client-supplied tenant/user UUID. Runtime permissions can be narrower than a policy's theoretical capability.
+Column immutability and the live foreign keys remain independent of scope; trigger functions schema-qualify their relations, and the runtime role cannot create temporary tables to shadow them. Scope is installed only by trusted code, not by accepting a client-supplied tenant/user UUID. Runtime permissions can be narrower than a policy's theoretical capability.
 
 ## Grant-context isolation integration requirements
 

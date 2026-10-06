@@ -4,7 +4,7 @@ This is the current storage contract. [Design](03-answerable-id.md) describes be
 
 ## Service contract
 
-Bun, Hono and Better Auth 1.7.2 use Postgres for identity, sessions, protocol state, policy, audit and command recovery. The baseline has 26 tables, 23 custom functions, 57 triggers, 24 policies and eleven RLS-enabled tables. The invariants migration holds the custom SQL that drizzle-orm cannot express. A [catalogue-equivalence test](../apps/id/src/db/migrations.integration.test.ts) proves the committed migrations build exactly what the schema modules generate plus that file.
+Bun, Hono and Better Auth 1.7.2 use Postgres for identity, sessions, protocol state, policy, audit and command recovery. The baseline has 26 tables, 17 custom functions, 37 triggers, 24 policies and eleven RLS-enabled tables. The invariants migration holds the custom SQL that drizzle-orm cannot express. A [catalogue-equivalence test](../apps/id/src/db/migrations.integration.test.ts) proves the committed migrations build exactly what the schema modules generate plus that file.
 
 ## Entity relationship diagram
 
@@ -46,7 +46,10 @@ Live uniqueness permits replacements only where explicitly defined. Group assign
 
 - Composite foreign keys reject cross-tenant member/group references.
 - Tombstone rows keep unique public identifiers reserved after product deletion. Platform identity comes from immutable `system_bindings`; matching slugs cannot adopt it.
-- Parent guards reject active children of deleted parents under locks.
+- **Live foreign keys hold soft deletion.** Each soft-deletable table has a `live` column: true while `deleted_at` is null, null once it is set. Parents carry `unique (id, live)` and children reference `(parent_id, live)`, so a live row needs live parents and a parent with live children cannot be deleted. `system_bindings` keeps the platform organisation, its admin group and the admin resource live. Every deletion path soft-deletes children first.
+- **A deleted row holds no authority.** Per-table CHECKs require a disabled or revoked status, and no client secret, account tokens, password or OIDC configuration. A trigger keeps deletion terminal and assigns `live`; writers never set it.
+- **Sessions and tokens carry no liveness guard.** The issuing transaction checks and locks the user and client, and erasure deletes their sessions and tokens.
+- **Trigger functions cannot be shadowed.** They schema-qualify every relation and search `pg_temp` last; the runtime role cannot create temporary tables.
 - Session authentication and grant provenance cannot be rewritten by tenant selection.
 - Native transaction/savepoint scope restores on success/failure; pooled connections retain no tenant authority.
 - Successful effects, audit, subjects and command reservations commit together.
@@ -67,7 +70,7 @@ Current deletion manifests describe product tombstones and actual credential cle
 
 ## Runtime database permissions
 
-Schema owner and runtime roles are separate. Runtime cannot DELETE/TRUNCATE product rows, rewrite audit, directly alter subjects/reservations or change system binding. Protocol records retain their consumption contract. Startup checks protected privileges, ownership and required RLS before listening.
+Schema owner and runtime roles are separate. Runtime cannot DELETE/TRUNCATE product rows, rewrite audit, directly alter subjects/reservations, change system binding or create temporary tables. Those privileges, not triggers, keep bindings and operation receipts immutable. Protocol records retain their consumption contract. Startup checks protected privileges, ownership, `TEMP` and required RLS before listening.
 
 RLS protects `groups`, `group_members`, `entitlements`, `organization_capabilities`, `grant_contexts`, `members`, `invitations`, `organization_domains`, `sso_providers`, `audit_events` and `audit_event_subjects`. Routing SELECT and audit INSERT remain available without scope. Native broker transactions use protocol scope; the fixed grant-provenance triggers run as their owner to validate parents and retain locks without granting membership writes to grant admission. This is targeted protection, not universal RLS. The [isolation inventory](../reports/answerable-id-isolation-inventory.md) records scopes and trusted exceptions.
 
