@@ -129,7 +129,7 @@ The prepare tool, or `toolbox_prepare` in the meta projection, returns the inten
 
 **Policy class.** A mutation's class for a caller is the organisation's `policy_class` override in [the catalogue](#the-catalogue), else the class its `risk` gives. It shows in the prepare tool's `_meta`, in `toolbox_whoami` and in `toolbox_search`.
 
-**The intent store.** Intents live in the Toolbox's `intents` table, one row per intent, with the commit token kept only as its SHA-256. Each status change is one compare-and-set on the status, so two commits never both run. An intent past `expires_at` is marked `expired` when a commit or a read finds it, judged by the database's clock. Every step of the commit is the one [every `@answerable/mcp` server](/docs/mcp/mutations#commit-tools) takes, and a commit checks again that the caller may still use the mutation.
+**The intent store.** Intents live in the Toolbox's `intents` table, one row per intent, with the commit token kept only as its SHA-256. Each status change is one compare-and-set on the status, so two commits never both run. An intent past `expires_at` is marked `expired` when a commit or a read finds it, judged by the database's clock. As in [the memory store](/docs/mcp/mutations#the-intent-store), an insert, at most once a minute, deletes the intents that can no longer be committed (expired, failed and stale ones) and committed ones a day after their commit, so a repeated commit replays its receipt for a day, then answers `INTENT_NOT_FOUND`. Every step of the commit is the one [every `@answerable/mcp` server](/docs/mcp/mutations#commit-tools) takes, and a commit checks again that the caller may still use the mutation.
 
 ## Grant strings
 
@@ -184,7 +184,7 @@ The catalogue is the ceiling: an organisation uses only providers enabled for it
 
 | Table | Holds |
 | --- | --- |
-| `providers` | Each mounted provider's id, version and manifest |
+| `providers` | Each mounted provider's id; its manifest is read from the code |
 | `capabilities` | Each capability at each version: kind, risk, title, description, schemas and the search vector [`toolbox_search`](#the-meta-projection) ranks |
 | `organisation_catalogue` | Per organisation and provider: `enabled`, and `overrides` with `disabled` (identities) and `policy_class` (identity to class) |
 | `host_clients` | Per host's OAuth client id: `projection` and `direct_limit` |
@@ -207,11 +207,11 @@ Every call of a tool, a prepare tool or a commit tool appends one event to its o
 | `intent.stale` | A commit found a target moved | `success` |
 | `intent.expired` | A commit or a read found the intent past `expires_at`: once per intent | `success` |
 
-Intent events carry the intent's organisation, person, host client, capability and `intent_id`. A commit that fails is its call's `capability.completed` failure. A call of `toolbox_execute` or `toolbox_prepare` is recorded as the capability it ran or refused; one that names no capability the Toolbox serves is recorded as the meta tool's own. A call to a name that does not exist records nothing. The kinds `intent.approved`, `intent.denied`, `operation.*`, `run.*` and `limit.refused` are accepted by the table and not yet written.
+Intent events carry the intent's organisation, person, host client, capability and `intent_id`. A commit that fails is its call's `capability.completed` failure. A call of `toolbox_execute` or `toolbox_prepare` is recorded as the capability it ran or refused; one that names no capability the Toolbox serves is recorded as the meta tool's own. A call to a name that does not exist records nothing. The table accepts no other kind.
 
 **What a row holds.** The organisation, actor, host client, capability identity and version, execution id, JSON-RPC id, trace and span ids, outcome and bounded `data` (at most 4 KiB). Inputs, results and secrets are never recorded.
 
-**The chain.** A database trigger takes a per-organisation lock, sets `seq` to the organisation's next number and `row_hash` to SHA-256 over the previous row's hash and every field, each written as its byte length, a colon and its text. The migration `packages/mcp-postgres/migrations/0002_evidence.sql` spells the layout out. Another trigger refuses `UPDATE`, `DELETE` and `TRUNCATE`.
+**The chain.** A database trigger takes a per-organisation lock, sets `seq` to the organisation's next number and `row_hash` to SHA-256 over the previous row's hash and every field, each written as its byte length, a colon and its text. The migration `packages/mcp-postgres/migrations/0001_evidence.sql` spells the layout out. Another trigger refuses `UPDATE`, `DELETE` and `TRUNCATE`.
 
 ```ts
 import { SQL } from "bun"
@@ -222,7 +222,7 @@ const evidence = createEvidence(db)
 console.log(await evidence.verify(organisationId)) // { ok: true, length: 2 }, or { ok: false, length, broken_at }
 ```
 
-`verify` walks the chain in `seq` order and recomputes every hash; `broken_at` is the first event whose fields, number or link no longer match.
+`verify` walks the chain in `seq` order and recomputes every hash; `broken_at` is the first event whose fields, number or link no longer match, or whose payload is gone or no longer hashes to its `payload_hash`.
 
 ### Payloads
 
@@ -231,7 +231,7 @@ const [{ payload_ref }] = await db`select payload_ref from evidence_events where
 await evidence.erase(payload_ref)
 ```
 
-Each `intent.prepared` stores the intent's preview in `evidence_payloads`; the event holds its id in `payload_ref` and its SHA-256 in `payload_hash`, which the chain covers. `erase(payloadId)` removes the body for good: `payload_hash` stays, and the chain still verifies.
+Each `intent.prepared` stores the intent's preview in `evidence_payloads`; the event holds its id in `payload_ref` and its SHA-256 in `payload_hash`, which the chain covers. `erase(payloadId)` removes the body for good: `payload_hash` stays, and the chain still verifies. A trigger refuses any other change to a payload, and its deletion. The intent keeps its own copy of the preview until [the intent store](#mutations-through-the-toolbox) deletes the intent.
 
 **Not yet:** nightly verification, publishing chain heads outside the database, and retention.
 
@@ -322,7 +322,9 @@ The admin API's audience is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`, s
 | `Missing the e2e records view…` at start | The view is not built | Run `bun run --filter @answerable/mcp-e2e build` |
 | `503 {"status":"unavailable"}` from `/health` | The database does not answer | Check `TOOLBOX_DATABASE_URL` and Postgres |
 | Log `relation "host_clients" does not exist`, or `"intents"`, and every list or call fails | The database lacks this version's migrations | Run `bun --env-file=.env run --filter @answerable/mcp-toolbox db:migrate` |
-| `evidence_events is append-only: UPDATE is refused` | Something tried to change evidence | Evidence is never changed; erase a payload with `erase` instead |
+| `db:migrate` fails with `Migration <directory>/<file> changed after it was applied…` | A migration file was edited after it was applied | Restore the file and put the change in a new file |
+| `db:migrate` fails with `column "checksum" does not exist` | The database was migrated before the migrations were reset | Drop its `public` schema, then run `db:migrate` again |
+| `evidence_events is append-only: UPDATE is refused`, or `evidence_payloads only erases a body: UPDATE is refused` | Something tried to change evidence | Evidence is never changed; erase a payload with `erase` instead |
 | `Refusing to reset <database>; expected answerable_toolbox_test` | `db:test:migrate` points elsewhere | Point `TOOLBOX_TEST_DATABASE_URL` at `answerable_toolbox_test` |
 
 Administration errors are in [Administer the Toolbox](/docs/toolbox/admin#errors). The journeys that prove this against real ID are in [Test MCPs locally](/docs/mcp/local-testing#what-the-toolbox-journeys-prove). The SDK options the Toolbox is built on are in [the server section](/docs/mcp/servers#the-server). The rules it enforces at run time are the Hub rows of [the design standard](/docs/mcp/standard).

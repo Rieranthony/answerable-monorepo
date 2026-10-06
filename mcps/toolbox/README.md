@@ -34,7 +34,7 @@ It builds on two shared packages: `@answerable/id-admin` (`createIdAdmin`, the T
 | `src/search.ts` | Postgres full-text ranking over `capabilities.search` |
 | `src/spans.ts` | One server span per call; OTLP/HTTP export when `OTEL_EXPORTER_OTLP_ENDPOINT` is set |
 | `src/environment.ts` | `readToolboxEnvironment` |
-| `src/db/migrate.ts`, `migrations/` | `0001_catalogue.sql` and `0003_host_clients.sql`; `migrate(db)` applies them together with the migrations of `@answerable/mcp-postgres` (`0002`, `0004`), in the order of their names |
+| `src/db/migrate.ts`, `migrations/` | `0001_initial.sql`, the catalogue and the host clients; `migrate(db)` applies the migrations of `@answerable/mcp-postgres` first, then the Toolbox's, recorded as `mcp-postgres/<file>` and `toolbox/<file>` |
 | `src/server.ts` | The entry point; `src/server.test.ts` starts it against the test database |
 
 `manifest.json` is the `toolbox` provider's contract; `UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-toolbox test` rewrites it. The journeys against real ID are `packages/acceptance/src/journeys/toolbox.journeys.test.ts`, run by `bun run mcp:test:e2e`. The acceptance imports this package through its `exports` (`./admin`, `./grants`, `./migrate`, `./poller`, `./spans`, `./toolbox`).

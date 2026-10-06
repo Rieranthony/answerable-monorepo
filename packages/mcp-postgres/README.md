@@ -16,12 +16,12 @@ const server = createMcpServer({ provider, auth, intents })
 console.log(await evidence.verify(organisationId)) // { ok: true, length }, or { ok: false, length, broken_at }
 ```
 
-- **`createEvidence(db)`.** `record` appends an event to an organisation's chain (a trigger assigns `seq` and the hashes), `verify` recomputes the chain, `erase` removes an erasable payload's body and leaves its hash.
-- **`createPostgresIntentStore(db, { now? })`.** An `IntentStore` on the `intents` table; every status change is one compare-and-set.
-- **`withEvidence(store, evidence)`.** Records `intent.prepared`, `intent.approval_requested`, `intent.committed`, `receipt.issued`, `intent.stale` and `intent.expired` as the store moves.
-- **`migrate(db, directories)`.** Applies the `.sql` files of the directories (URLs that end in `/`) that `schema_migrations` does not list, in the order of their names across all of them, each in its own transaction under an advisory lock. A file is recorded by its name alone. A server that has tables of its own passes its directory first: `migrate(db, [new URL("../migrations/", import.meta.url), migrations])`, and numbers its files around `0002_evidence.sql` and `0004_intents.sql`.
+- **`createEvidence(db)`.** `record` appends an event to an organisation's chain (a trigger assigns `seq` and the hashes), `verify` recomputes the chain and checks each unerased payload's body against its hash, `erase` removes an erasable payload's body and leaves its hash. A trigger refuses any other change to a payload.
+- **`createPostgresIntentStore(db, { now? })`.** An `IntentStore` on the `intents` table; every status change is one compare-and-set. Like the memory store, an insert, at most once a minute, deletes the intents that can no longer be committed and committed ones a day after their commit.
+- **`withEvidence(store, evidence)`.** Records `intent.prepared`, `intent.approval_requested`, `intent.committed`, `receipt.issued`, `intent.stale` and `intent.expired` as the store moves; each call expires an intent at most once, and records the expiry it made.
+- **`migrate(db, directories)`.** Applies the `.sql` files of the directories that `schema_migrations` does not list: the directories in the order given, each one's files in the order of their names, each file in its own transaction under an advisory lock. A directory is `{ name, url }`, with a URL that ends in `/`; a file is recorded as `<name>/<file>` with the SHA-256 of its text. A server that has tables of its own passes this package's directory first: `migrate(db, [migrations, { name: "my-server", url: new URL("../migrations/", import.meta.url) }])`, and numbers its own files from `0001`.
 
-The files `migrations/0002_evidence.sql` and `migrations/0004_intents.sql` keep their names from the Toolbox, so a database that applied them there does not apply them again. Never rename or edit an applied file.
+A recorded file whose text has changed refuses the run, naming it: put a change in a new file. Never rename an applied file either, or it applies again.
 
 ```sh
 bun run --filter @answerable/mcp-postgres test

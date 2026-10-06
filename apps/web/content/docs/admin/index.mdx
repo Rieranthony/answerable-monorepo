@@ -306,6 +306,7 @@ Every tool error is the envelope [MCP errors](/docs/mcp/errors) describes, with 
 | `Invalid admin MCP configuration: <VARIABLE>: …` at start | A variable is missing or invalid | Set it as in [Environment](#environment) |
 | `503 {"status":"unavailable"}` from `/health` | The database does not answer | Check `ADMIN_DATABASE_URL` and Postgres |
 | Log `relation "evidence_events" does not exist`, and every call fails | The database is not migrated | Run `bun --env-file=.env run --filter @answerable/mcp-admin db:migrate` |
+| `db:migrate` fails with `column "checksum" does not exist` | The database was migrated before the migrations were reset | Drop its `public` schema, then run `db:migrate` again |
 | `Refusing to reset <database>; expected answerable_admin_test` | `db:test:migrate` points elsewhere | Point `ADMIN_TEST_DATABASE_URL` at `answerable_admin_test` |
 
 ## Not yet
