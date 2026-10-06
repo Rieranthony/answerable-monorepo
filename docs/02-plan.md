@@ -11,6 +11,7 @@ This is the dependency order, not a deployment claim. The [design](03-answerable
 - Bun 1.3.1, Hono, Postgres and pinned Better Auth 1.7.2; Redis is reserved for later.
 - Admin API first, typed OpenAPI and explicit authentication-route allowlisting.
 - Behaviour changes need meaningful regression/fault tests. ID requires 100% application line/function coverage; a test that exists only to light a line goes together with the branch it lit, and a fact is proved once, at the layer closest to the consumer ([test audit](goals/test-audit/conclusions.md)).
+- The schema is a contract: a column, a kind or a trigger branch exists because something writes and reads it, an invariant lives in a constraint before a trigger and in a trigger before caller discipline, and nothing guards a hot path that the issuing transaction already checks ([schema audit](goals/schema-audit/task_plan.md)).
 - Bun in production, TLS at ingress, no CDN/WAF for now.
 - No opportunistic hardening loop. Reproduce an existing invariant violation before adding runtime work.
 
@@ -62,7 +63,7 @@ Stable IDs; never renumber. Resolve into the design doc or this page and delete 
 | `Q-TOOLBOX-PAGES` | Whether the hub's approval and connect pages may live in `mcps/toolbox` as an OIDC client of ID | After the goal, item 1 | Owners; the design assumes yes, since they are product pages |
 | `Q-BETTER-AUTH-CIMD` | Which Better Auth version to pin for `@better-auth/cimd` (needs 1.7.6; ID pins 1.7.2) and what its full suite shows | After the goal, item 3 | Upgrade spike with ID's suite |
 | `Q-PGBOSS-BUN` | pg-boss on Bun with the `pg` driver (Drizzle's Bun.SQL driver double-encodes JSON, issue 880) | After the goal, item 1 | Spike in CI |
-| `Q-EVIDENCE-RETENTION` | Retention per organisation, anchoring cadence for chain heads, and legal hold | Production use of the Toolbox's or the admin MCP's evidence | Owners with the first client |
+| `Q-EVIDENCE-RETENTION` | Retention per organisation, anchoring cadence for chain heads, and legal hold. Measured on 6 October 2026: a Toolbox mutation writes 5 evidence rows and 1 payload, about 3.4 KB on disk (2.5 GB a year at 1,000 mutations a day with the intent swept); a read call writes 1 row of 568 B; in ID, `audit_event_users` holds one row per user an event concerns and `audit_events` about 2.1 KB per token issuance, both kept forever | Production use of the Toolbox's or the admin MCP's evidence | Owners with the first client |
 | `Q-TOOLBOX-QUERY` | Numbers for the query surface (depth, cost, page caps) and which capability types project first | After the goal, item 7 | Measured on the query set |
 | `Q-HOST-MATRIX` | ChatGPT, Copilot Studio and Claude.ai behaviour not documented by the vendors: `list_changed`, elicitation, tool ceilings | After the goal, item 3 | Recorded when each host is tried |
 | `Q-ADMIN-SSO-SECRETS` | How staff set an SSO provider with the organisation's own credentials (a generic OIDC directory) without the client secret entering a tool. Today `sso_set` takes Answerable's Microsoft or Google application only, and staff send the secret to ID's admin API with cURL | Onboarding a client whose directory is neither Entra nor Google Workspace through the [admin MCP](11-admin-mcp.md) | Owners: a secret-entry page in ID, or a reference into the secret store (`Q-SECRET-STORE`) |

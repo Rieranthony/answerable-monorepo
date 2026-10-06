@@ -12,7 +12,7 @@
 | 2 | Audits by four Opus agents on throwaway Postgres 47433–47436, probes and measured numbers (A columns and vocabularies, B triggers, functions and RLS, C indexes, growth and the migration tooling, D Toolbox, mcp-postgres and admin MCP) | complete |
 | 3 | Consolidate: findings table with verdicts, cross-check contradictions, re-run any probe the report leans on | complete |
 | 4 | Report (artifact) and decisions for the owner, with recommendations | in_progress: report v1 https://claude.ai/artifact/8Nb5XhGQz472qjLLpvXLRa; decisions D1–D12 asked |
-| 5 | After approval: implementation briefs, gates, land on main, update docs/02 and docs/04, memory | pending |
+| 5 | After approval: implementation briefs, gates, land on main, update docs/02 and docs/04, memory | in_progress: all five change sets on claude/schema-audit (M 9a59b4b, C1 3c5f3bc, C2 5458e50, B fcaf830, A bc31c27); full gates running |
 
 ## Layout
 
@@ -28,7 +28,7 @@ Taken by the owner on 2026-10-06, all as recommended in the report:
 - **D3, D4, D5** Delete the parent-liveness trigger from sessions and both token tables; replace the generic parent and deletion guards on the configuration tables with generated `live` columns, composite FKs and per-table CHECKs (drizzle-kit modelling proved in a spike first); close the temp-table search-path hole (qualified names, `pg_temp` last, TEMP revoked, startup assertion, a test).
 - **D7, D8, D9, D11** One audit payload version per action; `audit_event_users (user_id, event_id)`; typed grant evidence; the dead columns deleted and the three renames taken; ID provisions membership at sign-in (boot without `invitations` proved first), then `invitations` and `members.role` go; the small deletions; `grant_contexts` cascades to `restrict`.
 - **D6, D10** A batched sweep job in ID for expired protocol rows; Toolbox and mcp-postgres: intents swept like the memory store, expiry recorded once, payload bodies verified with an update guard, two CHECKs, the unwritten columns, kinds, `intents.approval`, `capabilities.status`, four `providers` columns and the GIN index deleted.
-- **D12** Upstream tokens: stop storing if the SSO plugin allows, else keep; decided during implementation once checked.
+- **D12** Upstream tokens: keep storing them (coordinator's call during implementation): docs/02 `Q-AID-RECHECK` plans upstream refresh-token probes for offboarding detection, a consumer the audit did not weigh; record in docs/04 that nothing reads them today. No spike.
 
 ## Implementation order (phase 5, on the owner's word)
 
