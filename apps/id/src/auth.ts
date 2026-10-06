@@ -40,7 +40,8 @@ export function createAuth(db: Database, environment: Environment) {
     },
     redirectURI: "/sso/callback",
     providersLimit: 0,
-    organizationProvisioning: { defaultRole: "member" },
+    // ID provisions the membership in the callback transaction (sso-origin.ts).
+    organizationProvisioning: { disabled: true },
     resolveUser: ssoOrigin.resolveUser,
   });
   const auth = betterAuth({

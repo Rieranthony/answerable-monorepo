@@ -224,25 +224,6 @@ export function createVerifiedSso(db: Database) {
     }
     const resolution = await resolveFederatedUser(input, database, flow.userId);
     if (resolution.action === "reject") return resolution;
-    // Provision the membership in this transaction, before binding audit and
-    // session creation. Native post-callback provisioning then finds it intact.
-    const existing = await database.findOne({
-      model: "member",
-      where: [
-        { field: "userId", value: flow.userId },
-        { field: "organizationId", value: flow.targetOrganizationId },
-      ],
-    });
-    if (!existing)
-      await database.create({
-        model: "member",
-        data: {
-          userId: flow.userId,
-          organizationId: flow.targetOrganizationId,
-          role: "member",
-          status: "active",
-        },
-      });
     const [account] = await tx
       .select({ id: accounts.id })
       .from(accounts)

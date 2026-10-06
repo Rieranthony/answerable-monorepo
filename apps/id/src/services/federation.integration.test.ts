@@ -693,7 +693,7 @@ describe("integration: federated sign-in", () => {
       authenticationProviderRevision: provider!.revision,
     });
   });
-  test("a failed origin insert rolls back native SSO user, account and session creation", async () => {
+  test("a failed origin insert rolls back native SSO user, account, membership and session creation", async () => {
     await seedProvider();
     await connection.db.execute(
       sql`alter table sessions add constraint origin_write_fault check (authentication_provider_id is null)`,
@@ -710,6 +710,7 @@ describe("integration: federated sign-in", () => {
       expect(await connection.db.select().from(sessions)).toHaveLength(0);
       expect(await connection.db.select().from(accounts)).toHaveLength(0);
       expect(await connection.db.select().from(users)).toHaveLength(0);
+      expect(await connection.db.select().from(members)).toHaveLength(0);
       expect(diagnostic.mock.calls).toEqual([
         [
           "[id] auth",
@@ -722,6 +723,25 @@ describe("integration: federated sign-in", () => {
         sql`alter table sessions drop constraint origin_write_fault`,
       );
     }
+  });
+  test("a returning identity without a membership gets an active one in the provider's organisation", async () => {
+    const organization = await seedProvider();
+    issuer.enqueue(entraClaims());
+    expect((await signIn()).location).toBe(callbackURL);
+    // As when a domain moves to another organisation: the account exists, the
+    // membership in this organisation does not.
+    await connection.db.delete(members);
+    issuer.enqueue(entraClaims());
+    expect((await signIn()).location).toBe(callbackURL);
+    const [account] = await connection.db.select().from(accounts);
+    const memberships = await connection.db.select().from(members);
+    expect(memberships).toHaveLength(1);
+    expect(memberships[0]).toMatchObject({
+      organizationId: organization.id,
+      userId: account!.userId,
+      revision: 1,
+      status: "active",
+    });
   });
   test("tenant removal blocks a subsequent valid SSO login without recreating membership", async () => {
     await seedProvider();
@@ -843,7 +863,12 @@ describe("integration: federated sign-in", () => {
       expect(memberships[0]).toMatchObject({
         organizationId: organization.id,
         userId: user!.id,
-        role: "member",
+        revision: 1,
+        status: "active",
+        revokedAt: null,
+        validFrom: null,
+        validUntil: null,
+        deletedAt: null,
       });
     },
   );

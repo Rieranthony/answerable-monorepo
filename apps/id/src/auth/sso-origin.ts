@@ -6,7 +6,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { getCurrentAdapter, type BetterAuthOptions } from "better-auth";
 import { APIError, addOAuthServerContext } from "better-auth/api";
 import { and, isNull, eq } from "drizzle-orm";
-import { accounts, ssoProviders } from "../db/schema/index.ts";
+import { accounts, members, ssoProviders } from "../db/schema/index.ts";
 import { resolveFederatedUser } from "../services/federation.ts";
 import { authTransaction } from "./database-adapter.ts";
 import type { VerifiedSso } from "./verified-sso.ts";
@@ -109,6 +109,19 @@ export function createSsoOriginBoundary(verifiedSso?: VerifiedSso) {
       );
     if (!account)
       throw new Error("Accepted SSO account is no longer available");
+    // A first sign-in or link to an organisation provisions an active membership
+    // in this transaction, before the session. An existing row is left as it is;
+    // federation and the verified flow have already refused an ineffective one.
+    await authTransaction(database)
+      .insert(members)
+      .values({
+        id: createId(),
+        organizationId: provider.authenticationOrganizationId,
+        userId: account.userId,
+      })
+      .onConflictDoNothing({
+        target: [members.organizationId, members.userId],
+      });
     origins.set(database, {
       ...provider,
       authenticationAccountId: account.id,
