@@ -78,7 +78,10 @@ async function protectPlatformUser(tx: Executor, userId: string) {
       members,
       eq(members.organizationId, systemBindings.organizationId),
     )
-    .innerJoin(oauthResources, eq(oauthResources.id, systemBindings.resourceId))
+    .innerJoin(
+      oauthResources,
+      eq(oauthResources.id, systemBindings.resourceInstanceId),
+    )
     .where(eq(members.userId, userId));
   if (
     binding &&

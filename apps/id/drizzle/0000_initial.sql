@@ -150,7 +150,7 @@ CREATE TABLE "oauth_access_tokens" (
 	"scopes" text[] NOT NULL,
 	"expires_at" timestamp with time zone NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"revoked" timestamp with time zone,
+	"revoked_at" timestamp with time zone,
 	"confirmation" jsonb,
 	CONSTRAINT "oauth_access_tokens_token_unique" UNIQUE("token")
 );
@@ -164,7 +164,7 @@ CREATE TABLE "oauth_client_resources" (
 	"deleted_at" timestamp with time zone,
 	"id" uuid PRIMARY KEY NOT NULL,
 	"client_id" text NOT NULL,
-	"resource_id" text NOT NULL,
+	"resource" text NOT NULL,
 	"metadata" jsonb,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -241,7 +241,7 @@ CREATE TABLE "oauth_refresh_tokens" (
 	"scopes" text[] NOT NULL,
 	"expires_at" timestamp with time zone NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"revoked" timestamp with time zone,
+	"revoked_at" timestamp with time zone,
 	"rotated_at" timestamp with time zone,
 	"rotation_replay_response" text,
 	"rotation_replay_expires_at" timestamp with time zone,
@@ -404,7 +404,7 @@ ALTER TABLE "audit_events" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "system_bindings" (
 	"name" text PRIMARY KEY NOT NULL,
 	"organization_id" uuid NOT NULL,
-	"resource_id" uuid NOT NULL,
+	"resource_instance_id" uuid NOT NULL,
 	"group_id" uuid NOT NULL,
 	CONSTRAINT "system_bindings_name_check" CHECK ("system_bindings"."name" in ('platform'))
 );
@@ -484,7 +484,7 @@ ALTER TABLE "oauth_access_tokens" ADD CONSTRAINT "oauth_access_tokens_session_id
 ALTER TABLE "oauth_access_tokens" ADD CONSTRAINT "oauth_access_tokens_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "oauth_access_tokens" ADD CONSTRAINT "oauth_access_tokens_refresh_id_oauth_refresh_tokens_id_fk" FOREIGN KEY ("refresh_id") REFERENCES "public"."oauth_refresh_tokens"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "oauth_client_resources" ADD CONSTRAINT "oauth_client_resources_client_id_oauth_clients_client_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."oauth_clients"("client_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "oauth_client_resources" ADD CONSTRAINT "oauth_client_resources_resource_id_fk" FOREIGN KEY ("resource_id") REFERENCES "public"."oauth_resources"("identifier") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "oauth_client_resources" ADD CONSTRAINT "oauth_client_resources_resource_fk" FOREIGN KEY ("resource") REFERENCES "public"."oauth_resources"("identifier") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "oauth_clients" ADD CONSTRAINT "oauth_clients_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "oauth_clients" ADD CONSTRAINT "oauth_clients_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "oauth_consents" ADD CONSTRAINT "oauth_consents_client_id_oauth_clients_client_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."oauth_clients"("client_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -507,7 +507,7 @@ ALTER TABLE "sso_providers" ADD CONSTRAINT "sso_providers_organization_id_organi
 ALTER TABLE "audit_event_subjects" ADD CONSTRAINT "audit_event_subjects_event_id_audit_events_id_fk" FOREIGN KEY ("event_id") REFERENCES "public"."audit_events"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "audit_events" ADD CONSTRAINT "audit_events_operation_id_admin_operations_id_fk" FOREIGN KEY ("operation_id") REFERENCES "public"."admin_operations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "system_bindings" ADD CONSTRAINT "system_bindings_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "system_bindings" ADD CONSTRAINT "system_bindings_resource_id_oauth_resources_id_fk" FOREIGN KEY ("resource_id") REFERENCES "public"."oauth_resources"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "system_bindings" ADD CONSTRAINT "system_bindings_resource_instance_id_oauth_resources_id_fk" FOREIGN KEY ("resource_instance_id") REFERENCES "public"."oauth_resources"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "system_bindings" ADD CONSTRAINT "system_bindings_organization_group_fk" FOREIGN KEY ("organization_id","group_id") REFERENCES "public"."groups"("organization_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organization_capabilities" ADD CONSTRAINT "organization_capabilities_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organization_capabilities" ADD CONSTRAINT "organization_capabilities_client_id_oauth_clients_client_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."oauth_clients"("client_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -535,8 +535,8 @@ CREATE INDEX "oauth_access_tokens_user_id_idx" ON "oauth_access_tokens" USING bt
 CREATE INDEX "oauth_access_tokens_authorization_code_id_idx" ON "oauth_access_tokens" USING btree ("authorization_code_id");--> statement-breakpoint
 CREATE INDEX "oauth_access_tokens_refresh_id_idx" ON "oauth_access_tokens" USING btree ("refresh_id");--> statement-breakpoint
 CREATE INDEX "oauth_client_assertions_expires_at_idx" ON "oauth_client_assertions" USING btree ("expires_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "oauth_client_resources_client_id_resource_id_unique" ON "oauth_client_resources" USING btree ("client_id","resource_id") WHERE "oauth_client_resources"."deleted_at" is null;--> statement-breakpoint
-CREATE INDEX "oauth_client_resources_resource_id_idx" ON "oauth_client_resources" USING btree ("resource_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "oauth_client_resources_client_id_resource_unique" ON "oauth_client_resources" USING btree ("client_id","resource") WHERE "oauth_client_resources"."deleted_at" is null;--> statement-breakpoint
+CREATE INDEX "oauth_client_resources_resource_idx" ON "oauth_client_resources" USING btree ("resource");--> statement-breakpoint
 CREATE INDEX "oauth_clients_user_id_idx" ON "oauth_clients" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "oauth_clients_organization_id_idx" ON "oauth_clients" USING btree ("organization_id");--> statement-breakpoint
 CREATE INDEX "oauth_consents_client_id_idx" ON "oauth_consents" USING btree ("client_id");--> statement-breakpoint

@@ -387,7 +387,7 @@ test("exact pairs never union with client-only, resource-only, other pairs or an
   await db.insert(systemBindings).values({
     name: "platform",
     organizationId: org.id,
-    resourceId: row!.id,
+    resourceInstanceId: row!.id,
     groupId: group.id,
   });
   await db
@@ -785,7 +785,7 @@ test("direct administrator explanations agree with actual grants and root writer
   await db.insert(systemBindings).values({
     name: "platform",
     organizationId: org.id,
-    resourceId: endpoint!.id,
+    resourceInstanceId: endpoint!.id,
     groupId: group.id,
   });
   const memberId = ids[0]!;

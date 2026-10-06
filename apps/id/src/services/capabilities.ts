@@ -122,7 +122,7 @@ async function validateTarget(
     const [binding] = await tx
       .select()
       .from(systemBindings)
-      .where(eq(systemBindings.resourceId, resource!.id));
+      .where(eq(systemBindings.resourceInstanceId, resource!.id));
     if (
       !binding ||
       (organizationId !== binding.organizationId &&

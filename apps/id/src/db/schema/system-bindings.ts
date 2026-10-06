@@ -12,7 +12,7 @@ export const systemBindings = pgTable(
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "restrict" }),
-    resourceId: uuid("resource_id")
+    resourceInstanceId: uuid("resource_instance_id")
       .notNull()
       .references(() => oauthResources.id, { onDelete: "restrict" }),
     groupId: uuid("group_id").notNull(),

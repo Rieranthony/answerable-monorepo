@@ -228,11 +228,11 @@ test("resource link insertion, movement and explicit removal advance affected cl
     )[0]!.revision;
   const linkId = createId();
   await connection.db.execute(
-    sql`insert into oauth_client_resources (id, client_id, resource_id) values (${linkId}, ${client.clientId}, ${resource})`,
+    sql`insert into oauth_client_resources (id, client_id, resource) values (${linkId}, ${client.clientId}, ${resource})`,
   );
   expect(await revision()).toBe(2);
   await connection.db.execute(
-    sql`insert into oauth_client_resources (id, client_id, resource_id) values (${createId()}, ${client.clientId}, ${resource}) on conflict do nothing`,
+    sql`insert into oauth_client_resources (id, client_id, resource) values (${createId()}, ${client.clientId}, ${resource}) on conflict do nothing`,
   );
   expect(await revision()).toBe(2);
   await connection.db.execute(
@@ -289,11 +289,11 @@ test("resource configuration revisions reject manual writes and include link mov
   expect(await revision(a)).toBe(2);
   const id = createId();
   await connection.db.execute(
-    sql`insert into oauth_client_resources (id, client_id, resource_id) values (${id}, ${client.clientId}, ${a})`,
+    sql`insert into oauth_client_resources (id, client_id, resource) values (${id}, ${client.clientId}, ${a})`,
   );
   expect(await revision(a)).toBe(3);
   await connection.db.execute(
-    sql`update oauth_client_resources set resource_id = ${b} where id = ${id}`,
+    sql`update oauth_client_resources set resource = ${b} where id = ${id}`,
   );
   expect(await revision(a)).toBe(4);
   expect(await revision(b)).toBe(2);

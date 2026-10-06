@@ -286,7 +286,7 @@ CREATE FUNCTION touch_client_resource_revision() RETURNS trigger
 LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
 DECLARE target text;
 BEGIN
-  IF TG_OP = 'UPDATE' AND NEW.client_id = OLD.client_id AND NEW.resource_id = OLD.resource_id AND NEW.deleted_at IS NOT DISTINCT FROM OLD.deleted_at THEN
+  IF TG_OP = 'UPDATE' AND NEW.client_id = OLD.client_id AND NEW.resource = OLD.resource AND NEW.deleted_at IS NOT DISTINCT FROM OLD.deleted_at THEN
     RETURN NULL;
   END IF;
   FOR target IN
@@ -301,8 +301,8 @@ BEGIN
   END LOOP;
   FOR target IN
     SELECT DISTINCT value FROM unnest(ARRAY[
-      CASE WHEN TG_OP <> 'INSERT' THEN OLD.resource_id END,
-      CASE WHEN TG_OP <> 'DELETE' THEN NEW.resource_id END
+      CASE WHEN TG_OP <> 'INSERT' THEN OLD.resource END,
+      CASE WHEN TG_OP <> 'DELETE' THEN NEW.resource END
     ]) AS targets(value) WHERE value IS NOT NULL ORDER BY value
   LOOP
     UPDATE public.oauth_resources
@@ -376,7 +376,7 @@ BEGIN
   IF TG_OP = 'UPDATE' AND (NEW.id IS DISTINCT FROM OLD.id OR NEW.organization_id IS DISTINCT FROM OLD.organization_id OR NEW.client_id IS DISTINCT FROM OLD.client_id OR NEW.resource IS DISTINCT FROM OLD.resource OR NEW.grant_kind IS DISTINCT FROM OLD.grant_kind) THEN
     RAISE EXCEPTION 'Capability identity and target are immutable' USING ERRCODE = '23514';
   END IF;
-  IF NEW.grant_kind = 'admin_session' AND NOT EXISTS (SELECT 1 FROM system_bindings b JOIN oauth_resources r ON r.id = b.resource_id WHERE r.identifier = NEW.resource) THEN
+  IF NEW.grant_kind = 'admin_session' AND NOT EXISTS (SELECT 1 FROM system_bindings b JOIN oauth_resources r ON r.id = b.resource_instance_id WHERE r.identifier = NEW.resource) THEN
     RAISE EXCEPTION 'Direct administration requires the bound admin resource' USING ERRCODE = '23514';
   END IF;
   IF NEW.grant_kind = 'client_credentials' AND NOT EXISTS (SELECT 1 FROM oauth_clients c WHERE c.client_id = NEW.client_id AND c.organization_id = NEW.organization_id) THEN
@@ -490,7 +490,7 @@ BEGIN
       SELECT 1 FROM public.system_bindings b WHERE
         (TG_TABLE_NAME = 'organizations' AND b.organization_id = OLD.id)
         OR (TG_TABLE_NAME = 'groups' AND b.group_id = OLD.id)
-        OR (TG_TABLE_NAME = 'oauth_resources' AND b.resource_id = OLD.id)
+        OR (TG_TABLE_NAME = 'oauth_resources' AND b.resource_instance_id = OLD.id)
     ) THEN
       RAISE EXCEPTION 'Bound platform objects cannot be deleted' USING ERRCODE = '23514', CONSTRAINT = 'system_binding_protected';
     END IF;
@@ -505,7 +505,7 @@ BEGIN
     ) OR TG_TABLE_NAME = 'oauth_resources' AND (
       EXISTS (SELECT 1 FROM public.entitlements WHERE resource = to_jsonb(OLD)->>'identifier' AND deleted_at IS NULL)
       OR EXISTS (SELECT 1 FROM public.organization_capabilities WHERE resource = to_jsonb(OLD)->>'identifier' AND deleted_at IS NULL)
-      OR EXISTS (SELECT 1 FROM public.oauth_client_resources WHERE resource_id = to_jsonb(OLD)->>'identifier' AND deleted_at IS NULL)
+      OR EXISTS (SELECT 1 FROM public.oauth_client_resources WHERE resource = to_jsonb(OLD)->>'identifier' AND deleted_at IS NULL)
     ) THEN
       RAISE EXCEPTION 'Remove live product references before deletion' USING ERRCODE = '23503', CONSTRAINT = 'product_live_references';
     END IF;
@@ -554,7 +554,7 @@ BEGIN
     PERFORM public.require_present_parent('public.oauth_clients', 'client_id', row_data->>'client_id');
   END IF;
   IF TG_TABLE_NAME <> 'oauth_resources' THEN
-    PERFORM public.require_present_parent('public.oauth_resources', 'identifier', coalesce(row_data->>'resource', row_data->>'resource_id'));
+    PERFORM public.require_present_parent('public.oauth_resources', 'identifier', row_data->>'resource');
   END IF;
   RETURN NEW;
 END;

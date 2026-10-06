@@ -178,7 +178,7 @@ test("resource erasure requires explicit unlinking in both the service and datab
   ).rejects.toMatchObject({
     cause: {
       code: "23503",
-      constraint: "oauth_client_resources_resource_id_fk",
+      constraint: "oauth_client_resources_resource_fk",
     },
   });
   expect(await db.select().from(oauthClientResources)).toHaveLength(1);

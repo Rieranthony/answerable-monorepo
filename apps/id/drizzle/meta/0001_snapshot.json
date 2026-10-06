@@ -1,6 +1,6 @@
 {
-  "id": "3de48b63-8c0c-4efe-8f4f-9378816feb9c",
-  "prevId": "9689281e-f5e7-45a6-8f44-83d77528aa47",
+  "id": "7b210f1b-e0e4-43b3-9fdf-e89bef97f263",
+  "prevId": "f75fc10d-9578-41d6-b8c8-763bfe1d26d4",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1166,8 +1166,8 @@
           "notNull": true,
           "default": "now()"
         },
-        "revoked": {
-          "name": "revoked",
+        "revoked_at": {
+          "name": "revoked_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
@@ -1402,8 +1402,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "resource_id": {
-          "name": "resource_id",
+        "resource": {
+          "name": "resource",
           "type": "text",
           "primaryKey": false,
           "notNull": true
@@ -1423,8 +1423,8 @@
         }
       },
       "indexes": {
-        "oauth_client_resources_client_id_resource_id_unique": {
-          "name": "oauth_client_resources_client_id_resource_id_unique",
+        "oauth_client_resources_client_id_resource_unique": {
+          "name": "oauth_client_resources_client_id_resource_unique",
           "columns": [
             {
               "expression": "client_id",
@@ -1433,7 +1433,7 @@
               "nulls": "last"
             },
             {
-              "expression": "resource_id",
+              "expression": "resource",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1445,11 +1445,11 @@
           "where": "\"oauth_client_resources\".\"deleted_at\" is null",
           "concurrently": false
         },
-        "oauth_client_resources_resource_id_idx": {
-          "name": "oauth_client_resources_resource_id_idx",
+        "oauth_client_resources_resource_idx": {
+          "name": "oauth_client_resources_resource_idx",
           "columns": [
             {
-              "expression": "resource_id",
+              "expression": "resource",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1475,11 +1475,11 @@
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
-        "oauth_client_resources_resource_id_fk": {
-          "name": "oauth_client_resources_resource_id_fk",
+        "oauth_client_resources_resource_fk": {
+          "name": "oauth_client_resources_resource_fk",
           "tableFrom": "oauth_client_resources",
           "columnsFrom": [
-            "resource_id"
+            "resource"
           ],
           "tableTo": "oauth_resources",
           "columnsTo": [
@@ -2039,8 +2039,8 @@
           "notNull": true,
           "default": "now()"
         },
-        "revoked": {
-          "name": "revoked",
+        "revoked_at": {
+          "name": "revoked_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
@@ -3749,8 +3749,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "resource_id": {
-          "name": "resource_id",
+        "resource_instance_id": {
+          "name": "resource_instance_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -3777,11 +3777,11 @@
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
-        "system_bindings_resource_id_oauth_resources_id_fk": {
-          "name": "system_bindings_resource_id_oauth_resources_id_fk",
+        "system_bindings_resource_instance_id_oauth_resources_id_fk": {
+          "name": "system_bindings_resource_instance_id_oauth_resources_id_fk",
           "tableFrom": "system_bindings",
           "columnsFrom": [
-            "resource_id"
+            "resource_instance_id"
           ],
           "tableTo": "oauth_resources",
           "columnsTo": [

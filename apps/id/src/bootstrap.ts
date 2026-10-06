@@ -116,7 +116,7 @@ export async function bootstrap(
       .from(oauthResources)
       .where(
         binding
-          ? eq(oauthResources.id, binding.resourceId)
+          ? eq(oauthResources.id, binding.resourceInstanceId)
           : eq(oauthResources.identifier, options.adminResourceIdentifier),
       );
     if (
@@ -204,7 +204,7 @@ export async function bootstrap(
       await tx.insert(systemBindings).values({
         name: "platform",
         organizationId,
-        resourceId: resource!.id,
+        resourceInstanceId: resource!.id,
         groupId: group.id,
       });
     // The established immutable binding is the authority for this system ceiling.

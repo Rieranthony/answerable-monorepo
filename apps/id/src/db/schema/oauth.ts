@@ -151,8 +151,8 @@ export const oauthClientResources = pgTable(
     clientId: text("client_id")
       .notNull()
       .references(() => oauthClients.clientId, { onDelete: "cascade" }),
-    /** Holds the resource identifier, not its row id; the plugin's naming. */
-    resourceId: text("resource_id").notNull(),
+    /** Holds the resource identifier, not its row id; the property keeps the plugin's naming. */
+    resourceId: text("resource").notNull(),
     metadata: jsonb("metadata"),
     createdAt: timestampColumn("created_at").defaultNow().notNull(),
   },
@@ -160,14 +160,14 @@ export const oauthClientResources = pgTable(
     // Named explicitly: the generated name would exceed 63 characters and
     // PostgreSQL would silently truncate it.
     foreignKey({
-      name: "oauth_client_resources_resource_id_fk",
+      name: "oauth_client_resources_resource_fk",
       columns: [table.resourceId],
       foreignColumns: [oauthResources.identifier],
     }).onDelete("restrict"),
-    uniqueIndex("oauth_client_resources_client_id_resource_id_unique")
+    uniqueIndex("oauth_client_resources_client_id_resource_unique")
       .on(table.clientId, table.resourceId)
       .where(sql`${table.deletedAt} is null`),
-    index("oauth_client_resources_resource_id_idx").on(table.resourceId),
+    index("oauth_client_resources_resource_idx").on(table.resourceId),
   ],
 );
 
@@ -194,7 +194,7 @@ export const oauthRefreshTokens = pgTable(
     // cannot exist.
     expiresAt: timestampColumn("expires_at").notNull(),
     createdAt: timestampColumn("created_at").defaultNow().notNull(),
-    revoked: timestampColumn("revoked"),
+    revoked: timestampColumn("revoked_at"),
     rotatedAt: timestampColumn("rotated_at"),
     rotationReplayResponse: text("rotation_replay_response"),
     rotationReplayExpiresAt: timestampColumn("rotation_replay_expires_at"),
@@ -239,7 +239,7 @@ export const oauthAccessTokens = pgTable(
     // cannot exist.
     expiresAt: timestampColumn("expires_at").notNull(),
     createdAt: timestampColumn("created_at").defaultNow().notNull(),
-    revoked: timestampColumn("revoked"),
+    revoked: timestampColumn("revoked_at"),
     confirmation: jsonb("confirmation"),
   },
   (table) => [

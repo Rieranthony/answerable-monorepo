@@ -43,9 +43,9 @@ function requireResource<T>(row: T | null): T {
 }
 async function protect(tx: Executor, resourceId: string) {
   const [binding] = await tx
-    .select({ resourceId: systemBindings.resourceId })
+    .select({ resourceId: systemBindings.resourceInstanceId })
     .from(systemBindings)
-    .where(eq(systemBindings.resourceId, resourceId));
+    .where(eq(systemBindings.resourceInstanceId, resourceId));
   if (binding)
     throw new ProblemError(
       409,
@@ -114,7 +114,7 @@ export async function updateResource(
       .from(systemBindings)
       .innerJoin(
         oauthResources,
-        eq(oauthResources.id, systemBindings.resourceId),
+        eq(oauthResources.id, systemBindings.resourceInstanceId),
       )
       .where(eq(oauthResources.identifier, identifier));
     if (binding)
