@@ -30,25 +30,21 @@ function provider(id: string, { version = "2026-09-29", title = "Search tickets"
 }
 const rows = (id: string) => db`select identity, version, kind, risk, title, input -> 'required' as required from capabilities where provider_id = ${id} order by identity, version`
 
-test("ingest stores a provider's manifest and each capability, without the commit tools; a mutation's class is not stored, since its risk gives it", async () => {
+test("ingest stores a provider's id and each capability, without the commit tools; a mutation's class is not stored, since its risk gives it", async () => {
   const id = providerId()
   await ingest(db, [provider(id)])
-  const [stored] = await db`select version, status, manifest -> 'id' as manifest_id from providers where id = ${id}`
-  expect(stored).toEqual({ version: "2026-09-29", status: "active", manifest_id: id })
+  expect<unknown>(await db`select * from providers where id = ${id}`).toEqual([{ id }])
   expect(await rows(id)).toEqual([
     { identity: `${id}/tickets.close`, version: "2026-09-29", kind: "mutate", risk: "high", title: null, required: ["id"] },
     { identity: `${id}/tickets.search`, version: "2026-09-29", kind: "read", risk: null, title: "Search tickets", required: ["query"] },
   ])
   const columns = await db`select column_name from information_schema.columns where table_schema = current_schema() and table_name = 'capabilities' order by ordinal_position`
-  expect(columns.map((row: { column_name: string }) => row.column_name)).toEqual(["provider_id", "identity", "version", "kind", "risk", "title", "description", "input", "output", "search", "status"])
+  expect(columns.map((row: { column_name: string }) => row.column_name)).toEqual(["provider_id", "identity", "version", "kind", "risk", "title", "description", "input", "output", "search"])
 })
 
-test("ingesting again changes nothing, and a new title or description updates in place", async () => {
+test("a new title or description updates in place", async () => {
   const id = providerId()
   await ingest(db, [provider(id)])
-  const [first] = await db`select registered_at from providers where id = ${id}`
-  await ingest(db, [provider(id)])
-  expect<unknown>(await db`select registered_at from providers where id = ${id}`).toEqual([first])
   await ingest(db, [provider(id, { title: "Find tickets" })])
   expect((await rows(id)).map((row: { title: string | null }) => row.title)).toEqual([null, "Find tickets"])
 })
@@ -64,7 +60,6 @@ test("a changed contract under the same version refuses the boot, naming the cap
   expect((await rows(id)).map((row: { identity: string; version: string }) => `${row.identity}@${row.version}`)).toEqual([
     `${id}/tickets.close@2026-09-29`, `${id}/tickets.close@2026-10-01`, `${id}/tickets.search@2026-09-29`, `${id}/tickets.search@2026-10-01`,
   ])
-  expect<unknown>(await db`select version from providers where id = ${id}`).toEqual([{ version: "2026-10-01" }])
 })
 
 test("an organisation's catalogue is read by provider, with default overrides, and rewritten in place", async () => {

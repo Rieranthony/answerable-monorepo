@@ -17,7 +17,7 @@ export type CatalogueEntry = { enabled: boolean; overrides: Overrides }
 export type Catalogue = ReadonlyMap<string, CatalogueEntry>
 
 /**
- * Store each provider's manifest and every capability at its version. A capability already stored at the same version with another
+ * Store each provider's id and every capability of its manifest at its version. A capability already stored at the same version with another
  * kind, risk, input or output refuses the whole ingest, naming it: a contract change needs a new version. Titles and descriptions update in place.
  * A capability the provider never had before stays off for every organisation that has the provider enabled: its identity joins their `overrides.disabled`.
  */
@@ -25,9 +25,7 @@ export async function ingest(db: SQL, providers: readonly Provider[]) {
   await db.begin(async tx => {
     for (const provider of providers) {
       const contract = manifest(provider)
-      await tx`insert into providers (id, version, manifest) values (${provider.id}, ${provider.version}, ${contract})
-        on conflict (id) do update set version = excluded.version, manifest = excluded.manifest,
-          registered_at = case when providers.manifest = excluded.manifest then providers.registered_at else now() end`
+      await tx`insert into providers (id) values (${provider.id}) on conflict (id) do nothing`
       const known = new Set((await tx`select identity from capabilities where provider_id = ${provider.id}`).map((row: { identity: string }) => row.identity))
       for (const tool of contract.tools) {
         if (tool.kind === "commit") continue
