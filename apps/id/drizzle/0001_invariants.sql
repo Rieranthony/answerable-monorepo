@@ -48,15 +48,11 @@ BEGIN
     RAISE EXCEPTION 'Resource identity is immutable'
       USING ERRCODE = '23514', CONSTRAINT = 'oauth_resources_identity_immutable';
   END IF;
+  IF NEW.classification IS DISTINCT FROM OLD.classification OR NEW.organization_id IS DISTINCT FROM OLD.organization_id THEN
+    RAISE EXCEPTION 'Resource ownership is immutable'
+      USING ERRCODE = '23514', CONSTRAINT = 'oauth_resources_ownership_immutable';
+  END IF;
   RETURN NEW;
-END;
-$$;
---> statement-breakpoint
-CREATE FUNCTION protect_system_binding() RETURNS trigger
-LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
-BEGIN
-  RAISE EXCEPTION 'System bindings are immutable'
-    USING ERRCODE = '23514', CONSTRAINT = 'system_bindings_immutable';
 END;
 $$;
 --> statement-breakpoint
@@ -264,23 +260,20 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
-CREATE FUNCTION protect_admin_operation() RETURNS trigger
-LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
-BEGIN
-  RAISE EXCEPTION 'Completed operations are immutable'
-    USING ERRCODE = '23514', CONSTRAINT = 'admin_operations_immutable';
-END;
-$$;
---> statement-breakpoint
+-- Columns named as trigger arguments do not count as a change: an update of only those
+-- keeps the revision and their old values (Better Auth locks an SSO provider that way).
 CREATE FUNCTION protect_configuration_revision() RETURNS trigger
 LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE ignored text[] := coalesce(TG_ARGV, '{}');
 BEGIN
   IF NEW.revision IS DISTINCT FROM OLD.revision THEN
     RAISE EXCEPTION 'Configuration revision is server controlled'
       USING ERRCODE = '23514', CONSTRAINT = 'configuration_revision_server_controlled';
   END IF;
-  IF (to_jsonb(NEW) - 'revision') IS DISTINCT FROM (to_jsonb(OLD) - 'revision') THEN
+  IF (to_jsonb(NEW) - 'revision' - ignored) IS DISTINCT FROM (to_jsonb(OLD) - 'revision' - ignored) THEN
     NEW.revision := OLD.revision + 1;
+  ELSE
+    NEW := OLD;
   END IF;
   RETURN NEW;
 END;
@@ -295,8 +288,7 @@ BEGIN
   END IF;
   FOR target IN
     SELECT DISTINCT value FROM unnest(ARRAY[
-      CASE WHEN TG_OP <> 'INSERT' THEN OLD.client_id END,
-      CASE WHEN TG_OP <> 'DELETE' THEN NEW.client_id END
+      CASE WHEN TG_OP = 'UPDATE' THEN OLD.client_id END, NEW.client_id
     ]) AS targets(value) WHERE value IS NOT NULL ORDER BY value
   LOOP
     UPDATE public.oauth_clients
@@ -305,8 +297,7 @@ BEGIN
   END LOOP;
   FOR target IN
     SELECT DISTINCT value FROM unnest(ARRAY[
-      CASE WHEN TG_OP <> 'INSERT' THEN OLD.resource END,
-      CASE WHEN TG_OP <> 'DELETE' THEN NEW.resource END
+      CASE WHEN TG_OP = 'UPDATE' THEN OLD.resource END, NEW.resource
     ]) AS targets(value) WHERE value IS NOT NULL ORDER BY value
   LOOP
     UPDATE public.oauth_resources
@@ -352,16 +343,6 @@ BEGIN
      OR NEW.member_id IS DISTINCT FROM OLD.member_id THEN
     RAISE EXCEPTION 'Group assignment identity and ownership are immutable'
       USING ERRCODE = '23514', CONSTRAINT = 'group_members_identity_immutable';
-  END IF;
-  RETURN NEW;
-END;
-$$;
---> statement-breakpoint
-CREATE FUNCTION protect_resource_ownership() RETURNS trigger
-LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
-BEGIN
-  IF NEW.classification IS DISTINCT FROM OLD.classification OR NEW.organization_id IS DISTINCT FROM OLD.organization_id THEN
-    RAISE EXCEPTION 'Resource ownership is immutable' USING ERRCODE = '23514';
   END IF;
   RETURN NEW;
 END;
@@ -481,22 +462,6 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
-CREATE FUNCTION protect_sso_provider_revision() RETURNS trigger
-LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
-BEGIN
-  IF NEW.revision IS DISTINCT FROM OLD.revision THEN
-    RAISE EXCEPTION 'Configuration revision is server controlled'
-      USING ERRCODE = '23514', CONSTRAINT = 'configuration_revision_server_controlled';
-  END IF;
-  IF (to_jsonb(NEW) - 'revision' - 'updated_at') IS DISTINCT FROM (to_jsonb(OLD) - 'revision' - 'updated_at') THEN
-    NEW.revision := OLD.revision + 1;
-  ELSE
-    NEW.updated_at := OLD.updated_at;
-  END IF;
-  RETURN NEW;
-END;
-$$;
---> statement-breakpoint
 -- Validate fixed provenance independently of caller visibility; RLS still controls admission.
 CREATE FUNCTION validate_grant_authentication() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
@@ -572,19 +537,13 @@ FOR EACH ROW EXECUTE FUNCTION protect_oauth_client_identity();
 CREATE TRIGGER oauth_resources_identity_guard BEFORE UPDATE ON oauth_resources
 FOR EACH ROW EXECUTE FUNCTION protect_oauth_resource_identity();
 --> statement-breakpoint
-CREATE TRIGGER system_bindings_immutable BEFORE UPDATE OR DELETE ON system_bindings
-FOR EACH ROW EXECUTE FUNCTION protect_system_binding();
---> statement-breakpoint
 CREATE TRIGGER audit_events_capture_subjects AFTER INSERT ON audit_events
 FOR EACH ROW EXECUTE FUNCTION record_audit_subjects();
---> statement-breakpoint
-CREATE TRIGGER admin_operations_immutable BEFORE UPDATE OR DELETE ON admin_operations
-FOR EACH ROW EXECUTE FUNCTION protect_admin_operation();
 --> statement-breakpoint
 CREATE TRIGGER oauth_clients_revision_guard BEFORE UPDATE ON oauth_clients
 FOR EACH ROW EXECUTE FUNCTION protect_configuration_revision();
 --> statement-breakpoint
-CREATE TRIGGER oauth_client_resources_revision AFTER INSERT OR UPDATE OR DELETE ON oauth_client_resources
+CREATE TRIGGER oauth_client_resources_revision AFTER INSERT OR UPDATE ON oauth_client_resources
 FOR EACH ROW EXECUTE FUNCTION touch_client_resource_revision();
 --> statement-breakpoint
 CREATE TRIGGER oauth_resources_revision_guard BEFORE UPDATE ON oauth_resources
@@ -603,7 +562,7 @@ CREATE TRIGGER organizations_revision_guard BEFORE UPDATE ON organizations
 FOR EACH ROW EXECUTE FUNCTION protect_configuration_revision();
 --> statement-breakpoint
 CREATE TRIGGER sso_providers_revision_guard BEFORE UPDATE ON sso_providers
-FOR EACH ROW EXECUTE FUNCTION protect_sso_provider_revision();
+FOR EACH ROW EXECUTE FUNCTION protect_configuration_revision('updated_at');
 --> statement-breakpoint
 CREATE TRIGGER groups_revision_guard BEFORE UPDATE ON groups
 FOR EACH ROW EXECUTE FUNCTION protect_configuration_revision();
@@ -616,8 +575,6 @@ FOR EACH ROW EXECUTE FUNCTION protect_configuration_revision();
 --> statement-breakpoint
 CREATE TRIGGER entitlements_revision_guard BEFORE UPDATE ON entitlements
 FOR EACH ROW EXECUTE FUNCTION protect_configuration_revision();
---> statement-breakpoint
-CREATE TRIGGER resource_ownership_immutable BEFORE UPDATE ON oauth_resources FOR EACH ROW EXECUTE FUNCTION protect_resource_ownership();
 --> statement-breakpoint
 CREATE TRIGGER private_resource_assignment BEFORE INSERT OR UPDATE ON entitlements FOR EACH ROW EXECUTE FUNCTION protect_private_resource_assignment();
 --> statement-breakpoint

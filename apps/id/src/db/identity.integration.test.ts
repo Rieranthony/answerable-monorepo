@@ -249,18 +249,23 @@ test("resource link insertion, movement and explicit removal advance affected cl
   await expect(
     connection.db.delete(oauthResources).execute(),
   ).rejects.toMatchObject({ cause: { code: "23503" } });
-  await connection.db.execute(
-    sql`delete from oauth_client_resources where id = ${linkId}`,
-  );
-  await connection.db.delete(oauthResources);
-  expect(
+  const otherRevision = async () =>
     (
       await connection.db
         .select()
         .from(oauthClients)
         .where(eq(oauthClients.clientId, "other-client"))
-    )[0]!.revision,
-  ).toBe(3);
+    )[0]!.revision;
+  // Removal is a soft deletion; the runtime role cannot delete a link.
+  await connection.db.execute(
+    sql`update oauth_client_resources set deleted_at = now() where id = ${linkId}`,
+  );
+  expect(await otherRevision()).toBe(3);
+  await connection.db.execute(
+    sql`delete from oauth_client_resources where id = ${linkId}`,
+  );
+  await connection.db.delete(oauthResources);
+  expect(await otherRevision()).toBe(3);
   await connection.db.delete(oauthClients);
 });
 

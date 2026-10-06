@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, type SQL } from "drizzle-orm";
 
+import { closeRuntimeRole, openRuntimeRole } from "./__tests__/runtime-role.ts";
 import { testEnvironment } from "./__tests__/support.ts";
 import { assertDisposableTestDatabase } from "./__tests__/test-database.ts";
 import {
@@ -10,6 +11,7 @@ import {
   type BootstrapOptions,
 } from "./bootstrap.ts";
 import { createDatabase } from "./db/client.ts";
+import { withDatabaseScope } from "./db/isolation.ts";
 import {
   auditEvents,
   entitlements,
@@ -244,23 +246,59 @@ test("bootstrap does not adopt an unrelated existing resource", async () => {
 });
 
 test("system binding protects its rows and rejects a changed admin audience", async () => {
-  const bound = await bootstrap(db, actor, options);
-  await expect(
-    bootstrap(db, actor, {
-      ...options,
-      adminResourceIdentifier: "https://other.example/admin",
-    }),
-  ).rejects.toMatchObject({ code: "system_binding_conflict" });
-  for (const table of [organizations, oauthResources, groups])
-    await expect(db.delete(table).execute()).rejects.toThrow();
-  await expect(
-    Promise.resolve(db.execute(sql`delete from system_bindings`)),
-  ).rejects.toThrow();
-  await expect(
-    Promise.resolve(
-      db.execute(sql`update system_bindings set group_id = ${bound.group.id}`),
-    ),
-  ).rejects.toThrow();
+  const role = `id_test_runtime_${crypto.randomUUID().replaceAll("-", "")}`;
+  const connections = await openRuntimeRole(testEnvironment(), role);
+  try {
+    const bound = await bootstrap(db, actor, options);
+    await expect(
+      bootstrap(db, actor, {
+        ...options,
+        adminResourceIdentifier: "https://other.example/admin",
+      }),
+    ).rejects.toMatchObject({ code: "system_binding_conflict" });
+    for (const table of [organizations, oauthResources, groups])
+      await expect(db.delete(table).execute()).rejects.toThrow();
+    // The runtime role may neither rewrite nor remove the binding.
+    for (const command of [
+      sql`delete from system_bindings`,
+      sql`update system_bindings set group_id = ${bound.group.id}`,
+    ])
+      await expect(
+        Promise.resolve(connections.runtime.db.execute(command)),
+      ).rejects.toMatchObject({ cause: { code: "42501" } });
+    // Nor soft-delete what it binds, even after removing every other reference.
+    const softDelete = (statements: SQL[]) =>
+      withDatabaseScope(
+        connections.runtime.db,
+        { kind: "platform", access: "write" },
+        async (tx) => {
+          for (const statement of statements) await tx.execute(statement);
+        },
+      );
+    const retire = sql`deleted_at = now(), status = 'disabled'`;
+    await expect(
+      softDelete([
+        sql`update entitlements set ${retire} where group_id = ${bound.group.id}`,
+        sql`update groups set ${retire} where id = ${bound.group.id}`,
+      ]),
+    ).rejects.toMatchObject({
+      cause: { code: "23503", constraint: "system_bindings_group_live_fk" },
+    });
+    await expect(
+      softDelete([
+        sql`update entitlements set ${retire} where resource = ${options.adminResourceIdentifier}`,
+        sql`update organization_capabilities set ${retire} where resource = ${options.adminResourceIdentifier}`,
+        sql`update oauth_resources set deleted_at = now(), disabled = true where id = ${bound.resource.id}`,
+      ]),
+    ).rejects.toMatchObject({
+      cause: {
+        code: "23503",
+        constraint: "system_bindings_resource_instance_live_fk",
+      },
+    });
+  } finally {
+    await closeRuntimeRole(connections, role);
+  }
 });
 
 test("bootstrap preserves explicit restrictions on the bound platform capability", async () => {

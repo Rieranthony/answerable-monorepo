@@ -6,8 +6,8 @@ export function tenantPolicies(organizationId: PgColumn) {
   const mode = sql`current_setting('answerable.scope', true)`;
   const tenant = sql`${organizationId} = nullif(current_setting('answerable.tenant', true), '')::uuid`;
   const write = sql`(${mode} = 'platform-write' or (${mode} = 'tenant-write' and ${tenant}))`;
-  const read = sql`(${write}
-    or ${mode} = 'platform-read'
+  // Permissive policies combine with OR: the write policy already admits writers to SELECT.
+  const read = sql`(${mode} = 'platform-read'
     or (${mode} = 'tenant-read' and ${tenant})
     or (${mode} = 'policy-user' and ${organizationId} in (
       select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid and deleted_at is null and status = 'active' and (valid_from is null or valid_from <= statement_timestamp()) and (valid_until is null or valid_until > statement_timestamp())
@@ -28,16 +28,14 @@ export function membershipPolicies(
   const tenant = sql`${organizationId} = nullif(current_setting('answerable.tenant', true), '')::uuid`;
   const write = sql`(${mode} in ('platform-write', 'protocol') or (${mode} = 'tenant-write' and ${tenant}))`;
   const subject = userId
-    ? sql`(${mode} in ('policy-user', 'grant-admission') and ${userId} = nullif(current_setting('answerable.subject', true), '')::uuid)`
-    : sql`false`;
+    ? sql` or (${mode} in ('policy-user', 'grant-admission') and ${userId} = nullif(current_setting('answerable.subject', true), '')::uuid)`
+    : sql``;
   return [
     pgPolicy("tenant_write", { for: "all", using: write, withCheck: write }),
     pgPolicy("tenant_read", {
       for: "select",
-      using: sql`${write}
-      or ${mode} in ('platform-read', 'platform-users')
-      or (${mode} = 'tenant-read' and ${tenant})
-      or ${subject}
+      using: sql`${mode} in ('platform-read', 'platform-users')
+      or (${mode} = 'tenant-read' and ${tenant})${subject}
       or (${mode} = 'policy-root' and ${organizationId} in (select organization_id from system_bindings))`,
     }),
   ];
@@ -49,9 +47,9 @@ export function routingPolicies(
   protocolWrite = false,
 ) {
   const mode = sql`current_setting('answerable.scope', true)`;
+  const protocol = protocolWrite ? sql` or ${mode} = 'protocol'` : sql``;
   const write = sql`(${mode} = 'platform-write'
-    or (${mode} = 'tenant-write' and ${organizationId} = nullif(current_setting('answerable.tenant', true), '')::uuid)
-    or (${protocolWrite ? sql`true` : sql`false`} and ${mode} = 'protocol'))`;
+    or (${mode} = 'tenant-write' and ${organizationId} = nullif(current_setting('answerable.tenant', true), '')::uuid)${protocol})`;
   return [
     pgPolicy("routing_read", { for: "select", using: sql`true` }),
     pgPolicy("routing_write", { for: "all", using: write, withCheck: write }),
