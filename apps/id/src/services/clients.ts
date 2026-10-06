@@ -105,6 +105,10 @@ function auditResourceLink(
   after: boolean,
   relationship: { id: string; deletedAt: Date | null } | null,
 ) {
+  const visible =
+    resource?.classification === "platform_shared" ||
+    resource?.organizationId === client.organizationId;
+  const organizationId = visible ? client.organizationId : null;
   return audit(
     tx,
     actor,
@@ -123,10 +127,7 @@ function auditResourceLink(
       before: { linked: before },
       after: { linked: after },
     },
-    resource?.classification === "platform_shared" ||
-      resource?.organizationId === client.organizationId
-      ? client.organizationId
-      : null,
+    organizationId,
   );
 }
 /** A client's owner is not entitled to its other tenants' grant identities. */
