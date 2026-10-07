@@ -56,12 +56,11 @@ export const MOSAIC = {
    * is exactly one cell wide). Retune if the photo changes.
    */
   focusCommas: [
-    { col: 10, row: 9 }, // the speaker's head
+    { col: 10, row: 9, cellsTall: 2 }, // the speaker's head
     // Her face is smaller, so this one is scaled down until it covers her
     // without dominating the frame.
     { col: 13, row: 11, cellsTall: 1.75 }, // the seated listener's face
   ],
-  focusCommaCellsTall: 2, // default when an entry does not set its own
   focusClearMargin: 1,
   // Solid scattered marks fade with distance from the boundary (fill-opacity
   // from fadeNear at dist 1 to fadeFar at the far edge of the scatter zone).
@@ -111,7 +110,8 @@ export const MOSAIC_DITHER: DitherSettings = {
   colorHighlight: "#e6e6e6",
 }
 
-type Rot = 0 | 90 | 180 | 270
+export const ROTATIONS = [0, 90, 180, 270] as const
+type Rot = (typeof ROTATIONS)[number]
 
 export interface Mark {
   shape: "square" | "comma" | "semicolon" | "focus-comma"
@@ -187,9 +187,9 @@ export function computeMosaicLayout(): Mark[] {
   }
 
   function placeComma(r: number, c: number, fill: "image" | "solid", fade = 1) {
-    const rots = ([0, 90, 180, 270] as Rot[])
-      .map((rot) => ({ rot, sort: rand() }))
-      .sort((a, b) => a.sort - b.sort)
+    const rots = ROTATIONS.map((rot) => ({ rot, sort: rand() })).sort(
+      (a, b) => a.sort - b.sort,
+    )
     for (const { rot } of rots) {
       const [dr, dc, h, w] = COMMA_FOOT[rot]
       if (!free(2 * r + dr, 2 * c + dc, h, w)) continue
@@ -323,13 +323,12 @@ export function computeMosaicLayout(): Mark[] {
   const margin = MOSAIC.focusClearMargin
   const nearFocus = (c: number, r: number) =>
     MOSAIC.focusCommas.some((f) => {
-      const tall = "cellsTall" in f ? f.cellsTall : MOSAIC.focusCommaCellsTall
-      const wide = (tall * COMMA_BOX.w) / COMMA_BOX.h
+      const wide = (f.cellsTall * COMMA_BOX.w) / COMMA_BOX.h
       return (
         c >= f.col - margin &&
         c < f.col + wide + margin &&
         r >= f.row - margin &&
-        r < f.row + tall + margin
+        r < f.row + f.cellsTall + margin
       )
     })
 
@@ -361,7 +360,7 @@ export function computeMosaicLayout(): Mark[] {
     // The scattered marks outside the image stay grey.
     mark.fill = "cutout"
     mark.fade = 1
-    mark.rot = ([0, 90, 180, 270] as Rot[])[Math.floor(rand() * 4)]
+    mark.rot = ROTATIONS[Math.floor(rand() * ROTATIONS.length)]
     struck.add(mark)
     struckCells.add(`${mark.col},${mark.row}`)
   }
@@ -373,7 +372,7 @@ export function computeMosaicLayout(): Mark[] {
     shape: "focus-comma",
     col: f.col,
     row: f.row,
-    cellsTall: "cellsTall" in f ? f.cellsTall : MOSAIC.focusCommaCellsTall,
+    cellsTall: f.cellsTall,
     rot: 0,
     fill: "cutout",
     fade: 1,

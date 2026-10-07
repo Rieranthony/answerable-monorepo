@@ -10,6 +10,7 @@ import {
   computeMosaicLayout,
   MOSAIC,
   MOSAIC_DITHER,
+  ROTATIONS,
 } from "@/lib/mosaic-layout"
 import { COMMA_BOX, COMMA_PATH } from "@answerable/ui/lib/logo"
 import { cn } from "@answerable/ui/lib/utils"
@@ -94,7 +95,7 @@ export function Mosaic({ className }: { className?: string }) {
           <clipPath id="mz-sq">
             <rect x={INSET} y={INSET} width={TILE} height={TILE} />
           </clipPath>
-          {([0, 90, 180, 270] as const).map((rot) => (
+          {ROTATIONS.map((rot) => (
             <clipPath key={rot} id={`mz-c${rot}`}>
               <path d={COMMA_PATH} transform={commaTransform(rot)} />
             </clipPath>
@@ -116,9 +117,7 @@ export function Mosaic({ className }: { className?: string }) {
           // scattered comma does in its cell, and it is scaled by height so
           // the glyph keeps its own proportions.
           if (m.shape === "focus-comma") {
-            const scale =
-              ((m.cellsTall ?? MOSAIC.focusCommaCellsTall) * MOSAIC.cell) /
-              COMMA_BOX.h
+            const scale = (m.cellsTall! * MOSAIC.cell) / COMMA_BOX.h
             return (
               <g key={i} className="fill-background">
                 <g transform={`translate(${x} ${y})`}>
