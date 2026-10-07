@@ -15,7 +15,7 @@ const tables = [
   "sessions",
 ] as const;
 
-export type ProtocolSweepCounts = Record<(typeof tables)[number], number>;
+type ProtocolSweepCounts = Record<(typeof tables)[number], number>;
 
 /**
  * Delete rows whose `expires_at` has passed, one short transaction per batch.

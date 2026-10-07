@@ -4,7 +4,6 @@
 
 /** `inert`: imported, cannot log in until bound to an upstream identity. */
 export const userStatuses = ["inert", "active", "disabled"] as const;
-export type UserStatus = (typeof userStatuses)[number];
 
 export const membershipStatuses = ["active", "revoked"] as const;
 

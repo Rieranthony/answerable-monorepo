@@ -24,13 +24,13 @@ type OidcEndpoints = {
   tokenEndpoint?: string;
   jwksEndpoint?: string;
 };
-export type OwnOidc = OidcEndpoints & {
+type OwnOidc = OidcEndpoints & {
   credentials?: "own";
   clientId: string;
   clientSecret?: string;
   tokenEndpointAuthentication?: TokenEndpointAuthentication;
 };
-export type PlatformOidc = OidcEndpoints & { credentials: "platform" };
+type PlatformOidc = OidcEndpoints & { credentials: "platform" };
 export type CreateSsoProviderInput = {
   organizationId: string;
   providerId: string;
