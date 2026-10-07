@@ -3,7 +3,7 @@ import type { Executor } from "../db/client.ts";
 import { sessions } from "../db/schema/index.ts";
 import { ProblemError } from "../http/problem.ts";
 
-export const freshAuthenticationSeconds = 300;
+const freshAuthenticationSeconds = 300;
 
 export async function isFreshAuthentication(tx: Executor, time: Date | null) {
   const result =

@@ -14,7 +14,7 @@ import {
 /** Immutable evidence for subsequent login/resource-grant persistence.
  * Broker acceptance time is not upstream authentication freshness.
  */
-export type TenantAuthentication = Readonly<{
+type TenantAuthentication = Readonly<{
   userId: string;
   memberId: string;
   authenticationSessionId: string;

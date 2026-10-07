@@ -13,7 +13,7 @@ export const platformApplications = {
   },
 } as const;
 
-export type PlatformApplication = { clientId: string; clientSecret: string };
+type PlatformApplication = { clientId: string; clientSecret: string };
 export type PlatformApplications = {
   google?: PlatformApplication;
   microsoft?: PlatformApplication;

@@ -142,7 +142,7 @@ export async function setGroupStatus(
 }
 /** An assignment's policy fields and its member's user: the evidence its
  * audit events carry. */
-export const assignmentEvidence = {
+const assignmentEvidence = {
   id: groupMembers.id,
   revision: groupMembers.revision,
   organizationId: groupMembers.organizationId,
