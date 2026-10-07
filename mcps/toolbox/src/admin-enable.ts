@@ -1,5 +1,5 @@
 import type { SQL } from "bun"
-import { found, IdError, type IdAdmin } from "@answerable/id-admin"
+import { found, IdError, pages, type IdAdmin } from "@answerable/id-admin"
 import type { Provider } from "@answerable/mcp"
 import { z } from "zod"
 import { readCatalogue, writeCatalogue } from "./catalogue"
@@ -40,12 +40,7 @@ export function createEnable({ db, providers, id, resource }: { db: SQL; provide
   // Every row of one of ID's paged lists.
   async function list(path: string) {
     const rows: Row[] = []
-    let cursor: string | null = null
-    do {
-      const next = page.parse((await id.manage("GET", `${path}${path.includes("?") ? "&" : "?"}limit=200${cursor ? `&cursor=${cursor}` : ""}`)).body)
-      rows.push(...next.items)
-      cursor = next.nextCursor
-    } while (cursor)
+    for await (const items of pages(path, async next => page.parse((await id.manage("GET", next)).body))) rows.push(...items)
     return rows
   }
   async function plan(organisationId: string, hostClientIds: string[], named: Provider[]) {

@@ -5,6 +5,7 @@
 A grant string on an entitlement limited to one host client (`kind: "client_resource"` in ID's member access view) counts only through that client. The Toolbox used to count it for every host the person signed in through, though ID reaches a pair's resource through its own client only and the admin MCP's `access_grant` promises "only through this OAuth client". The grant cache now holds the member's Toolbox targets for 60 seconds, as before, and each request takes the grant strings of its own client from them. Grants on the Toolbox resource itself, which the enable operation and the journeys use, are unchanged.
 
 - `isGrant` is one test, `toolbox/approve` and `toolbox/code` among the strings its pattern accepts, with the same answers. `Caller`, `Overrides` and `CatalogueEntry` are no longer exported; nothing imported them.
+- The poller and the enable operation read every page of ID's lists with `@answerable/id-admin` 0.5.0's `pages`, which also URL-encodes the poller's cursor.
 
 ## 0.3.4
 

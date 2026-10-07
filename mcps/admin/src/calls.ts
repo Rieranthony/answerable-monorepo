@@ -1,4 +1,4 @@
-import { found, IdError, type IdAdmin } from "@answerable/id-admin"
+import { found, IdError, pages, type IdAdmin } from "@answerable/id-admin"
 import { ToolError, type ToolContext } from "@answerable/mcp"
 
 const query = (params: Record<string, unknown>) => new URLSearchParams(Object.entries(params).flatMap(([key, value]) => (value === undefined ? [] : [[key, String(value)]])))
@@ -41,12 +41,7 @@ export function createCalls(id: IdAdmin) {
   // Every item of an ID list, page by page.
   async function all<Item>(path: string, context: ToolContext, missing?: string) {
     const items: Item[] = []
-    let cursor: string | undefined
-    do {
-      const page = await list<Item>(path, { limit: 200, cursor }, context, missing)
-      items.push(...page.items)
-      cursor = page.next_cursor ?? undefined
-    } while (cursor)
+    for await (const page of pages(path, next => need<{ items: Item[]; nextCursor: string | null }>(next, context, missing))) items.push(...page)
     return items
   }
   // A read with ID's ETag, the version a target binds; ID's 404 is undefined.

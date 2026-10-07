@@ -1,4 +1,4 @@
-import type { IdAdmin } from "@answerable/id-admin"
+import { pages, type IdAdmin } from "@answerable/id-admin"
 import { z } from "zod"
 import type { GrantsReader } from "./grants"
 
@@ -20,25 +20,26 @@ export function startGrantsPoller({ id, grants, intervalMs = 15_000 }: { id: IdA
   let last: string | undefined
   let busy = false
   let running = Promise.resolve()
+  // Add what the events since the last one seen name to `organisations` and `users`, newest first, and answer the newest event's id.
+  async function read(organisations: Set<string>, users: Set<string>) {
+    let newest: string | undefined
+    for await (const items of pages("/audit-events", async path => page.parse(await id.get(path)))) {
+      for (const event of items) {
+        newest ??= event.id
+        // Audit event ids are UUIDv7, so they sort by time.
+        if (last === undefined || event.id <= last) return newest
+        if (event.organizationId && organisationActions.some(prefix => event.action.startsWith(prefix))) organisations.add(event.organizationId)
+        if (event.targetId && userActions.some(prefix => event.action.startsWith(prefix))) users.add(event.targetId)
+      }
+    }
+    return newest
+  }
   async function once() {
     busy = true
     try {
       const organisations = new Set<string>()
       const users = new Set<string>()
-      let newest: string | undefined
-      let cursor: string | null = null
-      pages: do {
-        const { items, nextCursor } = page.parse(await id.get(`/audit-events?limit=200${cursor ? `&cursor=${cursor}` : ""}`))
-        for (const event of items) {
-          newest ??= event.id
-          // Audit event ids are UUIDv7, so they sort by time.
-          if (last === undefined || event.id <= last) break pages
-          if (event.organizationId && organisationActions.some(prefix => event.action.startsWith(prefix))) organisations.add(event.organizationId)
-          if (event.targetId && userActions.some(prefix => event.action.startsWith(prefix))) users.add(event.targetId)
-        }
-        cursor = nextCursor
-      } while (cursor)
-      last = newest ?? last ?? ""
+      last = await read(organisations, users) ?? last ?? ""
       grants.invalidate(organisations, users)
     } catch (error) {
       console.error("[toolbox] reading ID's audit log failed", error)
