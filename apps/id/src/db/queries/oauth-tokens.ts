@@ -1,8 +1,6 @@
-import {
-  requirePlatformUsersContext,
-  requirePlatformWriteContext,
-  type PlatformUsersContext,
-  type PlatformWriteContext,
+import type {
+  PlatformUsersContext,
+  PlatformWriteContext,
 } from "../../services/platform-context.ts";
 import { eq, and, inArray, isNull, sql } from "drizzle-orm";
 import type { Executor } from "../client.ts";
@@ -48,7 +46,7 @@ export function revokeUserTokens(
   context: PlatformUsersContext,
   userId: string,
 ) {
-  const { tx } = requirePlatformUsersContext(context);
+  const { tx } = context;
   return revokeTokens(tx, "userId", userId);
 }
 
@@ -56,7 +54,7 @@ export function revokeClientTokens(
   context: PlatformWriteContext,
   clientId: string,
 ) {
-  const { tx } = requirePlatformWriteContext(context);
+  const { tx } = context;
   return revokeTokens(tx, "clientId", clientId);
 }
 
@@ -64,7 +62,7 @@ export function revokeSessionTokens(
   context: PlatformUsersContext,
   sessionId: string,
 ) {
-  const { tx } = requirePlatformUsersContext(context);
+  const { tx } = context;
   return revokeTokens(tx, "sessionId", sessionId);
 }
 
@@ -73,7 +71,7 @@ export async function revokeOrganizationMachineTokens(
   context: PlatformWriteContext,
   organizationId: string,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   const rows = await executor
     .update(oauthAccessTokens)
     .set({ revoked: sql`now()` })

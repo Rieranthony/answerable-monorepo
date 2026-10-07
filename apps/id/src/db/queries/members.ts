@@ -1,16 +1,9 @@
 import { and, desc, eq, ilike, not, or, sql, isNull } from "drizzle-orm";
-import {
-  requireTenantDirectoryContext,
-  requireTenantMemberAccessContext,
-  requireTenantMemberConfigurationContext,
-  requireTenantMemberContext,
-  type TenantMemberContext,
-  type TenantReadContext,
+import type {
+  TenantMemberContext,
+  TenantReadContext,
 } from "../../services/tenant-context.ts";
-import {
-  requirePlatformWriteContext,
-  type PlatformWriteContext,
-} from "../../services/platform-context.ts";
+import type { PlatformWriteContext } from "../../services/platform-context.ts";
 import {
   members,
   users,
@@ -47,10 +40,7 @@ export function listMembers(
   context: TenantReadContext<"directory"> | TenantReadContext<"memberAccess">,
   query: MemberQuery,
 ) {
-  const { tx: executor, organizationId } =
-    context.access === "memberAccess"
-      ? requireTenantMemberAccessContext(context)
-      : requireTenantDirectoryContext(context);
+  const { tx: executor, organizationId } = context;
   return executor
     .select(selection)
     .from(members)
@@ -84,10 +74,7 @@ export async function findMember(
   context: TenantReadContext<"directory"> | TenantMemberContext,
   memberId: string,
 ) {
-  const { tx: executor, organizationId } =
-    context.access === "command"
-      ? requireTenantMemberContext(context)
-      : requireTenantDirectoryContext(context);
+  const { tx: executor, organizationId } = context;
   const [row] = await executor
     .select(selection)
     .from(members)
@@ -126,7 +113,7 @@ export async function updateMemberWindow(
   memberId: string,
   patch: MemberWindow,
 ) {
-  const { tx: executor, organizationId } = requireTenantMemberContext(context);
+  const { tx: executor, organizationId } = context;
   const [row] = await executor
     .update(members)
     .set(patch)
@@ -140,7 +127,7 @@ export async function revokeMember(
   context: TenantMemberContext,
   memberId: string,
 ) {
-  const { tx: executor, organizationId } = requireTenantMemberContext(context);
+  const { tx: executor, organizationId } = context;
   const [row] = await executor
     .update(members)
     .set({
@@ -158,7 +145,7 @@ export async function reinstateMember(
   context: TenantMemberContext,
   memberId: string,
 ) {
-  const { tx: executor, organizationId } = requireTenantMemberContext(context);
+  const { tx: executor, organizationId } = context;
   const [row] = await executor
     .update(members)
     .set({ status: "active", revokedAt: null })
@@ -174,7 +161,7 @@ export async function removeMemberAssignments(
   context: TenantMemberContext,
   memberId: string,
 ) {
-  const { tx: executor, organizationId } = requireTenantMemberContext(context);
+  const { tx: executor, organizationId } = context;
   const removedGrants = await executor
     .update(entitlements)
     .set({ deletedAt: sql`now()`, status: "disabled" })
@@ -208,10 +195,7 @@ export async function findMemberConfiguration(
     | TenantMemberContext,
   memberId: string,
 ) {
-  const { tx: executor, organizationId } =
-    context.access === "memberAccess"
-      ? requireTenantMemberAccessContext(context)
-      : requireTenantMemberConfigurationContext(context);
+  const { tx: executor, organizationId } = context;
   const query = executor
     .select({
       id: members.id,
@@ -240,7 +224,7 @@ export async function findMemberForAssignment(
   organizationId: string,
   memberId: string,
 ) {
-  const { tx } = requirePlatformWriteContext(context);
+  const { tx } = context;
   const [row] = await tx
     .select({ membershipStatus: members.status })
     .from(members)

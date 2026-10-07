@@ -1,11 +1,5 @@
-import {
-  requireTenantDirectoryContext,
-  type TenantReadContext,
-} from "../../services/tenant-context.ts";
-import {
-  requirePlatformWriteContext,
-  type PlatformWriteContext,
-} from "../../services/platform-context.ts";
+import type { TenantReadContext } from "../../services/tenant-context.ts";
+import type { PlatformWriteContext } from "../../services/platform-context.ts";
 import {
   and,
   desc,
@@ -39,7 +33,7 @@ export async function createGroup(
   context: PlatformWriteContext,
   input: CreateGroupInput,
 ) {
-  const { tx: db } = requirePlatformWriteContext(context);
+  const { tx: db } = context;
   const [group] = await db
     .insert(groups)
     .values({ id: createId(), ...input })
@@ -70,8 +64,7 @@ export function listGroups(
   context: TenantReadContext<"directory">,
   query: GroupQuery,
 ) {
-  const { tx: executor, organizationId } =
-    requireTenantDirectoryContext(context);
+  const { tx: executor, organizationId } = context;
   return executor
     .select()
     .from(groups)
@@ -108,7 +101,7 @@ export async function findGroup(
   context: TenantReadContext<"directory">,
   groupId: string,
 ) {
-  const { tx, organizationId } = requireTenantDirectoryContext(context);
+  const { tx, organizationId } = context;
   const [row] = await findGroupQuery(tx, organizationId, groupId);
   return row ?? null;
 }
@@ -117,7 +110,7 @@ export async function findGroupForCommand(
   organizationId: string,
   groupId: string,
 ) {
-  const { tx } = requirePlatformWriteContext(context);
+  const { tx } = context;
   const [row] = await findGroupQuery(tx, organizationId, groupId).for("update");
   await context.revalidate();
   return row ?? null;
@@ -128,7 +121,7 @@ export async function updateGroup(
   groupId: string,
   patch: GroupPatch,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   const [row] = await executor
     .update(groups)
     .set(patch)
@@ -142,7 +135,7 @@ export async function setGroupStatus(
   groupId: string,
   status: LifecycleStatus,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   const [row] = await executor
     .update(groups)
     .set({ status })
@@ -179,7 +172,7 @@ export async function readGroupPolicyForCommand(
   organizationId: string,
   groupId: string,
 ) {
-  const { tx } = requirePlatformWriteContext(context);
+  const { tx } = context;
   // The caller holds organisation/group locks; child locks also order global
   // user cascades through capture and the command's audit/receipt commit.
   const assignments = await tx
@@ -214,7 +207,7 @@ export async function deleteGroup(
   organizationId: string,
   groupId: string,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   // The service holds the parent group lock, preventing new child rows while
   // UPDATE RETURNING captures the actual effects, including ineligible policy.
   const softDeletedAssignments = await executor
@@ -266,8 +259,7 @@ export function listGroupMembers(
   groupId: string,
   query: PageQuery,
 ) {
-  const { tx: executor, organizationId } =
-    requireTenantDirectoryContext(context);
+  const { tx: executor, organizationId } = context;
   return executor
     .select({
       memberId: members.id,
@@ -314,7 +306,7 @@ export async function findGroupMember(
   groupId: string,
   memberId: string,
 ) {
-  const { tx, organizationId } = requireTenantDirectoryContext(context);
+  const { tx, organizationId } = context;
   const [row] = await findGroupMemberQuery(
     tx,
     organizationId,
@@ -329,7 +321,7 @@ export async function findGroupMemberForCommand(
   groupId: string,
   memberId: string,
 ) {
-  const { tx } = requirePlatformWriteContext(context);
+  const { tx } = context;
   const [row] = await findGroupMemberQuery(
     tx,
     organizationId,
@@ -347,7 +339,7 @@ export async function upsertGroupMember(
     memberId: string;
   } & MemberWindow,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   // xmax distinguishes insertion from the conflict update in the same statement.
   const [result] = await executor
     .insert(groupMembers)
@@ -375,7 +367,7 @@ export async function removeGroupMember(
   groupId: string,
   memberId: string,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   const rows = await executor
     .update(groupMembers)
     .set({ deletedAt: sql`now()` })

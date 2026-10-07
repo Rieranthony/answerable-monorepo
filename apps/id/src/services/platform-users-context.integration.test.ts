@@ -228,11 +228,6 @@ test("platform write contexts protect organisation mutations and user erasure wi
     (context: Write) =>
       groups.putMember(context, missing, missing, missing, {}),
     (context: Write) => groups.removeMember(context, missing, missing, missing),
-    (context: Write) =>
-      grants.createEntitlement(context, missing, {
-        clientId: "missing",
-        scopes: [],
-      }),
     (context: Write) => grants.updateEntitlement(context, missing, missing, {}),
     (context: Write) => grants.disableEntitlement(context, missing, missing),
     (context: Write) => grants.enableEntitlement(context, missing, missing),

@@ -1,12 +1,7 @@
-import {
-  requireTenantDirectoryContext,
-  type TenantReadContext,
-} from "../../services/tenant-context.ts";
-import {
-  requirePlatformWriteContext,
-  requirePlatformReadContext,
-  type PlatformWriteContext,
-  type PlatformReadContext,
+import type { TenantReadContext } from "../../services/tenant-context.ts";
+import type {
+  PlatformWriteContext,
+  PlatformReadContext,
 } from "../../services/platform-context.ts";
 import { and, desc, eq, getTableColumns, sql, isNull } from "drizzle-orm";
 import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
@@ -36,7 +31,7 @@ export async function createEntitlement(
   context: PlatformWriteContext,
   input: CreateEntitlementInput,
 ) {
-  const { tx: db } = requirePlatformWriteContext(context);
+  const { tx: db } = context;
   const [entitlement] = await db
     .insert(entitlements)
     .values({ id: createId(), ...input })
@@ -62,8 +57,7 @@ export function listEntitlements(
   context: TenantReadContext<"directory">,
   query: EntitlementQuery,
 ) {
-  const { tx: executor, organizationId } =
-    requireTenantDirectoryContext(context);
+  const { tx: executor, organizationId } = context;
   return executor
     .select()
     .from(entitlements)
@@ -111,7 +105,7 @@ export async function findEntitlement(
   context: TenantReadContext<"directory">,
   entitlementId: string,
 ) {
-  const { tx, organizationId } = requireTenantDirectoryContext(context);
+  const { tx, organizationId } = context;
   const [row] = await findEntitlementQuery(tx, organizationId, entitlementId);
   return row ?? null;
 }
@@ -120,7 +114,7 @@ export async function findEntitlementForCommand(
   organizationId: string,
   entitlementId: string,
 ) {
-  const { tx } = requirePlatformWriteContext(context);
+  const { tx } = context;
   const [row] = await findEntitlementQuery(
     tx,
     organizationId,
@@ -135,7 +129,7 @@ export async function updateEntitlement(
   entitlementId: string,
   patch: EntitlementPatch,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   const [row] = await executor
     .update(entitlements)
     .set(patch)
@@ -154,7 +148,7 @@ export async function setEntitlementStatus(
   entitlementId: string,
   status: LifecycleStatus,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   const [row] = await executor
     .update(entitlements)
     .set({ status })
@@ -172,7 +166,7 @@ export async function deleteEntitlement(
   organizationId: string,
   entitlementId: string,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   const [row] = await executor
     .update(entitlements)
     .set({ deletedAt: sql`now()`, status: "disabled" })
@@ -196,7 +190,7 @@ export async function readEntitlementAudience(
   principal: { memberId: string | null; groupId: string | null },
 ) {
   const { groupId, memberId } = principal;
-  const { tx } = requirePlatformWriteContext(context);
+  const { tx } = context;
   const membership = {
     memberId: members.id,
     userId: members.userId,
@@ -259,7 +253,7 @@ export function listAllEntitlements(
   context: PlatformReadContext,
   query: EntitlementQuery,
 ) {
-  const { tx: executor } = requirePlatformReadContext(context);
+  const { tx: executor } = context;
   return executor
     .select({
       ...getTableColumns(entitlements),

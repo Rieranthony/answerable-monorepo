@@ -6,12 +6,9 @@ import {
   memberPermissionView,
 } from "../../auth/member-permission.ts";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import {
-  requireTenantMemberAccessContext,
-  requireTenantMemberContext,
-  requireTenantDirectoryContext,
-  type TenantMemberContext,
-  type TenantReadContext,
+import type {
+  TenantMemberContext,
+  TenantReadContext,
 } from "../../services/tenant-context.ts";
 import {
   entitlements,
@@ -54,10 +51,7 @@ export async function memberAccess(
   context: TenantReadContext<"memberAccess"> | TenantMemberContext,
   memberId: string,
 ): Promise<MemberAccess> {
-  const { tx: executor, organizationId } =
-    context.access === "command"
-      ? requireTenantMemberContext(context)
-      : requireTenantMemberAccessContext(context);
+  const { tx: executor, organizationId } = context;
   // Group matching assignments before projecting policy facts. Otherwise every
   // entitlement repeats the full target source list in the database response.
   const assignedTargets = executor
@@ -164,8 +158,7 @@ export async function targetAccess(
   target: AccessTarget,
   page: PageQuery,
 ) {
-  const { tx: executor, organizationId } =
-    requireTenantDirectoryContext(context);
+  const { tx: executor, organizationId } = context;
   const rows = await executor
     .select({
       memberId: members.id,

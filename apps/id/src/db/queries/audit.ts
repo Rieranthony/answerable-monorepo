@@ -1,11 +1,5 @@
-import {
-  requirePlatformReadContext,
-  type PlatformReadContext,
-} from "../../services/platform-context.ts";
-import {
-  requireTenantHistoryContext,
-  type TenantReadContext,
-} from "../../services/tenant-context.ts";
+import type { PlatformReadContext } from "../../services/platform-context.ts";
+import type { TenantReadContext } from "../../services/tenant-context.ts";
 import { and, desc, eq, gte, lt, inArray, sql } from "drizzle-orm";
 
 import { createId } from "../../lib/id.ts";
@@ -176,7 +170,7 @@ export function listAuditEvents(
   filters: AuditEventFilters,
   page: { cursor?: string; limit: number },
 ) {
-  const { tx } = requirePlatformReadContext(context);
+  const { tx } = context;
   return queryAuditEvents(tx, filters, page);
 }
 
@@ -185,7 +179,7 @@ export function listOrganizationAuditEvents(
   filters: Omit<AuditEventFilters, "organizationId">,
   page: { cursor?: string; limit: number },
 ) {
-  const { tx, organizationId } = requireTenantHistoryContext(context);
+  const { tx, organizationId } = context;
   return queryAuditEvents(tx, { ...filters, organizationId }, page);
 }
 
@@ -244,7 +238,7 @@ export async function listUserAuditEvents(
   filters: Pick<AuditEventFilters, "action" | "outcome" | "from" | "to">,
   page: { cursor?: string; limit: number },
 ): Promise<{ items: AuditEvent[]; nextCursor: string | null }> {
-  const { tx: executor } = requirePlatformReadContext(context);
+  const { tx: executor } = context;
   const rows = await executor
     .select()
     .from(auditEvents)

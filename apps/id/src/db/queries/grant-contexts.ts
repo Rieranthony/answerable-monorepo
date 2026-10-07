@@ -1,13 +1,8 @@
-import {
-  requirePlatformUsersContext,
-  requirePlatformWriteContext,
-  type PlatformUsersContext,
-  type PlatformWriteContext,
+import type {
+  PlatformUsersContext,
+  PlatformWriteContext,
 } from "../../services/platform-context.ts";
-import {
-  requireTenantMemberContext,
-  type TenantMemberContext,
-} from "../../services/tenant-context.ts";
+import type { TenantMemberContext } from "../../services/tenant-context.ts";
 import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
 import type { Executor } from "../client.ts";
 import { grantContexts } from "../schema/index.ts";
@@ -26,7 +21,7 @@ export function revokeMemberGrantContexts(
   context: TenantMemberContext,
   memberId: string,
 ) {
-  const { tx: executor, organizationId } = requireTenantMemberContext(context);
+  const { tx: executor, organizationId } = context;
   return revokeGrantContexts(
     executor,
     and(
@@ -40,7 +35,7 @@ export function revokeUserGrantContexts(
   context: PlatformUsersContext,
   userId: string,
 ) {
-  const { tx: executor } = requirePlatformUsersContext(context);
+  const { tx: executor } = context;
   return revokeGrantContexts(
     executor,
     eq(grantContexts.userId, userId),
@@ -55,7 +50,7 @@ export function revokeErasedUserGrantContexts(
   context: PlatformWriteContext,
   userId: string,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   return revokeGrantContexts(
     executor,
     eq(grantContexts.userId, userId),
@@ -70,7 +65,7 @@ export function revokeOrganizationGrantContexts(
   context: PlatformWriteContext,
   organizationId: string,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   return revokeGrantContexts(
     executor,
     eq(grantContexts.organizationId, organizationId),
@@ -82,7 +77,7 @@ export function revokeSessionGrantContexts(
   userId: string,
   sessionId: string,
 ) {
-  const { tx: executor } = requirePlatformUsersContext(context);
+  const { tx: executor } = context;
   return revokeGrantContexts(
     executor,
     and(
@@ -99,7 +94,7 @@ export function revokeResourceGrantContexts(
   context: PlatformWriteContext,
   resourceInstanceId: string,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   return revokeGrantContexts(
     executor,
     eq(grantContexts.resourceInstanceId, resourceInstanceId),
@@ -114,7 +109,7 @@ export function revokeClientGrantContexts(
   context: PlatformWriteContext,
   clientInstanceId: string,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   return revokeGrantContexts(
     executor,
     eq(grantContexts.clientInstanceId, clientInstanceId),

@@ -1,13 +1,8 @@
-import {
-  requirePlatformReadContext,
-  requirePlatformWriteContext,
-  type PlatformReadContext,
-  type PlatformWriteContext,
+import type {
+  PlatformReadContext,
+  PlatformWriteContext,
 } from "../../services/platform-context.ts";
-import {
-  requireTenantDirectoryContext,
-  type TenantReadContext,
-} from "../../services/tenant-context.ts";
+import type { TenantReadContext } from "../../services/tenant-context.ts";
 import { lockClient } from "../locks.ts";
 import {
   count,
@@ -64,7 +59,7 @@ export type ClientQuery = PageQuery & {
   disabled?: boolean;
 };
 export function listClients(context: PlatformReadContext, query: ClientQuery) {
-  const { tx: executor } = requirePlatformReadContext(context);
+  const { tx: executor } = context;
   return executor
     .select(publicSelection)
     .from(oauthClients)
@@ -102,7 +97,7 @@ export async function readClient(
   context: PlatformReadContext,
   clientId: string,
 ) {
-  const { tx } = requirePlatformReadContext(context);
+  const { tx } = context;
   const [row] = await publicClientQuery(tx, clientId);
   return row ?? null;
 }
@@ -110,7 +105,7 @@ export async function readClientForPolicy(
   context: PlatformWriteContext,
   clientId: string,
 ) {
-  const { tx } = requirePlatformWriteContext(context);
+  const { tx } = context;
   const [row] = await publicClientQuery(tx, clientId);
   return row ?? null;
 }
@@ -118,7 +113,7 @@ export async function lockClientForCommand(
   context: PlatformWriteContext,
   clientId: string,
 ) {
-  const { tx } = requirePlatformWriteContext(context);
+  const { tx } = context;
   const row = await lockClient(tx, clientId);
   await context.revalidate();
   return row;
@@ -128,7 +123,7 @@ export async function findClientForAccess(
   context: TenantReadContext<"directory">,
   clientId: string,
 ) {
-  const { tx } = requireTenantDirectoryContext(context);
+  const { tx } = context;
   const [row] = await tx
     .select({ id: oauthClients.id })
     .from(oauthClients)
@@ -142,7 +137,7 @@ export async function createClient(
   context: PlatformWriteContext,
   input: ClientInput,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   const [row] = await executor
     .insert(oauthClients)
     .values({ ...input, id: createId() })
@@ -154,7 +149,7 @@ export async function updateClient(
   clientId: string,
   patch: ClientPatch,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   const [row] = await executor
     .update(oauthClients)
     .set(patch)
@@ -169,7 +164,7 @@ export async function setClientDisabled(
   clientId: string,
   disabled: boolean,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   const [row] = await executor
     .update(oauthClients)
     .set({ disabled })
@@ -184,7 +179,7 @@ export async function setClientSecret(
   clientId: string,
   digest: string,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   const [row] = await executor
     .update(oauthClients)
     .set({ clientSecret: digest })
@@ -199,7 +194,7 @@ export async function linkClientResource(
   clientId: string,
   resource: string,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   const rows = await executor
     .insert(oauthClientResources)
     .values({ id: createId(), clientId, resourceId: resource })
@@ -215,7 +210,7 @@ export async function unlinkClientResource(
   clientId: string,
   resource: string,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   const rows = await executor
     .update(oauthClientResources)
     .set({ deletedAt: sql`now()` })
@@ -236,7 +231,7 @@ export function listClientResources(
   context: PlatformReadContext,
   clientId: string,
 ) {
-  const { tx: executor } = requirePlatformReadContext(context);
+  const { tx: executor } = context;
   return executor
     .select()
     .from(oauthClientResources)
@@ -253,7 +248,7 @@ export async function countClientEntitlements(
   context: PlatformWriteContext,
   clientId: string,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   const [row] = await executor
     .select({ count: count() })
     .from(entitlements)
@@ -266,7 +261,7 @@ export async function deleteClient(
   context: PlatformWriteContext,
   clientId: string,
 ) {
-  const { tx } = requirePlatformWriteContext(context);
+  const { tx } = context;
   // Caller holds the client FOR UPDATE. Lock refresh parents in a separate
   // statement: a cross-client access row can reference one while deletion waits.
   await tx

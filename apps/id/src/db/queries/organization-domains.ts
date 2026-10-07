@@ -1,14 +1,7 @@
 import type { Executor } from "../client.ts";
 import { sql, and, desc, eq, isNull } from "drizzle-orm";
-import {
-  requirePlatformWriteContext,
-  type PlatformWriteContext,
-} from "../../services/platform-context.ts";
-import {
-  requireTenantDirectoryContext,
-  requireTenantMemberAccessContext,
-  type TenantReadContext,
-} from "../../services/tenant-context.ts";
+import type { PlatformWriteContext } from "../../services/platform-context.ts";
+import type { TenantReadContext } from "../../services/tenant-context.ts";
 import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
 import type { LifecycleStatus } from "../schema/vocabulary.ts";
 
@@ -21,7 +14,7 @@ export async function createOrganizationDomain(
   context: PlatformWriteContext,
   input: { organizationId: string; domain: string },
 ) {
-  const { tx: db } = requirePlatformWriteContext(context);
+  const { tx: db } = context;
   const [domain] = await db
     .insert(organizationDomains)
     .values({
@@ -39,7 +32,7 @@ export async function organizationAcceptsDomain(
   context: TenantReadContext<"memberAccess">,
   domain: string,
 ) {
-  const { tx: db, organizationId } = requireTenantMemberAccessContext(context);
+  const { tx: db, organizationId } = context;
   const [organization] = await db
     .select({ id: organizations.id })
     .from(organizationDomains)
@@ -90,8 +83,7 @@ export function listOrganizationDomains(
   context: TenantReadContext<"directory">,
   query: DomainQuery,
 ) {
-  const { tx: executor, organizationId } =
-    requireTenantDirectoryContext(context);
+  const { tx: executor, organizationId } = context;
   return executor
     .select()
     .from(organizationDomains)
@@ -114,7 +106,7 @@ export async function findOrganizationDomainForCommand(
   organizationId: string,
   domainId: string,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   const query = executor
     .select()
     .from(organizationDomains)
@@ -136,7 +128,7 @@ export async function setOrganizationDomainStatus(
   domainId: string,
   status: LifecycleStatus,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   const [row] = await executor
     .update(organizationDomains)
     .set({ status })
@@ -156,7 +148,7 @@ export async function deleteOrganizationDomain(
   organizationId: string,
   domainId: string,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   const [row] = await executor
     .update(organizationDomains)
     .set({ deletedAt: sql`now()`, status: "disabled" })

@@ -1,8 +1,6 @@
-import {
-  requirePlatformReadContext,
-  requirePlatformUsersContext,
-  type PlatformReadContext,
-  type PlatformUsersContext,
+import type {
+  PlatformReadContext,
+  PlatformUsersContext,
 } from "../../services/platform-context.ts";
 import { and, desc, eq } from "drizzle-orm";
 import { sessions } from "../schema/index.ts";
@@ -12,7 +10,7 @@ export async function deleteUserSessionIds(
   context: PlatformUsersContext,
   userId: string,
 ): Promise<string[]> {
-  const { tx: executor } = requirePlatformUsersContext(context);
+  const { tx: executor } = context;
   const rows = await executor
     .delete(sessions)
     .where(eq(sessions.userId, userId))
@@ -35,7 +33,7 @@ export function listUserSessions(
   userId: string,
   page: PageQuery,
 ) {
-  const { tx: executor } = requirePlatformReadContext(context);
+  const { tx: executor } = context;
   return executor
     .select(selection)
     .from(sessions)
@@ -51,7 +49,7 @@ export async function deleteSession(
   userId: string,
   sessionId: string,
 ) {
-  const { tx: executor } = requirePlatformUsersContext(context);
+  const { tx: executor } = context;
   const [row] = await executor
     .delete(sessions)
     .where(and(eq(sessions.userId, userId), eq(sessions.id, sessionId)))
@@ -64,7 +62,7 @@ export async function findUserSession(
   userId: string,
   sessionId: string,
 ) {
-  const { tx: executor } = requirePlatformUsersContext(context);
+  const { tx: executor } = context;
   const [row] = await executor
     .select(selection)
     .from(sessions)

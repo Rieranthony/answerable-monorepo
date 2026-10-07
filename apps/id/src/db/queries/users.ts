@@ -1,12 +1,9 @@
 import { revokeErasedUserGrantContexts } from "./grant-contexts.ts";
 import { lockUser as lockUserRow } from "../locks.ts";
-import {
-  requirePlatformReadContext,
-  requirePlatformUsersContext,
-  requirePlatformWriteContext,
-  type PlatformReadContext,
-  type PlatformUsersContext,
-  type PlatformWriteContext,
+import type {
+  PlatformReadContext,
+  PlatformUsersContext,
+  PlatformWriteContext,
 } from "../../services/platform-context.ts";
 import {
   and,
@@ -45,7 +42,7 @@ export async function retireUserEmail(
   context: PlatformUsersContext,
   userId: string,
 ) {
-  const { tx: db } = requirePlatformUsersContext(context);
+  const { tx: db } = context;
   const [user] = await db
     .update(users)
     .set({
@@ -72,7 +69,7 @@ export type UserQuery = PageQuery & {
 };
 
 export function listUsers(context: PlatformReadContext, query: UserQuery) {
-  const { tx: executor } = requirePlatformReadContext(context);
+  const { tx: executor } = context;
   return executor
     .select()
     .from(users)
@@ -114,10 +111,7 @@ export async function lockUser(
   context: PlatformUsersContext | PlatformWriteContext,
   userId: string,
 ) {
-  const { tx: executor } =
-    context?.access === "write"
-      ? requirePlatformWriteContext(context)
-      : requirePlatformUsersContext(context);
+  const { tx: executor } = context;
   const row = await lockUserRow(executor, userId);
   await context.revalidate();
   return row;
@@ -125,7 +119,7 @@ export async function lockUser(
 
 /** Existence checks must not load the user's profile and identity graph. */
 export async function userExists(context: PlatformReadContext, userId: string) {
-  const { tx: executor } = requirePlatformReadContext(context);
+  const { tx: executor } = context;
   const rows = await executor
     .select({ id: users.id })
     .from(users)
@@ -134,7 +128,7 @@ export async function userExists(context: PlatformReadContext, userId: string) {
 }
 
 export async function findUser(context: PlatformReadContext, userId: string) {
-  const { tx: executor } = requirePlatformReadContext(context);
+  const { tx: executor } = context;
   const [row] = await executor
     .select()
     .from(users)
@@ -186,7 +180,7 @@ export async function setUserStatus(
   userId: string,
   status: "active" | "disabled",
 ) {
-  const { tx: executor } = requirePlatformUsersContext(context);
+  const { tx: executor } = context;
   const [row] = await executor
     .update(users)
     .set({ status, disabledAt: status === "disabled" ? sql`now()` : null })
@@ -202,7 +196,7 @@ export async function deleteUser(
   context: PlatformWriteContext,
   userId: string,
 ) {
-  const { tx } = requirePlatformWriteContext(context);
+  const { tx } = context;
   // Lock indirect parents before capturing any children, including grants.
   for (const table of [members, sessions, oauthRefreshTokens] as const) {
     await tx

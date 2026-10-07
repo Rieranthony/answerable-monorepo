@@ -1,15 +1,8 @@
-import {
-  requirePlatformReadContext,
-  requirePlatformWriteContext,
-  type PlatformReadContext,
-  type PlatformWriteContext,
+import type {
+  PlatformReadContext,
+  PlatformWriteContext,
 } from "../../services/platform-context.ts";
-import {
-  requireTenantDirectoryContext,
-  requireTenantMemberAccessContext,
-  requireTenantHistoryContext,
-  type TenantReadContext,
-} from "../../services/tenant-context.ts";
+import type { TenantReadContext } from "../../services/tenant-context.ts";
 import { lockOrganization } from "../locks.ts";
 import { and, count, desc, eq, ilike, or, sql, isNull } from "drizzle-orm";
 import {
@@ -43,7 +36,7 @@ export function listOrganizations(
   context: PlatformReadContext,
   query: OrganizationQuery,
 ) {
-  const { tx: executor } = requirePlatformReadContext(context);
+  const { tx: executor } = context;
   return executor
     .select()
     .from(organizations)
@@ -69,7 +62,7 @@ export function listOrganizations(
 export async function readOrganization(
   context: TenantReadContext<"directory">,
 ) {
-  const { tx, organizationId } = requireTenantDirectoryContext(context);
+  const { tx, organizationId } = context;
   const [row] = await tx
     .select()
     .from(organizations)
@@ -85,7 +78,7 @@ export async function readOrganization(
 export async function readOrganizationStatus(
   context: TenantReadContext<"memberAccess">,
 ) {
-  const { tx, organizationId } = requireTenantMemberAccessContext(context);
+  const { tx, organizationId } = context;
   const [row] = await tx
     .select({
       id: organizations.id,
@@ -105,7 +98,7 @@ export async function readOrganizationStatus(
 export async function organizationExistsForHistory(
   context: TenantReadContext<"history">,
 ) {
-  const { tx, organizationId } = requireTenantHistoryContext(context);
+  const { tx, organizationId } = context;
   const [row] = await tx
     .select({ id: organizations.id })
     .from(organizations)
@@ -122,7 +115,7 @@ export async function lockOrganizationForCommand(
   context: PlatformWriteContext,
   organizationId: string,
 ) {
-  const { tx } = requirePlatformWriteContext(context);
+  const { tx } = context;
   const row = await lockOrganization(tx, organizationId);
   await context.revalidate();
   return row;
@@ -132,7 +125,7 @@ export async function createOrganization(
   context: PlatformWriteContext,
   input: OrganizationInput,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   const [row] = await executor
     .insert(organizations)
     .values({ ...input, id: createId() })
@@ -145,7 +138,7 @@ export async function updateOrganization(
   id: string,
   patch: OrganizationPatch,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   const [row] = await executor
     .update(organizations)
     .set(patch)
@@ -159,7 +152,7 @@ export async function setOrganizationStatus(
   id: string,
   status: LifecycleStatus,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   const [row] = await executor
     .update(organizations)
     .set({ status, disabledAt: status === "disabled" ? sql`now()` : null })
@@ -172,7 +165,7 @@ export async function countOrganizationClients(
   context: PlatformWriteContext,
   id: string,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   const [row] = await executor
     .select({ count: count() })
     .from(oauthClients)
@@ -190,7 +183,7 @@ export async function deleteOrganization(
   context: PlatformWriteContext,
   organizationId: string,
 ) {
-  const { tx } = requirePlatformWriteContext(context);
+  const { tx } = context;
   const softDeletedEntitlements = await tx
     .update(entitlements)
     .set({ deletedAt: sql`now()`, status: "disabled" })

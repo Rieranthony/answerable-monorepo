@@ -4,17 +4,11 @@ import {
   type PlatformApplicationIds,
 } from "../../auth/platform-applications.ts";
 import { and, eq, sql, isNull } from "drizzle-orm";
-import {
-  requirePlatformReadContext,
-  requirePlatformWriteContext,
-  type PlatformReadContext,
-  type PlatformWriteContext,
+import type {
+  PlatformReadContext,
+  PlatformWriteContext,
 } from "../../services/platform-context.ts";
-import {
-  requireTenantDirectoryContext,
-  requireTenantMemberAccessContext,
-  type TenantReadContext,
-} from "../../services/tenant-context.ts";
+import type { TenantReadContext } from "../../services/tenant-context.ts";
 
 import { createId } from "../../lib/id.ts";
 import type { Executor } from "../client.ts";
@@ -88,7 +82,7 @@ export async function createSsoProvider(
   context: PlatformWriteContext,
   input: CreateSsoProviderInput,
 ) {
-  const { tx: db } = requirePlatformWriteContext(context);
+  const { tx: db } = context;
   const [reserved] = await db
     .select({
       deletedAt: ssoProviders.deletedAt,
@@ -131,7 +125,7 @@ export async function findSsoProviderForCommand(
   context: PlatformWriteContext,
   organizationId: string,
 ) {
-  const { tx } = requirePlatformWriteContext(context);
+  const { tx } = context;
   const [provider] = await providerQuery(tx, organizationId).for("update");
   await context.revalidate();
   return provider ?? null;
@@ -141,7 +135,7 @@ export async function readSsoProvider(
   context: TenantReadContext<"directory">,
   ids: PlatformApplicationIds = {},
 ) {
-  const { tx, organizationId } = requireTenantDirectoryContext(context);
+  const { tx, organizationId } = context;
   const [provider] = await providerQuery(tx, organizationId);
   return provider ? redactSsoProvider(provider, ids) : null;
 }
@@ -149,7 +143,7 @@ export async function readSsoProvider(
 export async function readSsoIssuer(
   context: TenantReadContext<"memberAccess">,
 ) {
-  const { tx, organizationId } = requireTenantMemberAccessContext(context);
+  const { tx, organizationId } = context;
   const [provider] = await tx
     .select({ issuer: ssoProviders.issuer })
     .from(ssoProviders)
@@ -167,7 +161,7 @@ export async function readSsoEndpoints(
   context: PlatformReadContext,
   organizationId: string,
 ) {
-  const { tx } = requirePlatformReadContext(context);
+  const { tx } = context;
   const [provider] = await tx
     .select({
       issuer: ssoProviders.issuer,
@@ -196,7 +190,7 @@ export async function updateSsoProvider(
   id: string,
   input: Pick<CreateSsoProviderInput, "issuer" | "domain" | "oidc">,
 ) {
-  const { tx: db } = requirePlatformWriteContext(context);
+  const { tx: db } = context;
   const [provider] = await db
     .update(ssoProviders)
     .set({
@@ -213,7 +207,7 @@ export async function deleteSsoProvider(
   context: PlatformWriteContext,
   organizationId: string,
 ) {
-  const { tx: executor } = requirePlatformWriteContext(context);
+  const { tx: executor } = context;
   const [row] = await executor
     .update(ssoProviders)
     .set({ deletedAt: sql`now()`, oidcConfig: null })
