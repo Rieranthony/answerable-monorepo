@@ -49,7 +49,7 @@ export async function retireUserEmail(
     .update(users)
     .set({
       retiredEmail: users.email,
-      email: sql`${users.id}::text || '@retired.invalid'`,
+      email: retiredEmailFor(userId),
     })
     .where(
       and(
@@ -298,7 +298,7 @@ export async function deleteUser(
       status: "disabled",
       disabledAt: sql`now()`,
       retiredEmail: sql`coalesce(${users.retiredEmail}, ${users.email})`,
-      email: sql`${users.id}::text || '@retired.invalid'`,
+      email: retiredEmailFor(userId),
     })
     .where(and(isNull(users.deletedAt), eq(users.id, userId)))
     .returning();
