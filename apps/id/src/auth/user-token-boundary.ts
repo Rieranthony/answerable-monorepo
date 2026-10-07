@@ -11,7 +11,11 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { setDatabaseScope } from "../db/isolation.ts";
 import { grantContexts, oauthResources } from "../db/schema/index.ts";
-import { authTransaction, grantTransaction } from "./database-adapter.ts";
+import {
+  authTransaction,
+  grantTransaction,
+  withAdapter,
+} from "./database-adapter.ts";
 import { currentGrantAuthentication } from "./grant-authentication.ts";
 import { assertUserTokenResponse } from "./user-token-assertions.ts";
 import { lockResourceGrantPolicy } from "./lock-resource-grant-policy.ts";
@@ -159,11 +163,7 @@ export function createUserTokenBoundary() {
   ) {
     return grantTransaction(ctx.context.adapter, async (adapter) => {
       const result = await native({
-        ...ctx,
-        context: {
-          ...ctx.context,
-          adapter: { ...ctx.context.adapter, ...adapter },
-        },
+        ...withAdapter(ctx, adapter),
         asResponse: false,
         returnHeaders: true,
         returnStatus: false,
@@ -193,25 +193,18 @@ export function createUserTokenBoundary() {
             });
             const create = nativeCreate(adapter);
             let storedTokens = false;
-            const bound = {
-              ...ctx,
-              context: {
-                ...ctx.context,
-                adapter: {
-                  ...ctx.context.adapter,
-                  ...adapter,
-                  create: (async (input: Parameters<typeof create>[0]) => {
-                    if (
-                      ["oauthAccessToken", "oauthRefreshToken"].includes(
-                        input.model,
-                      )
-                    )
-                      storedTokens = true;
-                    return create(input);
-                  }) as typeof create,
-                },
-              },
-            };
+            const bound = withAdapter(ctx, {
+              ...adapter,
+              create: (async (input: Parameters<typeof create>[0]) => {
+                if (
+                  ["oauthAccessToken", "oauthRefreshToken"].includes(
+                    input.model,
+                  )
+                )
+                  storedTokens = true;
+                return create(input);
+              }) as typeof create,
+            });
             const api = getOAuthProviderApi(bound, options);
             const hash = await api.hashToken(
               kind === "authorization_code"

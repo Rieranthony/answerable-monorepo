@@ -8,7 +8,7 @@ import { APIError, createAuthEndpoint } from "better-auth/api";
 import type { Database } from "../db/client.ts";
 import { errorFields } from "../http/problem.ts";
 import { logEvent } from "../lib/log.ts";
-import { grantTransaction } from "./database-adapter.ts";
+import { grantTransaction, withAdapter } from "./database-adapter.ts";
 import {
   recordMachineIssuance,
   recordMachineRejection,
@@ -114,13 +114,7 @@ export function machineOAuthProvider(
                   throw new APIError("BAD_REQUEST", { error: decision.reason });
                 stage = "issuance";
                 const issued = await getOAuthProviderApi(
-                  {
-                    ...ctx,
-                    context: {
-                      ...ctx.context,
-                      adapter: { ...ctx.context.adapter, ...adapter },
-                    },
-                  },
+                  withAdapter(ctx, adapter),
                   provider.options,
                   "client_credentials",
                 ).issueTokens({

@@ -20,7 +20,7 @@ import {
 } from "../db/schema/index.ts";
 import { setDatabaseScope } from "../db/isolation.ts";
 import { createId } from "../lib/id.ts";
-import { grantTransaction } from "./database-adapter.ts";
+import { grantTransaction, withAdapter } from "./database-adapter.ts";
 import { createResourceGrant } from "./create-resource-grant.ts";
 import { currentGrantAuthentication } from "./grant-authentication.ts";
 import { lockResourceGrantPolicy } from "./lock-resource-grant-policy.ts";
@@ -324,18 +324,18 @@ export function createUserOAuthFlow(
         };
       }
       const granted = acceptedDecision!.grantedScopes!;
+      const bound = withAdapter(ctx, adapter);
       const result = await active.run(
         { flow, sessionId: session.session.id },
         () =>
           run({
-            ...ctx,
+            ...bound,
             // Native consent stores and codes only the accepted scopes.
             ...(action === "consent" && ctx.body.accept === true
               ? { body: { ...ctx.body, scope: granted.join(" ") } }
               : {}),
             context: {
-              ...ctx.context,
-              adapter: { ...ctx.context.adapter, ...adapter },
+              ...bound.context,
               // Skip-consent clients receive their code here, from the original query.
               internalAdapter: {
                 ...ctx.context.internalAdapter,

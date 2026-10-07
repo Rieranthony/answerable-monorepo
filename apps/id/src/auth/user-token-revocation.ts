@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm";
 import { revokeGrantContexts } from "../db/queries/grant-contexts.ts";
 import { grantContexts } from "../db/schema/index.ts";
 import { setDatabaseScope } from "../db/isolation.ts";
-import { grantTransaction } from "./database-adapter.ts";
+import { grantTransaction, withAdapter } from "./database-adapter.ts";
 import { lockResourceGrantPolicy } from "./lock-resource-grant-policy.ts";
 import {
   withNativeClientAuthentication,
@@ -33,8 +33,7 @@ export function revokeUserToken(ctx: NativeContext, provider: Provider) {
             kind: "grant-client",
             clientId: client.clientId,
           });
-          const boundAdapter = {
-            ...ctx.context.adapter,
+          const bound = withAdapter(ctx, {
             ...adapter,
             create: nativeCreate(adapter),
             findOne: (async (input: Parameters<typeof adapter.findOne>[0]) =>
@@ -49,11 +48,8 @@ export function revokeUserToken(ctx: NativeContext, provider: Provider) {
                     }
                   : input,
               )) as typeof adapter.findOne,
-          };
-          const bound = {
-            ...ctx,
-            context: { ...ctx.context, adapter: boundAdapter },
-          };
+          });
+          const boundAdapter = bound.context.adapter;
           const api = getOAuthProviderApi(bound, provider.options);
           const token: string = ctx.body.token;
           const refresh =

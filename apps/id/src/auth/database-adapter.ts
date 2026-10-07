@@ -126,6 +126,21 @@ export function authDatabaseAdapter(
   };
 }
 
+/** The endpoint context with these adapter methods in place, typically the
+ * transaction-bound adapter's. */
+export function withAdapter<C extends { context: { adapter: object } }>(
+  ctx: C,
+  adapter: Partial<C["context"]["adapter"]>,
+): C {
+  return {
+    ...ctx,
+    context: {
+      ...ctx.context,
+      adapter: { ...ctx.context.adapter, ...adapter },
+    },
+  };
+}
+
 export function authTransaction(adapter: object): Executor {
   const tx = transactions.get(adapter);
   if (!tx) throw new Error("An active authentication transaction is required");
