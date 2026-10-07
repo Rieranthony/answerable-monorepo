@@ -77,14 +77,18 @@ export class OAuthTestClient {
     if (map.size >= 1000)
       throw new Error("Too many test sessions. Try again later.")
   }
+  /** Every request to ID: never cached, never redirected, ten seconds at most. */
+  private request(url: string, init: RequestInit = {}) {
+    return this.transport(url, {
+      cache: "no-store",
+      redirect: "error",
+      signal: AbortSignal.timeout(10_000),
+      ...init,
+    })
+  }
   private async discovery(): Promise<Discovery> {
-    const r = await this.transport(
+    const r = await this.request(
       `${this.config.issuer}/.well-known/openid-configuration`,
-      {
-        cache: "no-store",
-        redirect: "error",
-        signal: AbortSignal.timeout(10_000),
-      },
     )
     if (!r.ok) throw new Error("ID discovery is unavailable")
     const d = (await r.json()) as Discovery
@@ -109,11 +113,8 @@ export class OAuthTestClient {
   private async post(url: string, body: URLSearchParams) {
     const encode = (value: string) =>
       new URLSearchParams({ v: value }).toString().slice(2)
-    return this.transport(url, {
+    return this.request(url, {
       method: "POST",
-      redirect: "error",
-      cache: "no-store",
-      signal: AbortSignal.timeout(10_000),
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         Authorization: `Basic ${Buffer.from(`${encode(this.config.clientId)}:${encode(this.config.clientSecret)}`).toString("base64")}`,
@@ -142,11 +143,7 @@ export class OAuthTestClient {
     token: string,
     nonce?: string,
   ): Promise<Identity> {
-    const r = await this.transport(d.jwks_uri, {
-      cache: "no-store",
-      redirect: "error",
-      signal: AbortSignal.timeout(10_000),
-    })
+    const r = await this.request(d.jwks_uri)
     if (!r.ok) throw new Error("ID signing keys are unavailable")
     const { payload } = await jwtVerify(
       token,
