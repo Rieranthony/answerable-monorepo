@@ -12,6 +12,7 @@ import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import type { AuditAction } from "../db/queries/audit.ts";
 import { recordCommandEvent, statusAction } from "./audit.ts";
 import { found, ProblemError } from "../http/problem.ts";
+import { assertRevision } from "../http/admin/revision.ts";
 function configuration(
   row: NonNullable<Awaited<ReturnType<typeof queries.findEntitlement>>>,
 ) {
@@ -136,15 +137,11 @@ export async function updateEntitlement(
     organizationId,
     entitlementId,
   );
-  if (
-    expected &&
-    (existing.id !== expected.id || existing.revision !== expected.revision)
-  )
-    throw new ProblemError(
-      412,
-      "revision_mismatch",
-      "Entitlement changed; read its current revision before issuing a new command",
-    );
+  assertRevision(
+    existing,
+    expected,
+    "Entitlement changed; read its current revision before issuing a new command",
+  );
   if (patch.scopes !== undefined && existing.resource !== null)
     await checkScopes(context, existing.resource, patch.scopes);
   const normalized = {

@@ -14,6 +14,7 @@ import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { revokeClientTokens } from "../db/queries/oauth-tokens.ts";
 import { recordCommandEvent } from "./audit.ts";
 import { found, ProblemError } from "../http/problem.ts";
+import { assertRevision } from "../http/admin/revision.ts";
 import { generateClientSecret, hashClientSecret } from "./client-secrets.ts";
 
 type ClientRow = NonNullable<
@@ -276,15 +277,11 @@ export async function updateClient(
     await queries.lockClientForCommand(context, clientId),
     notFound,
   );
-  if (
-    expected &&
-    (existing.id !== expected.id || existing.revision !== expected.revision)
-  )
-    throw new ProblemError(
-      412,
-      "revision_mismatch",
-      "Client changed; read its current revision before issuing a new command",
-    );
+  assertRevision(
+    existing,
+    expected,
+    "Client changed; read its current revision before issuing a new command",
+  );
   validateClient({ ...existing, ...patch });
   const changed = Object.entries(patch).some(
     ([key, value]) =>

@@ -11,6 +11,7 @@ import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/oauth-resources.ts";
 import { recordCommandEvent } from "./audit.ts";
 import { found, ProblemError } from "../http/problem.ts";
+import { assertRevision } from "../http/admin/revision.ts";
 
 type ResourceRow = NonNullable<
   Awaited<ReturnType<typeof queries.readResource>>
@@ -102,15 +103,11 @@ export async function updateResource(
     await queries.lockResourceForCommand(context, identifier),
     notFound,
   );
-  if (
-    expected &&
-    (existing.id !== expected.id || existing.revision !== expected.revision)
-  )
-    throw new ProblemError(
-      412,
-      "revision_mismatch",
-      "Resource changed; read its current revision before issuing a new command",
-    );
+  assertRevision(
+    existing,
+    expected,
+    "Resource changed; read its current revision before issuing a new command",
+  );
   const changed = Object.entries(patch).some(
     ([key, value]) =>
       value !== undefined &&

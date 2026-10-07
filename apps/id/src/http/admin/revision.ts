@@ -6,6 +6,22 @@ export const revisionSchema = z.object({
   id: z.uuid(),
   revision: z.number().int().positive(),
 });
+/** Refuse a command whose precondition no longer holds: an If-Match revision,
+ * or null for If-None-Match: *, which requires the target to be absent.
+ * Undefined, no precondition, checks nothing. */
+export function assertRevision(
+  current: Revision | null,
+  expected: Revision | null | undefined,
+  title: string,
+) {
+  if (expected === undefined) return;
+  if (
+    expected === null
+      ? current !== null
+      : current?.id !== expected.id || current.revision !== expected.revision
+  )
+    throw new ProblemError(412, "revision_mismatch", title);
+}
 export const revisionTag = (value: Revision): string =>
   `"${value.id}:${value.revision}"`;
 

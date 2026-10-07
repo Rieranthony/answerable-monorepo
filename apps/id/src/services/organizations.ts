@@ -8,6 +8,7 @@ import * as queries from "../db/queries/organizations.ts";
 import { recordCommandEvent } from "./audit.ts";
 import { revokeOrganizationMachineTokens } from "../db/queries/oauth-tokens.ts";
 import { found, ProblemError } from "../http/problem.ts";
+import { assertRevision } from "../http/admin/revision.ts";
 
 const notFound = "Organisation not found";
 
@@ -65,15 +66,11 @@ export async function updateOrganization(
     await queries.lockOrganizationForCommand(context, id),
     notFound,
   );
-  if (
-    expected &&
-    (before.id !== expected.id || before.revision !== expected.revision)
-  )
-    throw new ProblemError(
-      412,
-      "revision_mismatch",
-      "Organisation changed; read its current revision before issuing a new command",
-    );
+  assertRevision(
+    before,
+    expected,
+    "Organisation changed; read its current revision before issuing a new command",
+  );
   const changed = Object.entries(patch).some(
     ([key, value]) => before[key as keyof queries.OrganizationPatch] !== value,
   );

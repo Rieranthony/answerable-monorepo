@@ -6,6 +6,7 @@ import type { PageQuery } from "../http/pagination.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { recordCommandEvent, statusAction } from "./audit.ts";
 import { found, ProblemError } from "../http/problem.ts";
+import { assertRevision } from "../http/admin/revision.ts";
 const notFound = "Organisation or group not found";
 function configuration(
   row: NonNullable<Awaited<ReturnType<typeof queries.findGroup>>>,
@@ -84,15 +85,11 @@ export async function updateGroup(
   expected?: { id: string; revision: number },
 ) {
   const before = await lockedGroup(context, organizationId, groupId);
-  if (
-    expected &&
-    (before.id !== expected.id || before.revision !== expected.revision)
-  )
-    throw new ProblemError(
-      412,
-      "revision_mismatch",
-      "Group changed; read its current revision before issuing a new command",
-    );
+  assertRevision(
+    before,
+    expected,
+    "Group changed; read its current revision before issuing a new command",
+  );
   const changed = Object.entries(patch).some(
     ([key, value]) =>
       value !== undefined && before[key as keyof queries.GroupPatch] !== value,
@@ -224,19 +221,11 @@ export async function putMember(
     groupId,
     memberId,
   );
-  if (
-    expected !== undefined &&
-    (expected === null
-      ? before !== null
-      : !before ||
-        before.id !== expected.id ||
-        before.revision !== expected.revision)
-  )
-    throw new ProblemError(
-      412,
-      "revision_mismatch",
-      "Assignment changed; read its current state before issuing a new command",
-    );
+  assertRevision(
+    before,
+    expected,
+    "Assignment changed; read its current state before issuing a new command",
+  );
   const changed =
     !before ||
     (window.validFrom !== undefined &&

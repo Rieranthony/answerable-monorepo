@@ -13,6 +13,7 @@ import { createId } from "../lib/id.ts";
 import type { PageQuery } from "../http/pagination.ts";
 import { beforeCursor, cursorPage } from "../db/queries/lists.ts";
 import { found, ProblemError } from "../http/problem.ts";
+import { assertRevision } from "../http/admin/revision.ts";
 import { type PlatformWriteContext } from "./platform-context.ts";
 import { type TenantReadContext } from "./tenant-context.ts";
 
@@ -211,15 +212,11 @@ export async function updateCapability(
         .where(where(organizationId, id))
     )[0],
   );
-  if (
-    expected &&
-    (before.id !== expected.id || before.revision !== expected.revision)
-  )
-    throw new ProblemError(
-      412,
-      "revision_mismatch",
-      "Capability changed; read its current revision",
-    );
+  assertRevision(
+    before,
+    expected,
+    "Capability changed; read its current revision",
+  );
   const normalized = {
     ...patch,
     ...(patch.scopes === undefined

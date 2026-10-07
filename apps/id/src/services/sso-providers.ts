@@ -10,6 +10,7 @@ import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { revokeOrganizationGrantContexts } from "../db/queries/grant-contexts.ts";
 import { recordCommandEvent } from "./audit.ts";
 import { found, ProblemError } from "../http/problem.ts";
+import { assertRevision } from "../http/admin/revision.ts";
 
 export type SsoProviderInput = Pick<
   queries.CreateSsoProviderInput,
@@ -69,19 +70,11 @@ export async function putSsoProvider(
     context,
     organizationId,
   );
-  if (
-    expected !== undefined &&
-    (expected === null
-      ? existing !== null
-      : !existing ||
-        existing.id !== expected.id ||
-        existing.revision !== expected.revision)
-  )
-    throw new ProblemError(
-      412,
-      "revision_mismatch",
-      "SSO configuration changed; read the current provider before issuing a new command",
-    );
+  assertRevision(
+    existing,
+    expected,
+    "SSO configuration changed; read the current provider before issuing a new command",
+  );
   const oidc = { ...input.oidc };
   const stored = JSON.parse(
     existing?.oidcConfig ?? "{}",

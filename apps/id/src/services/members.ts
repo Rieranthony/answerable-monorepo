@@ -7,7 +7,8 @@ import {
   type TenantMemberContext,
 } from "./tenant-context.ts";
 import { recordCommandEvent } from "./audit.ts";
-import { found, ProblemError } from "../http/problem.ts";
+import { found } from "../http/problem.ts";
+import { assertRevision } from "../http/admin/revision.ts";
 const notFound = "Organisation or member not found";
 export async function listMembers(
   context: TenantReadContext<"directory">,
@@ -32,15 +33,11 @@ export async function updateWindow(
     await queries.findMemberConfiguration(context, memberId),
     notFound,
   );
-  if (
-    expected &&
-    (before.id !== expected.id || before.revision !== expected.revision)
-  )
-    throw new ProblemError(
-      412,
-      "revision_mismatch",
-      "Member changed; read its configuration before issuing a new command",
-    );
+  assertRevision(
+    before,
+    expected,
+    "Member changed; read its configuration before issuing a new command",
+  );
   const accessBefore = await memberAccess(context, memberId);
   const row = found(
     await queries.updateMemberWindow(context, memberId, patch),
