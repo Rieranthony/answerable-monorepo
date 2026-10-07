@@ -39,7 +39,6 @@ export function MosaicDither({
   onUnavailable,
 }: MosaicDitherProps) {
   const hostRef = useRef<HTMLDivElement | null>(null)
-  const previousFrame = useRef<string | null>(null)
   const scratchRef = useRef<HTMLCanvasElement | null>(null)
 
   useEffect(() => {
@@ -60,7 +59,6 @@ export function MosaicDither({
       getCanvas: () => hostRef.current?.querySelector("canvas") ?? null,
       minWidth: CAPTURE_W,
       scratch,
-      previousFrame,
       onCapture: (blob) => onCapture(URL.createObjectURL(blob)),
       onUnavailable,
     })

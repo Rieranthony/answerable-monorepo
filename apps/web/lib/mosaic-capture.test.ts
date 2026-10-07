@@ -11,7 +11,6 @@ let tone = 1
 let canvasWidth = 1152
 let captures: string[]
 let unavailable: number
-let previousFrame: { current: string | null }
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
 const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document")
 const originalNow = Date.now
@@ -24,7 +23,6 @@ beforeEach(() => {
   canvasWidth = 1152
   captures = []
   unavailable = 0
-  previousFrame = { current: null }
   Date.now = () => now
   Object.defineProperty(globalThis, "window", {
     configurable: true,
@@ -86,7 +84,6 @@ function start(hasCanvas = true) {
     getCanvas: () => (hasCanvas ? canvas : null),
     minWidth: 1152,
     scratch,
-    previousFrame,
     onCapture: (_blob, signature) => captures.push(signature),
     onUnavailable: () => {
       unavailable++
@@ -161,21 +158,6 @@ test("a hidden page gets a fresh visible budget, with a hard cap while hidden", 
   now += 20000
   tick!()
   expect(unavailable).toBe(1)
-})
-
-test("settings changes wait for a frame different from the previous capture", () => {
-  const cleanup = start()
-  tick!()
-  complete!(new Blob(["frame"]))
-  cleanup()
-  const cleanupNext = start()
-  tick!()
-  expect(tick).toBeDefined()
-  tone = 2
-  tick!()
-  complete!(new Blob(["frame"]))
-  expect(captures).toEqual(["1", "2"])
-  cleanupNext()
 })
 
 test("a canvas narrower than the minimum is not committed until it grows", () => {

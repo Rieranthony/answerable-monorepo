@@ -16,8 +16,7 @@
     "components": "@answerable/ui/components",
     "utils": "@answerable/ui/lib/utils",
     "ui": "@answerable/ui/components",
-    "lib": "@answerable/ui/lib",
-    "hooks": "@answerable/ui/hooks"
+    "lib": "@answerable/ui/lib"
   },
   "menuColor": "default",
   "menuAccent": "subtle",
