@@ -268,6 +268,7 @@ export function register(app: Hono<AppEnvironment>) {
       const input = createSchema.parse(await context.req.json());
       return platformCommand(
         context,
+        "write",
         "createOrganization",
         input,
         201,
@@ -306,6 +307,7 @@ export function register(app: Hono<AppEnvironment>) {
       const organizationId = context.req.param("organizationId")!;
       return platformCommand(
         context,
+        "write",
         "updateOrganization",
         { organizationId, ...(expected ? { expected } : {}), patch },
         200,
@@ -339,6 +341,7 @@ export function register(app: Hono<AppEnvironment>) {
       const organizationId = context.req.param("organizationId")!;
       return platformCommand(
         context,
+        "write",
         "disableOrganization",
         { organizationId },
         200,
@@ -364,6 +367,7 @@ export function register(app: Hono<AppEnvironment>) {
       const organizationId = context.req.param("organizationId")!;
       return platformCommand(
         context,
+        "write",
         "enableOrganization",
         { organizationId },
         200,
@@ -391,6 +395,7 @@ export function register(app: Hono<AppEnvironment>) {
       const organizationId = context.req.param("organizationId")!;
       return platformCommand(
         context,
+        "write",
         "eraseOrganization",
         { organizationId, confirm },
         204,

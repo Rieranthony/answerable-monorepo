@@ -9,7 +9,6 @@ import type { Hono } from "hono";
 import { z } from "zod";
 import {
   platformCommand,
-  platformUsersCommand,
   operationJson,
   idempotencyParameter,
   commandResponseHeaders,
@@ -238,8 +237,9 @@ export function register(app: Hono<AppEnvironment>) {
     validate("param", userParams),
     async (context) => {
       const userId = context.req.param("userId")!;
-      return platformUsersCommand(
+      return platformCommand(
         context,
+        "users",
         "disableUser",
         operationJson({ userId }),
         200,
@@ -260,8 +260,9 @@ export function register(app: Hono<AppEnvironment>) {
     validate("param", userParams),
     async (context) => {
       const userId = context.req.param("userId")!;
-      return platformUsersCommand(
+      return platformCommand(
         context,
+        "users",
         "enableUser",
         operationJson({ userId }),
         200,
@@ -282,8 +283,9 @@ export function register(app: Hono<AppEnvironment>) {
     validate("param", userParams),
     async (context) => {
       const userId = context.req.param("userId")!;
-      return platformUsersCommand(
+      return platformCommand(
         context,
+        "users",
         "retireUserEmail",
         operationJson({ userId }),
         200,
@@ -308,6 +310,7 @@ export function register(app: Hono<AppEnvironment>) {
       const confirm = eraseSchema.parse(context.req.query()).confirm;
       return platformCommand(
         context,
+        "write",
         "eraseUser",
         operationJson({ userId, confirm }),
         204,

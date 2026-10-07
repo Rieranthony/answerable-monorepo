@@ -12,7 +12,7 @@ import {
 } from "../db/schema/index.ts";
 import { hasPlatformWriter } from "../db/queries/grants.ts";
 import { createId } from "../lib/id.ts";
-import { authorizePlatformUsersCommand } from "./platform-context.ts";
+import { authorizePlatformMutation } from "./platform-context.ts";
 import { updateCapability } from "./capabilities.ts";
 import { updateResource } from "./resources.ts";
 import { enableUser } from "./users.ts";
@@ -124,7 +124,11 @@ for (const source of ["capability", "resource", "new-member"] as const)
             sql`select pg_backend_pid() as pid`,
           );
           commandPid = pid.rows[0]!.pid;
-          const authority = await authorizePlatformUsersCommand(tx, caller);
+          const authority = await authorizePlatformMutation(
+            tx,
+            caller,
+            "users",
+          );
           await authority.run(
             async (context) => {
               if (order === "command-first") {
@@ -260,13 +264,17 @@ for (const source of ["capability", "resource", "new-member"] as const)
       ).toBe(true);
       await expect(
         reader.db.transaction(async (tx) => {
-          await authorizePlatformUsersCommand(tx, caller);
+          await authorizePlatformMutation(tx, caller, "users");
         }),
       ).rejects.toMatchObject({ code: "root_locked" });
       await reader.db.transaction(async (tx) => {
-        await authorizePlatformUsersCommand(tx, {
-          ...caller,
-          environment: { ...caller.environment, rootAdminBreakGlass: true },
-        });
+        await authorizePlatformMutation(
+          tx,
+          {
+            ...caller,
+            environment: { ...caller.environment, rootAdminBreakGlass: true },
+          },
+          "users",
+        );
       });
     });

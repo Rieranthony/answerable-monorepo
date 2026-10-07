@@ -29,16 +29,20 @@ export async function inPlatformUsers<T>(
   ) => Promise<T>,
   metadata: ActorMetadata = { requestId: "service-test" },
 ) {
-  const { authorizePlatformUsersCommand } =
+  const { authorizePlatformMutation } =
     await import("../services/platform-context.ts");
   return db.transaction(async (tx) => {
-    const authorized = await authorizePlatformUsersCommand(tx, {
-      principal: { type: "root", grants: [] },
-      environment: testEnvironment({
-        rootAdminSecret: "service-test",
-        rootAdminBreakGlass: true,
-      }),
-    });
+    const authorized = await authorizePlatformMutation(
+      tx,
+      {
+        principal: { type: "root", grants: [] },
+        environment: testEnvironment({
+          rootAdminSecret: "service-test",
+          rootAdminBreakGlass: true,
+        }),
+      },
+      "users",
+    );
     return authorized.run(run, metadata);
   });
 }
@@ -50,16 +54,20 @@ export async function inPlatformWrite<T>(
   ) => Promise<T>,
   metadata: ActorMetadata = { requestId: "service-test" },
 ) {
-  const { authorizePlatformWriteCommand } =
+  const { authorizePlatformMutation } =
     await import("../services/platform-context.ts");
   return db.transaction(async (tx) => {
-    const authorized = await authorizePlatformWriteCommand(tx, {
-      principal: { type: "root", grants: [] },
-      environment: testEnvironment({
-        rootAdminSecret: "service-test",
-        rootAdminBreakGlass: true,
-      }),
-    });
+    const authorized = await authorizePlatformMutation(
+      tx,
+      {
+        principal: { type: "root", grants: [] },
+        environment: testEnvironment({
+          rootAdminSecret: "service-test",
+          rootAdminBreakGlass: true,
+        }),
+      },
+      "write",
+    );
     return authorized.run(run, metadata);
   });
 }

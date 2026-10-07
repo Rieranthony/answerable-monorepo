@@ -419,6 +419,7 @@ export function register(app: Hono<AppEnvironment>) {
       const confirm = eraseSchema.parse(context.req.query()).confirm;
       return platformCommand(
         context,
+        "write",
         "eraseClient",
         { clientId, confirm },
         204,
@@ -471,6 +472,7 @@ export function register(app: Hono<AppEnvironment>) {
       };
       return platformCommand(
         context,
+        "write",
         "createClient",
         operationJson(input),
         201,
@@ -509,6 +511,7 @@ export function register(app: Hono<AppEnvironment>) {
       const clientId = context.req.param("clientId")!;
       return platformCommand(
         context,
+        "write",
         "updateClient",
         operationJson({ clientId, expected, patch: input }),
         200,
@@ -542,6 +545,7 @@ export function register(app: Hono<AppEnvironment>) {
       const clientId = context.req.param("clientId")!;
       return platformCommand(
         context,
+        "write",
         "disableClient",
         { clientId },
         200,
@@ -564,6 +568,7 @@ export function register(app: Hono<AppEnvironment>) {
       const clientId = context.req.param("clientId")!;
       return platformCommand(
         context,
+        "write",
         "enableClient",
         { clientId },
         200,
@@ -586,6 +591,7 @@ export function register(app: Hono<AppEnvironment>) {
       const clientId = context.req.param("clientId")!;
       return platformCommand(
         context,
+        "write",
         "rotateClientSecret",
         { clientId },
         200,
@@ -606,6 +612,7 @@ export function register(app: Hono<AppEnvironment>) {
       const clientId = context.req.param("clientId")!;
       return platformCommand(
         context,
+        "write",
         "setClientOwner",
         { clientId, ...input },
         200,
@@ -630,6 +637,7 @@ export function register(app: Hono<AppEnvironment>) {
       const resource = context.req.param("resource")!;
       return platformCommand(
         context,
+        "write",
         "linkClientResource",
         { clientId, resource },
         201,
@@ -658,6 +666,7 @@ export function register(app: Hono<AppEnvironment>) {
       const resource = context.req.param("resource")!;
       return platformCommand(
         context,
+        "write",
         "unlinkClientResource",
         { clientId, resource },
         204,

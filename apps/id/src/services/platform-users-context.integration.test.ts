@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { createAdminFixture, type AdminFixture } from "../__tests__/admin.ts";
 import { createId } from "../lib/id.ts";
+import { authorizePlatformMutation } from "./platform-context.ts";
 let fixture: AdminFixture;
 beforeAll(async () => {
   fixture = await createAdminFixture();
@@ -12,12 +13,8 @@ const actor = {
   requestId: "context-test",
 };
 
-for (const factory of [
-  "authorizePlatformUsersCommand",
-  "authorizePlatformWriteCommand",
-] as const) {
-  test(`${factory}: actor identity comes from authority, never metadata`, async () => {
-    const authorize = (await import("./platform-context.ts"))[factory];
+for (const access of ["users", "write"] as const) {
+  test(`platform ${access}: actor identity comes from authority, never metadata`, async () => {
     const metadata = {
       ...actor,
       actorType: "user" as const,
@@ -27,10 +24,14 @@ for (const factory of [
       userAgent: "test",
     };
     await fixture.db.transaction(async (tx) => {
-      const authority = await authorize(tx, {
-        principal: { type: "root", grants: [] },
-        environment: fixture.environment,
-      });
+      const authority = await authorizePlatformMutation(
+        tx,
+        {
+          principal: { type: "root", grants: [] },
+          environment: fixture.environment,
+        },
+        access,
+      );
       await authority.run(async (context) => {
         expect(context.actor).toEqual({
           ...metadata,

@@ -434,6 +434,7 @@ export function register(app: Hono<AppEnvironment>) {
       const input = createSchema.parse(await context.req.json());
       return platformCommand(
         context,
+        "write",
         "createGroup",
         operationJson({ organizationId, input }),
         201,
@@ -472,6 +473,7 @@ export function register(app: Hono<AppEnvironment>) {
       const patch = patchSchema.parse(await context.req.json());
       return platformCommand(
         context,
+        "write",
         "updateGroup",
         operationJson({ organizationId, groupId, expected, patch }),
         200,
@@ -507,6 +509,7 @@ export function register(app: Hono<AppEnvironment>) {
       const groupId = context.req.param("groupId")!;
       return platformCommand(
         context,
+        "write",
         "disableGroup",
         operationJson({ organizationId, groupId }),
         200,
@@ -534,6 +537,7 @@ export function register(app: Hono<AppEnvironment>) {
       const groupId = context.req.param("groupId")!;
       return platformCommand(
         context,
+        "write",
         "enableGroup",
         operationJson({ organizationId, groupId }),
         200,
@@ -563,6 +567,7 @@ export function register(app: Hono<AppEnvironment>) {
       const confirm = eraseSchema.parse(context.req.query()).confirm;
       return platformCommand(
         context,
+        "write",
         "eraseGroup",
         operationJson({ organizationId, groupId, confirm }),
         204,
@@ -626,6 +631,7 @@ export function register(app: Hono<AppEnvironment>) {
       const window = windowDates(windowSchema.parse(await context.req.json()));
       return platformCommand(
         context,
+        "write",
         "putGroupMember",
         operationJson({ organizationId, groupId, memberId, expected, window }),
         200,
@@ -667,6 +673,7 @@ export function register(app: Hono<AppEnvironment>) {
       const memberId = context.req.param("memberId")!;
       return platformCommand(
         context,
+        "write",
         "removeGroupMember",
         operationJson({ organizationId, groupId, memberId }),
         204,

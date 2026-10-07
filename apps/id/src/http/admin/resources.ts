@@ -306,6 +306,7 @@ export function register(app: Hono<AppEnvironment>) {
       };
       return platformCommand(
         context,
+        "write",
         "createResource",
         operationJson(input),
         201,
@@ -341,6 +342,7 @@ export function register(app: Hono<AppEnvironment>) {
       const identifier = context.req.param("resource")!;
       return platformCommand(
         context,
+        "write",
         "updateResource",
         operationJson({ identifier, expected, patch: input }),
         200,
@@ -374,6 +376,7 @@ export function register(app: Hono<AppEnvironment>) {
       const identifier = context.req.param("resource")!;
       return platformCommand(
         context,
+        "write",
         "disableResource",
         { identifier },
         200,
@@ -396,6 +399,7 @@ export function register(app: Hono<AppEnvironment>) {
       const identifier = context.req.param("resource")!;
       return platformCommand(
         context,
+        "write",
         "enableResource",
         { identifier },
         200,
@@ -420,6 +424,7 @@ export function register(app: Hono<AppEnvironment>) {
       const identifier = context.req.param("resource")!;
       return platformCommand(
         context,
+        "write",
         "eraseResource",
         { identifier, ...input },
         204,

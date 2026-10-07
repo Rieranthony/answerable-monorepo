@@ -9,7 +9,7 @@ import {
   sessions,
   users,
 } from "../db/schema/index.ts";
-import { authorizePlatformUsersCommand } from "./platform-context.ts";
+import { authorizePlatformMutation } from "./platform-context.ts";
 import { updateCapability } from "./capabilities.ts";
 import { updateResource } from "./resources.ts";
 import { enableUser } from "./users.ts";
@@ -84,7 +84,11 @@ for (const source of ["capability", "resource"] as const)
             sql`select pg_backend_pid() as pid`,
           );
           commandPid = pid.rows[0]!.pid;
-          const authority = await authorizePlatformUsersCommand(tx, caller);
+          const authority = await authorizePlatformMutation(
+            tx,
+            caller,
+            "users",
+          );
           await authority.run(
             async (context) => {
               if (order === "command-first") {
@@ -189,7 +193,7 @@ for (const source of ["capability", "resource"] as const)
       );
       await expect(
         reader.db.transaction(async (tx) => {
-          await authorizePlatformUsersCommand(tx, caller);
+          await authorizePlatformMutation(tx, caller, "users");
         }),
       ).rejects.toMatchObject({ code: "insufficient_scope" });
     });
@@ -236,16 +240,20 @@ test("session expiry during a policy lock wait denies the command before mutatio
       sql`select pg_backend_pid() as pid`,
     );
     readerPid = pid.rows[0]!.pid;
-    const authority = await authorizePlatformUsersCommand(tx, {
-      principal: {
-        type: "user",
-        userId,
-        sessionId: session!.id,
-        email: "admin@example.com",
-        grants: [],
+    const authority = await authorizePlatformMutation(
+      tx,
+      {
+        principal: {
+          type: "user",
+          userId,
+          sessionId: session!.id,
+          email: "admin@example.com",
+          grants: [],
+        },
+        environment: fixture.environment,
       },
-      environment: fixture.environment,
-    });
+      "users",
+    );
     await authority.run(
       async () => {
         mutated = true;
@@ -292,8 +300,7 @@ test("session expiry during a policy lock wait denies the command before mutatio
 
 test("concurrent policy lock upgrades roll back one command and permit same-key recovery", async () => {
   const { executeOperation } = await import("./operations.ts");
-  const { authorizePlatformWriteCommand } =
-    await import("./platform-context.ts");
+  const { authorizePlatformMutation } = await import("./platform-context.ts");
   const { updateOrganization } = await import("./organizations.ts");
   const { mapDatabaseError } = await import("../http/problem.ts");
   const { adminOperations, auditEvents } =
@@ -329,7 +336,7 @@ test("concurrent policy lock upgrades roll back one command and permit same-key 
         key: `upgrade-${index}`,
         input: { name: `Changed ${index}` },
       },
-      (tx) => authorizePlatformWriteCommand(tx, caller),
+      (tx) => authorizePlatformMutation(tx, caller, "write"),
       async (_tx, _operationId, authority) =>
         authority.run(
           async (context) => {

@@ -301,6 +301,7 @@ export function register(app: Hono<AppEnvironment>) {
         input.oidc.scopes = [...new Set(input.oidc.scopes)].sort();
       return platformCommand(
         context,
+        "write",
         "putSsoProvider",
         operationJson({ organizationId, expected, input }),
         200,
@@ -336,6 +337,7 @@ export function register(app: Hono<AppEnvironment>) {
       const organizationId = context.req.param("organizationId")!;
       return platformCommand(
         context,
+        "write",
         "deleteSsoProvider",
         { organizationId },
         204,

@@ -1,8 +1,6 @@
 import {
-  authorizePlatformUsersCommand,
-  authorizePlatformWriteCommand,
-  type PlatformWriteContext,
-  type PlatformUsersContext,
+  authorizePlatformMutation,
+  type PlatformMutationContext,
 } from "../../services/platform-context.ts";
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
@@ -128,12 +126,13 @@ async function httpCommand<T>(
   );
 }
 
-export function platformCommand(
+export function platformCommand<Access extends "users" | "write">(
   context: Context<AppEnvironment>,
+  access: Access,
   name: string,
   input: OperationJson,
   statusCode: number,
-  mutate: (platform: PlatformWriteContext) => Promise<CommandResult>,
+  mutate: (platform: PlatformMutationContext<Access>) => Promise<CommandResult>,
   options: CommandOptions = {},
 ) {
   return httpCommand(
@@ -144,38 +143,15 @@ export function platformCommand(
     {
       scope: "platform",
       authorize: (tx) =>
-        authorizePlatformWriteCommand(tx, {
-          principal: context.get("principal")!,
-          environment: context.get("environment"),
-          claims: context.get("bearerClaims"),
-        }),
-    },
-    (_tx, actor, authorized) => authorized.run(mutate, actor),
-    options,
-  );
-}
-
-export function platformUsersCommand(
-  context: Context<AppEnvironment>,
-  name: string,
-  input: OperationJson,
-  statusCode: number,
-  mutate: (context: PlatformUsersContext) => Promise<CommandResult>,
-  options: CommandOptions = {},
-) {
-  return httpCommand(
-    context,
-    name,
-    input,
-    statusCode,
-    {
-      scope: "platform",
-      authorize: (tx) =>
-        authorizePlatformUsersCommand(tx, {
-          principal: context.get("principal")!,
-          environment: context.get("environment"),
-          claims: context.get("bearerClaims"),
-        }),
+        authorizePlatformMutation(
+          tx,
+          {
+            principal: context.get("principal")!,
+            environment: context.get("environment"),
+            claims: context.get("bearerClaims"),
+          },
+          access,
+        ),
     },
     (_tx, actor, authorized) => authorized.run(mutate, actor),
     options,

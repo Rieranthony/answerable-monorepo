@@ -289,6 +289,7 @@ export function register(app: Hono<AppEnvironment>) {
       };
       return platformCommand(
         context,
+        "write",
         "createCapability",
         operationJson({ organizationId, input }),
         201,
@@ -325,6 +326,7 @@ export function register(app: Hono<AppEnvironment>) {
       };
       return platformCommand(
         context,
+        "write",
         "updateCapability",
         operationJson({ organizationId, capabilityId, expected, input }),
         200,
@@ -360,6 +362,7 @@ export function register(app: Hono<AppEnvironment>) {
       const capabilityId = context.req.param("capabilityId")!;
       return platformCommand(
         context,
+        "write",
         "removeCapability",
         operationJson({ organizationId, capabilityId }),
         204,

@@ -342,6 +342,7 @@ export function register(app: Hono<AppEnvironment>) {
       };
       return platformCommand(
         context,
+        "write",
         "createEntitlement",
         operationJson({ organizationId, input }),
         201,
@@ -390,6 +391,7 @@ export function register(app: Hono<AppEnvironment>) {
       };
       return platformCommand(
         context,
+        "write",
         "updateEntitlement",
         operationJson({ organizationId, entitlementId, expected, input }),
         200,
@@ -425,6 +427,7 @@ export function register(app: Hono<AppEnvironment>) {
       const entitlementId = context.req.param("entitlementId")!;
       return platformCommand(
         context,
+        "write",
         "disableEntitlement",
         operationJson({ organizationId, entitlementId }),
         200,
@@ -452,6 +455,7 @@ export function register(app: Hono<AppEnvironment>) {
       const entitlementId = context.req.param("entitlementId")!;
       return platformCommand(
         context,
+        "write",
         "enableEntitlement",
         operationJson({ organizationId, entitlementId }),
         200,
@@ -479,6 +483,7 @@ export function register(app: Hono<AppEnvironment>) {
       const entitlementId = context.req.param("entitlementId")!;
       return platformCommand(
         context,
+        "write",
         "removeEntitlement",
         operationJson({ organizationId, entitlementId }),
         204,

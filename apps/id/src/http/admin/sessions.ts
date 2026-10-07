@@ -3,7 +3,7 @@ import { platformRead } from "./platform-read.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
 import {
-  platformUsersCommand,
+  platformCommand,
   operationJson,
   idempotencyParameter,
   commandResponseHeaders,
@@ -141,8 +141,9 @@ export function register(app: Hono<AppEnvironment>) {
     validate("param", userParams),
     async (context) => {
       const userId = context.req.param("userId")!;
-      return platformUsersCommand(
+      return platformCommand(
         context,
+        "users",
         "revokeUserSessions",
         operationJson({ userId }),
         200,
@@ -164,8 +165,9 @@ export function register(app: Hono<AppEnvironment>) {
     async (context) => {
       const userId = context.req.param("userId")!;
       const sessionId = context.req.param("sessionId")!;
-      return platformUsersCommand(
+      return platformCommand(
         context,
+        "users",
         "revokeUserSession",
         operationJson({ userId, sessionId }),
         204,

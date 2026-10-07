@@ -186,6 +186,7 @@ export function register(app: Hono<AppEnvironment>) {
       const domainId = context.req.param("domainId")!;
       return platformCommand(
         context,
+        "write",
         "deleteOrganizationDomain",
         { organizationId, domainId },
         204,
@@ -225,6 +226,7 @@ export function register(app: Hono<AppEnvironment>) {
       const input = createSchema.parse(await context.req.json());
       return platformCommand(
         context,
+        "write",
         "createOrganizationDomain",
         { organizationId, ...input },
         201,
@@ -248,6 +250,7 @@ export function register(app: Hono<AppEnvironment>) {
       const domainId = context.req.param("domainId")!;
       return platformCommand(
         context,
+        "write",
         "disableOrganizationDomain",
         { organizationId, domainId },
         200,
@@ -275,6 +278,7 @@ export function register(app: Hono<AppEnvironment>) {
       const domainId = context.req.param("domainId")!;
       return platformCommand(
         context,
+        "write",
         "enableOrganizationDomain",
         { organizationId, domainId },
         200,

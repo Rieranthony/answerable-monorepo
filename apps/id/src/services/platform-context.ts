@@ -42,21 +42,21 @@ export function withPlatformRead<T>(
 }
 
 const platformMutation = Symbol("platformMutation");
-type PlatformMutationContext<Access extends "users" | "write"> = Readonly<{
-  revalidate: () => Promise<void>;
-  [platformMutation]: true;
-  access: Access;
-  actor: Readonly<Actor>;
-  tx: Executor;
-}>;
+export type PlatformMutationContext<Access extends "users" | "write"> =
+  Readonly<{
+    revalidate: () => Promise<void>;
+    [platformMutation]: true;
+    access: Access;
+    actor: Readonly<Actor>;
+    tx: Executor;
+  }>;
 export type PlatformUsersContext = PlatformMutationContext<"users">;
 export type PlatformWriteContext = PlatformMutationContext<"write">;
 
-async function authorizePlatformMutation<Access extends "users" | "write">(
-  tx: Executor,
-  caller: PlatformCaller,
-  access: Access,
-) {
+/** Fixed authority is checked before replay; the runner is owned by the journal. */
+export async function authorizePlatformMutation<
+  Access extends "users" | "write",
+>(tx: Executor, caller: PlatformCaller, access: Access) {
   const identity = actorIdentity(caller.principal);
   const authorize = () =>
     authorizeCommand(
@@ -90,18 +90,4 @@ async function authorizePlatformMutation<Access extends "users" | "write">(
       });
     },
   };
-}
-
-/** Fixed authority is checked before replay; the runner is owned by the journal. */
-export function authorizePlatformUsersCommand(
-  tx: Executor,
-  caller: PlatformCaller,
-) {
-  return authorizePlatformMutation(tx, caller, "users");
-}
-export function authorizePlatformWriteCommand(
-  tx: Executor,
-  caller: PlatformCaller,
-) {
-  return authorizePlatformMutation(tx, caller, "write");
 }
