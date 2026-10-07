@@ -17,7 +17,7 @@ import {
 const createClient = platformWriteService(createClientImplementation);
 const linkResource = platformWriteService(linkResourceImplementation);
 import { type DatabaseConnection } from "./client.ts";
-import { auditEvents } from "./schema/index.ts";
+import { auditEvents, oauthResources } from "./schema/index.ts";
 import { configureRuntimeRole, assertRuntimeRole } from "./runtime-role.ts";
 import { openRuntimeRole } from "../__tests__/runtime-role.ts";
 
@@ -32,7 +32,7 @@ beforeAll(async () => {
   ({ owner, runtime, role: roleName } = roles);
 });
 afterAll(() => roles?.close());
-test("real runtime login can bootstrap, audit and issue a machine token", async () => {
+test("real runtime login can bootstrap, restart, audit and issue a machine token", async () => {
   await configureRuntimeRole(owner.db, roleName);
   await assertRuntimeRole(runtime.db);
   await expect(assertRuntimeRole(owner.db)).rejects.toThrow(
@@ -41,11 +41,26 @@ test("real runtime login can bootstrap, audit and issue a machine token", async 
   const identity = await runtime.db.execute(sql`select current_user as name`);
   expect(identity.rows).toEqual([{ name: roleName }]);
   const actor = systemActor("runtime-role-test");
-  const seeded = await bootstrap(runtime.db, actor, {
+  const options = {
     platformOrganizationSlug: environment.platformOrganizationSlug,
     platformOrganizationName: "Platform",
     adminResourceIdentifier: environment.adminResourceIdentifier,
+  };
+  const seeded = await bootstrap(runtime.db, actor, options);
+  // A later start restores the admin resource's definition under the same role.
+  await owner.db
+    .update(oauthResources)
+    .set({ accessTokenTtl: 60 })
+    .where(eq(oauthResources.id, seeded.resourceId));
+  expect(await bootstrap(runtime.db, actor, options)).toEqual({
+    ...seeded,
+    created: false,
   });
+  const [resource] = await owner.db
+    .select()
+    .from(oauthResources)
+    .where(eq(oauthResources.id, seeded.resourceId));
+  expect(resource!.accessTokenTtl).toBe(600);
   const client = await createClient(runtime.db, actor, {
     clientId: "runtime-machine",
     name: "Runtime",
