@@ -734,7 +734,7 @@ test("runtime erasure audit creates protected indirect subject references throug
   });
   expect(
     (await listUserAuditEvents(runtime.db, affected, {}, { limit: 10 })).items,
-  ).toEqual([row]);
+  ).toEqual([{ ...row, occurredAt: expect.any(Date) }]);
   await assertRuntimeRole(runtime.db);
 });
 
@@ -774,6 +774,8 @@ test("runtime lifecycle audit indexes recorded users without direct subject writ
   }
   expect(
     (await listUserAuditEvents(runtime.db, affected, {}, { limit: 10 })).items,
-  ).toEqual(expected.reverse());
+  ).toEqual(
+    expected.reverse().map((row) => ({ ...row, occurredAt: expect.any(Date) })),
+  );
   await assertRuntimeRole(runtime.db);
 });

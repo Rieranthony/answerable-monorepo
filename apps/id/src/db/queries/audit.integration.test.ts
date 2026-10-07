@@ -75,19 +75,19 @@ test("round-trips JSON data and optional fields inside a transaction", async () 
     expect(
       (await productionAuditQueries.listAuditEvents(context, {}, { limit: 10 }))
         .items,
-    ).toEqual([recorded]);
+    ).toEqual([{ ...recorded, occurredAt: expect.any(Date) }]);
     return recorded;
   });
   expect(isUuidV7(row.id)).toBe(true);
-  expect(row.occurredAt).toBeInstanceOf(Date);
   expect(row).toMatchObject(input);
-  expect(await connection.db.select().from(auditEvents)).toEqual([row]);
+  const stored = { ...row, occurredAt: expect.any(Date) };
+  expect(await connection.db.select().from(auditEvents)).toEqual([stored]);
   expect(
     await connection.db
       .select()
       .from(auditEvents)
       .where(eq(auditEvents.organizationId, organization.id)),
-  ).toEqual([row]);
+  ).toEqual([stored]);
 
   for (const optionals of [
     {},
@@ -108,7 +108,6 @@ test("round-trips JSON data and optional fields inside a transaction", async () 
     expect(minimal).toEqual({
       ...event,
       id: minimal.id,
-      occurredAt: minimal.occurredAt,
       schemaVersion: 1,
       operationId: null,
       organizationId: null,
@@ -227,7 +226,9 @@ test("keeps the event and erased target id when an organisation is erased", asyn
   await connection.db
     .delete(organizations)
     .where(eq(organizations.id, organization.id));
-  expect(await connection.db.select().from(auditEvents)).toEqual([row]);
+  expect(await connection.db.select().from(auditEvents)).toEqual([
+    { ...row, occurredAt: expect.any(Date) },
+  ]);
 });
 
 test("rejects unknown actor and outcome vocabularies through CHECK constraints", async () => {

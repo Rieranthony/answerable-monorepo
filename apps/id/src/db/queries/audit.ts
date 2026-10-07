@@ -1,6 +1,6 @@
 import type { PlatformReadContext } from "../../services/platform-context.ts";
 import type { TenantReadContext } from "../../services/tenant-context.ts";
-import { and, desc, eq, gte, lt, inArray, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, lt, inArray, type SQL } from "drizzle-orm";
 import { beforeCursor, cursorPage, optionalEq } from "./lists.ts";
 
 import { createId } from "../../lib/id.ts";
@@ -124,17 +124,15 @@ export type AuditEventInput = {
   data?: Record<string, unknown> | null;
 };
 
+/** Insert the event and return it as written; occurred_at takes the column's
+ * now() default, the transaction's start. */
 export async function recordAuditEvent(
   executor: Executor,
   event: AuditEventInput,
 ) {
   // RETURNING requires SELECT permission, which protocol and unscoped writers lack.
-  const time = await executor.execute<{ occurredAt: string }>(
-    sql`select current_timestamp as "occurredAt"`,
-  );
-  const row: AuditEvent = {
+  const row: Omit<AuditEvent, "occurredAt"> = {
     id: createId(),
-    occurredAt: new Date(time.rows[0]!.occurredAt),
     actorType: event.actorType,
     actorId: event.actorId,
     action: event.action,

@@ -465,7 +465,7 @@ test("administrative RLS isolates rows while retaining routing and append-only b
       .select()
       .from(auditEvents)
       .where(eq(auditEvents.id, event.id)),
-  ).toEqual([event]);
+  ).toEqual([{ ...event, occurredAt: expect.any(Date) }]);
   await expect(
     Promise.resolve(
       runtime.db
