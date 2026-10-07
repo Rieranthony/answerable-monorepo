@@ -23,7 +23,7 @@ It builds on two shared packages: `@answerable/id-admin` (`createIdAdmin`, the T
 | File | Job |
 | --- | --- |
 | `src/toolbox.ts` | `createToolbox({ providers, auth, db, id, spans })`: the endpoint on `@answerable/mcp`, authority and the projection per request, evidence and a span per call, `RESULT_TOO_LARGE` above 100 KiB, `/health` |
-| `src/grants.ts` | `createGrantsReader`: grant strings from ID's member access view, cached 60 seconds; an invalidation sends `tools/list_changed`. `allowedScopes(providers)`, the Toolbox resource's allowed scopes |
+| `src/grants.ts` | `createGrantsReader`: grant strings from the Toolbox targets of ID's member access view, cached 60 seconds, a client-limited one counted only through its client; an invalidation sends `tools/list_changed`. `allowedScopes(providers)`, the Toolbox resource's allowed scopes |
 | `src/poller.ts` | `startGrantsPoller`: reads ID's audit log every 15 seconds and invalidates the organisations and the users it names |
 | `src/admin.ts` | The platform-tier admin API under `/admin/v1`: authentication (a machine client's token with `toolbox:admin`), routing, and the routes for providers, catalogue entries and host clients; `toolboxAdminResource` |
 | `src/admin-enable.ts` | The enable operation: what ID holds, what is missing, and the ID calls that make it |
