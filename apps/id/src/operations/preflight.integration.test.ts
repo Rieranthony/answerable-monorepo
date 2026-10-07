@@ -33,8 +33,13 @@ test("custody preflight reads retained provider and upstream material without ch
     expect(await fixture.db.select().from(adminOperations)).toEqual(
       before.operations,
     );
+    await expect(
+      checkKeyCustody(fixture.db, {
+        ...fixture.environment,
+        upstreamTokenSecrets: undefined,
+      }),
+    ).rejects.toThrow("Required key configuration is absent");
     for (const environment of [
-      { ...fixture.environment, upstreamTokenSecrets: undefined },
       { ...fixture.environment, betterAuthSecret: "wrong".repeat(12) },
       {
         ...fixture.environment,
@@ -64,7 +69,7 @@ test("custody preflight reads retained provider and upstream material without ch
     await fixture.db.delete(jwks);
     await expect(
       checkKeyCustody(fixture.db, fixture.environment),
-    ).rejects.toThrow("Key custody preflight failed");
+    ).rejects.toThrow("Signing keys have not been provisioned");
     expect(await fixture.db.select().from(jwks)).toEqual([]);
     await createAuth(fixture.db, fixture.environment).api.getJwks();
   } finally {

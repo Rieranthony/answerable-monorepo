@@ -7,17 +7,21 @@ import type { Database } from "../db/client.ts";
 import { accounts, jwks } from "../db/schema/index.ts";
 import type { Environment } from "../env.ts";
 
+/** A preflight failure whose message names its cause and holds no key material. */
+export class CustodyPreflightError extends Error {}
+
 /** Read-only, paged verification while writers are stopped. Returns counts, never credential material.
  * This checks retained ciphertext, not secret-manager delivery, backup completeness or traffic readiness.
  */
 export async function checkKeyCustody(db: Database, environment: Environment) {
+  if (!environment.upstreamTokenSecrets?.length)
+    throw new CustodyPreflightError("Required key configuration is absent");
+  let counts: { signingKeys: number; accounts: number };
   try {
-    if (!environment.upstreamTokenSecrets?.length)
-      throw new Error("Required key configuration is absent");
     const upstream = upstreamTokenStorage(environment.upstreamTokenSecrets)
       .schema.account.fields.accessToken.transform.output;
     const { secretConfig } = await createAuth(db, environment).$context;
-    return await db.transaction(async (tx) => {
+    counts = await db.transaction(async (tx) => {
       await tx.execute(sql`set transaction read only`);
       const counts = { signingKeys: 0, accounts: 0 };
       let after: string | undefined;
@@ -48,8 +52,6 @@ export async function checkKeyCustody(db: Database, environment: Environment) {
         }
         after = rows.at(-1)!.id;
       }
-      if (!counts.signingKeys)
-        throw new Error("Signing keys have not been provisioned");
       after = undefined;
       for (;;) {
         const rows = await tx
@@ -74,6 +76,10 @@ export async function checkKeyCustody(db: Database, environment: Environment) {
       return counts;
     });
   } catch {
-    throw new Error("Key custody preflight failed");
+    // A parse or decryption error on decrypted text can quote key material.
+    throw new CustodyPreflightError("Key custody preflight failed");
   }
+  if (!counts.signingKeys)
+    throw new CustodyPreflightError("Signing keys have not been provisioned");
+  return counts;
 }
