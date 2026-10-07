@@ -17,7 +17,6 @@ export type PlatformReadContext = Readonly<{
 }>;
 
 type PlatformCaller = {
-  freshAuthentication?: boolean;
   principal: Principal;
   environment: Environment;
   claims?: BearerClaims;
@@ -64,10 +63,7 @@ async function authorizePlatformMutation<Access extends "users" | "write">(
       tx,
       caller.principal,
       caller.environment,
-      {
-        platform: access === "users" ? "platform:users" : "platform:write",
-        freshAuthentication: caller.freshAuthentication,
-      },
+      { platform: access === "users" ? "platform:users" : "platform:write" },
       caller.claims,
     );
   await authorize();

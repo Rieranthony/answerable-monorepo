@@ -61,7 +61,7 @@ async function httpCommand<T>(
   statusCode: number,
   authority: {
     scope: string;
-    authorize: (tx: Executor, freshAuthentication: boolean) => Promise<T>;
+    authorize: (tx: Executor) => Promise<T>;
   },
   mutate: (tx: Executor, actor: Actor, authority: T) => Promise<CommandResult>,
   options: CommandOptions,
@@ -92,8 +92,9 @@ async function httpCommand<T>(
       input,
     },
     async (tx) => {
-      const authorized = await authority.authorize(tx, Boolean(needsFreshness));
+      const authorized = await authority.authorize(tx);
       const principal = context.get("principal")!;
+      // Checked before the receipt lookup, so a stale replay is refused too.
       if (needsFreshness && principal.type === "user")
         checkFreshness = await freshAuthenticationGuard(
           tx,
@@ -102,10 +103,9 @@ async function httpCommand<T>(
       return authorized;
     },
     async (tx, operationId, authorized) => {
-      await checkFreshness?.();
       const result = await mutate(tx, { ...actor, operationId }, authorized);
-      // Target-row/audit waits can outlast the freshness window too. Roll
-      // back the whole command and its effects if time elapsed in the body.
+      // Target-row/audit waits can outlast the freshness window. Roll back
+      // the whole command and its effects if time elapsed in the body.
       await checkFreshness?.();
       return {
         outcome: result.outcome ?? "applied",
@@ -143,12 +143,11 @@ export function platformCommand(
     statusCode,
     {
       scope: "platform",
-      authorize: (tx, freshAuthentication) =>
+      authorize: (tx) =>
         authorizePlatformWriteCommand(tx, {
           principal: context.get("principal")!,
           environment: context.get("environment"),
           claims: context.get("bearerClaims"),
-          freshAuthentication,
         }),
     },
     (_tx, actor, authorized) => authorized.run(mutate, actor),
@@ -171,12 +170,11 @@ export function platformUsersCommand(
     statusCode,
     {
       scope: "platform",
-      authorize: (tx, freshAuthentication) =>
+      authorize: (tx) =>
         authorizePlatformUsersCommand(tx, {
           principal: context.get("principal")!,
           environment: context.get("environment"),
           claims: context.get("bearerClaims"),
-          freshAuthentication,
         }),
     },
     (_tx, actor, authorized) => authorized.run(mutate, actor),
@@ -199,13 +197,12 @@ export function tenantMemberCommand(
     statusCode,
     {
       scope: `tenant:${organizationId}`,
-      authorize: (tx, freshAuthentication) =>
+      authorize: (tx) =>
         authorizeTenantMemberCommand(tx, {
           principal: context.get("principal")!,
           environment: context.get("environment"),
           claims: context.get("bearerClaims"),
           organizationId,
-          freshAuthentication,
         }),
     },
     (_tx, actor, tenant) => tenant.run(mutate, actor),

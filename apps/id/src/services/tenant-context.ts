@@ -35,7 +35,6 @@ export type TenantReadContext<Access extends TenantReadAccess> =
   ScopedContext<Access>;
 
 type TenantAuthority = {
-  freshAuthentication?: boolean;
   principal: Principal;
   environment: Environment;
   claims?: BearerClaims;
@@ -59,7 +58,6 @@ export async function authorizeTenantMemberCommand(
       {
         platform: "platform:users",
         tenant: { organizationId: input.organizationId, scope: "org:users" },
-        freshAuthentication: input.freshAuthentication,
       },
       input.claims,
     );
