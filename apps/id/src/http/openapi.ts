@@ -80,8 +80,6 @@ export async function buildPublicOpenApiDocument(input: {
     generateSpecs(input.app, {
       exclude: [
         /^\/openapi\.json$/,
-        /^\/api\/admin\/openapi\.json$/,
-        /^\/api\/admin\/docs$/,
         /^\/api\/admin\//,
       ],
     }),

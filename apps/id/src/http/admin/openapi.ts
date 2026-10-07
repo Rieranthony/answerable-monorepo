@@ -49,7 +49,6 @@ export function standardResponses(
     ...success,
     ...requestBoundaryResponses,
     ...problemResponses(401, 403, 503),
-    503: problemResponses(503)[503],
     ...(route.orgScope ? problemResponses(404) : {}),
   };
 }

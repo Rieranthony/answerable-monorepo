@@ -64,7 +64,6 @@ export function createAdminApp(services: AppServices) {
   });
   app.use("*", createPrincipalMiddleware(createDefaultPrincipalDeps(services)));
   for (const family of families) family.register(app);
-  app.notFound(notFound);
   // Hono does not carry a sub-app's notFound handler across app.route().
   app.all("*", notFound);
   return app;
