@@ -8,7 +8,7 @@ import {
   type PlatformWriteContext,
   type PlatformReadContext,
 } from "../../services/platform-context.ts";
-import { and, desc, eq, getTableColumns, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, sql, isNull } from "drizzle-orm";
 import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
 import type { LifecycleStatus } from "../schema/vocabulary.ts";
 import type { MemberWindow } from "./groups.ts";
@@ -69,7 +69,7 @@ export function listEntitlements(
     .from(entitlements)
     .where(
       and(
-        sql`${entitlements.deletedAt} is null`,
+        isNull(entitlements.deletedAt),
         eq(entitlements.organizationId, organizationId),
         query.clientId === undefined
           ? undefined
@@ -102,7 +102,7 @@ function findEntitlementQuery(
     .from(entitlements)
     .where(
       and(
-        sql`${entitlements.deletedAt} is null`,
+        isNull(entitlements.deletedAt),
         entitlementWhere(organizationId, entitlementId),
       ),
     );
@@ -141,7 +141,7 @@ export async function updateEntitlement(
     .set(patch)
     .where(
       and(
-        sql`${entitlements.deletedAt} is null`,
+        isNull(entitlements.deletedAt),
         entitlementWhere(organizationId, entitlementId),
       ),
     )
@@ -160,7 +160,7 @@ export async function setEntitlementStatus(
     .set({ status })
     .where(
       and(
-        sql`${entitlements.deletedAt} is null`,
+        isNull(entitlements.deletedAt),
         entitlementWhere(organizationId, entitlementId),
       ),
     )
@@ -178,7 +178,7 @@ export async function deleteEntitlement(
     .set({ deletedAt: sql`now()`, status: "disabled" })
     .where(
       and(
-        sql`${entitlements.deletedAt} is null`,
+        isNull(entitlements.deletedAt),
         entitlementWhere(organizationId, entitlementId),
       ),
     )
@@ -228,8 +228,8 @@ export async function readEntitlementAudience(
       )
       .where(
         and(
-          sql`${groupMembers.deletedAt} is null`,
-          sql`${members.deletedAt} is null`,
+          isNull(groupMembers.deletedAt),
+          isNull(members.deletedAt),
           eq(members.organizationId, organizationId),
           eq(groupMembers.groupId, groupId),
         ),
@@ -244,7 +244,7 @@ export async function readEntitlementAudience(
     .from(members)
     .where(
       and(
-        sql`${members.deletedAt} is null`,
+        isNull(members.deletedAt),
         eq(members.organizationId, organizationId),
         memberId === null ? undefined : eq(members.id, memberId),
       ),
@@ -269,8 +269,8 @@ export function listAllEntitlements(
     .innerJoin(organizations, eq(organizations.id, entitlements.organizationId))
     .where(
       and(
-        sql`${organizations.deletedAt} is null`,
-        sql`${entitlements.deletedAt} is null`,
+        isNull(organizations.deletedAt),
+        isNull(entitlements.deletedAt),
         query.clientId === undefined
           ? undefined
           : eq(entitlements.clientId, query.clientId),

@@ -1,6 +1,6 @@
 import { withDatabaseScope } from "./isolation.ts";
 import { findMachineCapability } from "./queries/capabilities.ts";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql, isNull } from "drizzle-orm";
 import type { Executor } from "./client.ts";
 import {
   oauthClients,
@@ -27,7 +27,7 @@ export async function findClientPrincipal(
       .from(oauthClients)
       .where(
         and(
-          sql`${oauthClients.deletedAt} is null`,
+          isNull(oauthClients.deletedAt),
           eq(oauthClients.clientId, clientId),
         ),
       );
@@ -39,7 +39,7 @@ export async function findClientPrincipal(
         .from(organizations)
         .where(
           and(
-            sql`${organizations.deletedAt} is null`,
+            isNull(organizations.deletedAt),
             eq(organizations.id, identity.organizationId),
           ),
         )
@@ -48,10 +48,7 @@ export async function findClientPrincipal(
       .select({ id: oauthClients.id })
       .from(oauthClients)
       .where(
-        and(
-          sql`${oauthClients.deletedAt} is null`,
-          eq(oauthClients.id, identity.id),
-        ),
+        and(isNull(oauthClients.deletedAt), eq(oauthClients.id, identity.id)),
       )
       .for("share");
     await tx
@@ -59,7 +56,7 @@ export async function findClientPrincipal(
       .from(oauthResources)
       .where(
         and(
-          sql`${oauthResources.deletedAt} is null`,
+          isNull(oauthResources.deletedAt),
           eq(oauthResources.identifier, resource),
         ),
       )
@@ -96,10 +93,10 @@ export async function findClientPrincipal(
       )
       .where(
         and(
-          sql`${oauthResources.deletedAt} is null`,
-          sql`${oauthClientResources.deletedAt} is null`,
-          sql`${organizations.deletedAt} is null`,
-          sql`${oauthClients.deletedAt} is null`,
+          isNull(oauthResources.deletedAt),
+          isNull(oauthClientResources.deletedAt),
+          isNull(organizations.deletedAt),
+          isNull(oauthClients.deletedAt),
           eq(oauthClients.id, identity.id),
           eq(oauthResources.identifier, resource),
           eq(oauthResources.disabled, false),

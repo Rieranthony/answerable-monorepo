@@ -11,7 +11,7 @@ import {
   type TenantReadContext,
 } from "../../services/tenant-context.ts";
 import { lockOrganization } from "../organization-lock.ts";
-import { and, count, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, or, sql, isNull } from "drizzle-orm";
 import {
   organizations,
   oauthClients,
@@ -49,7 +49,7 @@ export function listOrganizations(
     .from(organizations)
     .where(
       and(
-        sql`${organizations.deletedAt} is null`,
+        isNull(organizations.deletedAt),
         query.q === undefined
           ? undefined
           : or(
@@ -75,7 +75,7 @@ export async function readOrganization(
     .from(organizations)
     .where(
       and(
-        sql`${organizations.deletedAt} is null`,
+        isNull(organizations.deletedAt),
         eq(organizations.id, organizationId),
       ),
     );
@@ -95,7 +95,7 @@ export async function readOrganizationStatus(
     .from(organizations)
     .where(
       and(
-        sql`${organizations.deletedAt} is null`,
+        isNull(organizations.deletedAt),
         eq(organizations.id, organizationId),
       ),
     );
@@ -111,7 +111,7 @@ export async function organizationExistsForHistory(
     .from(organizations)
     .where(
       and(
-        sql`${organizations.deletedAt} is null`,
+        isNull(organizations.deletedAt),
         eq(organizations.id, organizationId),
       ),
     );
@@ -149,9 +149,7 @@ export async function updateOrganization(
   const [row] = await executor
     .update(organizations)
     .set(patch)
-    .where(
-      and(sql`${organizations.deletedAt} is null`, eq(organizations.id, id)),
-    )
+    .where(and(isNull(organizations.deletedAt), eq(organizations.id, id)))
     .returning();
   return row ?? null;
 }
@@ -165,9 +163,7 @@ export async function setOrganizationStatus(
   const [row] = await executor
     .update(organizations)
     .set({ status, disabledAt: status === "disabled" ? sql`now()` : null })
-    .where(
-      and(sql`${organizations.deletedAt} is null`, eq(organizations.id, id)),
-    )
+    .where(and(isNull(organizations.deletedAt), eq(organizations.id, id)))
     .returning();
   return row ?? null;
 }
@@ -181,10 +177,7 @@ export async function countOrganizationClients(
     .select({ count: count() })
     .from(oauthClients)
     .where(
-      and(
-        sql`${oauthClients.deletedAt} is null`,
-        eq(oauthClients.organizationId, id),
-      ),
+      and(isNull(oauthClients.deletedAt), eq(oauthClients.organizationId, id)),
     );
   return row!.count;
 }
@@ -203,7 +196,7 @@ export async function deleteOrganization(
     .set({ deletedAt: sql`now()`, status: "disabled" })
     .where(
       and(
-        sql`${entitlements.deletedAt} is null`,
+        isNull(entitlements.deletedAt),
         eq(entitlements.organizationId, organizationId),
       ),
     )
@@ -226,7 +219,7 @@ export async function deleteOrganization(
     .set({ deletedAt: sql`now()` })
     .where(
       and(
-        sql`${groupMembers.deletedAt} is null`,
+        isNull(groupMembers.deletedAt),
         eq(groupMembers.organizationId, organizationId),
       ),
     )
@@ -249,7 +242,7 @@ export async function deleteOrganization(
     })
     .where(
       and(
-        sql`${members.deletedAt} is null`,
+        isNull(members.deletedAt),
         eq(members.organizationId, organizationId),
       ),
     )
@@ -268,10 +261,7 @@ export async function deleteOrganization(
     .update(groups)
     .set({ deletedAt: sql`now()`, status: "disabled" })
     .where(
-      and(
-        sql`${groups.deletedAt} is null`,
-        eq(groups.organizationId, organizationId),
-      ),
+      and(isNull(groups.deletedAt), eq(groups.organizationId, organizationId)),
     )
     .returning({
       deletedAt: groups.deletedAt,
@@ -286,7 +276,7 @@ export async function deleteOrganization(
     .set({ deletedAt: sql`now()`, status: "disabled" })
     .where(
       and(
-        sql`${organizationCapabilities.deletedAt} is null`,
+        isNull(organizationCapabilities.deletedAt),
         eq(organizationCapabilities.organizationId, organizationId),
       ),
     )
@@ -308,7 +298,7 @@ export async function deleteOrganization(
     .set({ deletedAt: sql`now()`, status: "disabled" })
     .where(
       and(
-        sql`${organizationDomains.deletedAt} is null`,
+        isNull(organizationDomains.deletedAt),
         eq(organizationDomains.organizationId, organizationId),
       ),
     )
@@ -324,7 +314,7 @@ export async function deleteOrganization(
     .set({ deletedAt: sql`now()`, oidcConfig: null })
     .where(
       and(
-        sql`${ssoProviders.deletedAt} is null`,
+        isNull(ssoProviders.deletedAt),
         eq(ssoProviders.organizationId, organizationId),
       ),
     )
@@ -342,7 +332,7 @@ export async function deleteOrganization(
     .set({ deletedAt: sql`now()`, status: "disabled", disabledAt: sql`now()` })
     .where(
       and(
-        sql`${organizations.deletedAt} is null`,
+        isNull(organizations.deletedAt),
         eq(organizations.id, organizationId),
       ),
     )

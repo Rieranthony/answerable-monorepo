@@ -1,6 +1,6 @@
 import { identityScopes } from "../auth/grant-scopes.ts";
 import { adminScopes } from "../http/admin/scopes.ts";
-import { sql, and, desc, eq } from "drizzle-orm";
+import { sql, and, desc, eq, isNull } from "drizzle-orm";
 import {
   organizationCapabilities,
   systemBindings,
@@ -48,7 +48,7 @@ export type CapabilityPatch = Partial<
 >;
 const where = (organizationId: string, id: string) =>
   and(
-    sql`${organizationCapabilities.deletedAt} is null`,
+    isNull(organizationCapabilities.deletedAt),
     eq(organizationCapabilities.organizationId, organizationId),
     eq(organizationCapabilities.id, id),
   );
@@ -68,7 +68,7 @@ export async function listCapabilities(
       .from(organizationCapabilities)
       .where(
         and(
-          sql`${organizationCapabilities.deletedAt} is null`,
+          isNull(organizationCapabilities.deletedAt),
           eq(organizationCapabilities.organizationId, organizationId),
           beforeCursor(organizationCapabilities.id, query.cursor),
         ),
@@ -288,7 +288,7 @@ export async function removeCapability(
     .set({ deletedAt: sql`now()`, status: "disabled" })
     .where(
       and(
-        sql`${organizationCapabilities.deletedAt} is null`,
+        isNull(organizationCapabilities.deletedAt),
         where(organizationId, id),
       ),
     )
@@ -315,7 +315,7 @@ export async function requireNoCapabilityReferences(
     .from(organizationCapabilities)
     .where(
       and(
-        sql`${organizationCapabilities.deletedAt} is null`,
+        isNull(organizationCapabilities.deletedAt),
         "clientId" in target
           ? eq(organizationCapabilities.clientId, target.clientId)
           : eq(organizationCapabilities.resource, target.resource),

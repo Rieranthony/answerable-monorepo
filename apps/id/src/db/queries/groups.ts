@@ -6,7 +6,16 @@ import {
   requirePlatformWriteContext,
   type PlatformWriteContext,
 } from "../../services/platform-context.ts";
-import { and, desc, eq, ilike, or, sql, getTableColumns } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  ilike,
+  or,
+  sql,
+  getTableColumns,
+  isNull,
+} from "drizzle-orm";
 import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
 import type { LifecycleStatus } from "../schema/vocabulary.ts";
 import { isEffective } from "./effective.ts";
@@ -68,7 +77,7 @@ export function listGroups(
     .from(groups)
     .where(
       and(
-        sql`${groups.deletedAt} is null`,
+        isNull(groups.deletedAt),
         eq(groups.organizationId, organizationId),
         query.q === undefined
           ? undefined
@@ -93,12 +102,7 @@ function findGroupQuery(
   return executor
     .select()
     .from(groups)
-    .where(
-      and(
-        sql`${groups.deletedAt} is null`,
-        groupWhere(organizationId, groupId),
-      ),
-    );
+    .where(and(isNull(groups.deletedAt), groupWhere(organizationId, groupId)));
 }
 export async function findGroup(
   context: TenantReadContext<"directory">,
@@ -128,12 +132,7 @@ export async function updateGroup(
   const [row] = await executor
     .update(groups)
     .set(patch)
-    .where(
-      and(
-        sql`${groups.deletedAt} is null`,
-        groupWhere(organizationId, groupId),
-      ),
-    )
+    .where(and(isNull(groups.deletedAt), groupWhere(organizationId, groupId)))
     .returning();
   return row ?? null;
 }
@@ -147,12 +146,7 @@ export async function setGroupStatus(
   const [row] = await executor
     .update(groups)
     .set({ status })
-    .where(
-      and(
-        sql`${groups.deletedAt} is null`,
-        groupWhere(organizationId, groupId),
-      ),
-    )
+    .where(and(isNull(groups.deletedAt), groupWhere(organizationId, groupId)))
     .returning();
   return row ?? null;
 }
@@ -193,7 +187,7 @@ export async function readGroupPolicyForCommand(
     .from(groupMembers)
     .where(
       and(
-        sql`${groupMembers.deletedAt} is null`,
+        isNull(groupMembers.deletedAt),
         membershipWhere(organizationId, groupId),
       ),
     )
@@ -204,7 +198,7 @@ export async function readGroupPolicyForCommand(
     .from(entitlements)
     .where(
       and(
-        sql`${entitlements.deletedAt} is null`,
+        isNull(entitlements.deletedAt),
         eq(entitlements.organizationId, organizationId),
         eq(entitlements.groupId, groupId),
       ),
@@ -228,7 +222,7 @@ export async function deleteGroup(
     .set({ deletedAt: sql`now()` })
     .where(
       and(
-        sql`${groupMembers.deletedAt} is null`,
+        isNull(groupMembers.deletedAt),
         membershipWhere(organizationId, groupId),
       ),
     )
@@ -241,7 +235,7 @@ export async function deleteGroup(
     .set({ deletedAt: sql`now()`, status: "disabled" })
     .where(
       and(
-        sql`${entitlements.deletedAt} is null`,
+        isNull(entitlements.deletedAt),
         eq(entitlements.organizationId, organizationId),
         eq(entitlements.groupId, groupId),
       ),
@@ -253,12 +247,7 @@ export async function deleteGroup(
   const [row] = await executor
     .update(groups)
     .set({ deletedAt: sql`now()`, status: "disabled" })
-    .where(
-      and(
-        sql`${groups.deletedAt} is null`,
-        groupWhere(organizationId, groupId),
-      ),
-    )
+    .where(and(isNull(groups.deletedAt), groupWhere(organizationId, groupId)))
     .returning();
   return {
     row: row!,
@@ -294,9 +283,9 @@ export function listGroupMembers(
     .innerJoin(users, eq(users.id, members.userId))
     .where(
       and(
-        sql`${users.deletedAt} is null`,
-        sql`${members.deletedAt} is null`,
-        sql`${groupMembers.deletedAt} is null`,
+        isNull(users.deletedAt),
+        isNull(members.deletedAt),
+        isNull(groupMembers.deletedAt),
         membershipWhere(organizationId, groupId),
         beforeCursor(groupMembers.memberId, query.cursor),
       ),
@@ -315,7 +304,7 @@ function findGroupMemberQuery(
     .from(groupMembers)
     .where(
       and(
-        sql`${groupMembers.deletedAt} is null`,
+        isNull(groupMembers.deletedAt),
         membershipWhere(organizationId, groupId, memberId),
       ),
     );
@@ -365,7 +354,7 @@ export async function upsertGroupMember(
     .values({ ...input, id: createId() })
     .onConflictDoUpdate({
       target: [groupMembers.groupId, groupMembers.memberId],
-      targetWhere: sql`${groupMembers.deletedAt} is null`,
+      targetWhere: isNull(groupMembers.deletedAt),
       set: {
         organizationId: input.organizationId,
         memberId: input.memberId,
@@ -392,7 +381,7 @@ export async function removeGroupMember(
     .set({ deletedAt: sql`now()` })
     .where(
       and(
-        sql`${groupMembers.deletedAt} is null`,
+        isNull(groupMembers.deletedAt),
         membershipWhere(organizationId, groupId, memberId),
       ),
     )

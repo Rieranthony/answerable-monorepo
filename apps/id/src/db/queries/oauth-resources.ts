@@ -1,4 +1,4 @@
-import { sql, and, count, desc, eq, ilike, or } from "drizzle-orm";
+import { sql, and, count, desc, eq, ilike, or, isNull } from "drizzle-orm";
 import {
   requirePlatformReadContext,
   requirePlatformWriteContext,
@@ -45,7 +45,7 @@ export function listResources(
     .from(oauthResources)
     .where(
       and(
-        sql`${oauthResources.deletedAt} is null`,
+        isNull(oauthResources.deletedAt),
         query.q === undefined
           ? undefined
           : or(
@@ -95,7 +95,7 @@ export async function findResourceForAccess(
     .from(oauthResources)
     .where(
       and(
-        sql`${oauthResources.deletedAt} is null`,
+        isNull(oauthResources.deletedAt),
         eq(oauthResources.identifier, identifier),
         or(
           eq(oauthResources.classification, "platform_shared"),
@@ -128,7 +128,7 @@ export async function updateResource(
     .set(patch)
     .where(
       and(
-        sql`${oauthResources.deletedAt} is null`,
+        isNull(oauthResources.deletedAt),
         eq(oauthResources.identifier, identifier),
       ),
     )
@@ -146,7 +146,7 @@ export async function setResourceDisabled(
     .set({ disabled })
     .where(
       and(
-        sql`${oauthResources.deletedAt} is null`,
+        isNull(oauthResources.deletedAt),
         eq(oauthResources.identifier, identifier),
       ),
     )
@@ -163,7 +163,7 @@ export async function deleteResource(
     .set({ deletedAt: sql`now()`, disabled: true })
     .where(
       and(
-        sql`${oauthResources.deletedAt} is null`,
+        isNull(oauthResources.deletedAt),
         eq(oauthResources.identifier, identifier),
       ),
     )
@@ -180,7 +180,7 @@ export async function countResourceEntitlements(
     .from(entitlements)
     .where(
       and(
-        sql`${entitlements.deletedAt} is null`,
+        isNull(entitlements.deletedAt),
         eq(entitlements.resource, identifier),
       ),
     );
@@ -197,7 +197,7 @@ export function listResourceClients(
     .from(oauthClientResources)
     .where(
       and(
-        sql`${oauthClientResources.deletedAt} is null`,
+        isNull(oauthClientResources.deletedAt),
         eq(oauthClientResources.resourceId, resource),
       ),
     )
@@ -214,7 +214,7 @@ export async function hasResourceClients(
     .from(oauthClientResources)
     .where(
       and(
-        sql`${oauthClientResources.deletedAt} is null`,
+        isNull(oauthClientResources.deletedAt),
         eq(oauthClientResources.resourceId, resource),
       ),
     )

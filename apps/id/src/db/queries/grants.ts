@@ -1,5 +1,5 @@
 import { withDatabaseScope } from "../isolation.ts";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql, isNull } from "drizzle-orm";
 
 import type { Executor } from "../client.ts";
 import {
@@ -56,8 +56,8 @@ export async function effectiveGrants(
         .innerJoin(organizations, eq(organizations.id, members.organizationId))
         .where(
           and(
-            sql`${organizations.deletedAt} is null`,
-            sql`${members.deletedAt} is null`,
+            isNull(organizations.deletedAt),
+            isNull(members.deletedAt),
             eq(members.userId, principal.userId),
             authenticationOrganizationId === undefined
               ? undefined
@@ -71,7 +71,7 @@ export async function effectiveGrants(
         .from(oauthResources)
         .where(
           and(
-            sql`${oauthResources.deletedAt} is null`,
+            isNull(oauthResources.deletedAt),
             eq(oauthResources.identifier, resource),
           ),
         )
@@ -100,10 +100,10 @@ export async function effectiveGrants(
         .innerJoin(oauthResources, eq(oauthResources.identifier, resource))
         .where(
           and(
-            sql`${oauthResources.deletedAt} is null`,
-            sql`${organizations.deletedAt} is null`,
-            sql`${users.deletedAt} is null`,
-            sql`${members.deletedAt} is null`,
+            isNull(oauthResources.deletedAt),
+            isNull(organizations.deletedAt),
+            isNull(users.deletedAt),
+            isNull(members.deletedAt),
             eq(members.userId, principal.userId),
             inArray(
               members.organizationId,
@@ -158,10 +158,10 @@ export async function hasPlatformWriter(
       .innerJoin(oauthResources, eq(oauthResources.identifier, input.resource))
       .where(
         and(
-          sql`${oauthResources.deletedAt} is null`,
-          sql`${organizations.deletedAt} is null`,
-          sql`${users.deletedAt} is null`,
-          sql`${members.deletedAt} is null`,
+          isNull(oauthResources.deletedAt),
+          isNull(organizations.deletedAt),
+          isNull(users.deletedAt),
+          isNull(members.deletedAt),
           inArray(organizations.id, organizationIds),
         ),
       );

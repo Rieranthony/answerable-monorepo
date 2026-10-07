@@ -19,7 +19,7 @@ export function isEffective(table: {
 
   // Parenthesised so callers can negate or combine it without precedence
   // surprises (`not (a and b)`, `x or (a and b)`).
-  const present = table.deletedAt ? sql`${table.deletedAt} is null` : sql`true`;
+  const present = table.deletedAt ? isNull(table.deletedAt) : sql`true`;
   return table.status
     ? sql`(${present} and ${table.status} = 'active' and ${window})`
     : sql`(${present} and ${window})`;
@@ -42,7 +42,7 @@ export function matchingEntitlements(executor: Executor) {
             and(
               eq(groupMembers.memberId, members.id),
               eq(groups.status, "active"),
-              sql`${groups.deletedAt} is null`,
+              isNull(groups.deletedAt),
               isEffective(groupMembers),
             ),
           ),

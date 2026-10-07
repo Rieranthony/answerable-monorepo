@@ -3,7 +3,7 @@ import {
   platformApplications,
   type PlatformApplicationIds,
 } from "../../auth/platform-applications.ts";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql, isNull } from "drizzle-orm";
 import {
   requirePlatformReadContext,
   requirePlatformWriteContext,
@@ -120,7 +120,7 @@ function providerQuery(db: Executor, organizationId: string) {
     .from(ssoProviders)
     .where(
       and(
-        sql`${ssoProviders.deletedAt} is null`,
+        isNull(ssoProviders.deletedAt),
         eq(ssoProviders.organizationId, organizationId),
       ),
     )
@@ -155,7 +155,7 @@ export async function readSsoIssuer(
     .from(ssoProviders)
     .where(
       and(
-        sql`${ssoProviders.deletedAt} is null`,
+        isNull(ssoProviders.deletedAt),
         eq(ssoProviders.organizationId, organizationId),
       ),
     )
@@ -178,7 +178,7 @@ export async function readSsoEndpoints(
     .from(ssoProviders)
     .where(
       and(
-        sql`${ssoProviders.deletedAt} is null`,
+        isNull(ssoProviders.deletedAt),
         eq(ssoProviders.organizationId, organizationId),
       ),
     )
@@ -204,7 +204,7 @@ export async function updateSsoProvider(
       domain: input.domain.trim().toLowerCase(),
       oidcConfig: serializeSsoProviderConfig(input),
     })
-    .where(and(sql`${ssoProviders.deletedAt} is null`, eq(ssoProviders.id, id)))
+    .where(and(isNull(ssoProviders.deletedAt), eq(ssoProviders.id, id)))
     .returning();
   return provider!;
 }
@@ -219,7 +219,7 @@ export async function deleteSsoProvider(
     .set({ deletedAt: sql`now()`, oidcConfig: null })
     .where(
       and(
-        sql`${ssoProviders.deletedAt} is null`,
+        isNull(ssoProviders.deletedAt),
         eq(ssoProviders.organizationId, organizationId),
       ),
     )

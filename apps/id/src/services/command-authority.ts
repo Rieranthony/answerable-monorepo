@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql, isNull } from "drizzle-orm";
 import type { Executor } from "../db/client.ts";
 import { effectiveGrants, hasPlatformWriter } from "../db/queries/grants.ts";
 import { findClientPrincipal } from "../db/client-principal.ts";
@@ -55,7 +55,7 @@ export async function authorizeCommand(
           eq(sessions.id, principal.sessionId),
           eq(users.id, principal.userId),
           eq(users.status, "active"),
-          sql`${users.deletedAt} is null`,
+          isNull(users.deletedAt),
           sql`${sessions.expiresAt} > statement_timestamp()`,
         ),
       )

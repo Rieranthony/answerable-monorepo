@@ -226,7 +226,7 @@ export async function bootstrap(
           organizationCapabilities.resource,
           organizationCapabilities.grantKind,
         ],
-        where: sql`${organizationCapabilities.deletedAt} is null`,
+        where: isNull(organizationCapabilities.deletedAt),
       })
       .returning();
     const [capability] = insertedCapabilities.length

@@ -1,5 +1,5 @@
 import type { Executor } from "../client.ts";
-import { sql, and, desc, eq } from "drizzle-orm";
+import { sql, and, desc, eq, isNull } from "drizzle-orm";
 import {
   requirePlatformWriteContext,
   type PlatformWriteContext,
@@ -49,8 +49,8 @@ export async function organizationAcceptsDomain(
     )
     .where(
       and(
-        sql`${organizations.deletedAt} is null`,
-        sql`${organizationDomains.deletedAt} is null`,
+        isNull(organizations.deletedAt),
+        isNull(organizationDomains.deletedAt),
         eq(organizationDomains.domain, normalizeDomain(domain)),
         eq(organizationDomains.organizationId, organizationId),
         eq(organizationDomains.status, "active"),
@@ -72,8 +72,8 @@ export async function findDomainOrganizationSlug(db: Executor, domain: string) {
     )
     .where(
       and(
-        sql`${organizations.deletedAt} is null`,
-        sql`${organizationDomains.deletedAt} is null`,
+        isNull(organizations.deletedAt),
+        isNull(organizationDomains.deletedAt),
         eq(organizationDomains.domain, normalizeDomain(domain)),
         eq(organizationDomains.status, "active"),
         eq(organizations.status, "active"),
@@ -97,7 +97,7 @@ export function listOrganizationDomains(
     .from(organizationDomains)
     .where(
       and(
-        sql`${organizationDomains.deletedAt} is null`,
+        isNull(organizationDomains.deletedAt),
         eq(organizationDomains.organizationId, organizationId),
         query.status === undefined
           ? undefined
@@ -120,7 +120,7 @@ export async function findOrganizationDomainForCommand(
     .from(organizationDomains)
     .where(
       and(
-        sql`${organizationDomains.deletedAt} is null`,
+        isNull(organizationDomains.deletedAt),
         eq(organizationDomains.organizationId, organizationId),
         eq(organizationDomains.id, domainId),
       ),
@@ -142,7 +142,7 @@ export async function setOrganizationDomainStatus(
     .set({ status })
     .where(
       and(
-        sql`${organizationDomains.deletedAt} is null`,
+        isNull(organizationDomains.deletedAt),
         eq(organizationDomains.organizationId, organizationId),
         eq(organizationDomains.id, domainId),
       ),
@@ -162,7 +162,7 @@ export async function deleteOrganizationDomain(
     .set({ deletedAt: sql`now()`, status: "disabled" })
     .where(
       and(
-        sql`${organizationDomains.deletedAt} is null`,
+        isNull(organizationDomains.deletedAt),
         eq(organizationDomains.organizationId, organizationId),
         eq(organizationDomains.id, domainId),
       ),

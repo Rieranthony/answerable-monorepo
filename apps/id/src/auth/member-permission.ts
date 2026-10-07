@@ -1,4 +1,4 @@
-import { and, eq, or, sql } from "drizzle-orm";
+import { and, eq, or, sql, isNull } from "drizzle-orm";
 import type { Executor } from "../db/client.ts";
 import { isEffective, matchingEntitlements } from "../db/queries/effective.ts";
 import {
@@ -45,22 +45,22 @@ export function memberPermissionFields(
   const activeMember = and(
     isEffective(members),
     eq(users.status, "active"),
-    sql`${users.deletedAt} is null`,
+    isNull(users.deletedAt),
     eq(organizations.status, "active"),
-    sql`${organizations.deletedAt} is null`,
+    isNull(organizations.deletedAt),
   );
   const clientId = includeClient ? oauthClients.clientId : sql`null::text`;
   const loginEligible = includeClient
     ? and(
         activeMember,
         eq(oauthClients.disabled, false),
-        sql`${oauthClients.deletedAt} is null`,
+        isNull(oauthClients.deletedAt),
         sql`${oauthClients.grantTypes} @> ARRAY['authorization_code']::text[]`,
       )
     : sql`false`;
   const resourceEligible = and(
     eq(oauthResources.disabled, false),
-    sql`${oauthResources.deletedAt} is null`,
+    isNull(oauthResources.deletedAt),
     or(
       eq(oauthResources.classification, "platform_shared"),
       eq(oauthResources.organizationId, members.organizationId),

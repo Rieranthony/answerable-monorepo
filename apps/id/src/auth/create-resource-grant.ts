@@ -1,5 +1,5 @@
 import { withDatabaseScope } from "../db/isolation.ts";
-import { and, eq, or, sql } from "drizzle-orm";
+import { and, eq, or, sql, isNull } from "drizzle-orm";
 import { APIError } from "better-auth/api";
 import type { Executor } from "../db/client.ts";
 import { isEffective } from "../db/queries/effective.ts";
@@ -129,7 +129,7 @@ export async function createResourceGrant(
               and(
                 eq(oauthClientResources.clientId, oauthClients.clientId),
                 eq(oauthClientResources.resourceId, oauthResources.identifier),
-                sql`${oauthClientResources.deletedAt} is null`,
+                isNull(oauthClientResources.deletedAt),
               ),
             )
             .where(
@@ -138,12 +138,12 @@ export async function createResourceGrant(
                 eq(users.id, input.userId),
                 isEffective(members),
                 eq(users.status, "active"),
-                sql`${users.deletedAt} is null`,
+                isNull(users.deletedAt),
                 eq(organizations.status, "active"),
-                sql`${organizations.deletedAt} is null`,
+                isNull(organizations.deletedAt),
                 sql`${sessions.expiresAt} > statement_timestamp()`,
                 eq(oauthClients.disabled, false),
-                sql`${oauthClients.deletedAt} is null`,
+                isNull(oauthClients.deletedAt),
                 input.resource === null
                   ? undefined
                   : eq(oauthResources.disabled, false),

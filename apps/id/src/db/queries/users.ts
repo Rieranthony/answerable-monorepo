@@ -53,7 +53,7 @@ export async function retireUserEmail(
     })
     .where(
       and(
-        sql`${users.deletedAt} is null`,
+        isNull(users.deletedAt),
         eq(users.id, userId),
         eq(users.status, "disabled"),
         isNull(users.retiredEmail),
@@ -77,7 +77,7 @@ export function listUsers(context: PlatformReadContext, query: UserQuery) {
     .from(users)
     .where(
       and(
-        sql`${users.deletedAt} is null`,
+        isNull(users.deletedAt),
         query.email === undefined
           ? undefined
           : eq(users.email, query.email.toLowerCase()),
@@ -96,7 +96,7 @@ export function listUsers(context: PlatformReadContext, query: UserQuery) {
                 .from(members)
                 .where(
                   and(
-                    sql`${members.deletedAt} is null`,
+                    isNull(members.deletedAt),
                     eq(members.userId, users.id),
                     eq(members.organizationId, query.organizationId),
                   ),
@@ -120,7 +120,7 @@ export async function lockUser(
   const [row] = await executor
     .select()
     .from(users)
-    .where(and(sql`${users.deletedAt} is null`, eq(users.id, userId)))
+    .where(and(isNull(users.deletedAt), eq(users.id, userId)))
     .for("update");
   await context.revalidate();
   return row ?? null;
@@ -132,7 +132,7 @@ export async function userExists(context: PlatformReadContext, userId: string) {
   const rows = await executor
     .select({ id: users.id })
     .from(users)
-    .where(and(sql`${users.deletedAt} is null`, eq(users.id, userId)));
+    .where(and(isNull(users.deletedAt), eq(users.id, userId)));
   return rows.length > 0;
 }
 
@@ -141,7 +141,7 @@ export async function findUser(context: PlatformReadContext, userId: string) {
   const [row] = await executor
     .select()
     .from(users)
-    .where(and(sql`${users.deletedAt} is null`, eq(users.id, userId)));
+    .where(and(isNull(users.deletedAt), eq(users.id, userId)));
   if (!row) return null;
   const memberships = await executor
     .select({
@@ -156,8 +156,8 @@ export async function findUser(context: PlatformReadContext, userId: string) {
     .innerJoin(organizations, eq(organizations.id, members.organizationId))
     .where(
       and(
-        sql`${organizations.deletedAt} is null`,
-        sql`${members.deletedAt} is null`,
+        isNull(organizations.deletedAt),
+        isNull(members.deletedAt),
         eq(members.userId, userId),
       ),
     )
@@ -170,7 +170,7 @@ export async function findUser(context: PlatformReadContext, userId: string) {
       directoryUserId: accounts.directoryUserId,
     })
     .from(accounts)
-    .where(and(sql`${accounts.deletedAt} is null`, eq(accounts.userId, userId)))
+    .where(and(isNull(accounts.deletedAt), eq(accounts.userId, userId)))
     .orderBy(desc(accounts.id));
   const [total] = await executor
     .select({ count: count() })
@@ -193,7 +193,7 @@ export async function setUserStatus(
   const [row] = await executor
     .update(users)
     .set({ status, disabledAt: status === "disabled" ? sql`now()` : null })
-    .where(and(sql`${users.deletedAt} is null`, eq(users.id, userId)))
+    .where(and(isNull(users.deletedAt), eq(users.id, userId)))
     .returning();
   return row ?? null;
 }
@@ -222,7 +222,7 @@ export async function deleteUser(
   const membershipIds = tx
     .select({ id: members.id })
     .from(members)
-    .where(and(sql`${members.deletedAt} is null`, eq(members.userId, userId)));
+    .where(and(isNull(members.deletedAt), eq(members.userId, userId)));
   const refreshWhere = eq(oauthRefreshTokens.userId, userId);
   const erasedRefreshIds = tx
     .select({ id: oauthRefreshTokens.id })
@@ -264,10 +264,7 @@ export async function deleteUser(
     .update(oauthConsents)
     .set({ deletedAt: sql`now()` })
     .where(
-      and(
-        sql`${oauthConsents.deletedAt} is null`,
-        eq(oauthConsents.userId, userId),
-      ),
+      and(isNull(oauthConsents.deletedAt), eq(oauthConsents.userId, userId)),
     )
     .returning({
       deletedAt: oauthConsents.deletedAt,
@@ -316,7 +313,7 @@ export async function deleteUser(
     .set({ deletedAt: sql`now()`, status: "disabled" })
     .where(
       and(
-        sql`${entitlements.deletedAt} is null`,
+        isNull(entitlements.deletedAt),
         inArray(entitlements.memberId, membershipIds),
       ),
     )
@@ -339,7 +336,7 @@ export async function deleteUser(
     .set({ deletedAt: sql`now()` })
     .where(
       and(
-        sql`${groupMembers.deletedAt} is null`,
+        isNull(groupMembers.deletedAt),
         inArray(groupMembers.memberId, membershipIds),
       ),
     )
@@ -360,7 +357,7 @@ export async function deleteUser(
       status: "revoked",
       revokedAt: sql`coalesce(${members.revokedAt}, now())`,
     })
-    .where(and(sql`${members.deletedAt} is null`, eq(members.userId, userId)))
+    .where(and(isNull(members.deletedAt), eq(members.userId, userId)))
     .returning({
       deletedAt: members.deletedAt,
       id: members.id,
@@ -395,7 +392,7 @@ export async function deleteUser(
       accessTokenExpiresAt: null,
       refreshTokenExpiresAt: null,
     })
-    .where(and(sql`${accounts.deletedAt} is null`, eq(accounts.userId, userId)))
+    .where(and(isNull(accounts.deletedAt), eq(accounts.userId, userId)))
     .returning({
       deletedAt: accounts.deletedAt,
       id: accounts.id,
@@ -410,7 +407,7 @@ export async function deleteUser(
       retiredEmail: sql`coalesce(${users.retiredEmail}, ${users.email})`,
       email: sql`${users.id}::text || '@retired.invalid'`,
     })
-    .where(and(sql`${users.deletedAt} is null`, eq(users.id, userId)))
+    .where(and(isNull(users.deletedAt), eq(users.id, userId)))
     .returning();
   // The caller has locked this live user, so the update returns its row.
   return {

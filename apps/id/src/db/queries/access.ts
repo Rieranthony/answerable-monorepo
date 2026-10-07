@@ -47,7 +47,7 @@ export type MemberAccess = {
 const activeOrganization = and(
   eq(organizations.id, members.organizationId),
   eq(organizations.status, "active"),
-  sql`${organizations.deletedAt} is null`,
+  isNull(organizations.deletedAt),
 );
 export async function memberAccess(
   context: TenantReadContext<"memberAccess"> | TenantMemberContext,
@@ -77,12 +77,7 @@ export async function memberAccess(
       ) order by ${entitlements.id})`.as("sources"),
     })
     .from(entitlements)
-    .where(
-      and(
-        sql`${entitlements.deletedAt} is null`,
-        matchingEntitlements(executor),
-      ),
-    )
+    .where(and(isNull(entitlements.deletedAt), matchingEntitlements(executor)))
     .groupBy(entitlements.clientId, entitlements.resource)
     .as("assigned_targets");
   const rows = await executor
@@ -106,11 +101,11 @@ export async function memberAccess(
     )
     .where(
       and(
-        sql`${oauthResources.deletedAt} is null`,
-        sql`${oauthClients.deletedAt} is null`,
-        sql`${organizations.deletedAt} is null`,
-        sql`${users.deletedAt} is null`,
-        sql`${members.deletedAt} is null`,
+        isNull(oauthResources.deletedAt),
+        isNull(oauthClients.deletedAt),
+        isNull(organizations.deletedAt),
+        isNull(users.deletedAt),
+        isNull(members.deletedAt),
         eq(members.organizationId, organizationId),
         eq(members.id, memberId),
         isEffective(members),
@@ -204,12 +199,12 @@ export async function targetAccess(
     .crossJoinLateral(sql`unnest(${entitlements.scopes}) as s(scope)`)
     .where(
       and(
-        sql`${oauthResources.deletedAt} is null`,
-        sql`${oauthClients.deletedAt} is null`,
-        sql`${entitlements.deletedAt} is null`,
-        sql`${users.deletedAt} is null`,
-        sql`${organizations.deletedAt} is null`,
-        sql`${members.deletedAt} is null`,
+        isNull(oauthResources.deletedAt),
+        isNull(oauthClients.deletedAt),
+        isNull(entitlements.deletedAt),
+        isNull(users.deletedAt),
+        isNull(organizations.deletedAt),
+        isNull(members.deletedAt),
         eq(members.organizationId, organizationId),
         isEffective(members),
         beforeCursor(members.id, page.cursor),

@@ -19,6 +19,7 @@ import {
   or,
   sql,
   getTableColumns,
+  isNull,
 } from "drizzle-orm";
 
 import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
@@ -69,7 +70,7 @@ export function listClients(context: PlatformReadContext, query: ClientQuery) {
     .from(oauthClients)
     .where(
       and(
-        sql`${oauthClients.deletedAt} is null`,
+        isNull(oauthClients.deletedAt),
         query.q === undefined
           ? undefined
           : or(
@@ -93,10 +94,7 @@ function publicClientQuery(executor: Executor, clientId: string) {
     .select(publicSelection)
     .from(oauthClients)
     .where(
-      and(
-        sql`${oauthClients.deletedAt} is null`,
-        eq(oauthClients.clientId, clientId),
-      ),
+      and(isNull(oauthClients.deletedAt), eq(oauthClients.clientId, clientId)),
     )
     .for("share");
 }
@@ -135,10 +133,7 @@ export async function findClientForAccess(
     .select({ id: oauthClients.id })
     .from(oauthClients)
     .where(
-      and(
-        sql`${oauthClients.deletedAt} is null`,
-        eq(oauthClients.clientId, clientId),
-      ),
+      and(isNull(oauthClients.deletedAt), eq(oauthClients.clientId, clientId)),
     );
   return row ?? null;
 }
@@ -164,10 +159,7 @@ export async function updateClient(
     .update(oauthClients)
     .set(patch)
     .where(
-      and(
-        sql`${oauthClients.deletedAt} is null`,
-        eq(oauthClients.clientId, clientId),
-      ),
+      and(isNull(oauthClients.deletedAt), eq(oauthClients.clientId, clientId)),
     )
     .returning();
   return row ?? null;
@@ -182,10 +174,7 @@ export async function setClientDisabled(
     .update(oauthClients)
     .set({ disabled })
     .where(
-      and(
-        sql`${oauthClients.deletedAt} is null`,
-        eq(oauthClients.clientId, clientId),
-      ),
+      and(isNull(oauthClients.deletedAt), eq(oauthClients.clientId, clientId)),
     )
     .returning();
   return row ?? null;
@@ -200,10 +189,7 @@ export async function setClientSecret(
     .update(oauthClients)
     .set({ clientSecret: digest })
     .where(
-      and(
-        sql`${oauthClients.deletedAt} is null`,
-        eq(oauthClients.clientId, clientId),
-      ),
+      and(isNull(oauthClients.deletedAt), eq(oauthClients.clientId, clientId)),
     )
     .returning();
   return row ?? null;
@@ -235,7 +221,7 @@ export async function unlinkClientResource(
     .set({ deletedAt: sql`now()` })
     .where(
       and(
-        sql`${oauthClientResources.deletedAt} is null`,
+        isNull(oauthClientResources.deletedAt),
         eq(oauthClientResources.clientId, clientId),
         eq(oauthClientResources.resourceId, resource),
       ),
@@ -256,7 +242,7 @@ export function listClientResources(
     .from(oauthClientResources)
     .where(
       and(
-        sql`${oauthClientResources.deletedAt} is null`,
+        isNull(oauthClientResources.deletedAt),
         eq(oauthClientResources.clientId, clientId),
       ),
     )
@@ -272,10 +258,7 @@ export async function countClientEntitlements(
     .select({ count: count() })
     .from(entitlements)
     .where(
-      and(
-        sql`${entitlements.deletedAt} is null`,
-        eq(entitlements.clientId, clientId),
-      ),
+      and(isNull(entitlements.deletedAt), eq(entitlements.clientId, clientId)),
     );
   return row!.count;
 }
@@ -335,7 +318,7 @@ export async function deleteClient(
     .set({ deletedAt: sql`now()` })
     .where(
       and(
-        sql`${oauthConsents.deletedAt} is null`,
+        isNull(oauthConsents.deletedAt),
         eq(oauthConsents.clientId, clientId),
       ),
     )
@@ -352,7 +335,7 @@ export async function deleteClient(
     .set({ deletedAt: sql`now()` })
     .where(
       and(
-        sql`${oauthClientResources.deletedAt} is null`,
+        isNull(oauthClientResources.deletedAt),
         eq(oauthClientResources.clientId, clientId),
       ),
     )
@@ -366,10 +349,7 @@ export async function deleteClient(
     .update(oauthClients)
     .set({ deletedAt: sql`now()`, disabled: true, clientSecret: null })
     .where(
-      and(
-        sql`${oauthClients.deletedAt} is null`,
-        eq(oauthClients.clientId, clientId),
-      ),
+      and(isNull(oauthClients.deletedAt), eq(oauthClients.clientId, clientId)),
     )
     .returning();
   return {

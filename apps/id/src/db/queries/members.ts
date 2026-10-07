@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, not, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, not, or, sql, isNull } from "drizzle-orm";
 import {
   requireTenantDirectoryContext,
   requireTenantMemberAccessContext,
@@ -57,8 +57,8 @@ export function listMembers(
     .innerJoin(users, eq(users.id, members.userId))
     .where(
       and(
-        sql`${users.deletedAt} is null`,
-        sql`${members.deletedAt} is null`,
+        isNull(users.deletedAt),
+        isNull(members.deletedAt),
         eq(members.organizationId, organizationId),
         query.email === undefined
           ? undefined
@@ -94,8 +94,8 @@ export async function findMember(
     .innerJoin(users, eq(users.id, members.userId))
     .where(
       and(
-        sql`${users.deletedAt} is null`,
-        sql`${members.deletedAt} is null`,
+        isNull(users.deletedAt),
+        isNull(members.deletedAt),
         memberWhere(organizationId, memberId),
       ),
     );
@@ -112,8 +112,8 @@ export async function findMember(
     .innerJoin(groups, eq(groups.id, groupMembers.groupId))
     .where(
       and(
-        sql`${groups.deletedAt} is null`,
-        sql`${groupMembers.deletedAt} is null`,
+        isNull(groups.deletedAt),
+        isNull(groupMembers.deletedAt),
         eq(groupMembers.organizationId, organizationId),
         eq(groupMembers.memberId, memberId),
       ),
@@ -131,10 +131,7 @@ export async function updateMemberWindow(
     .update(members)
     .set(patch)
     .where(
-      and(
-        sql`${members.deletedAt} is null`,
-        memberWhere(organizationId, memberId),
-      ),
+      and(isNull(members.deletedAt), memberWhere(organizationId, memberId)),
     )
     .returning({ id: members.id });
   return row ? findMember(context, memberId) : null;
@@ -151,10 +148,7 @@ export async function revokeMember(
       revokedAt: sql`coalesce(${members.revokedAt}, now())`,
     })
     .where(
-      and(
-        sql`${members.deletedAt} is null`,
-        memberWhere(organizationId, memberId),
-      ),
+      and(isNull(members.deletedAt), memberWhere(organizationId, memberId)),
     )
     .returning();
   return row ?? null;
@@ -169,10 +163,7 @@ export async function reinstateMember(
     .update(members)
     .set({ status: "active", revokedAt: null })
     .where(
-      and(
-        sql`${members.deletedAt} is null`,
-        memberWhere(organizationId, memberId),
-      ),
+      and(isNull(members.deletedAt), memberWhere(organizationId, memberId)),
     )
     .returning();
   return row ?? null;
@@ -189,7 +180,7 @@ export async function removeMemberAssignments(
     .set({ deletedAt: sql`now()`, status: "disabled" })
     .where(
       and(
-        sql`${entitlements.deletedAt} is null`,
+        isNull(entitlements.deletedAt),
         eq(entitlements.organizationId, organizationId),
         eq(entitlements.memberId, memberId),
       ),
@@ -200,7 +191,7 @@ export async function removeMemberAssignments(
     .set({ deletedAt: sql`now()` })
     .where(
       and(
-        sql`${groupMembers.deletedAt} is null`,
+        isNull(groupMembers.deletedAt),
         eq(groupMembers.organizationId, organizationId),
         eq(groupMembers.memberId, memberId),
       ),
@@ -234,10 +225,7 @@ export async function findMemberConfiguration(
     })
     .from(members)
     .where(
-      and(
-        sql`${members.deletedAt} is null`,
-        memberWhere(organizationId, memberId),
-      ),
+      and(isNull(members.deletedAt), memberWhere(organizationId, memberId)),
     );
   const [row] = await (context.access === "command"
     ? query.for("update")
@@ -257,10 +245,7 @@ export async function findMemberForAssignment(
     .select({ membershipStatus: members.status })
     .from(members)
     .where(
-      and(
-        sql`${members.deletedAt} is null`,
-        memberWhere(organizationId, memberId),
-      ),
+      and(isNull(members.deletedAt), memberWhere(organizationId, memberId)),
     );
   return row ?? null;
 }
