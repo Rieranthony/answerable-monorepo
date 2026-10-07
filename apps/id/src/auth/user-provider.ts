@@ -14,7 +14,7 @@ import { z } from "zod";
 import type { Database } from "../db/client.ts";
 import { machineOAuthProvider } from "./machine-provider.ts";
 import { machineIdentity } from "./machine-identity.ts";
-import { createUserOAuthFlow } from "./user-oauth-flow.ts";
+import { createUserOAuthFlow, flowResponse } from "./user-oauth-flow.ts";
 import { createUserTokenBoundary } from "./user-token-boundary.ts";
 import { revokeUserToken } from "./user-token-revocation.ts";
 
@@ -33,28 +33,6 @@ const redirectResponse = {
     },
   },
 };
-
-const flowResponse = z.object({
-  client: z.object({
-    clientId: z.string(),
-    name: z.string().nullable(),
-    uri: z.string().nullable(),
-  }),
-  resource: z.object({ identifier: z.string(), name: z.string() }).nullable(),
-  scopes: z.array(z.string()),
-  grantedScopes: z.array(z.string()).nullable(),
-  memberships: z.array(
-    z.object({
-      memberId: z.uuid(),
-      organizationId: z.uuid(),
-      name: z.string(),
-      slug: z.string(),
-      authenticated: z.boolean(),
-    }),
-  ),
-  selectedMemberId: z.uuid().nullable(),
-  status: z.enum(["selection", "consent"]),
-});
 
 /** Compose application policy around the installed native provider. */
 export function userOAuthProvider(

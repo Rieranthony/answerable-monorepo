@@ -41,6 +41,28 @@ const flowSchema = z.object({
   status: z.enum(["selection", "consent", "complete", "denied"]),
 });
 type Flow = z.infer<typeof flowSchema>;
+/** What POST /auth/oauth2/flow returns; the OpenAPI document is generated from it. */
+export const flowResponse = z.object({
+  client: z.object({
+    clientId: z.string(),
+    name: z.string().nullable(),
+    uri: z.string().nullable(),
+  }),
+  resource: z.object({ identifier: z.string(), name: z.string() }).nullable(),
+  scopes: z.array(z.string()),
+  grantedScopes: z.array(z.string()).nullable(),
+  memberships: z.array(
+    z.object({
+      memberId: z.uuid(),
+      organizationId: z.uuid(),
+      name: z.string(),
+      slug: z.string(),
+      authenticated: z.boolean(),
+    }),
+  ),
+  selectedMemberId: z.uuid().nullable(),
+  status: z.enum(["selection", "consent"]),
+});
 const invalid = () =>
   new APIError("BAD_REQUEST", {
     error: "invalid_request",
@@ -171,7 +193,8 @@ export function createUserOAuthFlow(
       if (
         flow.query !== binding(params) ||
         (flow.userId && flow.userId !== session.user.id) ||
-        ["complete", "denied"].includes(flow.status)
+        flow.status === "complete" ||
+        flow.status === "denied"
       )
         throw invalid();
       flow.userId = session.user.id;
@@ -321,7 +344,7 @@ export function createUserOAuthFlow(
           memberships,
           selectedMemberId: selected ?? null,
           status: flow.status,
-        };
+        } satisfies z.infer<typeof flowResponse>;
       }
       const granted = acceptedDecision!.grantedScopes!;
       const bound = withAdapter(ctx, adapter);
