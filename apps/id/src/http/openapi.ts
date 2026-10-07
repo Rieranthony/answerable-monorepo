@@ -78,10 +78,7 @@ export async function buildPublicOpenApiDocument(input: {
 }): Promise<PublicOpenApiDocument> {
   const [honoDocument, authDocument] = await Promise.all([
     generateSpecs(input.app, {
-      exclude: [
-        /^\/openapi\.json$/,
-        /^\/api\/admin\//,
-      ],
+      exclude: [/^\/openapi\.json$/, /^\/api\/admin\//],
     }),
     input.auth.api.generateOpenAPISchema(),
   ]);

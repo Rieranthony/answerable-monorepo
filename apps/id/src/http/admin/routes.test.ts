@@ -194,7 +194,6 @@ test("admin route tables equal the OpenAPI operation union", async () => {
         operation?.["x-kind"] ?? "",
       );
       expect(operation?.["x-kind"], label).toBe(route.kind);
-
       expect(operation?.["x-scopes"], label).toEqual(
         route.open
           ? {}
