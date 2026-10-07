@@ -106,7 +106,28 @@ function databaseBusy() {
   );
 }
 
-export function mapDatabaseError(error: unknown): ProblemError | undefined {
+/** A Postgres error's SQLSTATE and constraint, when this is one. */
+function postgresError(candidate: unknown) {
+  return typeof candidate === "object" &&
+    candidate !== null &&
+    "code" in candidate &&
+    typeof candidate.code === "string" &&
+    /^[0-9A-Z]{5}$/.test(candidate.code)
+    ? (candidate as { code: string; constraint?: unknown })
+    : undefined;
+}
+
+/** The Postgres error a query wrapped: drizzle reports it as the cause. */
+const queryCause = (error: unknown) =>
+  postgresError(
+    typeof error === "object" && error !== null && "cause" in error
+      ? error.cause
+      : undefined,
+  );
+
+/** A failure that the same command may retry: a statement or lock timeout, a
+ * deadlock, or a pool checkout timeout. */
+export function isRetryableDatabaseError(error: unknown) {
   // pg-pool has no error code for checkout/connection timeouts. Keep its exact
   // pinned-driver messages here; queries wrap them, transaction checkout does not.
   if (
@@ -118,23 +139,21 @@ export function mapDatabaseError(error: unknown): ProblemError | undefined {
             "Connection terminated due to connection timeout"),
     )
   )
-    return databaseBusy();
-  if (typeof error !== "object" || error === null || !("cause" in error))
-    return undefined;
-  const cause = error.cause;
-  if (typeof cause !== "object" || cause === null || !("code" in cause))
-    return undefined;
-  switch (cause.code) {
-    case "57014":
-    case "55P03":
-    case "40P01":
-      return databaseBusy();
+    return true;
+  const code = queryCause(error)?.code;
+  return code === "57014" || code === "55P03" || code === "40P01";
+}
+
+export function mapDatabaseError(error: unknown): ProblemError | undefined {
+  if (isRetryableDatabaseError(error)) return databaseBusy();
+  const cause = queryCause(error);
+  switch (cause?.code) {
     case "23505":
       return new ProblemError(
         409,
         "conflict",
         "Conflict",
-        "constraint" in cause && typeof cause.constraint === "string"
+        typeof cause.constraint === "string"
           ? `A row already exists for ${cause.constraint}.`
           : undefined,
       );

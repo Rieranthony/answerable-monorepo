@@ -5,6 +5,7 @@ import { HTTPException } from "hono/http-exception";
 import { describeRoute, generateSpecs } from "hono-openapi";
 import type { AppEnvironment } from "./context.ts";
 import {
+  isRetryableDatabaseError,
   mapDatabaseError,
   ProblemError,
   problemHandler,
@@ -140,6 +141,18 @@ describe("unit: HTTP problems", () => {
     ]) {
       expect(mapDatabaseError(error)).toBeUndefined();
     }
+  });
+
+  test("names retryable database failures for every caller", () => {
+    for (const code of ["57014", "55P03", "40P01"])
+      expect(isRetryableDatabaseError(databaseError(code)), code).toBe(true);
+    const checkout = new Error("timeout exceeded when trying to connect");
+    expect(isRetryableDatabaseError(checkout)).toBe(true);
+    expect(
+      isRetryableDatabaseError(new Error("query", { cause: checkout })),
+    ).toBe(true);
+    for (const error of [databaseError("23505"), new Error("ordinary"), null])
+      expect(isRetryableDatabaseError(error)).toBe(false);
   });
 
   test("logs unexpected errors and hides internal details", async () => {
