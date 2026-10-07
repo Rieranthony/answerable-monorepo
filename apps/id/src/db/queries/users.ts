@@ -32,6 +32,9 @@ import {
 import type { PageQuery } from "../../http/pagination.ts";
 import { beforeCursor, cursorPage, optionalEq, contains } from "./lists.ts";
 import { isEffective } from "./effective.ts";
+import { softDeleteEntitlements } from "./entitlements.ts";
+import { softDeleteAssignments } from "./groups.ts";
+import { memberEvidence } from "./members.ts";
 
 export function retiredEmailFor(userId: string): string {
   return `${userId}@retired.invalid`;
@@ -292,48 +295,14 @@ export async function deleteUser(
       beforeSessionId: sessions.id,
       afterSessionId: oauthRefreshTokens.sessionId,
     });
-  const softDeletedEntitlements = await tx
-    .update(entitlements)
-    .set({ deletedAt: sql`now()`, status: "disabled" })
-    .where(
-      and(
-        isNull(entitlements.deletedAt),
-        inArray(entitlements.memberId, membershipIds),
-      ),
-    )
-    .returning({
-      deletedAt: entitlements.deletedAt,
-      id: entitlements.id,
-      organizationId: entitlements.organizationId,
-      revision: entitlements.revision,
-      memberId: entitlements.memberId,
-      groupId: entitlements.groupId,
-      clientId: entitlements.clientId,
-      resource: entitlements.resource,
-      scopes: entitlements.scopes,
-      status: entitlements.status,
-      validFrom: entitlements.validFrom,
-      validUntil: entitlements.validUntil,
-    });
-  const softDeletedAssignments = await tx
-    .update(groupMembers)
-    .set({ deletedAt: sql`now()` })
-    .where(
-      and(
-        isNull(groupMembers.deletedAt),
-        inArray(groupMembers.memberId, membershipIds),
-      ),
-    )
-    .returning({
-      deletedAt: groupMembers.deletedAt,
-      id: groupMembers.id,
-      organizationId: groupMembers.organizationId,
-      revision: groupMembers.revision,
-      memberId: groupMembers.memberId,
-      groupId: groupMembers.groupId,
-      validFrom: groupMembers.validFrom,
-      validUntil: groupMembers.validUntil,
-    });
+  const softDeletedEntitlements = await softDeleteEntitlements(
+    tx,
+    inArray(entitlements.memberId, membershipIds),
+  );
+  const softDeletedAssignments = await softDeleteAssignments(
+    tx,
+    inArray(groupMembers.memberId, membershipIds),
+  );
   const softDeletedMembers = await tx
     .update(members)
     .set({
@@ -342,17 +311,7 @@ export async function deleteUser(
       revokedAt: sql`coalesce(${members.revokedAt}, now())`,
     })
     .where(and(isNull(members.deletedAt), eq(members.userId, userId)))
-    .returning({
-      deletedAt: members.deletedAt,
-      id: members.id,
-      organizationId: members.organizationId,
-      userId: members.userId,
-      revision: members.revision,
-      status: members.status,
-      revokedAt: members.revokedAt,
-      validFrom: members.validFrom,
-      validUntil: members.validUntil,
-    });
+    .returning({ ...memberEvidence, deletedAt: members.deletedAt });
   const deletedSessions = await tx
     .delete(sessions)
     .where(eq(sessions.userId, userId))

@@ -72,6 +72,8 @@ Current deletion manifests describe product tombstones and actual credential cle
 
 Every event has `schema_version` 1, and each action one `data` shape; the first payload change after launch adds version 2. `reason` holds a refusal or failure code. Optional keys are marked. A [test](../apps/id/src/db/queries/audit.test.ts) keeps this table equal to the actions ID writes.
 
+Soft-deleted entitlements, group assignments and memberships have one evidence shape wherever an erasure's `effects` lists them, ordered by `id`: the row's policy fields (identifiers, `revision`, scopes or status, validity window) and `deletedAt`. Assignments add the member's `userId`; memberships carry `userId`, `status` and `revokedAt`.
+
 | Action | `data` |
 | ------ | ------ |
 | `admin.auth_failed` | `claimedClientId` when a bearer named a client, otherwise null. |

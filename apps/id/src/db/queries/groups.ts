@@ -1,10 +1,19 @@
 import type { TenantReadContext } from "../../services/tenant-context.ts";
 import type { PlatformWriteContext } from "../../services/platform-context.ts";
-import { and, desc, eq, getTableColumns, sql, isNull } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  getTableColumns,
+  sql,
+  isNull,
+  type SQL,
+} from "drizzle-orm";
 import type { PageQuery } from "../../http/pagination.ts";
 import { beforeCursor, cursorPage, optionalEq, contains } from "./lists.ts";
 import type { LifecycleStatus } from "../schema/vocabulary.ts";
 import { isEffective } from "./effective.ts";
+import { entitlementEvidence, softDeleteEntitlements } from "./entitlements.ts";
 import { createId } from "../../lib/id.ts";
 import type { Executor } from "../client.ts";
 import {
@@ -131,7 +140,9 @@ export async function setGroupStatus(
     .returning();
   return row ?? null;
 }
-const groupAssignmentEvidence = {
+/** An assignment's policy fields and its member's user: the evidence its
+ * audit events carry. */
+export const assignmentEvidence = {
   id: groupMembers.id,
   revision: groupMembers.revision,
   organizationId: groupMembers.organizationId,
@@ -141,19 +152,17 @@ const groupAssignmentEvidence = {
   validFrom: groupMembers.validFrom,
   validUntil: groupMembers.validUntil,
 };
-const groupEntitlementEvidence = {
-  id: entitlements.id,
-  revision: entitlements.revision,
-  organizationId: entitlements.organizationId,
-  groupId: entitlements.groupId,
-  memberId: entitlements.memberId,
-  clientId: entitlements.clientId,
-  resource: entitlements.resource,
-  scopes: entitlements.scopes,
-  status: entitlements.status,
-  validFrom: entitlements.validFrom,
-  validUntil: entitlements.validUntil,
-};
+
+/** Soft-delete the live assignments `where` selects. The caller holds a write
+ * context and the parent's lock; the rows, by id, are the actual effects. */
+export async function softDeleteAssignments(executor: Executor, where: SQL) {
+  const rows = await executor
+    .update(groupMembers)
+    .set({ deletedAt: sql`now()` })
+    .where(and(isNull(groupMembers.deletedAt), where))
+    .returning({ ...assignmentEvidence, deletedAt: groupMembers.deletedAt });
+  return rows.sort((a, b) => a.id.localeCompare(b.id));
+}
 
 export async function readGroupPolicyForCommand(
   context: PlatformWriteContext,
@@ -164,7 +173,7 @@ export async function readGroupPolicyForCommand(
   // The caller holds organisation/group locks; child locks also order global
   // user cascades through capture and the command's audit/receipt commit.
   const assignments = await tx
-    .select(groupAssignmentEvidence)
+    .select(assignmentEvidence)
     .from(groupMembers)
     .where(
       and(
@@ -175,7 +184,7 @@ export async function readGroupPolicyForCommand(
     .orderBy(groupMembers.id)
     .for("share");
   const policy = await tx
-    .select(groupEntitlementEvidence)
+    .select(entitlementEvidence)
     .from(entitlements)
     .where(
       and(
@@ -198,33 +207,17 @@ export async function deleteGroup(
   const { tx: executor } = context;
   // The service holds the parent group lock, preventing new child rows while
   // UPDATE RETURNING captures the actual effects, including ineligible policy.
-  const softDeletedAssignments = await executor
-    .update(groupMembers)
-    .set({ deletedAt: sql`now()` })
-    .where(
-      and(
-        isNull(groupMembers.deletedAt),
-        membershipWhere(organizationId, groupId),
-      ),
-    )
-    .returning({
-      ...groupAssignmentEvidence,
-      deletedAt: groupMembers.deletedAt,
-    });
-  const softDeletedEntitlements = await executor
-    .update(entitlements)
-    .set({ deletedAt: sql`now()`, status: "disabled" })
-    .where(
-      and(
-        isNull(entitlements.deletedAt),
-        eq(entitlements.organizationId, organizationId),
-        eq(entitlements.groupId, groupId),
-      ),
-    )
-    .returning({
-      ...groupEntitlementEvidence,
-      deletedAt: entitlements.deletedAt,
-    });
+  const softDeletedAssignments = await softDeleteAssignments(
+    executor,
+    membershipWhere(organizationId, groupId)!,
+  );
+  const softDeletedEntitlements = await softDeleteEntitlements(
+    executor,
+    and(
+      eq(entitlements.organizationId, organizationId),
+      eq(entitlements.groupId, groupId),
+    )!,
+  );
   const [row] = await executor
     .update(groups)
     .set({ deletedAt: sql`now()`, status: "disabled" })
@@ -232,14 +225,7 @@ export async function deleteGroup(
     .returning();
   return {
     row: row!,
-    effects: {
-      softDeletedAssignments: softDeletedAssignments.sort((a, b) =>
-        a.id.localeCompare(b.id),
-      ),
-      softDeletedEntitlements: softDeletedEntitlements.sort((a, b) =>
-        a.id.localeCompare(b.id),
-      ),
-    },
+    effects: { softDeletedAssignments, softDeletedEntitlements },
   };
 }
 export async function listGroupMembers(

@@ -20,6 +20,9 @@ import type { LifecycleStatus } from "../schema/vocabulary.ts";
 import type { PageQuery } from "../../http/pagination.ts";
 import { beforeCursor, cursorPage, optionalEq, contains } from "./lists.ts";
 import { createId } from "../../lib/id.ts";
+import { softDeleteEntitlements } from "./entitlements.ts";
+import { softDeleteAssignments } from "./groups.ts";
+import { memberEvidence } from "./members.ts";
 
 export type OrganizationInput = {
   slug: string;
@@ -181,48 +184,14 @@ export async function deleteOrganization(
   organizationId: string,
 ) {
   const { tx } = context;
-  const softDeletedEntitlements = await tx
-    .update(entitlements)
-    .set({ deletedAt: sql`now()`, status: "disabled" })
-    .where(
-      and(
-        isNull(entitlements.deletedAt),
-        eq(entitlements.organizationId, organizationId),
-      ),
-    )
-    .returning({
-      deletedAt: entitlements.deletedAt,
-      id: entitlements.id,
-      organizationId: entitlements.organizationId,
-      revision: entitlements.revision,
-      memberId: entitlements.memberId,
-      groupId: entitlements.groupId,
-      clientId: entitlements.clientId,
-      resource: entitlements.resource,
-      scopes: entitlements.scopes,
-      status: entitlements.status,
-      validFrom: entitlements.validFrom,
-      validUntil: entitlements.validUntil,
-    });
-  const softDeletedAssignments = await tx
-    .update(groupMembers)
-    .set({ deletedAt: sql`now()` })
-    .where(
-      and(
-        isNull(groupMembers.deletedAt),
-        eq(groupMembers.organizationId, organizationId),
-      ),
-    )
-    .returning({
-      deletedAt: groupMembers.deletedAt,
-      id: groupMembers.id,
-      organizationId: groupMembers.organizationId,
-      revision: groupMembers.revision,
-      memberId: groupMembers.memberId,
-      groupId: groupMembers.groupId,
-      validFrom: groupMembers.validFrom,
-      validUntil: groupMembers.validUntil,
-    });
+  const softDeletedEntitlements = await softDeleteEntitlements(
+    tx,
+    eq(entitlements.organizationId, organizationId),
+  );
+  const softDeletedAssignments = await softDeleteAssignments(
+    tx,
+    eq(groupMembers.organizationId, organizationId),
+  );
   const softDeletedMembers = await tx
     .update(members)
     .set({
@@ -236,17 +205,7 @@ export async function deleteOrganization(
         eq(members.organizationId, organizationId),
       ),
     )
-    .returning({
-      deletedAt: members.deletedAt,
-      id: members.id,
-      organizationId: members.organizationId,
-      userId: members.userId,
-      revision: members.revision,
-      status: members.status,
-      revokedAt: members.revokedAt,
-      validFrom: members.validFrom,
-      validUntil: members.validUntil,
-    });
+    .returning({ ...memberEvidence, deletedAt: members.deletedAt });
   const softDeletedGroups = await tx
     .update(groups)
     .set({ deletedAt: sql`now()`, status: "disabled" })

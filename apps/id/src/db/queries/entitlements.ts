@@ -3,7 +3,15 @@ import type {
   PlatformWriteContext,
   PlatformReadContext,
 } from "../../services/platform-context.ts";
-import { and, desc, eq, getTableColumns, sql, isNull } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  getTableColumns,
+  sql,
+  isNull,
+  type SQL,
+} from "drizzle-orm";
 import type { PageQuery } from "../../http/pagination.ts";
 import { beforeCursor, cursorPage, optionalEq } from "./lists.ts";
 import type { LifecycleStatus } from "../schema/vocabulary.ts";
@@ -39,6 +47,32 @@ export async function createEntitlement(
     .returning();
 
   return entitlement!;
+}
+
+/** An entitlement's policy fields: the evidence its audit events carry. */
+export const entitlementEvidence = {
+  id: entitlements.id,
+  revision: entitlements.revision,
+  organizationId: entitlements.organizationId,
+  groupId: entitlements.groupId,
+  memberId: entitlements.memberId,
+  clientId: entitlements.clientId,
+  resource: entitlements.resource,
+  scopes: entitlements.scopes,
+  status: entitlements.status,
+  validFrom: entitlements.validFrom,
+  validUntil: entitlements.validUntil,
+};
+
+/** Soft-delete the live entitlements `where` selects. The caller holds a write
+ * context and the parent's lock; the rows, by id, are the actual effects. */
+export async function softDeleteEntitlements(executor: Executor, where: SQL) {
+  const rows = await executor
+    .update(entitlements)
+    .set({ deletedAt: sql`now()`, status: "disabled" })
+    .where(and(isNull(entitlements.deletedAt), where))
+    .returning({ ...entitlementEvidence, deletedAt: entitlements.deletedAt });
+  return rows.sort((a, b) => a.id.localeCompare(b.id));
 }
 
 export type EntitlementQuery = PageQuery & {

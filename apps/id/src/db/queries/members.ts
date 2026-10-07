@@ -14,7 +14,8 @@ import {
 import type { PageQuery } from "../../http/pagination.ts";
 import { beforeCursor, contains, cursorPage, optionalEq } from "./lists.ts";
 import { isEffective } from "./effective.ts";
-import type { MemberWindow } from "./groups.ts";
+import { softDeleteEntitlements } from "./entitlements.ts";
+import { softDeleteAssignments, type MemberWindow } from "./groups.ts";
 export type MemberQuery = PageQuery & {
   q?: string;
   email?: string;
@@ -34,6 +35,17 @@ const selection = {
   validUntil: members.validUntil,
   createdAt: members.createdAt,
   effective: sql<boolean>`(${isEffective(members)})`,
+};
+/** A membership's state and window: the evidence erasure events carry. */
+export const memberEvidence = {
+  id: members.id,
+  organizationId: members.organizationId,
+  userId: members.userId,
+  revision: members.revision,
+  status: members.status,
+  revokedAt: members.revokedAt,
+  validFrom: members.validFrom,
+  validUntil: members.validUntil,
 };
 const memberWhere = (organizationId: string, memberId: string) =>
   and(eq(members.organizationId, organizationId), eq(members.id, memberId));
@@ -153,28 +165,20 @@ export async function removeMemberAssignments(
   memberId: string,
 ) {
   const { tx: executor, organizationId } = context;
-  const removedGrants = await executor
-    .update(entitlements)
-    .set({ deletedAt: sql`now()`, status: "disabled" })
-    .where(
-      and(
-        isNull(entitlements.deletedAt),
-        eq(entitlements.organizationId, organizationId),
-        eq(entitlements.memberId, memberId),
-      ),
-    )
-    .returning();
-  const softDeletedGroups = await executor
-    .update(groupMembers)
-    .set({ deletedAt: sql`now()` })
-    .where(
-      and(
-        isNull(groupMembers.deletedAt),
-        eq(groupMembers.organizationId, organizationId),
-        eq(groupMembers.memberId, memberId),
-      ),
-    )
-    .returning();
+  const removedGrants = await softDeleteEntitlements(
+    executor,
+    and(
+      eq(entitlements.organizationId, organizationId),
+      eq(entitlements.memberId, memberId),
+    )!,
+  );
+  const softDeletedGroups = await softDeleteAssignments(
+    executor,
+    and(
+      eq(groupMembers.organizationId, organizationId),
+      eq(groupMembers.memberId, memberId),
+    )!,
+  );
   return { removedGrants, softDeletedGroups };
 }
 
