@@ -372,13 +372,7 @@ export function createUserTokenBoundary() {
             const response = result.value.response;
             const replayed = !(issuance?.minted || storedTokens);
             const returnedScopes = await assertUserTokenResponse({
-              ctx: {
-                ...bound,
-                context: {
-                  ...bound.context,
-                  adapter: { ...bound.context.adapter, ...adapter },
-                },
-              },
+              ctx: bound,
               options,
               decision,
               identity: identity(decision),
