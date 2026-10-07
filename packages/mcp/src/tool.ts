@@ -107,7 +107,7 @@ export function defineTool<Input extends z.ZodObject, Output extends z.ZodObject
 
 export const wireName = (name: string) => name.replace(".", "_")
 
-export const deprecationSentence = ({ since, sunset, replacement }: Deprecation) => `Deprecated since ${since}; removed on ${sunset}${replacement ? `; use ${replacement} instead` : ""}.`
+const deprecationSentence = ({ since, sunset, replacement }: Deprecation) => `Deprecated since ${since}; removed on ${sunset}${replacement ? `; use ${replacement} instead` : ""}.`
 
 export const wireDescription = ({ description, deprecated }: Pick<Tool, "description" | "deprecated">) => deprecated ? `${description} ${deprecationSentence(deprecated)}` : description
 

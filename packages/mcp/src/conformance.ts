@@ -33,7 +33,7 @@ async function ok(kit: Kit, name: string, args: Record<string, unknown>) {
 // The kit never validates only, so every intent it prepares has an id and a token.
 type PreparedIntent = z.output<typeof intentView> & { intent_id: string; commit_token: string }
 async function prepare(kit: Kit, mutation: Served<Mutation>, args?: Record<string, unknown>) {
-  return await ok(kit, wire(mutation), args ?? await example(kit, mutation.name)) as unknown as PreparedIntent
+  return await ok(kit, wire(mutation), args ?? await example(kit, mutation.name)) as PreparedIntent
 }
 const commitArgs = (intent: PreparedIntent) => ({
   intent_id: intent.intent_id, commit_token: intent.commit_token,
