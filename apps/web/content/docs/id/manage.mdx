@@ -19,7 +19,7 @@ curl https://id.answerable.org/auth/oauth2/token \
 
 **Token.** Set `TOKEN` to the response's `access_token`. This bearer JWT is bound to the admin API resource.
 
-**Browser session.** The [sign-in session cookie](/docs/id/sign-in#sessions) works too. Send a trusted `Origin`; browser calls across origins need `credentials: "include"`.
+**Browser session.** The [sign-in session cookie](/docs/id/sign-in#sessions) works too. Send a trusted `Origin`. The admin API sends no CORS headers, so a script on another origin cannot read its responses.
 
 **Current company authentication.** Human authority requires the session's verified account and current SSO provider to belong to the organisation supplying the permission. A membership in another organisation does not transfer authentication. Platform support requires platform SSO and explicit platform scopes. Provider changes, deletion, account deletion or expired authentication prevent admission, including recovery with an existing operation key. After fresh SSO, retry the original key and input to recover an authorised receipt.
 

@@ -229,35 +229,6 @@ describe("unit: Hono application", () => {
   });
 });
 
-test("admin CORS allows trusted preflights", async () => {
-  const app = createApp({
-    auth: stubAuth(),
-    db: stubDatabase(),
-    environment: testEnvironment({ trustedOrigins: ["https://admin.example"] }),
-  });
-  for (const origin of ["https://admin.example", "https://evil.example"]) {
-    const response = await app.request("/api/admin/v1/me", {
-      method: "OPTIONS",
-      headers: {
-        Origin: origin,
-        "Access-Control-Request-Method": "GET",
-        "Access-Control-Request-Headers":
-          "Authorization,Content-Type,Idempotency-Key,If-Match",
-      },
-    });
-    expect(response.status).toBe(204);
-    expect(response.headers.get("access-control-allow-origin")).toBe(
-      origin === "https://admin.example" ? origin : null,
-    );
-    expect(response.headers.get("access-control-allow-credentials")).toBe(
-      "true",
-    );
-    expect(response.headers.get("access-control-allow-headers")).toBe(
-      "Authorization,Content-Type,Idempotency-Key,If-Match",
-    );
-  }
-});
-
 test("unknown admin routes return a problem without requiring credentials", async () => {
   const app = createApp({
     auth: stubAuth(),

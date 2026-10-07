@@ -78,25 +78,14 @@ export function createApp(services: AppServices, testing: AppTesting = {}) {
 
   app.use("*", limitRequestBody);
 
+  // Only Better Auth's routes answer cross-origin browser calls. The admin API
+  // has no browser client yet, so it sends no CORS headers; its principal
+  // still checks a cookie caller's Origin.
   app.use(
     "/auth/*",
     cors({ origin: services.environment.trustedOrigins, credentials: true }),
   );
 
-  app.use(
-    "/api/admin/*",
-    cors({
-      origin: services.environment.trustedOrigins,
-      credentials: true,
-      allowHeaders: [
-        "Authorization",
-        "Content-Type",
-        "Idempotency-Key",
-        "If-Match",
-      ],
-      exposeHeaders: ["Operation-Id", "Idempotency-Replayed", "ETag"],
-    }),
-  );
   app.route("/api/admin/v1", createAdminApp(services));
   app.route("/", createPagesApp());
 
