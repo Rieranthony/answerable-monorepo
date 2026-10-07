@@ -229,7 +229,7 @@ export function createAuth(db: Database, environment: Environment) {
           refreshTokenExpiresIn: grantLifetimeSeconds,
           refreshTokenReuseInterval:
             environment.oauthRefreshReuseIntervalSeconds,
-          // hashClientSecret mirrors this digest for bootstrap clients.
+          // Client creation and rotation store hashClientSecret digests.
           storeClientSecret: "hashed",
           loginPage: `${environment.betterAuthUrl}/login`,
           consentPage: `${environment.betterAuthUrl}/consent`,
