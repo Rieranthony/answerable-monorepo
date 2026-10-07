@@ -1,8 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import {
-  getCurrentAdapter,
-  runWithTransaction,
-} from "@better-auth/core/context";
+import { getCurrentAdapter } from "@better-auth/core/context";
 import {
   getOAuthProviderApi,
   type OAuthOptions,
@@ -14,7 +11,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { setDatabaseScope } from "../db/isolation.ts";
 import { grantContexts, oauthResources } from "../db/schema/index.ts";
-import { authTransaction } from "./database-adapter.ts";
+import { authTransaction, grantTransaction } from "./database-adapter.ts";
 import { currentGrantAuthentication } from "./grant-authentication.ts";
 import { assertUserTokenResponse } from "./user-token-assertions.ts";
 import { lockResourceGrantPolicy } from "./lock-resource-grant-policy.ts";
@@ -25,7 +22,6 @@ import {
 } from "./native-client-authentication.ts";
 import { withNativeRefreshFamily } from "./native-refresh-family.ts";
 import { withNativeTokenCleanup } from "./native-token-cleanup.ts";
-import { rethrowGrantError } from "./grant-error.ts";
 import {
   userResourcePolicy,
   type UserResourceDecision,
@@ -161,8 +157,7 @@ export function createUserTokenBoundary() {
     ctx: NativeContext,
     native: ReturnType<typeof oauthProvider>["endpoints"]["oauth2UserInfo"],
   ) {
-    return runWithTransaction(ctx.context.adapter, async () => {
-      const adapter = await getCurrentAdapter(ctx.context.adapter);
+    return grantTransaction(ctx.context.adapter, async (adapter) => {
       const result = await native({
         ...ctx,
         context: {
@@ -175,7 +170,7 @@ export function createUserTokenBoundary() {
       });
       result.headers.forEach((value, name) => ctx.setHeader(name, value));
       return result.response;
-    }).catch(rethrowGrantError);
+    });
   }
 
   async function handle(
@@ -189,11 +184,9 @@ export function createUserTokenBoundary() {
       options,
       kind,
       async (authenticated, nativeCreate) => {
-        const outcome = await runWithTransaction(
+        const outcome = await grantTransaction(
           ctx.context.adapter,
-          async () => {
-            const adapter = await getCurrentAdapter(ctx.context.adapter);
-            const tx = authTransaction(adapter);
+          async (adapter, tx) => {
             await setDatabaseScope(tx, {
               kind: "grant-client",
               clientId: authenticated.clientId,
@@ -414,7 +407,7 @@ export function createUserTokenBoundary() {
             );
             return { value: response };
           },
-        ).catch(rethrowGrantError);
+        );
         if ("error" in outcome) throw outcome.error;
         return outcome.value;
       },

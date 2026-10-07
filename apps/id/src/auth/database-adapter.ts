@@ -3,12 +3,21 @@ import {
   type PlatformApplications,
 } from "./platform-applications.ts";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
-import type { BetterAuthOptions } from "better-auth";
+import {
+  getCurrentAdapter,
+  runWithTransaction,
+} from "@better-auth/core/context";
+import type {
+  BetterAuthOptions,
+  DBAdapter,
+  DBTransactionAdapter,
+} from "better-auth";
 import { eq } from "drizzle-orm";
 import type { Database, Executor } from "../db/client.ts";
 import * as schema from "../db/schema/index.ts";
 
 import { setDatabaseScope } from "../db/isolation.ts";
+import { rethrowGrantError } from "./grant-error.ts";
 
 const transactions = new WeakMap<object, Executor>();
 const config = { provider: "pg", schema, usePlural: true } as const;
@@ -121,4 +130,16 @@ export function authTransaction(adapter: object): Executor {
   const tx = transactions.get(adapter);
   if (!tx) throw new Error("An active authentication transaction is required");
   return tx;
+}
+
+/** Run a grant in one Better Auth transaction, with its bound adapter and
+ * executor; a retryable database failure answers temporarily_unavailable. */
+export async function grantTransaction<T>(
+  adapter: DBAdapter,
+  run: (bound: DBTransactionAdapter, tx: Executor) => Promise<T>,
+): Promise<T> {
+  return await runWithTransaction(adapter, async () => {
+    const bound = await getCurrentAdapter(adapter);
+    return run(bound, authTransaction(bound));
+  }).catch(rethrowGrantError);
 }

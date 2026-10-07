@@ -1,9 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
-  getCurrentAdapter,
-  runWithTransaction,
-} from "@better-auth/core/context";
-import {
   getOAuthProviderState,
   type OAuthOptions,
 } from "@better-auth/oauth-provider";
@@ -24,7 +20,7 @@ import {
 } from "../db/schema/index.ts";
 import { setDatabaseScope } from "../db/isolation.ts";
 import { createId } from "../lib/id.ts";
-import { authTransaction } from "./database-adapter.ts";
+import { grantTransaction } from "./database-adapter.ts";
 import { createResourceGrant } from "./create-resource-grant.ts";
 import { currentGrantAuthentication } from "./grant-authentication.ts";
 import { lockResourceGrantPolicy } from "./lock-resource-grant-policy.ts";
@@ -33,7 +29,6 @@ import {
   type UserResourceDecision,
 } from "./user-resource-policy.ts";
 import type { NativeContext } from "./native-client-authentication.ts";
-import { rethrowGrantError } from "./grant-error.ts";
 import { narrowAuthorizationCode } from "./narrow-authorization-code.ts";
 import { recordUserOAuth } from "./user-oauth-audit.ts";
 
@@ -159,9 +154,7 @@ export function createUserOAuthFlow(
     const session = await getSessionFromCtx(ctx);
     if (!session)
       throw new APIError("UNAUTHORIZED", { error: "login_required" });
-    return runWithTransaction(ctx.context.adapter, async () => {
-      const adapter = await getCurrentAdapter(ctx.context.adapter);
-      const tx = authTransaction(adapter);
+    return grantTransaction(ctx.context.adapter, async (adapter, tx) => {
       const [stored] = await tx
         .select()
         .from(verifications)
@@ -386,7 +379,7 @@ export function createUserOAuthFlow(
         .set({ value: JSON.stringify(flow) })
         .where(eq(verifications.id, stored.id));
       return result;
-    }).catch(rethrowGrantError);
+    });
   }
   return { postLogin, start, resume };
 }

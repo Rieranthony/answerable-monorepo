@@ -1,8 +1,4 @@
 import {
-  getCurrentAdapter,
-  runWithTransaction,
-} from "@better-auth/core/context";
-import {
   getOAuthProviderApi,
   type oauthProvider,
 } from "@better-auth/oauth-provider";
@@ -11,7 +7,7 @@ import { eq } from "drizzle-orm";
 import { revokeGrantContexts } from "../db/queries/grant-contexts.ts";
 import { grantContexts } from "../db/schema/index.ts";
 import { setDatabaseScope } from "../db/isolation.ts";
-import { authTransaction } from "./database-adapter.ts";
+import { grantTransaction } from "./database-adapter.ts";
 import { lockResourceGrantPolicy } from "./lock-resource-grant-policy.ts";
 import {
   withNativeClientAuthentication,
@@ -20,7 +16,6 @@ import {
 import { withNativeRefreshFamily } from "./native-refresh-family.ts";
 import { withNativeTokenCleanup } from "./native-token-cleanup.ts";
 import { recordUserOAuth } from "./user-oauth-audit.ts";
-import { rethrowGrantError } from "./grant-error.ts";
 
 type Provider = ReturnType<typeof oauthProvider>;
 
@@ -31,11 +26,9 @@ export function revokeUserToken(ctx: NativeContext, provider: Provider) {
     provider.options,
     undefined,
     async (client, nativeCreate) => {
-      const outcome = await runWithTransaction(
+      const outcome = await grantTransaction(
         ctx.context.adapter,
-        async () => {
-          const adapter = await getCurrentAdapter(ctx.context.adapter);
-          const tx = authTransaction(adapter);
+        async (adapter, tx) => {
           await setDatabaseScope(tx, {
             kind: "grant-client",
             clientId: client.clientId,
@@ -160,7 +153,7 @@ export function revokeUserToken(ctx: NativeContext, provider: Provider) {
               : result;
           return { value: result.value.response };
         },
-      ).catch(rethrowGrantError);
+      );
       if ("error" in outcome) throw outcome.error;
       return outcome.value;
     },

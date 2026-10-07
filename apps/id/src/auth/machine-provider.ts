@@ -1,10 +1,5 @@
-import { rethrowGrantError } from "./grant-error.ts";
 import { identityScopes } from "./grant-scopes.ts";
 import { machineCapability } from "./machine-capability.ts";
-import {
-  getCurrentAdapter,
-  runWithTransaction,
-} from "@better-auth/core/context";
 import {
   getOAuthProviderApi,
   type oauthProvider,
@@ -13,7 +8,7 @@ import { APIError, createAuthEndpoint } from "better-auth/api";
 import type { Database } from "../db/client.ts";
 import { errorFields } from "../http/problem.ts";
 import { logEvent } from "../lib/log.ts";
-import { authTransaction } from "./database-adapter.ts";
+import { grantTransaction } from "./database-adapter.ts";
 import {
   recordMachineIssuance,
   recordMachineRejection,
@@ -89,59 +84,58 @@ export function machineOAuthProvider(
                 error_description: "Exactly one resource is required.",
               });
             }
-            return await runWithTransaction(ctx.context.adapter, async () => {
-              stage = "authorization";
-              const adapter = await getCurrentAdapter(ctx.context.adapter);
-              const client = await prepareMachineGrant(
-                adapter,
-                authenticated.client,
-                resource,
-              );
-              if (!client.grantTypes?.includes("client_credentials"))
-                throw new APIError("BAD_REQUEST", {
-                  error: "unauthorized_client",
-                });
-              const requestedScopes =
-                ctx.body.scope === undefined
-                  ? undefined
-                  : ctx.body.scope.split(" ").filter(Boolean);
-              if (requestedScopes?.some((scope) => identityScopes.has(scope)))
-                throw new APIError("BAD_REQUEST", { error: "invalid_scope" });
-              const decision = await machineCapability(
-                authTransaction(adapter),
-                {
+            return await grantTransaction(
+              ctx.context.adapter,
+              async (adapter, tx) => {
+                stage = "authorization";
+                const client = await prepareMachineGrant(
+                  adapter,
+                  authenticated.client,
+                  resource,
+                );
+                if (!client.grantTypes?.includes("client_credentials"))
+                  throw new APIError("BAD_REQUEST", {
+                    error: "unauthorized_client",
+                  });
+                const requestedScopes =
+                  ctx.body.scope === undefined
+                    ? undefined
+                    : ctx.body.scope.split(" ").filter(Boolean);
+                if (requestedScopes?.some((scope) => identityScopes.has(scope)))
+                  throw new APIError("BAD_REQUEST", { error: "invalid_scope" });
+                const decision = await machineCapability(tx, {
                   organizationId: client.organizationId,
                   clientId: client.clientId,
                   resource,
                   requestedScopes,
-                },
-              );
-              evaluatedDecision = decision;
-              if (!decision.allowed)
-                throw new APIError("BAD_REQUEST", { error: decision.reason });
-              stage = "issuance";
-              const issued = await getOAuthProviderApi(
-                {
-                  ...ctx,
-                  context: {
-                    ...ctx.context,
-                    adapter: { ...ctx.context.adapter, ...adapter },
+                });
+                evaluatedDecision = decision;
+                if (!decision.allowed)
+                  throw new APIError("BAD_REQUEST", { error: decision.reason });
+                stage = "issuance";
+                const issued = await getOAuthProviderApi(
+                  {
+                    ...ctx,
+                    context: {
+                      ...ctx.context,
+                      adapter: { ...ctx.context.adapter, ...adapter },
+                    },
                   },
-                },
-                provider.options,
-                "client_credentials",
-              ).issueTokens({
-                client,
-                scopes: [...decision.scopes],
-                resources: [resource],
-              });
-              await recordMachineIssuance(authTransaction(adapter), {
-                token: issued.access_token,
-                decision,
-                requestId: ctx.headers?.get("x-request-id"),
-              });
-              return issued;
-            }).catch(rethrowGrantError);
+                  provider.options,
+                  "client_credentials",
+                ).issueTokens({
+                  client,
+                  scopes: [...decision.scopes],
+                  resources: [resource],
+                });
+                await recordMachineIssuance(tx, {
+                  token: issued.access_token,
+                  decision,
+                  requestId: ctx.headers?.get("x-request-id"),
+                });
+                return issued;
+              },
+            );
           } catch (error) {
             // The issuance transaction has exited. Record the request failure independently.
             try {
