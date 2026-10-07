@@ -24,6 +24,7 @@ test("getAdminMe: platform admin cookie", async () => {
     headers: fixture.headers("platformAdmin"),
   });
   expect(response.status).toBe(200);
+  expect(response.headers.get("Cache-Control")).toBe("no-store");
   expect(meSchema.parse(await response.json())).toEqual({
     principal: {
       type: "user",

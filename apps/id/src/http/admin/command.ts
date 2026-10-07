@@ -100,7 +100,6 @@ async function httpCommand<T>(
     context.header("ETag", revisionTag(revisionSchema.parse(result.body)));
   context.header("Operation-Id", result.operation.id);
   context.header("Idempotency-Replayed", String(result.replayed));
-  context.header("Cache-Control", "no-store");
   if (result.operation.statusCode === 204) return context.body(null, 204);
   return context.body(
     JSON.stringify(result.body),

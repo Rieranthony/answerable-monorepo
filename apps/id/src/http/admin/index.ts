@@ -54,6 +54,11 @@ export const adminRouteTables: AdminRouteTable[] = families.map(
 
 export function createAdminApp(services: AppServices) {
   const app = new Hono<AppEnvironment>();
+  // Admin answers carry identities, grants and receipts: never cache one.
+  app.use("*", async (context, next) => {
+    await next();
+    context.header("Cache-Control", "no-store");
+  });
   const notFound = (context: Parameters<typeof problem>[0]) =>
     problem(context, new ProblemError(404, "not_found", "Not found"));
   // Unknown routes have no protected handler and should consistently return 404.

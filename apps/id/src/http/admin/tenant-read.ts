@@ -10,7 +10,6 @@ export function tenantRead<T, Access extends TenantReadAccess>(
   access: Access,
   run: (tenant: TenantReadContext<Access>) => Promise<T>,
 ) {
-  context.header("Cache-Control", "no-store");
   return withTenantRead(
     context.get("db"),
     {

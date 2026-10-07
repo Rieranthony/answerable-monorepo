@@ -8,7 +8,6 @@ export function platformRead<T>(
   context: Context<AppEnvironment>,
   run: (platform: PlatformReadContext) => Promise<T>,
 ) {
-  context.header("Cache-Control", "no-store");
   return withPlatformRead(
     context.get("db"),
     {

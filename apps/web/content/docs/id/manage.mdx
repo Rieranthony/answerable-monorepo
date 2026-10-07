@@ -214,7 +214,7 @@ See the staff runbook for [diagnosis verdicts](/docs/id/onboard#why-cant-someone
 
 ## Use it from an agent
 
-**Contract.** The [admin API reference](/docs/id/admin-api) is generated from the admin OpenAPI document. Operation IDs are tool names; `x-kind` marks `read`, `write` and `erase`, and `x-scopes` names fixed platform/organisation scopes. `/me` is available to any authenticated principal even with no grants. Erasures require `confirm` equal to the target identifier.
+**Contract.** The [admin API reference](/docs/id/admin-api) is generated from the admin OpenAPI document. Operation IDs are tool names; `x-kind` marks `read`, `write` and `erase`, and `x-scopes` names fixed platform/organisation scopes. `/me` is available to any authenticated principal even with no grants. Erasures require `confirm` equal to the target identifier. Every admin response carries `Cache-Control: no-store`.
 
 Every [operation page](/docs/id/admin-api) has a Markdown twin: append `.md` to its URL or send `Accept: text/markdown`. [/llms.txt](/llms.txt) indexes the docs and [/llms-full.txt](/llms-full.txt) contains them.
 
