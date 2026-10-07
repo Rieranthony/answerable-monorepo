@@ -1827,7 +1827,7 @@
             "description": "Internal Server Error. This is a problem with the server that you cannot fix."
           },
           "503": {
-            "description": "Tenant issuance capacity or authorization state is busy, a database statement was cancelled, or issuance audit storage is unavailable. Retry after the indicated delay with fresh client authentication.",
+            "description": "Tenant issuance capacity or authorization state is busy, a database statement was cancelled or deadlocked, or issuance audit storage is unavailable. Retry after the indicated delay with fresh client authentication.",
             "content": {
               "application/json": {
                 "schema": {

@@ -43,7 +43,7 @@ export function machineOAuthProvider(
                 503: {
                   ...token.options.metadata.openapi.responses[400],
                   description:
-                    "Tenant issuance capacity or authorization state is busy, a database statement was cancelled, or issuance audit storage is unavailable. Retry after the indicated delay with fresh client authentication.",
+                    "Tenant issuance capacity or authorization state is busy, a database statement was cancelled or deadlocked, or issuance audit storage is unavailable. Retry after the indicated delay with fresh client authentication.",
                   headers: {
                     "Retry-After": {
                       description: "Minimum delay in seconds before retrying.",

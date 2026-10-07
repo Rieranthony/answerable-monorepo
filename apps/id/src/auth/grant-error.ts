@@ -1,4 +1,5 @@
 import { APIError } from "better-auth/api";
+import { isRetryableDatabaseError } from "../http/problem.ts";
 
 /** An OAuth 503 the client may retry after a second. */
 export function temporarilyUnavailable(description: string) {
@@ -9,15 +10,10 @@ export function temporarilyUnavailable(description: string) {
   );
 }
 
-/** PostgreSQL lock contention and statement cancellation are retryable; preserve unrelated failures. */
+/** A lock or statement timeout, a deadlock or a pool checkout timeout is
+ * retryable, as in the admin API; every other failure passes through. */
 export function rethrowGrantError(error: unknown): never {
-  const cause = error instanceof Error ? error.cause : undefined;
-  if (
-    typeof cause === "object" &&
-    cause !== null &&
-    "code" in cause &&
-    (cause.code === "55P03" || cause.code === "57014")
-  )
+  if (isRetryableDatabaseError(error))
     throw temporarilyUnavailable(
       "Authorization state is busy. Retry the token request.",
     );

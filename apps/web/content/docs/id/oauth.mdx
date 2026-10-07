@@ -131,7 +131,7 @@ Refresh revocation closes that authorisation family. Another authorisation for t
 | `invalid_token`                                 | UserInfo access token is inactive or invalid                                     | Obtain a current access token                                                 |
 | `unsupported_token_type`                        | A self-contained JWT cannot be revoked through this endpoint                     | Revoke the refresh family and enforce expiry/current authority at the service |
 | `unsupported_grant_type`                        | The requested protocol grant is closed                                           | Use authorisation code, refresh or client credentials                         |
-| `temporarily_unavailable`                       | Policy locks or required audit storage are unavailable                           | Respect `Retry-After`; retry with fresh client authentication                 |
+| `temporarily_unavailable`                       | Policy locks, database capacity or required audit storage are unavailable        | Respect `Retry-After`; retry with fresh client authentication                 |
 | `authentication_unavailable`                    | An unexpected provider failure occurred                                          | Retry; contact Answerable staff if it persists                                |
 
 Transport limits can return HTTP 408, 413 or plain-text HTTP 503 before OAuth processing. The [API reference](/docs/id/api) describes each reachable endpoint. Successful authorisation, issuance, replay and revocation persist [audit facts](/docs/id/manage) that target the grant, and record its user, in the same transaction as native effects.

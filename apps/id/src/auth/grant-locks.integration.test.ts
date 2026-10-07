@@ -380,6 +380,33 @@ test("a blocked issuance times out, rolls back and can retry without leaking poo
   }
 });
 
+test("a deadlock or a pool checkout timeout during issuance answers 503", async () => {
+  for (const failure of [
+    new Error("Failed query", { cause: { code: "40P01" } }),
+    new Error("timeout exceeded when trying to connect"),
+  ]) {
+    const auth = createAuth(connection.db, environment);
+    const provider = auth.options.plugins.find(
+      (p) => p.id === "oauth-provider",
+    ) as ReturnType<typeof machineOAuthProvider>;
+    provider.options.extensions!.push({
+      claims: {
+        accessToken: () => {
+          throw failure;
+        },
+      },
+    });
+    const response = await mint(auth);
+    expect(response.status).toBe(503);
+    expect(response.headers.get("retry-after")).toBe("1");
+    expect(await response.json()).toEqual({
+      error: "temporarily_unavailable",
+      error_description:
+        "Authorization state is busy. Retry the token request.",
+    });
+  }
+});
+
 for (const policy of ["resource", "client", "grant", "capability"] as const) {
   test(`committed ${policy} policy changes are read after authentication`, async () => {
     const pause = await pausedAuth("before");
