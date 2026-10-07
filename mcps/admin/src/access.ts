@@ -48,7 +48,7 @@ export function accessWrites(writes: Writes) {
       }
     },
     async commit({ targets: [version], plan: { key, slug, name }, preview }, context) {
-      const done = await calls.write("POST", `/organizations/${version!.resource_id}/groups`, { body: { slug, name }, key }, context)
+      const done = await calls.write("POST", `/organizations/${version.resource_id}/groups`, { body: { slug, name }, key }, context)
       return { results: { groupId: done.id, operationId: done.operationId }, applied_changes: preview.changes, effects_performed: [] }
     },
   }))
@@ -81,7 +81,8 @@ export function accessWrites(writes: Writes) {
       }
     },
     // A change names the membership's version; a new membership asserts that there is none yet.
-    async commit({ targets: [version], plan: { key, organizationId: id, groupId: groupOf, memberId: person, validUntil }, preview }, context) {
+    async commit({ targets, plan: { key, organizationId: id, groupId: groupOf, memberId: person, validUntil }, preview }, context) {
+      const version = targets.at(0)
       const condition = version ? { ifMatch: version.version.value } : { ifNoneMatch: "*" as const }
       const done = await calls.write("PUT", `/organizations/${id}/groups/${groupOf}/members/${person}`, { body: validUntil ? { validUntil } : {}, ...condition, key }, context)
       return { results: { groupId: groupOf, memberId: person, operationId: done.operationId }, applied_changes: preview.changes, effects_performed: preview.effects }
@@ -173,7 +174,7 @@ export function accessWrites(writes: Writes) {
       }
     },
     async commit({ targets: [version], plan: { key, body }, preview }, context) {
-      const done = await calls.write("POST", `/organizations/${version!.resource_id}/entitlements`, { body, key }, context)
+      const done = await calls.write("POST", `/organizations/${version.resource_id}/entitlements`, { body, key }, context)
       return { results: { entitlementId: done.id, operationId: done.operationId }, applied_changes: preview.changes, effects_performed: preview.effects }
     },
   }))
@@ -213,8 +214,8 @@ export function accessWrites(writes: Writes) {
         }
       },
       async commit({ targets: [version], plan: { key, organizationId: id }, preview }, context) {
-        const done = await calls.write("POST", `/organizations/${id}/entitlements/${version!.resource_id}/${words.path}`, { key }, context)
-        return { results: { entitlementId: version!.resource_id, operationId: done.operationId }, applied_changes: preview.changes, effects_performed: preview.effects }
+        const done = await calls.write("POST", `/organizations/${id}/entitlements/${version.resource_id}/${words.path}`, { key }, context)
+        return { results: { entitlementId: version.resource_id, operationId: done.operationId }, applied_changes: preview.changes, effects_performed: preview.effects }
       },
     }))
   }

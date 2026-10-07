@@ -61,8 +61,8 @@ export function organisationWrites(writes: Writes) {
       }
     },
     async commit({ targets: [version], plan: { key, patch }, preview }, context) {
-      const done = await calls.write("PATCH", `/organizations/${version!.resource_id}`, { body: patch, ifMatch: version!.version.value, key }, context)
-      return { results: { organizationId: version!.resource_id, operationId: done.operationId }, applied_changes: preview.changes, effects_performed: [] }
+      const done = await calls.write("PATCH", `/organizations/${version.resource_id}`, { body: patch, ifMatch: version.version.value, key }, context)
+      return { results: { organizationId: version.resource_id, operationId: done.operationId }, applied_changes: preview.changes, effects_performed: [] }
     },
   }))
 
@@ -101,8 +101,8 @@ export function organisationWrites(writes: Writes) {
       }
     },
     async commit({ targets: [version], plan: { key }, preview }, context) {
-      const done = await calls.write("POST", `/organizations/${version!.resource_id}/${to === "disabled" ? "disable" : "enable"}`, { key }, context)
-      return { results: { organizationId: version!.resource_id, status: to, operationId: done.operationId }, applied_changes: preview.changes, effects_performed: preview.effects }
+      const done = await calls.write("POST", `/organizations/${version.resource_id}/${to === "disabled" ? "disable" : "enable"}`, { key }, context)
+      return { results: { organizationId: version.resource_id, status: to, operationId: done.operationId }, applied_changes: preview.changes, effects_performed: preview.effects }
     },
   }))
 
@@ -126,7 +126,7 @@ export function organisationWrites(writes: Writes) {
       }
     },
     async commit({ targets: [version], plan: { key, domain: added }, preview }, context) {
-      const done = await calls.write("POST", `/organizations/${version!.resource_id}/domains`, { body: { domain: added }, key }, context)
+      const done = await calls.write("POST", `/organizations/${version.resource_id}/domains`, { body: { domain: added }, key }, context)
       return { results: { domainId: done.id, domain: added, operationId: done.operationId }, applied_changes: preview.changes, effects_performed: [] }
     },
   }))
@@ -165,7 +165,8 @@ export function organisationWrites(writes: Writes) {
       }
     },
     // A replacement names the provider's version; a first provider asserts that there is none yet.
-    async commit({ targets: [version], plan: { key, organizationId: id, issuer, domain: signIn }, preview }, context) {
+    async commit({ targets, plan: { key, organizationId: id, issuer, domain: signIn }, preview }, context) {
+      const version = targets.at(0)
       const precondition = version ? { ifMatch: version.version.value } : { ifNoneMatch: "*" as const }
       const done = await calls.write("PUT", `/organizations/${id}/sso-provider`, { body: { issuer, domain: signIn, oidc: { credentials: "platform" } }, ...precondition, key }, context)
       return { results: { ssoProviderId: done.id, operationId: done.operationId }, applied_changes: preview.changes, effects_performed: preview.effects }
