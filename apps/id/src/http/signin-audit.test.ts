@@ -96,6 +96,7 @@ test("audit failure preserves the redirect and logs one line", async () => {
     expect(log.mock.calls[0]).toEqual([
       "[id] audit",
       JSON.stringify({
+        level: "error",
         event: "signin_rejection_audit_unavailable",
         requestId: "request",
         name: "Error",

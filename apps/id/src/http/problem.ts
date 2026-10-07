@@ -4,6 +4,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { resolver } from "hono-openapi";
 import { z } from "zod";
 import type { AppEnvironment } from "./context.ts";
+import { logEvent } from "../lib/log.ts";
 
 export class ProblemError extends Error {
   override name = "ProblemError";
@@ -202,14 +203,10 @@ export const problemHandler: ErrorHandler<AppEnvironment> = (
   }
   const mapped = mapDatabaseError(error);
   if (mapped) return problem(context, mapped);
-  console.error(
-    "[id] error",
-    JSON.stringify({
-      requestId: context.get("requestId"),
-      event: "unexpected_error",
-      ...errorFields(error),
-    }),
-  );
+  logEvent("error", "unexpected_error", {
+    requestId: context.get("requestId"),
+    ...errorFields(error),
+  });
   return problem(
     context,
     new ProblemError(500, "internal_error", "Unexpected error"),

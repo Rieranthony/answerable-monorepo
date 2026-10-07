@@ -172,8 +172,9 @@ describe("unit: HTTP problems", () => {
       expect(log).toHaveBeenCalledWith(
         "[id] error",
         JSON.stringify({
-          requestId: "request-123",
+          level: "error",
           event: "unexpected_error",
+          requestId: "request-123",
           name: "Error",
           code: "08006",
         }),
@@ -205,8 +206,9 @@ describe("unit: HTTP problems", () => {
       expect(log).toHaveBeenCalledWith(
         "[id] error",
         JSON.stringify({
-          requestId: "request-123",
+          level: "error",
           event: "unexpected_error",
+          requestId: "request-123",
           name: "Error",
         }),
       );

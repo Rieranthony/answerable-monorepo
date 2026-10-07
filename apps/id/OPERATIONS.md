@@ -37,19 +37,21 @@ tokens stay until their own expiry. An advisory lock lets one process delete at 
 time; a process that finds it taken skips the rest of that run. A run that deleted
 rows writes `[id] protocol sweep` followed by JSON with the count per table; expiry
 records no audit. A failed run writes only `protocol_sweep_failed`, with the
-SQLSTATE as `code` when the database gave one, and the next interval retries. Better Auth deletes
+error's class and its SQLSTATE when the database gave one, and the next interval retries. Better Auth deletes
 expired `verifications` itself.
 
 **Shutdown.** On `SIGINT` or `SIGTERM` the process stops listening, waits for in-flight
 requests, stops the sweep after its running batch and closes the pool. A failed shutdown
-writes `shutdown_failed` with the error's name and exits with status 1.
+writes `shutdown_failed` with the error's class and exits with status 1.
 
 **Monitoring handoff.** Configure the selected collector/scheduler to route these
 signals to an operator. No destination or numerical alert budget is configured here.
-An unexpected request error writes `[id] error` with `unexpected_error`; it and the
-`admin_denial_audit_unavailable` and `signin_rejection_audit_unavailable` events name
-the error's class as `name` and, for a database error, its SQLSTATE as `code` and any
-`constraint`, never its message.
+Each event is one line: `[id] <area>`, then JSON that starts with `level` and `event`.
+An unexpected request error writes `[id] error` with `unexpected_error`. It,
+`provider_diagnostic` for a thrown error, `protocol_sweep_failed`, `shutdown_failed`
+and the `admin_denial_audit_unavailable`, `token_rejection_audit_unavailable` and
+`signin_rejection_audit_unavailable` events name the error's class as `name` and, for
+a database error, its SQLSTATE as `code` and any `constraint`, never its message.
 
 | Signal                                                                  | Operator check                                                                                                                               |
 | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |

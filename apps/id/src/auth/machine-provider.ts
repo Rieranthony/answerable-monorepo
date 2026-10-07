@@ -12,6 +12,8 @@ import {
 } from "@better-auth/oauth-provider";
 import { APIError, createAuthEndpoint } from "better-auth/api";
 import type { Database } from "../db/client.ts";
+import { errorFields } from "../http/problem.ts";
+import { logEvent } from "../lib/log.ts";
 import { authTransaction } from "./database-adapter.ts";
 import {
   recordMachineIssuance,
@@ -154,14 +156,12 @@ export function machineOAuthProvider(
                   requestId: ctx.headers?.get("x-request-id"),
                 });
               });
-            } catch {
-              // Do not inspect error objects: driver parameters can contain credentials.
-              console.error(
-                "[id] auth",
-                JSON.stringify({
-                  level: "error",
-                  event: "token_rejection_audit_unavailable",
-                }),
+            } catch (auditError) {
+              // The class and SQLSTATE only: driver parameters can contain credentials.
+              logEvent(
+                "auth",
+                "token_rejection_audit_unavailable",
+                errorFields(auditError),
               );
             }
             throw error;

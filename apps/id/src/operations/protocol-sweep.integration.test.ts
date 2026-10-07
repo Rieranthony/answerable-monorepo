@@ -283,7 +283,7 @@ test("stopping clears the timer, waits for the running batch and ends the sweep 
     expect(log).not.toHaveBeenCalled();
   }));
 
-test("a failed sweep logs only its event and the next tick sweeps again", () =>
+test("a failed sweep logs only its event and the error's class, and the next tick sweeps again", () =>
   withTimers(async ({ timers, error }) => {
     const failing = {
       transaction: async () => {
@@ -302,12 +302,16 @@ test("a failed sweep logs only its event and the next tick sweeps again", () =>
     expect(error.mock.calls).toEqual(
       Array(2).fill([
         "[id] protocol sweep",
-        JSON.stringify({ level: "error", event: "protocol_sweep_failed" }),
+        JSON.stringify({
+          level: "error",
+          event: "protocol_sweep_failed",
+          name: "Error",
+        }),
       ]),
     );
   }));
 
-test("a failed sweep logs the database error's SQLSTATE and nothing else", () =>
+test("a failed sweep logs the error's class and SQLSTATE and nothing else", () =>
   withTimers(async ({ timers, error }) => {
     const failing = {
       transaction: async () => {
@@ -331,6 +335,7 @@ test("a failed sweep logs the database error's SQLSTATE and nothing else", () =>
         JSON.stringify({
           level: "error",
           event: "protocol_sweep_failed",
+          name: "Error",
           code: "57014",
         }),
       ],

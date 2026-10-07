@@ -704,7 +704,13 @@ describe("integration: federated sign-in", () => {
       expect(diagnostic.mock.calls).toEqual([
         [
           "[id] auth",
-          JSON.stringify({ level: "error", event: "provider_diagnostic" }),
+          JSON.stringify({
+            level: "error",
+            event: "provider_diagnostic",
+            name: "Error",
+            code: "23514",
+            constraint: "origin_write_fault",
+          }),
         ],
       ]);
     } finally {

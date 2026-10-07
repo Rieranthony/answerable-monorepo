@@ -1,5 +1,6 @@
 import { APIError } from "better-auth/api";
 import { classifyIssuer } from "../services/federation.ts";
+import { logEvent } from "../lib/log.ts";
 
 export const platformApplications = {
   google: {
@@ -54,14 +55,7 @@ export function hydrateSsoProviderRow<T>(
   );
   const credentials = application && applications[application];
   if (!credentials) {
-    console.error(
-      "[id] auth",
-      JSON.stringify({
-        level: "error",
-        event: "platform_application_missing",
-        application,
-      }),
-    );
+    logEvent("auth", "platform_application_missing", { application });
     throw new APIError("SERVICE_UNAVAILABLE", {
       code: "platform_application_missing",
       message: "The platform application for this directory is not configured",

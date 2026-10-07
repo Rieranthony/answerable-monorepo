@@ -16,7 +16,9 @@ import {
   membershipStatuses,
 } from "./db/schema/vocabulary.ts";
 import type { Environment } from "./env.ts";
+import { errorFields } from "./http/problem.ts";
 import { createId } from "./lib/id.ts";
+import { logEvent } from "./lib/log.ts";
 import { createSsoOriginBoundary } from "./auth/sso-origin.ts";
 import { upstreamTokenStorage } from "./auth/upstream-token-storage.ts";
 import { createVerifiedSso } from "./auth/verified-sso.ts";
@@ -50,10 +52,7 @@ export function createAuth(db: Database, environment: Environment) {
       onError(error) {
         if (isAPIError(error)) return;
 
-        console.error(
-          "[id] auth",
-          JSON.stringify({ level: "error", event: "provider_diagnostic" }),
-        );
+        logEvent("auth", "provider_diagnostic", errorFields(error));
         // Throw a safe protocol error so the native router cannot log the raw exception.
         throw new APIError("INTERNAL_SERVER_ERROR", {
           code: "authentication_unavailable",
@@ -65,11 +64,7 @@ export function createAuth(db: Database, environment: Environment) {
     // Preserve a severity signal, never free-form messages or argument objects.
     logger: {
       level: "warn",
-      log: (level) =>
-        console.error(
-          "[id] auth",
-          JSON.stringify({ level, event: "provider_diagnostic" }),
-        ),
+      log: (level) => logEvent("auth", "provider_diagnostic", { level }),
     },
     baseURL: environment.betterAuthUrl,
     basePath: "/auth",

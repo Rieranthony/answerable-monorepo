@@ -509,6 +509,9 @@ test("rejection audit failure keeps the original denial and emits only a safe op
       JSON.stringify({
         level: "error",
         event: "token_rejection_audit_unavailable",
+        // raise_exception: the trigger's message never reaches the log.
+        name: "Error",
+        code: "P0001",
       }),
     ]);
     for (const secret of [

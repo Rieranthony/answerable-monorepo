@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { recordAuditEvent } from "../db/queries/audit.ts";
 import type { AppEnvironment } from "./context.ts";
 import { boundedUserAgent } from "../lib/user-agent.ts";
+import { logEvent } from "../lib/log.ts";
 import { errorFields } from "./problem.ts";
 import { federationFailureCodes } from "../services/federation.ts";
 
@@ -43,13 +44,9 @@ export async function recordRejectedSignIn(
       userAgent: boundedUserAgent(context.req.header("user-agent")),
     });
   } catch (error) {
-    console.error(
-      "[id] audit",
-      JSON.stringify({
-        event: "signin_rejection_audit_unavailable",
-        requestId,
-        ...errorFields(error),
-      }),
-    );
+    logEvent("audit", "signin_rejection_audit_unavailable", {
+      requestId,
+      ...errorFields(error),
+    });
   }
 }
