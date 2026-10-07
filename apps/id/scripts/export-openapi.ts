@@ -1,18 +1,18 @@
+import { testEnvironment } from "../src/__tests__/support.ts";
 import { createApp } from "../src/app.ts";
 import { createAuth } from "../src/auth.ts";
 import { createDatabase } from "../src/db/client.ts";
-import { loadEnvironment } from "../src/env.ts";
 import { buildPublicOpenApiDocument } from "../src/http/openapi.ts";
 
-const environment = loadEnvironment();
+// The documents depend on no configuration but their servers, so the export
+// builds them as the snapshot tests do; no query reaches the database.
+const environment = testEnvironment();
 const database = createDatabase(environment);
 
 try {
   const auth = createAuth(database.db, environment);
   const app = createApp({ auth, db: database.db, environment });
-  const servers = [
-    { url: Bun.env.PUBLIC_ID_URL ?? "https://id.answerable.org" },
-  ];
+  const servers = [{ url: "https://id.answerable.org" }];
   const document = await buildPublicOpenApiDocument({
     app,
     auth,

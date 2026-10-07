@@ -8,7 +8,7 @@ Identity and authorisation service for Answerable. Own-tenant SSO, verified link
 - Browser pages: `/login`, `/authorize`, `/consent`, `/error` and `/security`, rendered on the server with `hono/jsx` and the shared theme from `packages/ui`; the stylesheet and font are served under `/assets`. The pages call the allowlisted Better Auth routes in-process and use no browser JavaScript
 - Admin API: `/api/admin/v1` — caller, organisations, domains, SSO provider, users, sessions, members, groups and group members, clients and their owners/resource links, resources, entitlements, access views and audit events
 - Public OpenAPI contract: `/openapi.json` — the reachable routes only; snapshot: `apps/id/openapi.json`
-- Admin OpenAPI: `/api/admin/openapi.json` — snapshot: `apps/id/openapi.admin.json`; regenerate both snapshots with `bun run openapi:export`
+- Admin OpenAPI: `/api/admin/openapi.json` — snapshot: `apps/id/openapi.admin.json`; regenerate both snapshots with `bun run openapi:export`, which needs no `.env`
 - Liveness: `/healthz` (no database query)
 - Readiness: `/readyz` (one `select 1`)
 

@@ -408,11 +408,10 @@ test("default.env lists every variable with an empty value", async () => {
   expect(names.filter((name, index) => names.indexOf(name) !== index)).toEqual(
     [],
   );
-  // Read outside the service schema: migrations, the test database and the OpenAPI export.
+  // Read outside the service schema: migrations and the test database.
   const tooling = [
     "DATABASE_MIGRATION_URL",
     "DATABASE_RUNTIME_ROLE",
-    "PUBLIC_ID_URL",
     "TEST_DATABASE_URL",
   ];
   expect(
