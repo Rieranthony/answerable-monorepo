@@ -6,6 +6,7 @@ import {
 import { APIError } from "better-auth/api";
 import { decodeJwt, decodeProtectedHeader } from "jose";
 import { z } from "zod";
+import { parseScope } from "../lib/scopes.ts";
 import type { NativeContext } from "./native-client-authentication.ts";
 import type { UserResourceDecision } from "./user-resource-policy.ts";
 
@@ -68,7 +69,7 @@ export async function assertUserTokenResponse(input: {
       decision.resource === null ||
       decision.resource.scopeCeiling!.includes(scope),
   );
-  const scopes = response.scope.split(" ").filter(Boolean);
+  const scopes = parseScope(response.scope);
   const hasRefresh =
     input.clientAllowsRefresh &&
     (reference.scopes.includes("offline_access") ||

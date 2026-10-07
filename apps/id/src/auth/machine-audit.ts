@@ -4,6 +4,7 @@ import { z } from "zod";
 import { isAPIError } from "better-auth/api";
 import type { Executor } from "../db/client.ts";
 import { recordAuditEvent } from "../db/queries/audit.ts";
+import { parseScope, uniqueSorted } from "../lib/scopes.ts";
 import { temporarilyUnavailable } from "./grant-error.ts";
 import { machineIdentitySchema } from "./machine-identity.ts";
 
@@ -31,9 +32,7 @@ export async function recordMachineIssuance(
 ) {
   const claims = issuedClaims.parse(decodeJwt(input.token));
   const { decision } = input;
-  const grantedScopes = [
-    ...new Set(claims.scope.split(" ").filter(Boolean)),
-  ].sort();
+  const grantedScopes = uniqueSorted(parseScope(claims.scope));
   if (
     claims.client_id !== decision.client.clientId ||
     claims.sub !== decision.client.clientId ||

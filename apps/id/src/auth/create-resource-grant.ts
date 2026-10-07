@@ -14,6 +14,7 @@ import {
   oauthClientResources,
 } from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
+import { uniqueSorted } from "../lib/scopes.ts";
 import { lockResourceGrantTargets } from "./lock-resource-grant-policy.ts";
 import { rethrowGrantError } from "./grant-error.ts";
 import { tenantAuthentication } from "./tenant-authentication.ts";
@@ -34,7 +35,7 @@ export async function createResourceGrant(
   },
   lifetimeSeconds: number,
 ) {
-  const scopes = [...new Set(input.scopes)].sort();
+  const scopes = uniqueSorted(input.scopes);
   const scopeArray = sql<string[]>`ARRAY[${sql.join(
     scopes.map((scope) => sql`${scope}`),
     sql`, `,

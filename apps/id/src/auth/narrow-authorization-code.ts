@@ -1,3 +1,5 @@
+import { parseScope } from "../lib/scopes.ts";
+
 /** Bind native authorisation codes to the approved grant and scope subset. */
 export function narrowAuthorizationCode(
   value: string,
@@ -12,10 +14,9 @@ export function narrowAuthorizationCode(
     return value;
   }
   if (stored?.type !== "authorization_code") return value;
-  const scopes =
-    typeof stored.query?.scope === "string"
-      ? stored.query.scope.split(" ")
-      : [];
+  const scopes = parseScope(
+    typeof stored.query?.scope === "string" ? stored.query.scope : null,
+  );
   if (
     stored.referenceId !== grantId ||
     granted.some((scope) => !scopes.includes(scope))

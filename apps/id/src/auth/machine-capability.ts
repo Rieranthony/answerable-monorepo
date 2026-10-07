@@ -1,6 +1,7 @@
 import { grantScopes, identityScopes } from "./grant-scopes.ts";
 import type { Executor } from "../db/client.ts";
 import { findMachineCapability } from "../db/queries/capabilities.ts";
+import { uniqueSorted } from "../lib/scopes.ts";
 
 /** Called only after authenticated ownership and organisation/client/resource locks. */
 export async function machineCapability(
@@ -68,7 +69,7 @@ export async function machineCapability(
     requestedScopes:
       input.requestedScopes === undefined
         ? null
-        : [...new Set(input.requestedScopes)].sort(),
+        : uniqueSorted(input.requestedScopes),
     scopes,
   };
 }

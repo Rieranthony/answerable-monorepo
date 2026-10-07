@@ -11,6 +11,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { setDatabaseScope } from "../db/isolation.ts";
 import { grantContexts, oauthResources } from "../db/schema/index.ts";
+import { parseScope } from "../lib/scopes.ts";
 import {
   authTransaction,
   grantTransaction,
@@ -232,7 +233,7 @@ export function createUserTokenBoundary() {
                   id: code.data.referenceId,
                   userId: code.data.userId,
                   sessionId: code.data.sessionId,
-                  scopes: code.data.query.scope.split(" ").filter(Boolean),
+                  scopes: parseScope(code.data.query.scope),
                   resources: code.data.resource,
                   nonce: code.data.query.nonce,
                 };
@@ -269,7 +270,7 @@ export function createUserTokenBoundary() {
                 throw new APIError("BAD_REQUEST", { error: "invalid_target" });
               const scopes: string[] =
                 kind === "refresh_token" && ctx.body.scope !== undefined
-                  ? ctx.body.scope.split(" ").filter(Boolean)
+                  ? parseScope(ctx.body.scope)
                   : reference.scopes;
               if (scopes.some((scope) => !reference!.scopes.includes(scope)))
                 throw new APIError("BAD_REQUEST", { error: "invalid_scope" });

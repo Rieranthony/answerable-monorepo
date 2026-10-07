@@ -8,6 +8,7 @@ import { APIError, createAuthEndpoint } from "better-auth/api";
 import type { Database } from "../db/client.ts";
 import { errorFields } from "../http/problem.ts";
 import { logEvent } from "../lib/log.ts";
+import { parseScope } from "../lib/scopes.ts";
 import { grantTransaction, withAdapter } from "./database-adapter.ts";
 import {
   recordMachineIssuance,
@@ -100,7 +101,7 @@ export function machineOAuthProvider(
                 const requestedScopes =
                   ctx.body.scope === undefined
                     ? undefined
-                    : ctx.body.scope.split(" ").filter(Boolean);
+                    : parseScope(ctx.body.scope);
                 if (requestedScopes?.some((scope) => identityScopes.has(scope)))
                   throw new APIError("BAD_REQUEST", { error: "invalid_scope" });
                 const decision = await machineCapability(tx, {

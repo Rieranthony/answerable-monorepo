@@ -1,3 +1,5 @@
+import { uniqueSorted } from "../lib/scopes.ts";
+
 /** Explicit requests must fit every ceiling; omitted scopes use their intersection. */
 export function grantScopes(
   requested: readonly string[] | undefined,
@@ -6,7 +8,7 @@ export function grantScopes(
   const allowed = (ceilings[0] ?? []).filter((scope) =>
     ceilings.every((ceiling) => ceiling.includes(scope)),
   );
-  const selected = [...new Set(requested ?? allowed)].sort();
+  const selected = uniqueSorted(requested ?? allowed);
   return selected.length && selected.every((scope) => allowed.includes(scope))
     ? selected
     : null;
@@ -17,13 +19,11 @@ export function narrowScopes(
   requested: readonly string[],
   ceilings: readonly (readonly string[])[],
 ): string[] | null {
-  const selected = [...new Set(requested)]
-    .filter(
-      (scope) =>
-        ceilings.length > 0 &&
-        ceilings.every((ceiling) => ceiling.includes(scope)),
-    )
-    .sort();
+  const selected = uniqueSorted(requested).filter(
+    (scope) =>
+      ceilings.length > 0 &&
+      ceilings.every((ceiling) => ceiling.includes(scope)),
+  );
   return selected.length ? selected : null;
 }
 

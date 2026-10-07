@@ -20,6 +20,7 @@ import {
 } from "../db/schema/index.ts";
 import { setDatabaseScope } from "../db/isolation.ts";
 import { createId } from "../lib/id.ts";
+import { parseScope } from "../lib/scopes.ts";
 import { grantTransaction, withAdapter } from "./database-adapter.ts";
 import { createResourceGrant } from "./create-resource-grant.ts";
 import { currentGrantAuthentication } from "./grant-authentication.ts";
@@ -105,10 +106,9 @@ export function createUserOAuthFlow(
         current.sessionId !== session?.id ||
         scopes.some(
           (scope) =>
-            !new URLSearchParams(current.flow.query)
-              .get("scope")
-              ?.split(" ")
-              .includes(scope),
+            !parseScope(
+              new URLSearchParams(current.flow.query).get("scope"),
+            ).includes(scope),
         )
       )
         throw invalid();
@@ -209,13 +209,12 @@ export function createUserOAuthFlow(
       if (resources.length > 1)
         throw new APIError("BAD_REQUEST", { error: "invalid_target" });
       const resource = resources[0] ?? null;
-      const originalScopes =
-        params.get("scope")?.split(" ").filter(Boolean) ?? [];
+      const originalScopes = parseScope(params.get("scope"));
       const scopes =
         action === "consent" &&
         ctx.body.accept === true &&
         ctx.body.scope !== undefined
-          ? (ctx.body.scope.split(" ") as string[])
+          ? parseScope(ctx.body.scope)
           : originalScopes;
       // Authorise the consented subset before native resource-scope filtering.
       if (scopes.some((scope) => !originalScopes.includes(scope)))

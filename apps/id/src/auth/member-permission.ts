@@ -1,6 +1,7 @@
 import { and, eq, or, sql, isNull } from "drizzle-orm";
 import type { Executor } from "../db/client.ts";
 import { isEffective, matchingEntitlements } from "../db/queries/effective.ts";
+import { uniqueSorted } from "../lib/scopes.ts";
 import {
   members,
   groupMembers,
@@ -195,9 +196,7 @@ function memberDecision(
     client: target === "resource" ? null : row.client,
     resource: target === "client" ? null : row.resource,
     requestedScopes:
-      requestedScopes === undefined
-        ? null
-        : [...new Set(requestedScopes)].sort(),
+      requestedScopes === undefined ? null : uniqueSorted(requestedScopes),
     scopes: [] as string[],
     evidence: {
       policyVersion: 1,
@@ -406,15 +405,13 @@ export function evaluateUserResourcePermission(
     grantedScopes:
       input.requestedScopes === undefined
         ? null
-        : [
-            ...new Set([
-              ...scopes,
-              ...input.requestedScopes.filter(
-                (scope) =>
-                  identityScopes.has(scope) && login.scopes.includes(scope),
-              ),
-            ]),
-          ].sort(),
+        : uniqueSorted([
+            ...scopes,
+            ...input.requestedScopes.filter(
+              (scope) =>
+                identityScopes.has(scope) && login.scopes.includes(scope),
+            ),
+          ]),
     evidence: {
       policyVersion: 1,
       evaluatedAt: row.evaluatedAt,
