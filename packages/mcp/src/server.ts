@@ -50,8 +50,9 @@ export type McpServerConfig = {
   /**
    * Which tools a caller sees and may call, decided in place of the scope rule for each request that lists or calls tools or reads views; other
    * requests, such as `initialize`, see no tools. `called` is true when the request calls that tool, so a hub can record the refusal.
-   * A `ToolError` it throws answers a call with that error whatever the call names; a list fails. Anything else it throws fails the request with
-   * HTTP 500, logged as `[mcp] request failed`. Default: the token carries every scope of the tool.
+   * A `ToolError` it throws answers a call with that error whatever tool the call names (a name no tool could have, outside lowercase letters,
+   * digits and underscores, stays unknown); a list fails. Anything else it throws fails the request with HTTP 500, logged as `[mcp] request failed`.
+   * Default: the token carries every scope of the tool.
    */
   allow?: (principal: UserPrincipal, tool: Served<Tool | Mutation>, called: boolean) => boolean | Promise<boolean>
   /**
@@ -109,6 +110,8 @@ async function peek(request: Request): Promise<Peeked> {
     return {}
   }
 }
+// Every name a tool can have on the wire; the longest, a mounted provider's, is 46 characters.
+const wireGrammar = /^[a-z0-9_]{1,64}$/
 const batchRefused = () => Response.json({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Batches are not supported; send one JSON-RPC request per POST" } }, { status: 400 })
 
 // Each tool with its name on the wire: `provider`'s own unprefixed, mounted ones prefixed with their provider's id.
@@ -229,8 +232,11 @@ export function createMcpServer(config: McpServerConfig): McpServerHandle {
       tools = await projected(principal, permitted)
     } catch (error) {
       if (!(error instanceof ToolError) || called === undefined) throw error
-      // Whatever the call names, so that a refusal reveals nothing about which tools exist.
-      server.registerTool(called, { inputSchema: advertised(z.object({})) }, () => answer(called, Bun.randomUUIDv7(), async () => { throw error }))
+      // Whatever tool the call names, so that a refusal reveals nothing about which tools exist. A name no tool can have stays unknown: the SDK
+      // would print it, newlines included, in its name warnings.
+      if (wireGrammar.test(called)) {
+        server.registerTool(called, { inputSchema: advertised(z.object({})) }, () => answer(called, Bun.randomUUIDv7(), async () => { throw error }))
+      }
       return server
     }
     // A failure is logged under the tool's name, or a commit tool's wire name.

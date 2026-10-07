@@ -149,6 +149,19 @@ test("a ToolError from allow answers any call with its envelope and fails a list
   expect((await mcp.fetch("https://mcp.test/mcp", { method: "POST", headers, body: "{not json" })).status).toBe(400)
 })
 
+test("a ToolError from allow answers only a name a tool could have; any other is unknown and never reaches the log", async () => {
+  const { person } = await hub({ allow: () => { throw new ToolError("UPSTREAM_UNAVAILABLE", "Answerable ID did not answer") } })
+  const client = await person([]).connect()
+  const warn = spyOn(console, "warn")
+  try {
+    expect(errorOf(await client.callTool({ name: "a".repeat(64), arguments: {} })).code).toBe("UPSTREAM_UNAVAILABLE")
+    for (const name of ["x\n[admin] forged log line", "Hub_whoami", "hub.whoami", "a".repeat(65)]) {
+      await expect(client.callTool({ name, arguments: {} })).rejects.toThrow("not found")
+    }
+    expect(warn).not.toHaveBeenCalled()
+  } finally { warn.mockRestore() }
+})
+
 test("anything else allow throws fails the call or the list with a 500, logged as the request's failure", async () => {
   const failure = new Error("grants database down")
   const { mcp } = await hub({ allow: () => { throw failure } })

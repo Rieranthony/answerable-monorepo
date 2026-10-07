@@ -164,7 +164,7 @@ curl "$ID/api/admin/v1/organizations/$ORGANISATION_ID/members/$MEMBERSHIP_ID/acc
 
 **The bound.** A change in ID reaches the person within 60 seconds even when the poller is down, and usually within one poll. In two acceptance runs, an entitlement added to a member reached the same access token after 10.0 and 15.0 seconds, listed by polling `tools/list` every 5 seconds; a listening host is told as soon as the poller sees it ([change](#change)).
 
-**When ID fails.** A stale entry answers until its 60 seconds end. Without one, a call answers `UPSTREAM_UNAVAILABLE` whatever tool it names, and listing tools fails; connecting still works.
+**When ID fails.** A stale entry answers until its 60 seconds end. Without one, a call answers `UPSTREAM_UNAVAILABLE` whatever tool it names, and listing tools fails; connecting still works. A name no tool could have (anything but lowercase letters, digits and underscores, up to 64) answers unknown tool instead.
 
 A capability is **allowed** when its provider is enabled in the organisation's catalogue, the organisation has not disabled it, and one of the caller's grant strings covers it.
 
