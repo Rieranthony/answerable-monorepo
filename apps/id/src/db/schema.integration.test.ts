@@ -607,12 +607,12 @@ describe("integration: PostgreSQL schema", () => {
 
     const domain = await createOrganizationDomain(connection.db, {
       organizationId: first.id,
-      domain: " Example.COM ",
+      domain: "example.com",
     });
     expect(domain.domain).toBe("example.com");
     expect(isUuidV7(domain.id)).toBe(true);
     expect(
-      await organizationAcceptsDomain(connection.db, first.id, " EXAMPLE.com "),
+      await organizationAcceptsDomain(connection.db, first.id, "example.com"),
     ).toBe(true);
     expect(
       await organizationAcceptsDomain(connection.db, first.id, "other.example"),

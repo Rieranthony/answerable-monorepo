@@ -103,7 +103,7 @@ export async function createSsoProvider(
           ? `${input.providerId}-${createId()}`
           : input.providerId,
       issuer: input.issuer,
-      domain: input.domain.trim().toLowerCase(),
+      domain: input.domain,
       oidcConfig: serializeSsoProviderConfig(input),
     })
     .returning();
@@ -198,7 +198,7 @@ export async function updateSsoProvider(
     .update(ssoProviders)
     .set({
       issuer: input.issuer,
-      domain: input.domain.trim().toLowerCase(),
+      domain: input.domain,
       oidcConfig: serializeSsoProviderConfig(input),
     })
     .where(and(isNull(ssoProviders.deletedAt), eq(ssoProviders.id, id)))

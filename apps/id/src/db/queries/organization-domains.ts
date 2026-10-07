@@ -9,8 +9,6 @@ import type { LifecycleStatus } from "../schema/vocabulary.ts";
 import { createId } from "../../lib/id.ts";
 import { organizationDomains, organizations } from "../schema/index.ts";
 
-const normalizeDomain = (domain: string) => domain.trim().toLowerCase();
-
 export async function createOrganizationDomain(
   context: PlatformWriteContext,
   input: { organizationId: string; domain: string },
@@ -21,14 +19,15 @@ export async function createOrganizationDomain(
     .values({
       id: createId(),
       organizationId: input.organizationId,
-      domain: normalizeDomain(input.domain),
+      domain: input.domain,
     })
     .returning();
 
   return domain!;
 }
 
-/** Whether this tenant currently accepts the domain; never returns a foreign identity. */
+/** Whether this tenant currently accepts the domain; never returns a foreign identity.
+ * Domains arrive normalised: the HTTP boundary lowercases and validates them. */
 export async function organizationAcceptsDomain(
   context: TenantReadContext<"memberAccess">,
   domain: string,
@@ -44,7 +43,7 @@ export async function organizationAcceptsDomain(
     .where(
       and(
         isNull(organizationDomains.deletedAt),
-        eq(organizationDomains.domain, normalizeDomain(domain)),
+        eq(organizationDomains.domain, domain),
         eq(organizationDomains.organizationId, organizationId),
         eq(organizationDomains.status, "active"),
         eq(organizations.status, "active"),
@@ -66,7 +65,7 @@ export async function findDomainOrganizationSlug(db: Executor, domain: string) {
     .where(
       and(
         isNull(organizationDomains.deletedAt),
-        eq(organizationDomains.domain, normalizeDomain(domain)),
+        eq(organizationDomains.domain, domain),
         eq(organizationDomains.status, "active"),
         eq(organizations.status, "active"),
       ),

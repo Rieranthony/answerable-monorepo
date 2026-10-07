@@ -34,7 +34,7 @@ test("provider queries create, find, update, redact and delete", async () => {
     organizationId: org.id,
     providerId: org.slug,
     issuer: "https://login.example.com",
-    domain: " ACME.EXAMPLE.COM ",
+    domain: "acme.example.com",
     oidc: { clientId: "client", clientSecret: "private-secret" },
   };
   const row = await queries.createSsoProvider(db, input);

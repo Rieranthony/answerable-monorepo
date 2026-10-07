@@ -424,7 +424,7 @@ test("restricted domain readers never load another tenant's routing identity", a
         expect(
           await queries.organizationAcceptsDomain(
             context,
-            tenant.domain.domain.toUpperCase(),
+            tenant.domain.domain,
           ),
         ).toBe(true);
         expect(
