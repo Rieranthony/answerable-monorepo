@@ -2,7 +2,7 @@ import { defineProvider, defineTool, manifest, ToolError, type Mutation, type Po
 import { z } from "zod"
 
 /** The caller's grant strings and the capabilities they may use, each with its policy class in their organisation (null for a read). */
-export type Caller = { grants: readonly string[]; capabilities: readonly { tool: Served<Tool | Mutation>; policy_class: PolicyClass | null }[] }
+type Caller = { grants: readonly string[]; capabilities: readonly { tool: Served<Tool | Mutation>; policy_class: PolicyClass | null }[] }
 
 /** What the Toolbox's own tools ask of the hub. */
 export type Hub = {

@@ -10,9 +10,9 @@ export const overridesSchema = z.object({
   policy_class: z.record(z.string(), z.enum(["agent", "controlled", "human"])).default({}),
 }).strict()
 /** What an organisation changes about a provider it may use. */
-export type Overrides = z.output<typeof overridesSchema>
+type Overrides = z.output<typeof overridesSchema>
 /** Whether an organisation may use a provider, and its overrides. */
-export type CatalogueEntry = { enabled: boolean; overrides: Overrides }
+type CatalogueEntry = { enabled: boolean; overrides: Overrides }
 /** An organisation's catalogue, by provider id. A provider without an entry is not enabled. */
 export type Catalogue = ReadonlyMap<string, CatalogueEntry>
 

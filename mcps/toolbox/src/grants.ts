@@ -5,7 +5,7 @@ import { z } from "zod"
 const grantForm = /^([a-z][a-z0-9]{0,11})(\/[a-z][a-z0-9]{0,15}(\.[a-z][a-z0-9]{0,15})?)?$/
 
 /** Whether an entitlement scope is a grant string: a provider (`e2e`), a domain (`e2e/records`), a capability (`e2e/records.list`), `toolbox/approve` or `toolbox/code`. */
-export const isGrant = (scope: string) => scope === "toolbox/approve" || scope === "toolbox/code" || (scope !== "toolbox" && grantForm.test(scope))
+export const isGrant = (scope: string) => scope !== "toolbox" && grantForm.test(scope)
 
 /** The Toolbox resource's `allowedScopes` in ID: `toolbox`, `offline_access`, `toolbox/approve` and every grant string of the mounted providers. */
 export function allowedScopes(providers: readonly Provider[]) {

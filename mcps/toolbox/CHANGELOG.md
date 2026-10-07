@@ -4,6 +4,8 @@
 
 A grant string on an entitlement limited to one host client (`kind: "client_resource"` in ID's member access view) counts only through that client. The Toolbox used to count it for every host the person signed in through, though ID reaches a pair's resource through its own client only and the admin MCP's `access_grant` promises "only through this OAuth client". The grant cache now holds the member's Toolbox targets for 60 seconds, as before, and each request takes the grant strings of its own client from them. Grants on the Toolbox resource itself, which the enable operation and the journeys use, are unchanged.
 
+- `isGrant` is one test, `toolbox/approve` and `toolbox/code` among the strings its pattern accepts, with the same answers. `Caller`, `Overrides` and `CatalogueEntry` are no longer exported; nothing imported them.
+
 ## 0.3.4
 
 No tool changes. `readToolboxEnvironment` is built on `@answerable/mcp`'s `parseEnvironment`, with the same messages, and the error code that evidence and spans record comes from its `errorCodeOf`. Intents use `@answerable/mcp-postgres` 0.4.0's `createPostgresIntentStore(db, evidence)`, with the same evidence.
