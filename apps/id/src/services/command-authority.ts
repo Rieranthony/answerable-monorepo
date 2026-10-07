@@ -114,7 +114,6 @@ export async function authorizeCommand(
     );
     if (
       !claims ||
-      !Number.isFinite(claims.expiresAt) ||
       claims.expiresAt <= Date.now() / 1000 ||
       !client ||
       client.disabled ||

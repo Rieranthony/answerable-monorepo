@@ -31,6 +31,7 @@ import { validate } from "../validation.ts";
 import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 import { lifecycleStatuses } from "../../db/schema/vocabulary.ts";
+import { uniqueSorted } from "../../lib/scopes.ts";
 const page = (schema: z.ZodType) =>
   z.object({ items: z.array(schema), nextCursor: z.uuid().nullable() });
 const orgParams = uuidParam("organizationId");
@@ -337,9 +338,7 @@ export function register(app: Hono<AppEnvironment>) {
       const input = {
         ...parsed,
         ...windowDates(parsed),
-        ...(parsed.scopes === undefined
-          ? {}
-          : { scopes: [...new Set(parsed.scopes)].sort() }),
+        scopes: uniqueSorted(parsed.scopes),
       };
       return platformCommand(
         context,

@@ -283,12 +283,7 @@ export async function removeCapability(
   const [after] = await tx
     .update(organizationCapabilities)
     .set({ deletedAt: sql`now()`, status: "disabled" })
-    .where(
-      and(
-        isNull(organizationCapabilities.deletedAt),
-        where(organizationId, id),
-      ),
-    )
+    .where(where(organizationId, id))
     .returning();
   await recordAuditEvent(tx, {
     ...actor,

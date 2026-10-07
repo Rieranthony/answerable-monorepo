@@ -268,7 +268,6 @@ export function createPrincipalMiddleware(
           if (
             !client ||
             client.disabled ||
-            !Number.isFinite(claims.expiresAt) ||
             claims.expiresAt <= Date.now() / 1000
           )
             throw invalidToken();
