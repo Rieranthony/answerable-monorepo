@@ -99,7 +99,6 @@ export async function memberAccess(
       and(
         isNull(oauthResources.deletedAt),
         isNull(oauthClients.deletedAt),
-        isNull(organizations.deletedAt),
         isNull(users.deletedAt),
         isNull(members.deletedAt),
         eq(members.organizationId, organizationId),
@@ -198,7 +197,6 @@ export async function targetAccess(
         isNull(oauthClients.deletedAt),
         isNull(entitlements.deletedAt),
         isNull(users.deletedAt),
-        isNull(organizations.deletedAt),
         isNull(members.deletedAt),
         eq(members.organizationId, organizationId),
         isEffective(members),

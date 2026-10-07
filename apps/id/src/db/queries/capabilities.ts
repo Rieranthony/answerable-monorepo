@@ -60,7 +60,6 @@ export async function findMachineCapability(
         eq(organizationCapabilities.grantKind, "client_credentials"),
         isEffective(organizationCapabilities),
         eq(oauthResources.disabled, false),
-        isNull(oauthResources.deletedAt),
       ),
     );
   return row ?? null;
