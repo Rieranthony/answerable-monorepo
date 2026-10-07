@@ -4,6 +4,8 @@
 
 `bun run build` finds the view's entry file in a checkout whose path has a space or a non-ASCII character. No tool changes.
 
+- `exports` gains `./view`: `viewHtml`, the built `dist/records.html` read once, for this server and the Toolbox, which used to derive the file's path from `./mcp`'s location. Without a build it throws `Missing the e2e records view. Run bun run --filter @answerable/mcp-e2e build first.`, the message the Toolbox gave; this server's said `Missing records view.`
+
 ## 0.1.0
 
 The reference server, on `@answerable/mcp`, and the first provider the Toolbox mounts.

@@ -6,6 +6,7 @@ A grant string on an entitlement limited to one host client (`kind: "client_reso
 
 - `isGrant` is one test, `toolbox/approve` and `toolbox/code` among the strings its pattern accepts, with the same answers. `Caller`, `Overrides` and `CatalogueEntry` are no longer exported; nothing imported them.
 - The poller and the enable operation read every page of ID's lists with `@answerable/id-admin` 0.5.0's `pages`, which also URL-encodes the poller's cursor.
+- `src/server.ts` imports the e2e view from `@answerable/mcp-e2e/view` instead of deriving `../dist/records.html` from the e2e package's `src/mcp.ts`. When the view is not built, start fails with the same message, now before the environment is read.
 
 ## 0.3.4
 

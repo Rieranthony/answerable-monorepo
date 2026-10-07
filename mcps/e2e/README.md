@@ -7,7 +7,7 @@ The reference MCP server, and the proof that Answerable ID signs people into MCP
 bun run mcp:test:e2e
 ```
 
-The acceptance lives in [`packages/acceptance`](../../packages/acceptance/README.md): it provisions a real ID through its admin API, serves this MCP in process, and signs three organisations in with the official MCP SDK's OAuth client and a real browser. [What it proves](../../apps/web/content/docs/mcp/local-testing.mdx#what-the-e2e-journeys-prove). It imports `createE2eProvider` and `createRecordStore` through this package's `exports`, `@answerable/mcp-e2e/mcp` and `@answerable/mcp-e2e/records`, and serves the provider with `createMcpServer`.
+The acceptance lives in [`packages/acceptance`](../../packages/acceptance/README.md): it provisions a real ID through its admin API, serves this MCP in process, and signs three organisations in with the official MCP SDK's OAuth client and a real browser. [What it proves](../../apps/web/content/docs/mcp/local-testing.mdx#what-the-e2e-journeys-prove). It imports `createE2eProvider` and `createRecordStore` through this package's `exports`, `@answerable/mcp-e2e/mcp` and `@answerable/mcp-e2e/records`, and serves the provider with `createMcpServer`. `@answerable/mcp-e2e/view` is the built view's HTML, read once, which this server and the Toolbox pass as `viewHtml`; importing it before `bun run --filter @answerable/mcp-e2e build` throws.
 
 ## Tools
 

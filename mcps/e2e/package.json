@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     "./mcp": "./src/mcp.ts",
-    "./records": "./src/records.ts"
+    "./records": "./src/records.ts",
+    "./view": "./src/view.ts"
   },
   "scripts": {
     "test": "bun test src",

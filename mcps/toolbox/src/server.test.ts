@@ -2,10 +2,10 @@ import { expect, test } from "bun:test"
 import { database } from "./test/database"
 
 const directory = new URL("../", import.meta.url).pathname
-const e2e = new URL("../", import.meta.resolve("@answerable/mcp-e2e/mcp")).pathname
 
 test("the entry point serves against the database, answers /health and stops on SIGTERM", async () => {
-  const build = Bun.spawn([process.execPath, "scripts/build.ts"], { cwd: e2e, stdout: "ignore", stderr: "pipe" })
+  // The e2e view the entry point imports, built as the Toolbox's dev script builds it.
+  const build = Bun.spawn([process.execPath, "run", "--filter", "@answerable/mcp-e2e", "build"], { cwd: directory, stdout: "ignore", stderr: "pipe" })
   expect(await build.exited, await new Response(build.stderr).text()).toBe(0)
   const probe = Bun.serve({ port: 0, fetch: () => new Response() })
   const { port } = probe
