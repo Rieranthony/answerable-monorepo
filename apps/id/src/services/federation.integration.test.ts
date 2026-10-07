@@ -384,12 +384,7 @@ describe("integration: federated sign-in", () => {
       },
     };
     issuer.enqueue(entraClaims());
-    const result = await signInThroughIdp(app, input, async () => {
-      const [stored] = await connection.db.select().from(verifications);
-      expect(
-        JSON.parse(stored!.value).serverContext.answerableSsoProviderRevisions,
-      ).toEqual({ [provider!.id]: provider!.revision });
-    });
+    const result = await signInThroughIdp(app, input);
     expect(errorCode(result.location)).toBeNull();
     const [session] = await connection.db.select().from(sessions);
     expect(session).toMatchObject({
@@ -1324,14 +1319,14 @@ for (const change of ["removed", "client-id", "secret"] as const) {
     }
   });
 }
-test("adapter hydrates single, multiple and transactional provider reads before observation", async () => {
+test("adapter hydrates and observes single, multiple and transactional provider reads", async () => {
   await seedProvider({ credentials: "platform" });
   const options = createAuth(runtime.db, testEnvironment()).options;
-  const observed: unknown[][] = [];
+  let observed = 0;
   const adapter = authDatabaseAdapter(
     runtime.db,
-    async (rows) => {
-      observed.push(rows);
+    async () => {
+      observed++;
     },
     undefined,
     platformApps,
@@ -1341,8 +1336,10 @@ test("adapter hydrates single, multiple and transactional provider reads before 
     where: [{ field: "providerId", value: "contoso" }],
   };
   const check = async (bound: Pick<typeof adapter, "findOne" | "findMany">) => {
+    const before = observed;
     const row = await bound.findOne<{ oidcConfig: string }>(input);
     const rows = await bound.findMany<{ oidcConfig: string }>(input);
+    expect(observed).toBe(before + 2);
     expect(rows).toHaveLength(1);
     for (const current of [row!, ...rows]) {
       const config = JSON.parse(current.oidcConfig);
@@ -1351,8 +1348,6 @@ test("adapter hydrates single, multiple and transactional provider reads before 
         true,
       );
     }
-    expect(observed.at(-2)![0]).toEqual(row);
-    expect(observed.at(-1)).toEqual(rows);
   };
   await check(adapter);
   await adapter.transaction(check);

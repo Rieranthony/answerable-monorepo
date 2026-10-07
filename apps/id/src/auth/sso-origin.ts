@@ -2,9 +2,8 @@ import { recordAuditEvent } from "../db/queries/audit.ts";
 import { createId } from "../lib/id.ts";
 import { boundedUserAgent } from "../lib/user-agent.ts";
 import type { SSOOptions } from "@better-auth/sso";
-import { AsyncLocalStorage } from "node:async_hooks";
 import { getCurrentAdapter, type BetterAuthOptions } from "better-auth";
-import { APIError, addOAuthServerContext } from "better-auth/api";
+import { APIError } from "better-auth/api";
 import { and, isNull, eq } from "drizzle-orm";
 import { accounts, members, ssoProviders } from "../db/schema/index.ts";
 import { resolveFederatedUser } from "../services/federation.ts";
@@ -28,32 +27,6 @@ type Origin = {
  */
 export function createSsoOriginBoundary(verifiedSso?: VerifiedSso) {
   const origins = new WeakMap<object, Origin>();
-  const requests = new AsyncLocalStorage<Map<string, number>>();
-  function run<T>(work: () => T): T {
-    return requests.run(new Map(), work);
-  }
-  async function observeProviders(rows: unknown[]) {
-    await verifiedSso?.observe();
-    const request = requests.getStore();
-    if (!request) return;
-    for (const row of rows) {
-      if (!row || typeof row !== "object") continue;
-      const provider = row as { id?: unknown; revision?: unknown };
-      if (
-        typeof provider.id !== "string" ||
-        typeof provider.revision !== "number"
-      )
-        continue;
-      if (!request.has(provider.id))
-        request.set(provider.id, provider.revision);
-    }
-    if (!request.size) return;
-    // Native domain routing can select from a list. Preserve its selection and
-    // bind the chosen provider's revision without copying its matching rules.
-    await addOAuthServerContext({
-      answerableSsoProviderRevisions: Object.fromEntries(request),
-    });
-  }
   const resolveUser: NonNullable<SSOOptions["resolveUser"]> = async (
     input,
     { database },
@@ -189,5 +162,5 @@ export function createSsoOriginBoundary(verifiedSso?: VerifiedSso) {
       },
     };
   };
-  return { resolveUser, before, run, observeProviders };
+  return { resolveUser, before };
 }

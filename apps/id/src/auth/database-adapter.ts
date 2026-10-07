@@ -16,7 +16,7 @@ const config = { provider: "pg", schema, usePlural: true } as const;
 /** Preserve the supported adapter while exposing its actual transaction to policy. */
 export function authDatabaseAdapter(
   db: Database,
-  onProviderRead?: (rows: unknown[]) => Promise<void>,
+  onProviderRead?: () => Promise<void>,
   beforeTransaction?: (tx: Executor) => Promise<void>,
   platformApplications: PlatformApplications = {},
 ) {
@@ -56,7 +56,7 @@ export function authDatabaseAdapter(
         let row = await base.findOne<T>(visible(input));
         if (input.model === "ssoProvider") {
           row = hydrateSsoProviderRow(row, platformApplications);
-          await onProviderRead?.([row]);
+          await onProviderRead?.();
         }
         return row;
       },
@@ -66,7 +66,7 @@ export function authDatabaseAdapter(
           rows = rows.map((row) =>
             hydrateSsoProviderRow(row, platformApplications),
           );
-          await onProviderRead?.(rows);
+          await onProviderRead?.();
         }
         return rows;
       },

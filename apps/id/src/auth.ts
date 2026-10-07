@@ -72,7 +72,7 @@ export function createAuth(db: Database, environment: Environment) {
     secrets: environment.betterAuthSecrets,
     database: authDatabaseAdapter(
       db,
-      ssoOrigin.observeProviders,
+      verifiedSso.observe,
       verifiedSso.beforeTransaction,
       environment.platformApplications,
     ),
@@ -276,8 +276,7 @@ export function createAuth(db: Database, environment: Environment) {
   });
   return {
     ...auth,
-    handler: (request: Request) =>
-      verifiedSso.run(() => ssoOrigin.run(() => auth.handler(request))),
+    handler: (request: Request) => verifiedSso.run(() => auth.handler(request)),
   };
 }
 
