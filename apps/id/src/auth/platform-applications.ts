@@ -4,12 +4,10 @@ import { logEvent } from "../lib/log.ts";
 
 export const platformApplications = {
   google: {
-    kind: "google",
     tokenEndpointAuthentication: "client_secret_post",
     scopes: ["email", "openid", "profile"],
   },
   microsoft: {
-    kind: "entra",
     tokenEndpointAuthentication: "client_secret_post",
     scopes: ["email", "offline_access", "openid", "profile"],
   },
