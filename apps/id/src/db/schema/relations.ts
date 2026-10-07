@@ -1,43 +1,20 @@
 import { relations } from "drizzle-orm";
 
-import { auditEvents } from "./audit.ts";
-
 import { accounts, members, organizations, sessions, users } from "./auth.ts";
-import {
-  entitlements,
-  groupMembers,
-  groups,
-  organizationDomains,
-} from "./authorization.ts";
-import {
-  oauthAccessTokens,
-  oauthClientResources,
-  oauthClients,
-  oauthConsents,
-  oauthRefreshTokens,
-  oauthResources,
-} from "./oauth.ts";
-import { ssoProviders } from "./federation.ts";
 
-// One-side relations are named after the Better Auth model they point at,
-// which is the key its adapter looks for when it joins.
+// The relations Better Auth's adapter joins on (`joins: true` in auth.ts):
+// one-side relations are named after the model they point at, many-side ones
+// after the plural model name, which are the keys the adapter looks for.
 
 export const usersRelations = relations(users, ({ many }) => ({
-  sessions: many(sessions),
   accounts: many(accounts),
-  members: many(members),
-  oauthRefreshTokens: many(oauthRefreshTokens),
-  oauthAccessTokens: many(oauthAccessTokens),
-  oauthConsents: many(oauthConsents),
 }));
 
-export const sessionsRelations = relations(sessions, ({ many, one }) => ({
+export const sessionsRelations = relations(sessions, ({ one }) => ({
   user: one(users, {
     fields: [sessions.userId],
     references: [users.id],
   }),
-  oauthRefreshTokens: many(oauthRefreshTokens),
-  oauthAccessTokens: many(oauthAccessTokens),
 }));
 
 export const accountsRelations = relations(accounts, ({ one }) => ({
@@ -47,27 +24,11 @@ export const accountsRelations = relations(accounts, ({ one }) => ({
   }),
 }));
 
-export const organizationsRelations = relations(
-  organizations,
-  ({ many, one }) => ({
-    members: many(members),
-    domains: many(organizationDomains),
-    auditEvents: many(auditEvents),
-    groups: many(groups),
-    entitlements: many(entitlements),
-    oauthClients: many(oauthClients),
-    ssoProvider: one(ssoProviders),
-  }),
-);
-
-export const ssoProvidersRelations = relations(ssoProviders, ({ one }) => ({
-  organization: one(organizations, {
-    fields: [ssoProviders.organizationId],
-    references: [organizations.id],
-  }),
+export const organizationsRelations = relations(organizations, ({ many }) => ({
+  members: many(members),
 }));
 
-export const membersRelations = relations(members, ({ many, one }) => ({
+export const membersRelations = relations(members, ({ one }) => ({
   organization: one(organizations, {
     fields: [members.organizationId],
     references: [organizations.id],
@@ -75,156 +36,5 @@ export const membersRelations = relations(members, ({ many, one }) => ({
   user: one(users, {
     fields: [members.userId],
     references: [users.id],
-  }),
-  groupMembers: many(groupMembers),
-  entitlements: many(entitlements),
-}));
-
-export const organizationDomainsRelations = relations(
-  organizationDomains,
-  ({ one }) => ({
-    organization: one(organizations, {
-      fields: [organizationDomains.organizationId],
-      references: [organizations.id],
-    }),
-  }),
-);
-
-export const groupsRelations = relations(groups, ({ many, one }) => ({
-  organization: one(organizations, {
-    fields: [groups.organizationId],
-    references: [organizations.id],
-  }),
-  groupMembers: many(groupMembers),
-  entitlements: many(entitlements),
-}));
-
-export const groupMembersRelations = relations(groupMembers, ({ one }) => ({
-  group: one(groups, {
-    fields: [groupMembers.groupId],
-    references: [groups.id],
-  }),
-  member: one(members, {
-    fields: [groupMembers.memberId],
-    references: [members.id],
-  }),
-}));
-
-export const oauthClientsRelations = relations(
-  oauthClients,
-  ({ many, one }) => ({
-    organization: one(organizations, {
-      fields: [oauthClients.organizationId],
-      references: [organizations.id],
-    }),
-    oauthClientResources: many(oauthClientResources),
-    oauthRefreshTokens: many(oauthRefreshTokens),
-    oauthAccessTokens: many(oauthAccessTokens),
-    oauthConsents: many(oauthConsents),
-    entitlements: many(entitlements),
-  }),
-);
-
-export const oauthResourcesRelations = relations(
-  oauthResources,
-  ({ many }) => ({
-    oauthClientResources: many(oauthClientResources),
-    entitlements: many(entitlements),
-  }),
-);
-
-export const oauthClientResourcesRelations = relations(
-  oauthClientResources,
-  ({ one }) => ({
-    oauthClient: one(oauthClients, {
-      fields: [oauthClientResources.clientId],
-      references: [oauthClients.clientId],
-    }),
-    oauthResource: one(oauthResources, {
-      fields: [oauthClientResources.resourceId],
-      references: [oauthResources.identifier],
-    }),
-  }),
-);
-
-export const oauthRefreshTokensRelations = relations(
-  oauthRefreshTokens,
-  ({ many, one }) => ({
-    oauthClient: one(oauthClients, {
-      fields: [oauthRefreshTokens.clientId],
-      references: [oauthClients.clientId],
-    }),
-    session: one(sessions, {
-      fields: [oauthRefreshTokens.sessionId],
-      references: [sessions.id],
-    }),
-    user: one(users, {
-      fields: [oauthRefreshTokens.userId],
-      references: [users.id],
-    }),
-    oauthAccessTokens: many(oauthAccessTokens),
-  }),
-);
-
-export const oauthAccessTokensRelations = relations(
-  oauthAccessTokens,
-  ({ one }) => ({
-    oauthClient: one(oauthClients, {
-      fields: [oauthAccessTokens.clientId],
-      references: [oauthClients.clientId],
-    }),
-    session: one(sessions, {
-      fields: [oauthAccessTokens.sessionId],
-      references: [sessions.id],
-    }),
-    user: one(users, {
-      fields: [oauthAccessTokens.userId],
-      references: [users.id],
-    }),
-    oauthRefreshToken: one(oauthRefreshTokens, {
-      fields: [oauthAccessTokens.refreshId],
-      references: [oauthRefreshTokens.id],
-    }),
-  }),
-);
-
-export const oauthConsentsRelations = relations(oauthConsents, ({ one }) => ({
-  oauthClient: one(oauthClients, {
-    fields: [oauthConsents.clientId],
-    references: [oauthClients.clientId],
-  }),
-  user: one(users, {
-    fields: [oauthConsents.userId],
-    references: [users.id],
-  }),
-}));
-
-export const entitlementsRelations = relations(entitlements, ({ one }) => ({
-  organization: one(organizations, {
-    fields: [entitlements.organizationId],
-    references: [organizations.id],
-  }),
-  member: one(members, {
-    fields: [entitlements.memberId],
-    references: [members.id],
-  }),
-  group: one(groups, {
-    fields: [entitlements.groupId],
-    references: [groups.id],
-  }),
-  oauthClient: one(oauthClients, {
-    fields: [entitlements.clientId],
-    references: [oauthClients.clientId],
-  }),
-  oauthResource: one(oauthResources, {
-    fields: [entitlements.resource],
-    references: [oauthResources.identifier],
-  }),
-}));
-
-export const auditEventsRelations = relations(auditEvents, ({ one }) => ({
-  organization: one(organizations, {
-    fields: [auditEvents.organizationId],
-    references: [organizations.id],
   }),
 }));

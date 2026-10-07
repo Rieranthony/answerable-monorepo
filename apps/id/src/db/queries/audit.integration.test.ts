@@ -82,16 +82,12 @@ test("round-trips JSON data and optional fields inside a transaction", async () 
   expect(row.occurredAt).toBeInstanceOf(Date);
   expect(row).toMatchObject(input);
   expect(await connection.db.select().from(auditEvents)).toEqual([row]);
-  const graph = await connection.db.query.organizations.findFirst({
-    where: eq(organizations.id, organization.id),
-    with: { auditEvents: true },
-  });
-  expect(graph?.auditEvents).toEqual([row]);
-  const auditGraph = await connection.db.query.auditEvents.findFirst({
-    where: eq(auditEvents.id, row.id),
-    with: { organization: true },
-  });
-  expect(auditGraph?.organization?.id).toBe(organization.id);
+  expect(
+    await connection.db
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.organizationId, organization.id)),
+  ).toEqual([row]);
 
   for (const optionals of [
     {},

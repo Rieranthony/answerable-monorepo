@@ -263,19 +263,15 @@ describe("integration: PostgreSQL schema", () => {
       organizationId: organization.id,
     });
 
-    const owningOrganization =
-      await connection.db.query.organizations.findFirst({
-        where: eq(organizations.id, organization.id),
-        with: { oauthClients: true },
-      });
-    const ownedClient = await connection.db.query.oauthClients.findFirst({
-      where: eq(oauthClients.clientId, clientId),
-      with: { organization: true },
-    });
     expect(
-      owningOrganization?.oauthClients.map((client) => client.clientId),
-    ).toEqual([clientId]);
-    expect(ownedClient?.organization?.id).toBe(organization.id);
+      await connection.db
+        .select({
+          clientId: oauthClients.clientId,
+          organizationId: oauthClients.organizationId,
+        })
+        .from(oauthClients)
+        .where(eq(oauthClients.organizationId, organization.id)),
+    ).toEqual([{ clientId, organizationId: organization.id }]);
 
     await expect(
       connection.db
@@ -536,18 +532,15 @@ describe("integration: PostgreSQL schema", () => {
       pkce: true,
       overrideUserInfo: false,
     });
-    const providerGraph = await connection.db.query.ssoProviders.findFirst({
-      where: eq(ssoProviders.id, firstProvider.id),
-      with: { organization: true },
-    });
-    const organizationGraph = await connection.db.query.organizations.findFirst(
-      {
-        where: eq(organizations.id, first.id),
-        with: { ssoProvider: true },
-      },
-    );
-    expect(providerGraph?.organization.id).toBe(first.id);
-    expect(organizationGraph?.ssoProvider?.id).toBe(firstProvider.id);
+    expect(
+      await connection.db
+        .select({
+          id: ssoProviders.id,
+          organizationId: ssoProviders.organizationId,
+        })
+        .from(ssoProviders)
+        .where(eq(ssoProviders.organizationId, first.id)),
+    ).toEqual([{ id: firstProvider.id, organizationId: first.id }]);
     await expect(
       createSsoProvider(connection.db, {
         organizationId: first.id,
