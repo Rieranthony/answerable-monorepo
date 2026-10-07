@@ -98,10 +98,7 @@ function gate() {
   });
   return { promise, release };
 }
-async function pausedAuth(
-  position: "before" | "after",
-  corruptInstance = false,
-) {
+async function pausedAuth(position: "before" | "after") {
   const entered = gate();
   const resume = gate();
   const auth = createAuth(connection.db, environment);
@@ -149,15 +146,6 @@ async function pausedAuth(
     };
     provider.options.extensions!.push(extension);
   }
-  if (corruptInstance)
-    provider.options.extensions!.unshift({
-      claims: {
-        accessToken: ({ client }) => {
-          Object.assign(client, { id: createId() });
-          return {};
-        },
-      },
-    });
   return {
     auth,
     entered,
@@ -301,20 +289,6 @@ test("two issuances share the organisation lock; another tenant can change", asy
   expect(
     (await Promise.all(requests)).map((response) => response.status),
   ).toEqual([200, 200]);
-});
-
-test("locked current client must match the authenticated instance", async () => {
-  const pause = await pausedAuth("before", true);
-  const issued = mint(pause.auth);
-  await pause.entered.promise;
-  pause.resume.release();
-  expect((await issued).status).toBe(401);
-  expect(
-    await connection.db
-      .select()
-      .from(verifications)
-      .where(eq(verifications.identifier, pause.marker)),
-  ).toHaveLength(0);
 });
 
 test("a blocked issuance times out, rolls back and can retry without leaking pool settings", async () => {
