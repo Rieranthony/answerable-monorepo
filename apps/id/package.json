@@ -5,7 +5,6 @@
   "type": "module",
   "scripts": {
     "dev": "bun --env-file=../../.env --hot src/server.ts",
-    "start": "bun src/server.ts",
     "build": "bun scripts/build-css.ts && bun build src/server.ts --outdir dist --target bun --external hono-tailwind",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src scripts drizzle.config.ts --max-warnings 0",
