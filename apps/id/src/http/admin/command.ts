@@ -16,6 +16,7 @@ import {
 } from "../../services/operations.ts";
 import type { AppEnvironment } from "../context.ts";
 import { ProblemError } from "../problem.ts";
+import { revisionSchema, revisionTag } from "./revision.ts";
 import { freshAuthenticationGuard } from "../../auth/fresh-authentication.ts";
 
 export const idempotencyParameter = {
@@ -49,7 +50,8 @@ type CommandResult = {
   resultReference: { type: string; id: string };
 };
 type CommandOptions = {
-  etag?: (body: OperationJson) => string;
+  /** Send the first response's id and revision as its ETag. */
+  etag?: true;
 };
 
 async function httpCommand<T>(
@@ -114,7 +116,7 @@ async function httpCommand<T>(
     },
   );
   if (options.etag && !result.replayed)
-    context.header("ETag", options.etag(result.body!));
+    context.header("ETag", revisionTag(revisionSchema.parse(result.body)));
   context.header("Operation-Id", result.operation.id);
   context.header("Idempotency-Replayed", String(result.replayed));
   context.header("Cache-Control", "no-store");

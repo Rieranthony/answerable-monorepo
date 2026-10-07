@@ -406,12 +406,7 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "entitlement", id: entitlementId },
           };
         },
-        {
-          etag: (body) =>
-            revisionTag(
-              entitlementSchema.pick({ id: true, revision: true }).parse(body),
-            ),
-        },
+        { etag: true },
       );
     },
   );

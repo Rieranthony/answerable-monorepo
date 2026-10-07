@@ -518,12 +518,7 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "client", id: clientId },
           };
         },
-        {
-          etag: (body) =>
-            revisionTag(
-              clientSchema.pick({ id: true, revision: true }).parse(body),
-            ),
-        },
+        { etag: true },
       );
     },
   );

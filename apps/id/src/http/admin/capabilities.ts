@@ -341,12 +341,7 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "capability", id: capabilityId },
           };
         },
-        {
-          etag: (value) =>
-            revisionTag(
-              capabilitySchema.pick({ id: true, revision: true }).parse(value),
-            ),
-        },
+        { etag: true },
       );
     },
   );

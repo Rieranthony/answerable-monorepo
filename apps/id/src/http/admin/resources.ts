@@ -356,12 +356,7 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "resource", id: identifier },
           };
         },
-        {
-          etag: (body) =>
-            revisionTag(
-              resourceSchema.pick({ id: true, revision: true }).parse(body),
-            ),
-        },
+        { etag: true },
       );
     },
   );

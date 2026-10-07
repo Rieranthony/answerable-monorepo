@@ -488,12 +488,7 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "group", id: groupId },
           };
         },
-        {
-          etag: (body) =>
-            revisionTag(
-              groupSchema.pick({ id: true, revision: true }).parse(body),
-            ),
-        },
+        { etag: true },
       );
     },
   );
@@ -647,12 +642,7 @@ export function register(app: Hono<AppEnvironment>) {
             },
           };
         },
-        {
-          etag: (body) =>
-            revisionTag(
-              membershipSchema.pick({ id: true, revision: true }).parse(body),
-            ),
-        },
+        { etag: true },
       );
     },
   );

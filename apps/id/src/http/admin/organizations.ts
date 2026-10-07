@@ -316,12 +316,7 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "organization", id: organizationId },
           };
         },
-        {
-          etag: (body) =>
-            revisionTag(
-              organizationSchema.pick({ id: true, revision: true }).parse(body),
-            ),
-        },
+        { etag: true },
       );
     },
   );

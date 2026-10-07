@@ -318,12 +318,7 @@ export function register(app: Hono<AppEnvironment>) {
             resultReference: { type: "sso_provider", id: result.provider.id },
           };
         },
-        {
-          etag: (body) =>
-            revisionTag(
-              ssoProviderSchema.pick({ id: true, revision: true }).parse(body),
-            ),
-        },
+        { etag: true },
       );
     },
   );

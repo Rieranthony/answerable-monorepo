@@ -2,6 +2,10 @@ import { z } from "zod";
 import { ProblemError } from "../problem.ts";
 
 export type Revision = { id: string; revision: number };
+export const revisionSchema = z.object({
+  id: z.uuid(),
+  revision: z.number().int().positive(),
+});
 export const revisionTag = (value: Revision): string =>
   `"${value.id}:${value.revision}"`;
 
