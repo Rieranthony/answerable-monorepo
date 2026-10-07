@@ -172,14 +172,14 @@ export async function removeMemberAssignments(
       eq(entitlements.memberId, memberId),
     )!,
   );
-  const softDeletedGroups = await softDeleteAssignments(
+  const softDeletedAssignments = await softDeleteAssignments(
     executor,
     and(
       eq(groupMembers.organizationId, organizationId),
       eq(groupMembers.memberId, memberId),
     )!,
   );
-  return { removedGrants, softDeletedGroups };
+  return { removedGrants, softDeletedAssignments };
 }
 
 /** Stable membership configuration; excludes user/group projections and clock-derived access. */

@@ -261,7 +261,7 @@ curl -X DELETE "https://id.answerable.org/api/admin/v1/users/$USER_ID?confirm=$U
 
 **Cleanup later.** Physical cleanup jobs and their retention period are [Not yet.](/docs/id#today-and-next). They are separate from session expiry, one-time code/assertion consumption, credential revocation and existing encrypted command-result expiry. Local revocation does not prove that a downstream session ended; offline tokens retain their documented expiry limits.
 
-**Deletion audit.** Deletion events record `deletionMode: "soft"` and retained after-state. `client.grants_erased` remains platform-only. Relationship manifests name `softDeleted*` arrays and include deletion timestamps. Membership removal leaves the membership eligible for explicit reinstatement. Its effect keys are `removedGrants` for retired direct entitlements, `softDeletedGroups` for retired group assignments and `revokedGrantContexts`. Physically removed sessions/tokens retain `deleted*` names; grant-context effects use `revokedGrantContexts`.
+**Deletion audit.** Deletion events record `deletionMode: "soft"` and retained after-state. `client.grants_erased` remains platform-only. Relationship manifests name `softDeleted*` arrays and include deletion timestamps. Membership removal leaves the membership eligible for explicit reinstatement. Its effect keys are `removedGrants` for retired direct entitlements, `softDeletedAssignments` for retired group assignments and `revokedGrantContexts`. Physically removed sessions/tokens retain `deleted*` names; grant-context effects use `revokedGrantContexts`.
 
 ## Errors
 

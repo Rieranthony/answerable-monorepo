@@ -106,7 +106,7 @@ test("access queries use issued tenant contexts on a restricted connection", asy
       ).toBeNull();
       expect(
         await memberQueries.removeMemberAssignments(context, foreign.memberId),
-      ).toEqual({ removedGrants: [], softDeletedGroups: [] });
+      ).toEqual({ removedGrants: [], softDeletedAssignments: [] });
       expect(
         await memberQueries.revokeMember(context, tenant.memberId),
       ).toMatchObject({ status: "revoked" });

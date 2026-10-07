@@ -104,7 +104,7 @@ Soft-deleted entitlements, group assignments and memberships have one evidence s
 | `group_member.added`, `group_member.updated`, `group_member.update_unchanged` | `groupId`, `before` (null when added), `after`. |
 | `identity.linked` | `initiatingSessionId`, `initiatingAccountId`, `authenticationProviderId`, `authenticationProviderRevision`, `upstreamAuthTime`, `flowId`. |
 | `member.updated` | `changes`, `before`, `after`, each state with its `access`. |
-| `member.removed`, `member.removal_unchanged` | `userId`, `reason`, `before`, `after` (with `access`), `effects` (`removedGrants`, `softDeletedGroups`, `revokedGrantContexts`). |
+| `member.removed`, `member.removal_unchanged` | `userId`, `reason`, `before`, `after` (with `access`), `effects` (`removedGrants`, `softDeletedAssignments`, `revokedGrantContexts`). |
 | `member.reinstated`, `member.reinstatement_unchanged` | `userId`, `reason`, `before`, `after` (with `access`). |
 | `oauth.token.issued` | `decision`, `issuedAt`, `expiresAt`. |
 | `oauth.token.rejected` | `grantType`, `stage`, `authenticatedClient` and `decision` (both null when client authentication failed). |

@@ -323,7 +323,7 @@ test("revocation retains identity, denies tenant A, preserves tenant B and requi
   expect(evidence[0]!.data).toMatchObject({
     effects: {
       removedGrants: [{ id: aGrant }],
-      softDeletedGroups: [{ groupId: group.id }],
+      softDeletedAssignments: [{ groupId: group.id }],
     },
   });
   await expect(
