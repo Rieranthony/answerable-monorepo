@@ -104,8 +104,8 @@ export function configureRuntimeRole(db: Database, roleName: string) {
   });
 }
 
-/** The runtime role is unsafe; the message names no credential. */
-export class UnsafeRuntimeRoleError extends Error {}
+export const unsafeRuntimeRole =
+  "Unsafe database runtime role: use a non-owner role with protected audit permissions";
 
 /** Refuse an owner or a writer capable of changing the retained evidence. */
 export async function assertRuntimeRole(db: Database) {
@@ -124,8 +124,5 @@ export async function assertRuntimeRole(db: Database) {
       as unsafe
     from pg_roles r where rolname = current_user
   `);
-  if (result.rows[0]!.unsafe)
-    throw new UnsafeRuntimeRoleError(
-      "Unsafe database runtime role: use a non-owner role with protected audit permissions",
-    );
+  if (result.rows[0]!.unsafe) throw new Error(unsafeRuntimeRole);
 }

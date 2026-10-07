@@ -1,12 +1,12 @@
 import { createDatabase } from "../src/db/client.ts";
 import {
   assertRuntimeRole,
-  UnsafeRuntimeRoleError,
+  unsafeRuntimeRole,
 } from "../src/db/runtime-role.ts";
 import { loadEnvironment } from "../src/env.ts";
 import {
   checkKeyCustody,
-  CustodyPreflightError,
+  custodyErrorName,
 } from "../src/operations/preflight.ts";
 
 let connection: ReturnType<typeof createDatabase> | undefined;
@@ -25,8 +25,8 @@ try {
 } catch (error) {
   // Only these failures have messages known to carry no secret or key material.
   const known =
-    error instanceof CustodyPreflightError ||
-    error instanceof UnsafeRuntimeRoleError;
+    error instanceof Error &&
+    (error.name === custodyErrorName || error.message === unsafeRuntimeRole);
   console.error(
     JSON.stringify({
       event: "custody_preflight_failed",

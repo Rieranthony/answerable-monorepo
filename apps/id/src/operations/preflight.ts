@@ -7,15 +7,20 @@ import type { Database } from "../db/client.ts";
 import { accounts, jwks } from "../db/schema/index.ts";
 import type { Environment } from "../env.ts";
 
-/** A preflight failure whose message names its cause and holds no key material. */
-export class CustodyPreflightError extends Error {}
+/** The name of a preflight failure whose message names its cause and holds
+ * no key material. */
+export const custodyErrorName = "CustodyPreflightError";
+
+function custodyError(message: string) {
+  return Object.assign(new Error(message), { name: custodyErrorName });
+}
 
 /** Read-only, paged verification while writers are stopped. Returns counts, never credential material.
  * This checks retained ciphertext, not secret-manager delivery, backup completeness or traffic readiness.
  */
 export async function checkKeyCustody(db: Database, environment: Environment) {
   if (!environment.upstreamTokenSecrets?.length)
-    throw new CustodyPreflightError("Required key configuration is absent");
+    throw custodyError("Required key configuration is absent");
   let counts: { signingKeys: number; accounts: number };
   try {
     const upstream = upstreamTokenStorage(environment.upstreamTokenSecrets)
@@ -77,9 +82,9 @@ export async function checkKeyCustody(db: Database, environment: Environment) {
     });
   } catch {
     // A parse or decryption error on decrypted text can quote key material.
-    throw new CustodyPreflightError("Key custody preflight failed");
+    throw custodyError("Key custody preflight failed");
   }
   if (!counts.signingKeys)
-    throw new CustodyPreflightError("Signing keys have not been provisioned");
+    throw custodyError("Signing keys have not been provisioned");
   return counts;
 }
