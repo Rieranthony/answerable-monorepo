@@ -1,15 +1,6 @@
 import type { SQL } from "bun"
-import type { Intent, IntentStatus, IntentStore, Receipt } from "@answerable/mcp"
-
-/** An `IntentStore` in Postgres, with its steps apart, so that `withEvidence` expires an intent once per call and records that expiry. */
-export type PostgresIntentStore = IntentStore & {
-  /** Mark the intent `expired` if it is `prepared` or `awaiting_approval` and `expires_at` has passed. The intent when this call expired it, else `undefined`. */
-  expire(intentId: string): Promise<Intent | undefined>
-  /** The intent as stored: `get` without expiring it first. */
-  read(intentId: string): Promise<Intent | undefined>
-  /** `transition` without expiring the intent first: the intent once moved, else `undefined`. */
-  move(intentId: string, from: IntentStatus, to: IntentStatus, receipt?: Receipt): Promise<Intent | undefined>
-}
+import type { Intent, IntentStatus, IntentStore } from "@answerable/mcp"
+import type { createEvidence, EvidenceEvent } from "./evidence"
 
 type Row = Record<"intent_id" | "organisation_id" | "user_id" | "membership_id" | "client_id" | "capability_identity" | "capability_version" | "policy_class" | "commit_token_hash" | "status", string>
   & Record<"input" | "targets" | "preview", string> & Record<"plan" | "receipt", string | null> & Record<"created_at" | "expires_at", Date>
@@ -34,39 +25,40 @@ function intentOf(row: Row | undefined): Intent | undefined {
 }
 
 /**
- * Keep intents in the `intents` table. Every status change is one `UPDATE … WHERE intent_id = … AND status = …`, so two commits can never both
- * claim an intent. `get` and `transition` first mark an intent `expired` once `expires_at` has passed. Like the memory store, an insert, at most
- * once a minute, deletes the intents that can no longer be committed (expired, failed and stale ones, and unclaimed ones past `expires_at`) and
- * committed ones a day after their commit. Expiry and the sweep follow the database's clock, or `now` when a test injects one; `now` also
- * stamps new intents and receipts, and spaces the sweeps.
+ * Keep intents in the `intents` table and record every step of an intent as `evidence`, so that the SDK never deals with evidence. Every status
+ * change is one `UPDATE … WHERE intent_id = … AND status = …`, so two commits can never both claim an intent. `get` and `transition` first mark an
+ * intent `expired` once `expires_at` has passed, at most once per call, and record the expiry that one step made.
+ *
+ * The evidence: `intent.prepared` on insert, with the preview as an erasable payload, and `intent.approval_requested` when the intent waits for a
+ * human; `intent.committed` and `receipt.issued` when a commit ends `committed`; `intent.stale` when it ends `stale`; `intent.expired` once, when a
+ * read or a claim expires the intent. A failed commit is its call's own `capability.completed` failure. A transition the store refuses records nothing.
+ *
+ * Like the memory store, an insert, at most once a minute, deletes the intents that can no longer be committed (expired, failed and stale ones, and
+ * unclaimed ones past `expires_at`) and committed ones a day after their commit. Expiry and the sweep follow the database's clock, or `now` when a
+ * test injects one; `now` also stamps new intents and receipts, and spaces the sweeps.
  */
-export function createPostgresIntentStore(db: SQL, options: { now?: () => number } = {}): PostgresIntentStore {
+export function createPostgresIntentStore(db: SQL, evidence: ReturnType<typeof createEvidence>, options: { now?: () => number } = {}): IntentStore {
   const { now } = options
   const clock = now ?? Date.now
   const at = () => (now ? new Date(now()) : null)
   const columns = db`intent_id::text, organisation_id::text, user_id, membership_id, client_id, capability_identity, capability_version, input::text,
     targets::text, preview::text, plan::text, policy_class, commit_token_hash, status, created_at, expires_at, receipt::text`
   let swept = -Infinity
+  const record = (intent: Intent, kind: EvidenceEvent["kind"], fields: Partial<EvidenceEvent> = {}) => evidence.record({
+    organisation_id: intent.organisation_id, kind, actor_type: "user", actor_id: intent.principal.user_id, client_id: intent.principal.client_id,
+    capability_identity: intent.capability_identity, capability_version: intent.capability_version, intent_id: intent.intent_id, outcome: "success", ...fields,
+  })
+  // Mark the intent expired if it is open and past expires_at, and record that: the intent when this step expired it, else undefined.
   async function expire(intentId: string) {
     const [row] = await db`update intents set status = 'expired'
       where intent_id = ${intentId} and status in ('prepared', 'awaiting_approval') and expires_at <= coalesce(${at()}::timestamptz, now())
       returning ${columns}`
-    return intentOf(row)
-  }
-  async function read(intentId: string) {
-    const [row] = await db`select ${columns} from intents where intent_id = ${intentId}`
-    return intentOf(row)
-  }
-  async function move(intentId: string, from: IntentStatus, to: IntentStatus, receipt?: Receipt) {
-    const [row] = await db`update intents set status = ${to}, receipt = coalesce(${json(receipt)}::text::jsonb, receipt)
-      where intent_id = ${intentId} and status = ${from} returning ${columns}`
-    return intentOf(row)
+    const expired = intentOf(row)
+    if (expired) await record(expired, "intent.expired")
+    return expired
   }
   return {
     now: clock,
-    expire,
-    read,
-    move,
     async insert(intent) {
       if (clock() - swept >= sweepMs) {
         swept = clock()
@@ -81,13 +73,27 @@ export function createPostgresIntentStore(db: SQL, options: { now?: () => number
           ${intent.capability_identity}, ${intent.capability_version}, ${json(intent.input)}::text::jsonb, ${json(intent.targets)}::text::jsonb,
           ${json(intent.preview)}::text::jsonb, ${json(intent.plan)}::text::jsonb, ${intent.policy_class}, ${intent.commit_token_hash}, ${intent.status},
           ${intent.created_at}::timestamptz, ${intent.expires_at}::timestamptz, ${json(intent.receipt)}::text::jsonb)`
+      await record(intent, "intent.prepared", { data: { policy_class: intent.policy_class }, payload: intent.preview })
+      if (intent.status === "awaiting_approval") await record(intent, "intent.approval_requested")
     },
     async get(intentId) {
-      return (await expire(intentId)) ?? read(intentId)
+      const expired = await expire(intentId)
+      if (expired) return expired
+      const [row] = await db`select ${columns} from intents where intent_id = ${intentId}`
+      return intentOf(row)
     },
     async transition(intentId, from, to, receipt) {
       if (expirable(from)) await expire(intentId)
-      return (await move(intentId, from, to, receipt)) !== undefined
+      const [row] = await db`update intents set status = ${to}, receipt = coalesce(${json(receipt)}::text::jsonb, receipt)
+        where intent_id = ${intentId} and status = ${from} returning ${columns}`
+      const moved = intentOf(row)
+      if (!moved) return false
+      if (to === "stale") await record(moved, "intent.stale")
+      if (to === "committed") {
+        await record(moved, "intent.committed", { receipt_id: receipt!.receipt_id })
+        await record(moved, "receipt.issued", { receipt_id: receipt!.receipt_id })
+      }
+      return true
     },
   }
 }

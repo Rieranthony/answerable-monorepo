@@ -1,7 +1,7 @@
 import type { SQL } from "bun"
 import type { IdAdmin } from "@answerable/id-admin"
 import { createMcpServer, errorCodeOf, ToolError, type IdVerifierConfig, type Mutation, type Provider, type Served, type Tool, type UserPrincipal } from "@answerable/mcp"
-import { createEvidence, createPostgresIntentStore, withEvidence, type EvidenceEvent } from "@answerable/mcp-postgres"
+import { createEvidence, createPostgresIntentStore, type EvidenceEvent } from "@answerable/mcp-postgres"
 import type { Tracer } from "@opentelemetry/api"
 import { createAdmin } from "./admin"
 import { ingest, readCatalogue, readHostClient, type Catalogue, type HostClient } from "./catalogue"
@@ -78,7 +78,7 @@ export async function createToolbox({ providers, auth, db, id, spans }: ToolboxC
     provider: toolbox,
     mount: mounted,
     auth,
-    intents: withEvidence(createPostgresIntentStore(db), evidence),
+    intents: createPostgresIntentStore(db, evidence),
     async allow(principal, tool, called) {
       const scoped = principal.scopes.includes("toolbox")
       const ok = scoped && (own.has(tool) || await authority(principal).then(({ grants, catalogue }) => allowed(grants, catalogue, tool)))

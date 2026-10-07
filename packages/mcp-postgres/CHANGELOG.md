@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0
+
+The intent store records its own evidence. Breaking: `withEvidence` and the `PostgresIntentStore` and `EvidenceKind` types are gone, and `createPostgresIntentStore` takes the evidence.
+
+- `createPostgresIntentStore(db, evidence, { now? })` returns an `IntentStore` that records every step of an intent, as `withEvidence(createPostgresIntentStore(db), evidence)` did, the only way either server used it. Replace that call with this one; the events, the expiry once per call and its record are unchanged.
+- `expire`, `read` and `move` are private steps of `get` and `transition`.
+- `EvidenceKind`, which nothing imported, is no longer exported; `EvidenceEvent["kind"]` names the same kinds.
+
 ## 0.3.0
 
 The schema audit's reset. Breaking: `migrate` takes named directories and records files under new names, the files restart at `0001`, the evidence table loses four columns and eight kinds, and `expire` returns the intent. Nothing was deployed; recreate a database migrated by 0.2.0 (drop its `public` schema, then migrate).

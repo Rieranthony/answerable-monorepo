@@ -1,7 +1,7 @@
 import type { SQL } from "bun"
 import type { IdAdmin } from "@answerable/id-admin"
 import { createMcpServer, errorCodeOf, type ToolError, type IdVerifierConfig, type UserPrincipal } from "@answerable/mcp"
-import { createEvidence, createPostgresIntentStore, withEvidence, type EvidenceEvent } from "@answerable/mcp-postgres"
+import { createEvidence, createPostgresIntentStore, type EvidenceEvent } from "@answerable/mcp-postgres"
 import { reauthenticationRequired } from "./fresh"
 import { createAdminProvider } from "./provider"
 import { createRoles } from "./roles"
@@ -39,7 +39,7 @@ export function createAdminMcp({ auth, db, id, platform, freshSeconds = 1800, to
   })
   const server = createMcpServer({
     provider, auth,
-    intents: withEvidence(createPostgresIntentStore(db), evidence),
+    intents: createPostgresIntentStore(db, evidence),
     policyClass: () => "controlled",
     async allow(principal, tool, called) {
       const refused = await authority.refusal(principal, tool.scopes, minimum(tool))

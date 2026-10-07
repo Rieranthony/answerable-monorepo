@@ -2,7 +2,7 @@
 
 ## 0.2.6
 
-No tool changes. `readAdminEnvironment` is built on `@answerable/mcp`'s `parseEnvironment`, with the same messages, the error code that evidence records comes from its `errorCodeOf`, and the workspace no longer depends on `@answerable/auth`.
+No tool changes. `readAdminEnvironment` is built on `@answerable/mcp`'s `parseEnvironment`, with the same messages, the error code that evidence records comes from its `errorCodeOf`, and the workspace no longer depends on `@answerable/auth`. Intents use `@answerable/mcp-postgres` 0.4.0's `createPostgresIntentStore(db, evidence)`, with the same evidence.
 
 ## 0.2.5
 
