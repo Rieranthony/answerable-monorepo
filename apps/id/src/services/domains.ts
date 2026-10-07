@@ -2,7 +2,7 @@ import { type PlatformWriteContext } from "./platform-context.ts";
 import { type TenantReadContext } from "./tenant-context.ts";
 import * as queries from "../db/queries/organization-domains.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
-import { recordCommandEvent } from "./audit.ts";
+import { recordCommandEvent, statusAction } from "./audit.ts";
 import { found } from "../http/problem.ts";
 
 const notFound = "Organisation or domain not found";
@@ -76,13 +76,7 @@ async function setStatus(
     organizationId,
     targetType: "domain",
     targetId: domainId,
-    action: changed
-      ? status === "active"
-        ? "domain.enabled"
-        : "domain.disabled"
-      : status === "active"
-        ? "domain.enable_unchanged"
-        : "domain.disable_unchanged",
+    action: statusAction("domain", status, changed),
     data: { status, before: auditDomain(existing), after: auditDomain(row!) },
   });
   return { domain: row!, changed };

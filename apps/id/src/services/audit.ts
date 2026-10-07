@@ -8,6 +8,22 @@ import type { PageQuery } from "../http/pagination.ts";
 import { found } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
 
+/** A status command's audit action: the transition, or its no-op. */
+export function statusAction(
+  entity: "domain" | "entitlement" | "group",
+  status: "active" | "disabled",
+  changed: boolean,
+): queries.AuditAction {
+  const transition = changed
+    ? status === "active"
+      ? "enabled"
+      : "disabled"
+    : status === "active"
+      ? "enable_unchanged"
+      : "disable_unchanged";
+  return `${entity}.${transition}`;
+}
+
 /** Record a command's successful effect as the command's actor. */
 export function recordCommandEvent(
   context: { tx: Executor; actor: Readonly<Actor> },

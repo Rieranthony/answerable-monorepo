@@ -4,7 +4,7 @@ import * as queries from "../db/queries/groups.ts";
 import { findMemberForAssignment } from "../db/queries/members.ts";
 import type { PageQuery } from "../http/pagination.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
-import { recordCommandEvent } from "./audit.ts";
+import { recordCommandEvent, statusAction } from "./audit.ts";
 import { found, ProblemError } from "../http/problem.ts";
 const notFound = "Organisation or group not found";
 function configuration(
@@ -127,13 +127,7 @@ async function setStatus(
     organizationId,
     targetType: "group",
     targetId: groupId,
-    action: changed
-      ? status === "active"
-        ? "group.enabled"
-        : "group.disabled"
-      : status === "active"
-        ? "group.enable_unchanged"
-        : "group.disable_unchanged",
+    action: statusAction("group", status, changed),
     data: {
       before: configuration(existing),
       after: configuration(row),

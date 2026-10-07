@@ -10,7 +10,7 @@ import { readClient } from "../db/queries/oauth-clients.ts";
 import { readResourceForPolicy } from "../db/queries/oauth-resources.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import type { AuditAction } from "../db/queries/audit.ts";
-import { recordCommandEvent } from "./audit.ts";
+import { recordCommandEvent, statusAction } from "./audit.ts";
 import { found, ProblemError } from "../http/problem.ts";
 function configuration(
   row: NonNullable<Awaited<ReturnType<typeof queries.findEntitlement>>>,
@@ -194,17 +194,10 @@ async function setStatus(
         status,
       ))!
     : existing;
-  await audit(
-    context,
-    changed
-      ? status === "active"
-        ? "entitlement.enabled"
-        : "entitlement.disabled"
-      : status === "active"
-        ? "entitlement.enable_unchanged"
-        : "entitlement.disable_unchanged",
-    { before: configuration(existing), after: configuration(row) },
-  );
+  await audit(context, statusAction("entitlement", status, changed), {
+    before: configuration(existing),
+    after: configuration(row),
+  });
   return { row, changed };
 }
 export async function disableEntitlement(
