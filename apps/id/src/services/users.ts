@@ -9,11 +9,10 @@ import {
 } from "./platform-context.ts";
 import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/users.ts";
-import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
+import { recordCommandEvent } from "./audit.ts";
 import { deleteUserSessionIds } from "../db/queries/sessions.ts";
 import { revokeUserTokens } from "../db/queries/oauth-tokens.ts";
 import { found, ProblemError } from "../http/problem.ts";
-import type { Actor } from "./actor.ts";
 
 const notFound = "User not found";
 function state(row: NonNullable<Awaited<ReturnType<typeof queries.lockUser>>>) {
@@ -24,23 +23,6 @@ function state(row: NonNullable<Awaited<ReturnType<typeof queries.lockUser>>>) {
     disabledAt: row.disabledAt,
     emailRetired: row.retiredEmail !== null,
   };
-}
-function audit(
-  tx: Executor,
-  actor: Actor,
-  userId: string,
-  action: AuditAction,
-  data: Record<string, unknown>,
-) {
-  return recordAuditEvent(tx, {
-    ...actor,
-    organizationId: null,
-    targetId: userId,
-    targetType: "user",
-    action,
-    data,
-    outcome: "success",
-  });
 }
 export async function listUsers(
   context: PlatformReadContext,
@@ -86,7 +68,7 @@ export async function disableUser(
   context: PlatformUsersContext,
   userId: string,
 ) {
-  const { tx, actor } = context;
+  const { tx } = context;
   const existing = found(await queries.lockUser(context, userId), notFound);
   await protectPlatformUser(tx, userId);
   const stateChanged = existing.status !== "disabled";
@@ -102,12 +84,12 @@ export async function disableUser(
     sessionIds.length > 0 ||
     tokens.refreshTokens > 0 ||
     tokens.accessTokens > 0;
-  await audit(
-    tx,
-    actor,
-    userId,
-    changed ? "user.disabled" : "user.disable_unchanged",
-    {
+  await recordCommandEvent(context, {
+    organizationId: null,
+    targetType: "user",
+    targetId: userId,
+    action: changed ? "user.disabled" : "user.disable_unchanged",
+    data: {
       before: state(existing),
       after: state(row),
       sessions: sessionIds.length,
@@ -115,14 +97,13 @@ export async function disableUser(
       revokedGrantContexts,
       ...tokens,
     },
-  );
+  });
   return { row, changed };
 }
 export async function enableUser(
   context: PlatformUsersContext,
   userId: string,
 ) {
-  const { tx, actor } = context;
   const existing = found(await queries.lockUser(context, userId), notFound);
   if (existing.retiredEmail !== null)
     throw new ProblemError(
@@ -136,20 +117,19 @@ export async function enableUser(
   const row = changed
     ? (await queries.setUserStatus(context, userId, "active"))!
     : existing;
-  await audit(
-    tx,
-    actor,
-    userId,
-    changed ? "user.enabled" : "user.enable_unchanged",
-    { before: state(existing), after: state(row) },
-  );
+  await recordCommandEvent(context, {
+    organizationId: null,
+    targetType: "user",
+    targetId: userId,
+    action: changed ? "user.enabled" : "user.enable_unchanged",
+    data: { before: state(existing), after: state(row) },
+  });
   return { row, changed };
 }
 export async function retireUserEmail(
   context: PlatformUsersContext,
   userId: string,
 ) {
-  const { tx, actor } = context;
   const existing = found(await queries.lockUser(context, userId), notFound);
   if (existing.status !== "disabled")
     throw new ProblemError(
@@ -161,13 +141,13 @@ export async function retireUserEmail(
   const row = changed
     ? await queries.retireUserEmail(context, userId)
     : existing;
-  await audit(
-    tx,
-    actor,
-    userId,
-    changed ? "user.email_retired" : "user.email_retirement_unchanged",
-    { before: state(existing), after: state(row) },
-  );
+  await recordCommandEvent(context, {
+    organizationId: null,
+    targetType: "user",
+    targetId: userId,
+    action: changed ? "user.email_retired" : "user.email_retirement_unchanged",
+    data: { before: state(existing), after: state(row) },
+  });
   return { row, changed };
 }
 export async function eraseUser(
@@ -175,7 +155,7 @@ export async function eraseUser(
   userId: string,
   confirm: string,
 ) {
-  const { tx, actor } = context;
+  const { tx } = context;
   const before = found(await queries.lockUser(context, userId), notFound);
   if (confirm !== userId)
     throw new ProblemError(
@@ -188,11 +168,17 @@ export async function eraseUser(
     await queries.deleteUser(context, userId),
     notFound,
   );
-  await audit(tx, actor, userId, "user.erased", {
-    before: state(before),
-    after: state(row),
-    deletionMode: "soft",
-    revokedGrantContexts,
-    effects,
+  await recordCommandEvent(context, {
+    organizationId: null,
+    targetType: "user",
+    targetId: userId,
+    action: "user.erased",
+    data: {
+      before: state(before),
+      after: state(row),
+      deletionMode: "soft",
+      revokedGrantContexts,
+      effects,
+    },
   });
 }

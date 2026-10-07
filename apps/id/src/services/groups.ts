@@ -3,11 +3,9 @@ import { type TenantReadContext } from "./tenant-context.ts";
 import * as queries from "../db/queries/groups.ts";
 import { findMemberForAssignment } from "../db/queries/members.ts";
 import type { PageQuery } from "../http/pagination.ts";
-import type { Executor } from "../db/client.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
-import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
+import { recordCommandEvent } from "./audit.ts";
 import { found, ProblemError } from "../http/problem.ts";
-import type { Actor } from "./actor.ts";
 const notFound = "Organisation or group not found";
 function configuration(
   row: NonNullable<Awaited<ReturnType<typeof queries.findGroup>>>,
@@ -35,25 +33,6 @@ function assignment(
     validFrom: row.validFrom,
     validUntil: row.validUntil,
   };
-}
-function audit(
-  tx: Executor,
-  actor: Actor,
-  organizationId: string,
-  targetId: string,
-  action: AuditAction,
-  data: Record<string, unknown>,
-  targetType = "group",
-) {
-  return recordAuditEvent(tx, {
-    ...actor,
-    organizationId,
-    targetId,
-    targetType,
-    action,
-    data,
-    outcome: "success",
-  });
 }
 async function lockedGroup(
   context: PlatformWriteContext,
@@ -83,12 +62,17 @@ export async function createGroup(
   organizationId: string,
   input: Omit<queries.CreateGroupInput, "organizationId">,
 ) {
-  const { tx, actor } = context;
   found(await lockOrganizationForCommand(context, organizationId), notFound);
   const row = await queries.createGroup(context, { ...input, organizationId });
-  await audit(tx, actor, organizationId, row.id, "group.created", {
-    before: null,
-    after: configuration(row),
+  await recordCommandEvent(context, {
+    organizationId,
+    targetType: "group",
+    targetId: row.id,
+    action: "group.created",
+    data: {
+      before: null,
+      after: configuration(row),
+    },
   });
   return row;
 }
@@ -99,7 +83,6 @@ export async function updateGroup(
   patch: queries.GroupPatch,
   expected?: { id: string; revision: number },
 ) {
-  const { tx, actor } = context;
   const before = await lockedGroup(context, organizationId, groupId);
   if (
     expected &&
@@ -117,14 +100,13 @@ export async function updateGroup(
   const row = changed
     ? (await queries.updateGroup(context, organizationId, groupId, patch))!
     : before;
-  await audit(
-    tx,
-    actor,
+  await recordCommandEvent(context, {
     organizationId,
-    groupId,
-    changed ? "group.updated" : "group.update_unchanged",
-    { before: configuration(before), after: configuration(row) },
-  );
+    targetType: "group",
+    targetId: groupId,
+    action: changed ? "group.updated" : "group.update_unchanged",
+    data: { before: configuration(before), after: configuration(row) },
+  });
   return { row, changed };
 }
 async function setStatus(
@@ -133,7 +115,6 @@ async function setStatus(
   groupId: string,
   status: "active" | "disabled",
 ) {
-  const { tx, actor } = context;
   const existing = await lockedGroup(context, organizationId, groupId);
   const changed = existing.status !== status;
   const policySources = changed
@@ -142,24 +123,23 @@ async function setStatus(
   const row = changed
     ? (await queries.setGroupStatus(context, organizationId, groupId, status))!
     : existing;
-  await audit(
-    tx,
-    actor,
+  await recordCommandEvent(context, {
     organizationId,
-    groupId,
-    changed
+    targetType: "group",
+    targetId: groupId,
+    action: changed
       ? status === "active"
         ? "group.enabled"
         : "group.disabled"
       : status === "active"
         ? "group.enable_unchanged"
         : "group.disable_unchanged",
-    {
+    data: {
       before: configuration(existing),
       after: configuration(row),
       ...(changed ? { policySources } : {}),
     },
-  );
+  });
   return { row, changed };
 }
 export async function disableGroup(
@@ -182,7 +162,6 @@ export async function eraseGroup(
   groupId: string,
   confirm: string,
 ) {
-  const { tx, actor } = context;
   const before = await lockedGroup(context, organizationId, groupId);
   if (confirm !== groupId)
     throw new ProblemError(
@@ -195,11 +174,17 @@ export async function eraseGroup(
     organizationId,
     groupId,
   );
-  await audit(tx, actor, organizationId, groupId, "group.erased", {
-    before: configuration(before),
-    after: configuration(row),
-    deletionMode: "soft",
-    effects,
+  await recordCommandEvent(context, {
+    organizationId,
+    targetType: "group",
+    targetId: groupId,
+    action: "group.erased",
+    data: {
+      before: configuration(before),
+      after: configuration(row),
+      deletionMode: "soft",
+      effects,
+    },
   });
 }
 export async function listGroupMembers(
@@ -228,7 +213,6 @@ export async function putMember(
   window: queries.MemberWindow,
   expected?: { id: string; revision: number } | null,
 ) {
-  const { tx, actor } = context;
   await lockedGroup(context, organizationId, groupId);
   const member = found(
     await findMemberForAssignment(context, organizationId, memberId),
@@ -274,23 +258,21 @@ export async function putMember(
           memberId,
           ...window,
         });
-  await audit(
-    tx,
-    actor,
+  await recordCommandEvent(context, {
     organizationId,
-    memberId,
-    !changed
+    targetType: "group_member",
+    targetId: memberId,
+    action: !changed
       ? "group_member.update_unchanged"
       : result.created
         ? "group_member.added"
         : "group_member.updated",
-    {
+    data: {
       groupId,
       before: before ? assignment(before) : null,
       after: assignment(result.row),
     },
-    "group_member",
-  );
+  });
   return { ...result, changed };
 }
 export async function removeMember(
@@ -299,7 +281,6 @@ export async function removeMember(
   groupId: string,
   memberId: string,
 ) {
-  const { tx, actor } = context;
   await lockedGroup(context, organizationId, groupId);
   const before = found(
     await queries.findGroupMemberForCommand(
@@ -316,18 +297,16 @@ export async function removeMember(
     groupId,
     memberId,
   );
-  await audit(
-    tx,
-    actor,
+  await recordCommandEvent(context, {
     organizationId,
-    memberId,
-    "group_member.removed",
-    {
+    targetType: "group_member",
+    targetId: memberId,
+    action: "group_member.removed",
+    data: {
       groupId,
       before: assignment(before),
       after: assignment(row!),
       deletionMode: "soft",
     },
-    "group_member",
-  );
+  });
 }

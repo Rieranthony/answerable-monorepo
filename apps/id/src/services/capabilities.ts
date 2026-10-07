@@ -8,7 +8,7 @@ import {
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { readClient } from "../db/queries/oauth-clients.ts";
 import { readResourceForPolicy } from "../db/queries/oauth-resources.ts";
-import { recordAuditEvent } from "../db/queries/audit.ts";
+import { recordCommandEvent } from "./audit.ts";
 import { createId } from "../lib/id.ts";
 import type { PageQuery } from "../http/pagination.ts";
 import { beforeCursor, cursorPage } from "../db/queries/lists.ts";
@@ -161,9 +161,7 @@ function audit(
   before: Row | null,
   changed: boolean,
 ) {
-  const { tx, actor } = context;
-  return recordAuditEvent(tx, {
-    ...actor,
+  return recordCommandEvent(context, {
     organizationId: row.organizationId,
     targetType: "capability",
     targetId: row.id,
@@ -173,7 +171,6 @@ function audit(
         : changed
           ? "capability.updated"
           : "capability.update_unchanged",
-    outcome: "success",
     data: { before, after: row },
   });
 }
@@ -260,7 +257,7 @@ export async function removeCapability(
   organizationId: string,
   id: string,
 ) {
-  const { tx, actor } = context;
+  const { tx } = context;
   found(await lockOrganizationForCommand(context, organizationId));
   const before = found(
     (
@@ -275,13 +272,11 @@ export async function removeCapability(
     .set({ deletedAt: sql`now()`, status: "disabled" })
     .where(where(organizationId, id))
     .returning();
-  await recordAuditEvent(tx, {
-    ...actor,
+  await recordCommandEvent(context, {
     organizationId,
     targetType: "capability",
     targetId: id,
     action: "capability.removed",
-    outcome: "success",
     data: { before, after, deletionMode: "soft" },
   });
 }

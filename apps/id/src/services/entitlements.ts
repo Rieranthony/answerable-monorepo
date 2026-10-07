@@ -9,7 +9,8 @@ import { findGroupForCommand } from "../db/queries/groups.ts";
 import { readClient } from "../db/queries/oauth-clients.ts";
 import { readResourceForPolicy } from "../db/queries/oauth-resources.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
-import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
+import type { AuditAction } from "../db/queries/audit.ts";
+import { recordCommandEvent } from "./audit.ts";
 import { found, ProblemError } from "../http/problem.ts";
 function configuration(
   row: NonNullable<Awaited<ReturnType<typeof queries.findEntitlement>>>,
@@ -42,7 +43,6 @@ async function audit(
       }
     | { before: null; after: Configuration; deletionMode?: "soft" },
 ) {
-  const { tx, actor } = context;
   const target = data.before ?? data.after;
   // A change names the memberships it reaches; a no-op names none.
   const audience = action.endsWith("_unchanged")
@@ -52,14 +52,12 @@ async function audit(
         target.organizationId,
         target,
       );
-  return recordAuditEvent(tx, {
-    ...actor,
+  return recordCommandEvent(context, {
     organizationId: target.organizationId,
     targetId: target.id,
     targetType: "entitlement",
     action,
     data: audience === undefined ? data : { ...data, audience },
-    outcome: "success",
   });
 }
 async function lockedEntitlement(

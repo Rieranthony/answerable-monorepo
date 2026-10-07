@@ -1,11 +1,9 @@
 import { type PlatformWriteContext } from "./platform-context.ts";
 import { type TenantReadContext } from "./tenant-context.ts";
-import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/organization-domains.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
-import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
+import { recordCommandEvent } from "./audit.ts";
 import { found } from "../http/problem.ts";
-import type { Actor } from "./actor.ts";
 
 const notFound = "Organisation or domain not found";
 function auditDomain(
@@ -21,24 +19,6 @@ function auditDomain(
     status: row.status,
   };
 }
-function audit(
-  tx: Executor,
-  actor: Actor,
-  organizationId: string,
-  id: string,
-  action: AuditAction,
-  data: Record<string, unknown>,
-) {
-  return recordAuditEvent(tx, {
-    ...actor,
-    organizationId,
-    targetType: "domain",
-    targetId: id,
-    action,
-    outcome: "success",
-    data,
-  });
-}
 export async function listDomains(
   context: TenantReadContext<"directory">,
   query: queries.DomainQuery,
@@ -50,16 +30,21 @@ export async function createDomain(
   organizationId: string,
   input: { domain: string },
 ) {
-  const { tx, actor } = context;
   found(await lockOrganizationForCommand(context, organizationId), notFound);
   const row = await queries.createOrganizationDomain(context, {
     organizationId,
     ...input,
   });
-  await audit(tx, actor, organizationId, row.id, "domain.created", {
-    domain: row.domain,
-    before: null,
-    after: auditDomain(row),
+  await recordCommandEvent(context, {
+    organizationId,
+    targetType: "domain",
+    targetId: row.id,
+    action: "domain.created",
+    data: {
+      domain: row.domain,
+      before: null,
+      after: auditDomain(row),
+    },
   });
   return row;
 }
@@ -69,7 +54,6 @@ async function setStatus(
   domainId: string,
   status: "active" | "disabled",
 ) {
-  const { tx, actor } = context;
   found(await lockOrganizationForCommand(context, organizationId), notFound);
   const existing = found(
     await queries.findOrganizationDomainForCommand(
@@ -88,20 +72,19 @@ async function setStatus(
         status,
       )
     : existing;
-  await audit(
-    tx,
-    actor,
+  await recordCommandEvent(context, {
     organizationId,
-    domainId,
-    changed
+    targetType: "domain",
+    targetId: domainId,
+    action: changed
       ? status === "active"
         ? "domain.enabled"
         : "domain.disabled"
       : status === "active"
         ? "domain.enable_unchanged"
         : "domain.disable_unchanged",
-    { status, before: auditDomain(existing), after: auditDomain(row!) },
-  );
+    data: { status, before: auditDomain(existing), after: auditDomain(row!) },
+  });
   return { domain: row!, changed };
 }
 export async function disableDomain(
@@ -124,7 +107,6 @@ export async function deleteOrganizationDomain(
   organizationId: string,
   domainId: string,
 ) {
-  const { tx, actor } = context;
   found(await lockOrganizationForCommand(context, organizationId), notFound);
   const before = found(
     await queries.findOrganizationDomainForCommand(
@@ -139,9 +121,15 @@ export async function deleteOrganizationDomain(
     organizationId,
     domainId,
   );
-  await audit(tx, actor, organizationId, domainId, "domain.deleted", {
-    before: auditDomain(before),
-    after: auditDomain(row!),
-    deletionMode: "soft",
+  await recordCommandEvent(context, {
+    organizationId,
+    targetType: "domain",
+    targetId: domainId,
+    action: "domain.deleted",
+    data: {
+      before: auditDomain(before),
+      after: auditDomain(row!),
+      deletionMode: "soft",
+    },
   });
 }

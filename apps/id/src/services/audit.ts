@@ -3,8 +3,25 @@ import { userExists } from "../db/queries/users.ts";
 import { type PlatformReadContext } from "./platform-context.ts";
 import * as queries from "../db/queries/audit.ts";
 import { organizationExistsForHistory } from "../db/queries/organizations.ts";
+import type { Executor } from "../db/client.ts";
 import type { PageQuery } from "../http/pagination.ts";
 import { found } from "../http/problem.ts";
+import type { Actor } from "./actor.ts";
+
+/** Record a command's successful effect as the command's actor. */
+export function recordCommandEvent(
+  context: { tx: Executor; actor: Readonly<Actor> },
+  event: Pick<
+    queries.AuditEventInput,
+    "organizationId" | "targetType" | "targetId" | "action" | "data"
+  >,
+) {
+  return queries.recordAuditEvent(context.tx, {
+    ...context.actor,
+    ...event,
+    outcome: "success",
+  });
+}
 
 export async function listOrganizationAuditEvents(
   context: TenantReadContext<"history">,

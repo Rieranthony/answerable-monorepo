@@ -5,7 +5,6 @@ import {
   type PlatformReadContext,
 } from "./platform-context.ts";
 import { z } from "zod";
-import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/oauth-clients.ts";
 import {
   lockResourceForCommand,
@@ -13,9 +12,8 @@ import {
 } from "../db/queries/oauth-resources.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { revokeClientTokens } from "../db/queries/oauth-tokens.ts";
-import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
+import { recordCommandEvent } from "./audit.ts";
 import { found, ProblemError } from "../http/problem.ts";
-import type { Actor } from "./actor.ts";
 import { generateClientSecret, hashClientSecret } from "./client-secrets.ts";
 
 type ClientRow = NonNullable<
@@ -66,28 +64,9 @@ function auditClient(row: ClientRow) {
     hasJwksUri: row.jwksUri !== null,
   };
 }
-function audit(
-  tx: Executor,
-  actor: Actor,
-  clientId: string,
-  action: AuditAction,
-  data: Record<string, unknown>,
-  organizationId?: string | null,
-) {
-  return recordAuditEvent(tx, {
-    ...actor,
-    organizationId,
-    targetType: "client",
-    targetId: clientId,
-    action,
-    outcome: "success",
-    data,
-  });
-}
 /** Owning a client does not grant visibility into another tenant's private target. */
 function auditResourceLink(
-  tx: Executor,
-  actor: Actor,
+  context: PlatformWriteContext,
   client: ClientRow,
   identifier: string,
   resource: Awaited<ReturnType<typeof readResourceForPolicy>>,
@@ -99,16 +78,17 @@ function auditResourceLink(
     resource?.classification === "platform_shared" ||
     resource?.organizationId === client.organizationId;
   const organizationId = visible ? client.organizationId : null;
-  return audit(
-    tx,
-    actor,
-    client.clientId,
-    before === after
-      ? "client.resource_unchanged"
-      : after
-        ? "client.resource_linked"
-        : "client.resource_unlinked",
-    {
+  return recordCommandEvent(context, {
+    organizationId,
+    targetType: "client",
+    targetId: client.clientId,
+    action:
+      before === after
+        ? "client.resource_unchanged"
+        : after
+          ? "client.resource_linked"
+          : "client.resource_unlinked",
+    data: {
       resource: identifier,
       relationship,
       resourceInstanceId: resource?.id ?? null,
@@ -117,13 +97,11 @@ function auditResourceLink(
       before: { linked: before },
       after: { linked: after },
     },
-    organizationId,
-  );
+  });
 }
 /** A client's owner is not entitled to its other tenants' grant identities. */
 async function auditGrantEffects(
-  tx: Executor,
-  actor: Actor,
+  context: PlatformWriteContext,
   client: ClientRow,
   grantContexts: { id: string; organizationId: string; userId: string }[],
   details:
@@ -145,19 +123,18 @@ async function auditGrantEffects(
         details.revokedTokens.refresh.length > 0
       : Object.values(details.effects).some((rows) => rows.length > 0);
   if (!grantContexts.length && !hasEffects) return undefined;
-  const event = await audit(
-    tx,
-    actor,
-    client.clientId,
+  const event = await recordCommandEvent(context, {
+    organizationId: null,
+    targetType: "client",
+    targetId: client.clientId,
     action,
-    {
+    data: {
       clientInstanceId: client.id,
       grantContexts,
       ...payload,
       ...(action === "client.grants_erased" ? { deletionMode: "soft" } : {}),
     },
-    null,
-  );
+  });
   return event.id;
 }
 const jwkSetSchema = z.object({
@@ -254,7 +231,6 @@ export async function createClient(
   context: PlatformWriteContext,
   input: CreateClientInput,
 ) {
-  const { tx, actor } = context;
   validateClient(input);
   if (input.organizationId)
     found(
@@ -278,14 +254,13 @@ export async function createClient(
       : [],
     requirePKCE: true,
   });
-  await audit(
-    tx,
-    actor,
-    clientId,
-    "client.created",
-    { before: null, after: auditClient(row) },
-    row.organizationId,
-  );
+  await recordCommandEvent(context, {
+    organizationId: row.organizationId,
+    targetType: "client",
+    targetId: clientId,
+    action: "client.created",
+    data: { before: null, after: auditClient(row) },
+  });
   return {
     ...publicClient(row),
     ...(clientSecret === undefined ? {} : { clientSecret }),
@@ -297,7 +272,6 @@ export async function updateClient(
   patch: queries.ClientPatch,
   expected?: { id: string; revision: number },
 ) {
-  const { tx, actor } = context;
   const existing = found(
     await queries.lockClientForCommand(context, clientId),
     notFound,
@@ -321,18 +295,17 @@ export async function updateClient(
   const row = changed
     ? await queries.updateClient(context, clientId, patch)
     : existing;
-  await audit(
-    tx,
-    actor,
-    clientId,
-    changed ? "client.updated" : "client.update_unchanged",
-    {
+  await recordCommandEvent(context, {
+    organizationId: row!.organizationId,
+    targetType: "client",
+    targetId: clientId,
+    action: changed ? "client.updated" : "client.update_unchanged",
+    data: {
       requestedFields: Object.keys(patch).sort(),
       before: auditClient(existing),
       after: auditClient(row!),
     },
-    row!.organizationId,
-  );
+  });
   return { body: publicClient(row!), changed };
 }
 async function setDisabled(
@@ -340,7 +313,6 @@ async function setDisabled(
   clientId: string,
   disabled: boolean,
 ) {
-  const { tx, actor } = context;
   const existing = found(
     await queries.lockClientForCommand(context, clientId),
     notFound,
@@ -365,29 +337,27 @@ async function setDisabled(
     effects.accessTokens > 0 ||
     revokedGrantContexts.length > 0;
   const grantEffectsEventId = await auditGrantEffects(
-    tx,
-    actor,
+    context,
     existing,
     revokedGrantContexts,
     { action: "client.grants_revoked", revokedTokens },
   );
-  await audit(
-    tx,
-    actor,
-    clientId,
-    changed
+  await recordCommandEvent(context, {
+    organizationId: row.organizationId,
+    targetType: "client",
+    targetId: clientId,
+    action: changed
       ? disabled
         ? "client.disabled"
         : "client.enabled"
       : "client.state_unchanged",
-    {
+    data: {
       before: auditClient(existing),
       after: auditClient(row),
       effects,
       ...(grantEffectsEventId ? { grantEffectsEventId } : {}),
     },
-    row.organizationId,
-  );
+  });
   return { client: publicClient(row), changed };
 }
 export async function disableClient(
@@ -406,7 +376,6 @@ export async function rotateSecret(
   context: PlatformWriteContext,
   clientId: string,
 ) {
-  const { tx, actor } = context;
   const existing = found(
     await queries.lockClientForCommand(context, clientId),
     notFound,
@@ -432,18 +401,17 @@ export async function rotateSecret(
     existing.id,
   );
   const grantEffectsEventId = await auditGrantEffects(
-    tx,
-    actor,
+    context,
     existing,
     revokedGrantContexts,
     { action: "client.grants_revoked", revokedTokens },
   );
-  await audit(
-    tx,
-    actor,
-    clientId,
-    "client.secret_rotated",
-    {
+  await recordCommandEvent(context, {
+    organizationId: updated.organizationId,
+    targetType: "client",
+    targetId: clientId,
+    action: "client.secret_rotated",
+    data: {
       before: { authorizationVersion: existing.authorizationVersion },
       after: { authorizationVersion: updated.authorizationVersion },
       effects: {
@@ -452,8 +420,7 @@ export async function rotateSecret(
       },
       ...(grantEffectsEventId ? { grantEffectsEventId } : {}),
     },
-    updated.organizationId,
-  );
+  });
   return { clientId, clientSecret };
 }
 export async function setOwner(
@@ -461,7 +428,6 @@ export async function setOwner(
   clientId: string,
   organizationId: string | null,
 ) {
-  const { tx, actor } = context;
   const existing = found(
     await queries.lockClientForCommand(context, clientId),
     notFound,
@@ -472,18 +438,17 @@ export async function setOwner(
       "ownership_conflict",
       "Client ownership is immutable; create a replacement client under the new owner",
     );
-  await audit(
-    tx,
-    actor,
-    clientId,
-    "client.owner_unchanged",
-    {
+  await recordCommandEvent(context, {
+    organizationId: existing.organizationId,
+    targetType: "client",
+    targetId: clientId,
+    action: "client.owner_unchanged",
+    data: {
       before: { organizationId },
       after: { organizationId },
       changed: false,
     },
-    existing.organizationId,
-  );
+  });
   return publicClient(existing);
 }
 export async function linkResource(
@@ -491,7 +456,6 @@ export async function linkResource(
   clientId: string,
   resource: string,
 ) {
-  const { tx, actor } = context;
   const client = found(
     await queries.lockClientForCommand(context, clientId),
     notFound,
@@ -502,8 +466,7 @@ export async function linkResource(
   );
   const result = await queries.linkClientResource(context, clientId, resource);
   await auditResourceLink(
-    tx,
-    actor,
+    context,
     client,
     resource,
     target,
@@ -518,7 +481,6 @@ export async function unlinkResource(
   clientId: string,
   resource: string,
 ) {
-  const { tx, actor } = context;
   const client = found(
     await queries.lockClientForCommand(context, clientId),
     notFound,
@@ -530,8 +492,7 @@ export async function unlinkResource(
     resource,
   );
   await auditResourceLink(
-    tx,
-    actor,
+    context,
     client,
     resource,
     target,
@@ -547,7 +508,6 @@ export async function eraseClient(
   clientId: string,
   confirm: string,
 ) {
-  const { tx, actor } = context;
   const existing = found(
     await queries.lockClientForCommand(context, clientId),
     notFound,
@@ -571,19 +531,16 @@ export async function eraseClient(
   );
   const { row, effects } = await queries.deleteClient(context, clientId);
   const grantEffectsEventId = await auditGrantEffects(
-    tx,
-    actor,
+    context,
     existing,
     revokedGrantContexts,
     { action: "client.grants_erased", effects },
   );
-  await recordAuditEvent(tx, {
-    ...actor,
+  await recordCommandEvent(context, {
     organizationId: existing.organizationId,
     targetType: "client",
     targetId: clientId,
     action: "client.erased",
-    outcome: "success",
     data: {
       deletionMode: "soft",
       effects: {

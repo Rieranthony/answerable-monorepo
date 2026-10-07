@@ -4,12 +4,10 @@ import {
   type PlatformReadContext,
 } from "./platform-context.ts";
 import { type TenantReadContext } from "./tenant-context.ts";
-import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/organizations.ts";
-import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
+import { recordCommandEvent } from "./audit.ts";
 import { revokeOrganizationMachineTokens } from "../db/queries/oauth-tokens.ts";
 import { found, ProblemError } from "../http/problem.ts";
-import type { Actor } from "./actor.ts";
 
 const notFound = "Organisation not found";
 
@@ -28,24 +26,6 @@ function configuration(
   };
 }
 
-function audit(
-  executor: Executor,
-  actor: Actor,
-  id: string,
-  action: AuditAction,
-  data: Record<string, unknown>,
-) {
-  return recordAuditEvent(executor, {
-    ...actor,
-    organizationId: id,
-    action,
-    targetType: "organization",
-    targetId: id,
-    outcome: "success",
-    data,
-  });
-}
-
 export async function listOrganizations(
   context: PlatformReadContext,
   query: queries.OrganizationQuery,
@@ -61,11 +41,16 @@ export async function createOrganization(
   context: PlatformWriteContext,
   input: queries.OrganizationInput,
 ) {
-  const { tx, actor } = context;
   const row = await queries.createOrganization(context, input);
-  await audit(tx, actor, row.id, "organization.created", {
-    before: null,
-    after: configuration(row),
+  await recordCommandEvent(context, {
+    organizationId: row.id,
+    targetType: "organization",
+    targetId: row.id,
+    action: "organization.created",
+    data: {
+      before: null,
+      after: configuration(row),
+    },
   });
   return row;
 }
@@ -76,7 +61,6 @@ export async function updateOrganization(
   patch: queries.OrganizationPatch,
   expected?: { id: string; revision: number },
 ) {
-  const { tx, actor } = context;
   const before = found(
     await queries.lockOrganizationForCommand(context, id),
     notFound,
@@ -96,13 +80,13 @@ export async function updateOrganization(
   const row = changed
     ? (await queries.updateOrganization(context, id, patch))!
     : before;
-  await audit(
-    tx,
-    actor,
-    id,
-    changed ? "organization.updated" : "organization.update_unchanged",
-    { before: configuration(before), after: configuration(row) },
-  );
+  await recordCommandEvent(context, {
+    organizationId: id,
+    targetType: "organization",
+    targetId: id,
+    action: changed ? "organization.updated" : "organization.update_unchanged",
+    data: { before: configuration(before), after: configuration(row) },
+  });
   return { organization: row, changed };
 }
 
@@ -110,7 +94,6 @@ export async function disableOrganization(
   context: PlatformWriteContext,
   id: string,
 ) {
-  const { tx, actor } = context;
   const existing = found(
     await queries.lockOrganizationForCommand(context, id),
     notFound,
@@ -127,12 +110,14 @@ export async function disableOrganization(
   const revokedMachineAccessTokenIds = changed
     ? await revokeOrganizationMachineTokens(context, id)
     : [];
-  await audit(
-    tx,
-    actor,
-    id,
-    changed ? "organization.disabled" : "organization.disable_unchanged",
-    {
+  await recordCommandEvent(context, {
+    organizationId: id,
+    targetType: "organization",
+    targetId: id,
+    action: changed
+      ? "organization.disabled"
+      : "organization.disable_unchanged",
+    data: {
       before: {
         status: existing.status,
         authorizationVersion: existing.authorizationVersion,
@@ -143,7 +128,7 @@ export async function disableOrganization(
       },
       effects: { revokedMachineAccessTokenIds, revokedGrantContexts },
     },
-  );
+  });
   return { organization: row, changed };
 }
 
@@ -151,7 +136,6 @@ export async function enableOrganization(
   context: PlatformWriteContext,
   id: string,
 ) {
-  const { tx, actor } = context;
   const existing = found(
     await queries.lockOrganizationForCommand(context, id),
     notFound,
@@ -160,16 +144,16 @@ export async function enableOrganization(
   const row = changed
     ? (await queries.setOrganizationStatus(context, id, "active"))!
     : existing;
-  await audit(
-    tx,
-    actor,
-    id,
-    changed ? "organization.enabled" : "organization.enable_unchanged",
-    {
+  await recordCommandEvent(context, {
+    organizationId: id,
+    targetType: "organization",
+    targetId: id,
+    action: changed ? "organization.enabled" : "organization.enable_unchanged",
+    data: {
       before: configuration(existing),
       after: configuration(row),
     },
-  );
+  });
   return { organization: row, changed };
 }
 
@@ -178,7 +162,6 @@ export async function eraseOrganization(
   id: string,
   confirm: string,
 ) {
-  const { tx, actor } = context;
   const before = found(
     await queries.lockOrganizationForCommand(context, id),
     notFound,
@@ -200,14 +183,20 @@ export async function eraseOrganization(
     id,
   );
   const { row, effects } = await queries.deleteOrganization(context, id);
-  await audit(tx, actor, id, "organization.erased", {
-    before: configuration(before),
-    after: configuration(row),
-    deletionMode: "soft",
-    revokedGrantContexts: revokedGrantContexts.map((row) => ({
-      ...row,
-      organizationId: id,
-    })),
-    effects,
+  await recordCommandEvent(context, {
+    organizationId: id,
+    targetType: "organization",
+    targetId: id,
+    action: "organization.erased",
+    data: {
+      before: configuration(before),
+      after: configuration(row),
+      deletionMode: "soft",
+      revokedGrantContexts: revokedGrantContexts.map((row) => ({
+        ...row,
+        organizationId: id,
+      })),
+      effects,
+    },
   });
 }

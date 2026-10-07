@@ -6,37 +6,17 @@ import {
   type PlatformUsersContext,
   type PlatformReadContext,
 } from "./platform-context.ts";
-import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/sessions.ts";
 import { userExists, lockUser } from "../db/queries/users.ts";
 import {
   revokeSessionTokens,
   revokeUserTokens,
 } from "../db/queries/oauth-tokens.ts";
-import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
+import { recordCommandEvent } from "./audit.ts";
 import type { PageQuery } from "../http/pagination.ts";
 import { found } from "../http/problem.ts";
-import type { Actor } from "./actor.ts";
 
 const notFound = "User or session not found";
-function audit(
-  tx: Executor,
-  actor: Actor,
-  targetId: string,
-  action: AuditAction,
-  data: Record<string, unknown>,
-  targetType = "session",
-) {
-  return recordAuditEvent(tx, {
-    ...actor,
-    organizationId: null,
-    targetId,
-    targetType,
-    action,
-    data,
-    outcome: "success",
-  });
-}
 export async function listUserSessions(
   context: PlatformReadContext,
   userId: string,
@@ -50,7 +30,6 @@ export async function revokeUserSession(
   userId: string,
   sessionId: string,
 ) {
-  const { tx, actor } = context;
   found(await lockUser(context, userId), notFound);
   const before = found(
     await queries.findUserSession(context, userId, sessionId),
@@ -64,43 +43,47 @@ export async function revokeUserSession(
     sessionId,
   );
   await queries.deleteSession(context, userId, sessionId);
-  await audit(tx, actor, sessionId, "session.revoked", {
-    userId,
-    before: {
-      id: before.id,
-      createdAt: before.createdAt,
-      expiresAt: before.expiresAt,
+  await recordCommandEvent(context, {
+    organizationId: null,
+    targetType: "session",
+    targetId: sessionId,
+    action: "session.revoked",
+    data: {
+      userId,
+      before: {
+        id: before.id,
+        createdAt: before.createdAt,
+        expiresAt: before.expiresAt,
+      },
+      after: null,
+      sessionIds: [sessionId],
+      revokedGrantContexts,
+      ...tokens,
     },
-    after: null,
-    sessionIds: [sessionId],
-    revokedGrantContexts,
-    ...tokens,
   });
 }
 export async function revokeUserSessions(
   context: PlatformUsersContext,
   userId: string,
 ) {
-  const { tx, actor } = context;
   found(await lockUser(context, userId), notFound);
   const sessionIds = await queries.deleteUserSessionIds(context, userId);
   const revoked = sessionIds.length;
   const tokens = await revokeUserTokens(context, userId);
   const revokedGrantContexts = await revokeUserGrantContexts(context, userId);
-  await audit(
-    tx,
-    actor,
-    userId,
-    "session.revoked_all",
-    {
+  await recordCommandEvent(context, {
+    organizationId: null,
+    targetType: "user",
+    targetId: userId,
+    action: "session.revoked_all",
+    data: {
       userId,
       sessions: revoked,
       sessionIds,
       revokedGrantContexts,
       ...tokens,
     },
-    "user",
-  );
+  });
   return {
     revoked,
     changed:

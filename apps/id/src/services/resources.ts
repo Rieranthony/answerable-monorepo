@@ -9,9 +9,8 @@ import {
 } from "./platform-context.ts";
 import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/oauth-resources.ts";
-import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
+import { recordCommandEvent } from "./audit.ts";
 import { found, ProblemError } from "../http/problem.ts";
-import type { Actor } from "./actor.ts";
 
 type ResourceRow = NonNullable<
   Awaited<ReturnType<typeof queries.readResource>>
@@ -45,22 +44,6 @@ async function protect(tx: Executor, resourceId: string) {
       "The bound admin resource is protected",
     );
 }
-function audit(
-  tx: Executor,
-  actor: Actor,
-  identifier: string,
-  action: AuditAction,
-  data: Record<string, unknown>,
-) {
-  return recordAuditEvent(tx, {
-    ...actor,
-    targetType: "resource",
-    targetId: identifier,
-    action,
-    outcome: "success",
-    data,
-  });
-}
 export async function listResources(
   context: PlatformReadContext,
   query: queries.ResourceQuery,
@@ -83,11 +66,15 @@ export async function createResource(
   context: PlatformWriteContext,
   input: queries.ResourceInput,
 ) {
-  const { tx, actor } = context;
   const row = await queries.createResource(context, input);
-  await audit(tx, actor, row.identifier, "resource.created", {
-    before: null,
-    after: auditResource(row),
+  await recordCommandEvent(context, {
+    targetType: "resource",
+    targetId: row.identifier,
+    action: "resource.created",
+    data: {
+      before: null,
+      after: auditResource(row),
+    },
   });
   return row;
 }
@@ -97,7 +84,7 @@ export async function updateResource(
   patch: queries.ResourcePatch,
   expected?: { id: string; revision: number },
 ) {
-  const { tx, actor } = context;
+  const { tx } = context;
   // Preserve root admission ordering when this resource can activate platform authority.
   if (patch.allowedScopes !== undefined) {
     const [binding] = await tx
@@ -133,17 +120,16 @@ export async function updateResource(
   const row = changed
     ? await queries.updateResource(context, identifier, patch)
     : existing;
-  await audit(
-    tx,
-    actor,
-    identifier,
-    changed ? "resource.updated" : "resource.update_unchanged",
-    {
+  await recordCommandEvent(context, {
+    targetType: "resource",
+    targetId: identifier,
+    action: changed ? "resource.updated" : "resource.update_unchanged",
+    data: {
       requestedFields: Object.keys(patch).sort(),
       before: auditResource(existing),
       after: auditResource(row!),
     },
-  );
+  });
   return { body: row!, changed };
 }
 export async function disableResource(
@@ -163,7 +149,7 @@ async function setDisabled(
   identifier: string,
   disabled: boolean,
 ) {
-  const { tx, actor } = context;
+  const { tx } = context;
   const existing = found(
     await queries.lockResourceForCommand(context, identifier),
     notFound,
@@ -177,21 +163,20 @@ async function setDisabled(
     ? await revokeResourceGrantContexts(context, existing.id)
     : [];
   const changed = stateChanged || revokedGrantContexts.length > 0;
-  await audit(
-    tx,
-    actor,
-    identifier,
-    changed
+  await recordCommandEvent(context, {
+    targetType: "resource",
+    targetId: identifier,
+    action: changed
       ? disabled
         ? "resource.disabled"
         : "resource.enabled"
       : "resource.state_unchanged",
-    {
+    data: {
       before: auditResource(existing),
       after: auditResource(row),
       effects: { revokedGrantContexts },
     },
-  );
+  });
   return { resource: row, changed };
 }
 export async function eraseResource(
@@ -199,7 +184,7 @@ export async function eraseResource(
   identifier: string,
   confirm: string,
 ) {
-  const { tx, actor } = context;
+  const { tx } = context;
   const existing = found(
     await queries.lockResourceForCommand(context, identifier),
     notFound,
@@ -229,10 +214,15 @@ export async function eraseResource(
     existing.id,
   );
   const row = await queries.deleteResource(context, identifier);
-  await audit(tx, actor, identifier, "resource.erased", {
-    before: auditResource(existing),
-    after: auditResource(row),
-    deletionMode: "soft",
-    revokedGrantContexts,
+  await recordCommandEvent(context, {
+    targetType: "resource",
+    targetId: identifier,
+    action: "resource.erased",
+    data: {
+      before: auditResource(existing),
+      after: auditResource(row),
+      deletionMode: "soft",
+      revokedGrantContexts,
+    },
   });
 }

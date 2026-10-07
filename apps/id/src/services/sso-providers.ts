@@ -5,13 +5,11 @@ import {
 import { type PlatformWriteContext } from "./platform-context.ts";
 import { type TenantReadContext } from "./tenant-context.ts";
 import { isDeepStrictEqual } from "node:util";
-import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/sso-providers.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { revokeOrganizationGrantContexts } from "../db/queries/grant-contexts.ts";
-import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
+import { recordCommandEvent } from "./audit.ts";
 import { found, ProblemError } from "../http/problem.ts";
-import type { Actor } from "./actor.ts";
 
 export type SsoProviderInput = Pick<
   queries.CreateSsoProviderInput,
@@ -35,24 +33,6 @@ function configuration(
     oidc: redacted.oidc,
   };
 }
-function audit(
-  tx: Executor,
-  actor: Actor,
-  organizationId: string,
-  id: string,
-  action: AuditAction,
-  data: Record<string, unknown>,
-) {
-  return recordAuditEvent(tx, {
-    ...actor,
-    organizationId,
-    targetType: "sso_provider",
-    targetId: id,
-    action,
-    outcome: "success",
-    data,
-  });
-}
 export async function getSsoProvider(
   context: TenantReadContext<"directory">,
   ids: PlatformApplicationIds = {},
@@ -66,7 +46,6 @@ export async function putSsoProvider(
   expected?: { id: string; revision: number } | null,
   ids: PlatformApplicationIds = {},
 ) {
-  const { tx, actor } = context;
   const organization = found(
     await lockOrganizationForCommand(context, organizationId),
     notFound,
@@ -138,17 +117,16 @@ export async function putSsoProvider(
   const revokedGrantContexts = changed
     ? await revokeOrganizationGrantContexts(context, organizationId)
     : [];
-  await audit(
-    tx,
-    actor,
+  await recordCommandEvent(context, {
     organizationId,
-    row.id,
-    !changed
+    targetType: "sso_provider",
+    targetId: row.id,
+    action: !changed
       ? "sso_provider.update_unchanged"
       : existing
         ? "sso_provider.updated"
         : "sso_provider.created",
-    {
+    data: {
       before: existing ? configuration(existing, ids) : null,
       after: configuration(row, ids),
       credentialsChanged:
@@ -159,7 +137,7 @@ export async function putSsoProvider(
           (oidc.credentials === "platform" ? undefined : oidc.clientSecret),
       effects: { revokedGrantContexts },
     },
-  );
+  });
   return {
     created: !existing,
     changed,
@@ -171,7 +149,6 @@ export async function deleteSsoProvider(
   organizationId: string,
   ids: PlatformApplicationIds = {},
 ) {
-  const { tx, actor } = context;
   found(await lockOrganizationForCommand(context, organizationId), notFound);
   const before = found(
     await queries.findSsoProviderForCommand(context, organizationId),
@@ -185,16 +162,22 @@ export async function deleteSsoProvider(
     context,
     organizationId,
   );
-  await audit(tx, actor, organizationId, row.id, "sso_provider.deleted", {
-    before: configuration(before, ids),
-    after: {
-      id: row.id,
-      revision: row.revision,
-      deletedAt: row.deletedAt,
-      credentialsCleared: true,
+  await recordCommandEvent(context, {
+    organizationId,
+    targetType: "sso_provider",
+    targetId: row.id,
+    action: "sso_provider.deleted",
+    data: {
+      before: configuration(before, ids),
+      after: {
+        id: row.id,
+        revision: row.revision,
+        deletedAt: row.deletedAt,
+        credentialsCleared: true,
+      },
+      deletionMode: "soft",
+      effects: { revokedGrantContexts },
     },
-    deletionMode: "soft",
-    effects: { revokedGrantContexts },
   });
   return row.id;
 }
