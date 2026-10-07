@@ -73,11 +73,11 @@ export async function authorizeTenantMemberCommand(
   });
   return {
     /** The actor needs the operation id, which exists only after authorisation. */
-    async run<T>(
+    run<T>(
       run: (context: TenantMemberContext) => Promise<T>,
       metadata: ActorMetadata,
     ): Promise<T> {
-      const context: TenantMemberContext = {
+      return run({
         [tenantCommand]: true,
         access: "command",
         tx,
@@ -86,9 +86,7 @@ export async function authorizeTenantMemberCommand(
         async revalidate() {
           if (input.principal.type === "user") await authorize();
         },
-      };
-      await context.revalidate();
-      return run(context);
+      });
     },
   };
 }
