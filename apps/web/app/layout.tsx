@@ -1,8 +1,7 @@
-import type { Metadata } from "next"
+import type { Metadata, Viewport } from "next"
 import { Public_Sans } from "next/font/google"
 
 import "./globals.css"
-import { ThemeProvider } from "@/components/theme-provider"
 import { createMetadata, SITE } from "@/lib/metadata"
 import { cn } from "@answerable/ui/lib/utils"
 
@@ -15,6 +14,11 @@ export const metadata: Metadata = {
   title: { default: SITE.name, template: "%s · Answerable" },
 }
 
+// The site is dark only: the class is static, so the server HTML is already
+// dark and needs no script, and the browser draws its own controls and
+// scrollbars dark too.
+export const viewport: Viewport = { colorScheme: "dark" }
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -23,12 +27,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      suppressHydrationWarning
-      className={cn("font-sans antialiased", publicSans.variable)}
+      className={cn("dark font-sans antialiased", publicSans.variable)}
     >
-      <body>
-        <ThemeProvider>{children}</ThemeProvider>
-      </body>
+      <body>{children}</body>
     </html>
   )
 }

@@ -1,11 +1,10 @@
 "use client"
 
-import { useEffect, useRef, useSyncExternalStore } from "react"
+import { useEffect, useRef } from "react"
 import { ImageDithering } from "@paper-design/shaders-react"
-import { useTheme } from "next-themes"
 
 import { startMosaicCapture } from "@/lib/mosaic-capture"
-import { MOSAIC, MOSAIC_DITHER, type DitherSettings } from "@/lib/mosaic-layout"
+import { MOSAIC, type DitherSettings } from "@/lib/mosaic-layout"
 
 /**
  * Screens the mosaic photo through the Paper Design dithering shader.
@@ -22,24 +21,6 @@ import { MOSAIC, MOSAIC_DITHER, type DitherSettings } from "@/lib/mosaic-layout"
 /** 2x the photo's 576x864 slot in the viewBox, so dots land 1:1 on retina. */
 const CAPTURE_W = MOSAIC.photoCols * MOSAIC.cell * 2 // 1152
 const CAPTURE_H = MOSAIC.rows * MOSAIC.cell * 2 // 1728
-
-const emptySubscribe = () => () => {}
-
-/** next-themes resolves to `undefined` on the first client render. */
-function useResolvedScheme(): "light" | "dark" {
-  const { resolvedTheme } = useTheme()
-  const mounted = useSyncExternalStore(
-    emptySubscribe,
-    () => true,
-    () => false,
-  )
-  return mounted && resolvedTheme === "dark" ? "dark" : "light"
-}
-
-/** The dither settings for the active scheme. */
-export function useDitherSettings(): DitherSettings {
-  return MOSAIC_DITHER[useResolvedScheme()]
-}
 
 interface MosaicDitherProps {
   /** Photo to screen, e.g. "/mosaic/p8.webp". */

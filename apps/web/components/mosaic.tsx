@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useState } from "react"
 import { preload } from "react-dom"
 
-import { MosaicDither, useDitherSettings } from "@/components/mosaic-dither"
+import { MosaicDither } from "@/components/mosaic-dither"
 import {
   ACTIVE_PHOTO,
   COMMA_SCALE,
   computeMosaicLayout,
   MOSAIC,
+  MOSAIC_DITHER,
 } from "@/lib/mosaic-layout"
 import { COMMA_BOX, COMMA_PATH } from "@answerable/ui/lib/logo"
 import { cn } from "@answerable/ui/lib/utils"
@@ -43,11 +44,7 @@ const commaTransform = (rot: number) =>
   `${rot ? `rotate(${rot} 24 24) ` : ""}translate(24 24) scale(${TILE_SCALE}) translate(-24 -24) scale(${COMMA_SCALE}) translate(${-COMMA_BOX.x} ${-COMMA_BOX.y})`
 
 export function Mosaic({ className }: { className?: string }) {
-  const settings = useDitherSettings()
-  // The screened bitmap. Deliberately kept on screen when the
-  // settings change: the replacement lands within a frame or two, and
-  // briefly showing the previous screen beats flashing back to the raw
-  // photo every time the theme is toggled.
+  // The screened bitmap.
   const [dithered, setDithered] = useState<string | null>(null)
   const onCapture = useCallback((url: string) => setDithered(url), [])
 
@@ -78,7 +75,7 @@ export function Mosaic({ className }: { className?: string }) {
     <>
       <MosaicDither
         photo={ACTIVE_PHOTO}
-        settings={settings}
+        settings={MOSAIC_DITHER}
         onCapture={onCapture}
         onUnavailable={onUnavailable}
       />

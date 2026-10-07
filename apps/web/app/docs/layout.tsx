@@ -12,7 +12,7 @@ export const metadata = {
   },
 }
 
-// Theme is owned by next-themes in the root layout, which forces dark on /docs.
+// The root layout is dark only, so Fumadocs' own theme switching stays off.
 export default function Layout({ children }: LayoutProps<"/docs">) {
   return (
     <RootProvider theme={{ enabled: false }}>

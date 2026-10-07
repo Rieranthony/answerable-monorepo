@@ -81,8 +81,7 @@ export const ACTIVE_PHOTO = "/mosaic/p8.webp"
 /**
  * Runtime dithering (see components/mosaic-dither). The photos ship
  * untouched and the halftone is applied by a shader on the client, so these
- * are live knobs rather than baked-in pixels — which is what lets the screen
- * differ between light and dark.
+ * are live knobs rather than baked-in pixels.
  *
  * `size` is the dot grid in REAL pixels, so it is independent of how large
  * the mosaic is drawn; it only tracks the capture resolution.
@@ -100,27 +99,16 @@ export interface DitherSettings {
   colorHighlight: string
 }
 
-export const MOSAIC_DITHER: Record<"light" | "dark", DitherSettings> = {
-  light: {
-    type: "8x8",
-    size: 2,
-    colorSteps: 2,
-    inverted: false,
-    colorFront: "#111111",
-    colorBack: "#ffffff",
-    colorHighlight: "#111111",
-  },
-  // Tuned separately: on black the screen wants a finer grid and an extra
-  // tone step to keep the dark half of the image from filling in solid.
-  dark: {
-    type: "8x8",
-    size: 1,
-    colorSteps: 3,
-    inverted: false,
-    colorFront: "#e6e6e6",
-    colorBack: "#000000",
-    colorHighlight: "#e6e6e6",
-  },
+// Tuned for the black page: a fine grid and an extra tone step keep the dark
+// half of the image from filling in solid.
+export const MOSAIC_DITHER: DitherSettings = {
+  type: "8x8",
+  size: 1,
+  colorSteps: 3,
+  inverted: false,
+  colorFront: "#e6e6e6",
+  colorBack: "#000000",
+  colorHighlight: "#e6e6e6",
 }
 
 export type Rot = 0 | 90 | 180 | 270
