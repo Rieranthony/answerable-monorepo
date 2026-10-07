@@ -38,6 +38,14 @@ const paramSchema = uuidParam("organizationId");
 const parameters = [
   pathParameter("organizationId", "uuid"),
 ] satisfies AdminRoute["parameters"];
+/** The OIDC endpoints and scopes, in a request or in the redacted provider. */
+const endpointFields = {
+  discoveryEndpoint: z.url().optional(),
+  authorizationEndpoint: z.url().optional(),
+  tokenEndpoint: z.url().optional(),
+  jwksEndpoint: z.url().optional(),
+  scopes: z.array(z.string()).optional(),
+};
 const ownOidcSchema = z.strictObject({
   credentials: z.literal("own").optional(),
   clientId: z.string().min(1),
@@ -45,19 +53,11 @@ const ownOidcSchema = z.strictObject({
   tokenEndpointAuthentication: z
     .enum(["client_secret_post", "client_secret_basic", "private_key_jwt"])
     .optional(),
-  discoveryEndpoint: z.url().optional(),
-  authorizationEndpoint: z.url().optional(),
-  tokenEndpoint: z.url().optional(),
-  jwksEndpoint: z.url().optional(),
-  scopes: z.array(z.string()).optional(),
+  ...endpointFields,
 });
 const platformOidcSchema = z.strictObject({
   credentials: z.literal("platform"),
-  discoveryEndpoint: z.url().optional(),
-  authorizationEndpoint: z.url().optional(),
-  tokenEndpoint: z.url().optional(),
-  jwksEndpoint: z.url().optional(),
-  scopes: z.array(z.string()).optional(),
+  ...endpointFields,
 });
 const oidcSchema = z.union([platformOidcSchema, ownOidcSchema]);
 const putSchema = z.object({
@@ -77,11 +77,7 @@ const ssoProviderSchema = z.object({
     tokenEndpointAuthentication: z
       .enum(["client_secret_post", "client_secret_basic", "private_key_jwt"])
       .optional(),
-    discoveryEndpoint: z.url().optional(),
-    authorizationEndpoint: z.url().optional(),
-    tokenEndpoint: z.url().optional(),
-    jwksEndpoint: z.url().optional(),
-    scopes: z.array(z.string()).optional(),
+    ...endpointFields,
     clientId: z.string().optional(),
     hasClientSecret: z.boolean(),
     pkce: z.boolean().optional(),
