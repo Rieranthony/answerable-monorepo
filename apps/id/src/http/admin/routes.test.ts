@@ -103,7 +103,6 @@ test("admin route tables equal the OpenAPI operation union", async () => {
           "x-tier"?: string;
           "x-kind"?: string;
           "x-scopes"?: unknown;
-          "x-scope-alternatives"?: unknown;
           parameters?: {
             in: string;
             name: string;
@@ -195,9 +194,7 @@ test("admin route tables equal the OpenAPI operation union", async () => {
         operation?.["x-kind"] ?? "",
       );
       expect(operation?.["x-kind"], label).toBe(route.kind);
-      expect(operation?.["x-scope-alternatives"], label).toEqual(
-        "scopeAlternatives" in route ? route.scopeAlternatives : undefined,
-      );
+
       expect(operation?.["x-scopes"], label).toEqual(
         route.open
           ? {}

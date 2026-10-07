@@ -21,13 +21,8 @@ export type AdminRoute = {
   parameters?: DescribeRouteOptions["parameters"];
   requestBody?: DescribeRouteOptions["requestBody"];
   example?: { body?: unknown; query?: Record<string, string> };
-  /** Authenticated self routes perform any receipt-specific authority check in their handler. */
+  /** `/me`: any authenticated principal. */
   open?: true;
-  /** Alternative handler-checked scopes; ownership/context conditions remain in the description. */
-  scopeAlternatives?: {
-    platform: readonly AdminScope[];
-    org?: readonly AdminScope[];
-  };
 };
 
 export type AdminRouteTable = Record<string, AdminRoute>;
