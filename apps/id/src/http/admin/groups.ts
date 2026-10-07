@@ -94,7 +94,7 @@ export const routes = {
     responses: {
       200: {
         description: "Success",
-        content: commandJson(page(groupSchema)),
+        content: json(page(groupSchema)),
       },
       ...problemResponses(400, 404),
     },

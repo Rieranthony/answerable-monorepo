@@ -116,7 +116,7 @@ export const routes = {
     responses: {
       200: {
         description: "Success",
-        content: commandJson(page(memberSchema)),
+        content: json(page(memberSchema)),
       },
       ...problemResponses(400, 404),
     },
@@ -136,7 +136,7 @@ export const routes = {
     ),
     orgScope: "org:read",
     responses: {
-      200: { description: "Success", content: commandJson(detailSchema) },
+      200: { description: "Success", content: json(detailSchema) },
       ...problemResponses(400, 404),
     },
   },

@@ -1,5 +1,6 @@
 import {
   commandJson,
+  json,
   pathParameter,
   uuidParam,
   confirmQuery,
@@ -72,7 +73,7 @@ export const routes = {
     kind: "read",
     parameters: [],
     responses: {
-      200: { description: "Success", content: commandJson(page(userSchema)) },
+      200: { description: "Success", content: json(page(userSchema)) },
       ...problemResponses(400, 404),
     },
   },
@@ -88,7 +89,7 @@ export const routes = {
     kind: "read",
     parameters: ["userId"].map((name) => pathParameter(name, "uuid")),
     responses: {
-      200: { description: "Success", content: commandJson(detailSchema) },
+      200: { description: "Success", content: json(detailSchema) },
       ...problemResponses(400, 404),
     },
   },

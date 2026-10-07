@@ -107,7 +107,7 @@ export const routes = {
     responses: {
       200: {
         description: "Success",
-        content: commandJson(page(entitlementSchema)),
+        content: json(page(entitlementSchema)),
       },
       ...problemResponses(400, 404),
     },

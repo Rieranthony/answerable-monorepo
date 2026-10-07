@@ -1,4 +1,4 @@
-import { commandJson, pathParameter, uuidParam } from "./schemas.ts";
+import { commandJson, json, pathParameter, uuidParam } from "./schemas.ts";
 import { platformRead } from "./platform-read.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
@@ -53,7 +53,7 @@ export const routes = {
     responses: {
       200: {
         description: "Success",
-        content: commandJson(page(sessionSchema)),
+        content: json(page(sessionSchema)),
       },
       ...problemResponses(400, 404),
     },
