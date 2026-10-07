@@ -166,7 +166,7 @@ A write that ID takes without a precondition says so in its preview's warnings.
 
 ### Idempotency and correlation
 
-- **One key per intent.** Prepare mints a UUIDv7 and keeps it in the intent; every write of the commit sends it as `Idempotency-Key`, as `<key>.<step>` when one commit writes more than once (`staff_revoke` out of two groups). A write refused with `401` is sent again with a new token and the same key; a write ID did not answer is sent once more with the same key, and ID answers what it did the first time, if it did.
+- **One key per intent.** Every write of the commit sends the intent's id as `Idempotency-Key`, as `<intent id>.<step>` when one commit writes more than once (`staff_revoke` out of two groups). The id is the same on every attempt to commit the intent. A write refused with `401` is sent again with a new token and the same key; a write ID did not answer is sent once more with the same key, and ID answers what it did the first time, if it did.
 - **The execution id.** Every call to ID carries the call's execution id as `x-request-id`, which ID stores on the audit event as `requestId`.
 - **ID's operation.** The receipt's `results.operationId` (`operationIds` for `staff_revoke`) is the `Operation-Id` ID answered: filter `audit_list` by it.
 - **The Toolbox.** `toolbox_enable` sends no key: the Toolbox's enable call takes none, and repeating it makes only what is missing.

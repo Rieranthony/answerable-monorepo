@@ -1,7 +1,7 @@
 import { defineMutation, type ToolContext } from "@answerable/mcp"
 import { z } from "zod"
 import { confers, grantString, roleOf, roles } from "./roles"
-import { commitWith, errors, newKey, noPrecondition, precondition, scopes, target, type Assignment, type Entitlement, type Group, type Member, type Writes } from "./writes"
+import { commitWith, errors, noPrecondition, precondition, scopes, target, type Assignment, type Entitlement, type Group, type Member, type Writes } from "./writes"
 
 type Via = { entitlementId: string; principal: "organization" | "group" | "member"; groupId: string | null }
 const rank = (scopes: string[]) => roles.indexOf(roleOf(scopes)!)
@@ -62,12 +62,12 @@ export function staffWrites({ calls, role, platform, resource, fresh }: Writes) 
           changes: [{ path: `staff[${memberId}].role`, from: before, to: after }, { path: `groups[${joined.id}].members[${memberId}]`, from: null, to: { validFrom: null, validUntil: null } }],
           effects: ["permission_change" as const],
         },
-        plan: { key: newKey(), memberId, role: granted, groupId: joined.id },
+        plan: { memberId, role: granted, groupId: joined.id },
       }
     },
     // The membership must still be absent: ID refuses the write with 412 if it appeared meanwhile.
-    async commit({ plan: { key, memberId, role: granted, groupId }, preview }, context) {
-      const done = await calls.write("PUT", `/organizations/${platform}/groups/${groupId}/members/${memberId}`, { body: {}, ifNoneMatch: "*", key }, context)
+    async commit({ intent_id, plan: { memberId, role: granted, groupId }, preview }, context) {
+      const done = await calls.write("PUT", `/organizations/${platform}/groups/${groupId}/members/${memberId}`, { body: {}, ifNoneMatch: "*", key: intent_id }, context)
       return { results: { memberId, groupId, role: granted, operationId: done.operationId }, applied_changes: preview.changes, effects_performed: preview.effects }
     },
   }))
@@ -115,14 +115,14 @@ export function staffWrites({ calls, role, platform, resource, fresh }: Writes) 
           effects: ["permission_change" as const],
           warnings,
         },
-        plan: { key: newKey(), memberId, groupIds: leaving },
+        plan: { memberId, groupIds: leaving },
       }
     },
-    // One removal per group, each with its own step of the intent's key.
-    async commit({ plan: { key, memberId, groupIds }, preview }, context) {
+    // One removal per group, each keyed by the intent's id and its step.
+    async commit({ intent_id, plan: { memberId, groupIds }, preview }, context) {
       const operationIds: string[] = []
       for (const [step, groupId] of groupIds.entries()) {
-        const done = await calls.write("DELETE", `/organizations/${platform}/groups/${groupId}/members/${memberId}`, { key: `${key}.${step + 1}` }, context)
+        const done = await calls.write("DELETE", `/organizations/${platform}/groups/${groupId}/members/${memberId}`, { key: `${intent_id}.${step + 1}` }, context)
         operationIds.push(done.operationId)
       }
       return { results: { memberId, groupIds, operationIds }, applied_changes: preview.changes, effects_performed: preview.effects }

@@ -4,6 +4,8 @@
 
 No tool changes. `readAdminEnvironment` is built on `@answerable/mcp`'s `parseEnvironment`, with the same messages, the error code that evidence records comes from its `errorCodeOf`, and the workspace no longer depends on `@answerable/auth`. Intents use `@answerable/mcp-postgres` 0.4.0's `createPostgresIntentStore(db, evidence)`, with the same evidence.
 
+- Every write sends the intent's id, which `commit` now receives from `@answerable/mcp`, as `Idempotency-Key` (`<intent id>.<step>` for `staff_revoke`), where it sent a UUIDv7 that `prepare` minted into the plan. Plans no longer carry `key`, and `newKey` is gone. An intent prepared before this version and committed after it sends its id, not its old key.
+
 ## 0.2.5
 
 Answerable ID dropped the columns nothing wrote. `organisations_update` renames an organisation only: its input requires `name` and no longer takes `logo` or `metadata`. Group tools no longer take or report a directory id, and client reads no longer carry the registration fields ID never stored. `manifest.json` regenerated.

@@ -1,7 +1,7 @@
 import { defineMutation, type ToolContext } from "@answerable/mcp"
 import { z } from "zod"
 import {
-  commitWith, errors, invalid, memberId, missingMember, named, newKey, noPrecondition, organizationId, precondition, scopes, slug, target,
+  commitWith, errors, invalid, memberId, missingMember, named, noPrecondition, organizationId, precondition, scopes, slug, target,
   type Assignment, type Entitlement, type Group, type Member, type Writes,
 } from "./writes"
 
@@ -44,11 +44,11 @@ export function accessWrites(writes: Writes) {
           changes: [{ path: `organizations[${id}].groups[${slug}]`, from: null, to: { slug, name } }],
           warnings: [noPrecondition("creating a group")],
         },
-        plan: { key: newKey(), slug, name },
+        plan: { slug, name },
       }
     },
-    async commit({ targets: [version], plan: { key, slug, name }, preview }, context) {
-      const done = await calls.write("POST", `/organizations/${version.resource_id}/groups`, { body: { slug, name }, key }, context)
+    async commit({ intent_id, targets: [version], plan: { slug, name }, preview }, context) {
+      const done = await calls.write("POST", `/organizations/${version.resource_id}/groups`, { body: { slug, name }, key: intent_id }, context)
       return { results: { groupId: done.id, operationId: done.operationId }, applied_changes: preview.changes, effects_performed: [] }
     },
   }))
@@ -77,14 +77,14 @@ export function accessWrites(writes: Writes) {
           changes: [{ path: `groups[${groupOf}].members[${person}]`, from: before, to: { validFrom: before?.validFrom ?? null, validUntil: until } }],
           effects: ["permission_change" as const],
         },
-        plan: { key: newKey(), organizationId: id, groupId: groupOf, memberId: person, validUntil },
+        plan: { organizationId: id, groupId: groupOf, memberId: person, validUntil },
       }
     },
     // A change names the membership's version; a new membership asserts that there is none yet.
-    async commit({ targets, plan: { key, organizationId: id, groupId: groupOf, memberId: person, validUntil }, preview }, context) {
+    async commit({ intent_id, targets, plan: { organizationId: id, groupId: groupOf, memberId: person, validUntil }, preview }, context) {
       const version = targets.at(0)
       const condition = version ? { ifMatch: version.version.value } : { ifNoneMatch: "*" as const }
-      const done = await calls.write("PUT", `/organizations/${id}/groups/${groupOf}/members/${person}`, { body: validUntil ? { validUntil } : {}, ...condition, key }, context)
+      const done = await calls.write("PUT", `/organizations/${id}/groups/${groupOf}/members/${person}`, { body: validUntil ? { validUntil } : {}, ...condition, key: intent_id }, context)
       return { results: { groupId: groupOf, memberId: person, operationId: done.operationId }, applied_changes: preview.changes, effects_performed: preview.effects }
     },
   }))
@@ -108,11 +108,11 @@ export function accessWrites(writes: Writes) {
           effects: ["permission_change" as const],
           warnings: [noPrecondition("removing a member from a group")],
         },
-        plan: { key: newKey(), organizationId: id, groupId: groupOf, memberId: person },
+        plan: { organizationId: id, groupId: groupOf, memberId: person },
       }
     },
-    async commit({ plan: { key, organizationId: id, groupId: groupOf, memberId: person }, preview }, context) {
-      const done = await calls.write("DELETE", `/organizations/${id}/groups/${groupOf}/members/${person}`, { key }, context)
+    async commit({ intent_id, plan: { organizationId: id, groupId: groupOf, memberId: person }, preview }, context) {
+      const done = await calls.write("DELETE", `/organizations/${id}/groups/${groupOf}/members/${person}`, { key: intent_id }, context)
       return { results: { groupId: groupOf, memberId: person, operationId: done.operationId }, applied_changes: preview.changes, effects_performed: preview.effects }
     },
   }))
@@ -170,11 +170,11 @@ export function accessWrites(writes: Writes) {
           effects: ["permission_change" as const],
           warnings: [noPrecondition("creating an entitlement")],
         },
-        plan: { key: newKey(), body: { ...(shape.memberId ? { memberId: shape.memberId } : {}), ...(shape.groupId ? { groupId: shape.groupId } : {}), ...(clientId ? { clientId } : {}), resource, scopes: granted } },
+        plan: { body: { ...(shape.memberId ? { memberId: shape.memberId } : {}), ...(shape.groupId ? { groupId: shape.groupId } : {}), ...(clientId ? { clientId } : {}), resource, scopes: granted } },
       }
     },
-    async commit({ targets: [version], plan: { key, body }, preview }, context) {
-      const done = await calls.write("POST", `/organizations/${version.resource_id}/entitlements`, { body, key }, context)
+    async commit({ intent_id, targets: [version], plan: { body }, preview }, context) {
+      const done = await calls.write("POST", `/organizations/${version.resource_id}/entitlements`, { body, key: intent_id }, context)
       return { results: { entitlementId: done.id, operationId: done.operationId }, applied_changes: preview.changes, effects_performed: preview.effects }
     },
   }))
@@ -210,11 +210,11 @@ export function accessWrites(writes: Writes) {
               noPrecondition(words.write),
             ],
           },
-          plan: { key: newKey(), organizationId: id },
+          plan: { organizationId: id },
         }
       },
-      async commit({ targets: [version], plan: { key, organizationId: id }, preview }, context) {
-        const done = await calls.write("POST", `/organizations/${id}/entitlements/${version.resource_id}/${words.path}`, { key }, context)
+      async commit({ intent_id, targets: [version], plan: { organizationId: id }, preview }, context) {
+        const done = await calls.write("POST", `/organizations/${id}/entitlements/${version.resource_id}/${words.path}`, { key: intent_id }, context)
         return { results: { entitlementId: version.resource_id, operationId: done.operationId }, applied_changes: preview.changes, effects_performed: preview.effects }
       },
     }))

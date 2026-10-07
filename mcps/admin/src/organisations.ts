@@ -1,7 +1,7 @@
 import { defineMutation } from "@answerable/mcp"
 import { z } from "zod"
 import {
-  commitWith, errors, invalid, missingOrganisation, named, newKey, noPrecondition, organizationId, precondition, scopes, slug, target,
+  commitWith, errors, invalid, missingOrganisation, named, noPrecondition, organizationId, precondition, scopes, slug, target,
   type Organisation, type Writes,
 } from "./writes"
 
@@ -34,11 +34,11 @@ export function organisationWrites(writes: Writes) {
           changes: [{ path: `organizations[${slug}]`, from: null, to: { slug, name } }], effects: ["publication" as const],
           warnings: [noPrecondition("creating an organisation")],
         },
-        plan: { key: newKey(), slug, name },
+        plan: { slug, name },
       }
     },
-    async commit({ plan: { key, slug, name }, preview }, context) {
-      const done = await calls.write("POST", "/organizations", { body: { slug, name }, key }, context)
+    async commit({ intent_id, plan: { slug, name }, preview }, context) {
+      const done = await calls.write("POST", "/organizations", { body: { slug, name }, key: intent_id }, context)
       return { results: { organizationId: done.id, slug, operationId: done.operationId }, applied_changes: preview.changes, effects_performed: preview.effects }
     },
   }))
@@ -57,11 +57,11 @@ export function organisationWrites(writes: Writes) {
           summary: `Rename organisation ${named(row)} to “${input.name}”`,
           changes: [{ path: `organizations[${row.id}].name`, from: row.name, to: input.name }],
         },
-        plan: { key: newKey(), patch: { name: input.name } },
+        plan: { patch: { name: input.name } },
       }
     },
-    async commit({ targets: [version], plan: { key, patch }, preview }, context) {
-      const done = await calls.write("PATCH", `/organizations/${version.resource_id}`, { body: patch, ifMatch: version.version.value, key }, context)
+    async commit({ intent_id, targets: [version], plan: { patch }, preview }, context) {
+      const done = await calls.write("PATCH", `/organizations/${version.resource_id}`, { body: patch, ifMatch: version.version.value, key: intent_id }, context)
       return { results: { organizationId: version.resource_id, operationId: done.operationId }, applied_changes: preview.changes, effects_performed: [] }
     },
   }))
@@ -97,11 +97,10 @@ export function organisationWrites(writes: Writes) {
           changes: [{ path: `organizations[${id}].status`, from: row.status, to }],
           warnings: ["The grants revoked when it was disabled stay revoked: its people sign in again, and its machine clients get new tokens.", noPrecondition("enabling an organisation")],
         },
-        plan: { key: newKey() },
       }
     },
-    async commit({ targets: [version], plan: { key }, preview }, context) {
-      const done = await calls.write("POST", `/organizations/${version.resource_id}/${to === "disabled" ? "disable" : "enable"}`, { key }, context)
+    async commit({ intent_id, targets: [version], preview }, context) {
+      const done = await calls.write("POST", `/organizations/${version.resource_id}/${to === "disabled" ? "disable" : "enable"}`, { key: intent_id }, context)
       return { results: { organizationId: version.resource_id, status: to, operationId: done.operationId }, applied_changes: preview.changes, effects_performed: preview.effects }
     },
   }))
@@ -122,11 +121,11 @@ export function organisationWrites(writes: Writes) {
           changes: [{ path: `organizations[${id}].domains`, from: held, to: [...held, added].sort() }],
           warnings: [`If another organisation holds ${added}, Answerable ID refuses the write with 409 conflict.`, noPrecondition("adding a domain")],
         },
-        plan: { key: newKey(), domain: added },
+        plan: { domain: added },
       }
     },
-    async commit({ targets: [version], plan: { key, domain: added }, preview }, context) {
-      const done = await calls.write("POST", `/organizations/${version.resource_id}/domains`, { body: { domain: added }, key }, context)
+    async commit({ intent_id, targets: [version], plan: { domain: added }, preview }, context) {
+      const done = await calls.write("POST", `/organizations/${version.resource_id}/domains`, { body: { domain: added }, key: intent_id }, context)
       return { results: { domainId: done.id, domain: added, operationId: done.operationId }, applied_changes: preview.changes, effects_performed: [] }
     },
   }))
@@ -161,14 +160,14 @@ export function organisationWrites(writes: Writes) {
           effects: ["permission_change" as const],
           warnings: ["When the provider changes, including when it is first set, Answerable ID revokes every grant of the organisation: its people sign in to each application again."],
         },
-        plan: { key: newKey(), organizationId: id, issuer, domain: signIn },
+        plan: { organizationId: id, issuer, domain: signIn },
       }
     },
     // A replacement names the provider's version; a first provider asserts that there is none yet.
-    async commit({ targets, plan: { key, organizationId: id, issuer, domain: signIn }, preview }, context) {
+    async commit({ intent_id, targets, plan: { organizationId: id, issuer, domain: signIn }, preview }, context) {
       const version = targets.at(0)
       const precondition = version ? { ifMatch: version.version.value } : { ifNoneMatch: "*" as const }
-      const done = await calls.write("PUT", `/organizations/${id}/sso-provider`, { body: { issuer, domain: signIn, oidc: { credentials: "platform" } }, ...precondition, key }, context)
+      const done = await calls.write("PUT", `/organizations/${id}/sso-provider`, { body: { issuer, domain: signIn, oidc: { credentials: "platform" } }, ...precondition, key: intent_id }, context)
       return { results: { ssoProviderId: done.id, operationId: done.operationId }, applied_changes: preview.changes, effects_performed: preview.effects }
     },
   }))

@@ -185,7 +185,6 @@ const prepared = async (client: Client, name: string, args: Record<string, unkno
 }
 const confirm = (client: Client, intent: Prepared, summary = intent.preview.summary) =>
   call(client, "admin_commit_confirmed", { intent_id: intent.intent_id, commit_token: intent.commit_token, preview_summary: summary })
-const planKey = async (intent: Prepared) => (await db`select plan->>'key' as key from intents where intent_id = ${intent.intent_id}`)[0].key as string
 const writesTo = (id: FakeId, request: string) => id.received.filter(item => item.request === request)
 
 test("a team member sees no write and no commit tool; an admin the ordinary writes; an owner every write; an admin calling an owner tool gets the unknown-tool error and a capability.denied row", async () => {
@@ -201,7 +200,7 @@ test("a team member sees no write and no commit tool; an admin the ordinary writ
   ])
 })
 
-test("a controlled intent commits only through admin_commit_confirmed with its summary word for word, once, with the plan's key, the commit's execution id and the bound ETag, and the receipt names ID's operation", async () => {
+test("a controlled intent commits only through admin_commit_confirmed with its summary word for word, once, with the intent's id as the key, the commit's execution id and the bound ETag, and the receipt names ID's operation", async () => {
   const { staff, id, platform, answers } = await admin()
   const newco = id.organisation(Bun.randomUUIDv7(), { name: "Newco", slug: "newco" })
   const client = await staff(["admin", "answerable-admin"]).connect()
@@ -214,7 +213,7 @@ test("a controlled intent commits only through admin_commit_confirmed with its s
   const [patch] = writesTo(id, `PATCH /api/admin/v1/organizations/${newco.id}`)
   const committing = (await events(platform)).findLast(row => row.capability_identity === "admin/commit_confirmed")!
   expect(patch).toEqual({
-    request: `PATCH /api/admin/v1/organizations/${newco.id}`, requestId: committing.execution_id, idempotencyKey: await planKey(intent), ifMatch: `"${newco.id}:1"`, ifNoneMatch: null,
+    request: `PATCH /api/admin/v1/organizations/${newco.id}`, requestId: committing.execution_id, idempotencyKey: intent.intent_id, ifMatch: `"${newco.id}:1"`, ifNoneMatch: null,
   })
   expect(receipt).toMatchObject({ results: { organizationId: newco.id, operationId: answers.find(answer => answer.request === `PATCH /api/admin/v1/organizations/${newco.id}`)!.operationId }, idempotent_replay: false })
   const again = (await confirm(client, intent)).structuredContent
@@ -233,7 +232,7 @@ test("a controlled intent commits only through admin_commit_confirmed with its s
   expect(await createEvidence(db).verify(platform)).toEqual({ ok: true, length: 8 })
 })
 
-test("the plan's key survives a write whose answer is lost, which ID replays once without a second organisation, and a commit resent after a 401", async () => {
+test("the intent's key survives a write whose answer is lost, which ID replays once without a second organisation, and a commit resent after a 401", async () => {
   const { staff, id, lose, answers } = await admin()
   const client = await staff(["admin", "answerable-admin"]).connect()
   const creates = () => writesTo(id, "POST /api/admin/v1/organizations")
@@ -241,7 +240,7 @@ test("the plan's key survives a write whose answer is lost, which ID replays onc
   const lost = await prepared(client, "organisations_create", { slug: "lost", name: "Lost" })
   lose()
   const receipt = (await confirm(client, lost)).structuredContent as { results: { organizationId: string; operationId: string } }
-  expect(creates().map(item => item.idempotencyKey)).toEqual([await planKey(lost), await planKey(lost)])
+  expect(creates().map(item => item.idempotencyKey)).toEqual([lost.intent_id, lost.intent_id])
   const [first, replay] = answered()
   expect([first!.replayed, replay!.replayed, replay!.operationId]).toEqual([false, true, first!.operationId])
   expect(receipt.results).toMatchObject({ operationId: first!.operationId })
@@ -251,7 +250,7 @@ test("the plan's key survives a write whose answer is lost, which ID replays onc
   const renewed = await prepared(client, "organisations_create", { slug: "renewed", name: "Renewed" })
   id.revoke()
   await confirm(client, renewed)
-  expect(creates().slice(2).map(item => item.idempotencyKey)).toEqual([await planKey(renewed), await planKey(renewed)])
+  expect(creates().slice(2).map(item => item.idempotencyKey)).toEqual([renewed.intent_id, renewed.intent_id])
   expect(answered().slice(2).map(answer => answer.status)).toEqual([401, 201])
 })
 

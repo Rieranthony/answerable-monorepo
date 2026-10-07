@@ -17,7 +17,7 @@ function upstream(error: unknown): never {
   throw new ToolError("UPSTREAM_REJECTED", error.message, { details: { upstream: { status: error.status, code: error.code ?? null } } })
 }
 
-/** What a write to ID sends besides its path: the body, a precondition and the idempotency key the intent's plan carries. */
+/** What a write to ID sends besides its path: the body, a precondition and the idempotency key, the intent's id (`<intent id>.<step>` for one of several writes). */
 type Write = { body?: unknown; ifMatch?: string; ifNoneMatch?: "*"; key: string }
 
 /**
@@ -59,7 +59,7 @@ export function createCalls(id: IdAdmin) {
     return answer
   }
   /**
-   * A write with the plan's idempotency key and the call's execution id. When ID does not answer, or answers with a 5xx, it is sent once more with
+   * A write with the intent's idempotency key and the call's execution id. When ID does not answer, or answers with a 5xx, it is sent once more with
    * the same key, which ID replays if the first one was applied; when it still fails, or ID answers that a write with the key is still running,
    * `UPSTREAM_UNAVAILABLE` says the outcome is unknown. ID refusing a stale `If-Match` answers `INTENT_STALE`. Returns the `Operation-Id` ID sends with
    * every command (`apps/id/src/http/admin/command.ts`) and the id of the row it made or changed, which a replayed answer carries in its

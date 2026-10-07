@@ -16,7 +16,7 @@ const google = "https://accounts.google.com"
 const servers: TestMcp[] = []
 afterEach(async () => { await Promise.all(servers.splice(0).map(mcp => mcp.close())) })
 
-// The provider served alone on a fake ID seeded with Newco and the platform's role groups, and a fake Toolbox; the intents in memory, readable.
+// The provider served alone on a fake ID seeded with Newco and the platform's role groups, and a fake Toolbox; the intents in memory.
 async function setup({ toolbox: withToolbox = true } = {}) {
   const id = createIdFake()
   const world = seed(id)
@@ -44,17 +44,16 @@ async function setup({ toolbox: withToolbox = true } = {}) {
     if (answer.isError) throw new Error(`commit: ${JSON.stringify(errorOf(answer))}`)
     return answer.structuredContent as { results: Record<string, unknown>; applied_changes: unknown[]; effects_performed: string[]; idempotent_replay: boolean }
   }
-  // The writes ID received, without the reads; the plan's key of an intent; the execution id of the last commit.
+  // The writes ID received, without the reads; the execution id of the last commit.
   const writes = () => id.received.filter(({ request }) => !request.startsWith("GET"))
-  const key = async (intent: Intent) => ((await intents.get(intent.intent_id))!.plan as { key: string }).key
   const lastCommit = () => calls.findLast(item => item.tool.kind === "commit")!.executionId
-  return { id, world, toolbox, prepare, refusal, commit, committed, writes, key, lastCommit }
+  return { id, world, toolbox, prepare, refusal, commit, committed, writes, lastCommit }
 }
 const noPrecondition = (write: string) => `Answerable ID takes no precondition on ${write}: the admin MCP reads the target again just before it writes, but a change in between is not refused by ID.`
 const etag = (row: Record<string, unknown> & { id: string }) => `"${row.id}:${row.revision}"`
 
-test("organisations_create previews the organisation, changes nothing until committed, then sends one create with the plan's key and the call's execution id", async () => {
-  const { id, prepare, refusal, committed, writes, key, lastCommit } = await setup()
+test("organisations_create previews the organisation, changes nothing until committed, then sends one create with the intent's id as the key and the call's execution id", async () => {
+  const { id, prepare, refusal, committed, writes, lastCommit } = await setup()
   const intent = await prepare("organisations_create", { slug: "acme", name: "Acme" })
   expect(intent).toMatchObject({ policy_class: "controlled", commit_tool: "admin_commit_confirmed", targets: [] })
   expect(intent.preview).toEqual({
@@ -64,7 +63,7 @@ test("organisations_create previews the organisation, changes nothing until comm
   expect(writes()).toEqual([])
   const receipt = await committed(intent)
   const [create] = writes()
-  expect(create).toEqual({ request: "POST /api/admin/v1/organizations", requestId: lastCommit(), idempotencyKey: await key(intent), ifMatch: null, ifNoneMatch: null })
+  expect(create).toEqual({ request: "POST /api/admin/v1/organizations", requestId: lastCommit(), idempotencyKey: intent.intent_id, ifMatch: null, ifNoneMatch: null })
   expect(receipt.results).toEqual({ organizationId: expect.any(String), slug: "acme", operationId: expect.any(String) })
   expect(receipt.effects_performed).toEqual(["publication"])
   expect(await refusal("organisations_create", { slug: "acme", name: "Acme again" })).toMatchObject({
@@ -373,8 +372,8 @@ test("staff_grant prefers the group that confers the least beyond the role, and 
   expect(roles.admin.group.name).toBe("Operations")
 })
 
-test("staff_revoke removes the member from every group that carries the role, each with its own step of the key, and says what role remains", async () => {
-  const { id, world: { platform, roles, staffer }, prepare, refusal, committed, writes, key } = await setup()
+test("staff_revoke removes the member from every group that carries the role, each with its own step of the intent's id as the key, and says what role remains", async () => {
+  const { id, world: { platform, roles, staffer }, prepare, refusal, committed, writes } = await setup()
   const second = id.group(platform, { slug: "board", name: "Board" })
   const board = id.entitlement(platform, { groupId: second.id, resource, scopes: ["answerable-owner"] })
   const owner = staffer("owner@answerable.test", ["owner", "team"])
@@ -402,9 +401,8 @@ test("staff_revoke removes the member from every group that carries the role, ea
   })
   const receipt = await committed(intent)
   expect(receipt.results).toEqual({ memberId: owner.id, groupIds: leaving.map(group => group.id), operationIds: [expect.any(String), expect.any(String)] })
-  const planKey = await key(intent)
   expect(writes().map(({ request, idempotencyKey }) => [request, idempotencyKey])).toEqual(leaving.map((group, step) => [
-    `DELETE /api/admin/v1/organizations/${platform}/groups/${group.id}/members/${owner.id}`, `${planKey}.${step + 1}`,
+    `DELETE /api/admin/v1/organizations/${platform}/groups/${group.id}/members/${owner.id}`, `${intent.intent_id}.${step + 1}`,
   ]))
   expect(await refusal("staff_revoke", { memberId: staffer("plain@answerable.test").id, role: "team" })).toMatchObject({ code: "PRECONDITION_FAILED", message: "plain@answerable.test does not hold team" })
 })

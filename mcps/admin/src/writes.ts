@@ -34,8 +34,6 @@ export type Assignment = { id: string; validFrom: string | null; validUntil: str
 
 /** A target bound to the ETag ID answered for it; commit sends that ETag as `If-Match` where ID takes one. */
 export const target = (resource_type: string, resource_id: string, label: string, etag: string): Target => ({ resource_type, resource_id, label, version: { kind: "etag", value: etag } })
-/** The idempotency key of an intent's writes, minted once by `prepare` and stored in its plan: commit receives the stored plan, never a new one. */
-export const newKey = () => Bun.randomUUIDv7()
 /** A preview warning for a write that ID takes without a precondition. */
 export const noPrecondition = (write: string) =>
   `Answerable ID takes no precondition on ${write}: the admin MCP reads the target again just before it writes, but a change in between is not refused by ID.`
