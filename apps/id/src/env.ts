@@ -121,7 +121,7 @@ const environmentSchema = z
       .min(1)
       .max(2_147_483_647)
       .default(1_000),
-    DATABASE_POOL_MAX: z.coerce.number().int().min(1).optional(),
+    DATABASE_POOL_MAX: z.coerce.number().int().min(1).default(20),
     DATABASE_POOL_IDLE_TIMEOUT_MS: z.coerce
       .number()
       .int()
@@ -246,9 +246,7 @@ const environmentSchema = z
     operationalLogIntervalMs: environment.OPERATIONAL_LOG_INTERVAL_MS,
     protocolSweepIntervalMs: environment.PROTOCOL_SWEEP_INTERVAL_MS,
     protocolSweepBatchSize: environment.PROTOCOL_SWEEP_BATCH,
-    databasePoolMax:
-      environment.DATABASE_POOL_MAX ??
-      (environment.NODE_ENV === "test" ? 1 : 20),
+    databasePoolMax: environment.DATABASE_POOL_MAX,
     databasePoolIdleTimeoutMs: environment.DATABASE_POOL_IDLE_TIMEOUT_MS,
     databaseConnectionTimeoutMs: environment.DATABASE_CONNECTION_TIMEOUT_MS,
     databaseStatementTimeoutMs: environment.DATABASE_STATEMENT_TIMEOUT_MS,

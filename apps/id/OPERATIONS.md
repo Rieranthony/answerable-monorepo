@@ -8,7 +8,7 @@ The [local evidence](../../reports/id-operations.md) cannot establish production
 
 | Boundary            | Repository default or behaviour                                            | Limit of the claim                                                         |
 | ------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Database pool       | 20 connections (1 in tests); checkout 5 seconds; idle 10 seconds           | Multiply pools by processes and include other database users               |
+| Database pool       | 20 connections; checkout 5 seconds; idle 10 seconds                        | Multiply pools by processes and include other database users               |
 | Database statements | 10 seconds per statement; lock wait 2 seconds; idle transaction 15 seconds | Not a whole-request deadline; transactions may execute multiple statements |
 | Request body        | 256 KiB; acquisition deadline 5 seconds                                    | Does not bound response streaming or socket count                          |
 | Forwarded IP        | Rightmost untrusted address after listed ingress proxies                   | Requires proxy-only network access and TRUSTED_PROXY_CIDRS                 |

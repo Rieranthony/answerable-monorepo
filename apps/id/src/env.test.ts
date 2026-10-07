@@ -93,19 +93,6 @@ describe("unit: environment", () => {
     });
   });
 
-  test("uses one test connection unless explicitly overridden", () => {
-    expect(
-      parseEnvironment({ ...requiredEnvironment, NODE_ENV: "test" })
-        .databasePoolMax,
-    ).toBe(1);
-    expect(
-      parseEnvironment({
-        ...requiredEnvironment,
-        NODE_ENV: "test",
-        DATABASE_POOL_MAX: "3",
-      }).databasePoolMax,
-    ).toBe(3);
-  });
 
   test("operational reporting is disabled by zero or runs at least once a second", () => {
     for (const value of ["0", "1000"]) {
