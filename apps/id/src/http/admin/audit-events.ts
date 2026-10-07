@@ -4,6 +4,7 @@ import { json, pathParameter, uuidParam } from "./schemas.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
 import { auditActorTypes, auditOutcomes } from "../../db/schema/vocabulary.ts";
+import { listAuditEvents } from "../../db/queries/audit.ts";
 import * as service from "../../services/audit.ts";
 import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
@@ -165,7 +166,7 @@ export function register(app: Hono<AppEnvironment>) {
       const query = platformQuerySchema.parse(context.req.query());
       return context.json(
         await platformRead(context, (platform) =>
-          service.listAuditEvents(platform, filters(query), query),
+          listAuditEvents(platform, filters(query), query),
         ),
       );
     },

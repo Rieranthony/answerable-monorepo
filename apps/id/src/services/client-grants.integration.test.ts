@@ -27,11 +27,8 @@ import {
   enableClient,
   eraseClient,
 } from "./clients.ts";
-import {
-  listUserAuditEvents,
-  listAuditEvents,
-  listOrganizationAuditEvents,
-} from "./audit.ts";
+import { listAuditEvents } from "../db/queries/audit.ts";
+import { listUserAuditEvents, listOrganizationAuditEvents } from "./audit.ts";
 
 let connection: DatabaseConnection;
 beforeAll(() => {

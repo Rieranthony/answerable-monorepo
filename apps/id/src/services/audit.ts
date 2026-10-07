@@ -6,14 +6,6 @@ import { organizationExistsForHistory } from "../db/queries/organizations.ts";
 import type { PageQuery } from "../http/pagination.ts";
 import { ProblemError } from "../http/problem.ts";
 
-export function listAuditEvents(
-  context: PlatformReadContext,
-  filters: queries.AuditEventFilters,
-  page: PageQuery,
-) {
-  return queries.listAuditEvents(context, filters, page);
-}
-
 export async function listOrganizationAuditEvents(
   context: TenantReadContext<"history">,
   filters: Omit<queries.AuditEventFilters, "organizationId">,
