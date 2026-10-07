@@ -170,6 +170,20 @@ export function mapDatabaseError(error: unknown): ProblemError | undefined {
   }
 }
 
+/** What a log may say about an unexpected error: its class and, for a Postgres
+ * error, the SQLSTATE and constraint. Never the message, which can carry query
+ * parameters and credentials. */
+export function errorFields(error: unknown) {
+  const database = postgresError(error) ?? queryCause(error);
+  return {
+    name: error instanceof Error ? error.name : typeof error,
+    ...(database && { code: database.code }),
+    ...(typeof database?.constraint === "string" && {
+      constraint: database.constraint,
+    }),
+  };
+}
+
 export const problemHandler: ErrorHandler<AppEnvironment> = (
   error,
   context,
@@ -193,6 +207,7 @@ export const problemHandler: ErrorHandler<AppEnvironment> = (
     JSON.stringify({
       requestId: context.get("requestId"),
       event: "unexpected_error",
+      ...errorFields(error),
     }),
   );
   return problem(

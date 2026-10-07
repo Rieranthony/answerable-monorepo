@@ -109,6 +109,9 @@ for (const kind of ["scope", "foreign", "locked-root", "machine"] as const) {
           JSON.stringify({
             event: "admin_denial_audit_unavailable",
             requestId: response.headers.get("x-request-id"),
+            // raise_exception: the trigger's message never reaches the log.
+            name: "Error",
+            code: "P0001",
           }),
         ],
       ]);

@@ -46,6 +46,9 @@ writes `shutdown_failed` with the error's name and exits with status 1.
 
 **Monitoring handoff.** Configure the selected collector/scheduler to route these
 signals to an operator. No destination or numerical alert budget is configured here.
+An unexpected request error writes `[id] error` with `unexpected_error`; it and the
+`admin_denial_audit_unavailable` event name the error's class as `name` and, for a
+database error, its SQLSTATE as `code` and any `constraint`, never its message.
 
 | Signal                                                                  | Operator check                                                                                                                               |
 | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |

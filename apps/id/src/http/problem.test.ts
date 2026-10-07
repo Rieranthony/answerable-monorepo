@@ -5,6 +5,7 @@ import { HTTPException } from "hono/http-exception";
 import { describeRoute, generateSpecs } from "hono-openapi";
 import type { AppEnvironment } from "./context.ts";
 import {
+  errorFields,
   isRetryableDatabaseError,
   mapDatabaseError,
   ProblemError,
@@ -155,6 +156,34 @@ describe("unit: HTTP problems", () => {
       expect(isRetryableDatabaseError(error)).toBe(false);
   });
 
+  test("logs a database error's class, SQLSTATE and constraint, never its message", async () => {
+    expect(errorFields(databaseError("08006", "users_email_unique"))).toEqual({
+      name: "Error",
+      code: "08006",
+      constraint: "users_email_unique",
+    });
+    expect(
+      errorFields(Object.assign(new Error("driver secret"), { code: "25P02" })),
+    ).toEqual({ name: "Error", code: "25P02" });
+    expect(errorFields("thrown string")).toEqual({ name: "string" });
+    const log = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await errorApp(databaseError("08006")).request("/");
+      expect(log).toHaveBeenCalledWith(
+        "[id] error",
+        JSON.stringify({
+          requestId: "request-123",
+          event: "unexpected_error",
+          name: "Error",
+          code: "08006",
+        }),
+      );
+      expect(JSON.stringify(log.mock.calls)).not.toContain("secret");
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   test("logs unexpected errors and hides internal details", async () => {
     const log = spyOn(console, "error").mockImplementation(() => {});
     try {
@@ -178,6 +207,7 @@ describe("unit: HTTP problems", () => {
         JSON.stringify({
           requestId: "request-123",
           event: "unexpected_error",
+          name: "Error",
         }),
       );
     } finally {
