@@ -886,6 +886,14 @@ class ToolError extends Error {
 Throw from a handler for an expected failure; the caller receives its code, message, retry policy and details in the error envelope.
 A custom `<PROVIDER>_<CODE>` code needs an explicit `retry` and must be listed in the definition's `errors`.
 
+### errorCodeOf
+
+```ts
+const errorCodeOf: (failure: unknown) => string
+```
+
+The code a failure answers with: a `ToolError`'s own, anything else `INTERNAL`. For a server's `wrapCall`, to record or trace what a call answered.
+
 ### errorCodes
 
 ```ts

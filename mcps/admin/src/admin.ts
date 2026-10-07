@@ -1,6 +1,6 @@
 import type { SQL } from "bun"
 import type { IdAdmin } from "@answerable/id-admin"
-import { createMcpServer, ToolError, type IdVerifierConfig, type UserPrincipal } from "@answerable/mcp"
+import { createMcpServer, errorCodeOf, type ToolError, type IdVerifierConfig, type UserPrincipal } from "@answerable/mcp"
 import { createEvidence, createPostgresIntentStore, withEvidence, type EvidenceEvent } from "@answerable/mcp-postgres"
 import { reauthenticationRequired } from "./fresh"
 import { createAdminProvider } from "./provider"
@@ -48,7 +48,7 @@ export function createAdminMcp({ auth, db, id, platform, freshSeconds = 1800, to
     },
     async wrapCall(call, run) {
       const settled = await run().then(data => ({ data }), (failure: unknown) => ({ failure }))
-      const code = "failure" in settled ? (settled.failure instanceof ToolError ? settled.failure.code : "INTERNAL") : undefined
+      const code = "failure" in settled ? errorCodeOf(settled.failure) : undefined
       const ran = { execution_id: call.executionId, request_id: String(call.requestId), upstream: call.tool.identity === "admin/toolbox.enable" ? "toolbox" : "id" }
       await record(call.principal, call.tool, code === reauthenticationRequired
         // A critical operation refused for a stale sign-in is a denial, with the times that decided it.

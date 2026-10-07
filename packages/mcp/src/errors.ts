@@ -61,3 +61,6 @@ export class ToolError extends Error {
     if (options.details) this.details = options.details
   }
 }
+
+/** The code a failure answers with: a `ToolError`'s own, anything else `INTERNAL`. For a server's `wrapCall`, to record or trace what a call answered. */
+export const errorCodeOf = (failure: unknown): string => failure instanceof ToolError ? failure.code : "INTERNAL"

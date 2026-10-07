@@ -2,7 +2,7 @@
 
 ## 0.3.4
 
-No tool changes. `readToolboxEnvironment` is built on `@answerable/mcp`'s `parseEnvironment`, with the same messages.
+No tool changes. `readToolboxEnvironment` is built on `@answerable/mcp`'s `parseEnvironment`, with the same messages, and the error code that evidence and spans record comes from its `errorCodeOf`.
 
 ## 0.3.3
 

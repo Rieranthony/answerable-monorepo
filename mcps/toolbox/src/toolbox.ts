@@ -1,6 +1,6 @@
 import type { SQL } from "bun"
 import type { IdAdmin } from "@answerable/id-admin"
-import { createMcpServer, ToolError, type IdVerifierConfig, type Mutation, type Provider, type Served, type Tool, type UserPrincipal } from "@answerable/mcp"
+import { createMcpServer, errorCodeOf, ToolError, type IdVerifierConfig, type Mutation, type Provider, type Served, type Tool, type UserPrincipal } from "@answerable/mcp"
 import { createEvidence, createPostgresIntentStore, withEvidence, type EvidenceEvent } from "@answerable/mcp-postgres"
 import type { Tracer } from "@opentelemetry/api"
 import { createAdmin } from "./admin"
@@ -111,7 +111,7 @@ export async function createToolbox({ providers, auth, db, id, spans }: ToolboxC
         span.setAttribute("answerable.outcome", denied ? "denied" : "failure")
         await record(denied
           ? { kind: "capability.denied", outcome: "denied", reason: "not granted" }
-          : { kind: "capability.completed", outcome: "failure", error_code: failure instanceof ToolError ? failure.code : "INTERNAL" })
+          : { kind: "capability.completed", outcome: "failure", error_code: errorCodeOf(failure) })
         throw failure
       }
       if ("failure" in settled) return fail(settled.failure)

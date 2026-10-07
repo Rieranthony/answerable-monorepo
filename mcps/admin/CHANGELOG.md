@@ -2,7 +2,7 @@
 
 ## 0.2.6
 
-No tool changes. `readAdminEnvironment` is built on `@answerable/mcp`'s `parseEnvironment`, with the same messages, and the workspace no longer depends on `@answerable/auth`.
+No tool changes. `readAdminEnvironment` is built on `@answerable/mcp`'s `parseEnvironment`, with the same messages, the error code that evidence records comes from its `errorCodeOf`, and the workspace no longer depends on `@answerable/auth`.
 
 ## 0.2.5
 

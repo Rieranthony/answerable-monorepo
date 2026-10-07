@@ -1,4 +1,4 @@
-import { ToolError, type ToolCall } from "@answerable/mcp"
+import { errorCodeOf, type ToolCall } from "@answerable/mcp"
 import { isSpanContextValid, ROOT_CONTEXT, SpanKind, SpanStatusCode, trace, type Span, type Tracer } from "@opentelemetry/api"
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
 import { resourceFromAttributes } from "@opentelemetry/resources"
@@ -53,7 +53,7 @@ export async function traced<T>(tracer: Tracer, call: ToolCall, salt: string, bo
     return await body(span)
   } catch (error) {
     span.setStatus({ code: SpanStatusCode.ERROR })
-    span.setAttribute("error.type", error instanceof ToolError ? error.code : "INTERNAL")
+    span.setAttribute("error.type", errorCodeOf(error))
     throw error
   } finally {
     span.end()

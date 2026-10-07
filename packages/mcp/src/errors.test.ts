@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { errorCodes, ToolError, type ErrorCode } from "./index"
+import { errorCodeOf, errorCodes, ToolError, type ErrorCode } from "./index"
 
 const defaults: Record<ErrorCode, string> = {
   INVALID_INPUT: "after_fix_input",
@@ -54,4 +54,10 @@ test("a custom <PROVIDER>_<CODE> needs an explicit retry and a capitalised shape
   for (const code of ["record_not_found", "NOTFOUND", "Acme_QUOTA", "_ACME", "ACME_", "2ACME_X", "ACME-QUOTA", "toString"]) {
     expect(() => new ToolError(code, "Bad", { retry: { policy: "never" } })).toThrow(`ToolError code "${code}" must be a standard code or <PROVIDER>_<CODE> in capitals, for example ACME_QUOTA_EXCEEDED`)
   }
+})
+
+test("errorCodeOf answers a ToolError's code and INTERNAL for anything else", () => {
+  expect(errorCodeOf(new ToolError("NOT_FOUND", "Gone"))).toBe("NOT_FOUND")
+  expect(errorCodeOf(new ToolError("ACME_QUOTA_EXCEEDED", "Quota", { retry: { policy: "never" } }))).toBe("ACME_QUOTA_EXCEEDED")
+  for (const failure of [new Error("crash"), "text", undefined]) expect(errorCodeOf(failure)).toBe("INTERNAL")
 })
