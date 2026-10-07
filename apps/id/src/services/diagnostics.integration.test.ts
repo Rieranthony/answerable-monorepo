@@ -6,8 +6,11 @@ import { createSsoProvider } from "../__tests__/sso-queries.ts";
 import { testEnvironment } from "../__tests__/support.ts";
 import { inTenantRead } from "../__tests__/tenant-command.ts";
 import { retireUserEmail } from "../__tests__/user-queries.ts";
-import type { Database } from "../db/client.ts";
-import { createDatabase, type DatabaseConnection } from "../db/client.ts";
+import {
+  type Database,
+  createDatabase,
+  type DatabaseConnection,
+} from "../db/client.ts";
 import { accounts, members, organizations, users } from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
 import {

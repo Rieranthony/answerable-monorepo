@@ -32,6 +32,8 @@ import {
   oauthRefreshTokens,
   oauthConsents,
 } from "../schema/index.ts";
+import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
+import { isEffective } from "./effective.ts";
 
 export function retiredEmailFor(userId: string): string {
   return `${userId}@retired.invalid`;
@@ -60,9 +62,6 @@ export async function retireUserEmail(
     .returning();
   return user!;
 }
-
-import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
-import { isEffective } from "./effective.ts";
 
 export type UserQuery = PageQuery & {
   q?: string;

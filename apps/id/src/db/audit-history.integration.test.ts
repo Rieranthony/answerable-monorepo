@@ -1,11 +1,14 @@
 import { inPlatformRead } from "../__tests__/platform-context.ts";
 import { inTenantRead } from "../__tests__/tenant-command.ts";
-import type { Database } from "./client.ts";
+import {
+  type Database,
+  createDatabase,
+  type DatabaseConnection,
+} from "./client.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createId } from "../lib/id.ts";
-import { createDatabase, type DatabaseConnection } from "./client.ts";
 import {
   auditEvents,
   auditEventUsers,

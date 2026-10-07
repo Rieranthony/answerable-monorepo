@@ -1,8 +1,17 @@
 import { updateCapability } from "../services/capabilities.ts";
-import { organizationCapabilities } from "../db/schema/index.ts";
+import {
+  organizationCapabilities,
+  oauthAccessTokens,
+  oauthClients,
+  oauthResources,
+  organizations,
+  verifications,
+} from "../db/schema/index.ts";
 import { approveMachineCapability } from "../__tests__/capabilities.ts";
-import { platformWriteService } from "../__tests__/platform-context.ts";
-import { inPlatformWrite } from "../__tests__/platform-context.ts";
+import {
+  platformWriteService,
+  inPlatformWrite,
+} from "../__tests__/platform-context.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { getCurrentAdapter } from "better-auth";
 import { createApp } from "../app.ts";
@@ -18,13 +27,6 @@ import { eq, sql } from "drizzle-orm";
 import { createAuth } from "../auth.ts";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
-import {
-  oauthAccessTokens,
-  oauthClients,
-  oauthResources,
-  organizations,
-  verifications,
-} from "../db/schema/index.ts";
 import { createOrganization } from "../__tests__/organization-queries.ts";
 import { createResource } from "../__tests__/resource-queries.ts";
 import * as clientsImplementation from "../services/clients.ts";

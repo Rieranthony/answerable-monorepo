@@ -5,8 +5,8 @@ import {
 import {
   requirePlatformUsersContext,
   type PlatformUsersContext,
+  type PlatformReadContext,
 } from "./platform-context.ts";
-import { type PlatformReadContext } from "./platform-context.ts";
 import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/sessions.ts";
 import { userExists, lockUser } from "../db/queries/users.ts";

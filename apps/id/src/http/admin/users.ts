@@ -1,6 +1,10 @@
-import { commandJson } from "./schemas.ts";
+import {
+  commandJson,
+  pathParameter,
+  uuidParam,
+  confirmQuery,
+} from "./schemas.ts";
 import { platformRead } from "./platform-read.ts";
-import { pathParameter, uuidParam, confirmQuery } from "./schemas.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
 import {

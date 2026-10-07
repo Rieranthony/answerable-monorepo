@@ -7,8 +7,11 @@ import {
 } from "../__tests__/platform-context.ts";
 import { createResource } from "../__tests__/resource-queries.ts";
 import { testEnvironment } from "../__tests__/support.ts";
-import type { Database } from "../db/client.ts";
-import { createDatabase, type DatabaseConnection } from "../db/client.ts";
+import {
+  type Database,
+  createDatabase,
+  type DatabaseConnection,
+} from "../db/client.ts";
 import {
   auditEvents,
   oauthAccessTokens,

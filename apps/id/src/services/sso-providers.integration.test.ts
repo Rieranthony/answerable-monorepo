@@ -1,7 +1,11 @@
 import type { PlatformApplicationIds } from "../auth/platform-applications.ts";
 import { inPlatformWrite } from "../__tests__/platform-context.ts";
 import { inTenantRead } from "../__tests__/tenant-command.ts";
-import type { Database } from "../db/client.ts";
+import {
+  type Database,
+  createDatabase,
+  type DatabaseConnection,
+} from "../db/client.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import {
@@ -9,7 +13,6 @@ import {
   insertOriginSession,
 } from "../__tests__/grants.ts";
 import { testEnvironment } from "../__tests__/support.ts";
-import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import { createOrganization } from "../__tests__/organization-queries.ts";
 import { createId } from "../lib/id.ts";
 let connection: DatabaseConnection;

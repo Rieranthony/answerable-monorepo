@@ -11,6 +11,9 @@ import {
   oauthRefreshTokens,
   sessions,
   users,
+  members,
+  groups,
+  groupMembers,
 } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
 
@@ -32,7 +35,6 @@ function request(
   return fixture.app.request(`/api/admin/v1${path}`, { method, headers });
 }
 
-import { members, groups, groupMembers } from "../../db/schema/index.ts";
 for (const parent of ["refresh", "session", "member"] as const) {
   test(`global user erasure records children committed while waiting for a ${parent} parent`, async () => {
     const db = fixture.db,

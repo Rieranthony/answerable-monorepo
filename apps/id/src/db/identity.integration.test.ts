@@ -1,10 +1,14 @@
-import { entitlements } from "./schema/index.ts";
+import {
+  entitlements,
+  oauthClients,
+  oauthResources,
+  organizations,
+} from "./schema/index.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createId } from "../lib/id.ts";
 import { createDatabase, type DatabaseConnection } from "./client.ts";
-import { oauthClients, oauthResources, organizations } from "./schema/index.ts";
 
 let connection: DatabaseConnection;
 let client: typeof oauthClients.$inferSelect;

@@ -2,8 +2,8 @@ import { revokeOrganizationGrantContexts } from "../db/queries/grant-contexts.ts
 import {
   requirePlatformWriteContext,
   type PlatformWriteContext,
+  type PlatformReadContext,
 } from "./platform-context.ts";
-import { type PlatformReadContext } from "./platform-context.ts";
 import { type TenantReadContext } from "./tenant-context.ts";
 import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/organizations.ts";

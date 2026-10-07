@@ -1,6 +1,11 @@
-import { commandJson } from "./schemas.ts";
+import {
+  commandJson,
+  json,
+  body,
+  pathParameter,
+  uuidParam,
+} from "./schemas.ts";
 import { tenantRead } from "./tenant-read.ts";
-import { json, body, pathParameter, uuidParam } from "./schemas.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
 import {

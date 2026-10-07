@@ -2,7 +2,11 @@ import { platformWriteService } from "../__tests__/platform-context.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import { testEnvironment } from "../__tests__/support.ts";
-import { createDatabase, type DatabaseConnection } from "../db/client.ts";
+import {
+  createDatabase,
+  type DatabaseConnection,
+  type Database,
+} from "../db/client.ts";
 import { createOrganization } from "../__tests__/organization-queries.ts";
 import { createId } from "../lib/id.ts";
 import {
@@ -83,7 +87,6 @@ async function seed() {
 }
 import * as implementation from "./entitlements.ts";
 import { inTenantRead } from "../__tests__/tenant-command.ts";
-import type { Database } from "../db/client.ts";
 const service = {
   ...implementation,
   createEntitlement: platformWriteService(implementation.createEntitlement),

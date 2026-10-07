@@ -10,10 +10,6 @@ import {
   auditEvents,
   members,
   users,
-} from "../../db/schema/index.ts";
-import { createId } from "../../lib/id.ts";
-import { signInThroughIdp } from "../../__tests__/federation.ts";
-import {
   accounts,
   sessions,
   groups,
@@ -26,6 +22,8 @@ import {
   organizationDomains,
   ssoProviders,
 } from "../../db/schema/index.ts";
+import { createId } from "../../lib/id.ts";
+import { signInThroughIdp } from "../../__tests__/federation.ts";
 
 let fixture: AdminFixture;
 beforeEach(async () => {

@@ -2,7 +2,13 @@ import {
   platformApplicationFor,
   platformApplications,
 } from "../../auth/platform-applications.ts";
-import { commandJson } from "./schemas.ts";
+import {
+  commandJson,
+  json,
+  body,
+  pathParameter,
+  uuidParam,
+} from "./schemas.ts";
 import { platformRead } from "./platform-read.ts";
 import { tenantRead } from "./tenant-read.ts";
 import {
@@ -16,7 +22,6 @@ import {
   testSsoProvider,
   ssoProblemCodes,
 } from "../../services/sso-test.ts";
-import { json, body, pathParameter, uuidParam } from "./schemas.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
 import {

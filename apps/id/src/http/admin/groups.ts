@@ -1,13 +1,5 @@
-import { commandJson } from "./schemas.ts";
-import { tenantRead } from "./tenant-read.ts";
 import {
-  requireRevision,
-  requirePutRevision,
-  revisionTag,
-  revisionParameter,
-  revisionResponseHeaders,
-} from "./revision.ts";
-import {
+  commandJson,
   json,
   body,
   pathParameter,
@@ -16,6 +8,14 @@ import {
   windowDates,
   confirmQuery,
 } from "./schemas.ts";
+import { tenantRead } from "./tenant-read.ts";
+import {
+  requireRevision,
+  requirePutRevision,
+  revisionTag,
+  revisionParameter,
+  revisionResponseHeaders,
+} from "./revision.ts";
 import * as service from "../../services/groups.ts";
 import type { Hono } from "hono";
 import { z } from "zod";

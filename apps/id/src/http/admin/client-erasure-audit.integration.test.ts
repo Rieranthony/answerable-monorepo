@@ -13,6 +13,9 @@ import {
   oauthClients,
   sessions,
   users,
+  oauthConsents,
+  oauthClientResources,
+  oauthResources,
 } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
 
@@ -35,12 +38,6 @@ function request(
 }
 const sorted = <T extends { id: string }>(rows: T[]) =>
   [...rows].sort((a, b) => a.id.localeCompare(b.id));
-
-import {
-  oauthConsents,
-  oauthClientResources,
-  oauthResources,
-} from "../../db/schema/index.ts";
 
 test("restricted client erasure records exact cascades with private cross-client effects and atomic recovery", async () => {
   const db = fixture.db;

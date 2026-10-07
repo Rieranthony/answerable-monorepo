@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { sql, and, count, desc, eq, ilike, or } from "drizzle-orm";
 import {
   requirePlatformReadContext,
   requirePlatformWriteContext,
@@ -10,7 +10,6 @@ import {
   type TenantReadContext,
 } from "../../services/tenant-context.ts";
 import { lockResource } from "../resource-lock.ts";
-import { and, count, desc, eq, ilike, or } from "drizzle-orm";
 import {
   oauthResources,
   entitlements,

@@ -1,12 +1,6 @@
-import { organizationCapabilities, systemBindings } from "../schema/index.ts";
-import { hasPlatformWriter } from "./grants.ts";
-import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
-import { testEnvironment } from "../../__tests__/support.ts";
-import { createDatabase, type DatabaseConnection } from "../client.ts";
-import { createOrganization } from "../../__tests__/organization-queries.ts";
-import { createId } from "../../lib/id.ts";
 import {
+  organizationCapabilities,
+  systemBindings,
   users,
   members,
   groups,
@@ -16,6 +10,17 @@ import {
   oauthClients,
   oauthResources,
 } from "../schema/index.ts";
+import { hasPlatformWriter, effectiveGrants } from "./grants.ts";
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { eq, sql } from "drizzle-orm";
+import { testEnvironment } from "../../__tests__/support.ts";
+import {
+  createDatabase,
+  type DatabaseConnection,
+  type Database,
+} from "../client.ts";
+import { createOrganization } from "../../__tests__/organization-queries.ts";
+import { createId } from "../../lib/id.ts";
 import { createGroup, addGroupMember } from "../../__tests__/group-queries.ts";
 import { createEntitlement } from "../../__tests__/entitlement-queries.ts";
 let connection: DatabaseConnection;
@@ -87,10 +92,8 @@ async function seed() {
     .values({ id: createId(), clientId, redirectUris: [], scopes: ["openid"] });
   return { db, org, other, ids, group, foreignGroup, resource, clientId };
 }
-import { effectiveGrants } from "./grants.ts";
 import * as accessQueries from "./access.ts";
 import { inTenantRead } from "../../__tests__/tenant-command.ts";
-import type { Database } from "../client.ts";
 const memberAccess = (db: Database, organizationId: string, memberId: string) =>
   inTenantRead(db, organizationId, "memberAccess", (context) =>
     accessQueries.memberAccess(context, memberId),

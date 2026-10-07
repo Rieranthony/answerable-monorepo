@@ -1,4 +1,12 @@
-import { commandJson } from "./schemas.ts";
+import {
+  commandJson,
+  body,
+  json,
+  pathParameter,
+  uuidParam,
+  windowDates,
+  windowSchema,
+} from "./schemas.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
 import type { AppEnvironment } from "../context.ts";
@@ -8,14 +16,6 @@ import { validate } from "../validation.ts";
 import * as service from "../../services/capabilities.ts";
 import { capabilityGrantKinds } from "../../db/schema/capabilities.ts";
 import { lifecycleStatuses } from "../../db/schema/vocabulary.ts";
-import {
-  body,
-  json,
-  pathParameter,
-  uuidParam,
-  windowDates,
-  windowSchema,
-} from "./schemas.ts";
 import {
   platformCommand,
   operationJson,

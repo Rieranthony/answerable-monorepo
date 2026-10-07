@@ -1,6 +1,8 @@
 import { approveMachineCapability } from "../__tests__/capabilities.ts";
-import { platformWriteService } from "../__tests__/platform-context.ts";
-import { inPlatformWrite } from "../__tests__/platform-context.ts";
+import {
+  platformWriteService,
+  inPlatformWrite,
+} from "../__tests__/platform-context.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import {

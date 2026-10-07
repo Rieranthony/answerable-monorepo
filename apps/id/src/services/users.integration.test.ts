@@ -6,8 +6,11 @@ import {
 } from "../__tests__/grants.ts";
 import { inPlatformUsers } from "../__tests__/platform-context.ts";
 import { testEnvironment } from "../__tests__/support.ts";
-import type { Database } from "../db/client.ts";
-import { createDatabase, type DatabaseConnection } from "../db/client.ts";
+import {
+  type Database,
+  createDatabase,
+  type DatabaseConnection,
+} from "../db/client.ts";
 import {
   accounts,
   auditEvents,

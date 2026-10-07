@@ -3,7 +3,7 @@ import {
   platformApplications,
   type PlatformApplicationIds,
 } from "../../auth/platform-applications.ts";
-import { and } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   requirePlatformReadContext,
   requirePlatformWriteContext,
@@ -15,7 +15,6 @@ import {
   requireTenantMemberAccessContext,
   type TenantReadContext,
 } from "../../services/tenant-context.ts";
-import { eq, sql } from "drizzle-orm";
 
 import { createId } from "../../lib/id.ts";
 import type { Executor } from "../client.ts";

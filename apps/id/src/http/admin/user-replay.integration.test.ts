@@ -11,12 +11,10 @@ import {
   entitlements,
   sessions,
   users,
-} from "../../db/schema/index.ts";
-import { createId } from "../../lib/id.ts";
-import {
   oauthAccessTokens,
   oauthRefreshTokens,
 } from "../../db/schema/index.ts";
+import { createId } from "../../lib/id.ts";
 let fixture: AdminFixture;
 beforeAll(async () => {
   fixture = await createAdminFixture(

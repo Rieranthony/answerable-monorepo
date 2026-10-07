@@ -1,8 +1,15 @@
-import { platformWriteService } from "../__tests__/platform-context.ts";
+import {
+  platformWriteService,
+  inPlatformRead,
+} from "../__tests__/platform-context.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import { testEnvironment } from "../__tests__/support.ts";
-import { createDatabase, type DatabaseConnection } from "../db/client.ts";
+import {
+  createDatabase,
+  type DatabaseConnection,
+  type Database,
+} from "../db/client.ts";
 import {
   auditEvents,
   entitlements,
@@ -14,8 +21,6 @@ import {
 import { createId } from "../lib/id.ts";
 import type { Actor } from "./actor.ts";
 import * as implementation from "./resources.ts";
-import { inPlatformRead } from "../__tests__/platform-context.ts";
-import type { Database } from "../db/client.ts";
 const service = {
   ...implementation,
   createResource: platformWriteService(implementation.createResource),

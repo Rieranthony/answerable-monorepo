@@ -1,4 +1,7 @@
-import { recordAuditEvent } from "../../__tests__/audit-queries.ts";
+import {
+  recordAuditEvent,
+  type AuditEvent,
+} from "../../__tests__/audit-queries.ts";
 import { createId } from "../../lib/id.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { decodeJwt } from "jose";
@@ -7,7 +10,6 @@ import {
   type AdminFixture,
 } from "../../__tests__/admin.ts";
 import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
-import type { AuditEvent } from "../../__tests__/audit-queries.ts";
 import { routes } from "./audit-events.ts";
 let fixture: AdminFixture;
 beforeAll(async () => {

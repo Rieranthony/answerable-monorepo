@@ -5,12 +5,10 @@ import { revokeUserGrantContexts } from "../db/queries/grant-contexts.ts";
 import {
   requirePlatformWriteContext,
   type PlatformWriteContext,
-} from "./platform-context.ts";
-import {
   requirePlatformUsersContext,
   type PlatformUsersContext,
+  type PlatformReadContext,
 } from "./platform-context.ts";
-import { type PlatformReadContext } from "./platform-context.ts";
 import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/users.ts";
 import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";

@@ -5,11 +5,10 @@ import {
 import { type TenantReadContext } from "./tenant-context.ts";
 import * as queries from "../db/queries/groups.ts";
 import { findMemberForAssignment } from "../db/queries/members.ts";
-import type { PageQuery } from "../http/pagination.ts";
+import { type PageQuery, cursorPage } from "../http/pagination.ts";
 import type { Executor } from "../db/client.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
-import { cursorPage } from "../http/pagination.ts";
 import { ProblemError } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
 function requireRow<T>(row: T | null): T {

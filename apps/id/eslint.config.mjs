@@ -5,6 +5,11 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    rules: {
+      "no-duplicate-imports": "error",
+    },
+  },
+  {
     ignores: ["coverage/**", "dist/**"],
   },
 );

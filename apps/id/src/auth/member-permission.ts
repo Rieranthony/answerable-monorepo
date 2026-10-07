@@ -1,7 +1,6 @@
 import { and, eq, or, sql } from "drizzle-orm";
 import type { Executor } from "../db/client.ts";
-import { isEffective } from "../db/queries/effective.ts";
-import { matchingEntitlements } from "../db/queries/effective.ts";
+import { isEffective, matchingEntitlements } from "../db/queries/effective.ts";
 import {
   members,
   groupMembers,

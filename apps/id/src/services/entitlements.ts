@@ -1,8 +1,8 @@
 import {
   requirePlatformWriteContext,
   type PlatformWriteContext,
+  type PlatformReadContext,
 } from "./platform-context.ts";
-import { type PlatformReadContext } from "./platform-context.ts";
 import { type TenantReadContext } from "./tenant-context.ts";
 import * as queries from "../db/queries/entitlements.ts";
 import { findMemberForAssignment } from "../db/queries/members.ts";

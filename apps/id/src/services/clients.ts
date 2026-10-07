@@ -3,8 +3,8 @@ import { requireNoCapabilityReferences } from "./capabilities.ts";
 import {
   requirePlatformWriteContext,
   type PlatformWriteContext,
+  type PlatformReadContext,
 } from "./platform-context.ts";
-import { type PlatformReadContext } from "./platform-context.ts";
 import { z } from "zod";
 import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/oauth-clients.ts";

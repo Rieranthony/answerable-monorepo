@@ -9,8 +9,12 @@ import { createOrganization } from "../__tests__/organization-queries.ts";
 import { platformWriteService } from "../__tests__/platform-context.ts";
 import { testEnvironment } from "../__tests__/support.ts";
 import { inTenant, inTenantRead } from "../__tests__/tenant-command.ts";
-import type { Database, Executor } from "../db/client.ts";
-import { createDatabase, type DatabaseConnection } from "../db/client.ts";
+import {
+  type Database,
+  type Executor,
+  createDatabase,
+  type DatabaseConnection,
+} from "../db/client.ts";
 import {
   auditEvents,
   entitlements,

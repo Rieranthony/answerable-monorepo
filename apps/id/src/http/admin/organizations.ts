@@ -1,4 +1,11 @@
-import { commandJson } from "./schemas.ts";
+import {
+  commandJson,
+  json,
+  body,
+  pathParameter,
+  uuidParam,
+  confirmQuery,
+} from "./schemas.ts";
 import { platformRead } from "./platform-read.ts";
 import { tenantRead } from "./tenant-read.ts";
 import {
@@ -7,13 +14,6 @@ import {
   revisionParameter,
   revisionResponseHeaders,
 } from "./revision.ts";
-import {
-  json,
-  body,
-  pathParameter,
-  uuidParam,
-  confirmQuery,
-} from "./schemas.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
 import { lifecycleStatuses } from "../../db/schema/vocabulary.ts";

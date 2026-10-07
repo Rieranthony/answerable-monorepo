@@ -1,5 +1,5 @@
 import type { Executor } from "../client.ts";
-import { sql } from "drizzle-orm";
+import { sql, and, desc, eq } from "drizzle-orm";
 import {
   requirePlatformWriteContext,
   type PlatformWriteContext,
@@ -11,7 +11,6 @@ import {
 } from "../../services/tenant-context.ts";
 import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
 import type { LifecycleStatus } from "../schema/vocabulary.ts";
-import { and, desc, eq } from "drizzle-orm";
 
 import { createId } from "../../lib/id.ts";
 import { organizationDomains, organizations } from "../schema/index.ts";

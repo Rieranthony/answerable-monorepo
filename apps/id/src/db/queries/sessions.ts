@@ -6,6 +6,7 @@ import {
 } from "../../services/platform-context.ts";
 import { and, desc, eq } from "drizzle-orm";
 import { sessions } from "../schema/index.ts";
+import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
 
 export async function deleteUserSessionIds(
   context: PlatformUsersContext,
@@ -18,7 +19,6 @@ export async function deleteUserSessionIds(
     .returning({ id: sessions.id });
   return rows.map((row) => row.id).sort();
 }
-import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
 
 const selection = {
   id: sessions.id,

@@ -51,7 +51,10 @@ async function request(
 import { routes } from "./sso-providers.ts";
 import { responseSchema } from "../../__tests__/openapi-response.ts";
 const ssoProviderSchema = responseSchema("getSsoProvider", 200);
-import { findSsoProviderByOrganization } from "../../__tests__/sso-queries.ts";
+import {
+  findSsoProviderByOrganization,
+  createSsoProvider,
+} from "../../__tests__/sso-queries.ts";
 const input = {
   issuer: "https://login.example.com",
   domain: " ACME.EXAMPLE.COM ",
@@ -221,7 +224,6 @@ test("machine token creates, updates and deletes the provider", async () => {
   expectRedacted(events);
 });
 
-import { createSsoProvider } from "../../__tests__/sso-queries.ts";
 const ssoTestSchema = responseSchema("testSsoProvider", 200);
 test("platform admins, readers and a machine test the in-process SSO issuer", async () => {
   for (const kind of [

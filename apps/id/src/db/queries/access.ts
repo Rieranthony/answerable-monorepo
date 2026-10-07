@@ -22,8 +22,7 @@ import {
   oauthResources,
 } from "../schema/index.ts";
 import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
-import { isEffective } from "./effective.ts";
-import { matchingEntitlements } from "./effective.ts";
+import { isEffective, matchingEntitlements } from "./effective.ts";
 
 export type AccessTarget =
   | { clientId: string; resource?: string }

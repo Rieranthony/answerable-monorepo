@@ -5,7 +5,11 @@ import {
   insertOriginSession,
 } from "../__tests__/grants.ts";
 import { testEnvironment } from "../__tests__/support.ts";
-import { createDatabase, type DatabaseConnection } from "../db/client.ts";
+import {
+  createDatabase,
+  type DatabaseConnection,
+  type Database,
+} from "../db/client.ts";
 import {
   accounts,
   grantContexts,
@@ -22,7 +26,6 @@ import { createId } from "../lib/id.ts";
 import type { Actor } from "./actor.ts";
 import * as implementation from "./sessions.ts";
 import { inPlatformUsers } from "../__tests__/platform-context.ts";
-import type { Database } from "../db/client.ts";
 const service = {
   revokeUserSession: (
     db: Database,
