@@ -71,7 +71,7 @@ describe("countries", () => {
     expect(findCountry("zz")).toBeUndefined()
     expect(findCountry("")).toBeUndefined()
     expect(flagUrl("GB")).toBe(
-      "https://cdn.jsdelivr.net/gh/hampusborgos/country-flags@main/svg/gb.svg",
+      "https://cdn.jsdelivr.net/gh/hampusborgos/country-flags@c09927e63705529bbf59ca6684cd9b23225dddad/svg/gb.svg",
     )
     expect(flagUrl(" gb ")).toBe(flagUrl("GB"))
   })

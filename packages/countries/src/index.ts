@@ -1,6 +1,10 @@
-// Source: https://cdn.jsdelivr.net/gh/hampusborgos/country-flags@main/countries.json
-// Refresh by re-downloading countries.json from that URL.
+// Source: hampusborgos/country-flags at one commit, FLAG_COMMIT below. countries.json is that commit's file and the flag
+// images load from the same commit, so neither drifts when upstream pushes. Refresh both together: choose a commit,
+// re-download countries.json from https://cdn.jsdelivr.net/gh/hampusborgos/country-flags@<commit>/countries.json,
+// change FLAG_COMMIT and the URL in index.test.ts, and check that svg/ holds a file for every code.
 import data from "./countries.json"
+
+const FLAG_COMMIT = "c09927e63705529bbf59ca6684cd9b23225dddad"
 
 export type Country = { code: string; name: string }
 
@@ -53,7 +57,7 @@ export function findCountry(code: string): Country | undefined {
 }
 
 export function flagUrl(code: string): string {
-  return `https://cdn.jsdelivr.net/gh/hampusborgos/country-flags@main/svg/${code.trim().toLowerCase()}.svg`
+  return `https://cdn.jsdelivr.net/gh/hampusborgos/country-flags@${FLAG_COMMIT}/svg/${code.trim().toLowerCase()}.svg`
 }
 
 export type CountryGroup = { label: string; items: readonly Country[] }
