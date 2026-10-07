@@ -40,6 +40,8 @@ export async function startAdminStack(id: Id, { adminHost, toolboxHost, fetch }:
   const grants = staffRoles.map(role => `answerable-${role}`)
 
   step("Registering the Toolbox, its admin resource, its host client and its machine client")
+  // 900-second tokens, where startToolboxStack registers 60: A3 polls the Toolbox's tools/list with the person's one access token for up to 75 seconds
+  // after access_revoke and again after access_enable, longer than a 60-second token lives. Whether A3 passes with 60, refreshing in the middle, is untried.
   await registerResource(admin, { identifier: toolboxResource, scopes: ["toolbox"], accessTokenTtl: 900 })
   await registerResource(admin, { identifier: toolboxAdmin, scopes: ["toolbox:admin"], accessTokenTtl: 300 })
   await registerClient(admin, { ...toolboxHost, scopes: ["toolbox"] })
