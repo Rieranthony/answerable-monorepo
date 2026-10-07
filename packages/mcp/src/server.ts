@@ -239,45 +239,38 @@ export function createMcpServer(config: McpServerConfig): McpServerHandle {
       }
       return server
     }
-    // A failure is logged under the tool's name, or a commit tool's wire name.
-    const wrapped = (tool: ToolCall["tool"], name: string, call: ToolContext, mcpReq: { id: string | number; _meta?: Record<string, unknown> }, run: () => Promise<Record<string, unknown>>) =>
-      answer(tool.kind === "commit" ? name : tool.name, call.executionId, () => wrapCall(Object.freeze({
+    // One call: a fresh context, then `run` inside wrapCall. A failure is logged under the tool's name, or a commit tool's wire name.
+    type Run = (args: Record<string, unknown>, call: ToolContext) => Promise<Record<string, unknown>>
+    type Extra = { mcpReq: { id: string | number; signal: AbortSignal; _meta?: Record<string, unknown> } }
+    const handle = (tool: ToolCall["tool"], name: string, run: Run) => (args: Record<string, unknown>, { mcpReq }: Extra) => {
+      const call = context(mcpReq.signal)
+      return answer(tool.kind === "commit" ? name : tool.name, call.executionId, () => wrapCall(Object.freeze({
         tool, name, principal, executionId: call.executionId, requestId: mcpReq.id, meta: mcpReq._meta ?? {},
-      }), run))
+      }), () => run(args, call)))
+    }
     const registeredViews = new Set<View>()
     for (const tool of tools) {
-      const capability = { identity: tool.identity, version: tool.version, kind: tool.kind }
-      const deprecated = tool.deprecated ? { deprecated: tool.deprecated } : {}
-      if (tool.kind === "read") {
-        registerAppTool(server, names.get(tool)!, {
-          title: tool.title, description: wireDescription(tool), inputSchema: advertised(tool.input), outputSchema: tool.output, annotations: readAnnotations,
-          _meta: { "com.answerable/capability": { ...capability, ...deprecated }, ...(tool.view ? { ui: { resourceUri: tool.view.uri } } : {}) },
-        }, (args, sdkContext) => {
-          const call = context(sdkContext.mcpReq.signal)
-          return wrapped(tool, names.get(tool)!, call, sdkContext.mcpReq, () => perform(tool, args, call))
-        })
-        if (tool.view) registeredViews.add(tool.view)
-        continue
+      const name = names.get(tool)!
+      const read = tool.kind === "read"
+      const capability = {
+        identity: tool.identity, version: tool.version, kind: tool.kind,
+        ...(read ? {} : { risk: tool.risk, policy_class: await policyClass(tool, principal) }), ...(tool.deprecated ? { deprecated: tool.deprecated } : {}),
       }
-      registerAppTool(server, names.get(tool)!, {
-        title: tool.title, description: wireDescription(tool), inputSchema: advertised(prepareInputs.get(tool)!), outputSchema: intentView, annotations: readAnnotations,
-        _meta: { "com.answerable/capability": { ...capability, risk: tool.risk, policy_class: await policyClass(tool, principal), ...deprecated } },
-      }, (args, sdkContext) => {
-        const call = context(sdkContext.mcpReq.signal)
-        return wrapped(tool, names.get(tool)!, call, sdkContext.mcpReq, () => perform(tool, args, call))
-      })
+      registerAppTool(server, name, {
+        title: tool.title, description: wireDescription(tool), annotations: readAnnotations,
+        inputSchema: advertised(read ? tool.input : prepareInputs.get(tool)!), outputSchema: read ? tool.output : intentView,
+        _meta: { "com.answerable/capability": capability, ...(read && tool.view ? { ui: { resourceUri: tool.view.uri } } : {}) },
+      }, handle(tool, name, (args, call) => perform(tool, args, call)))
+      if (read && tool.view) registeredViews.add(tool.view)
     }
     // A caller who can use no mutation gets the unknown-tool error from the commit tools too.
     for (const commit of permitted.some(tool => tool.kind === "mutate") ? commits : []) {
       registerAppTool(server, commit.name, {
         description: commit.description, inputSchema: advertised(commit.input), outputSchema: receipt, annotations: commit.annotations, _meta: commit.meta,
-      }, (args, sdkContext) => {
-        const call = context(sdkContext.mcpReq.signal)
-        return wrapped(commit.call, commit.name, call, sdkContext.mcpReq, async () => commitIntent({
-          id: provider.id, tool: commit.name, input: await parseArguments(commit.input, args), context: call, store: intents, mutations,
-          permitted: mutation => permitted.includes(mutation), policyClass: mutation => policyClass(mutation, principal),
-        }))
-      })
+      }, handle(commit.call, commit.name, async (args, call) => commitIntent({
+        id: provider.id, tool: commit.name, input: await parseArguments(commit.input, args), context: call, store: intents, mutations,
+        permitted: mutation => permitted.includes(mutation), policyClass: mutation => policyClass(mutation, principal),
+      })))
     }
     for (const prompt of provider.prompts.filter(definition => permits(principal, definition))) {
       server.registerPrompt(prompt.name, { description: prompt.description, argsSchema: prompt.input }, async (input, sdkContext) => {
