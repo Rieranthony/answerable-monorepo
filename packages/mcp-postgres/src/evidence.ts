@@ -1,7 +1,7 @@
 import type { SQL } from "bun"
 
 /** What an evidence event records. */
-export type EvidenceKind =
+type EvidenceKind =
   | "capability.completed" | "capability.denied" | "intent.prepared" | "intent.approval_requested" | "intent.committed" | "intent.stale"
   | "intent.expired" | "receipt.issued"
 

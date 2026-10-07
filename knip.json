@@ -1,12 +1,70 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "ignore": ["**/coverage/**", "**/dist/**", "**/.next/**"],
+  "ignore": [
+    "**/coverage/**",
+    "**/dist/**",
+    "**/.next/**"
+  ],
   "workspaces": {
-    ".": { "entry": ["scripts/*.ts"] },
-    "apps/id": { "entry": ["src/server.ts", "src/**/*.test.ts", "src/__tests__/preload.ts", "scripts/*.ts", "drizzle.config.ts"], "project": ["src/**/*.{ts,tsx}", "scripts/**/*.ts"] },
-    "apps/web": { "entry": ["app/**/*.{ts,tsx}", "proxy.ts", "**/*.test.ts", "scripts/*.ts", "next.config.mjs"], "project": ["**/*.{ts,tsx,mjs}"] },
-    "packages/*": { "entry": ["src/index.ts", "src/testing.ts", "src/**/*.test.ts", "scripts/*.ts"], "project": ["src/**/*.{ts,tsx}"] },
-    "mcps/*": { "entry": ["src/server.ts", "src/**/*.test.ts", "scripts/*.ts"], "project": ["src/**/*.{ts,tsx}"] },
-    "scripts": { "entry": ["*.ts"], "project": ["*.ts"] }
+    ".": {
+      "entry": [
+        "scripts/*.ts"
+      ]
+    },
+    "apps/id": {
+      "entry": [
+        "src/server.ts",
+        "src/**/*.test.ts",
+        "src/__tests__/preload.ts",
+        "scripts/*.ts",
+        "drizzle.config.ts"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}",
+        "scripts/**/*.ts"
+      ]
+    },
+    "apps/web": {
+      "entry": [
+        "app/**/*.{ts,tsx}",
+        "proxy.ts",
+        "**/*.test.ts",
+        "scripts/*.ts",
+        "next.config.mjs"
+      ],
+      "project": [
+        "**/*.{ts,tsx,mjs}"
+      ]
+    },
+    "packages/*": {
+      "entry": [
+        "src/index.ts",
+        "src/testing.ts",
+        "src/**/*.test.ts",
+        "scripts/*.ts",
+        "src/build-worker.ts"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}"
+      ]
+    },
+    "mcps/*": {
+      "entry": [
+        "src/server.ts",
+        "src/**/*.test.ts",
+        "scripts/*.ts"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}"
+      ]
+    },
+    "scripts": {
+      "entry": [
+        "*.ts"
+      ],
+      "project": [
+        "*.ts"
+      ]
+    }
   }
 }

@@ -96,7 +96,6 @@ export async function memberAccess(
     )
     .where(
       and(
-        isNull(members.deletedAt),
         eq(members.organizationId, organizationId),
         eq(members.id, memberId),
         isEffective(members),
@@ -189,7 +188,6 @@ export async function targetAccess(
     .crossJoinLateral(sql`unnest(${entitlements.scopes}) as s(scope)`)
     .where(
       and(
-        isNull(members.deletedAt),
         eq(members.organizationId, organizationId),
         isEffective(members),
         beforeCursor(members.id, page.cursor),

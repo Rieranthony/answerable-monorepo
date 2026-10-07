@@ -1,4 +1,5 @@
 import { recordAdministrativeDenial } from "./denial-audit.ts";
+import { uniqueSorted } from "../lib/scopes.ts";
 import { boundedUserAgent } from "../lib/user-agent.ts";
 import { APIError } from "better-auth/api";
 import type { MiddlewareHandler } from "hono";
@@ -296,17 +297,15 @@ export function createPrincipalMiddleware(
               "User-delegated tokens are not admin credentials.",
             );
           context.set("bearerClaims", claims);
-          const scopes = [
-            ...new Set(
-              claims.scopes.filter(
-                (scope) =>
-                  isAdminScope(scope) &&
-                  client.clientCredentialsScopes?.includes(scope) &&
-                  (client.resourceScopes === null ||
-                    client.resourceScopes.includes(scope)),
-              ),
+          const scopes = uniqueSorted(
+            claims.scopes.filter(
+              (scope) =>
+                isAdminScope(scope) &&
+                client.clientCredentialsScopes?.includes(scope) &&
+                (client.resourceScopes === null ||
+                  client.resourceScopes.includes(scope)),
             ),
-          ].sort();
+          );
           principal = {
             type: "client",
             clientId: client.clientId,
