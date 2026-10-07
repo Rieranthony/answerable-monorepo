@@ -47,7 +47,9 @@ writes `shutdown_failed` with the error's class and exits with status 1.
 **Monitoring handoff.** Configure the selected collector/scheduler to route these
 signals to an operator. No destination or numerical alert budget is configured here.
 Each event is one line: `[id] <area>`, then JSON that starts with `level` and `event`.
-An unexpected request error writes `[id] error` with `unexpected_error`. It,
+An unexpected request error writes `[id] error` with `unexpected_error`; a sign-in page
+whose in-process authentication call throws writes `[id] page` with
+`page_auth_call_failed` and the auth path, then shows its friendly message. These,
 `provider_diagnostic` for a thrown error, `protocol_sweep_failed`, `shutdown_failed`
 and the `admin_denial_audit_unavailable`, `token_rejection_audit_unavailable` and
 `signin_rejection_audit_unavailable` events name the error's class as `name` and, for

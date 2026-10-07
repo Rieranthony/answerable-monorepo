@@ -1,6 +1,8 @@
 import type { Context } from "hono";
 import type { AppEnvironment } from "../context.ts";
 import { isAllowedAuthRoute } from "../auth-allowlist.ts";
+import { errorFields } from "../problem.ts";
+import { logEvent } from "../../lib/log.ts";
 
 export type PageContext = Context<AppEnvironment>;
 
@@ -29,26 +31,35 @@ export async function callAuth<T = { url?: string; code?: string }>(
     const value = context.req.header(name);
     if (value !== undefined) headers.set(name, value);
   }
-  const response = await context
-    .get("auth")
-    .handler(
+  try {
+    const response = await context.get("auth").handler(
       new Request(`${serviceOrigin(context)}${input.path}`, {
         method: input.method,
         headers,
         body: input.body === undefined ? undefined : JSON.stringify(input.body),
       }),
     );
-  const data: T | null = response.headers
-    .get("content-type")
-    ?.includes("application/json")
-    ? await response.json()
-    : null;
-  return {
-    status: response.status,
-    ok: response.ok,
-    data,
-    setCookies: response.headers.getSetCookie(),
-  };
+    const data: T | null = response.headers
+      .get("content-type")
+      ?.includes("application/json")
+      ? await response.json()
+      : null;
+    return {
+      status: response.status,
+      ok: response.ok,
+      data,
+      setCookies: response.headers.getSetCookie(),
+    };
+  } catch (error) {
+    // The pages answer with a friendly message; this line keeps the failure
+    // visible to operators, as problemHandler does for the API.
+    logEvent("page", "page_auth_call_failed", {
+      requestId: context.get("requestId"),
+      path: input.path,
+      ...errorFields(error),
+    });
+    throw error;
+  }
 }
 
 export function applyCookies(context: PageContext, setCookies: string[]) {

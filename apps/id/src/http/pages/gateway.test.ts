@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { Hono } from "hono";
 import { stubAuth, testEnvironment } from "../../__tests__/support.ts";
 import type { AppEnvironment } from "../context.ts";
@@ -83,4 +83,41 @@ test("gateway refuses routes that clients cannot reach", async () => {
     return c.text("ok");
   });
   expect((await app.request("/")).status).toBe(200);
+});
+test("a thrown auth call logs its request, path and error class, never its message", async () => {
+  const log = spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const app = new Hono<AppEnvironment>();
+    const auth = stubAuth();
+    auth.handler = async () => {
+      throw Object.assign(new Error("private driver detail"), {
+        code: "57014",
+      });
+    };
+    app.get("/", async (c) => {
+      c.set("auth", auth);
+      c.set("environment", testEnvironment());
+      c.set("requestId", "request-123");
+      await expect(
+        callAuth(c, { method: "GET", path: "/auth/get-session", origin: null }),
+      ).rejects.toThrow("private driver detail");
+      return c.text("ok");
+    });
+    expect((await app.request("/")).status).toBe(200);
+    expect(log.mock.calls).toEqual([
+      [
+        "[id] page",
+        JSON.stringify({
+          level: "error",
+          event: "page_auth_call_failed",
+          requestId: "request-123",
+          path: "/auth/get-session",
+          name: "Error",
+          code: "57014",
+        }),
+      ],
+    ]);
+  } finally {
+    log.mockRestore();
+  }
 });
