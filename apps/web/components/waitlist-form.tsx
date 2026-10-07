@@ -2,7 +2,8 @@
 
 import { useActionState, useEffect, useRef } from "react"
 
-import { joinWaitlist, type WaitlistState } from "@/app/actions"
+import { joinWaitlist } from "@/app/actions"
+import type { WaitlistState } from "@/lib/waitlist"
 import { Button } from "@answerable/ui/components/button"
 import { CountrySelect } from "@answerable/ui/components/country-select"
 import { Field, FieldLabel, FieldError } from "@answerable/ui/components/field"
