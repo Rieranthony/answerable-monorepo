@@ -59,7 +59,7 @@ const plan = z.object({ targets: z.array(target), preview, plan: z.unknown().opt
 /** What `commit` reports besides its results. */
 export const outcome = z.object({ applied_changes: z.array(change), effects_performed: z.array(z.string()) })
 
-/** What `commit` receives: the targets and preview `prepare` returned, and the author's own `plan` data, stored as JSON. */
+/** What `commit` receives besides the intent's id: the targets and preview `prepare` returned, and the author's own `plan` data, stored as JSON. */
 export type Plan<Data = unknown> = { targets: Target[]; preview: Preview; plan: Data }
 
 /** A mutation: frozen data made by `defineMutation`. A read tool's fields with `prepare` and `commit` in place of `execute`. */
@@ -81,15 +81,19 @@ export type Mutation<Input extends z.ZodObject = z.ZodObject, Output extends z.Z
     expiresInMs?: number
     /** Resolve the targets and describe the change. It must not change anything. */
     prepare(input: z.output<Input>, context: ToolContext): Promise<{ targets: Target[]; preview: Pick<Preview, "summary"> & Partial<Preview>; plan?: Data }>
-    /** Apply exactly the prepared plan; `results` is checked against `output`. */
-    commit(plan: Plan<Data>, context: ToolContext): Promise<{ results: z.input<Output>; applied_changes: Change[]; effects_performed: Effect[] }>
+    /**
+     * Apply exactly the prepared plan; `results` is checked against `output`. The plan comes with the intent's `intent_id`, the same on every attempt
+     * to commit the intent: send it upstream as the idempotency key where the API takes one.
+     */
+    commit(plan: Plan<Data> & { intent_id: string }, context: ToolContext): Promise<{ results: z.input<Output>; applied_changes: Change[]; effects_performed: Effect[] }>
   }
 >
 
 /**
  * Define a mutation from a read tool's fields with `prepare` and `commit` in place of `execute`; `risk`, `effects` and `expiresInMs` are optional.
  * `prepare` resolves targets and describes the change without making it; `commit` applies exactly that plan, once the server has checked
- * the commit token, the principal, the expiry, the policy class and every target's version.
+ * the commit token, the principal, the expiry, the policy class and every target's version. `commit` also receives the intent's `intent_id`, the
+ * same on every attempt to commit the intent: send it upstream as the idempotency key where the API takes one.
  *
  * @example
  * ```ts

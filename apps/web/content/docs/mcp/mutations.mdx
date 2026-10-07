@@ -31,7 +31,7 @@ A read tool's fields, with `prepare` and `commit` in place of `execute`:
 
 **`plan`** is your own data for `commit`, optional. It is stored as JSON, so keep it plain data. Its type flows from `prepare` to `commit`. Commit receives the stored plan, not the one its second `prepare` returns, so a value minted in `prepare` stays the same: [the admin MCP](/docs/admin#idempotency-and-correlation) keeps there the key it sends upstream as `Idempotency-Key`.
 
-**`commit(plan, context)`** receives exactly what `prepare` returned, as stored: `{ targets, preview, plan }`. It applies the change and returns `{ results, applied_changes, effects_performed }`. The server checks `results` against `output` and drops undeclared fields. When no target moved, the prepared `preview.changes` are the applied changes.
+**`commit(plan, context)`** receives exactly what `prepare` returned, as stored, with the intent's id: `{ intent_id, targets, preview, plan }`. `intent_id` is the same on every attempt to commit the intent: send it upstream as the idempotency key where the API takes one. It applies the change and returns `{ results, applied_changes, effects_performed }`. The server checks `results` against `output` and drops undeclared fields. When no target moved, the prepared `preview.changes` are the applied changes.
 
 Both throw `ToolError` for expected failures, as `execute` does. `context` is the same as a read tool's: [the caller](/docs/mcp/tools#the-caller).
 

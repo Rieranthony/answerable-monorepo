@@ -18,6 +18,8 @@ type Gate = { entered: Resolvers; released: Resolvers }
 // Documents whose versions a test can move between prepare and commit, and the mutations over them.
 function library() {
   const docs = new Map<string, Doc>([["d1", { title: "First", version: 1 }], ["d2", { title: "Second", version: 1 }]])
+  // The intent ids the rename's commit received.
+  const committed: string[] = []
   let gate: Gate | undefined
   const target = (id: string) => {
     const doc = docs.get(id)
@@ -36,7 +38,8 @@ function library() {
       const doc = target(id)
       return { targets: [doc], preview: { summary: `Rename “${doc.label}” to “${title}”`, changes: [{ path: `docs[${id}].title`, from: doc.label, to: title }] }, plan: { id, title } }
     },
-    async commit({ plan, preview }) {
+    async commit({ intent_id, plan, preview }) {
+      committed.push(intent_id)
       gate?.entered.resolve()
       await gate?.released.promise
       docs.set(plan.id, { title: plan.title, version: docs.get(plan.id)!.version + 1 })
@@ -74,7 +77,7 @@ function library() {
     },
   })
   const hold = () => (gate = { entered: Promise.withResolvers(), released: Promise.withResolvers() })
-  return { docs, hold, list, rename, remove, publish, purge }
+  return { docs, committed, hold, list, rename, remove, publish, purge }
 }
 type Library = ReturnType<typeof library>
 
@@ -195,8 +198,8 @@ test("validate_only runs prepare and records nothing", async () => {
   expect(await refused(client, "docs_delete", { id: "d1", validate_only: "yes" })).toMatchObject({ code: "INVALID_INPUT", details: { field_violations: [{ field: "validate_only" }] } })
 })
 
-test("commit applies the intent once and returns the receipt; a repeat by the same person returns it again as a replay", async () => {
-  const { connect, docs, person, advance } = await serve()
+test("commit applies the intent once, given its id, and returns the receipt; a repeat by the same person returns it again as a replay", async () => {
+  const { connect, docs, committed, person, advance } = await serve()
   const client = await connect()
   const intent = await ok(client, "docs_rename", { id: "d1", title: "Renamed" })
   advance(minute)
@@ -212,6 +215,7 @@ test("commit applies the intent once and returns the receipt; a repeat by the sa
   expect(await ok(client, "test_commit", commitArgs(intent))).toEqual({ ...receipt, idempotent_replay: true })
   expect(await ok(await connect(), "test_commit", commitArgs(intent))).toEqual({ ...receipt, idempotent_replay: true })
   expect(docs.get("d1")).toEqual({ title: "Renamed", version: 2 })
+  expect(committed).toEqual([intent.intent_id])
 })
 
 test("the wrong commit tool or a different summary answers APPROVAL_REQUIRED and leaves the intent committable", async () => {

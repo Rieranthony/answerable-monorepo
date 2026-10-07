@@ -51,7 +51,7 @@ function apply(intent: Intent, mutation: Served<Mutation>, context: ToolContext,
         const targets = changed.map(({ resource_id, expected, current }) => ({ resource_id, expected, current }))
         throw new ToolError("INTENT_STALE", `Intent ${intent_id} is stale: ${labels} changed since it was prepared; prepare it again`, { details: { targets } })
       }
-      const done = await mutation.commit({ targets: intent.targets, preview: intent.preview, plan: intent.plan }, context)
+      const done = await mutation.commit({ intent_id, targets: intent.targets, preview: intent.preview, plan: intent.plan }, context)
       const receipt: Receipt = {
         receipt_id: Bun.randomUUIDv7(), intent_id, status: "committed",
         results: await mutation.output.parseAsync(done.results), ...outcome.parse(done),
