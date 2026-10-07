@@ -85,6 +85,37 @@ describe("unit: validation", () => {
       errors: [{ path: "", message: expect.any(String) }],
     });
   });
+  test("refuses a JSON body target without a JSON Content-Type", async () => {
+    const app = new Hono<AppEnvironment>();
+    app.use("*", async (c, next) => {
+      c.set("requestId", "content-type-request");
+      await next();
+    });
+    // Every field optional: Hono would otherwise validate {} and pass.
+    app.put(
+      "/",
+      validate("json", z.object({ note: z.string().optional() })),
+      (c) => c.json(c.req.valid("json")),
+    );
+    for (const headers of [{ "content-type": "text/plain" }, undefined]) {
+      const response = await app.request("/", {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ note: 1 }),
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        code: "validation_failed",
+        errors: [{ path: "", message: "Send the body as application/json" }],
+      });
+    }
+    const json = await app.request("/", {
+      method: "PUT",
+      headers: { "content-type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ note: "kept" }),
+    });
+    expect(await json.json()).toEqual({ note: "kept" });
+  });
   test("formats standard validation issues without a path", async () => {
     const rootSchema = z.string();
     const validation = spyOn(

@@ -286,7 +286,7 @@ curl -X DELETE "https://id.answerable.org/api/admin/v1/users/$USER_ID?confirm=$U
 | `invalid_token`         | The bearer token is invalid, expired or for another resource.  | Obtain a fresh token for the admin API resource.                       |
 | `insufficient_scope`    | The caller lacks the route's required authority.               | Check `/me`; ask staff for the required grant, then request its scope. |
 | `not_found`             | The record is absent or outside your organisation's authority. | Check the IDs and your organisation.                                   |
-| `validation_failed`     | A parameter or body failed validation.                         | Correct the fields identified in the response.                         |
+| `validation_failed`     | A parameter or body failed validation, or a body was sent without `Content-Type: application/json`. | Correct the fields identified in the response; send bodies as JSON.    |
 | `conflict`              | A record already exists with a unique value.                   | Read the existing record and use a different value or update it.       |
 | `user_disabled`         | The session's user account is disabled.                        | Ask Answerable staff to review the account.                            |
 | `origin_required`       | Cookie-authenticated writes need an `Origin`.                  | Send the trusted browser origin or use a bearer token.                 |
