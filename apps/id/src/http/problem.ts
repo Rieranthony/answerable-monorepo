@@ -19,6 +19,12 @@ export class ProblemError extends Error {
   }
 }
 
+/** The row, or a 404 problem with this title when it is missing. */
+export function found<T>(row: T | null | undefined, title = "Not found"): T {
+  if (!row) throw new ProblemError(404, "not_found", title);
+  return row;
+}
+
 export const problemSchema = z
   .object({
     type: z.string(),

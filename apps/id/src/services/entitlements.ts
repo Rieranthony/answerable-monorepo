@@ -10,11 +10,7 @@ import { readClient } from "../db/queries/oauth-clients.ts";
 import { readResourceForPolicy } from "../db/queries/oauth-resources.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
-import { ProblemError } from "../http/problem.ts";
-function requireRow<T>(row: T | null): T {
-  if (!row) throw new ProblemError(404, "not_found", "Not found");
-  return row;
-}
+import { found, ProblemError } from "../http/problem.ts";
 function configuration(
   row: NonNullable<Awaited<ReturnType<typeof queries.findEntitlement>>>,
 ) {
@@ -71,8 +67,8 @@ async function lockedEntitlement(
   organizationId: string,
   entitlementId: string,
 ) {
-  requireRow(await lockOrganizationForCommand(context, organizationId));
-  return requireRow(
+  found(await lockOrganizationForCommand(context, organizationId));
+  return found(
     await queries.findEntitlementForCommand(
       context,
       organizationId,
@@ -90,20 +86,20 @@ export async function getEntitlement(
   context: TenantReadContext<"directory">,
   entitlementId: string,
 ) {
-  return requireRow(await queries.findEntitlement(context, entitlementId));
+  return found(await queries.findEntitlement(context, entitlementId));
 }
 export async function createEntitlement(
   context: PlatformWriteContext,
   organizationId: string,
   input: Omit<queries.CreateEntitlementInput, "organizationId">,
 ) {
-  requireRow(await lockOrganizationForCommand(context, organizationId));
+  found(await lockOrganizationForCommand(context, organizationId));
   if (input.memberId !== undefined && input.groupId !== undefined)
     invalid("memberId", "At most one of memberId and groupId is allowed");
   if (input.clientId === undefined && input.resource === undefined)
     invalid("clientId", "A client, resource or exact pair is required");
   if (input.memberId !== undefined) {
-    const member = requireRow(
+    const member = found(
       await findMemberForAssignment(context, organizationId, input.memberId),
     );
     if (member.membershipStatus === "revoked")
@@ -114,11 +110,9 @@ export async function createEntitlement(
       );
   }
   if (input.groupId !== undefined)
-    requireRow(
-      await findGroupForCommand(context, organizationId, input.groupId),
-    );
+    found(await findGroupForCommand(context, organizationId, input.groupId));
   if (input.clientId !== undefined)
-    requireRow(await readClient(context, input.clientId));
+    found(await readClient(context, input.clientId));
   if (input.resource !== undefined)
     await checkScopes(context, input.resource, input.scopes);
   const row = await queries.createEntitlement(context, {
@@ -265,7 +259,7 @@ async function checkScopes(
   resource: string,
   scopes: string[],
 ) {
-  const row = requireRow(await readResourceForPolicy(context, resource));
+  const row = found(await readResourceForPolicy(context, resource));
   const unknown = scopes.filter(
     (scope) => !(row.allowedScopes ?? []).includes(scope),
   );

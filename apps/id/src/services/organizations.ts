@@ -8,13 +8,10 @@ import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/organizations.ts";
 import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
 import { revokeOrganizationMachineTokens } from "../db/queries/oauth-tokens.ts";
-import { ProblemError } from "../http/problem.ts";
+import { found, ProblemError } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
 
-function requireOrganization<T>(row: T | null): T {
-  if (!row) throw new ProblemError(404, "not_found", "Organisation not found");
-  return row;
-}
+const notFound = "Organisation not found";
 
 function configuration(
   row: NonNullable<Awaited<ReturnType<typeof queries.readOrganization>>>,
@@ -57,7 +54,7 @@ export async function listOrganizations(
 }
 
 export async function getOrganization(context: TenantReadContext<"directory">) {
-  return requireOrganization(await queries.readOrganization(context));
+  return found(await queries.readOrganization(context), notFound);
 }
 
 export async function createOrganization(
@@ -80,8 +77,9 @@ export async function updateOrganization(
   expected?: { id: string; revision: number },
 ) {
   const { tx, actor } = context;
-  const before = requireOrganization(
+  const before = found(
     await queries.lockOrganizationForCommand(context, id),
+    notFound,
   );
   if (
     expected &&
@@ -113,8 +111,9 @@ export async function disableOrganization(
   id: string,
 ) {
   const { tx, actor } = context;
-  const existing = requireOrganization(
+  const existing = found(
     await queries.lockOrganizationForCommand(context, id),
+    notFound,
   );
   const stateChanged = existing.status !== "disabled";
   const row = stateChanged
@@ -153,8 +152,9 @@ export async function enableOrganization(
   id: string,
 ) {
   const { tx, actor } = context;
-  const existing = requireOrganization(
+  const existing = found(
     await queries.lockOrganizationForCommand(context, id),
+    notFound,
   );
   const changed = existing.status !== "active";
   const row = changed
@@ -179,8 +179,9 @@ export async function eraseOrganization(
   confirm: string,
 ) {
   const { tx, actor } = context;
-  const before = requireOrganization(
+  const before = found(
     await queries.lockOrganizationForCommand(context, id),
+    notFound,
   );
   if (confirm !== id)
     throw new ProblemError(

@@ -12,13 +12,10 @@ import * as queries from "../db/queries/users.ts";
 import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
 import { deleteUserSessionIds } from "../db/queries/sessions.ts";
 import { revokeUserTokens } from "../db/queries/oauth-tokens.ts";
-import { ProblemError } from "../http/problem.ts";
+import { found, ProblemError } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
 
-function requireUser<T>(row: T | null): T {
-  if (!row) throw new ProblemError(404, "not_found", "User not found");
-  return row;
-}
+const notFound = "User not found";
 function state(row: NonNullable<Awaited<ReturnType<typeof queries.lockUser>>>) {
   return {
     id: row.id,
@@ -52,7 +49,7 @@ export async function listUsers(
   return queries.listUsers(context, query);
 }
 export async function getUser(context: PlatformReadContext, userId: string) {
-  return requireUser(await queries.findUser(context, userId));
+  return found(await queries.findUser(context, userId), notFound);
 }
 // Discover membership only after locking the user: concurrent membership inserts
 // need the user foreign-key lock. Do not wait for the platform lock while holding
@@ -90,7 +87,7 @@ export async function disableUser(
   userId: string,
 ) {
   const { tx, actor } = context;
-  const existing = requireUser(await queries.lockUser(context, userId));
+  const existing = found(await queries.lockUser(context, userId), notFound);
   await protectPlatformUser(tx, userId);
   const stateChanged = existing.status !== "disabled";
   const row = stateChanged
@@ -126,7 +123,7 @@ export async function enableUser(
   userId: string,
 ) {
   const { tx, actor } = context;
-  const existing = requireUser(await queries.lockUser(context, userId));
+  const existing = found(await queries.lockUser(context, userId), notFound);
   if (existing.retiredEmail !== null)
     throw new ProblemError(
       409,
@@ -153,7 +150,7 @@ export async function retireUserEmail(
   userId: string,
 ) {
   const { tx, actor } = context;
-  const existing = requireUser(await queries.lockUser(context, userId));
+  const existing = found(await queries.lockUser(context, userId), notFound);
   if (existing.status !== "disabled")
     throw new ProblemError(
       409,
@@ -179,7 +176,7 @@ export async function eraseUser(
   confirm: string,
 ) {
   const { tx, actor } = context;
-  const before = requireUser(await queries.lockUser(context, userId));
+  const before = found(await queries.lockUser(context, userId), notFound);
   if (confirm !== userId)
     throw new ProblemError(
       400,
@@ -187,8 +184,9 @@ export async function eraseUser(
       "Confirmation must match the user ID",
     );
   await protectPlatformUser(tx, userId);
-  const { effects, revokedGrantContexts, ...row } = requireUser(
+  const { effects, revokedGrantContexts, ...row } = found(
     await queries.deleteUser(context, userId),
+    notFound,
   );
   await audit(tx, actor, userId, "user.erased", {
     before: state(before),

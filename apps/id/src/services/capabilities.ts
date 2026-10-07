@@ -12,7 +12,7 @@ import { recordAuditEvent } from "../db/queries/audit.ts";
 import { createId } from "../lib/id.ts";
 import type { PageQuery } from "../http/pagination.ts";
 import { beforeCursor, cursorPage } from "../db/queries/lists.ts";
-import { ProblemError } from "../http/problem.ts";
+import { found, ProblemError } from "../http/problem.ts";
 import { type PlatformWriteContext } from "./platform-context.ts";
 import { type TenantReadContext } from "./tenant-context.ts";
 
@@ -43,10 +43,6 @@ const where = (organizationId: string, id: string) =>
     eq(organizationCapabilities.organizationId, organizationId),
     eq(organizationCapabilities.id, id),
   );
-function required<T>(row: T | null | undefined): T {
-  if (!row) throw new ProblemError(404, "not_found", "Not found");
-  return row;
-}
 
 export async function listCapabilities(
   context: TenantReadContext<"directory">,
@@ -74,7 +70,7 @@ export async function getCapability(
   id: string,
 ) {
   const { tx, organizationId } = context;
-  return required(
+  return found(
     (
       await tx
         .select()
@@ -92,12 +88,12 @@ async function validateTarget(
   const { tx } = context;
   const client =
     input.clientId !== null
-      ? required(await readClient(context, input.clientId))
+      ? found(await readClient(context, input.clientId))
       : null;
   const resource =
     input.resource === null
       ? null
-      : required(await readResourceForPolicy(context, input.resource));
+      : found(await readResourceForPolicy(context, input.resource));
   if (
     (input.grantKind === "client_credentials" &&
       client!.organizationId !== organizationId) ||
@@ -187,7 +183,7 @@ export async function createCapability(
   input: CapabilityInput,
 ) {
   const { tx } = context;
-  required(await lockOrganizationForCommand(context, organizationId));
+  found(await lockOrganizationForCommand(context, organizationId));
   await validateTarget(context, organizationId, input);
   const [row] = await tx
     .insert(organizationCapabilities)
@@ -209,8 +205,8 @@ export async function updateCapability(
   expected?: { id: string; revision: number },
 ) {
   const { tx } = context;
-  required(await lockOrganizationForCommand(context, organizationId));
-  const before = required(
+  found(await lockOrganizationForCommand(context, organizationId));
+  const before = found(
     (
       await tx
         .select()
@@ -265,8 +261,8 @@ export async function removeCapability(
   id: string,
 ) {
   const { tx, actor } = context;
-  required(await lockOrganizationForCommand(context, organizationId));
-  const before = required(
+  found(await lockOrganizationForCommand(context, organizationId));
+  const before = found(
     (
       await tx
         .select()

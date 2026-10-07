@@ -10,22 +10,14 @@ import * as queries from "../db/queries/sso-providers.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { revokeOrganizationGrantContexts } from "../db/queries/grant-contexts.ts";
 import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
-import { ProblemError } from "../http/problem.ts";
+import { found, ProblemError } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
 
 export type SsoProviderInput = Pick<
   queries.CreateSsoProviderInput,
   "issuer" | "domain" | "oidc"
 >;
-function requireRow<T>(row: T | null): T {
-  if (!row)
-    throw new ProblemError(
-      404,
-      "not_found",
-      "Organisation or SSO provider not found",
-    );
-  return row;
-}
+const notFound = "Organisation or SSO provider not found";
 function configuration(
   row: NonNullable<
     Awaited<ReturnType<typeof queries.findSsoProviderForCommand>>
@@ -65,7 +57,7 @@ export async function getSsoProvider(
   context: TenantReadContext<"directory">,
   ids: PlatformApplicationIds = {},
 ) {
-  return requireRow(await queries.readSsoProvider(context, ids));
+  return found(await queries.readSsoProvider(context, ids), notFound);
 }
 export async function putSsoProvider(
   context: PlatformWriteContext,
@@ -75,8 +67,9 @@ export async function putSsoProvider(
   ids: PlatformApplicationIds = {},
 ) {
   const { tx, actor } = context;
-  const organization = requireRow(
+  const organization = found(
     await lockOrganizationForCommand(context, organizationId),
+    notFound,
   );
   if (input.oidc.credentials === "platform") {
     const application = platformApplicationFor(input.issuer);
@@ -179,12 +172,14 @@ export async function deleteSsoProvider(
   ids: PlatformApplicationIds = {},
 ) {
   const { tx, actor } = context;
-  requireRow(await lockOrganizationForCommand(context, organizationId));
-  const before = requireRow(
+  found(await lockOrganizationForCommand(context, organizationId), notFound);
+  const before = found(
     await queries.findSsoProviderForCommand(context, organizationId),
+    notFound,
   );
-  const row = requireRow(
+  const row = found(
     await queries.deleteSsoProvider(context, organizationId),
+    notFound,
   );
   const revokedGrantContexts = await revokeOrganizationGrantContexts(
     context,

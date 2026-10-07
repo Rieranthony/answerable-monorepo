@@ -14,7 +14,7 @@ import {
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { revokeClientTokens } from "../db/queries/oauth-tokens.ts";
 import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
-import { ProblemError } from "../http/problem.ts";
+import { found, ProblemError } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
 import { generateClientSecret, hashClientSecret } from "./client-secrets.ts";
 
@@ -36,15 +36,7 @@ export type CreateClientInput = {
   uri?: string;
   contacts?: string[];
 };
-function requireRow<T>(row: T | null): T {
-  if (!row)
-    throw new ProblemError(
-      404,
-      "not_found",
-      "Client, resource or organisation not found",
-    );
-  return row;
-}
+const notFound = "Client, resource or organisation not found";
 function publicClient({ clientSecret, deletedAt, ...row }: ClientRow) {
   return {
     ...row,
@@ -250,7 +242,7 @@ export async function getClient(
   clientId: string,
 ) {
   // Keep the registration and its linked resources on the same revision.
-  const row = requireRow(await queries.readClient(context, clientId));
+  const row = found(await queries.readClient(context, clientId), notFound);
   return {
     ...row,
     resources: (await queries.listClientResources(context, clientId))
@@ -265,7 +257,10 @@ export async function createClient(
   const { tx, actor } = context;
   validateClient(input);
   if (input.organizationId)
-    requireRow(await lockOrganizationForCommand(context, input.organizationId));
+    found(
+      await lockOrganizationForCommand(context, input.organizationId),
+      notFound,
+    );
   const clientId =
     input.clientId ??
     `client_${Buffer.from(crypto.getRandomValues(new Uint8Array(8))).toString("hex")}`;
@@ -303,8 +298,9 @@ export async function updateClient(
   expected?: { id: string; revision: number },
 ) {
   const { tx, actor } = context;
-  const existing = requireRow(
+  const existing = found(
     await queries.lockClientForCommand(context, clientId),
+    notFound,
   );
   if (
     expected &&
@@ -345,8 +341,9 @@ async function setDisabled(
   disabled: boolean,
 ) {
   const { tx, actor } = context;
-  const existing = requireRow(
+  const existing = found(
     await queries.lockClientForCommand(context, clientId),
+    notFound,
   );
   const stateChanged = existing.disabled !== disabled;
   const row = stateChanged
@@ -410,8 +407,9 @@ export async function rotateSecret(
   clientId: string,
 ) {
   const { tx, actor } = context;
-  const existing = requireRow(
+  const existing = found(
     await queries.lockClientForCommand(context, clientId),
+    notFound,
   );
   if (existing.tokenEndpointAuthMethod !== "client_secret_basic")
     throw new ProblemError(
@@ -464,8 +462,9 @@ export async function setOwner(
   organizationId: string | null,
 ) {
   const { tx, actor } = context;
-  const existing = requireRow(
+  const existing = found(
     await queries.lockClientForCommand(context, clientId),
+    notFound,
   );
   if (existing.organizationId !== organizationId)
     throw new ProblemError(
@@ -493,10 +492,14 @@ export async function linkResource(
   resource: string,
 ) {
   const { tx, actor } = context;
-  const client = requireRow(
+  const client = found(
     await queries.lockClientForCommand(context, clientId),
+    notFound,
   );
-  const target = requireRow(await lockResourceForCommand(context, resource));
+  const target = found(
+    await lockResourceForCommand(context, resource),
+    notFound,
+  );
   const result = await queries.linkClientResource(context, clientId, resource);
   await auditResourceLink(
     tx,
@@ -516,8 +519,9 @@ export async function unlinkResource(
   resource: string,
 ) {
   const { tx, actor } = context;
-  const client = requireRow(
+  const client = found(
     await queries.lockClientForCommand(context, clientId),
+    notFound,
   );
   const target = await readResourceForPolicy(context, resource);
   const removed = await queries.unlinkClientResource(
@@ -544,8 +548,9 @@ export async function eraseClient(
   confirm: string,
 ) {
   const { tx, actor } = context;
-  const existing = requireRow(
+  const existing = found(
     await queries.lockClientForCommand(context, clientId),
+    notFound,
   );
   if (confirm !== clientId)
     throw new ProblemError(

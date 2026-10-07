@@ -6,13 +6,9 @@ import type { PageQuery } from "../http/pagination.ts";
 import type { Executor } from "../db/client.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
-import { ProblemError } from "../http/problem.ts";
+import { found, ProblemError } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
-function requireRow<T>(row: T | null): T {
-  if (!row)
-    throw new ProblemError(404, "not_found", "Organisation or group not found");
-  return row;
-}
+const notFound = "Organisation or group not found";
 function configuration(
   row: NonNullable<Awaited<ReturnType<typeof queries.findGroup>>>,
 ) {
@@ -64,9 +60,10 @@ async function lockedGroup(
   organizationId: string,
   groupId: string,
 ) {
-  requireRow(await lockOrganizationForCommand(context, organizationId));
-  return requireRow(
+  found(await lockOrganizationForCommand(context, organizationId), notFound);
+  return found(
     await queries.findGroupForCommand(context, organizationId, groupId),
+    notFound,
   );
 }
 export async function listGroups(
@@ -79,7 +76,7 @@ export async function getGroup(
   context: TenantReadContext<"directory">,
   groupId: string,
 ) {
-  return requireRow(await queries.findGroup(context, groupId));
+  return found(await queries.findGroup(context, groupId), notFound);
 }
 export async function createGroup(
   context: PlatformWriteContext,
@@ -87,7 +84,7 @@ export async function createGroup(
   input: Omit<queries.CreateGroupInput, "organizationId">,
 ) {
   const { tx, actor } = context;
-  requireRow(await lockOrganizationForCommand(context, organizationId));
+  found(await lockOrganizationForCommand(context, organizationId), notFound);
   const row = await queries.createGroup(context, { ...input, organizationId });
   await audit(tx, actor, organizationId, row.id, "group.created", {
     before: null,
@@ -218,7 +215,10 @@ export async function getGroupMember(
   groupId: string,
   memberId: string,
 ) {
-  return requireRow(await queries.findGroupMember(context, groupId, memberId));
+  return found(
+    await queries.findGroupMember(context, groupId, memberId),
+    notFound,
+  );
 }
 export async function putMember(
   context: PlatformWriteContext,
@@ -230,8 +230,9 @@ export async function putMember(
 ) {
   const { tx, actor } = context;
   await lockedGroup(context, organizationId, groupId);
-  const member = requireRow(
+  const member = found(
     await findMemberForAssignment(context, organizationId, memberId),
+    notFound,
   );
   if (member.membershipStatus === "revoked")
     throw new ProblemError(
@@ -300,13 +301,14 @@ export async function removeMember(
 ) {
   const { tx, actor } = context;
   await lockedGroup(context, organizationId, groupId);
-  const before = requireRow(
+  const before = found(
     await queries.findGroupMemberForCommand(
       context,
       organizationId,
       groupId,
       memberId,
     ),
+    notFound,
   );
   const row = await queries.removeGroupMember(
     context,

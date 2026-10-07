@@ -8,17 +8,9 @@ import {
   type TenantMemberContext,
 } from "./tenant-context.ts";
 import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
-import { ProblemError } from "../http/problem.ts";
+import { found, ProblemError } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
-function requireRow<T>(row: T | null): T {
-  if (!row)
-    throw new ProblemError(
-      404,
-      "not_found",
-      "Organisation or member not found",
-    );
-  return row;
-}
+const notFound = "Organisation or member not found";
 function audit(
   tx: Executor,
   actor: Actor,
@@ -47,7 +39,7 @@ export async function getMember(
   context: TenantReadContext<"directory">,
   memberId: string,
 ) {
-  return requireRow(await queries.findMember(context, memberId));
+  return found(await queries.findMember(context, memberId), notFound);
 }
 export async function updateWindow(
   context: TenantMemberContext,
@@ -56,8 +48,9 @@ export async function updateWindow(
   expected?: { id: string; revision: number },
 ) {
   const { tx, organizationId, actor } = context;
-  const before = requireRow(
+  const before = found(
     await queries.findMemberConfiguration(context, memberId),
+    notFound,
   );
   if (
     expected &&
@@ -69,8 +62,9 @@ export async function updateWindow(
       "Member changed; read its configuration before issuing a new command",
     );
   const accessBefore = await memberAccess(context, memberId);
-  const row = requireRow(
+  const row = found(
     await queries.updateMemberWindow(context, memberId, patch),
+    notFound,
   );
   const accessAfter = await memberAccess(context, memberId);
   await audit(tx, actor, organizationId, memberId, "member.updated", {
@@ -88,9 +82,9 @@ export async function updateWindow(
 }
 export async function remove(context: TenantMemberContext, memberId: string) {
   const { tx, organizationId, actor } = context;
-  const before = requireRow(await queries.findMember(context, memberId));
+  const before = found(await queries.findMember(context, memberId), notFound);
   const accessBefore = await memberAccess(context, memberId);
-  const row = requireRow(await queries.revokeMember(context, memberId));
+  const row = found(await queries.revokeMember(context, memberId), notFound);
   const { removedGrants, softDeletedAssignments } =
     await queries.removeMemberAssignments(context, memberId);
   const revokedGrantContexts = await revokeMemberGrantContexts(
@@ -133,9 +127,9 @@ export async function reinstate(
   memberId: string,
 ) {
   const { tx, organizationId, actor } = context;
-  const before = requireRow(await queries.findMember(context, memberId));
+  const before = found(await queries.findMember(context, memberId), notFound);
   const accessBefore = await memberAccess(context, memberId);
-  const row = requireRow(await queries.reinstateMember(context, memberId));
+  const row = found(await queries.reinstateMember(context, memberId), notFound);
   const accessAfter = await memberAccess(context, memberId);
   await audit(
     tx,
@@ -160,12 +154,15 @@ export async function reinstate(
       },
     },
   );
-  return requireRow(await queries.findMember(context, memberId));
+  return found(await queries.findMember(context, memberId), notFound);
 }
 
 export async function getMemberConfiguration(
   context: TenantMemberContext | TenantReadContext<"configuration">,
   memberId: string,
 ) {
-  return requireRow(await queries.findMemberConfiguration(context, memberId));
+  return found(
+    await queries.findMemberConfiguration(context, memberId),
+    notFound,
+  );
 }

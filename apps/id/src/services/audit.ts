@@ -4,20 +4,20 @@ import { type PlatformReadContext } from "./platform-context.ts";
 import * as queries from "../db/queries/audit.ts";
 import { organizationExistsForHistory } from "../db/queries/organizations.ts";
 import type { PageQuery } from "../http/pagination.ts";
-import { ProblemError } from "../http/problem.ts";
+import { found } from "../http/problem.ts";
 
 export async function listOrganizationAuditEvents(
   context: TenantReadContext<"history">,
   filters: Omit<queries.AuditEventFilters, "organizationId">,
   page: PageQuery,
 ) {
-  if (
-    !(await organizationExistsForHistory(context)) &&
-    !(await queries.listOrganizationAuditEvents(context, {}, { limit: 1 }))
-      .items.length
-  ) {
-    throw new ProblemError(404, "not_found", "Organisation not found");
-  }
+  // A live organisation, or retained history of an erased one.
+  found(
+    (await organizationExistsForHistory(context)) ||
+      (await queries.listOrganizationAuditEvents(context, {}, { limit: 1 }))
+        .items.length,
+    "Organisation not found",
+  );
   return queries.listOrganizationAuditEvents(context, filters, page);
 }
 
@@ -30,11 +30,11 @@ export async function listUserAuditEvents(
   >,
   page: PageQuery,
 ) {
-  if (
-    !(await userExists(context, userId)) &&
-    !(await queries.listUserAuditEvents(context, userId, {}, { limit: 1 }))
-      .items.length
-  )
-    throw new ProblemError(404, "not_found", "User not found");
+  found(
+    (await userExists(context, userId)) ||
+      (await queries.listUserAuditEvents(context, userId, {}, { limit: 1 }))
+        .items.length,
+    "User not found",
+  );
   return queries.listUserAuditEvents(context, userId, filters, page);
 }

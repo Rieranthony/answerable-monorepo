@@ -10,7 +10,7 @@ import {
 import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/oauth-resources.ts";
 import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
-import { ProblemError } from "../http/problem.ts";
+import { found, ProblemError } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
 
 type ResourceRow = NonNullable<
@@ -32,10 +32,7 @@ function auditResource(row: ResourceRow) {
     disabled: row.disabled,
   };
 }
-function requireResource<T>(row: T | null): T {
-  if (!row) throw new ProblemError(404, "not_found", "Resource not found");
-  return row;
-}
+const notFound = "Resource not found";
 async function protect(tx: Executor, resourceId: string) {
   const [binding] = await tx
     .select({ resourceId: systemBindings.resourceInstanceId })
@@ -74,7 +71,7 @@ export async function getResource(
   context: PlatformReadContext,
   identifier: string,
 ) {
-  const row = requireResource(await queries.readResource(context, identifier));
+  const row = found(await queries.readResource(context, identifier), notFound);
   return {
     ...row,
     clients: (await queries.listResourceClients(context, identifier))
@@ -114,8 +111,9 @@ export async function updateResource(
     if (binding)
       await lockOrganizationForCommand(context, binding.organizationId);
   }
-  const existing = requireResource(
+  const existing = found(
     await queries.lockResourceForCommand(context, identifier),
+    notFound,
   );
   if (
     expected &&
@@ -166,8 +164,9 @@ async function setDisabled(
   disabled: boolean,
 ) {
   const { tx, actor } = context;
-  const existing = requireResource(
+  const existing = found(
     await queries.lockResourceForCommand(context, identifier),
+    notFound,
   );
   if (disabled) await protect(tx, existing.id);
   const stateChanged = existing.disabled !== disabled;
@@ -201,8 +200,9 @@ export async function eraseResource(
   confirm: string,
 ) {
   const { tx, actor } = context;
-  const existing = requireResource(
+  const existing = found(
     await queries.lockResourceForCommand(context, identifier),
+    notFound,
   );
   if (confirm !== identifier)
     throw new ProblemError(

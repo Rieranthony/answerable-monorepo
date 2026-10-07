@@ -4,18 +4,10 @@ import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/organization-domains.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
-import { ProblemError } from "../http/problem.ts";
+import { found } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
 
-function requireRow<T>(row: T | null): T {
-  if (!row)
-    throw new ProblemError(
-      404,
-      "not_found",
-      "Organisation or domain not found",
-    );
-  return row;
-}
+const notFound = "Organisation or domain not found";
 function auditDomain(
   row: NonNullable<
     Awaited<ReturnType<typeof queries.findOrganizationDomainForCommand>>
@@ -59,7 +51,7 @@ export async function createDomain(
   input: { domain: string },
 ) {
   const { tx, actor } = context;
-  requireRow(await lockOrganizationForCommand(context, organizationId));
+  found(await lockOrganizationForCommand(context, organizationId), notFound);
   const row = await queries.createOrganizationDomain(context, {
     organizationId,
     ...input,
@@ -78,13 +70,14 @@ async function setStatus(
   status: "active" | "disabled",
 ) {
   const { tx, actor } = context;
-  requireRow(await lockOrganizationForCommand(context, organizationId));
-  const existing = requireRow(
+  found(await lockOrganizationForCommand(context, organizationId), notFound);
+  const existing = found(
     await queries.findOrganizationDomainForCommand(
       context,
       organizationId,
       domainId,
     ),
+    notFound,
   );
   const changed = existing.status !== status;
   const row = changed
@@ -132,13 +125,14 @@ export async function deleteOrganizationDomain(
   domainId: string,
 ) {
   const { tx, actor } = context;
-  requireRow(await lockOrganizationForCommand(context, organizationId));
-  const before = requireRow(
+  found(await lockOrganizationForCommand(context, organizationId), notFound);
+  const before = found(
     await queries.findOrganizationDomainForCommand(
       context,
       organizationId,
       domainId,
     ),
+    notFound,
   );
   const row = await queries.deleteOrganizationDomain(
     context,

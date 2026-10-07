@@ -9,7 +9,7 @@ import type { Database, Executor } from "../db/client.ts";
 import { lockOrganization } from "../db/locks.ts";
 import type { Environment } from "../env.ts";
 import type { Principal, BearerClaims } from "../http/principal.ts";
-import { ProblemError } from "../http/problem.ts";
+import { found } from "../http/problem.ts";
 import { authorizeCommand } from "./command-authority.ts";
 
 const tenantCommand = Symbol("tenantCommand");
@@ -62,8 +62,7 @@ export async function authorizeTenantMemberCommand(
       input.claims,
     );
   await authorize();
-  if (!organization)
-    throw new ProblemError(404, "not_found", "Organisation not found");
+  found(organization, "Organisation not found");
   await setDatabaseScope(tx, {
     kind: "tenant",
     access: "write",
@@ -79,7 +78,7 @@ export async function authorizeTenantMemberCommand(
         [tenantCommand]: true,
         access: "command",
         tx,
-        organizationId: organization.id,
+        organizationId: input.organizationId,
         actor: commandActor(identity, metadata),
         async revalidate() {
           if (input.principal.type === "user") await authorize();
@@ -116,8 +115,7 @@ export async function withTenantRead<T, Access extends TenantReadAccess>(
       input.claims,
     );
     // Historical evidence survives the live row; authority is still required.
-    if (!organization && access !== "history")
-      throw new ProblemError(404, "not_found", "Organisation not found");
+    if (access !== "history") found(organization, "Organisation not found");
     await setDatabaseScope(tx, {
       kind: "tenant",
       access: "read",

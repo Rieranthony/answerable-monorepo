@@ -15,14 +15,10 @@ import {
 } from "../db/queries/oauth-tokens.ts";
 import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
 import type { PageQuery } from "../http/pagination.ts";
-import { ProblemError } from "../http/problem.ts";
+import { found } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
 
-function requireRow<T>(row: T | null): T {
-  if (!row)
-    throw new ProblemError(404, "not_found", "User or session not found");
-  return row;
-}
+const notFound = "User or session not found";
 function audit(
   tx: Executor,
   actor: Actor,
@@ -46,8 +42,7 @@ export async function listUserSessions(
   userId: string,
   page: PageQuery,
 ) {
-  if (!(await userExists(context, userId)))
-    throw new ProblemError(404, "not_found", "User or session not found");
+  found(await userExists(context, userId), notFound);
   return queries.listUserSessions(context, userId, page);
 }
 export async function revokeUserSession(
@@ -56,9 +51,10 @@ export async function revokeUserSession(
   sessionId: string,
 ) {
   const { tx, actor } = context;
-  requireRow(await lockUser(context, userId));
-  const before = requireRow(
+  found(await lockUser(context, userId), notFound);
+  const before = found(
     await queries.findUserSession(context, userId, sessionId),
+    notFound,
   );
   // Deleting the session clears token sessionId foreign keys.
   const tokens = await revokeSessionTokens(context, sessionId);
@@ -86,7 +82,7 @@ export async function revokeUserSessions(
   userId: string,
 ) {
   const { tx, actor } = context;
-  requireRow(await lockUser(context, userId));
+  found(await lockUser(context, userId), notFound);
   const sessionIds = await queries.deleteUserSessionIds(context, userId);
   const revoked = sessionIds.length;
   const tokens = await revokeUserTokens(context, userId);
