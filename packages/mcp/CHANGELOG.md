@@ -2,7 +2,7 @@
 
 ## 0.9.0
 
-The V0 cleanup of the kit.
+What the V0 cleanup found in the kit: two exports for the servers, the intent id for `commit`, and three server gaps closed. Breaking: a replay of a commit needs its commit token.
 
 - A request that fails outside a tool, such as `allow`, `project` or `policyClass` throwing something other than a `ToolError`, is logged as `[mcp] request failed` with the error; it answered HTTP 500 with nothing in the log. The SDK's refusals of a malformed request, such as an unsupported protocol version, are logged on the same line.
 - When `allow` throws a `ToolError`, the call answers its envelope only for a name a tool could have: lowercase letters, digits and underscores, up to 64. Any other name answers unknown tool. The server used to register the name as sent, and the SDK printed it, newlines included, in five warning lines.
