@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.4
+
+No tool changes. `readToolboxEnvironment` is built on `@answerable/mcp`'s `parseEnvironment`, with the same messages.
+
 ## 0.3.3
 
 The schema audit's reset of the Toolbox's tables, with `@answerable/mcp-postgres` 0.3.0. Recreate a database migrated before this version: drop its `public` schema, then run `db:migrate`.

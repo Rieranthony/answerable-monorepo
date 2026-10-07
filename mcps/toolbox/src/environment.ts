@@ -1,4 +1,4 @@
-import { createIdVerifier } from "@answerable/auth"
+import { parseEnvironment } from "@answerable/mcp"
 import { z } from "zod"
 
 const schema = z.object({
@@ -14,16 +14,7 @@ const schema = z.object({
 
 /** Read the Toolbox's configuration from the environment; throws naming the variable that is missing or invalid. */
 export function readToolboxEnvironment(env: Record<string, string | undefined>) {
-  const result = schema.safeParse(env)
-  if (!result.success) throw new Error(`Invalid Toolbox configuration: ${result.error.issues.map(issue => `${issue.path.join(".")}: ${issue.message}`).join("; ")}`)
-  const { data } = result
-  const auth = { issuer: data.TOOLBOX_ID_ISSUER, resource: data.TOOLBOX_RESOURCE_URL }
-  try {
-    createIdVerifier(auth)
-  } catch (error) {
-    const message = (error as Error).message
-    throw new Error(`Invalid Toolbox configuration: ${message.startsWith("resource") ? "TOOLBOX_RESOURCE_URL" : "TOOLBOX_ID_ISSUER"}: ${message}`)
-  }
+  const { data, auth } = parseEnvironment("Toolbox", schema, env, { issuer: "TOOLBOX_ID_ISSUER", resource: "TOOLBOX_RESOURCE_URL" })
   return {
     databaseUrl: data.TOOLBOX_DATABASE_URL,
     auth,

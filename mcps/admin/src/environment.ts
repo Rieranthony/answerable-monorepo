@@ -1,4 +1,4 @@
-import { createIdVerifier } from "@answerable/auth"
+import { parseEnvironment } from "@answerable/mcp"
 import { z } from "zod"
 
 const schema = z.object({
@@ -15,16 +15,7 @@ const schema = z.object({
 
 /** Read the admin MCP's configuration from the environment; throws naming the variable that is missing or invalid. */
 export function readAdminEnvironment(env: Record<string, string | undefined>) {
-  const result = schema.safeParse(env)
-  if (!result.success) throw new Error(`Invalid admin MCP configuration: ${result.error.issues.map(issue => `${issue.path.join(".")}: ${issue.message}`).join("; ")}`)
-  const { data } = result
-  const auth = { issuer: data.ADMIN_ID_ISSUER, resource: data.ADMIN_RESOURCE_URL }
-  try {
-    createIdVerifier(auth)
-  } catch (error) {
-    const message = (error as Error).message
-    throw new Error(`Invalid admin MCP configuration: ${message.startsWith("resource") ? "ADMIN_RESOURCE_URL" : "ADMIN_ID_ISSUER"}: ${message}`)
-  }
+  const { data, auth } = parseEnvironment("admin MCP", schema, env, { issuer: "ADMIN_ID_ISSUER", resource: "ADMIN_RESOURCE_URL" })
   return {
     auth,
     port: data.ADMIN_PORT,

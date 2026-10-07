@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.6
+
+No tool changes. `readAdminEnvironment` is built on `@answerable/mcp`'s `parseEnvironment`, with the same messages, and the workspace no longer depends on `@answerable/auth`.
+
 ## 0.2.5
 
 Answerable ID dropped the columns nothing wrote. `organisations_update` renames an organisation only: its input requires `name` and no longer takes `logo` or `metadata`. Group tools no longer take or report a directory id, and client reads no longer carry the registration fields ID never stored. `manifest.json` regenerated.

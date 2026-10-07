@@ -84,7 +84,6 @@
       "name": "@answerable/mcp-admin",
       "version": "0.2.2",
       "dependencies": {
-        "@answerable/auth": "workspace:*",
         "@answerable/id-admin": "workspace:*",
         "@answerable/mcp": "workspace:*",
         "@answerable/mcp-postgres": "workspace:*",
