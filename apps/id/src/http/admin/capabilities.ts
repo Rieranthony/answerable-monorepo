@@ -29,7 +29,6 @@ import {
 } from "./revision.ts";
 import { tenantRead } from "./tenant-read.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
-import { standardResponses } from "./openapi.ts";
 
 const orgParams = uuidParam("organizationId");
 const params = orgParams.extend({ capabilityId: z.uuid() });
@@ -110,21 +109,18 @@ export const routes = {
     kind: "read",
     freshAuthentication: false,
     parameters: [orgParameter],
-    responses: standardResponses(
-      { orgScope: "org:read" },
-      {
-        200: {
-          description: "Capabilities",
-          content: json(
-            z.object({
-              items: z.array(capabilitySchema),
-              nextCursor: z.uuid().nullable(),
-            }),
-          ),
-        },
-        ...problemResponses(400, 404),
+    responses: {
+      200: {
+        description: "Capabilities",
+        content: json(
+          z.object({
+            items: z.array(capabilitySchema),
+            nextCursor: z.uuid().nullable(),
+          }),
+        ),
       },
-    ),
+      ...problemResponses(400, 404),
+    },
   },
   getCapability: {
     method: "get",
@@ -139,17 +135,14 @@ export const routes = {
     kind: "read",
     freshAuthentication: false,
     parameters: [orgParameter, idParameter],
-    responses: standardResponses(
-      { orgScope: "org:read" },
-      {
-        200: {
-          description: "Capability",
-          headers: revisionResponseHeaders,
-          content: json(capabilitySchema),
-        },
-        ...problemResponses(400, 404),
+    responses: {
+      200: {
+        description: "Capability",
+        headers: revisionResponseHeaders,
+        content: json(capabilitySchema),
       },
-    ),
+      ...problemResponses(400, 404),
+    },
   },
   createCapability: {
     method: "post",
@@ -173,17 +166,14 @@ export const routes = {
         scopes: ["tool:read"],
       },
     },
-    responses: standardResponses(
-      {},
-      {
-        201: {
-          description: "Created capability",
-          headers: commandResponseHeaders,
-          content: commandJson(capabilitySchema),
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      201: {
+        description: "Created capability",
+        headers: commandResponseHeaders,
+        content: commandJson(capabilitySchema),
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   updateCapability: {
     method: "patch",
@@ -205,17 +195,14 @@ export const routes = {
     ],
     requestBody: body(patchSchema),
     example: { body: { status: "disabled" } },
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          description: "Capability",
-          headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
-          content: commandJson(capabilitySchema),
-        },
-        ...problemResponses(400, 404, 409, 412, 503),
+    responses: {
+      200: {
+        description: "Capability",
+        headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
+        content: commandJson(capabilitySchema),
       },
-    ),
+      ...problemResponses(400, 404, 409, 412, 503),
+    },
   },
   removeCapability: {
     method: "delete",
@@ -230,16 +217,13 @@ export const routes = {
     kind: "write",
     freshAuthentication: true,
     parameters: [orgParameter, idParameter, idempotencyParameter],
-    responses: standardResponses(
-      {},
-      {
-        204: {
-          description: "Removed capability",
-          headers: commandResponseHeaders,
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      204: {
+        description: "Removed capability",
+        headers: commandResponseHeaders,
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
 } satisfies Record<string, AdminRoute>;
 export function register(app: Hono<AppEnvironment>) {

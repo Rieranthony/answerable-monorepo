@@ -9,7 +9,6 @@ import {
 import type { AppEnvironment } from "../context.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
-import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 import { json, pathParameter, uuidParam } from "./schemas.ts";
 
@@ -77,16 +76,13 @@ export const routes = {
       },
     ],
     example: { query: { email: "person@example.com" } },
-    responses: standardResponses(
-      { orgScope: "org:users" },
-      {
-        200: {
-          description: "Sign-in diagnosis",
-          content: json(signInDiagnosisSchema),
-        },
-        ...problemResponses(400, 404),
+    responses: {
+      200: {
+        description: "Sign-in diagnosis",
+        content: json(signInDiagnosisSchema),
       },
-    ),
+      ...problemResponses(400, 404),
+    },
   },
 } satisfies Record<string, AdminRoute>;
 export function register(app: Hono<AppEnvironment>) {

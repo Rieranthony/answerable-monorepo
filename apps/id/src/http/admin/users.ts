@@ -16,7 +16,6 @@ import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
-import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 const page = (schema: z.ZodType) =>
   z.object({ items: z.array(schema), nextCursor: z.uuid().nullable() });
@@ -76,13 +75,10 @@ export const routes = {
     kind: "read",
     freshAuthentication: false,
     parameters: [],
-    responses: standardResponses(
-      {},
-      {
-        200: { description: "Success", content: commandJson(page(userSchema)) },
-        ...problemResponses(400, 404),
-      },
-    ),
+    responses: {
+      200: { description: "Success", content: commandJson(page(userSchema)) },
+      ...problemResponses(400, 404),
+    },
   },
   getUser: {
     method: "get",
@@ -96,13 +92,10 @@ export const routes = {
     kind: "read",
     freshAuthentication: false,
     parameters: ["userId"].map((name) => pathParameter(name, "uuid")),
-    responses: standardResponses(
-      {},
-      {
-        200: { description: "Success", content: commandJson(detailSchema) },
-        ...problemResponses(400, 404),
-      },
-    ),
+    responses: {
+      200: { description: "Success", content: commandJson(detailSchema) },
+      ...problemResponses(400, 404),
+    },
   },
   disableUser: {
     method: "post",
@@ -116,17 +109,14 @@ export const routes = {
     kind: "write",
     freshAuthentication: true,
     parameters: [pathParameter("userId", "uuid"), idempotencyParameter],
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          description: "Success",
-          headers: commandResponseHeaders,
-          content: commandJson(userSchema),
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      200: {
+        description: "Success",
+        headers: commandResponseHeaders,
+        content: commandJson(userSchema),
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   enableUser: {
     method: "post",
@@ -140,17 +130,14 @@ export const routes = {
     kind: "write",
     freshAuthentication: true,
     parameters: [pathParameter("userId", "uuid"), idempotencyParameter],
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          description: "Success",
-          headers: commandResponseHeaders,
-          content: commandJson(userSchema),
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      200: {
+        description: "Success",
+        headers: commandResponseHeaders,
+        content: commandJson(userSchema),
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   retireUserEmail: {
     method: "post",
@@ -164,17 +151,14 @@ export const routes = {
     kind: "write",
     freshAuthentication: true,
     parameters: [pathParameter("userId", "uuid"), idempotencyParameter],
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          description: "Success",
-          headers: commandResponseHeaders,
-          content: commandJson(userSchema),
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      200: {
+        description: "Success",
+        headers: commandResponseHeaders,
+        content: commandJson(userSchema),
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   eraseUser: {
     method: "delete",
@@ -193,13 +177,10 @@ export const routes = {
       idempotencyParameter,
     ],
     example: { query: { confirm: "00000000-0000-7000-8000-000000000000" } },
-    responses: standardResponses(
-      {},
-      {
-        204: { description: "Success", headers: commandResponseHeaders },
-        ...problemResponses(400, 404, 409, 503),
-      },
-    ),
+    responses: {
+      204: { description: "Success", headers: commandResponseHeaders },
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
 } satisfies Record<string, AdminRoute>;
 export function register(app: Hono<AppEnvironment>) {

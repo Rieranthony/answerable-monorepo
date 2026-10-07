@@ -2,7 +2,6 @@ import { json } from "./schemas.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
 import type { AppEnvironment } from "../context.ts";
-import { standardResponses } from "./openapi.ts";
 import { adminScopes } from "./scopes.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 
@@ -44,15 +43,12 @@ export const routes = {
     kind: "read",
     freshAuthentication: false,
     open: true,
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          description: "Current principal and effective grants",
-          content: json(meSchema),
-        },
+    responses: {
+      200: {
+        description: "Current principal and effective grants",
+        content: json(meSchema),
       },
-    ),
+    },
   },
 } satisfies Record<string, AdminRoute>;
 

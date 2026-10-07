@@ -26,7 +26,6 @@ import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
-import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 import {
   membershipStatuses,
@@ -97,17 +96,14 @@ export const routes = {
     parameters: ["organizationId", "memberId"].map((name) =>
       pathParameter(name, "uuid"),
     ),
-    responses: standardResponses(
-      { orgScope: "org:users" },
-      {
-        200: {
-          description: "Member configuration",
-          content: json(configurationSchema),
-          headers: revisionResponseHeaders,
-        },
-        ...problemResponses(400, 404),
+    responses: {
+      200: {
+        description: "Member configuration",
+        content: json(configurationSchema),
+        headers: revisionResponseHeaders,
       },
-    ),
+      ...problemResponses(400, 404),
+    },
   },
 
   listMembers: {
@@ -123,16 +119,13 @@ export const routes = {
     freshAuthentication: false,
     parameters: ["organizationId"].map((name) => pathParameter(name, "uuid")),
     orgScope: "org:read",
-    responses: standardResponses(
-      { orgScope: "org:read" },
-      {
-        200: {
-          description: "Success",
-          content: commandJson(page(memberSchema)),
-        },
-        ...problemResponses(400, 404),
+    responses: {
+      200: {
+        description: "Success",
+        content: commandJson(page(memberSchema)),
       },
-    ),
+      ...problemResponses(400, 404),
+    },
   },
   getMember: {
     method: "get",
@@ -149,13 +142,10 @@ export const routes = {
       pathParameter(name, "uuid"),
     ),
     orgScope: "org:read",
-    responses: standardResponses(
-      { orgScope: "org:read" },
-      {
-        200: { description: "Success", content: commandJson(detailSchema) },
-        ...problemResponses(400, 404),
-      },
-    ),
+    responses: {
+      200: { description: "Success", content: commandJson(detailSchema) },
+      ...problemResponses(400, 404),
+    },
   },
   updateMember: {
     method: "patch",
@@ -178,17 +168,14 @@ export const routes = {
     orgScope: "org:users",
     requestBody: body(patchSchema),
     example: { body: { validUntil: null } },
-    responses: standardResponses(
-      { orgScope: "org:users" },
-      {
-        200: {
-          description: "Success",
-          content: commandJson(detailSchema),
-          headers: commandResponseHeaders,
-        },
-        ...problemResponses(400, 404, 409, 412, 503),
+    responses: {
+      200: {
+        description: "Success",
+        content: commandJson(detailSchema),
+        headers: commandResponseHeaders,
       },
-    ),
+      ...problemResponses(400, 404, 409, 412, 503),
+    },
   },
   reinstateMember: {
     method: "post",
@@ -208,17 +195,14 @@ export const routes = {
         pathParameter(name, "uuid"),
       ),
     ],
-    responses: standardResponses(
-      { orgScope: "org:users" },
-      {
-        200: {
-          description: "Membership reinstated",
-          headers: commandResponseHeaders,
-          content: commandJson(detailSchema),
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      200: {
+        description: "Membership reinstated",
+        headers: commandResponseHeaders,
+        content: commandJson(detailSchema),
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   removeMember: {
     method: "delete",
@@ -238,13 +222,10 @@ export const routes = {
       ),
     ],
     orgScope: "org:users",
-    responses: standardResponses(
-      { orgScope: "org:users" },
-      {
-        204: { description: "Success", headers: commandResponseHeaders },
-        ...problemResponses(400, 404, 409, 503),
-      },
-    ),
+    responses: {
+      204: { description: "Success", headers: commandResponseHeaders },
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
 } satisfies Record<string, AdminRoute>;
 export function register(app: Hono<AppEnvironment>) {

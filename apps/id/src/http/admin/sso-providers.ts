@@ -32,7 +32,6 @@ import {
 import type { AppEnvironment } from "../context.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
-import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 import * as service from "../../services/sso-providers.ts";
 import { hostSchema } from "./domains.ts";
@@ -126,16 +125,13 @@ export const routes = {
     kind: "read",
     freshAuthentication: false,
     parameters,
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          description: "SSO connectivity diagnosis",
-          content: json(ssoTestSchema),
-        },
-        ...problemResponses(400, 404),
+    responses: {
+      200: {
+        description: "SSO connectivity diagnosis",
+        content: json(ssoTestSchema),
       },
-    ),
+      ...problemResponses(400, 404),
+    },
   },
   getSsoProvider: {
     method: "get",
@@ -150,17 +146,14 @@ export const routes = {
     freshAuthentication: false,
     parameters,
     orgScope: "org:read",
-    responses: standardResponses(
-      { orgScope: "org:read" },
-      {
-        200: {
-          description: "SSO provider",
-          headers: revisionResponseHeaders,
-          content: json(ssoProviderSchema),
-        },
-        ...problemResponses(400, 404),
+    responses: {
+      200: {
+        description: "SSO provider",
+        headers: revisionResponseHeaders,
+        content: json(ssoProviderSchema),
       },
-    ),
+      ...problemResponses(400, 404),
+    },
   },
   putSsoProvider: {
     method: "put",
@@ -199,22 +192,19 @@ export const routes = {
         domain: "acme.example.com",
       },
     },
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          description: "SSO provider",
-          headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
-          content: commandJson(ssoProviderSchema),
-        },
-        201: {
-          description: "SSO provider created",
-          headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
-          content: commandJson(ssoProviderSchema),
-        },
-        ...problemResponses(400, 404, 409, 412, 503),
+    responses: {
+      200: {
+        description: "SSO provider",
+        headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
+        content: commandJson(ssoProviderSchema),
       },
-    ),
+      201: {
+        description: "SSO provider created",
+        headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
+        content: commandJson(ssoProviderSchema),
+      },
+      ...problemResponses(400, 404, 409, 412, 503),
+    },
   },
   deleteSsoProvider: {
     method: "delete",
@@ -228,16 +218,13 @@ export const routes = {
     kind: "write",
     freshAuthentication: true,
     parameters: [...parameters, idempotencyParameter],
-    responses: standardResponses(
-      {},
-      {
-        204: {
-          description: "SSO provider deleted",
-          headers: commandResponseHeaders,
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      204: {
+        description: "SSO provider deleted",
+        headers: commandResponseHeaders,
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
 } satisfies Record<string, AdminRoute>;
 

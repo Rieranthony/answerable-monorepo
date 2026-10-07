@@ -263,10 +263,10 @@ test("admin route tables equal the OpenAPI operation union", async () => {
         ).toBe(true);
       }
       for (const status of route.orgScope
-        ? ["401", "403", "404"]
-        : ["401", "403"]) {
+        ? ["401", "403", "404", "503"]
+        : ["401", "403", "503"]) {
         expect(
-          route.responses,
+          operation?.responses,
           `${label}: missing response ${status}`,
         ).toHaveProperty(status);
       }

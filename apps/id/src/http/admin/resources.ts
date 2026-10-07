@@ -25,7 +25,6 @@ import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
-import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 const resourceSchema = z.object({
   classification: z.enum(resourceClassifications),
@@ -96,21 +95,18 @@ export const routes = {
     platformScope: "platform:read",
     kind: "read",
     freshAuthentication: false,
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          description: "Resources",
-          content: json(
-            z.object({
-              items: z.array(resourceSchema),
-              nextCursor: z.uuid().nullable(),
-            }),
-          ),
-        },
-        ...problemResponses(400),
+    responses: {
+      200: {
+        description: "Resources",
+        content: json(
+          z.object({
+            items: z.array(resourceSchema),
+            nextCursor: z.uuid().nullable(),
+          }),
+        ),
       },
-    ),
+      ...problemResponses(400),
+    },
   },
   createResource: {
     method: "post",
@@ -132,17 +128,14 @@ export const routes = {
         allowedScopes: ["tutor:read"],
       },
     },
-    responses: standardResponses(
-      {},
-      {
-        201: {
-          headers: commandResponseHeaders,
-          description: "Resource created",
-          content: commandJson(resourceSchema),
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      201: {
+        headers: commandResponseHeaders,
+        description: "Resource created",
+        content: commandJson(resourceSchema),
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   getResource: {
     method: "get",
@@ -156,19 +149,14 @@ export const routes = {
     kind: "read",
     freshAuthentication: false,
     parameters,
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          headers: revisionResponseHeaders,
-          description: "Resource",
-          content: json(
-            resourceSchema.extend({ clients: z.array(z.string()) }),
-          ),
-        },
-        ...problemResponses(400, 404, 409),
+    responses: {
+      200: {
+        headers: revisionResponseHeaders,
+        description: "Resource",
+        content: json(resourceSchema.extend({ clients: z.array(z.string()) })),
       },
-    ),
+      ...problemResponses(400, 404, 409),
+    },
   },
   updateResource: {
     method: "patch",
@@ -184,17 +172,14 @@ export const routes = {
     parameters: [...parameters, idempotencyParameter, revisionParameter],
     requestBody: body(patchSchema),
     example: { body: { name: "Renamed" } },
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
-          description: "Resource updated",
-          content: commandJson(resourceSchema),
-        },
-        ...problemResponses(400, 404, 409, 412, 503),
+    responses: {
+      200: {
+        headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
+        description: "Resource updated",
+        content: commandJson(resourceSchema),
       },
-    ),
+      ...problemResponses(400, 404, 409, 412, 503),
+    },
   },
   disableResource: {
     method: "post",
@@ -208,17 +193,14 @@ export const routes = {
     kind: "write",
     freshAuthentication: true,
     parameters: [...parameters, idempotencyParameter],
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          headers: commandResponseHeaders,
-          description: "Resource disabled",
-          content: commandJson(resourceSchema),
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      200: {
+        headers: commandResponseHeaders,
+        description: "Resource disabled",
+        content: commandJson(resourceSchema),
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   enableResource: {
     method: "post",
@@ -232,17 +214,14 @@ export const routes = {
     kind: "write",
     freshAuthentication: true,
     parameters: [...parameters, idempotencyParameter],
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          headers: commandResponseHeaders,
-          description: "Resource enabled",
-          content: commandJson(resourceSchema),
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      200: {
+        headers: commandResponseHeaders,
+        description: "Resource enabled",
+        content: commandJson(resourceSchema),
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   eraseResource: {
     method: "delete",
@@ -261,16 +240,13 @@ export const routes = {
       confirmQuery(eraseSchema.shape.confirm),
     ],
     example: { query: { confirm: "https://none.example" } },
-    responses: standardResponses(
-      {},
-      {
-        204: {
-          headers: commandResponseHeaders,
-          description: "Resource erased",
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      204: {
+        headers: commandResponseHeaders,
+        description: "Resource erased",
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
 } satisfies Record<string, AdminRoute>;
 export function register(app: Hono<AppEnvironment>) {

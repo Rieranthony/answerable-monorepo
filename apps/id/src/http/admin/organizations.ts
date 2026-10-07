@@ -27,7 +27,6 @@ import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
-import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 
 const organizationSchema = z.object({
@@ -79,21 +78,18 @@ export const routes = {
     platformScope: "platform:read",
     kind: "read",
     freshAuthentication: false,
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          description: "Organisations",
-          content: json(
-            z.object({
-              items: z.array(organizationSchema),
-              nextCursor: z.uuid().nullable(),
-            }),
-          ),
-        },
-        ...problemResponses(400),
+    responses: {
+      200: {
+        description: "Organisations",
+        content: json(
+          z.object({
+            items: z.array(organizationSchema),
+            nextCursor: z.uuid().nullable(),
+          }),
+        ),
       },
-    ),
+      ...problemResponses(400),
+    },
   },
   createOrganization: {
     method: "post",
@@ -109,17 +105,14 @@ export const routes = {
     parameters: [idempotencyParameter],
     requestBody: body(createSchema),
     example: { body: { slug: "acme", name: "Acme" } },
-    responses: standardResponses(
-      {},
-      {
-        201: {
-          description: "Organisation created",
-          content: commandJson(organizationSchema),
-          headers: commandResponseHeaders,
-        },
-        ...problemResponses(400, 409, 503),
+    responses: {
+      201: {
+        description: "Organisation created",
+        content: commandJson(organizationSchema),
+        headers: commandResponseHeaders,
       },
-    ),
+      ...problemResponses(400, 409, 503),
+    },
   },
   getOrganization: {
     method: "get",
@@ -134,13 +127,10 @@ export const routes = {
     kind: "read",
     freshAuthentication: false,
     parameters,
-    responses: standardResponses(
-      { orgScope: "org:read" },
-      {
-        200: { ...success[200], headers: revisionResponseHeaders },
-        ...problemResponses(400),
-      },
-    ),
+    responses: {
+      200: { ...success[200], headers: revisionResponseHeaders },
+      ...problemResponses(400),
+    },
   },
   updateOrganization: {
     method: "patch",
@@ -156,17 +146,14 @@ export const routes = {
     parameters: [...parameters, idempotencyParameter, revisionParameter],
     requestBody: body(patchSchema),
     example: { body: { name: "Acme Ltd" } },
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          ...success[200],
-          content: commandJson(organizationSchema),
-          headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
-        },
-        ...problemResponses(400, 404, 409, 412, 503),
+    responses: {
+      200: {
+        ...success[200],
+        content: commandJson(organizationSchema),
+        headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
       },
-    ),
+      ...problemResponses(400, 404, 409, 412, 503),
+    },
   },
   disableOrganization: {
     method: "post",
@@ -180,17 +167,14 @@ export const routes = {
     kind: "write",
     freshAuthentication: true,
     parameters: [...parameters, idempotencyParameter],
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          ...success[200],
-          content: commandJson(organizationSchema),
-          headers: commandResponseHeaders,
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      200: {
+        ...success[200],
+        content: commandJson(organizationSchema),
+        headers: commandResponseHeaders,
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   enableOrganization: {
     method: "post",
@@ -204,17 +188,14 @@ export const routes = {
     kind: "write",
     freshAuthentication: true,
     parameters: [...parameters, idempotencyParameter],
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          ...success[200],
-          content: commandJson(organizationSchema),
-          headers: commandResponseHeaders,
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      200: {
+        ...success[200],
+        content: commandJson(organizationSchema),
+        headers: commandResponseHeaders,
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   eraseOrganization: {
     method: "delete",
@@ -233,16 +214,13 @@ export const routes = {
       idempotencyParameter,
     ],
     example: { query: { confirm: "00000000-0000-7000-8000-000000000000" } },
-    responses: standardResponses(
-      {},
-      {
-        204: {
-          description: "Organisation erased",
-          headers: commandResponseHeaders,
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      204: {
+        description: "Organisation erased",
+        headers: commandResponseHeaders,
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
 } satisfies Record<string, AdminRoute>;
 

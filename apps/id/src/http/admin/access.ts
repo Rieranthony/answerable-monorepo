@@ -7,7 +7,6 @@ import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
-import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 const orgParams = uuidParam("organizationId");
 const memberParams = orgParams.extend({ memberId: z.uuid() });
@@ -143,13 +142,10 @@ export const routes = {
     parameters: ["organizationId", "memberId"].map((name) =>
       pathParameter(name, "uuid"),
     ),
-    responses: standardResponses(
-      { orgScope: "org:users" },
-      {
-        200: { description: "Success", content: json(memberAccessSchema) },
-        ...problemResponses(400, 404),
-      },
-    ),
+    responses: {
+      200: { description: "Success", content: json(memberAccessSchema) },
+      ...problemResponses(400, 404),
+    },
   },
   listTargetAccess: {
     method: "get",
@@ -173,13 +169,10 @@ export const routes = {
       },
     ],
     example: { query: { resource: "https://none.example" } },
-    responses: standardResponses(
-      { orgScope: "org:read" },
-      {
-        200: { description: "Success", content: json(targetAccessSchema) },
-        ...problemResponses(400, 404),
-      },
-    ),
+    responses: {
+      200: { description: "Success", content: json(targetAccessSchema) },
+      ...problemResponses(400, 404),
+    },
   },
 } satisfies Record<string, AdminRoute>;
 export function register(app: Hono<AppEnvironment>) {

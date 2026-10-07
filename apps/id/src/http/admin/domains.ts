@@ -16,7 +16,6 @@ import {
 import type { AppEnvironment } from "../context.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
-import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 import { lifecycleStatuses } from "../../db/schema/vocabulary.ts";
 import { hostnamePattern } from "../../db/schema/columns.ts";
@@ -63,13 +62,10 @@ export const routes = {
     kind: "write",
     freshAuthentication: true,
     parameters: [...domainParameters, idempotencyParameter],
-    responses: standardResponses(
-      {},
-      {
-        204: { description: "Domain deleted", headers: commandResponseHeaders },
-        ...problemResponses(400, 404, 409, 503),
-      },
-    ),
+    responses: {
+      204: { description: "Domain deleted", headers: commandResponseHeaders },
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   listOrganizationDomains: {
     method: "get",
@@ -84,21 +80,18 @@ export const routes = {
     freshAuthentication: false,
     parameters,
     orgScope: "org:read",
-    responses: standardResponses(
-      { orgScope: "org:read" },
-      {
-        200: {
-          description: "Domains",
-          content: json(
-            z.object({
-              items: z.array(domainSchema),
-              nextCursor: z.uuid().nullable(),
-            }),
-          ),
-        },
-        ...problemResponses(400, 404),
+    responses: {
+      200: {
+        description: "Domains",
+        content: json(
+          z.object({
+            items: z.array(domainSchema),
+            nextCursor: z.uuid().nullable(),
+          }),
+        ),
       },
-    ),
+      ...problemResponses(400, 404),
+    },
   },
   createOrganizationDomain: {
     method: "post",
@@ -114,17 +107,14 @@ export const routes = {
     parameters: [...parameters, idempotencyParameter],
     requestBody: body(createSchema),
     example: { body: { domain: "acme.example.com" } },
-    responses: standardResponses(
-      {},
-      {
-        201: {
-          description: "Domain",
-          content: commandJson(domainSchema),
-          headers: commandResponseHeaders,
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      201: {
+        description: "Domain",
+        content: commandJson(domainSchema),
+        headers: commandResponseHeaders,
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   disableOrganizationDomain: {
     method: "post",
@@ -138,17 +128,14 @@ export const routes = {
     kind: "write",
     freshAuthentication: true,
     parameters: [...domainParameters, idempotencyParameter],
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          description: "Domain",
-          content: commandJson(domainSchema),
-          headers: commandResponseHeaders,
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      200: {
+        description: "Domain",
+        content: commandJson(domainSchema),
+        headers: commandResponseHeaders,
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   enableOrganizationDomain: {
     method: "post",
@@ -162,17 +149,14 @@ export const routes = {
     kind: "write",
     freshAuthentication: true,
     parameters: [...domainParameters, idempotencyParameter],
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          description: "Domain",
-          content: commandJson(domainSchema),
-          headers: commandResponseHeaders,
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      200: {
+        description: "Domain",
+        content: commandJson(domainSchema),
+        headers: commandResponseHeaders,
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
 } satisfies Record<string, AdminRoute>;
 

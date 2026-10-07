@@ -45,7 +45,7 @@ export const adminTags = [
   { name: "Me", description: "Current principal and effective grants" },
 ];
 
-export function standardResponses(
+function standardResponses(
   route: Pick<AdminRoute, "orgScope">,
   success: DescribeRouteOptions["responses"],
 ) {

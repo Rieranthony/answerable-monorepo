@@ -27,7 +27,6 @@ import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
-import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 import { lifecycleStatuses } from "../../db/schema/vocabulary.ts";
 import { uniqueSorted } from "../../lib/scopes.ts";
@@ -84,22 +83,19 @@ export const routes = {
     platformScope: "platform:read",
     kind: "read",
     freshAuthentication: false,
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          description: "Entitlements",
-          content: json(
-            page(
-              entitlementSchema.extend({
-                organization: z.object({ id: z.uuid(), slug: z.string() }),
-              }),
-            ),
+    responses: {
+      200: {
+        description: "Entitlements",
+        content: json(
+          page(
+            entitlementSchema.extend({
+              organization: z.object({ id: z.uuid(), slug: z.string() }),
+            }),
           ),
-        },
-        ...problemResponses(400),
+        ),
       },
-    ),
+      ...problemResponses(400),
+    },
   },
   listEntitlements: {
     method: "get",
@@ -114,16 +110,13 @@ export const routes = {
     freshAuthentication: false,
     parameters: ["organizationId"].map((name) => pathParameter(name, "uuid")),
     orgScope: "org:read",
-    responses: standardResponses(
-      { orgScope: "org:read" },
-      {
-        200: {
-          description: "Success",
-          content: commandJson(page(entitlementSchema)),
-        },
-        ...problemResponses(400, 404),
+    responses: {
+      200: {
+        description: "Success",
+        content: commandJson(page(entitlementSchema)),
       },
-    ),
+      ...problemResponses(400, 404),
+    },
   },
   createEntitlement: {
     method: "post",
@@ -141,17 +134,14 @@ export const routes = {
     example: {
       body: { resource: "https://none.example", scopes: ["tutor:read"] },
     },
-    responses: standardResponses(
-      {},
-      {
-        201: {
-          description: "Success",
-          headers: commandResponseHeaders,
-          content: commandJson(entitlementSchema),
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      201: {
+        description: "Success",
+        headers: commandResponseHeaders,
+        content: commandJson(entitlementSchema),
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   getEntitlement: {
     method: "get",
@@ -168,17 +158,14 @@ export const routes = {
       pathParameter(name, "uuid"),
     ),
     orgScope: "org:read",
-    responses: standardResponses(
-      { orgScope: "org:read" },
-      {
-        200: {
-          description: "Success",
-          headers: revisionResponseHeaders,
-          content: json(entitlementSchema),
-        },
-        ...problemResponses(400, 404),
+    responses: {
+      200: {
+        description: "Success",
+        headers: revisionResponseHeaders,
+        content: json(entitlementSchema),
       },
-    ),
+      ...problemResponses(400, 404),
+    },
   },
   updateEntitlement: {
     method: "patch",
@@ -200,17 +187,14 @@ export const routes = {
     ],
     requestBody: body(patchSchema),
     example: { body: { scopes: ["tutor:read"] } },
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          description: "Success",
-          headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
-          content: commandJson(entitlementSchema),
-        },
-        ...problemResponses(400, 404, 409, 412, 503),
+    responses: {
+      200: {
+        description: "Success",
+        headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
+        content: commandJson(entitlementSchema),
       },
-    ),
+      ...problemResponses(400, 404, 409, 412, 503),
+    },
   },
   disableEntitlement: {
     method: "post",
@@ -229,17 +213,14 @@ export const routes = {
       ),
       idempotencyParameter,
     ],
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          description: "Success",
-          headers: commandResponseHeaders,
-          content: commandJson(entitlementSchema),
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      200: {
+        description: "Success",
+        headers: commandResponseHeaders,
+        content: commandJson(entitlementSchema),
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   enableEntitlement: {
     method: "post",
@@ -258,17 +239,14 @@ export const routes = {
       ),
       idempotencyParameter,
     ],
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          description: "Success",
-          headers: commandResponseHeaders,
-          content: commandJson(entitlementSchema),
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      200: {
+        description: "Success",
+        headers: commandResponseHeaders,
+        content: commandJson(entitlementSchema),
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   removeEntitlement: {
     method: "delete",
@@ -287,13 +265,10 @@ export const routes = {
       ),
       idempotencyParameter,
     ],
-    responses: standardResponses(
-      {},
-      {
-        204: { description: "Success", headers: commandResponseHeaders },
-        ...problemResponses(400, 404, 409, 503),
-      },
-    ),
+    responses: {
+      204: { description: "Success", headers: commandResponseHeaders },
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
 } satisfies Record<string, AdminRoute>;
 export function register(app: Hono<AppEnvironment>) {

@@ -10,7 +10,6 @@ import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
-import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 
 const querySchema = pageQuerySchema.extend({
@@ -66,21 +65,18 @@ const auditSchema = z.object({
     ),
   data: z.record(z.string(), z.unknown()).nullable(),
 });
-const responses = standardResponses(
-  {},
-  {
-    200: {
-      description: "Success",
-      content: json(
-        z.object({
-          items: z.array(auditSchema),
-          nextCursor: z.uuid().nullable(),
-        }),
-      ),
-    },
-    ...problemResponses(400),
+const responses = {
+  200: {
+    description: "Success",
+    content: json(
+      z.object({
+        items: z.array(auditSchema),
+        nextCursor: z.uuid().nullable(),
+      }),
+    ),
   },
-);
+  ...problemResponses(400),
+};
 export const routes = {
   listUserAuditEvents: {
     method: "get",

@@ -24,7 +24,6 @@ import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
-import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 export const clientSchema = z.object({
   id: z.uuid(),
@@ -127,13 +126,10 @@ export const routes = {
       idempotencyParameter,
       confirmQuery(z.string().min(1)),
     ],
-    responses: standardResponses(
-      {},
-      {
-        204: { headers: commandResponseHeaders, description: "Client erased" },
-        ...problemResponses(400, 404, 409, 503),
-      },
-    ),
+    responses: {
+      204: { headers: commandResponseHeaders, description: "Client erased" },
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   listClients: {
     method: "get",
@@ -146,21 +142,18 @@ export const routes = {
     platformScope: "platform:read",
     kind: "read",
     freshAuthentication: false,
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          description: "Clients",
-          content: json(
-            z.object({
-              items: z.array(clientSchema),
-              nextCursor: z.uuid().nullable(),
-            }),
-          ),
-        },
-        ...problemResponses(400),
+    responses: {
+      200: {
+        description: "Clients",
+        content: json(
+          z.object({
+            items: z.array(clientSchema),
+            nextCursor: z.uuid().nullable(),
+          }),
+        ),
       },
-    ),
+      ...problemResponses(400),
+    },
   },
   createClient: {
     method: "post",
@@ -184,20 +177,17 @@ export const routes = {
         organizationId: "00000000-0000-7000-8000-000000000000",
       },
     },
-    responses: standardResponses(
-      {},
-      {
-        201: {
-          headers: commandResponseHeaders,
-          description:
-            "Client created; a retry returns the receipt. A lost secret requires a new rotation",
-          content: commandJson(
-            clientSchema.extend({ clientSecret: z.string().optional() }),
-          ),
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      201: {
+        headers: commandResponseHeaders,
+        description:
+          "Client created; a retry returns the receipt. A lost secret requires a new rotation",
+        content: commandJson(
+          clientSchema.extend({ clientSecret: z.string().optional() }),
+        ),
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   getClient: {
     method: "get",
@@ -211,19 +201,14 @@ export const routes = {
     kind: "read",
     freshAuthentication: false,
     parameters,
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          headers: revisionResponseHeaders,
-          description: "Client",
-          content: json(
-            clientSchema.extend({ resources: z.array(z.string()) }),
-          ),
-        },
-        ...problemResponses(400, 404, 409),
+    responses: {
+      200: {
+        headers: revisionResponseHeaders,
+        description: "Client",
+        content: json(clientSchema.extend({ resources: z.array(z.string()) })),
       },
-    ),
+      ...problemResponses(400, 404, 409),
+    },
   },
   updateClient: {
     method: "patch",
@@ -239,17 +224,14 @@ export const routes = {
     parameters: [...parameters, idempotencyParameter, revisionParameter],
     requestBody: body(patchSchema),
     example: { body: { name: "Renamed" } },
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
-          description: "Client updated",
-          content: commandJson(clientSchema),
-        },
-        ...problemResponses(400, 404, 409, 412, 503),
+    responses: {
+      200: {
+        headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
+        description: "Client updated",
+        content: commandJson(clientSchema),
       },
-    ),
+      ...problemResponses(400, 404, 409, 412, 503),
+    },
   },
   disableClient: {
     method: "post",
@@ -263,17 +245,14 @@ export const routes = {
     kind: "write",
     freshAuthentication: true,
     parameters: [...parameters, idempotencyParameter],
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          headers: commandResponseHeaders,
-          description: "Client disabled and tokens revoked",
-          content: commandJson(clientSchema),
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      200: {
+        headers: commandResponseHeaders,
+        description: "Client disabled and tokens revoked",
+        content: commandJson(clientSchema),
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   enableClient: {
     method: "post",
@@ -287,17 +266,14 @@ export const routes = {
     kind: "write",
     freshAuthentication: true,
     parameters: [...parameters, idempotencyParameter],
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          headers: commandResponseHeaders,
-          description: "Client enabled",
-          content: commandJson(clientSchema),
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      200: {
+        headers: commandResponseHeaders,
+        description: "Client enabled",
+        content: commandJson(clientSchema),
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   rotateClientSecret: {
     method: "post",
@@ -311,20 +287,17 @@ export const routes = {
     kind: "write",
     freshAuthentication: true,
     parameters: [...parameters, idempotencyParameter],
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          headers: commandResponseHeaders,
-          description:
-            "New secret; a retry returns the receipt. A lost secret requires a new rotation",
-          content: commandJson(
-            z.object({ clientId: z.string(), clientSecret: z.string() }),
-          ),
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      200: {
+        headers: commandResponseHeaders,
+        description:
+          "New secret; a retry returns the receipt. A lost secret requires a new rotation",
+        content: commandJson(
+          z.object({ clientId: z.string(), clientSecret: z.string() }),
+        ),
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   setClientOwner: {
     method: "put",
@@ -342,17 +315,14 @@ export const routes = {
     example: {
       body: { organizationId: "00000000-0000-7000-8000-000000000000" },
     },
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          headers: commandResponseHeaders,
-          description: "Client owner unchanged",
-          content: commandJson(clientSchema),
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      200: {
+        headers: commandResponseHeaders,
+        description: "Client owner unchanged",
+        content: commandJson(clientSchema),
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   linkClientResource: {
     method: "put",
@@ -366,22 +336,19 @@ export const routes = {
     kind: "write",
     freshAuthentication: true,
     parameters: [...resourceParameters, idempotencyParameter],
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          headers: commandResponseHeaders,
-          description: "Resource link already exists",
-          content: commandJson(z.object({ created: z.boolean() })),
-        },
-        201: {
-          headers: commandResponseHeaders,
-          description: "Resource linked",
-          content: commandJson(z.object({ created: z.boolean() })),
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      200: {
+        headers: commandResponseHeaders,
+        description: "Resource link already exists",
+        content: commandJson(z.object({ created: z.boolean() })),
       },
-    ),
+      201: {
+        headers: commandResponseHeaders,
+        description: "Resource linked",
+        content: commandJson(z.object({ created: z.boolean() })),
+      },
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   unlinkClientResource: {
     method: "delete",
@@ -395,16 +362,13 @@ export const routes = {
     kind: "write",
     freshAuthentication: true,
     parameters: [...resourceParameters, idempotencyParameter],
-    responses: standardResponses(
-      {},
-      {
-        204: {
-          headers: commandResponseHeaders,
-          description: "Resource unlinked",
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      204: {
+        headers: commandResponseHeaders,
+        description: "Resource unlinked",
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
 } satisfies Record<string, AdminRoute>;
 export function register(app: Hono<AppEnvironment>) {

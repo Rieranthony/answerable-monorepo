@@ -5,29 +5,25 @@ import { getAuditOperationStatus } from "../../services/operation-status.ts";
 import type { AppEnvironment } from "../context.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
-import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 import { json, pathParameter, uuidParam } from "./schemas.ts";
 
-const response = standardResponses(
-  {},
-  {
-    200: {
-      description: "Committed operation; result reference only",
-      content: json(
-        z.object({
-          id: z.uuid(),
-          name: z.string(),
-          outcome: z.enum(operationOutcomes),
-          statusCode: z.number().int(),
-          resultReference: z.object({ type: z.string(), id: z.string() }),
-          committedAt: z.iso.datetime(),
-        }),
-      ),
-    },
-    ...problemResponses(400, 404),
+const response = {
+  200: {
+    description: "Committed operation; result reference only",
+    content: json(
+      z.object({
+        id: z.uuid(),
+        name: z.string(),
+        outcome: z.enum(operationOutcomes),
+        statusCode: z.number().int(),
+        resultReference: z.object({ type: z.string(), id: z.string() }),
+        committedAt: z.iso.datetime(),
+      }),
+    ),
   },
-);
+  ...problemResponses(400, 404),
+};
 export const routes = {
   getOperation: {
     method: "get",

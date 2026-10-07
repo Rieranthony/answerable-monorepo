@@ -28,7 +28,6 @@ import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
-import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 import { lifecycleStatuses } from "../../db/schema/vocabulary.ts";
 const page = (schema: z.ZodType) =>
@@ -96,16 +95,13 @@ export const routes = {
     freshAuthentication: false,
     parameters: ["organizationId"].map((name) => pathParameter(name, "uuid")),
     orgScope: "org:read",
-    responses: standardResponses(
-      { orgScope: "org:read" },
-      {
-        200: {
-          description: "Success",
-          content: commandJson(page(groupSchema)),
-        },
-        ...problemResponses(400, 404),
+    responses: {
+      200: {
+        description: "Success",
+        content: commandJson(page(groupSchema)),
       },
-    ),
+      ...problemResponses(400, 404),
+    },
   },
   createGroup: {
     method: "post",
@@ -124,17 +120,14 @@ export const routes = {
     ],
     requestBody: body(createSchema),
     example: { body: { slug: "finance", name: "Finance" } },
-    responses: standardResponses(
-      {},
-      {
-        201: {
-          description: "Success",
-          headers: commandResponseHeaders,
-          content: commandJson(groupSchema),
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      201: {
+        description: "Success",
+        headers: commandResponseHeaders,
+        content: commandJson(groupSchema),
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   getGroup: {
     method: "get",
@@ -151,17 +144,14 @@ export const routes = {
       pathParameter(name, "uuid"),
     ),
     orgScope: "org:read",
-    responses: standardResponses(
-      { orgScope: "org:read" },
-      {
-        200: {
-          description: "Success",
-          headers: revisionResponseHeaders,
-          content: json(groupSchema),
-        },
-        ...problemResponses(400, 404),
+    responses: {
+      200: {
+        description: "Success",
+        headers: revisionResponseHeaders,
+        content: json(groupSchema),
       },
-    ),
+      ...problemResponses(400, 404),
+    },
   },
   updateGroup: {
     method: "patch",
@@ -183,17 +173,14 @@ export const routes = {
     ],
     requestBody: body(patchSchema),
     example: { body: { name: "Finance team" } },
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          description: "Success",
-          headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
-          content: commandJson(groupSchema),
-        },
-        ...problemResponses(400, 404, 409, 412, 503),
+    responses: {
+      200: {
+        description: "Success",
+        headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
+        content: commandJson(groupSchema),
       },
-    ),
+      ...problemResponses(400, 404, 409, 412, 503),
+    },
   },
   disableGroup: {
     method: "post",
@@ -212,17 +199,14 @@ export const routes = {
       ),
       idempotencyParameter,
     ],
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          description: "Success",
-          headers: commandResponseHeaders,
-          content: commandJson(groupSchema),
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      200: {
+        description: "Success",
+        headers: commandResponseHeaders,
+        content: commandJson(groupSchema),
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   enableGroup: {
     method: "post",
@@ -241,17 +225,14 @@ export const routes = {
       ),
       idempotencyParameter,
     ],
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          description: "Success",
-          headers: commandResponseHeaders,
-          content: commandJson(groupSchema),
-        },
-        ...problemResponses(400, 404, 409, 503),
+    responses: {
+      200: {
+        description: "Success",
+        headers: commandResponseHeaders,
+        content: commandJson(groupSchema),
       },
-    ),
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   eraseGroup: {
     method: "delete",
@@ -274,13 +255,10 @@ export const routes = {
       idempotencyParameter,
     ],
     example: { query: { confirm: "00000000-0000-4000-8000-000000000001" } },
-    responses: standardResponses(
-      {},
-      {
-        204: { description: "Success", headers: commandResponseHeaders },
-        ...problemResponses(400, 404, 409, 503),
-      },
-    ),
+    responses: {
+      204: { description: "Success", headers: commandResponseHeaders },
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
   listGroupMembers: {
     method: "get",
@@ -297,13 +275,10 @@ export const routes = {
       pathParameter(name, "uuid"),
     ),
     orgScope: "org:read",
-    responses: standardResponses(
-      { orgScope: "org:read" },
-      {
-        200: { description: "Success", content: json(page(groupMemberSchema)) },
-        ...problemResponses(400, 404),
-      },
-    ),
+    responses: {
+      200: { description: "Success", content: json(page(groupMemberSchema)) },
+      ...problemResponses(400, 404),
+    },
   },
   getGroupMember: {
     method: "get",
@@ -320,17 +295,14 @@ export const routes = {
     parameters: ["organizationId", "groupId", "memberId"].map((name) =>
       pathParameter(name, "uuid"),
     ),
-    responses: standardResponses(
-      { orgScope: "org:read" },
-      {
-        200: {
-          description: "Stored assignment",
-          headers: revisionResponseHeaders,
-          content: json(membershipSchema),
-        },
-        ...problemResponses(400, 404),
+    responses: {
+      200: {
+        description: "Stored assignment",
+        headers: revisionResponseHeaders,
+        content: json(membershipSchema),
       },
-    ),
+      ...problemResponses(400, 404),
+    },
   },
   putGroupMember: {
     method: "put",
@@ -365,22 +337,19 @@ export const routes = {
     ],
     requestBody: body(windowSchema),
     example: { body: {} },
-    responses: standardResponses(
-      {},
-      {
-        200: {
-          description: "Success",
-          headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
-          content: commandJson(membershipSchema),
-        },
-        201: {
-          description: "Membership created",
-          headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
-          content: commandJson(membershipSchema),
-        },
-        ...problemResponses(400, 404, 409, 412, 503),
+    responses: {
+      200: {
+        description: "Success",
+        headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
+        content: commandJson(membershipSchema),
       },
-    ),
+      201: {
+        description: "Membership created",
+        headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
+        content: commandJson(membershipSchema),
+      },
+      ...problemResponses(400, 404, 409, 412, 503),
+    },
   },
   removeGroupMember: {
     method: "delete",
@@ -399,13 +368,10 @@ export const routes = {
       ),
       idempotencyParameter,
     ],
-    responses: standardResponses(
-      {},
-      {
-        204: { description: "Success", headers: commandResponseHeaders },
-        ...problemResponses(400, 404, 409, 503),
-      },
-    ),
+    responses: {
+      204: { description: "Success", headers: commandResponseHeaders },
+      ...problemResponses(400, 404, 409, 503),
+    },
   },
 } satisfies Record<string, AdminRoute>;
 export function register(app: Hono<AppEnvironment>) {
