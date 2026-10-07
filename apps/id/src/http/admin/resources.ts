@@ -21,6 +21,7 @@ import {
   revisionResponseHeaders,
 } from "./revision.ts";
 import * as service from "../../services/resources.ts";
+import { resourceClassifications } from "../../db/schema/vocabulary.ts";
 import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
 import { problemResponses } from "../problem.ts";
@@ -28,7 +29,7 @@ import { validate } from "../validation.ts";
 import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 const resourceSchema = z.object({
-  classification: z.enum(["platform_shared", "tenant_owned"]),
+  classification: z.enum(resourceClassifications),
   organizationId: z.uuid().nullable(),
   id: z.uuid(),
   identifier: z.url(),
@@ -50,9 +51,7 @@ const fields = {
 };
 const createSchema = z
   .object({
-    classification: z
-      .enum(["platform_shared", "tenant_owned"])
-      .default("platform_shared"),
+    classification: z.enum(resourceClassifications).default("platform_shared"),
     organizationId: z.uuid().nullable().default(null),
     identifier: z.url(),
     ...fields,

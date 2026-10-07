@@ -1,5 +1,6 @@
 import type { Hono } from "hono";
 import { z } from "zod";
+import { operationOutcomes } from "../../db/schema/vocabulary.ts";
 import { getAuditOperationStatus } from "../../services/operation-status.ts";
 import type { AppEnvironment } from "../context.ts";
 import { problemResponses } from "../problem.ts";
@@ -17,7 +18,7 @@ const response = standardResponses(
         z.object({
           id: z.uuid(),
           name: z.string(),
-          outcome: z.enum(["applied", "noop"]),
+          outcome: z.enum(operationOutcomes),
           statusCode: z.number().int(),
           resultReference: z.object({ type: z.string(), id: z.string() }),
           committedAt: z.iso.datetime(),

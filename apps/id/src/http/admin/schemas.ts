@@ -1,12 +1,13 @@
 import { resolver } from "hono-openapi";
 import { z } from "zod";
+import { operationOutcomes } from "../../db/schema/vocabulary.ts";
 import type { AdminRoute } from "./route-table.ts";
 export const json = (schema: z.ZodType) => ({
   "application/json": { schema: resolver(schema) },
 });
 const operationReceiptSchema = z.object({
   operationId: z.uuid(),
-  outcome: z.enum(["applied", "noop"]),
+  outcome: z.enum(operationOutcomes),
   statusCode: z.number().int(),
   resultReference: z.object({ type: z.string(), id: z.string() }),
 });

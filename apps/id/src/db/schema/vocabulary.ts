@@ -17,3 +17,13 @@ export type AuditActorType = (typeof auditActorTypes)[number];
 /** `denied`: an authenticated principal was refused by authorisation. */
 export const auditOutcomes = ["success", "failure", "denied"] as const;
 export type AuditOutcome = (typeof auditOutcomes)[number];
+
+/** Who owns a protected resource: the platform, or one tenant. */
+export const resourceClassifications = [
+  "platform_shared",
+  "tenant_owned",
+] as const;
+export type ResourceClassification = (typeof resourceClassifications)[number];
+
+/** Whether a committed admin command changed state. */
+export const operationOutcomes = ["applied", "noop"] as const;

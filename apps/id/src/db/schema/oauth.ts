@@ -21,6 +21,7 @@ import {
   timestampColumn,
   timestamps,
 } from "./columns.ts";
+import { resourceClassifications } from "./vocabulary.ts";
 
 // Tables in this file are owned by Better Auth's JWT plugin and by
 // @better-auth/oauth-provider 1.7.2. Property names are the plugins' own field
@@ -98,9 +99,7 @@ export const oauthResources = pgTable(
   {
     ...softDeletion(),
     id: id(),
-    classification: text("classification", {
-      enum: ["platform_shared", "tenant_owned"],
-    })
+    classification: text("classification", { enum: resourceClassifications })
       .default("platform_shared")
       .notNull(),
     organizationId: uuid("organization_id").references(() => organizations.id, {

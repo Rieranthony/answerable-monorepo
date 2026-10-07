@@ -13,9 +13,10 @@ import {
 import type { PageQuery } from "../../http/pagination.ts";
 import { beforeCursor, cursorPage, optionalEq, contains } from "./lists.ts";
 import { createId } from "../../lib/id.ts";
+import type { ResourceClassification } from "../schema/vocabulary.ts";
 
 export type ResourceInput = {
-  classification?: "platform_shared" | "tenant_owned";
+  classification?: ResourceClassification;
   organizationId?: string | null;
   identifier: string;
   name: string;
