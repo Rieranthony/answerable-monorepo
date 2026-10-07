@@ -125,7 +125,7 @@ test("called is true only for the tool a request calls, including a hidden one",
 })
 
 test("a ToolError from allow answers any call with its envelope and fails a list, while connecting needs no decision", async () => {
-  let failure: Error | undefined = new ToolError("UPSTREAM_UNAVAILABLE", "Answerable ID did not answer")
+  let failure: ToolError | undefined = new ToolError("UPSTREAM_UNAVAILABLE", "Answerable ID did not answer")
   const { person, mcp } = await hub({ allow: (principal, tool) => {
     if (failure) throw failure
     return tool.identity === "hub/hub.whoami"
@@ -136,15 +136,33 @@ test("a ToolError from allow answers any call with its envelope and fails a list
     expect(result.isError).toBe(true)
     expect(errorOf(result)).toMatchObject({ code: "UPSTREAM_UNAVAILABLE", message: "Answerable ID did not answer", retry: { policy: "after_delay", after_ms: 1000 }, request_id: expect.stringMatching(uuidV7) })
   }
-  await expect(client.listTools()).rejects.toThrow()
-  failure = new Error("unexpected")
-  await expect(client.callTool({ name: "alpha_notes_list", arguments: {} })).rejects.toThrow()
+  const log = spyOn(console, "error").mockImplementation(() => {})
+  try {
+    await expect(client.listTools()).rejects.toThrow()
+    expect(log.mock.calls).toEqual([["[mcp] request failed", failure]])
+  } finally { log.mockRestore() }
   failure = undefined
   expect(await names(client)).toEqual(["hub_whoami"])
   const token = await mcp.issuer.sign({ resource: "https://mcp.test/mcp", scopes: ["hub"] })
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream", "MCP-Protocol-Version": "2025-11-25" }
   expect((await mcp.fetch("https://mcp.test/mcp", { method: "GET", headers })).status).toBe(405)
   expect((await mcp.fetch("https://mcp.test/mcp", { method: "POST", headers, body: "{not json" })).status).toBe(400)
+})
+
+test("anything else allow throws fails the call or the list with a 500, logged as the request's failure", async () => {
+  const failure = new Error("grants database down")
+  const { mcp } = await hub({ allow: () => { throw failure } })
+  const token = await mcp.issuer.sign({ resource: "https://mcp.test/mcp", scopes: ["hub"] })
+  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream", "MCP-Protocol-Version": "2025-11-25" }
+  const log = spyOn(console, "error").mockImplementation(() => {})
+  try {
+    for (const message of [{ method: "tools/call", params: { name: "alpha_notes_list", arguments: {} } }, { method: "tools/list" }]) {
+      const response = await mcp.fetch("https://mcp.test/mcp", { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: 1, ...message }) })
+      expect(response.status).toBe(500)
+      expect(await response.text()).not.toContain("grants database down")
+    }
+    expect(log.mock.calls).toEqual([["[mcp] request failed", failure], ["[mcp] request failed", failure]])
+  } finally { log.mockRestore() }
 })
 
 test("a JSON-RPC batch is refused with a JSON-RPC error, so allow never sees a call it cannot tell from a list", async () => {

@@ -50,7 +50,8 @@ export type McpServerConfig = {
   /**
    * Which tools a caller sees and may call, decided in place of the scope rule for each request that lists or calls tools or reads views; other
    * requests, such as `initialize`, see no tools. `called` is true when the request calls that tool, so a hub can record the refusal.
-   * A `ToolError` it throws answers a call with that error whatever the call names; a list fails. Default: the token carries every scope of the tool.
+   * A `ToolError` it throws answers a call with that error whatever the call names; a list fails. Anything else it throws fails the request with
+   * HTTP 500, logged as `[mcp] request failed`. Default: the token carries every scope of the tool.
    */
   allow?: (principal: UserPrincipal, tool: Served<Tool | Mutation>, called: boolean) => boolean | Promise<boolean>
   /**
@@ -298,7 +299,8 @@ export function createMcpServer(config: McpServerConfig): McpServerHandle {
       }))
     }
     return server
-  }, { keepAliveMs })
+    // The SDK answers a failure of the factory or of serving with a bare 500 and reports it only here: the error alone, never the request.
+  }, { keepAliveMs, onerror: error => console.error("[mcp] request failed", error) })
   return {
     async fetch(request) {
       const pathname = new URL(request.url).pathname

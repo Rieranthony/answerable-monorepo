@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.0
+
+The V0 cleanup of the kit.
+
+- A request that fails outside a tool, such as `allow`, `project` or `policyClass` throwing something other than a `ToolError`, is logged as `[mcp] request failed` with the error; it answered HTTP 500 with nothing in the log. The SDK's refusals of a malformed request, such as an unsupported protocol version, are logged on the same line.
+
 ## 0.8.0
 
 `Intent` loses `approval`, which the policy class gives and nothing read. Breaking for a custom `IntentStore` and for code that builds an `Intent`. A prepare tool still returns `approval` to the caller, derived from the class.
