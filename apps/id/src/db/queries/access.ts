@@ -72,7 +72,7 @@ export async function memberAccess(
       ) order by ${entitlements.id})`.as("sources"),
     })
     .from(entitlements)
-    .where(and(isNull(entitlements.deletedAt), matchingEntitlements(executor)))
+    .where(matchingEntitlements(executor))
     .groupBy(entitlements.clientId, entitlements.resource)
     .as("assigned_targets");
   const rows = await executor
@@ -189,7 +189,6 @@ export async function targetAccess(
     .crossJoinLateral(sql`unnest(${entitlements.scopes}) as s(scope)`)
     .where(
       and(
-        isNull(entitlements.deletedAt),
         isNull(members.deletedAt),
         eq(members.organizationId, organizationId),
         isEffective(members),
