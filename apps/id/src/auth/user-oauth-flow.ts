@@ -4,7 +4,7 @@ import {
   type OAuthOptions,
 } from "@better-auth/oauth-provider";
 import { APIError, getSessionFromCtx } from "better-auth/api";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, exists, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { isEffective } from "../db/queries/effective.ts";
 import {
@@ -306,12 +306,48 @@ export function createUserOAuthFlow(
             organizationId: organizations.id,
             name: organizations.name,
             slug: organizations.slug,
-            authenticated: sql<boolean>`exists(select 1 from ${sessions} s
-            join ${accounts} a on a.id = s.authentication_account_id and a.user_id = s.user_id and a.deleted_at is null
-            join ${ssoProviders} p on p.id = s.authentication_provider_id and p.revision = s.authentication_provider_revision
-              and p.organization_id = s.authentication_organization_id and p.issuer = a.issuer and p.provider_id = a.provider_id and p.deleted_at is null
-            where s.id = ${session.session.id} and s.user_id = ${session.user.id} and s.expires_at > statement_timestamp()
-              and s.authentication_organization_id = ${members.organizationId})`,
+            // This session's live SSO origin is in the membership's organisation.
+            authenticated: sql<boolean>`${exists(
+              tx
+                .select({ id: sessions.id })
+                .from(sessions)
+                .innerJoin(
+                  accounts,
+                  and(
+                    eq(accounts.id, sessions.authenticationAccountId),
+                    eq(accounts.userId, sessions.userId),
+                    isNull(accounts.deletedAt),
+                  ),
+                )
+                .innerJoin(
+                  ssoProviders,
+                  and(
+                    eq(ssoProviders.id, sessions.authenticationProviderId),
+                    eq(
+                      ssoProviders.revision,
+                      sessions.authenticationProviderRevision,
+                    ),
+                    eq(
+                      ssoProviders.organizationId,
+                      sessions.authenticationOrganizationId,
+                    ),
+                    eq(ssoProviders.issuer, accounts.issuer),
+                    eq(ssoProviders.providerId, accounts.providerId),
+                    isNull(ssoProviders.deletedAt),
+                  ),
+                )
+                .where(
+                  and(
+                    eq(sessions.id, session.session.id),
+                    eq(sessions.userId, session.user.id),
+                    sql`${sessions.expiresAt} > statement_timestamp()`,
+                    eq(
+                      sessions.authenticationOrganizationId,
+                      members.organizationId,
+                    ),
+                  ),
+                ),
+            )}`,
           })
           .from(members)
           .innerJoin(
