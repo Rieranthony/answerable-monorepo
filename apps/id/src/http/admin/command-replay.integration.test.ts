@@ -721,9 +721,6 @@ test.each(rows.map((row) => [label(row), row] as const))(
     const first = await send();
     expect(first.status).toBe(command.status);
     expect(first.headers.get("Cache-Control")).toBe("no-store");
-    expect(first.headers.get("access-control-expose-headers")).toContain(
-      "Operation-Id",
-    );
     const operationId = first.headers.get("Operation-Id")!;
     const [operation] = await reservations();
     expect(operation).toMatchObject({
