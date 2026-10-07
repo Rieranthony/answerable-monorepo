@@ -2,11 +2,7 @@ import { commandJson, pathParameter, uuidParam } from "./schemas.ts";
 import { platformRead } from "./platform-read.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
-import {
-  platformCommand,
-  idempotencyParameter,
-  commandResponseHeaders,
-} from "./command.ts";
+import { platformCommand } from "./command.ts";
 import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
 import { problemResponses } from "../problem.ts";
@@ -53,7 +49,6 @@ export const routes = {
     tag: "Sessions",
     platformScope: "platform:read",
     kind: "read",
-    freshAuthentication: false,
     parameters: ["userId"].map((name) => pathParameter(name, "uuid")),
     responses: {
       200: {
@@ -69,19 +64,18 @@ export const routes = {
     operationId: "revokeUserSessions",
     summary: "Revoke user sessions",
     description:
-      "Requires Idempotency-Key. Authorised retries return the receipt without revoking later sessions. Changed-input reuse conflicts. Revoke all of the user’s sessions and tokens and return an object containing the revoked session count. Prefer revokeUserSession to end only one session; validation_failed rejects malformed ids and not_found means the user is missing.",
+      "Revoke all of the user’s sessions and tokens and return an object containing the revoked session count. Prefer revokeUserSession to end only one session; validation_failed rejects malformed ids and not_found means the user is missing.",
     tag: "Sessions",
     platformScope: "platform:users",
     kind: "write",
     freshAuthentication: true,
-    parameters: [pathParameter("userId", "uuid"), idempotencyParameter],
+    parameters: [pathParameter("userId", "uuid")],
     responses: {
       200: {
         description: "Success",
-        headers: commandResponseHeaders,
         content: commandJson(revokedSchema),
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
   revokeUserSession: {
@@ -90,18 +84,17 @@ export const routes = {
     operationId: "revokeUserSession",
     summary: "Revoke user session",
     description:
-      "Requires Idempotency-Key. Authorised retries return the receipt without revoking later sessions. Changed-input reuse conflicts. Revoke one user session and its associated tokens and return no content. Prefer revokeUserSessions to revoke every session and token for that user; validation_failed rejects malformed ids and not_found means the user or session is missing.",
+      "Revoke one user session and its associated tokens and return no content. Prefer revokeUserSessions to revoke every session and token for that user; validation_failed rejects malformed ids and not_found means the user or session is missing.",
     tag: "Sessions",
     platformScope: "platform:users",
     kind: "write",
     freshAuthentication: true,
     parameters: [
       ...["userId", "sessionId"].map((name) => pathParameter(name, "uuid")),
-      idempotencyParameter,
     ],
     responses: {
-      204: { description: "Success", headers: commandResponseHeaders },
-      ...problemResponses(400, 404, 409, 503),
+      204: { description: "Success" },
+      ...problemResponses(404),
     },
   },
 } satisfies Record<string, AdminRoute>;

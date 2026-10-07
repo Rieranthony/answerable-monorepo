@@ -19,26 +19,6 @@ import { ProblemError } from "../problem.ts";
 import { revisionSchema, revisionTag } from "./revision.ts";
 import { freshAuthenticationGuard } from "../../auth/fresh-authentication.ts";
 
-export const idempotencyParameter = {
-  in: "header" as const,
-  name: "Idempotency-Key",
-  required: true,
-  schema: { type: "string" as const, minLength: 1, maxLength: 256 },
-  description:
-    "Stable key for this logical command. Reuse it with identical input after a lost response.",
-};
-
-export const commandResponseHeaders = {
-  "Operation-Id": {
-    description: "Immutable logical operation ID",
-    schema: { type: "string" as const, format: "uuid" },
-  },
-  "Idempotency-Replayed": {
-    description: "Whether this response was recovered from the journal",
-    schema: { type: "string" as const, enum: ["true", "false"] },
-  },
-};
-
 /** A value's HTTP JSON representation: dates become strings, undefined fields go. */
 const operationJson = (value: unknown): OperationJson =>
   JSON.parse(JSON.stringify(value));

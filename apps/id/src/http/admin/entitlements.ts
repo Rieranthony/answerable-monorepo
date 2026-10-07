@@ -18,11 +18,7 @@ import {
 import * as service from "../../services/entitlements.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
-import {
-  platformCommand,
-  idempotencyParameter,
-  commandResponseHeaders,
-} from "./command.ts";
+import { platformCommand } from "./command.ts";
 import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
 import { problemResponses } from "../problem.ts";
@@ -82,7 +78,6 @@ export const routes = {
     tag: "Entitlements",
     platformScope: "platform:read",
     kind: "read",
-    freshAuthentication: false,
     responses: {
       200: {
         description: "Entitlements",
@@ -107,7 +102,6 @@ export const routes = {
     tag: "Entitlements",
     platformScope: "platform:read",
     kind: "read",
-    freshAuthentication: false,
     parameters: ["organizationId"].map((name) => pathParameter(name, "uuid")),
     orgScope: "org:read",
     responses: {
@@ -124,12 +118,12 @@ export const routes = {
     operationId: "createEntitlement",
     summary: "Create an organisation entitlement",
     description:
-      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Create an organisation, group or member entitlement to a client, resource or exact client/resource pair and return the entitlement, granting access during its validity window. Prefer updateEntitlement to change existing scopes or dates; validation_failed rejects invalid targets or scopes, not_found means a referenced parent or target is missing, and conflict or constraint_violation rejects duplicate or inconsistent grants.",
+      "Create an organisation, group or member entitlement to a client, resource or exact client/resource pair and return the entitlement, granting access during its validity window. Prefer updateEntitlement to change existing scopes or dates; validation_failed rejects invalid targets or scopes, not_found means a referenced parent or target is missing, and conflict or constraint_violation rejects duplicate or inconsistent grants.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
     freshAuthentication: true,
-    parameters: [pathParameter("organizationId", "uuid"), idempotencyParameter],
+    parameters: [pathParameter("organizationId", "uuid")],
     requestBody: body(createSchema),
     example: {
       body: { resource: "https://none.example", scopes: ["tutor:read"] },
@@ -137,10 +131,9 @@ export const routes = {
     responses: {
       201: {
         description: "Success",
-        headers: commandResponseHeaders,
         content: commandJson(entitlementSchema),
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
   getEntitlement: {
@@ -153,7 +146,6 @@ export const routes = {
     tag: "Entitlements",
     platformScope: "platform:read",
     kind: "read",
-    freshAuthentication: false,
     parameters: ["organizationId", "entitlementId"].map((name) =>
       pathParameter(name, "uuid"),
     ),
@@ -173,7 +165,7 @@ export const routes = {
     operationId: "updateEntitlement",
     summary: "Update an organisation entitlement",
     description:
-      "Requires Idempotency-Key and optionally the strong If-Match ETag from getEntitlement. Stale or wrong-instance supplied revisions return 412. Committed replay precedes the old revision check. Identical authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Change an entitlement’s scopes or validity window and return the updated entitlement, affecting subsequent access decisions. Prefer createEntitlement to select a different principal or target; validation_failed rejects invalid scopes or an empty patch, not_found means the entitlement is missing, and constraint_violation rejects an invalid window.",
+      "Accepts the strong If-Match ETag from getEntitlement. Stale or wrong-instance supplied revisions return 412. Committed replay precedes the old revision check. Change an entitlement’s scopes or validity window and return the updated entitlement, affecting subsequent access decisions. Prefer createEntitlement to select a different principal or target; validation_failed rejects invalid scopes or an empty patch, not_found means the entitlement is missing, and constraint_violation rejects an invalid window.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
@@ -182,7 +174,6 @@ export const routes = {
       ...["organizationId", "entitlementId"].map((name) =>
         pathParameter(name, "uuid"),
       ),
-      idempotencyParameter,
       revisionParameter,
     ],
     requestBody: body(patchSchema),
@@ -190,10 +181,10 @@ export const routes = {
     responses: {
       200: {
         description: "Success",
-        headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
+        headers: revisionResponseHeaders,
         content: commandJson(entitlementSchema),
       },
-      ...problemResponses(400, 404, 409, 412, 503),
+      ...problemResponses(404, 412),
     },
   },
   disableEntitlement: {
@@ -202,7 +193,7 @@ export const routes = {
     operationId: "disableEntitlement",
     summary: "Disable an organisation entitlement",
     description:
-      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Disable an organisation entitlement and return the updated record. Prefer enableEntitlement for the opposite transition; not_found means the target is missing and unchanged status records a noop without updating timestamps.",
+      "Disable an organisation entitlement and return the updated record. Prefer enableEntitlement for the opposite transition; not_found means the target is missing and unchanged status records a noop without updating timestamps.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
@@ -211,15 +202,13 @@ export const routes = {
       ...["organizationId", "entitlementId"].map((name) =>
         pathParameter(name, "uuid"),
       ),
-      idempotencyParameter,
     ],
     responses: {
       200: {
         description: "Success",
-        headers: commandResponseHeaders,
         content: commandJson(entitlementSchema),
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
   enableEntitlement: {
@@ -228,7 +217,7 @@ export const routes = {
     operationId: "enableEntitlement",
     summary: "Enable an organisation entitlement",
     description:
-      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Enable an organisation entitlement and return the updated record. Prefer disableEntitlement for the opposite transition; not_found means the target is missing and unchanged status records a noop without updating timestamps.",
+      "Enable an organisation entitlement and return the updated record. Prefer disableEntitlement for the opposite transition; not_found means the target is missing and unchanged status records a noop without updating timestamps.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
@@ -237,15 +226,13 @@ export const routes = {
       ...["organizationId", "entitlementId"].map((name) =>
         pathParameter(name, "uuid"),
       ),
-      idempotencyParameter,
     ],
     responses: {
       200: {
         description: "Success",
-        headers: commandResponseHeaders,
         content: commandJson(entitlementSchema),
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
   removeEntitlement: {
@@ -254,7 +241,7 @@ export const routes = {
     operationId: "removeEntitlement",
     summary: "Remove an organisation entitlement",
     description:
-      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Soft-delete an organisation entitlement and return no content, removing access supplied by that record. Deletion is terminal; an explicit replacement gets a new UUID. Prefer updateEntitlement to change its validity or scopes; validation_failed rejects malformed ids and not_found means the target is unavailable.",
+      "Soft-delete an organisation entitlement and return no content, removing access supplied by that record. Deletion is terminal; an explicit replacement gets a new UUID. Prefer updateEntitlement to change its validity or scopes; validation_failed rejects malformed ids and not_found means the target is unavailable.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
@@ -263,11 +250,10 @@ export const routes = {
       ...["organizationId", "entitlementId"].map((name) =>
         pathParameter(name, "uuid"),
       ),
-      idempotencyParameter,
     ],
     responses: {
-      204: { description: "Success", headers: commandResponseHeaders },
-      ...problemResponses(400, 404, 409, 503),
+      204: { description: "Success" },
+      ...problemResponses(404),
     },
   },
 } satisfies Record<string, AdminRoute>;

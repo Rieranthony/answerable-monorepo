@@ -33,7 +33,6 @@ export const routes = {
     tag: "Operations",
     platformScope: "platform:read",
     kind: "read",
-    freshAuthentication: false,
     description:
       "Read a committed operation with platform audit authority. Returns its outcome and result reference. not_found means no committed operation exists; this does not prove that a concurrent request is not running. Every administrative mutation creates a journal record.",
     parameters: [pathParameter("operationId", "uuid")],

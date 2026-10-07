@@ -57,7 +57,55 @@ function standardResponses(
   };
 }
 
-export function adminRoute(route: AdminRoute) {
+const idempotency =
+  "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused.";
+
+const idempotencyParameter = {
+  in: "header" as const,
+  name: "Idempotency-Key",
+  required: true,
+  schema: { type: "string" as const, minLength: 1, maxLength: 256 },
+  description:
+    "Stable key for this logical command. Reuse it with identical input after a lost response.",
+};
+
+const commandResponseHeaders = {
+  "Operation-Id": {
+    description: "Immutable logical operation ID",
+    schema: { type: "string" as const, format: "uuid" },
+  },
+  "Idempotency-Replayed": {
+    description: "Whether this response was recovered from the journal",
+    schema: { type: "string" as const, enum: ["true", "false"] },
+  },
+};
+
+/** Every command's journal contract, which no route restates. */
+function withCommandContract(route: AdminRoute): AdminRoute {
+  if (route.kind === "read") return route;
+  return {
+    ...route,
+    description: `${idempotency} ${route.description}`,
+    parameters: [...(route.parameters ?? []), idempotencyParameter],
+    responses: {
+      ...problemResponses(400, 409, 503),
+      ...Object.fromEntries(
+        Object.entries(route.responses ?? {}).map(([status, response]) => [
+          status,
+          /^2\d\d$/.test(status) && !("$ref" in response)
+            ? {
+                ...response,
+                headers: { ...commandResponseHeaders, ...response.headers },
+              }
+            : response,
+        ]),
+      ),
+    },
+  };
+}
+
+export function adminRoute(adminRoute: AdminRoute) {
+  const route = withCommandContract(adminRoute);
   return describeRoute({
     operationId: route.operationId,
     summary: route.summary,
@@ -91,7 +139,7 @@ export function adminRoute(route: AdminRoute) {
     security: [{ cookieAuth: [] }, { bearerAuth: [] }],
     "x-tier": tierOf(route),
     "x-kind": route.kind,
-    "x-fresh-authentication": route.freshAuthentication,
+    "x-fresh-authentication": route.freshAuthentication ?? false,
     "x-scopes": route.open
       ? {}
       : {

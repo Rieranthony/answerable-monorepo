@@ -8,6 +8,7 @@ import {
   body,
   pathParameter,
   uuidParam,
+  softDeletion,
 } from "./schemas.ts";
 import { platformRead } from "./platform-read.ts";
 import { tenantRead } from "./tenant-read.ts";
@@ -24,11 +25,7 @@ import {
 } from "../../services/sso-test.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
-import {
-  platformCommand,
-  idempotencyParameter,
-  commandResponseHeaders,
-} from "./command.ts";
+import { platformCommand } from "./command.ts";
 import type { AppEnvironment } from "../context.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
@@ -123,7 +120,6 @@ export const routes = {
     tag: "Diagnostics",
     platformScope: "platform:read",
     kind: "read",
-    freshAuthentication: false,
     parameters,
     responses: {
       200: {
@@ -143,7 +139,6 @@ export const routes = {
     tag: "SSO provider",
     platformScope: "platform:read",
     kind: "read",
-    freshAuthentication: false,
     parameters,
     orgScope: "org:read",
     responses: {
@@ -161,14 +156,13 @@ export const routes = {
     operationId: "putSsoProvider",
     summary: "Put the SSO provider",
     description:
-      'Requires Idempotency-Key. Accepts the strong If-Match ETag from getSsoProvider for conditional replacement; conflicting/malformed headers return 400; stale state returns 412. Committed replay precedes the original precondition. Identical authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Create or replace the organisation’s SSO configuration and return the provider with credentials redacted. A real configuration change, including first creation, irreversibly revokes existing tenant grant contexts in the same audited transaction; unchanged configuration preserves them. Other tenants and global browser sessions are preserved. Prefer getSsoProvider to inspect configuration; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict indicates a duplicate provider. Omit oidc, or send oidc.credentials "platform", to sign the organisation in through Answerable\'s Google or Microsoft application; generic issuers require oidc.clientId. platform_credentials_unsupported rejects a generic issuer without own credentials; platform_application_missing means the service has no application for that directory.',
+      'Accepts the strong If-Match ETag from getSsoProvider for conditional replacement; conflicting/malformed headers return 400; stale state returns 412. Committed replay precedes the original precondition. Create or replace the organisation’s SSO configuration and return the provider with credentials redacted. A real configuration change, including first creation, irreversibly revokes existing tenant grant contexts in the same audited transaction; unchanged configuration preserves them. Other tenants and global browser sessions are preserved. Prefer getSsoProvider to inspect configuration; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict indicates a duplicate provider. Omit oidc, or send oidc.credentials "platform", to sign the organisation in through Answerable\'s Google or Microsoft application; generic issuers require oidc.clientId. platform_credentials_unsupported rejects a generic issuer without own credentials; platform_application_missing means the service has no application for that directory.',
     tag: "SSO provider",
     platformScope: "platform:write",
     kind: "write",
     freshAuthentication: true,
     parameters: [
       ...parameters,
-      idempotencyParameter,
       {
         ...revisionParameter,
         required: false,
@@ -195,15 +189,15 @@ export const routes = {
     responses: {
       200: {
         description: "SSO provider",
-        headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
+        headers: revisionResponseHeaders,
         content: commandJson(ssoProviderSchema),
       },
       201: {
         description: "SSO provider created",
-        headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
+        headers: revisionResponseHeaders,
         content: commandJson(ssoProviderSchema),
       },
-      ...problemResponses(400, 404, 409, 412, 503),
+      ...problemResponses(404, 412),
     },
   },
   deleteSsoProvider: {
@@ -211,19 +205,17 @@ export const routes = {
     path: "/organizations/:organizationId/sso-provider",
     operationId: "deleteSsoProvider",
     summary: "Delete the SSO provider",
-    description:
-      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Delete the organisation’s SSO configuration and return no content, preventing future sign-in through that provider and irreversibly revoking existing tenant grant contexts in the same audited transaction. Recreating the provider does not restore old grants. Other tenants and global browser sessions are preserved. Prefer putSsoProvider to replace its configuration; validation_failed rejects malformed ids and not_found means the organisation or provider is missing. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
+    description: `Delete the organisation’s SSO configuration and return no content, preventing future sign-in through that provider and irreversibly revoking existing tenant grant contexts in the same audited transaction. Recreating the provider does not restore old grants. Other tenants and global browser sessions are preserved. Prefer putSsoProvider to replace its configuration; validation_failed rejects malformed ids and not_found means the organisation or provider is missing. ${softDeletion}`,
     tag: "SSO provider",
     platformScope: "platform:write",
     kind: "write",
     freshAuthentication: true,
-    parameters: [...parameters, idempotencyParameter],
+    parameters: parameters,
     responses: {
       204: {
         description: "SSO provider deleted",
-        headers: commandResponseHeaders,
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
 } satisfies Record<string, AdminRoute>;

@@ -138,7 +138,6 @@ export const routes = {
     platformScope: "platform:read",
     orgScope: "org:users",
     kind: "read",
-    freshAuthentication: false,
     parameters: ["organizationId", "memberId"].map((name) =>
       pathParameter(name, "uuid"),
     ),
@@ -158,7 +157,6 @@ export const routes = {
     platformScope: "platform:read",
     orgScope: "org:read",
     kind: "read",
-    freshAuthentication: false,
     parameters: [
       pathParameter("organizationId", "uuid"),
       { in: "query", name: "clientId", schema: { type: "string" } },

@@ -8,28 +8,75 @@ import {
 import { adminRouteTables } from "./index.ts";
 import { tierOf } from "./route-table.ts";
 
-test("administrative command contract gaps cannot grow unnoticed", () => {
+type Parameter = {
+  in: string;
+  name: string;
+  required?: boolean;
+  example?: unknown;
+};
+type Operation = {
+  operationId?: string;
+  description?: string;
+  security?: unknown;
+  "x-tier"?: string;
+  "x-kind"?: string;
+  "x-scopes"?: unknown;
+  parameters?: Parameter[];
+  requestBody?: {
+    content: { "application/json": { example?: unknown } };
+  };
+  responses: Record<
+    string,
+    {
+      headers?: Record<string, unknown>;
+      content?: {
+        "application/json"?: {
+          schema?: {
+            properties?: Record<string, unknown>;
+            anyOf?: { properties?: Record<string, unknown> }[];
+          };
+        };
+      };
+    }
+  >;
+};
+
+async function adminDocument() {
+  const app = createApp({
+    auth: stubAuth(),
+    db: stubDatabase(),
+    environment: testEnvironment(),
+  });
+  const response = await app.request("/api/admin/openapi.json");
+  expect(response.status).toBe(200);
+  return (await response.json()) as {
+    paths: Record<string, Record<string, Operation>>;
+  };
+}
+const documentPath = (path: string) =>
+  `/api/admin/v1${path.replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, "{$1}")}`;
+
+test("administrative command contract gaps cannot grow unnoticed", async () => {
+  const document = await adminDocument();
   const mutations = adminRouteTables
     .flatMap((table) => Object.values(table))
     .filter((route) => route.kind !== "read");
   const missingReplay: string[] = [];
   const missingRevision: string[] = [];
   for (const route of mutations) {
+    const operation = document.paths[documentPath(route.path)]![route.method]!;
     const headers =
-      route.parameters?.filter(
-        (parameter) => "in" in parameter && parameter.in === "header",
-      ) ?? [];
-    const requiredHeader = (name: string) =>
-      headers.some(
+      operation.parameters?.filter((parameter) => parameter.in === "header") ??
+      [];
+    if (
+      !headers.some(
         (parameter) =>
-          "name" in parameter &&
-          parameter.name === name &&
-          parameter.required === true,
-      );
-    if (!requiredHeader("Idempotency-Key"))
+          parameter.name === "Idempotency-Key" && parameter.required === true,
+      )
+    )
       missingReplay.push(route.operationId);
     else {
-      const success = Object.entries(route.responses ?? {}).filter(([status]) =>
+      const success = Object.entries(operation.responses).filter(([status]) =>
         /^2\d\d$/.test(status),
       );
       expect(success.length, route.operationId).toBeGreaterThan(0);
@@ -42,7 +89,7 @@ test("administrative command contract gaps cannot grow unnoticed", () => {
         );
       }
       for (const status of ["400", "409", "503"])
-        expect(route.responses, route.operationId).toHaveProperty(status);
+        expect(operation.responses, route.operationId).toHaveProperty(status);
     }
     // These PUT commands verify immutable ownership or ensure one link exists;
     // they do not replace mutable configuration read by another administrator.
@@ -59,24 +106,18 @@ test("administrative command contract gaps cannot grow unnoticed", () => {
       if (conditionalPut) {
         for (const name of ["If-Match", "If-None-Match"])
           expect(
-            headers.find(
-              (parameter) => "name" in parameter && parameter.name === name,
-            ),
+            headers.find((parameter) => parameter.name === name),
             name,
           ).toMatchObject({ required: false });
       }
       if (
         !headers.some(
           (parameter) =>
-            "name" in parameter &&
-            parameter.name === "If-Match" &&
-            parameter.required === false,
+            parameter.name === "If-Match" && parameter.required === false,
         )
       )
         missingRevision.push(route.operationId);
-      else
-        for (const status of ["412"])
-          expect(route.responses, route.operationId).toHaveProperty(status);
+      else expect(operation.responses, route.operationId).toHaveProperty("412");
     }
   }
   expect(missingReplay).toEqual([]);
@@ -84,51 +125,7 @@ test("administrative command contract gaps cannot grow unnoticed", () => {
 });
 
 test("admin route tables equal the OpenAPI operation union", async () => {
-  const app = createApp({
-    auth: stubAuth(),
-    db: stubDatabase(),
-    environment: testEnvironment(),
-  });
-  const response = await app.request("/api/admin/openapi.json");
-  expect(response.status).toBe(200);
-  const document = (await response.json()) as {
-    paths: Record<
-      string,
-      Record<
-        string,
-        {
-          operationId?: string;
-          description?: string;
-          security?: unknown;
-          "x-tier"?: string;
-          "x-kind"?: string;
-          "x-scopes"?: unknown;
-          parameters?: {
-            in: string;
-            name: string;
-            required?: boolean;
-            example?: unknown;
-          }[];
-          requestBody?: {
-            content: { "application/json": { example?: unknown } };
-          };
-          responses: Record<
-            string,
-            {
-              content?: {
-                "application/json"?: {
-                  schema?: {
-                    properties?: Record<string, unknown>;
-                    anyOf?: { properties?: Record<string, unknown> }[];
-                  };
-                };
-              };
-            }
-          >;
-        }
-      >
-    >;
-  };
+  const document = await adminDocument();
   const methods = new Set([
     "get",
     "post",
@@ -152,7 +149,7 @@ test("admin route tables equal the OpenAPI operation union", async () => {
       if (route.open) expect(label).toBe("getAdminMe");
       expect(ids.has(label), `${label}: duplicate operationId`).toBe(false);
       ids.add(label);
-      const path = `/api/admin/v1${route.path.replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, "{$1}")}`;
+      const path = documentPath(route.path);
       const key = `${route.method.toUpperCase()} ${path}`;
       expect(
         expected.includes(key),
@@ -163,6 +160,9 @@ test("admin route tables equal the OpenAPI operation union", async () => {
       expect(operation, `${label}: missing OpenAPI operation`).toBeDefined();
       expect(operation?.operationId, label).toBe(label);
       if (route.kind !== "read") {
+        expect(operation?.description, label).toStartWith(
+          "Requires Idempotency-Key. ",
+        );
         expect(operation?.responses).not.toHaveProperty("410");
         for (const [status, response] of Object.entries(operation!.responses)) {
           if (!/^2\d\d$/.test(status) || status === "204") continue;
@@ -189,7 +189,7 @@ test("admin route tables equal the OpenAPI operation union", async () => {
       ]);
       expect(operation?.["x-tier"], `${label}: tier`).toBe(tierOf(route));
       expect(operation?.description?.trim().length, label).toBeGreaterThan(0);
-      expect(operation?.description, label).toBe(route.description);
+      expect(operation?.description, label).toEndWith(route.description);
       expect(["read", "write", "erase"], label).toContain(
         operation?.["x-kind"] ?? "",
       );

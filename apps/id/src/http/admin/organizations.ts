@@ -5,6 +5,7 @@ import {
   pathParameter,
   uuidParam,
   confirmQuery,
+  softDeletion,
 } from "./schemas.ts";
 import { platformRead } from "./platform-read.ts";
 import { tenantRead } from "./tenant-read.ts";
@@ -17,11 +18,7 @@ import {
 import type { Hono } from "hono";
 import { z } from "zod";
 import { lifecycleStatuses } from "../../db/schema/vocabulary.ts";
-import {
-  platformCommand,
-  idempotencyParameter,
-  commandResponseHeaders,
-} from "./command.ts";
+import { platformCommand } from "./command.ts";
 import * as service from "../../services/organizations.ts";
 import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
@@ -77,7 +74,6 @@ export const routes = {
     tag: "Organizations",
     platformScope: "platform:read",
     kind: "read",
-    freshAuthentication: false,
     responses: {
       200: {
         description: "Organisations",
@@ -97,21 +93,18 @@ export const routes = {
     operationId: "createOrganization",
     summary: "Create an organisation",
     description:
-      "Requires Idempotency-Key. Identical authorised retries return the receipt; changed input conflicts. Create an organisation and return its generated id and stored fields, recording the creation in the audit log. Prefer updateOrganization when its id already exists; validation_failed rejects malformed input and conflict means the slug is already in use.",
+      "Create an organisation and return its generated id and stored fields, recording the creation in the audit log. Prefer updateOrganization when its id already exists; validation_failed rejects malformed input and conflict means the slug is already in use.",
     tag: "Organizations",
     platformScope: "platform:write",
     kind: "write",
     freshAuthentication: true,
-    parameters: [idempotencyParameter],
     requestBody: body(createSchema),
     example: { body: { slug: "acme", name: "Acme" } },
     responses: {
       201: {
         description: "Organisation created",
         content: commandJson(organizationSchema),
-        headers: commandResponseHeaders,
       },
-      ...problemResponses(400, 409, 503),
     },
   },
   getOrganization: {
@@ -125,7 +118,6 @@ export const routes = {
     platformScope: "platform:read",
     orgScope: "org:read",
     kind: "read",
-    freshAuthentication: false,
     parameters,
     responses: {
       200: { ...success[200], headers: revisionResponseHeaders },
@@ -138,21 +130,20 @@ export const routes = {
     operationId: "updateOrganization",
     summary: "Update an organisation",
     description:
-      "Requires Idempotency-Key and optionally the If-Match ETag from getOrganization. Stale supplied revisions return 412. Committed replay precedes its old revision check. An unchanged patch preserves the revision. Identical authorised retries return the receipt; changed input conflicts. Update an organisation and return the updated record, recording the change in the audit log. Prefer getOrganization to inspect existing state; validation_failed rejects malformed input, not_found identifies missing parents or targets, and conflict or reference_violation identifies conflicting records.",
+      "Accepts the If-Match ETag from getOrganization. Stale supplied revisions return 412. Committed replay precedes its old revision check. An unchanged patch preserves the revision. Update an organisation and return the updated record, recording the change in the audit log. Prefer getOrganization to inspect existing state; validation_failed rejects malformed input, not_found identifies missing parents or targets, and conflict or reference_violation identifies conflicting records.",
     tag: "Organizations",
     platformScope: "platform:write",
     kind: "write",
-    freshAuthentication: false,
-    parameters: [...parameters, idempotencyParameter, revisionParameter],
+    parameters: [...parameters, revisionParameter],
     requestBody: body(patchSchema),
     example: { body: { name: "Acme Ltd" } },
     responses: {
       200: {
         ...success[200],
         content: commandJson(organizationSchema),
-        headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
+        headers: revisionResponseHeaders,
       },
-      ...problemResponses(400, 404, 409, 412, 503),
+      ...problemResponses(404, 412),
     },
   },
   disableOrganization: {
@@ -161,19 +152,18 @@ export const routes = {
     operationId: "disableOrganization",
     summary: "Disable an organisation",
     description:
-      "Requires Idempotency-Key. Identical authorised retries return the receipt; changed input conflicts. Disable the organisation, advance its authorizationVersion, revoke stored machine access tokens for its owned clients, and return the updated organisation. Global browser sessions and unbound user tokens are preserved; client ownership does not establish a user grant’s tenant. Complete tenant user-grant revocation is not yet implemented. Prefer enableOrganization to allow future access without restoring revoked credentials; validation_failed rejects malformed ids, not_found means the organisation is missing, and already disabled state returns a noop without another epoch advance.",
+      "Disable the organisation, advance its authorizationVersion, revoke stored machine access tokens for its owned clients, and return the updated organisation. Global browser sessions and unbound user tokens are preserved; client ownership does not establish a user grant’s tenant. Complete tenant user-grant revocation is not yet implemented. Prefer enableOrganization to allow future access without restoring revoked credentials; validation_failed rejects malformed ids, not_found means the organisation is missing, and already disabled state returns a noop without another epoch advance.",
     tag: "Organizations",
     platformScope: "platform:write",
     kind: "write",
     freshAuthentication: true,
-    parameters: [...parameters, idempotencyParameter],
+    parameters: parameters,
     responses: {
       200: {
         ...success[200],
         content: commandJson(organizationSchema),
-        headers: commandResponseHeaders,
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
   enableOrganization: {
@@ -182,19 +172,18 @@ export const routes = {
     operationId: "enableOrganization",
     summary: "Enable an organisation",
     description:
-      "Requires Idempotency-Key. Identical authorised retries return the receipt; changed input conflicts. Enable an organisation and return the updated record. Its authorizationVersion stays advanced, so pre-disable machine tokens remain invalid at the admin API; obtain fresh tokens. Prefer disableOrganization for the opposite transition; not_found means the target is missing and already active state returns a noop.",
+      "Enable an organisation and return the updated record. Its authorizationVersion stays advanced, so pre-disable machine tokens remain invalid at the admin API; obtain fresh tokens. Prefer disableOrganization for the opposite transition; not_found means the target is missing and already active state returns a noop.",
     tag: "Organizations",
     platformScope: "platform:write",
     kind: "write",
     freshAuthentication: true,
-    parameters: [...parameters, idempotencyParameter],
+    parameters: parameters,
     responses: {
       200: {
         ...success[200],
         content: commandJson(organizationSchema),
-        headers: commandResponseHeaders,
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
   eraseOrganization: {
@@ -202,24 +191,18 @@ export const routes = {
     path: "/organizations/:organizationId",
     operationId: "eraseOrganization",
     summary: "Erase an organisation",
-    description:
-      "Requires Idempotency-Key. Identical authorised retries return the receipt; changed input conflicts. Soft-delete the organisation and its tenant configuration, memberships and assignments. Clear provider credentials, revoke tenant grant contexts and clear browser-session selections. Global profiles and sessions remain. organization_has_clients requires removing owned clients first; undeleted owned resources also block deletion. The confirm query parameter must equal the target id. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableOrganization for reversible offboarding. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
+    description: `Soft-delete the organisation and its tenant configuration, memberships and assignments. Clear provider credentials, revoke tenant grant contexts and clear browser-session selections. Global profiles and sessions remain. organization_has_clients requires removing owned clients first; undeleted owned resources also block deletion. The confirm query parameter must equal the target id. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableOrganization for reversible offboarding. ${softDeletion}`,
     tag: "Organizations",
     platformScope: "platform:write",
     kind: "erase",
     freshAuthentication: true,
-    parameters: [
-      ...parameters,
-      confirmQuery(eraseSchema.shape.confirm),
-      idempotencyParameter,
-    ],
+    parameters: [...parameters, confirmQuery(eraseSchema.shape.confirm)],
     example: { query: { confirm: "00000000-0000-7000-8000-000000000000" } },
     responses: {
       204: {
         description: "Organisation erased",
-        headers: commandResponseHeaders,
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
 } satisfies Record<string, AdminRoute>;

@@ -3,15 +3,12 @@ import {
   pathParameter,
   uuidParam,
   confirmQuery,
+  softDeletion,
 } from "./schemas.ts";
 import { platformRead } from "./platform-read.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
-import {
-  platformCommand,
-  idempotencyParameter,
-  commandResponseHeaders,
-} from "./command.ts";
+import { platformCommand } from "./command.ts";
 import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
 import { problemResponses } from "../problem.ts";
@@ -73,7 +70,6 @@ export const routes = {
     tag: "Users",
     platformScope: "platform:read",
     kind: "read",
-    freshAuthentication: false,
     parameters: [],
     responses: {
       200: { description: "Success", content: commandJson(page(userSchema)) },
@@ -90,7 +86,6 @@ export const routes = {
     tag: "Users",
     platformScope: "platform:read",
     kind: "read",
-    freshAuthentication: false,
     parameters: ["userId"].map((name) => pathParameter(name, "uuid")),
     responses: {
       200: { description: "Success", content: commandJson(detailSchema) },
@@ -103,19 +98,18 @@ export const routes = {
     operationId: "disableUser",
     summary: "Disable user",
     description:
-      "Requires Idempotency-Key. Authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Disable the user, revoke sessions and tokens and return the updated user. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input. Prefer removeMember to offboard from only one organisation; not_found means the user is missing. A new command reconciles remaining sessions, tokens and grant contexts even when the user is already disabled; only zero actual effects and unchanged status record a noop. Replaying an old key returns its receipt without performing a new reconciliation.",
+      "Disable the user, revoke sessions and tokens and return the updated user. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input. Prefer removeMember to offboard from only one organisation; not_found means the user is missing. A new command reconciles remaining sessions, tokens and grant contexts even when the user is already disabled; only zero actual effects and unchanged status record a noop. Replaying an old key returns its receipt without performing a new reconciliation.",
     tag: "Users",
     platformScope: "platform:users",
     kind: "write",
     freshAuthentication: true,
-    parameters: [pathParameter("userId", "uuid"), idempotencyParameter],
+    parameters: [pathParameter("userId", "uuid")],
     responses: {
       200: {
         description: "Success",
-        headers: commandResponseHeaders,
         content: commandJson(userSchema),
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
   enableUser: {
@@ -124,19 +118,18 @@ export const routes = {
     operationId: "enableUser",
     summary: "Enable user",
     description:
-      "Requires Idempotency-Key. Authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Enable a disabled user and return the updated user without restoring revoked sessions. Prefer getUser to inspect blockers; not_found, user_email_retired and user_inert identify missing users or states that cannot be enabled.",
+      "Enable a disabled user and return the updated user without restoring revoked sessions. Prefer getUser to inspect blockers; not_found, user_email_retired and user_inert identify missing users or states that cannot be enabled.",
     tag: "Users",
     platformScope: "platform:users",
     kind: "write",
     freshAuthentication: true,
-    parameters: [pathParameter("userId", "uuid"), idempotencyParameter],
+    parameters: [pathParameter("userId", "uuid")],
     responses: {
       200: {
         description: "Success",
-        headers: commandResponseHeaders,
         content: commandJson(userSchema),
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
   retireUserEmail: {
@@ -145,19 +138,18 @@ export const routes = {
     operationId: "retireUserEmail",
     summary: "Retire user email",
     description:
-      "Requires Idempotency-Key. Authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Replace a disabled user’s email with a tombstone and return the updated user, freeing the original email for reuse. Prefer disableUser for reversible offboarding; not_found and user_not_disabled identify missing users or invalid lifecycle states.",
+      "Replace a disabled user’s email with a tombstone and return the updated user, freeing the original email for reuse. Prefer disableUser for reversible offboarding; not_found and user_not_disabled identify missing users or invalid lifecycle states.",
     tag: "Users",
     platformScope: "platform:users",
     kind: "write",
     freshAuthentication: true,
-    parameters: [pathParameter("userId", "uuid"), idempotencyParameter],
+    parameters: [pathParameter("userId", "uuid")],
     responses: {
       200: {
         description: "Success",
-        headers: commandResponseHeaders,
         content: commandJson(userSchema),
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
   eraseUser: {
@@ -165,8 +157,7 @@ export const routes = {
     path: "/users/:userId",
     operationId: "eraseUser",
     summary: "Erase user",
-    description:
-      "Requires Idempotency-Key. Authorised retries return the receipt without repeating effects. Changed-input reuse conflicts. Soft-delete the profile, account bindings, memberships, assignments, owned clients, links and consents. Clear account/client credentials, revoke grant contexts and delete affected session/token rows. Return no content. Concurrent writes through owned clients, memberships, sessions and refresh tokens are ordered before actual deletion and reference-clearing effects are captured. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input. The confirm query parameter must equal the target id. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableUser for reversible offboarding. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
+    description: `Soft-delete the profile, account bindings, memberships, assignments, owned clients, links and consents. Clear account/client credentials, revoke grant contexts and delete affected session/token rows. Return no content. Concurrent writes through owned clients, memberships, sessions and refresh tokens are ordered before actual deletion and reference-clearing effects are captured. Removing the last effective platform writer raises last_platform_administrator; establish a replacement and retry the same key/input. The confirm query parameter must equal the target id. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableUser for reversible offboarding. ${softDeletion}`,
     tag: "Users",
     platformScope: "platform:write",
     kind: "erase",
@@ -174,12 +165,11 @@ export const routes = {
     parameters: [
       ...["userId"].map((name) => pathParameter(name, "uuid")),
       confirmQuery(eraseSchema.shape.confirm),
-      idempotencyParameter,
     ],
     example: { query: { confirm: "00000000-0000-7000-8000-000000000000" } },
     responses: {
-      204: { description: "Success", headers: commandResponseHeaders },
-      ...problemResponses(400, 404, 409, 503),
+      204: { description: "Success" },
+      ...problemResponses(404),
     },
   },
 } satisfies Record<string, AdminRoute>;

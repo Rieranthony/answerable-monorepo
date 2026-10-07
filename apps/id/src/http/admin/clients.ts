@@ -4,6 +4,7 @@ import {
   body,
   pathParameter,
   confirmQuery,
+  softDeletion,
 } from "./schemas.ts";
 import { platformRead } from "./platform-read.ts";
 import {
@@ -12,11 +13,7 @@ import {
   revisionParameter,
   revisionResponseHeaders,
 } from "./revision.ts";
-import {
-  idempotencyParameter,
-  commandResponseHeaders,
-  platformCommand,
-} from "./command.ts";
+import { platformCommand } from "./command.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
 import * as service from "../../services/clients.ts";
@@ -115,20 +112,15 @@ export const routes = {
     path: "/clients/:clientId",
     operationId: "eraseClient",
     summary: "Erase client",
-    description:
-      "capability_references_exist requires removing all referencing capabilities before erasure. Requires Idempotency-Key; identical authorised retries return the receipt. Soft-delete a client, its resource links and consents, clear its secret and delete its token rows, returning no content and recording client.erased. Prefer disableClient for reversible suspension; enabling does not restore revoked grant contexts. Supply confirm equal to clientId; not_found is checked before confirmation_mismatch, then client_has_entitlements requires removing every referencing entitlement before retrying. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
+    description: `capability_references_exist requires removing all referencing capabilities before erasure. Soft-delete a client, its resource links and consents, clear its secret and delete its token rows, returning no content and recording client.erased. Prefer disableClient for reversible suspension; enabling does not restore revoked grant contexts. Supply confirm equal to clientId; not_found is checked before confirmation_mismatch, then client_has_entitlements requires removing every referencing entitlement before retrying. ${softDeletion}`,
     tag: "Clients",
     platformScope: "platform:write",
     kind: "erase",
     freshAuthentication: true,
-    parameters: [
-      ...parameters,
-      idempotencyParameter,
-      confirmQuery(z.string().min(1)),
-    ],
+    parameters: [...parameters, confirmQuery(z.string().min(1))],
     responses: {
-      204: { headers: commandResponseHeaders, description: "Client erased" },
-      ...problemResponses(400, 404, 409, 503),
+      204: { description: "Client erased" },
+      ...problemResponses(404),
     },
   },
   listClients: {
@@ -141,7 +133,6 @@ export const routes = {
     tag: "Clients",
     platformScope: "platform:read",
     kind: "read",
-    freshAuthentication: false,
     responses: {
       200: {
         description: "Clients",
@@ -161,12 +152,11 @@ export const routes = {
     operationId: "createClient",
     summary: "Create client",
     description:
-      "Create an OAuth client with a required Idempotency-Key. Identical authorised retries return the receipt, without another creation. Operation-Id identifies the journal record and Idempotency-Replayed marks recovery. A changed input returns idempotency_key_reused; a running duplicate returns retryable operation_in_progress. validation_failed rejects incompatible settings, not_found means the owner is missing, and conflict prevents identity reuse.",
+      "Create an OAuth client. validation_failed rejects incompatible settings, not_found means the owner is missing, and conflict prevents identity reuse.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
     freshAuthentication: true,
-    parameters: [idempotencyParameter],
     requestBody: body(createSchema),
     example: {
       body: {
@@ -179,14 +169,13 @@ export const routes = {
     },
     responses: {
       201: {
-        headers: commandResponseHeaders,
         description:
           "Client created; a retry returns the receipt. A lost secret requires a new rotation",
         content: commandJson(
           clientSchema.extend({ clientSecret: z.string().optional() }),
         ),
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
   getClient: {
@@ -199,7 +188,6 @@ export const routes = {
     tag: "Clients",
     platformScope: "platform:read",
     kind: "read",
-    freshAuthentication: false,
     parameters,
     responses: {
       200: {
@@ -216,21 +204,21 @@ export const routes = {
     operationId: "updateClient",
     summary: "Update client",
     description:
-      "Update a client with Idempotency-Key and optionally the If-Match ETag from getClient. A committed retry returns its receipt before evaluating its old revision. New stale commands return revision_mismatch (412). An unchanged patch records a noop without advancing the revision. Invalid input returns validation_failed; unknown clients return not_found.",
+      "Update a client; accepts the If-Match ETag from getClient. A committed retry returns its receipt before evaluating its old revision. New stale commands return revision_mismatch (412). An unchanged patch records a noop without advancing the revision. Invalid input returns validation_failed; unknown clients return not_found.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
     freshAuthentication: { unlessOnly: ["name", "uri", "contacts"] },
-    parameters: [...parameters, idempotencyParameter, revisionParameter],
+    parameters: [...parameters, revisionParameter],
     requestBody: body(patchSchema),
     example: { body: { name: "Renamed" } },
     responses: {
       200: {
-        headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
+        headers: revisionResponseHeaders,
         description: "Client updated",
         content: commandJson(clientSchema),
       },
-      ...problemResponses(400, 404, 409, 412, 503),
+      ...problemResponses(404, 412),
     },
   },
   disableClient: {
@@ -239,19 +227,18 @@ export const routes = {
     operationId: "disableClient",
     summary: "Disable client",
     description:
-      "Requires Idempotency-Key; identical authorised retries return the receipt. Disable the client, revoke its tokens and stored grant contexts across tenants, and return the updated registration. Prefer enableClient to restore future use; not_found means it is missing; an already disabled client reconciles remaining tokens and contexts, returning 200 with a noop outcome only when nothing changes.",
+      "Disable the client, revoke its tokens and stored grant contexts across tenants, and return the updated registration. Prefer enableClient to restore future use; not_found means it is missing; an already disabled client reconciles remaining tokens and contexts, returning 200 with a noop outcome only when nothing changes.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
     freshAuthentication: true,
-    parameters: [...parameters, idempotencyParameter],
+    parameters: parameters,
     responses: {
       200: {
-        headers: commandResponseHeaders,
         description: "Client disabled and tokens revoked",
         content: commandJson(clientSchema),
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
   enableClient: {
@@ -260,19 +247,18 @@ export const routes = {
     operationId: "enableClient",
     summary: "Enable client",
     description:
-      "Requires Idempotency-Key; identical authorised retries return the receipt. Enable client and return the updated record without restoring revoked grant contexts. Prefer disableClient for the opposite transition; not_found means the target is missing; an already active client returns 200 with a noop outcome.",
+      "Enable client and return the updated record without restoring revoked grant contexts. Prefer disableClient for the opposite transition; not_found means the target is missing; an already active client returns 200 with a noop outcome.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
     freshAuthentication: true,
-    parameters: [...parameters, idempotencyParameter],
+    parameters: parameters,
     responses: {
       200: {
-        headers: commandResponseHeaders,
         description: "Client enabled",
         content: commandJson(clientSchema),
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
   rotateClientSecret: {
@@ -281,22 +267,21 @@ export const routes = {
     operationId: "rotateClientSecret",
     summary: "Rotate client secret",
     description:
-      "Rotate the client secret with a required Idempotency-Key, revoking existing client tokens and stored grant contexts across tenants in the same transaction. Identical authorised retries return the receipt without rotating again, advancing the authorisation version or revoking grants established afterwards. A new key deliberately rotates again. Operation-Id identifies the result and Idempotency-Replayed marks recovery. If the first response is lost, rotate again with a new key to obtain a secret. operation_in_progress is retryable with the same key. not_found means the client is missing and client_has_no_secret rejects another authentication method.",
+      "Rotate the client secret, revoking existing client tokens and stored grant contexts across tenants in the same transaction. A retry does not advance the authorisation version again or revoke grants established afterwards; a new key deliberately rotates again. If the first response is lost, rotate again with a new key to obtain a secret. not_found means the client is missing and client_has_no_secret rejects another authentication method.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
     freshAuthentication: true,
-    parameters: [...parameters, idempotencyParameter],
+    parameters: parameters,
     responses: {
       200: {
-        headers: commandResponseHeaders,
         description:
           "New secret; a retry returns the receipt. A lost secret requires a new rotation",
         content: commandJson(
           z.object({ clientId: z.string(), clientSecret: z.string() }),
         ),
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
   setClientOwner: {
@@ -305,23 +290,22 @@ export const routes = {
     operationId: "setClientOwner",
     summary: "Verify unchanged client owner",
     description:
-      "Requires Idempotency-Key; identical authorised retries return the receipt. Client ownership is immutable. Supplying the current owner returns the registration without changing it; any different owner, including adding or removing one, returns ownership_conflict. Create a replacement client under the new owner and retire the old client. validation_failed rejects malformed ids; not_found means the client is missing.",
+      "Client ownership is immutable. Supplying the current owner returns the registration without changing it; any different owner, including adding or removing one, returns ownership_conflict. Create a replacement client under the new owner and retire the old client. validation_failed rejects malformed ids; not_found means the client is missing.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
     freshAuthentication: true,
-    parameters: [...parameters, idempotencyParameter],
+    parameters: parameters,
     requestBody: body(ownerSchema),
     example: {
       body: { organizationId: "00000000-0000-7000-8000-000000000000" },
     },
     responses: {
       200: {
-        headers: commandResponseHeaders,
         description: "Client owner unchanged",
         content: commandJson(clientSchema),
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
   linkClientResource: {
@@ -330,24 +314,22 @@ export const routes = {
     operationId: "linkClientResource",
     summary: "Link client resource (URL-encode {resource})",
     description:
-      "Requires Idempotency-Key; identical authorised retries return the receipt. Link an OAuth client to a resource and return the link, with 201 on creation and 200 when it already exists. The {resource} URL must be percent-encoded in the path; prefer unlinkClientResource to remove the link, and validation_failed or not_found identifies malformed input or a missing target.",
+      "Link an OAuth client to a resource and return the link, with 201 on creation and 200 when it already exists. The {resource} URL must be percent-encoded in the path; prefer unlinkClientResource to remove the link, and validation_failed or not_found identifies malformed input or a missing target.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
     freshAuthentication: true,
-    parameters: [...resourceParameters, idempotencyParameter],
+    parameters: resourceParameters,
     responses: {
       200: {
-        headers: commandResponseHeaders,
         description: "Resource link already exists",
         content: commandJson(z.object({ created: z.boolean() })),
       },
       201: {
-        headers: commandResponseHeaders,
         description: "Resource linked",
         content: commandJson(z.object({ created: z.boolean() })),
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
   unlinkClientResource: {
@@ -356,18 +338,17 @@ export const routes = {
     operationId: "unlinkClientResource",
     summary: "Unlink client resource (URL-encode {resource})",
     description:
-      "Requires Idempotency-Key; identical authorised retries return the receipt. Remove the client-to-resource link and return no content. The {resource} URL must be percent-encoded in the path; prefer linkClientResource to add a link, validation_failed identifies malformed input; not_found means the client is missing. An absent link returns 204 with a noop outcome.",
+      "Remove the client-to-resource link and return no content. The {resource} URL must be percent-encoded in the path; prefer linkClientResource to add a link, validation_failed identifies malformed input; not_found means the client is missing. An absent link returns 204 with a noop outcome.",
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
     freshAuthentication: true,
-    parameters: [...resourceParameters, idempotencyParameter],
+    parameters: resourceParameters,
     responses: {
       204: {
-        headers: commandResponseHeaders,
         description: "Resource unlinked",
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
 } satisfies Record<string, AdminRoute>;

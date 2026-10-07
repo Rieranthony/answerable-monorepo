@@ -7,6 +7,7 @@ import {
   windowSchema,
   windowDates,
   confirmQuery,
+  softDeletion,
 } from "./schemas.ts";
 import { tenantRead } from "./tenant-read.ts";
 import {
@@ -19,11 +20,7 @@ import {
 import * as service from "../../services/groups.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
-import {
-  platformCommand,
-  idempotencyParameter,
-  commandResponseHeaders,
-} from "./command.ts";
+import { platformCommand } from "./command.ts";
 import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
 import { problemResponses } from "../problem.ts";
@@ -92,7 +89,6 @@ export const routes = {
     tag: "Groups",
     platformScope: "platform:read",
     kind: "read",
-    freshAuthentication: false,
     parameters: ["organizationId"].map((name) => pathParameter(name, "uuid")),
     orgScope: "org:read",
     responses: {
@@ -109,24 +105,22 @@ export const routes = {
     operationId: "createGroup",
     summary: "Create an organisation group",
     description:
-      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects; changed-input reuse conflicts. Create an organisation group and return the created record, recording the change in the audit log. Prefer getGroup to inspect existing state; validation_failed rejects malformed input, not_found identifies missing parents or targets, and conflict or reference_violation identifies conflicting records.",
+      "Create an organisation group and return the created record, recording the change in the audit log. Prefer getGroup to inspect existing state; validation_failed rejects malformed input, not_found identifies missing parents or targets, and conflict or reference_violation identifies conflicting records.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
     freshAuthentication: true,
     parameters: [
       ...["organizationId"].map((name) => pathParameter(name, "uuid")),
-      idempotencyParameter,
     ],
     requestBody: body(createSchema),
     example: { body: { slug: "finance", name: "Finance" } },
     responses: {
       201: {
         description: "Success",
-        headers: commandResponseHeaders,
         content: commandJson(groupSchema),
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
   getGroup: {
@@ -139,7 +133,6 @@ export const routes = {
     tag: "Groups",
     platformScope: "platform:read",
     kind: "read",
-    freshAuthentication: false,
     parameters: ["organizationId", "groupId"].map((name) =>
       pathParameter(name, "uuid"),
     ),
@@ -159,7 +152,7 @@ export const routes = {
     operationId: "updateGroup",
     summary: "Update an organisation group",
     description:
-      "Requires Idempotency-Key and optionally the If-Match ETag from getGroup. Stale or wrong-instance supplied revisions return 412. Committed replay precedes the old revision check. Noops preserve the revision. Identical authorised retries return the receipt without repeating effects; changed-input reuse conflicts. Update an organisation group and return the updated record, recording the change in the audit log. Prefer getGroup to inspect existing state; validation_failed rejects malformed input, not_found identifies missing parents or targets, and conflict or reference_violation identifies conflicting records.",
+      "Accepts the If-Match ETag from getGroup. Stale or wrong-instance supplied revisions return 412. Committed replay precedes the old revision check. Noops preserve the revision. Update an organisation group and return the updated record, recording the change in the audit log. Prefer getGroup to inspect existing state; validation_failed rejects malformed input, not_found identifies missing parents or targets, and conflict or reference_violation identifies conflicting records.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
@@ -168,7 +161,6 @@ export const routes = {
       ...["organizationId", "groupId"].map((name) =>
         pathParameter(name, "uuid"),
       ),
-      idempotencyParameter,
       revisionParameter,
     ],
     requestBody: body(patchSchema),
@@ -176,10 +168,10 @@ export const routes = {
     responses: {
       200: {
         description: "Success",
-        headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
+        headers: revisionResponseHeaders,
         content: commandJson(groupSchema),
       },
-      ...problemResponses(400, 404, 409, 412, 503),
+      ...problemResponses(404, 412),
     },
   },
   disableGroup: {
@@ -188,7 +180,7 @@ export const routes = {
     operationId: "disableGroup",
     summary: "Disable an organisation group",
     description:
-      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects; changed-input reuse conflicts. Disable an organisation group and return the updated record. Prefer enableGroup for the opposite transition; not_found means the target is missing and already disabled state returns a noop.",
+      "Disable an organisation group and return the updated record. Prefer enableGroup for the opposite transition; not_found means the target is missing and already disabled state returns a noop.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
@@ -197,15 +189,13 @@ export const routes = {
       ...["organizationId", "groupId"].map((name) =>
         pathParameter(name, "uuid"),
       ),
-      idempotencyParameter,
     ],
     responses: {
       200: {
         description: "Success",
-        headers: commandResponseHeaders,
         content: commandJson(groupSchema),
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
   enableGroup: {
@@ -214,7 +204,7 @@ export const routes = {
     operationId: "enableGroup",
     summary: "Enable an organisation group",
     description:
-      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects; changed-input reuse conflicts. Enable an organisation group and return the updated record. Prefer disableGroup for the opposite transition; not_found means the target is missing and already active state returns a noop.",
+      "Enable an organisation group and return the updated record. Prefer disableGroup for the opposite transition; not_found means the target is missing and already active state returns a noop.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
@@ -223,15 +213,13 @@ export const routes = {
       ...["organizationId", "groupId"].map((name) =>
         pathParameter(name, "uuid"),
       ),
-      idempotencyParameter,
     ],
     responses: {
       200: {
         description: "Success",
-        headers: commandResponseHeaders,
         content: commandJson(groupSchema),
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
   eraseGroup: {
@@ -239,8 +227,7 @@ export const routes = {
     path: "/organizations/:organizationId/groups/:groupId",
     operationId: "eraseGroup",
     summary: "Erase an organisation group",
-    description:
-      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects; changed-input reuse conflicts. Soft-delete the group and return no content; related group assignments and entitlements also receive terminal deletedAt markers. The version-3 group.erased audit records actual soft-deleted policy rows and retains affected-user UUID history. This records removed assignments, not a claim that every affected user lost all effective access. The confirm query parameter must equal the target id. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableGroup for reversible offboarding. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
+    description: `Soft-delete the group and return no content; related group assignments and entitlements also receive terminal deletedAt markers. The version-3 group.erased audit records actual soft-deleted policy rows and retains affected-user UUID history. This records removed assignments, not a claim that every affected user lost all effective access. The confirm query parameter must equal the target id. A missing target raises not_found before a mismatched confirmation raises confirmation_mismatch; prefer disableGroup for reversible offboarding. ${softDeletion}`,
     tag: "Groups",
     platformScope: "platform:write",
     kind: "erase",
@@ -252,12 +239,11 @@ export const routes = {
         ),
         confirmQuery(eraseSchema.shape.confirm),
       ],
-      idempotencyParameter,
     ],
     example: { query: { confirm: "00000000-0000-4000-8000-000000000001" } },
     responses: {
-      204: { description: "Success", headers: commandResponseHeaders },
-      ...problemResponses(400, 404, 409, 503),
+      204: { description: "Success" },
+      ...problemResponses(404),
     },
   },
   listGroupMembers: {
@@ -270,7 +256,6 @@ export const routes = {
     tag: "Groups",
     platformScope: "platform:read",
     kind: "read",
-    freshAuthentication: false,
     parameters: ["organizationId", "groupId"].map((name) =>
       pathParameter(name, "uuid"),
     ),
@@ -291,7 +276,6 @@ export const routes = {
     platformScope: "platform:read",
     orgScope: "org:read",
     kind: "read",
-    freshAuthentication: false,
     parameters: ["organizationId", "groupId", "memberId"].map((name) =>
       pathParameter(name, "uuid"),
     ),
@@ -310,7 +294,7 @@ export const routes = {
     operationId: "putGroupMember",
     summary: "Add or update a group member",
     description:
-      "Requires Idempotency-Key. Accepts the strong If-Match ETag from getGroupMember for conditional replacement; conflicting/malformed headers return 400; stale or recreated state returns 412. Committed replay precedes the precondition check. Identical authorised retries return the receipt without repeating effects; changed-input reuse conflicts. Create or update a group membership validity window and return the membership, with 201 for creation and 200 for an update. Prefer removeGroupMember to end membership; validation_failed rejects malformed input and not_found means a parent is missing.",
+      "Accepts the strong If-Match ETag from getGroupMember for conditional replacement; conflicting/malformed headers return 400; stale or recreated state returns 412. Committed replay precedes the precondition check. Create or update a group membership validity window and return the membership, with 201 for creation and 200 for an update. Prefer removeGroupMember to end membership; validation_failed rejects malformed input and not_found means a parent is missing.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
@@ -319,7 +303,6 @@ export const routes = {
       ...["organizationId", "groupId", "memberId"].map((name) =>
         pathParameter(name, "uuid"),
       ),
-      idempotencyParameter,
       {
         ...revisionParameter,
         required: false,
@@ -340,15 +323,15 @@ export const routes = {
     responses: {
       200: {
         description: "Success",
-        headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
+        headers: revisionResponseHeaders,
         content: commandJson(membershipSchema),
       },
       201: {
         description: "Membership created",
-        headers: { ...commandResponseHeaders, ...revisionResponseHeaders },
+        headers: revisionResponseHeaders,
         content: commandJson(membershipSchema),
       },
-      ...problemResponses(400, 404, 409, 412, 503),
+      ...problemResponses(404, 412),
     },
   },
   removeGroupMember: {
@@ -357,7 +340,7 @@ export const routes = {
     operationId: "removeGroupMember",
     summary: "Remove a group member",
     description:
-      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating effects; changed-input reuse conflicts. Remove a group membership and return no content, removing access inherited through that membership. Prefer putGroupMember to change its validity window; not_found means a parent or membership is missing.",
+      "Remove a group membership and return no content, removing access inherited through that membership. Prefer putGroupMember to change its validity window; not_found means a parent or membership is missing.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
@@ -366,11 +349,10 @@ export const routes = {
       ...["organizationId", "groupId", "memberId"].map((name) =>
         pathParameter(name, "uuid"),
       ),
-      idempotencyParameter,
     ],
     responses: {
-      204: { description: "Success", headers: commandResponseHeaders },
-      ...problemResponses(400, 404, 409, 503),
+      204: { description: "Success" },
+      ...problemResponses(404),
     },
   },
 } satisfies Record<string, AdminRoute>;

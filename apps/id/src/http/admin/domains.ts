@@ -4,15 +4,12 @@ import {
   body,
   pathParameter,
   uuidParam,
+  softDeletion,
 } from "./schemas.ts";
 import { tenantRead } from "./tenant-read.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
-import {
-  platformCommand,
-  idempotencyParameter,
-  commandResponseHeaders,
-} from "./command.ts";
+import { platformCommand } from "./command.ts";
 import type { AppEnvironment } from "../context.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
@@ -55,16 +52,15 @@ export const routes = {
     path: "/organizations/:organizationId/domains/:domainId",
     operationId: "deleteOrganizationDomain",
     summary: "Delete organisation domain",
-    description:
-      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating its audit or mutation. Changed input returns idempotency_key_reused. Delete a domain assignment and return no content, removing its sign-in discovery routing and recording domain.deleted. Prefer disableOrganizationDomain for a reversible suspension; validation_failed rejects malformed ids and not_found means the organisation or domain is missing. No confirmation is required. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
+    description: `Delete a domain assignment and return no content, removing its sign-in discovery routing and recording domain.deleted. Prefer disableOrganizationDomain for a reversible suspension; validation_failed rejects malformed ids and not_found means the organisation or domain is missing. No confirmation is required. ${softDeletion}`,
     tag: "Domains",
     platformScope: "platform:write",
     kind: "write",
     freshAuthentication: true,
-    parameters: [...domainParameters, idempotencyParameter],
+    parameters: domainParameters,
     responses: {
-      204: { description: "Domain deleted", headers: commandResponseHeaders },
-      ...problemResponses(400, 404, 409, 503),
+      204: { description: "Domain deleted" },
+      ...problemResponses(404),
     },
   },
   listOrganizationDomains: {
@@ -77,7 +73,6 @@ export const routes = {
     tag: "Domains",
     platformScope: "platform:read",
     kind: "read",
-    freshAuthentication: false,
     parameters,
     orgScope: "org:read",
     responses: {
@@ -99,21 +94,20 @@ export const routes = {
     operationId: "createOrganizationDomain",
     summary: "Create an organisation domain",
     description:
-      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating its audit or mutation. Changed input returns idempotency_key_reused. Add an email domain to an organisation and return the created domain, enabling domain-based sign-in discovery. Prefer listOrganizationDomains to inspect existing assignments; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict means the domain is already assigned.",
+      "Add an email domain to an organisation and return the created domain, enabling domain-based sign-in discovery. Prefer listOrganizationDomains to inspect existing assignments; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict means the domain is already assigned.",
     tag: "Domains",
     platformScope: "platform:write",
     kind: "write",
     freshAuthentication: true,
-    parameters: [...parameters, idempotencyParameter],
+    parameters: parameters,
     requestBody: body(createSchema),
     example: { body: { domain: "acme.example.com" } },
     responses: {
       201: {
         description: "Domain",
         content: commandJson(domainSchema),
-        headers: commandResponseHeaders,
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
   disableOrganizationDomain: {
@@ -122,19 +116,18 @@ export const routes = {
     operationId: "disableOrganizationDomain",
     summary: "Disable an organisation domain",
     description:
-      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating its audit or mutation. Changed input returns idempotency_key_reused. Disable an organisation domain and return the updated record. Prefer enableOrganizationDomain for the opposite transition; not_found means the target is missing and an already disabled assignment returns unchanged state and records a noop.",
+      "Disable an organisation domain and return the updated record. Prefer enableOrganizationDomain for the opposite transition; not_found means the target is missing and an already disabled assignment returns unchanged state and records a noop.",
     tag: "Domains",
     platformScope: "platform:write",
     kind: "write",
     freshAuthentication: true,
-    parameters: [...domainParameters, idempotencyParameter],
+    parameters: domainParameters,
     responses: {
       200: {
         description: "Domain",
         content: commandJson(domainSchema),
-        headers: commandResponseHeaders,
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
   enableOrganizationDomain: {
@@ -143,19 +136,18 @@ export const routes = {
     operationId: "enableOrganizationDomain",
     summary: "Enable an organisation domain",
     description:
-      "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating its audit or mutation. Changed input returns idempotency_key_reused. Enable an organisation domain and return the updated record. Prefer disableOrganizationDomain for the opposite transition; not_found means the target is missing and an already active assignment returns unchanged state and records a noop.",
+      "Enable an organisation domain and return the updated record. Prefer disableOrganizationDomain for the opposite transition; not_found means the target is missing and an already active assignment returns unchanged state and records a noop.",
     tag: "Domains",
     platformScope: "platform:write",
     kind: "write",
     freshAuthentication: true,
-    parameters: [...domainParameters, idempotencyParameter],
+    parameters: domainParameters,
     responses: {
       200: {
         description: "Domain",
         content: commandJson(domainSchema),
-        headers: commandResponseHeaders,
       },
-      ...problemResponses(400, 404, 409, 503),
+      ...problemResponses(404),
     },
   },
 } satisfies Record<string, AdminRoute>;

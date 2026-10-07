@@ -2,6 +2,9 @@ import { resolver } from "hono-openapi";
 import { z } from "zod";
 import { operationOutcomes } from "../../db/schema/vocabulary.ts";
 import type { AdminRoute } from "./route-table.ts";
+/** The closing sentences of every soft-deleting route's description. */
+export const softDeletion =
+  "Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.";
 export const json = (schema: z.ZodType) => ({
   "application/json": { schema: resolver(schema) },
 });
