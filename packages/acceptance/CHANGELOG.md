@@ -6,6 +6,7 @@
 
 - `refreshRefused(session, clientId, resource)`, `serveCallback(callback)` and `intentSchema` are exported: the three journeys each wrote the refused refresh after a disabled organisation, the callback server and a schema of the prepared intent, and the admin lane its own callback server.
 - `startToolboxStack`'s `adminApi` calls the Toolbox's admin API with the staff client's token from `createIdAdmin(…).withToken`, kept until 30 seconds before it expires and renewed once on `401`, where the kit asked ID for a new token on every call with a copy of that token request.
+- `startId` creates each tenant's organisation, routes its domain and sets its single sign-on, and the platform organisation's, with `createAdmin`, `setSsoProvider` and a new `addDomain` (`src/admin.ts`); the ID fixture (`apps/id/scripts/mcp-e2e-fixture.ts`) only starts and trusts the directories and queues their sign-ins, where it did the same writes with its own copy of the root client and the SSO body. `setSsoProvider` sends `If-None-Match: *`, as the fixture did, so it refuses an organisation that already has single sign-on; `Admin` takes extra headers.
 
 ## 0.5.0
 

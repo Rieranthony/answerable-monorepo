@@ -1,5 +1,6 @@
 // Real Answerable ID for the MCP acceptance (packages/acceptance), booted on its own database.
-// It provisions each tenant's organisation, domain and company directory, optionally the platform organisation's and the spare directories, and leaves everything else to the admin API.
+// It starts and trusts a company directory per tenant, optionally the platform organisation's and the spare ones, and queues their sign-ins.
+// startId (packages/acceptance/src/id.ts) provisions everything else through the admin API, the tenants' organisations, domains and single sign-on first.
 // Test-only: never imported by a production service.
 import { rename } from "node:fs/promises";
 import { z } from "zod";
@@ -24,13 +25,12 @@ const queued = z.number().int().min(0);
 const directory = z.object({ slug: z.string().min(1), signIns: queued });
 const plan = z
   .object({
-    // One organisation per tenant, with its domain and its own company directory.
+    // One company directory per tenant, for the organisation startId creates.
     tenants: z.array(directory),
-    // Gives the platform organisation (Answerable staff) a domain and a company
-    // directory, so staff can sign in during a journey: `signIns` times its
-    // staff member, or, in order, the person of each sign-in, such as
-    // ["staff", "colleague", "staff"] for a second member between two of the
-    // first's.
+    // A company directory for the platform organisation (Answerable staff), so
+    // staff can sign in during a journey: `signIns` times its staff member, or,
+    // in order, the person of each sign-in, such as ["staff", "colleague",
+    // "staff"] for a second member between two of the first's.
     platform: z
       .object({
         signIns: z.union([queued, z.array(z.string().regex(/^[a-z]+$/))]),
@@ -90,33 +90,10 @@ authContext.skipCSRFCheck = false;
 const app = createApp({ auth, db: runtime.db, environment });
 Bun.serve({ hostname: "127.0.0.1", port: 47_600, fetch: app.fetch });
 
-async function admin(
-  method: string,
-  path: string,
-  body?: unknown,
-  headers: Record<string, string> = {},
-) {
-  const response = await fetch(`${idOrigin}/api/admin/v1${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${rootSecret}`,
-      "Idempotency-Key": crypto.randomUUID(),
-      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
-      ...headers,
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!response.ok)
-    throw new Error(
-      `${method} ${path} returned ${response.status}: ${await response.text()}`,
-    );
-  return (await response.json()) as Record<string, unknown>;
-}
-
 type Upstream = Awaited<ReturnType<typeof startOidcIssuer>>;
 
 // A company directory for `slug` whose person, `<person>@<slug>.example.test`, signs in `signIns` times; or, given a list, whose sign-ins are each
-// listed person's, in order. Each company sign-in consumes one queued identity. Returns what an organisation's single sign-on needs to use it.
+// listed person's, in order. Each company sign-in consumes one queued identity. Returns what an organisation's domain and single sign-on need to use it.
 function openDirectory(
   upstream: Upstream,
   slug: string,
@@ -159,72 +136,14 @@ function openDirectory(
   };
 }
 
-// Route the organisation's domain to the directory and set its single sign-on there, as an operator does through the admin API.
-async function connectDirectory(
-  organizationId: string,
-  {
-    domain,
-    issuer,
-    authorizationEndpoint,
-    tokenEndpoint,
-    jwksEndpoint,
-    clientId,
-    clientSecret,
-  }: ReturnType<typeof openDirectory>,
-) {
-  const path = `/organizations/${organizationId}`;
-  await admin("POST", `${path}/domains`, { domain });
-  await admin(
-    "PUT",
-    `${path}/sso-provider`,
-    {
-      issuer,
-      domain,
-      oidc: {
-        credentials: "own",
-        clientId,
-        clientSecret,
-        authorizationEndpoint,
-        tokenEndpoint,
-        jwksEndpoint,
-      },
-    },
-    { "If-None-Match": "*" },
-  );
-}
-
-const tenants = [];
-for (const [index, { slug, signIns }] of plan.tenants.entries()) {
-  const company = openDirectory(
-    tenantUpstreams[index]!,
-    slug,
-    "tester",
-    signIns,
-  );
-  const organization = await admin("POST", "/organizations", {
-    slug,
-    name: slug,
-  });
-  const organizationId = String(organization.id);
-  await connectDirectory(organizationId, company);
-  tenants.push({ slug, email: company.email, organizationId });
-}
-
-// The platform organisation is the one ID bound at boot, found through that binding and not by its slug.
-let platform;
-if (plan.platform && platformUpstream) {
-  const staff = openDirectory(
-    platformUpstream,
-    platformSlug,
-    "staff",
-    plan.platform.signIns,
-  );
-  const organizationId = seeded.organizationId;
-  await connectDirectory(organizationId, staff);
-  platform = { organizationId, domain: staff.domain, email: staff.email };
-}
-
-// A spare has no organisation: the journey creates one and sets its single sign-on from this entry.
+// startId creates each tenant's organisation and connects the organisations to these directories; a spare has no organisation: the journey creates one.
+const tenants = plan.tenants.map(({ slug, signIns }, index) =>
+  openDirectory(tenantUpstreams[index]!, slug, "tester", signIns),
+);
+const platform =
+  plan.platform && platformUpstream
+    ? openDirectory(platformUpstream, platformSlug, "staff", plan.platform.signIns)
+    : undefined;
 const spares = plan.spares.map(({ slug, signIns }, index) =>
   openDirectory(spareUpstreams[index]!, slug, "tester", signIns),
 );
@@ -236,6 +155,8 @@ await Bun.write(
     idOrigin,
     adminResource: environment.adminResourceIdentifier,
     rootSecret,
+    // The platform organisation is the one ID bound at boot, found through that binding and not by its slug.
+    platformOrganizationId: seeded.organizationId,
     tenants,
     platform,
     spares,

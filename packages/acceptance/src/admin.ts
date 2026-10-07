@@ -1,17 +1,18 @@
 import { z } from "zod"
 import type { Spare } from "./id"
 
-/** Call ID's admin API as root: `admin("POST", "/organizations", { slug, name })`. Every call carries a fresh `Idempotency-Key`; a status outside 2xx throws with the body. A `204` answers `{}`. */
-export type Admin = (method: string, path: string, body?: unknown) => Promise<Record<string, unknown>>
+/** Call ID's admin API as root: `admin("POST", "/organizations", { slug, name })`, with any extra `headers`. Every call carries a fresh `Idempotency-Key`; a status outside 2xx throws with the body. A `204` answers `{}`. */
+export type Admin = (method: string, path: string, body?: unknown, headers?: Record<string, string>) => Promise<Record<string, unknown>>
 
 export function createAdmin({ idOrigin, rootSecret }: { idOrigin: string; rootSecret: string }): Admin {
-  return async (method, path, body) => {
+  return async (method, path, body, headers) => {
     const response = await fetch(`${idOrigin}/api/admin/v1${path}`, {
       method,
       headers: {
         Authorization: `Bearer ${rootSecret}`,
         "Idempotency-Key": crypto.randomUUID(),
         ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        ...headers,
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     })
@@ -83,7 +84,13 @@ export async function registerMachine(admin: Admin, organizationId: string, clie
   return { clientId, clientSecret: created.clientSecret }
 }
 
-/** Set an organisation's single sign-on to a spare directory of the fixture, with the directory's own credentials. The organisation must already hold `spare.domain`. */
+/** Route `domain` to an organisation. */
+export function addDomain(admin: Admin, organizationId: string, domain: string) {
+  return admin("POST", `/organizations/${organizationId}/domains`, { domain })
+}
+
+/** Set an organisation's single sign-on to a directory of the fixture, such as a spare, with the directory's own credentials. The organisation must already hold `spare.domain` and have no single sign-on yet: the call sends `If-None-Match: *`. */
 export function setSsoProvider(admin: Admin, organizationId: string, { issuer, domain, clientId, clientSecret, authorizationEndpoint, tokenEndpoint, jwksEndpoint }: Spare) {
-  return admin("PUT", `/organizations/${organizationId}/sso-provider`, { issuer, domain, oidc: { credentials: "own", clientId, clientSecret, authorizationEndpoint, tokenEndpoint, jwksEndpoint } })
+  const body = { issuer, domain, oidc: { credentials: "own", clientId, clientSecret, authorizationEndpoint, tokenEndpoint, jwksEndpoint } }
+  return admin("PUT", `/organizations/${organizationId}/sso-provider`, body, { "If-None-Match": "*" })
 }

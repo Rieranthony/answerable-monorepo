@@ -3,14 +3,14 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { SQL } from "bun"
 import { z } from "zod"
-import { createAdmin } from "./admin"
+import { addDomain, createAdmin, setSsoProvider } from "./admin"
 import { cleanup, onCleanup } from "./cleanup"
 import { step } from "./step"
 
 const compose = ["docker", "compose", "-p", "answerable-mcp-e2e", "-f", Bun.fileURLToPath(new URL("../compose.yaml", import.meta.url))]
 const cwd = Bun.fileURLToPath(new URL("../../../apps/id/", import.meta.url))
 
-const spareSchema = z.object({
+const directorySchema = z.object({
   slug: z.string(),
   domain: z.string(),
   email: z.string(),
@@ -21,17 +21,19 @@ const spareSchema = z.object({
   clientId: z.string(),
   clientSecret: z.string(),
 })
-const manifestSchema = z.object({
+// What the fixture writes: every directory it started, and the platform organisation ID bound at boot.
+const fixtureSchema = z.object({
   idOrigin: z.url(),
   adminResource: z.url(),
   rootSecret: z.string(),
-  tenants: z.array(z.object({ slug: z.string(), email: z.string(), organizationId: z.uuid() })),
-  platform: z.object({ organizationId: z.uuid(), domain: z.string(), email: z.string() }).optional(),
-  spares: z.array(spareSchema),
+  platformOrganizationId: z.uuid(),
+  tenants: z.array(directorySchema),
+  platform: directorySchema.optional(),
+  spares: z.array(directorySchema),
 })
 
 /** A spare company directory the fixture started and trusted, bound to no organisation: its `slug`, the `domain` and `email` of its person, and the `issuer`, endpoints, `clientId` and `clientSecret` that point an organisation's single sign-on at it (see `setSsoProvider`). */
-export type Spare = z.infer<typeof spareSchema>
+export type Spare = z.infer<typeof directorySchema>
 
 async function run(command: string[], stderr: "ignore" | "inherit" = "inherit") {
   if ((await Bun.spawn(command, { cwd, stdout: "ignore", stderr }).exited) !== 0) throw new Error(`Command failed: ${command.slice(0, 4).join(" ")}; check that Docker is running and port 47532 is free`)
@@ -40,7 +42,8 @@ async function run(command: string[], stderr: "ignore" | "inherit" = "inherit") 
 /**
  * Start a real Answerable ID on its own database and return what a journey needs.
  * Starts the Compose PostgreSQL (port 47532), runs `apps/id/scripts/mcp-e2e-fixture.ts` (ID on port 47600, through its production migrations and restricted runtime role)
- * and waits up to `timeoutMs` (90 seconds) for its manifest. The fixture creates one organisation per tenant, with its domain and a local test company directory that accepts `signIns` sign-ins.
+ * and waits up to `timeoutMs` (90 seconds) for its manifest. The fixture starts a local test company directory per tenant that accepts `signIns` sign-ins; `startId` then creates
+ * the tenant's organisation through `admin`, routes the directory's domain to it and sets its single sign-on there, as an operator does.
  * `platform` gives the platform organisation (Answerable staff) a domain and such a directory too, so a staff member can sign in: `signIns` times, or, given a list,
  * one sign-in per person listed, in order, each `<person>@answerable.example.test`, so that a second member, such as `colleague`, can sign in between two of `staff`'s.
  * `spares` start directories that are trusted at boot but belong to no organisation, for organisations a journey creates later: `setSsoProvider` points one at a spare.
@@ -81,8 +84,22 @@ export async function startId({
       if (Date.now() > deadline) throw new Error(`Timed out after ${timeoutMs} ms waiting for the ID fixture; run again on a quieter machine, or pass a larger timeoutMs to startId`)
       await Bun.sleep(200)
     }
-    const manifest = manifestSchema.parse(await Bun.file(manifestPath).json())
-    return { manifest, admin: createAdmin(manifest), stop: cleanup }
+    const { platformOrganizationId, tenants: companies, platform: staff, ...written } = fixtureSchema.parse(await Bun.file(manifestPath).json())
+    const admin = createAdmin(written)
+    step("Creating the plan's organisations, domains and single sign-on")
+    const connect = async (organizationId: string, company: Spare) => {
+      await addDomain(admin, organizationId, company.domain)
+      await setSsoProvider(admin, organizationId, company)
+    }
+    const created = []
+    for (const company of companies) {
+      const { id: organizationId } = z.object({ id: z.uuid() }).parse(await admin("POST", "/organizations", { slug: company.slug, name: company.slug }))
+      await connect(organizationId, company)
+      created.push({ slug: company.slug, email: company.email, organizationId })
+    }
+    if (staff) await connect(platformOrganizationId, staff)
+    const manifest = { ...written, tenants: created, ...(staff && { platform: { organizationId: platformOrganizationId, domain: staff.domain, email: staff.email } }) }
+    return { manifest, admin, stop: cleanup }
   } catch (error) {
     await cleanup()
     throw error
