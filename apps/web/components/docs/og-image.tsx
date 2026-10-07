@@ -1,5 +1,3 @@
-import "server-only"
-
 import { COMMA_PATH, COMMA_VIEW_BOX } from "@answerable/ui/lib/logo"
 
 const MAX_TITLE_LENGTH = 58
