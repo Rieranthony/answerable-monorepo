@@ -156,9 +156,9 @@ curl "$ID/api/admin/v1/organizations/$ORGANISATION_ID/members/$MEMBERSHIP_ID/acc
   -H "Authorization: Bearer $TOOLBOX_MACHINE_TOKEN"
 ```
 
-**The access view.** It keeps the top-level `scopes` of every target whose resource is the Toolbox, both `kind: "resource"` and `kind: "client_resource"`, and keeps the grant strings. The token is the Toolbox's machine client's, a `client_credentials` token for ID's admin resource with `platform:read`, reused until 30 seconds before it expires.
+**The access view.** It keeps every target whose resource is the Toolbox, with the grant strings of its top-level `scopes`. A caller holds the grant strings of the `kind: "resource"` targets, and of the `kind: "client_resource"` targets whose `id` is the token's own client: a grant limited to one host client works through that client and grants nothing through another. The token is the Toolbox's machine client's, a `client_credentials` token for ID's admin resource with `platform:read`, reused until 30 seconds before it expires.
 
-**The cache.** Grant strings are cached per organisation, member and the token's `organization_authorization_version` for 60 seconds. A token with another version reads again.
+**The cache.** Those targets are cached per organisation, member and the token's `organization_authorization_version` for 60 seconds, and each request takes the grant strings of its own client from them. A token with another version reads again.
 
 **The poller.** Every 15 seconds the Toolbox reads ID's audit log (`GET /api/admin/v1/audit-events?limit=200`, newest first, back to the last event it saw) and marks stale the cache of every organisation named by a `capability.*`, `entitlement.*`, `group_member.*`, `group.*`, `member.*` or `organization.*` event, and of every user, in every organisation, a `user.*` event names (`user.disabled`, `user.erased`); the next request reads again. Its first poll only records the newest event.
 

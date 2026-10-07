@@ -30,8 +30,8 @@ test("the Toolbox resource allows toolbox, offline_access, toolbox/approve and e
   ])
 })
 
-test("reads the grant strings of the member's Toolbox targets, of both kinds, and ignores everything else", async () => {
-  const { id, grants, caller } = setup()
+test("reads the grant strings of the member's Toolbox targets: the resource's through every client, a client's own only through that client, and nothing else", async () => {
+  const { id, grants, caller, reads } = setup()
   id.grant(caller.organizationId, caller.membershipId, [
     { kind: "resource", id: toolbox, scopes: ["e2e/records", "toolbox", "offline_access"] },
     { kind: "client_resource", id: "claude-code", resource: toolbox, scopes: ["toolbox", "crm", "e2e/records"] },
@@ -39,7 +39,10 @@ test("reads the grant strings of the member's Toolbox targets, of both kinds, an
     { kind: "resource", id: "https://other.test/mcp", scopes: ["other/secrets"] },
     { kind: "client", id: "claude-code", scopes: ["openid", "offline_access"] },
   ])
-  expect(await grants.read(caller)).toEqual(["crm", "e2e/records"])
+  expect(await grants.read({ ...caller, clientId: "claude-code" })).toEqual(["crm", "e2e/records"])
+  // The same cached read, through another host client: the grant limited to claude-code gives nothing here.
+  expect(await grants.read({ ...caller, clientId: "chatgpt" })).toEqual(["e2e/records"])
+  expect(reads()).toBe(1)
 })
 
 test("a member ID does not know has no grants", async () => {

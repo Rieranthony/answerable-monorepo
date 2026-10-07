@@ -18,30 +18,38 @@ export function allowedScopes(providers: readonly Provider[]) {
 }
 
 const accessView = z.object({ targets: z.array(z.object({ kind: z.string(), id: z.string(), resource: z.string().optional(), scopes: z.array(z.string()) })) })
-type Entry = { userId: string; version: number; grants: readonly string[]; expiresAt: number; stale: boolean }
+type Target = z.output<typeof accessView>["targets"][number]
+type Entry = { userId: string; version: number; targets: readonly Target[]; expiresAt: number; stale: boolean }
+
+/** The grant strings a caller holds through a member's Toolbox targets: those of the resource itself, and those limited to the caller's token client. */
+const grantsOf = (targets: readonly Target[], clientId: string) =>
+  [...new Set(targets.filter(target => target.kind === "resource" || target.id === clientId).flatMap(target => target.scopes))].sort()
 
 /** A member's grant strings, read from ID and cached. */
 export type GrantsReader = {
-  /** The caller's grant strings, sorted: from the cache for 60 seconds after a read, else from ID's member access view. */
+  /**
+   * The caller's grant strings, sorted: those of the member's `kind: "resource"` targets for the Toolbox, and of its `kind: "client_resource"` targets
+   * for the Toolbox through the token's own client. The targets come from the cache for 60 seconds after a read, else from ID's member access view.
+   */
   read(principal: UserPrincipal): Promise<readonly string[]>
   /** Read these organisations' members, and these users in every organisation, from ID again on their next call, and call `changed` when at least one is named. */
   invalidate(organisationIds: Iterable<string>, userIds?: Iterable<string>): void
 }
 
 /**
- * Read each caller's grant strings from ID's member access view: the scopes of every target whose resource is the Toolbox, keeping only
- * grant strings. Cached per organisation, member and the token's organisation authorisation version for 60 seconds. When ID fails,
- * a cached entry answers until it expires; without one the read throws `UPSTREAM_UNAVAILABLE`. `changed` runs after an invalidation that names an
- * organisation or a user, cached or not, since a member who is listening may not have been read for a while.
+ * Read each caller's grant strings from ID's member access view: the targets whose resource is the Toolbox, with their grant strings only, cached per
+ * organisation, member and the token's organisation authorisation version for 60 seconds. A target of `kind: "client_resource"` counts only through its
+ * own client: a grant ID limits to one host client grants nothing through another. When ID fails, a cached entry answers until it expires; without one
+ * the read throws `UPSTREAM_UNAVAILABLE`. `changed` runs after an invalidation that names an organisation or a user, cached or not, since a member who
+ * is listening may not have been read for a while.
  */
 export function createGrantsReader({ id, resource, changed = () => {} }: { id: IdAdmin; resource: string; changed?: () => void }): GrantsReader {
   const cache = new Map<string, Map<string, Entry>>()
-  const pending = new Map<string, Promise<readonly string[]>>()
-  async function fetchGrants(organisationId: string, memberId: string) {
+  const pending = new Map<string, Promise<readonly Target[]>>()
+  async function fetchTargets(organisationId: string, memberId: string) {
     const view = await found(id.get(`/organizations/${organisationId}/members/${memberId}/access`))
     const targets = view === undefined ? [] : accessView.parse(view).targets
-    const scopes = targets.filter(target => (target.kind === "resource" ? target.id : target.resource) === resource).flatMap(target => target.scopes)
-    return [...new Set(scopes.filter(isGrant))].sort()
+    return targets.filter(target => (target.kind === "resource" ? target.id : target.resource) === resource).map(target => ({ ...target, scopes: target.scopes.filter(isGrant) }))
   }
   function remember(organisationId: string, memberId: string, entry: Entry) {
     const now = Date.now()
@@ -53,28 +61,28 @@ export function createGrantsReader({ id, resource, changed = () => {} }: { id: I
   }
   async function refresh({ userId, organizationId, membershipId, organizationAuthorizationVersion: version }: UserPrincipal, kept: Entry | undefined) {
     try {
-      const grants = await fetchGrants(organizationId, membershipId)
-      remember(organizationId, membershipId, { userId, version, grants, expiresAt: Date.now() + 60_000, stale: false })
-      return grants
+      const targets = await fetchTargets(organizationId, membershipId)
+      remember(organizationId, membershipId, { userId, version, targets, expiresAt: Date.now() + 60_000, stale: false })
+      return targets
     } catch (error) {
       console.error("[toolbox] reading access failed", error)
-      if (kept && Date.now() < kept.expiresAt) return kept.grants
+      if (kept && Date.now() < kept.expiresAt) return kept.targets
       throw new ToolError("UPSTREAM_UNAVAILABLE", "Answerable ID did not answer with your access; try again shortly")
     }
   }
   return {
     async read(principal) {
-      const { organizationId, membershipId, organizationAuthorizationVersion: version } = principal
+      const { organizationId, membershipId, organizationAuthorizationVersion: version, clientId } = principal
       const cached = cache.get(organizationId)?.get(membershipId)
       const kept = cached?.version === version ? cached : undefined
-      if (kept && !kept.stale && Date.now() < kept.expiresAt) return kept.grants
+      if (kept && !kept.stale && Date.now() < kept.expiresAt) return grantsOf(kept.targets, clientId)
       const key = `${organizationId}/${membershipId}/${version}`
       let read = pending.get(key)
       if (!read) {
         read = refresh(principal, kept).finally(() => pending.delete(key))
         pending.set(key, read)
       }
-      return read
+      return grantsOf(await read, clientId)
     },
     invalidate(organisationIds, userIds = []) {
       const users = new Set(userIds)
