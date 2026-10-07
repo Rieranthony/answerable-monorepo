@@ -10,7 +10,7 @@ import {
   requireTenantHistoryContext,
   type TenantReadContext,
 } from "../../services/tenant-context.ts";
-import { lockOrganization } from "../organization-lock.ts";
+import { lockOrganization } from "../locks.ts";
 import { and, count, desc, eq, ilike, or, sql, isNull } from "drizzle-orm";
 import {
   organizations,

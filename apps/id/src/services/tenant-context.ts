@@ -6,7 +6,7 @@ import {
 } from "./actor.ts";
 import { setDatabaseScope } from "../db/isolation.ts";
 import type { Database, Executor } from "../db/client.ts";
-import { lockOrganization } from "../db/organization-lock.ts";
+import { lockOrganization } from "../db/locks.ts";
 import type { Environment } from "../env.ts";
 import type { Principal, BearerClaims } from "../http/principal.ts";
 import { ProblemError } from "../http/problem.ts";

@@ -1,4 +1,5 @@
 import { setDatabaseScope } from "../db/isolation.ts";
+import { lockUser } from "../db/locks.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type {
   SSOUserResolutionInput,
@@ -24,7 +25,6 @@ import {
   organizations,
   sessions,
   ssoProviders,
-  users,
 } from "../db/schema/index.ts";
 import { recordAuditEvent } from "../db/queries/audit.ts";
 import { isEffective } from "../db/queries/effective.ts";
@@ -155,11 +155,7 @@ export function createVerifiedSso(db: Database) {
     const flow = requests.getStore()?.flow;
     if (!flow) return;
     // Acquire our source/target locks before native SSO's provider update lock.
-    await tx
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.id, flow.userId))
-      .for("update");
+    await lockUser(tx, flow.userId);
     await tx
       .select({ id: organizations.id })
       .from(organizations)
@@ -303,11 +299,7 @@ export function createVerifiedSso(db: Database) {
           const session = ctx.context.session;
           const flow = await db.transaction(async (tx) => {
             await setDatabaseScope(tx, { kind: "protocol" });
-            await tx
-              .select({ id: users.id })
-              .from(users)
-              .where(eq(users.id, session.user.id))
-              .for("share");
+            await lockUser(tx, session.user.id, "share");
             const [stored] = await tx
               .select()
               .from(sessions)

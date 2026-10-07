@@ -1,4 +1,5 @@
 import { revokeErasedUserGrantContexts } from "./grant-contexts.ts";
+import { lockUser as lockUserRow } from "../locks.ts";
 import {
   requirePlatformReadContext,
   requirePlatformUsersContext,
@@ -117,13 +118,9 @@ export async function lockUser(
     context?.access === "write"
       ? requirePlatformWriteContext(context)
       : requirePlatformUsersContext(context);
-  const [row] = await executor
-    .select()
-    .from(users)
-    .where(and(isNull(users.deletedAt), eq(users.id, userId)))
-    .for("update");
+  const row = await lockUserRow(executor, userId);
   await context.revalidate();
-  return row ?? null;
+  return row;
 }
 
 /** Existence checks must not load the user's profile and identity graph. */

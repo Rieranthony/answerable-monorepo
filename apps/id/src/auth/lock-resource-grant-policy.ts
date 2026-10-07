@@ -1,11 +1,13 @@
-import { lockOrganization } from "../db/organization-lock.ts";
-import { lockClient } from "../db/client-lock.ts";
-import { lockResource } from "../db/resource-lock.ts";
+import {
+  lockClient,
+  lockOrganization,
+  lockResource,
+  lockUser,
+} from "../db/locks.ts";
 import { rethrowGrantError } from "./grant-error.ts";
 import { and, eq, isNull } from "drizzle-orm";
 import {
   grantContexts,
-  users,
   oauthClients,
   oauthResources,
 } from "../db/schema/index.ts";
@@ -22,12 +24,7 @@ export async function lockResourceGrantTargets(
     resource: string | null;
   },
 ) {
-  await tx
-    .select({ id: users.id })
-    .from(users)
-    .where(and(isNull(users.deletedAt), eq(users.id, target.userId)))
-    .for("share")
-    .catch(rethrowGrantError);
+  await lockUser(tx, target.userId, "share").catch(rethrowGrantError);
   await lockOrganization(tx, target.organizationId, "share").catch(
     rethrowGrantError,
   );

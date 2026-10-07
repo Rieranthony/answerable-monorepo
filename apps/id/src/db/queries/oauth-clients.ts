@@ -8,7 +8,7 @@ import {
   requireTenantDirectoryContext,
   type TenantReadContext,
 } from "../../services/tenant-context.ts";
-import { lockClient } from "../client-lock.ts";
+import { lockClient } from "../locks.ts";
 import {
   count,
   and,

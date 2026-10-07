@@ -234,7 +234,7 @@ test("machine token expiry during a policy wait is checked before command admiss
     release = resolve;
   });
   const holder = writer.db.transaction(async (tx) => {
-    const { lockOrganization } = await import("../db/organization-lock.ts");
+    const { lockOrganization } = await import("../db/locks.ts");
     await lockOrganization(tx, fixture.platform.organizationId);
     reached();
     await gate;

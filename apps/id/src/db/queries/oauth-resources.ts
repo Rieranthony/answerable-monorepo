@@ -9,7 +9,7 @@ import {
   requireTenantDirectoryContext,
   type TenantReadContext,
 } from "../../services/tenant-context.ts";
-import { lockResource } from "../resource-lock.ts";
+import { lockResource } from "../locks.ts";
 import {
   oauthResources,
   entitlements,

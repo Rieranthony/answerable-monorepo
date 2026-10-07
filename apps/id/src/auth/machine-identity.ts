@@ -3,12 +3,10 @@ import { getCurrentAdapter, type DBAdapter } from "better-auth";
 import { APIError } from "better-auth/api";
 import { z } from "zod";
 import { setDatabaseScope } from "../db/isolation.ts";
-import { lockResource } from "../db/resource-lock.ts";
+import { lockResource, lockOrganization, lockClient } from "../db/locks.ts";
 import { authTransaction } from "./database-adapter.ts";
-import { lockOrganization } from "../db/organization-lock.ts";
 import { organizations, oauthClients } from "../db/schema/index.ts";
 import { eq } from "drizzle-orm";
-import { lockClient } from "../db/client-lock.ts";
 
 export const machineIdentitySchema = z.object({
   client_instance: z.uuid(),

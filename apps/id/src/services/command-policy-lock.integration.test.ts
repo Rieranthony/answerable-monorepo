@@ -214,7 +214,7 @@ test("session expiry during a policy lock wait denies the command before mutatio
     release = resolve;
   });
   const holder = writer.db.transaction(async (tx) => {
-    const { lockOrganization } = await import("../db/organization-lock.ts");
+    const { lockOrganization } = await import("../db/locks.ts");
     await lockOrganization(tx, fixture.platform.organizationId);
     reached();
     await gate;
