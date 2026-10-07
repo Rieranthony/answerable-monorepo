@@ -28,7 +28,7 @@ export function inPlatformRead<T>(
 }
 
 /** One transaction under the authority `authorize` issues, as the journal runs a command. */
-export function inPlatformCommand<Context>(
+function inPlatformCommand<Context>(
   authorize: (tx: Executor) => Promise<{
     run<T>(
       run: (context: Context) => Promise<T>,
