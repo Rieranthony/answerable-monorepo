@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0
+
+`pages(path, get)` yields every page of one of ID's lists, following `nextCursor`: `get` reads `path` with `limit=200` and the cursor appended, URL-encoded, with `?` or `&` as the path needs. The Toolbox's poller and enable operation and the admin MCP's reads each wrote this loop.
+
 ## 0.4.1
 
 `IdError` carries `retryAfterMs`: ID's `Retry-After` in milliseconds when it sends one in seconds, as it does with `503 database_busy`, so that a caller can wait as long as ID asks.

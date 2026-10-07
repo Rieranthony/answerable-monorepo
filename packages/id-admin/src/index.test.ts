@@ -1,5 +1,5 @@
 import { afterEach, expect, setSystemTime, test } from "bun:test"
-import { createIdAdmin, found, IdError } from "./index"
+import { createIdAdmin, found, IdError, pages } from "./index"
 import { createFakeId } from "./testing"
 
 afterEach(() => setSystemTime())
@@ -207,4 +207,22 @@ test("withToken gets a token for another audience with its own scope, reuses it,
   await expect(admin.withToken("https://other.test/admin", "toolbox:admin", service)).rejects.toThrow(
     "Answerable ID refused the client credentials of toolbox-hub (400); check the client id, the client secret and the client's toolbox:admin capability for https://other.test/admin",
   )
+})
+
+test("pages reads every page of a list at limit=200, appending the cursor with ? or & as the path needs, and stops when the caller stops", async () => {
+  const list = ["a", "b", "c", "d", "e"]
+  const asked: string[] = []
+  // Two items a page; the cursor is the index of the next item, with a character that needs encoding.
+  const get = async (path: string) => {
+    asked.push(path)
+    const from = Number(new URL(path, "http://id.test").searchParams.get("cursor")?.slice(1) ?? 0)
+    return { items: list.slice(from, from + 2), nextCursor: from + 2 < list.length ? `/${from + 2}` : null }
+  }
+  const read: string[][] = []
+  for await (const items of pages("/audit-events", get)) read.push(items)
+  expect(read).toEqual([["a", "b"], ["c", "d"], ["e"]])
+  expect(asked).toEqual(["/audit-events?limit=200", "/audit-events?limit=200&cursor=%2F2", "/audit-events?limit=200&cursor=%2F4"])
+  asked.length = 0
+  for await (const items of pages("/organizations/org/members?q=x", get)) if (items.includes("b")) break
+  expect(asked).toEqual(["/organizations/org/members?q=x&limit=200"])
 })

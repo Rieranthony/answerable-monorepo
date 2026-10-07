@@ -70,6 +70,25 @@ export async function found<T>(answer: Promise<T>): Promise<T | undefined> {
 }
 
 /**
+ * Every page of one of ID's lists, in order, following `nextCursor`: `get` reads one page at `path` with `limit=200` and, from the second page on,
+ * the cursor appended. Stop iterating to stop reading.
+ *
+ * @example
+ * ```ts
+ * for await (const items of pages("/audit-events", async path => page.parse(await id.get(path)))) events.push(...items)
+ * ```
+ */
+export async function* pages<Item>(path: string, get: (path: string) => Promise<{ items: Item[]; nextCursor: string | null }>): AsyncGenerator<Item[]> {
+  const first = `${path}${path.includes("?") ? "&" : "?"}limit=200`
+  let cursor: string | null = null
+  do {
+    const page = await get(cursor === null ? first : `${first}&cursor=${encodeURIComponent(cursor)}`)
+    yield page.items
+    cursor = page.nextCursor
+  } while (cursor)
+}
+
+/**
  * ID's admin API as a server's machine client, one per server. Reads (`get`, `read`) use a `platform:read` token; `manage` uses a `platform:read
  * platform:write` token of its own; `withToken` gets a token for another service that trusts the client. Each token is reused until 30 seconds
  * before it expires and renewed once when it is refused. A status outside 2xx from the admin API throws `IdError`.

@@ -1,9 +1,9 @@
 # Answerable ID admin client
 
-A server's machine client on Answerable ID's admin API: `createIdAdmin`, `IdError`, `found`, and a fake ID for tests. Used by the Toolbox; the admin MCP is its second consumer. Development and test only.
+A server's machine client on Answerable ID's admin API: `createIdAdmin`, `IdError`, `found`, `pages`, and a fake ID for tests. Used by the Toolbox; the admin MCP is its second consumer. Development and test only.
 
 ```ts
-import { createIdAdmin, found } from "@answerable/id-admin"
+import { createIdAdmin, found, pages } from "@answerable/id-admin"
 
 const id = createIdAdmin({
   issuer: "http://localhost:47300",
@@ -15,6 +15,9 @@ const id = createIdAdmin({
 const events = await id.get("/audit-events?limit=20") // platform:read
 const organisation = await found(id.get(`/organizations/${organisationId}`)) // ID's 404 becomes undefined
 const { body, etag: etagOfOrganisation } = await id.read(`/organizations/${organisationId}`) // the JSON and ID's ETag
+for await (const items of pages(`/organizations/${organisationId}/groups`, async path => (await id.get(path)) as { items: unknown[]; nextCursor: string | null })) {
+  console.log(items) // one page of up to 200, until nextCursor is null
+}
 
 const { etag, operationId, replayed } = await id.manage("PATCH", `/organizations/${organisationId}`, {
   body: { name: "Newco" },
@@ -29,6 +32,7 @@ const { etag, operationId, replayed } = await id.manage("PATCH", `/organizations
 - **Idempotency.** `manage` sends `Idempotency-Key` on every method but `GET`: yours, or a random UUID per call. A call resent after a 401 carries the same key and the same `x-request-id`. When ID replays an earlier answer to the key, `replayed` is true and `body` is ID's operation receipt: read the resource's id from `body.resultReference.id`.
 - **Preconditions.** `ifMatch` sends the ETag a write expects; `ifNoneMatch: "*"` asserts that nothing exists yet where ID takes it. A stale one answers `412 revision_mismatch`.
 - **Correlation.** `requestId` is sent as `x-request-id` when given. `manage` also returns ID's `Operation-Id` (`null` where ID sends none, as on reads), which joins a receipt to ID's audit log.
+- **Lists.** `pages(path, get)` yields every page of one of ID's lists: `get` reads `path` with `limit=200` and, from the second page on, `cursor` set to the last page's `nextCursor`. Break out of the loop to stop reading.
 - **Errors.** A status outside 2xx, a refused token request or no answer at all throws `IdError` with the `status` (0 when ID did not answer) and ID's problem `code`. A refusal of the client credentials names the client id and the capability to check.
 
 `@answerable/id-admin/testing` exports `createFakeId(options?)`: ID's token endpoint and the admin routes the Toolbox and the admin MCP call, in memory, answering the shapes of `apps/id/openapi.admin.json`. `fake.config` goes to `createIdAdmin`; `fake.received` lists every admin request with the `x-request-id`, `Idempotency-Key`, `If-Match` and `If-None-Match` it carried, 401s included.
