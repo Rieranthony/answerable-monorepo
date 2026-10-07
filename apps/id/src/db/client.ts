@@ -11,26 +11,21 @@ export function createDatabase(
     | "databasePoolMax"
     | "databasePoolIdleTimeoutMs"
     | "databaseConnectionTimeoutMs"
+    | "databaseStatementTimeoutMs"
+    | "databaseLockTimeoutMs"
+    | "databaseIdleInTransactionTimeoutMs"
     | "nodeEnv"
-  > &
-    Partial<
-      Pick<
-        Environment,
-        | "databaseStatementTimeoutMs"
-        | "databaseLockTimeoutMs"
-        | "databaseIdleInTransactionTimeoutMs"
-      >
-    >,
+  >,
 ) {
   const pool = new Pool({
     connectionString: environment.databaseUrl,
     max: environment.databasePoolMax,
     idleTimeoutMillis: environment.databasePoolIdleTimeoutMs,
     connectionTimeoutMillis: environment.databaseConnectionTimeoutMs,
-    statement_timeout: environment.databaseStatementTimeoutMs ?? 10_000,
-    lock_timeout: environment.databaseLockTimeoutMs ?? 2_000,
+    statement_timeout: environment.databaseStatementTimeoutMs,
+    lock_timeout: environment.databaseLockTimeoutMs,
     idle_in_transaction_session_timeout:
-      environment.databaseIdleInTransactionTimeoutMs ?? 15_000,
+      environment.databaseIdleInTransactionTimeoutMs,
     allowExitOnIdle: environment.nodeEnv === "test",
   });
 
