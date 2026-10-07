@@ -69,7 +69,7 @@ If a configured platform application disappears, `POST /auth/sign-in/sso` return
 | `authentication_unavailable` (500) | Upstream credentials cannot be stored securely. | Contact Answerable staff to check upstream token keys. |
 | `platform_application_missing` (503) | The organisation’s platform application is unavailable. | Start again later and contact Answerable staff. |
 
-Redirect codes arrive on the error page as `?error=<code>`.
+Redirect codes arrive on the error page as `?error=<code>`. The page also shows `error_description` when it is a code of at most 128 letters, digits, `_`, `.`, `:` or `-`, and drops any other text.
 
 | Code                               | Meaning                                                                                                                 | What to do                                                                                                       |
 | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |

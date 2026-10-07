@@ -331,16 +331,31 @@ test("consent records accept and deny and renders recoverable failures", async (
     "Your choice could not be recorded.",
   );
 });
-test("error pages escape descriptions and render known, unknown and absent codes", async () => {
+test("error pages show code-shaped descriptions only and render known, unknown and absent codes", async () => {
   for (const suffix of ["", "?error=unknown", "?error=invalid_state"])
     await html(
       await fixture().app.request("/error" + suffix),
       "Try another email",
     );
   await html(
-    await fixture().app.request("/error?error_description=%3Cscript%3E"),
-    "&lt;script&gt;",
+    await fixture().app.request(
+      "/error?error=invalid_state&error_description=sso_provider_changed_during_authentication",
+    ),
+    "sso_provider_changed_during_authentication",
   );
+  for (const description of [
+    "%3Cscript%3E",
+    "Your+account+is+locked.+Call+0800+000+000",
+    "x".repeat(129),
+  ]) {
+    const text = await html(
+      await fixture().app.request(`/error?error_description=${description}`),
+      "Try another email",
+    );
+    expect(text).not.toContain("script&gt;");
+    expect(text).not.toContain("account is locked");
+    expect(text).not.toContain("x".repeat(129));
+  }
 });
 test("security session states and verification actions", async () => {
   await html(
