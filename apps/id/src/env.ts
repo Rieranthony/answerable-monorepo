@@ -14,7 +14,7 @@ const applicationSecrets = z.string().transform((value, context) => {
   const parsed = z
     .array(
       z.object({
-        version: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+        version: z.number().int().min(0),
         value: z.string().min(32),
       }),
     )
@@ -113,7 +113,6 @@ const environmentSchema = z
       .number()
       .int()
       .min(0)
-      .max(Number.MAX_SAFE_INTEGER)
       .default(0),
     OPERATIONAL_LOG_INTERVAL_MS: intervalMs(30_000),
     PROTOCOL_SWEEP_INTERVAL_MS: intervalMs(60_000),
