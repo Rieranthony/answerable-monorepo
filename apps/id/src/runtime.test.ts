@@ -183,7 +183,7 @@ describe("unit: process runtime", () => {
   test("a failing seed closes the pool and never listens", async () => {
     const probe = Bun.serve({ port: 0, fetch: () => new Response() });
     const port = probe.port!;
-    probe.stop(true);
+    await probe.stop(true);
     const environment = testEnvironment({ port });
     const database = createDatabase(environment);
     const failure = new Error("seed failed");

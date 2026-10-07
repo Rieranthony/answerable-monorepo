@@ -84,7 +84,7 @@ export async function startRuntime(
     isShuttingDown = true;
     clearInterval(reporter);
 
-    server.stop(false);
+    await server.stop();
     await sweep.stop();
     await database.close();
   }

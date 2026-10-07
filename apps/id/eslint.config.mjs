@@ -10,6 +10,21 @@ export default tseslint.config(
     },
   },
   {
+    // A transaction's executor stays usable after its callback returns, so an
+    // unawaited query could run outside the transaction that authorised it.
+    files: ["src/**/*.{ts,tsx}", "scripts/**/*.ts"],
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      "@typescript-eslint/no-floating-promises": "error",
+      "@typescript-eslint/no-misused-promises": "error",
+    },
+  },
+  {
     ignores: ["coverage/**", "dist/**"],
   },
 );

@@ -37,8 +37,12 @@ tokens stay until their own expiry. An advisory lock lets one process delete at 
 time; a process that finds it taken skips the rest of that run. A run that deleted
 rows writes `[id] protocol sweep` followed by JSON with the count per table; expiry
 records no audit. A failed run writes only `protocol_sweep_failed`, with the
-SQLSTATE as `code` when the database gave one, and the next interval retries. Shutdown stops it after the running batch. Better Auth deletes
+SQLSTATE as `code` when the database gave one, and the next interval retries. Better Auth deletes
 expired `verifications` itself.
+
+**Shutdown.** On `SIGINT` or `SIGTERM` the process stops listening, waits for in-flight
+requests, stops the sweep after its running batch and closes the pool. A failed shutdown
+writes `shutdown_failed` with the error's name and exits with status 1.
 
 **Monitoring handoff.** Configure the selected collector/scheduler to route these
 signals to an operator. No destination or numerical alert budget is configured here.

@@ -144,7 +144,7 @@ export async function startOidcIssuer(
       queued.push({ claims, fault });
     },
     stop() {
-      server.stop(true);
+      void server.stop(true);
     },
   };
 }

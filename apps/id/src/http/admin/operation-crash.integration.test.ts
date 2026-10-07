@@ -75,7 +75,7 @@ async function worker(holdResponse: boolean) {
       holdResponse,
     }),
   );
-  child.stdin.end();
+  await child.stdin.end();
   void child.exited.then((code) => {
     ready.reject(new Error(`Worker exited before readiness (${code})`));
     responseReady.reject(
