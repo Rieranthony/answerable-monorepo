@@ -1,5 +1,5 @@
 import type { getOAuthProviderApi } from "@better-auth/oauth-provider";
-import { APIError } from "better-auth/api";
+import { temporarilyUnavailable } from "./grant-error.ts";
 
 type Adapter = Parameters<typeof getOAuthProviderApi>[0]["context"]["adapter"];
 
@@ -21,13 +21,8 @@ export async function withNativeTokenCleanup<T>(
     (error: unknown) => ({ error }),
   );
   if (failed)
-    throw new APIError(
-      "SERVICE_UNAVAILABLE",
-      {
-        error: "temporarily_unavailable",
-        error_description: "Token revocation failed. Retry the token request.",
-      },
-      { "Retry-After": "1" },
+    throw temporarilyUnavailable(
+      "Token revocation failed. Retry the token request.",
     );
   if ("error" in outcome) throw outcome.error;
   return outcome.value;

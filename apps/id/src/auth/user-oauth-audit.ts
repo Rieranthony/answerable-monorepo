@@ -1,7 +1,7 @@
-import { APIError } from "better-auth/api";
 import type { Executor } from "../db/client.ts";
 import { recordAuditEvent } from "../db/queries/audit.ts";
 import type { grantContexts } from "../db/schema/index.ts";
+import { temporarilyUnavailable } from "./grant-error.ts";
 
 /** The audit row targets the retained, immutable grant; its subject is the grant's user. */
 export async function recordUserOAuth(
@@ -33,14 +33,8 @@ export async function recordUserOAuth(
       data: input.data ?? null,
     });
   } catch {
-    throw new APIError(
-      "SERVICE_UNAVAILABLE",
-      {
-        error: "temporarily_unavailable",
-        error_description:
-          "The authorisation outcome could not be recorded. Retry the request.",
-      },
-      { "Retry-After": "1" },
+    throw temporarilyUnavailable(
+      "The authorisation outcome could not be recorded. Retry the request.",
     );
   }
 }

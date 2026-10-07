@@ -1,9 +1,10 @@
 import type { machineCapability } from "./machine-capability.ts";
 import { decodeJwt } from "jose";
 import { z } from "zod";
-import { APIError, isAPIError } from "better-auth/api";
+import { isAPIError } from "better-auth/api";
 import type { Executor } from "../db/client.ts";
 import { recordAuditEvent } from "../db/queries/audit.ts";
+import { temporarilyUnavailable } from "./grant-error.ts";
 import { machineIdentitySchema } from "./machine-identity.ts";
 
 const issuedClaims = machineIdentitySchema.extend({
@@ -66,14 +67,8 @@ export async function recordMachineIssuance(
       },
     });
   } catch {
-    throw new APIError(
-      "SERVICE_UNAVAILABLE",
-      {
-        error: "temporarily_unavailable",
-        error_description:
-          "Issuance audit could not be recorded. Retry the token request.",
-      },
-      { "Retry-After": "1" },
+    throw temporarilyUnavailable(
+      "Issuance audit could not be recorded. Retry the token request.",
     );
   }
 }
