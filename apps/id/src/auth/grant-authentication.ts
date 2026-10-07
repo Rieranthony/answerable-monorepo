@@ -60,8 +60,6 @@ export async function currentGrantAuthentication(
           isEffective(members),
           eq(users.status, "active"),
           eq(organizations.status, "active"),
-          isNull(users.deletedAt),
-          isNull(organizations.deletedAt),
           isNull(accounts.deletedAt),
           isNull(ssoProviders.deletedAt),
           sql`${grant.expiresAt} > statement_timestamp()`,
