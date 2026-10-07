@@ -12,8 +12,8 @@ Requires Bun 1.3.1 and Docker Compose. It starts PostgreSQL in a Compose project
 
 | File | Job |
 | --- | --- |
-| `src/id.ts` | `startId`: Compose, the ID fixture (`apps/id/scripts/mcp-e2e-fixture.ts`) with its plan (`tenants`, `platform`, `spares`), the manifest, `stop` |
-| `src/admin.ts` | `createAdmin` and the provisioning functions over ID's admin API, including `registerMachine` and `setSsoProvider` |
+| `src/id.ts` | `startId`: Compose, the ID fixture (`apps/id/scripts/mcp-e2e-fixture.ts`), which starts the company directories of the plan (`tenants`, `platform`, `spares`); the tenants' organisations and every organisation's domain and single sign-on; the manifest, `stop` |
+| `src/admin.ts` | `createAdmin` and the provisioning functions over ID's admin API, including `registerMachine`, `addDomain` and `setSsoProvider` |
 | `src/oauth.ts` | The SDK's OAuth client provider in memory, which `signIn` fills, and `refreshRefused` |
 | `src/browser.ts` | `launchBrowser`, `signIn`, `signInRefused` and `verifySignIn`: the SDK challenge and ID's pages in Chromium |
 | `src/mcp.ts` | `serve`, `serveCallback`, `connect`, `tool`, `refusal` and the journeys' `intentSchema` |
