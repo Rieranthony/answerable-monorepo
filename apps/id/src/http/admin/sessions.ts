@@ -136,7 +136,7 @@ export function register(app: Hono<AppEnvironment>) {
           const result = await service.revokeUserSessions(platform, userId);
           return {
             body: { revoked: result.revoked },
-            outcome: result.changed ? "applied" : "noop",
+            changed: result.changed,
             resultReference: { type: "user", id: userId },
           };
         },

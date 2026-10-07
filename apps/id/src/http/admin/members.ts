@@ -246,7 +246,7 @@ export function register(app: Hono<AppEnvironment>) {
           const body = await service.reinstate(tenant, memberId);
           return {
             body,
-            outcome: before.membershipStatus === "active" ? "noop" : "applied",
+            changed: before.membershipStatus !== "active",
             resultReference: { type: "member", id: memberId },
           };
         },
@@ -304,15 +304,15 @@ export function register(app: Hono<AppEnvironment>) {
         { memberId, patch, expected },
         200,
         async (tenant) => {
-          const { body, changed } = await service.updateWindow(
+          const { row, changed } = await service.updateWindow(
             tenant,
             memberId,
             patch,
             expected,
           );
           return {
-            body,
-            outcome: changed ? "applied" : "noop",
+            body: row,
+            changed,
             resultReference: { type: "member", id: memberId },
           };
         },

@@ -79,7 +79,7 @@ async function setStatus(
     action: statusAction("domain", status, changed),
     data: { status, before: auditDomain(existing), after: auditDomain(row!) },
   });
-  return { domain: row!, changed };
+  return { row: row!, changed };
 }
 export async function disableDomain(
   context: PlatformWriteContext,

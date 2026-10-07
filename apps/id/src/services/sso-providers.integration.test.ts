@@ -230,7 +230,7 @@ for (const application of ["google", "microsoft"] as const) {
     expect(created).toMatchObject({
       created: true,
       changed: true,
-      provider: {
+      row: {
         oidc: {
           credentials: "platform",
           clientId: applicationIds[application].clientId,
@@ -242,7 +242,7 @@ for (const application of ["google", "microsoft"] as const) {
       await inTenantRead(db, org.id, "directory", (context) =>
         implementation.getSsoProvider(context, applicationIds),
       ),
-    ).toEqual(created.provider);
+    ).toEqual(created.row);
     await inPlatformWrite(
       db,
       (context) =>
@@ -253,11 +253,11 @@ for (const application of ["google", "microsoft"] as const) {
     expect(events).toHaveLength(2);
     expect(events[0]!.data).toMatchObject({
       before: null,
-      after: { oidc: JSON.parse(JSON.stringify(created.provider.oidc)) },
+      after: { oidc: JSON.parse(JSON.stringify(created.row.oidc)) },
       credentialsChanged: true,
     });
     expect(events[1]!.data).toMatchObject({
-      before: { oidc: JSON.parse(JSON.stringify(created.provider.oidc)) },
+      before: { oidc: JSON.parse(JSON.stringify(created.row.oidc)) },
       deletionMode: "soft",
     });
     expect(JSON.stringify(events)).not.toContain('"clientSecret"');
@@ -337,13 +337,13 @@ for (const transition of [
       .limit(1);
     expect(event!.data).toMatchObject({
       before: { oidc: { credentials: beforeInput.oidc.credentials ?? "own" } },
-      after: { oidc: JSON.parse(JSON.stringify(result.provider.oidc)) },
+      after: { oidc: JSON.parse(JSON.stringify(result.row.oidc)) },
       credentialsChanged: changed,
       effects: {
         revokedGrantContexts: changed ? [{ id: contexts[0]!.id, userId }] : [],
       },
     });
-    const serialized = JSON.stringify([result.provider, event]);
+    const serialized = JSON.stringify([result.row, event]);
     expect(serialized).not.toContain('"clientSecret"');
     expect(serialized.includes("private-secret")).toBe(false);
     expect(serialized.includes("replacement-private")).toBe(false);

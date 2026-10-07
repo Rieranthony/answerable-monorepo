@@ -122,7 +122,7 @@ test("creates, lists, gets and updates with exactly one attributed audit per wri
   const patch = { name: "Acme Ltd" };
   expect(
     await service.updateOrganization(db, actor, row.id, patch),
-  ).toMatchObject({ organization: patch, changed: true });
+  ).toMatchObject({ row: patch, changed: true });
   const events = await db.select().from(auditEvents).orderBy(auditEvents.id);
   expect(events).toHaveLength(2);
   expect(events[0]).toMatchObject({
@@ -211,15 +211,15 @@ test("tenant kill switch revokes only machine rows and preserves global sessions
     expiresAt: new Date(Date.now() + 60000),
   });
   expect(await service.enableOrganization(db, actor, row.id)).toMatchObject({
-    organization: row,
+    row,
     changed: false,
   });
   expect(await service.disableOrganization(db, actor, row.id)).toMatchObject({
-    organization: { status: "disabled", disabledAt: expect.any(Date) },
+    row: { status: "disabled", disabledAt: expect.any(Date) },
     changed: true,
   });
   expect(await service.disableOrganization(db, actor, row.id)).toMatchObject({
-    organization: { status: "disabled", authorizationVersion: 2 },
+    row: { status: "disabled", authorizationVersion: 2 },
     changed: false,
   });
   const [event] = await db
@@ -249,7 +249,7 @@ test("tenant kill switch revokes only machine rows and preserves global sessions
     clientId: "owned",
   });
   expect(await service.enableOrganization(db, actor, row.id)).toMatchObject({
-    organization: { status: "active", disabledAt: null },
+    row: { status: "active", disabledAt: null },
     changed: true,
   });
   expect(await db.select().from(sessions)).toHaveLength(3);

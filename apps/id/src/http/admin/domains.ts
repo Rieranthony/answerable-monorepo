@@ -230,8 +230,8 @@ export function register(app: Hono<AppEnvironment>) {
             domainId,
           );
           return {
-            body: result.domain,
-            outcome: result.changed ? "applied" : "noop",
+            body: result.row,
+            changed: result.changed,
             resultReference: { type: "domain", id: domainId },
           };
         },
@@ -257,8 +257,8 @@ export function register(app: Hono<AppEnvironment>) {
             domainId,
           );
           return {
-            body: result.domain,
-            outcome: result.changed ? "applied" : "noop",
+            body: result.row,
+            changed: result.changed,
             resultReference: { type: "domain", id: domainId },
           };
         },

@@ -292,10 +292,10 @@ export function register(app: Hono<AppEnvironment>) {
             context.get("environment").platformApplications,
           );
           return {
-            body: result.provider,
+            body: result.row,
             statusCode: result.created ? 201 : 200,
-            outcome: result.changed ? "applied" : "noop",
-            resultReference: { type: "sso_provider", id: result.provider.id },
+            changed: result.changed,
+            resultReference: { type: "sso_provider", id: result.row.id },
           };
         },
         { etag: true },

@@ -216,7 +216,7 @@ export function register(app: Hono<AppEnvironment>) {
           const result = await service.disableUser(platform, userId);
           return {
             body: result.row,
-            outcome: result.changed ? "applied" : "noop",
+            changed: result.changed,
             resultReference: { type: "user", id: userId },
           };
         },
@@ -238,7 +238,7 @@ export function register(app: Hono<AppEnvironment>) {
           const result = await service.enableUser(platform, userId);
           return {
             body: result.row,
-            outcome: result.changed ? "applied" : "noop",
+            changed: result.changed,
             resultReference: { type: "user", id: userId },
           };
         },
@@ -260,7 +260,7 @@ export function register(app: Hono<AppEnvironment>) {
           const result = await service.retireUserEmail(platform, userId);
           return {
             body: result.row,
-            outcome: result.changed ? "applied" : "noop",
+            changed: result.changed,
             resultReference: { type: "user", id: userId },
           };
         },

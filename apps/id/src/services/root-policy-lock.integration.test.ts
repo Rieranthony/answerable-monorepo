@@ -206,9 +206,7 @@ for (const source of ["capability", "resource", "new-member"] as const)
               name: "Unrelated tenant remains writable",
             });
           });
-          expect(result.organization.name).toBe(
-            "Unrelated tenant remains writable",
-          );
+          expect(result.row.name).toBe("Unrelated tenant remains writable");
         } catch (error) {
           release();
           await first;

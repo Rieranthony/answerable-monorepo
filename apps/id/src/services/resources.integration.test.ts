@@ -26,7 +26,7 @@ const service = {
   createResource: platformWriteService(implementation.createResource),
   updateResource: platformWriteService(
     async (...args: Parameters<typeof implementation.updateResource>) =>
-      (await implementation.updateResource(...args)).body,
+      (await implementation.updateResource(...args)).row,
   ),
   disableResource: platformWriteService(implementation.disableResource),
   enableResource: platformWriteService(implementation.enableResource),
@@ -87,16 +87,16 @@ test("resource lifecycle attributes exactly one audit per write and preserves up
     await service.updateResource(db, actor, row.identifier, patch),
   ).toMatchObject(patch);
   expect(await service.enableResource(db, actor, row.identifier)).toMatchObject(
-    { changed: false, resource: { disabled: false } },
+    { changed: false, row: { disabled: false } },
   );
   expect(
     await service.disableResource(db, actor, row.identifier),
-  ).toMatchObject({ changed: true, resource: { disabled: true } });
+  ).toMatchObject({ changed: true, row: { disabled: true } });
   expect(
     await service.disableResource(db, actor, row.identifier),
-  ).toMatchObject({ changed: false, resource: { disabled: true } });
+  ).toMatchObject({ changed: false, row: { disabled: true } });
   expect(await service.enableResource(db, actor, row.identifier)).toMatchObject(
-    { changed: true, resource: { disabled: false } },
+    { changed: true, row: { disabled: false } },
   );
   await service.eraseResource(db, actor, row.identifier, row.identifier);
   const events = await db.select().from(auditEvents).orderBy(auditEvents.id);

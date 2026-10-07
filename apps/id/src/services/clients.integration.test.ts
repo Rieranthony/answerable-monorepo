@@ -28,7 +28,7 @@ const service = {
   createClient: platformWriteService(implementation.createClient),
   updateClient: platformWriteService(
     async (...args: Parameters<typeof implementation.updateClient>) =>
-      (await implementation.updateClient(...args)).body,
+      (await implementation.updateClient(...args)).row,
   ),
   disableClient: platformWriteService(implementation.disableClient),
   enableClient: platformWriteService(implementation.enableClient),
@@ -147,18 +147,18 @@ test("client lifecycle hides digests, returns secrets once, revokes tokens, chan
   await db.insert(oauthAccessTokens).values(token);
   await db.insert(oauthRefreshTokens).values({ ...token, id: createId() });
   expect(await service.enableClient(db, actor, created.clientId)).toMatchObject(
-    { changed: false, client: { disabled: false } },
+    { changed: false, row: { disabled: false } },
   );
   expect(
     await service.disableClient(db, actor, created.clientId),
-  ).toMatchObject({ changed: true, client: { disabled: true } });
+  ).toMatchObject({ changed: true, row: { disabled: true } });
   expect(
     await service.disableClient(db, actor, created.clientId),
-  ).toMatchObject({ changed: false, client: { disabled: true } });
+  ).toMatchObject({ changed: false, row: { disabled: true } });
   for (const table of [oauthAccessTokens, oauthRefreshTokens])
     expect((await db.select().from(table))[0]?.revoked).toBeInstanceOf(Date);
   expect(await service.enableClient(db, actor, created.clientId)).toMatchObject(
-    { changed: true, client: { disabled: false } },
+    { changed: true, row: { disabled: false } },
   );
   expect(
     await service.linkResource(db, actor, created.clientId, resource),

@@ -61,7 +61,7 @@ export async function updateWindow(
       },
     },
   });
-  return { body: row, changed: row.revision !== before.revision };
+  return { row, changed: row.revision !== before.revision };
 }
 export async function remove(context: TenantMemberContext, memberId: string) {
   const { organizationId } = context;

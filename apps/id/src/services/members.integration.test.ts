@@ -121,7 +121,7 @@ const service = {
       (context) =>
         memberService
           .updateWindow(context, memberId, patch, expected)
-          .then((result) => result.body),
+          .then((result) => result.row),
       actor,
     ),
   remove: (db: Executor, actor: Actor, org: string, memberId: string) =>

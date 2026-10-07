@@ -302,15 +302,15 @@ export function register(app: Hono<AppEnvironment>) {
         { identifier, expected, patch: input },
         200,
         async (platform) => {
-          const { body, changed } = await service.updateResource(
+          const { row, changed } = await service.updateResource(
             platform,
             identifier,
             input,
             expected,
           );
           return {
-            body,
-            outcome: changed ? "applied" : "noop",
+            body: row,
+            changed,
             resultReference: { type: "resource", id: identifier },
           };
         },
@@ -332,8 +332,8 @@ export function register(app: Hono<AppEnvironment>) {
         async (platform) => {
           const result = await service.disableResource(platform, identifier);
           return {
-            body: result.resource,
-            outcome: result.changed ? "applied" : "noop",
+            body: result.row,
+            changed: result.changed,
             resultReference: { type: "resource", id: identifier },
           };
         },
@@ -354,8 +354,8 @@ export function register(app: Hono<AppEnvironment>) {
         async (platform) => {
           const result = await service.enableResource(platform, identifier);
           return {
-            body: result.resource,
-            outcome: result.changed ? "applied" : "noop",
+            body: result.row,
+            changed: result.changed,
             resultReference: { type: "resource", id: identifier },
           };
         },

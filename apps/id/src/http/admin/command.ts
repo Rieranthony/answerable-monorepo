@@ -25,7 +25,8 @@ const operationJson = (value: unknown): OperationJson =>
 
 type CommandResult = {
   body: unknown;
-  outcome?: "applied" | "noop";
+  /** False records a noop; absent or true, an applied command. */
+  changed?: boolean;
   statusCode?: number;
   resultReference: { type: string; id: string };
 };
@@ -88,7 +89,7 @@ async function httpCommand<T>(
       // the whole command and its effects if time elapsed in the body.
       await checkFreshness?.();
       return {
-        outcome: result.outcome ?? "applied",
+        outcome: result.changed === false ? "noop" : "applied",
         statusCode: result.statusCode ?? statusCode,
         resultReference: result.resultReference,
         body: operationJson(result.body),

@@ -344,7 +344,7 @@ test("concurrent policy lock upgrades roll back one command and permit same-key 
               if (++entered === 2) release();
               await both;
             }
-            const row = await updateOrganization(
+            const { row } = await updateOrganization(
               context,
               fixture.platform.organizationId,
               { name: `Changed ${index}` },
@@ -354,7 +354,7 @@ test("concurrent policy lock upgrades roll back one command and permit same-key 
               statusCode: 200,
               resultReference: {
                 type: "organization",
-                id: row.organization.id,
+                id: row.id,
               },
             };
           },

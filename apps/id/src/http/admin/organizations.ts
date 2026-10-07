@@ -268,8 +268,8 @@ export function register(app: Hono<AppEnvironment>) {
             expected,
           );
           return {
-            body: result.organization,
-            outcome: result.changed ? "applied" : "noop",
+            body: result.row,
+            changed: result.changed,
             resultReference: { type: "organization", id: organizationId },
           };
         },
@@ -294,8 +294,8 @@ export function register(app: Hono<AppEnvironment>) {
             organizationId,
           );
           return {
-            body: result.organization,
-            outcome: result.changed ? "applied" : "noop",
+            body: result.row,
+            changed: result.changed,
             resultReference: { type: "organization", id: organizationId },
           };
         },
@@ -319,8 +319,8 @@ export function register(app: Hono<AppEnvironment>) {
             organizationId,
           );
           return {
-            body: result.organization,
-            outcome: result.changed ? "applied" : "noop",
+            body: result.row,
+            changed: result.changed,
             resultReference: { type: "organization", id: organizationId },
           };
         },

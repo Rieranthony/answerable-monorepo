@@ -434,7 +434,7 @@ export function register(app: Hono<AppEnvironment>) {
           );
           return {
             body: result.row,
-            outcome: result.changed ? "applied" : "noop",
+            changed: result.changed,
             resultReference: { type: "group", id: groupId },
           };
         },
@@ -462,7 +462,7 @@ export function register(app: Hono<AppEnvironment>) {
           );
           return {
             body: result.row,
-            outcome: result.changed ? "applied" : "noop",
+            changed: result.changed,
             resultReference: { type: "group", id: groupId },
           };
         },
@@ -489,7 +489,7 @@ export function register(app: Hono<AppEnvironment>) {
           );
           return {
             body: result.row,
-            outcome: result.changed ? "applied" : "noop",
+            changed: result.changed,
             resultReference: { type: "group", id: groupId },
           };
         },
@@ -584,7 +584,7 @@ export function register(app: Hono<AppEnvironment>) {
           );
           return {
             body: result.row,
-            outcome: result.changed ? "applied" : "noop",
+            changed: result.changed,
             statusCode: result.created ? 201 : 200,
             resultReference: {
               type: "group_member",

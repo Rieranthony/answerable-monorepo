@@ -303,7 +303,7 @@ export async function updateClient(
       after: auditClient(row!),
     },
   });
-  return { body: publicClient(row!), changed };
+  return { row: publicClient(row!), changed };
 }
 async function setDisabled(
   context: PlatformWriteContext,
@@ -355,7 +355,7 @@ async function setDisabled(
       ...(grantEffectsEventId ? { grantEffectsEventId } : {}),
     },
   });
-  return { client: publicClient(row), changed };
+  return { row: publicClient(row), changed };
 }
 export async function disableClient(
   context: PlatformWriteContext,

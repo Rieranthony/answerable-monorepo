@@ -84,7 +84,7 @@ export async function updateOrganization(
     action: changed ? "organization.updated" : "organization.update_unchanged",
     data: { before: configuration(before), after: configuration(row) },
   });
-  return { organization: row, changed };
+  return { row, changed };
 }
 
 export async function disableOrganization(
@@ -126,7 +126,7 @@ export async function disableOrganization(
       effects: { revokedMachineAccessTokenIds, revokedGrantContexts },
     },
   });
-  return { organization: row, changed };
+  return { row, changed };
 }
 
 export async function enableOrganization(
@@ -151,7 +151,7 @@ export async function enableOrganization(
       after: configuration(row),
     },
   });
-  return { organization: row, changed };
+  return { row, changed };
 }
 
 export async function eraseOrganization(

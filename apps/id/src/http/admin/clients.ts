@@ -446,15 +446,15 @@ export function register(app: Hono<AppEnvironment>) {
         { clientId, expected, patch: input },
         200,
         async (platform) => {
-          const { body, changed } = await service.updateClient(
+          const { row, changed } = await service.updateClient(
             platform,
             clientId,
             input,
             expected,
           );
           return {
-            body,
-            outcome: changed ? "applied" : "noop",
+            body: row,
+            changed,
             resultReference: { type: "client", id: clientId },
           };
         },
@@ -476,8 +476,8 @@ export function register(app: Hono<AppEnvironment>) {
         async (platform) => {
           const result = await service.disableClient(platform, clientId);
           return {
-            body: result.client,
-            outcome: result.changed ? "applied" : "noop",
+            body: result.row,
+            changed: result.changed,
             resultReference: { type: "client", id: clientId },
           };
         },
@@ -498,8 +498,8 @@ export function register(app: Hono<AppEnvironment>) {
         async (platform) => {
           const result = await service.enableClient(platform, clientId);
           return {
-            body: result.client,
-            outcome: result.changed ? "applied" : "noop",
+            body: result.row,
+            changed: result.changed,
             resultReference: { type: "client", id: clientId },
           };
         },
@@ -543,7 +543,7 @@ export function register(app: Hono<AppEnvironment>) {
             clientId,
             input.organizationId,
           ),
-          outcome: "noop",
+          changed: false,
           resultReference: { type: "client", id: clientId },
         }),
       );
@@ -569,7 +569,7 @@ export function register(app: Hono<AppEnvironment>) {
           );
           return {
             body: result,
-            outcome: result.created ? "applied" : "noop",
+            changed: result.created,
             statusCode: result.created ? 201 : 200,
             resultReference: { type: "client", id: clientId },
           };
@@ -597,7 +597,7 @@ export function register(app: Hono<AppEnvironment>) {
           );
           return {
             body: null,
-            outcome: result.removed ? "applied" : "noop",
+            changed: result.removed,
             resultReference: { type: "client", id: clientId },
           };
         },

@@ -134,7 +134,7 @@ export async function putSsoProvider(
   return {
     created: !existing,
     changed,
-    provider: queries.redactSsoProvider(row, ids),
+    row: queries.redactSsoProvider(row, ids),
   };
 }
 export async function deleteSsoProvider(

@@ -127,7 +127,7 @@ export async function updateResource(
       after: auditResource(row!),
     },
   });
-  return { body: row!, changed };
+  return { row: row!, changed };
 }
 export async function disableResource(
   context: PlatformWriteContext,
@@ -174,7 +174,7 @@ async function setDisabled(
       effects: { revokedGrantContexts },
     },
   });
-  return { resource: row, changed };
+  return { row, changed };
 }
 export async function eraseResource(
   context: PlatformWriteContext,

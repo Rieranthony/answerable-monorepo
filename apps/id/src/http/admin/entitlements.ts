@@ -362,7 +362,7 @@ export function register(app: Hono<AppEnvironment>) {
           );
           return {
             body: result.row,
-            outcome: result.changed ? "applied" : "noop",
+            changed: result.changed,
             resultReference: { type: "entitlement", id: entitlementId },
           };
         },
@@ -390,7 +390,7 @@ export function register(app: Hono<AppEnvironment>) {
           );
           return {
             body: result.row,
-            outcome: result.changed ? "applied" : "noop",
+            changed: result.changed,
             resultReference: { type: "entitlement", id: entitlementId },
           };
         },
@@ -417,7 +417,7 @@ export function register(app: Hono<AppEnvironment>) {
           );
           return {
             body: result.row,
-            outcome: result.changed ? "applied" : "noop",
+            changed: result.changed,
             resultReference: { type: "entitlement", id: entitlementId },
           };
         },
