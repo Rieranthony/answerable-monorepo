@@ -1,10 +1,12 @@
 import type { Hono } from "hono";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { adminOperations } from "../../db/schema/index.ts";
 import { operationOutcomes } from "../../db/schema/vocabulary.ts";
-import { getAuditOperationStatus } from "../../services/operation-status.ts";
 import type { AppEnvironment } from "../context.ts";
-import { problemResponses } from "../problem.ts";
+import { found, problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
+import { platformRead } from "./platform-read.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 import { json, pathParameter, uuidParam } from "./schemas.ts";
 
@@ -46,17 +48,20 @@ export function register(app: Hono<AppEnvironment>) {
     routes.getOperation,
     validate("param", uuidParam("operationId")),
     async (context) => {
-      context.header("Cache-Control", "no-store");
-      const result = await getAuditOperationStatus(
-        context.get("db"),
-        context.req.param("operationId")!,
-        {
-          principal: context.get("principal")!,
-          environment: context.get("environment"),
-          claims: context.get("bearerClaims"),
-        },
+      const [operation] = await platformRead(context, ({ tx }) =>
+        tx
+          .select({
+            id: adminOperations.id,
+            name: adminOperations.name,
+            outcome: adminOperations.outcome,
+            statusCode: adminOperations.statusCode,
+            resultReference: adminOperations.resultReference,
+            committedAt: adminOperations.committedAt,
+          })
+          .from(adminOperations)
+          .where(eq(adminOperations.id, context.req.param("operationId")!)),
       );
-      return context.json(result);
+      return context.json(found(operation, "Operation not found"));
     },
   );
 }
