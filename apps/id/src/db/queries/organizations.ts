@@ -59,6 +59,7 @@ export async function listOrganizations(
   );
 }
 
+/** withTenantRead has share-locked the live row and answered 404 without it. */
 export async function readOrganization(
   context: TenantReadContext<"directory">,
 ) {
@@ -72,7 +73,7 @@ export async function readOrganization(
         eq(organizations.id, organizationId),
       ),
     );
-  return row ?? null;
+  return row!;
 }
 
 export async function readOrganizationStatus(

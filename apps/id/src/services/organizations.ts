@@ -14,7 +14,7 @@ import type { Actor } from "./actor.ts";
 const notFound = "Organisation not found";
 
 function configuration(
-  row: NonNullable<Awaited<ReturnType<typeof queries.readOrganization>>>,
+  row: Awaited<ReturnType<typeof queries.readOrganization>>,
 ) {
   return {
     id: row.id,
@@ -54,7 +54,7 @@ export async function listOrganizations(
 }
 
 export async function getOrganization(context: TenantReadContext<"directory">) {
-  return found(await queries.readOrganization(context), notFound);
+  return queries.readOrganization(context);
 }
 
 export async function createOrganization(
