@@ -20,7 +20,6 @@ import {
   tenantMemberCommand,
   idempotencyParameter,
   commandResponseHeaders,
-  operationJson,
 } from "./command.ts";
 import { z } from "zod";
 import type { AppEnvironment } from "../context.ts";
@@ -334,7 +333,7 @@ export function register(app: Hono<AppEnvironment>) {
       return tenantMemberCommand(
         context,
         organizationId,
-        operationJson({ memberId, patch, expected }),
+        { memberId, patch, expected },
         200,
         async (tenant) => {
           const { body, changed } = await service.updateWindow(

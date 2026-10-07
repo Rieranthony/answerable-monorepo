@@ -21,7 +21,6 @@ import type { Hono } from "hono";
 import { z } from "zod";
 import {
   platformCommand,
-  operationJson,
   idempotencyParameter,
   commandResponseHeaders,
 } from "./command.ts";
@@ -435,7 +434,7 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        operationJson({ organizationId, input }),
+        { organizationId, input },
         201,
         async (platform) => {
           const row = await service.createGroup(
@@ -473,7 +472,7 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        operationJson({ organizationId, groupId, expected, patch }),
+        { organizationId, groupId, expected, patch },
         200,
         async (platform) => {
           const result = await service.updateGroup(
@@ -508,7 +507,7 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        operationJson({ organizationId, groupId }),
+        { organizationId, groupId },
         200,
         async (platform) => {
           const result = await service.disableGroup(
@@ -535,7 +534,7 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        operationJson({ organizationId, groupId }),
+        { organizationId, groupId },
         200,
         async (platform) => {
           const result = await service.enableGroup(
@@ -564,7 +563,7 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        operationJson({ organizationId, groupId, confirm }),
+        { organizationId, groupId, confirm },
         204,
         async (platform) => {
           await service.eraseGroup(platform, organizationId, groupId, confirm);
@@ -627,7 +626,7 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        operationJson({ organizationId, groupId, memberId, expected, window }),
+        { organizationId, groupId, memberId, expected, window },
         200,
         async (platform) => {
           const result = await service.putMember(
@@ -668,7 +667,7 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        operationJson({ organizationId, groupId, memberId }),
+        { organizationId, groupId, memberId },
         204,
         async (platform) => {
           await service.removeMember(

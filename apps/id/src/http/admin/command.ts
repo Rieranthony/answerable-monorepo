@@ -38,8 +38,8 @@ export const commandResponseHeaders = {
   },
 };
 
-/** Normalise first-response values to their HTTP JSON representation. */
-export const operationJson = (value: unknown): OperationJson =>
+/** A value's HTTP JSON representation: dates become strings, undefined fields go. */
+const operationJson = (value: unknown): OperationJson =>
   JSON.parse(JSON.stringify(value));
 
 type CommandResult = {
@@ -54,7 +54,7 @@ type CommandOptions = {
 
 async function httpCommand<T>(
   context: Context<AppEnvironment>,
-  input: OperationJson,
+  input: unknown,
   statusCode: number,
   authority: {
     scope: string;
@@ -87,7 +87,7 @@ async function httpCommand<T>(
       // The route's operationId names the command in the journal.
       name: context.get("operationId")!,
       key,
-      input,
+      input: operationJson(input),
     },
     async (tx) => {
       const authorized = await authority.authorize(tx);
@@ -129,7 +129,7 @@ async function httpCommand<T>(
 export function platformCommand<Access extends "users" | "write">(
   context: Context<AppEnvironment>,
   access: Access,
-  input: OperationJson,
+  input: unknown,
   statusCode: number,
   mutate: (platform: PlatformMutationContext<Access>) => Promise<CommandResult>,
   options: CommandOptions = {},
@@ -159,7 +159,7 @@ export function platformCommand<Access extends "users" | "write">(
 export function tenantMemberCommand(
   context: Context<AppEnvironment>,
   organizationId: string,
-  input: OperationJson,
+  input: unknown,
   statusCode: number,
   mutate: (tenant: TenantMemberContext) => Promise<CommandResult>,
 ) {

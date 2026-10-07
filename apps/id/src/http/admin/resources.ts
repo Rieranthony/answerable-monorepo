@@ -10,7 +10,6 @@ import type { Hono } from "hono";
 import { z } from "zod";
 import {
   platformCommand,
-  operationJson,
   idempotencyParameter,
   commandResponseHeaders,
 } from "./command.ts";
@@ -307,7 +306,7 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        operationJson(input),
+        input,
         201,
         async (platform) => ({
           body: await service.createResource(platform, input),
@@ -342,7 +341,7 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        operationJson({ identifier, expected, patch: input }),
+        { identifier, expected, patch: input },
         200,
         async (platform) => {
           const { body, changed } = await service.updateResource(

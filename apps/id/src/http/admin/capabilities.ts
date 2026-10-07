@@ -18,7 +18,6 @@ import { capabilityGrantKinds } from "../../db/schema/capabilities.ts";
 import { lifecycleStatuses } from "../../db/schema/vocabulary.ts";
 import {
   platformCommand,
-  operationJson,
   idempotencyParameter,
   commandResponseHeaders,
 } from "./command.ts";
@@ -290,7 +289,7 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        operationJson({ organizationId, input }),
+        { organizationId, input },
         201,
         async (platform) => {
           const row = await service.createCapability(
@@ -326,7 +325,7 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        operationJson({ organizationId, capabilityId, expected, input }),
+        { organizationId, capabilityId, expected, input },
         200,
         async (platform) => {
           const result = await service.updateCapability(
@@ -361,7 +360,7 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        operationJson({ organizationId, capabilityId }),
+        { organizationId, capabilityId },
         204,
         async (platform) => {
           await service.removeCapability(

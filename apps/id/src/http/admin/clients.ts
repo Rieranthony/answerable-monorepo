@@ -15,7 +15,6 @@ import {
 import {
   idempotencyParameter,
   commandResponseHeaders,
-  operationJson,
   platformCommand,
 } from "./command.ts";
 import type { Hono } from "hono";
@@ -469,19 +468,13 @@ export function register(app: Hono<AppEnvironment>) {
             ? undefined
             : [...new Set(parsed.scopes)].sort(),
       };
-      return platformCommand(
-        context,
-        "write",
-        operationJson(input),
-        201,
-        async (platform) => {
-          const body = await service.createClient(platform, input);
-          return {
-            body,
-            resultReference: { type: "client", id: body.clientId },
-          };
-        },
-      );
+      return platformCommand(context, "write", input, 201, async (platform) => {
+        const body = await service.createClient(platform, input);
+        return {
+          body,
+          resultReference: { type: "client", id: body.clientId },
+        };
+      });
     },
   );
   registerRoute(
@@ -510,7 +503,7 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        operationJson({ clientId, expected, patch: input }),
+        { clientId, expected, patch: input },
         200,
         async (platform) => {
           const { body, changed } = await service.updateClient(

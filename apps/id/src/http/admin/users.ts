@@ -9,7 +9,6 @@ import type { Hono } from "hono";
 import { z } from "zod";
 import {
   platformCommand,
-  operationJson,
   idempotencyParameter,
   commandResponseHeaders,
 } from "./command.ts";
@@ -240,7 +239,7 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "users",
-        operationJson({ userId }),
+        { userId },
         200,
         async (platform) => {
           const result = await service.disableUser(platform, userId);
@@ -262,7 +261,7 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "users",
-        operationJson({ userId }),
+        { userId },
         200,
         async (platform) => {
           const result = await service.enableUser(platform, userId);
@@ -284,7 +283,7 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "users",
-        operationJson({ userId }),
+        { userId },
         200,
         async (platform) => {
           const result = await service.retireUserEmail(platform, userId);
@@ -308,7 +307,7 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        operationJson({ userId, confirm }),
+        { userId, confirm },
         204,
         async (platform) => {
           await service.eraseUser(platform, userId, confirm);

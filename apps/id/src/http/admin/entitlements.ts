@@ -20,7 +20,6 @@ import type { Hono } from "hono";
 import { z } from "zod";
 import {
   platformCommand,
-  operationJson,
   idempotencyParameter,
   commandResponseHeaders,
 } from "./command.ts";
@@ -343,7 +342,7 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        operationJson({ organizationId, input }),
+        { organizationId, input },
         201,
         async (platform) => {
           const row = await service.createEntitlement(
@@ -391,7 +390,7 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        operationJson({ organizationId, entitlementId, expected, input }),
+        { organizationId, entitlementId, expected, input },
         200,
         async (platform) => {
           const result = await service.updateEntitlement(
@@ -426,7 +425,7 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        operationJson({ organizationId, entitlementId }),
+        { organizationId, entitlementId },
         200,
         async (platform) => {
           const result = await service.disableEntitlement(
@@ -453,7 +452,7 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        operationJson({ organizationId, entitlementId }),
+        { organizationId, entitlementId },
         200,
         async (platform) => {
           const result = await service.enableEntitlement(
@@ -480,7 +479,7 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        operationJson({ organizationId, entitlementId }),
+        { organizationId, entitlementId },
         204,
         async (platform) => {
           await service.removeEntitlement(
