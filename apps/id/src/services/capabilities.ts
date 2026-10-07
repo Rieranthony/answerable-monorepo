@@ -10,11 +10,8 @@ import { readClientForPolicy } from "../db/queries/oauth-clients.ts";
 import { readResourceForPolicy } from "../db/queries/oauth-resources.ts";
 import { recordAuditEvent } from "../db/queries/audit.ts";
 import { createId } from "../lib/id.ts";
-import {
-  beforeCursor,
-  cursorPage,
-  type PageQuery,
-} from "../http/pagination.ts";
+import type { PageQuery } from "../http/pagination.ts";
+import { beforeCursor, cursorPage } from "../db/queries/lists.ts";
 import { ProblemError } from "../http/problem.ts";
 import {
   requirePlatformWriteContext,

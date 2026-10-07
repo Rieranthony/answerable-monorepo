@@ -82,7 +82,7 @@ test("access queries use issued tenant contexts on a restricted connection", asy
       const page = await targetAccess(context, { resource }, { limit: 10 });
       expect(page.items.map((row) => row.memberId)).toEqual([tenant.memberId]);
       expect(
-        (await memberQueries.listMembers(context, { limit: 10 })).map(
+        (await memberQueries.listMembers(context, { limit: 10 })).items.map(
           (row) => row.id,
         ),
       ).toEqual([tenant.memberId]);
@@ -251,7 +251,7 @@ test("group and entitlement queries preserve tenant scope under the runtime logi
       "directory",
       async (context) => {
         expect(
-          (await groupQueries.listGroups(context, { limit: 10 })).map(
+          (await groupQueries.listGroups(context, { limit: 10 })).items.map(
             (row) => row.id,
           ),
         ).toEqual([tenant.group.id]);
@@ -263,7 +263,7 @@ test("group and entitlement queries preserve tenant scope under the runtime logi
             await groupQueries.listGroupMembers(context, tenant.group.id, {
               limit: 10,
             })
-          ).map((row) => row.memberId),
+          ).items.map((row) => row.memberId),
         ).toEqual([tenant.memberId]);
         expect(
           await groupQueries.findGroupMember(
@@ -275,7 +275,7 @@ test("group and entitlement queries preserve tenant scope under the runtime logi
         expect(
           (
             await entitlementQueries.listEntitlements(context, { limit: 10 })
-          ).map((row) => row.id),
+          ).items.map((row) => row.id),
         ).toEqual([tenant.entitlement.id]);
         expect(
           await entitlementQueries.findEntitlement(
@@ -293,7 +293,7 @@ test("group and entitlement queries preserve tenant scope under the runtime logi
           resource,
           limit: 10,
         })
-      )
+      ).items
         .map((row) => row.id)
         .sort(),
     ).toEqual(tenants.map((row) => row.entitlement.id).sort());
@@ -413,7 +413,7 @@ test("restricted domain readers never load another tenant's routing identity", a
     const foreign = tenants.find((row) => row !== tenant)!;
     await inTenantRead(runtime.db, tenant.id, "directory", async (context) => {
       expect(
-        await queries.listOrganizationDomains(context, { limit: 10 }),
+        (await queries.listOrganizationDomains(context, { limit: 10 })).items,
       ).toEqual([tenant.domain]);
     });
     await inTenantRead(
@@ -557,7 +557,7 @@ test("restricted organisation readers keep tenant detail, diagnosis and retained
   }
   await inPlatformRead(runtime.db, async (context) =>
     expect(
-      (await queries.listOrganizations(context, { limit: 10, q: prefix }))
+      (await queries.listOrganizations(context, { limit: 10, q: prefix })).items
         .map((row) => row.id)
         .sort(),
     ).toEqual(tenants.map((row) => row.id).sort()),
@@ -633,7 +633,7 @@ test("restricted global user/session queries preserve global scope and exclude c
           limit: 10,
           organizationId: tenantIds[1],
         })
-      ).map((row) => row.id),
+      ).items.map((row) => row.id),
     ).toEqual([userId]);
     const user = await userQueries.findUser(context, userId);
     expect(user?.memberships.map((row) => row.organizationId).sort()).toEqual(
@@ -641,9 +641,11 @@ test("restricted global user/session queries preserve global scope and exclude c
     );
     expect(user?.sessionCount).toBe(1);
     expect(JSON.stringify(user)).not.toContain("-secret");
-    const rows = await sessionQueries.listUserSessions(context, userId, {
-      limit: 10,
-    });
+    const { items: rows } = await sessionQueries.listUserSessions(
+      context,
+      userId,
+      { limit: 10 },
+    );
     expect(rows.map((row) => row.id)).toEqual([sessionIds[0]!]);
     expect(rows[0]).not.toHaveProperty("token");
   });
@@ -664,12 +666,13 @@ test("restricted global user/session queries preserve global scope and exclude c
   });
   await inPlatformRead(runtime.db, async (context) => {
     expect(
-      await sessionQueries.listUserSessions(context, userId, { limit: 10 }),
+      (await sessionQueries.listUserSessions(context, userId, { limit: 10 }))
+        .items,
     ).toEqual([]);
     expect(
       (
         await sessionQueries.listUserSessions(context, otherId, { limit: 10 })
-      ).map((row) => row.id),
+      ).items.map((row) => row.id),
     ).toEqual([sessionIds[1]!]);
     expect(
       (await userQueries.findUser(context, userId))?.memberships,
@@ -738,7 +741,7 @@ test("restricted resource queries hide foreign private targets while preserving 
     );
   await inPlatformRead(runtime.db, async (context) => {
     expect(
-      (await queries.listResources(context, { limit: 10, q: prefix }))
+      (await queries.listResources(context, { limit: 10, q: prefix })).items
         .map((row) => row.id)
         .sort(),
     ).toEqual(resources.map((row) => row.id).sort());
@@ -781,7 +784,10 @@ test("restricted client queries exclude digests and preserve shared registration
       );
   });
   await inPlatformRead(runtime.db, async (context) => {
-    const rows = await queries.listClients(context, { limit: 10, q: prefix });
+    const { items: rows } = await queries.listClients(context, {
+      limit: 10,
+      q: prefix,
+    });
     expect(rows.map((row) => row.id).sort()).toEqual(
       clients.map((row) => row.id).sort(),
     );

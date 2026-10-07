@@ -11,7 +11,6 @@ import { readClientForPolicy } from "../db/queries/oauth-clients.ts";
 import { readResourceForPolicy } from "../db/queries/oauth-resources.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
-import { cursorPage } from "../http/pagination.ts";
 import { ProblemError } from "../http/problem.ts";
 function requireRow<T>(row: T | null): T {
   if (!row) throw new ProblemError(404, "not_found", "Not found");
@@ -86,10 +85,7 @@ export async function listEntitlements(
   context: TenantReadContext<"directory">,
   query: queries.EntitlementQuery,
 ) {
-  return cursorPage(
-    await queries.listEntitlements(context, query),
-    query.limit,
-  );
+  return queries.listEntitlements(context, query);
 }
 export async function getEntitlement(
   context: TenantReadContext<"directory">,
@@ -288,8 +284,5 @@ export async function listAllEntitlements(
   context: PlatformReadContext,
   query: queries.EntitlementQuery,
 ) {
-  return cursorPage(
-    await queries.listAllEntitlements(context, query),
-    query.limit,
-  );
+  return queries.listAllEntitlements(context, query);
 }

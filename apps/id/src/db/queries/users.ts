@@ -30,7 +30,8 @@ import {
   oauthRefreshTokens,
   oauthConsents,
 } from "../schema/index.ts";
-import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
+import type { PageQuery } from "../../http/pagination.ts";
+import { beforeCursor, cursorPage } from "./lists.ts";
 import { isEffective } from "./effective.ts";
 
 export function retiredEmailFor(userId: string): string {
@@ -68,43 +69,51 @@ export type UserQuery = PageQuery & {
   organizationId?: string;
 };
 
-export function listUsers(context: PlatformReadContext, query: UserQuery) {
+export async function listUsers(
+  context: PlatformReadContext,
+  query: UserQuery,
+) {
   const { tx: executor } = context;
-  return executor
-    .select()
-    .from(users)
-    .where(
-      and(
-        isNull(users.deletedAt),
-        query.email === undefined
-          ? undefined
-          : eq(users.email, query.email.toLowerCase()),
-        query.q === undefined
-          ? undefined
-          : or(
-              ilike(users.email, `%${query.q}%`),
-              ilike(users.name, `%${query.q}%`),
-            ),
-        query.status === undefined ? undefined : eq(users.status, query.status),
-        query.organizationId === undefined
-          ? undefined
-          : exists(
-              executor
-                .select({ id: members.id })
-                .from(members)
-                .where(
-                  and(
-                    isNull(members.deletedAt),
-                    eq(members.userId, users.id),
-                    eq(members.organizationId, query.organizationId),
+  return cursorPage(
+    await executor
+      .select()
+      .from(users)
+      .where(
+        and(
+          isNull(users.deletedAt),
+          query.email === undefined
+            ? undefined
+            : eq(users.email, query.email.toLowerCase()),
+          query.q === undefined
+            ? undefined
+            : or(
+                ilike(users.email, `%${query.q}%`),
+                ilike(users.name, `%${query.q}%`),
+              ),
+          query.status === undefined
+            ? undefined
+            : eq(users.status, query.status),
+          query.organizationId === undefined
+            ? undefined
+            : exists(
+                executor
+                  .select({ id: members.id })
+                  .from(members)
+                  .where(
+                    and(
+                      isNull(members.deletedAt),
+                      eq(members.userId, users.id),
+                      eq(members.organizationId, query.organizationId),
+                    ),
                   ),
-                ),
-            ),
-        beforeCursor(users.id, query.cursor),
-      ),
-    )
-    .orderBy(desc(users.id))
-    .limit(query.limit + 1);
+              ),
+          beforeCursor(users.id, query.cursor),
+        ),
+      )
+      .orderBy(desc(users.id))
+      .limit(query.limit + 1),
+    query.limit,
+  );
 }
 
 export async function lockUser(

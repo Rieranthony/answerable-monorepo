@@ -7,7 +7,6 @@ import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/organization-domains.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
-import { cursorPage } from "../http/pagination.ts";
 import { ProblemError } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
 
@@ -55,10 +54,7 @@ export async function listDomains(
   context: TenantReadContext<"directory">,
   query: queries.DomainQuery,
 ) {
-  return cursorPage(
-    await queries.listOrganizationDomains(context, query),
-    query.limit,
-  );
+  return queries.listOrganizationDomains(context, query);
 }
 export async function createDomain(
   context: PlatformWriteContext,

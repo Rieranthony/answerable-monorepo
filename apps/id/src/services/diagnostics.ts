@@ -36,7 +36,7 @@ export async function diagnoseSignIn(
     readSsoIssuer(context),
     listMembers(context, { email, limit: 1 }),
   ]);
-  const membership = memberRows[0];
+  const membership = memberRows.items[0];
   const checks: [(typeof signInVerdictCodes)[number], boolean][] = [
     ["provider_not_found", provider === null],
     ["organization_disabled", organization.status !== "active"],

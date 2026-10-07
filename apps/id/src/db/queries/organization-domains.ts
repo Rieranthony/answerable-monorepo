@@ -2,7 +2,8 @@ import type { Executor } from "../client.ts";
 import { sql, and, desc, eq, isNull } from "drizzle-orm";
 import type { PlatformWriteContext } from "../../services/platform-context.ts";
 import type { TenantReadContext } from "../../services/tenant-context.ts";
-import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
+import type { PageQuery } from "../../http/pagination.ts";
+import { beforeCursor, cursorPage } from "./lists.ts";
 import type { LifecycleStatus } from "../schema/vocabulary.ts";
 
 import { createId } from "../../lib/id.ts";
@@ -79,26 +80,29 @@ export async function findDomainOrganizationSlug(db: Executor, domain: string) {
 
 export type DomainQuery = PageQuery & { status?: LifecycleStatus };
 
-export function listOrganizationDomains(
+export async function listOrganizationDomains(
   context: TenantReadContext<"directory">,
   query: DomainQuery,
 ) {
   const { tx: executor, organizationId } = context;
-  return executor
-    .select()
-    .from(organizationDomains)
-    .where(
-      and(
-        isNull(organizationDomains.deletedAt),
-        eq(organizationDomains.organizationId, organizationId),
-        query.status === undefined
-          ? undefined
-          : eq(organizationDomains.status, query.status),
-        beforeCursor(organizationDomains.id, query.cursor),
-      ),
-    )
-    .orderBy(desc(organizationDomains.id))
-    .limit(query.limit + 1);
+  return cursorPage(
+    await executor
+      .select()
+      .from(organizationDomains)
+      .where(
+        and(
+          isNull(organizationDomains.deletedAt),
+          eq(organizationDomains.organizationId, organizationId),
+          query.status === undefined
+            ? undefined
+            : eq(organizationDomains.status, query.status),
+          beforeCursor(organizationDomains.id, query.cursor),
+        ),
+      )
+      .orderBy(desc(organizationDomains.id))
+      .limit(query.limit + 1),
+    query.limit,
+  );
 }
 
 export async function findOrganizationDomainForCommand(

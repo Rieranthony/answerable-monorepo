@@ -11,7 +11,8 @@ import {
   groupMembers,
   entitlements,
 } from "../schema/index.ts";
-import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
+import type { PageQuery } from "../../http/pagination.ts";
+import { beforeCursor, cursorPage } from "./lists.ts";
 import { isEffective } from "./effective.ts";
 import type { MemberWindow } from "./groups.ts";
 export type MemberQuery = PageQuery & {
@@ -36,39 +37,42 @@ const selection = {
 };
 const memberWhere = (organizationId: string, memberId: string) =>
   and(eq(members.organizationId, organizationId), eq(members.id, memberId));
-export function listMembers(
+export async function listMembers(
   context: TenantReadContext<"directory"> | TenantReadContext<"memberAccess">,
   query: MemberQuery,
 ) {
   const { tx: executor, organizationId } = context;
-  return executor
-    .select(selection)
-    .from(members)
-    .innerJoin(users, eq(users.id, members.userId))
-    .where(
-      and(
-        isNull(users.deletedAt),
-        isNull(members.deletedAt),
-        eq(members.organizationId, organizationId),
-        query.email === undefined
-          ? undefined
-          : eq(users.email, query.email.toLowerCase()),
-        query.q === undefined
-          ? undefined
-          : or(
-              ilike(users.email, `%${query.q}%`),
-              ilike(users.name, `%${query.q}%`),
-            ),
-        query.effective === undefined
-          ? undefined
-          : query.effective
-            ? isEffective(members)
-            : not(isEffective(members)),
-        beforeCursor(members.id, query.cursor),
-      ),
-    )
-    .orderBy(desc(members.id))
-    .limit(query.limit + 1);
+  return cursorPage(
+    await executor
+      .select(selection)
+      .from(members)
+      .innerJoin(users, eq(users.id, members.userId))
+      .where(
+        and(
+          isNull(users.deletedAt),
+          isNull(members.deletedAt),
+          eq(members.organizationId, organizationId),
+          query.email === undefined
+            ? undefined
+            : eq(users.email, query.email.toLowerCase()),
+          query.q === undefined
+            ? undefined
+            : or(
+                ilike(users.email, `%${query.q}%`),
+                ilike(users.name, `%${query.q}%`),
+              ),
+          query.effective === undefined
+            ? undefined
+            : query.effective
+              ? isEffective(members)
+              : not(isEffective(members)),
+          beforeCursor(members.id, query.cursor),
+        ),
+      )
+      .orderBy(desc(members.id))
+      .limit(query.limit + 1),
+    query.limit,
+  );
 }
 export async function findMember(
   context: TenantReadContext<"directory"> | TenantMemberContext,

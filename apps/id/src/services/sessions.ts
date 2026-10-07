@@ -15,7 +15,7 @@ import {
   revokeUserTokens,
 } from "../db/queries/oauth-tokens.ts";
 import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
-import { cursorPage, type PageQuery } from "../http/pagination.ts";
+import type { PageQuery } from "../http/pagination.ts";
 import { ProblemError } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
 
@@ -49,10 +49,7 @@ export async function listUserSessions(
 ) {
   if (!(await userExists(context, userId)))
     throw new ProblemError(404, "not_found", "User or session not found");
-  return cursorPage(
-    await queries.listUserSessions(context, userId, page),
-    page.limit,
-  );
+  return queries.listUserSessions(context, userId, page);
 }
 export async function revokeUserSession(
   context: PlatformUsersContext,

@@ -14,7 +14,6 @@ import * as queries from "../db/queries/users.ts";
 import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
 import { deleteUserSessionIds } from "../db/queries/sessions.ts";
 import { revokeUserTokens } from "../db/queries/oauth-tokens.ts";
-import { cursorPage } from "../http/pagination.ts";
 import { ProblemError } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
 
@@ -52,7 +51,7 @@ export async function listUsers(
   context: PlatformReadContext,
   query: queries.UserQuery,
 ) {
-  return cursorPage(await queries.listUsers(context, query), query.limit);
+  return queries.listUsers(context, query);
 }
 export async function getUser(context: PlatformReadContext, userId: string) {
   return requireUser(await queries.findUser(context, userId));

@@ -4,7 +4,8 @@ import type {
 } from "../../services/platform-context.ts";
 import { and, desc, eq } from "drizzle-orm";
 import { sessions } from "../schema/index.ts";
-import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
+import type { PageQuery } from "../../http/pagination.ts";
+import { beforeCursor, cursorPage } from "./lists.ts";
 
 export async function deleteUserSessionIds(
   context: PlatformUsersContext,
@@ -28,20 +29,26 @@ const selection = {
   authenticationOrganizationId: sessions.authenticationOrganizationId,
 };
 
-export function listUserSessions(
+export async function listUserSessions(
   context: PlatformReadContext,
   userId: string,
   page: PageQuery,
 ) {
   const { tx: executor } = context;
-  return executor
-    .select(selection)
-    .from(sessions)
-    .where(
-      and(eq(sessions.userId, userId), beforeCursor(sessions.id, page.cursor)),
-    )
-    .orderBy(desc(sessions.id))
-    .limit(page.limit + 1);
+  return cursorPage(
+    await executor
+      .select(selection)
+      .from(sessions)
+      .where(
+        and(
+          eq(sessions.userId, userId),
+          beforeCursor(sessions.id, page.cursor),
+        ),
+      )
+      .orderBy(desc(sessions.id))
+      .limit(page.limit + 1),
+    page.limit,
+  );
 }
 
 export async function deleteSession(

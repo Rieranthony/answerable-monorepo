@@ -18,7 +18,8 @@ import {
   oauthClients,
   oauthResources,
 } from "../schema/index.ts";
-import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
+import type { PageQuery } from "../../http/pagination.ts";
+import { beforeCursor, cursorPage } from "./lists.ts";
 import { isEffective, matchingEntitlements } from "./effective.ts";
 import { uniqueSorted } from "../../lib/scopes.ts";
 
@@ -215,26 +216,25 @@ export async function targetAccess(
     )
     .orderBy(desc(members.id))
     .limit(page.limit + 1);
-  const items = rows.slice(0, page.limit).map((row) => ({
-    memberId: row.memberId,
-    userId: row.userId,
-    email: row.email,
-    name: row.name,
-    scopes: row.scopes,
-    permission: memberPermissionView(
-      target.clientId === undefined
-        ? evaluateAdminPermission(row)
-        : target.resource === undefined
-          ? evaluateClientLoginPermission(row)
-          : evaluateUserResourcePermission(row, {
-              resource: target.resource,
-              grantType: "authorization_code",
-            }),
-    ),
-  }));
+  const { items, nextCursor } = cursorPage(rows, page.limit, "memberId");
   return {
-    items,
-    nextCursor:
-      rows.length > page.limit ? items[items.length - 1].memberId : null,
+    items: items.map((row) => ({
+      memberId: row.memberId,
+      userId: row.userId,
+      email: row.email,
+      name: row.name,
+      scopes: row.scopes,
+      permission: memberPermissionView(
+        target.clientId === undefined
+          ? evaluateAdminPermission(row)
+          : target.resource === undefined
+            ? evaluateClientLoginPermission(row)
+            : evaluateUserResourcePermission(row, {
+                resource: target.resource,
+                grantType: "authorization_code",
+              }),
+      ),
+    })),
+    nextCursor,
   };
 }

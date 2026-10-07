@@ -5,7 +5,7 @@ import {
 import { type TenantReadContext } from "./tenant-context.ts";
 import * as queries from "../db/queries/groups.ts";
 import { findMemberForAssignment } from "../db/queries/members.ts";
-import { type PageQuery, cursorPage } from "../http/pagination.ts";
+import type { PageQuery } from "../http/pagination.ts";
 import type { Executor } from "../db/client.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
@@ -76,7 +76,7 @@ export async function listGroups(
   context: TenantReadContext<"directory">,
   query: queries.GroupQuery,
 ) {
-  return cursorPage(await queries.listGroups(context, query), query.limit);
+  return queries.listGroups(context, query);
 }
 export async function getGroup(
   context: TenantReadContext<"directory">,
@@ -214,13 +214,7 @@ export async function listGroupMembers(
   query: PageQuery,
 ) {
   await getGroup(context, groupId);
-  const rows = await queries.listGroupMembers(context, groupId, query);
-  const items = rows.slice(0, query.limit);
-  return {
-    items,
-    nextCursor:
-      rows.length > query.limit ? items[items.length - 1].memberId : null,
-  };
+  return queries.listGroupMembers(context, groupId, query);
 }
 export async function getGroupMember(
   context: TenantReadContext<"directory">,

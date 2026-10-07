@@ -22,6 +22,6 @@ export const findUserByEmail = (
   email: string,
 ) =>
   inPlatformRead(db, async (context) => {
-    const [row] = await queries.listUsers(context, { email, limit: 1 });
+    const [row] = (await queries.listUsers(context, { email, limit: 1 })).items;
     return row ? queries.findUser(context, row.id) : null;
   });

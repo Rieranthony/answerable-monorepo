@@ -11,7 +11,6 @@ import {
   type TenantMemberContext,
 } from "./tenant-context.ts";
 import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
-import { cursorPage } from "../http/pagination.ts";
 import { ProblemError } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
 function requireRow<T>(row: T | null): T {
@@ -46,7 +45,7 @@ export async function listMembers(
   query: queries.MemberQuery,
 ) {
   requireTenantDirectoryContext(context);
-  return cursorPage(await queries.listMembers(context, query), query.limit);
+  return queries.listMembers(context, query);
 }
 export async function getMember(
   context: TenantReadContext<"directory">,

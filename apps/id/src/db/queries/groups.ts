@@ -10,7 +10,8 @@ import {
   getTableColumns,
   isNull,
 } from "drizzle-orm";
-import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
+import type { PageQuery } from "../../http/pagination.ts";
+import { beforeCursor, cursorPage } from "./lists.ts";
 import type { LifecycleStatus } from "../schema/vocabulary.ts";
 import { isEffective } from "./effective.ts";
 import { createId } from "../../lib/id.ts";
@@ -60,32 +61,35 @@ const membershipWhere = (
     eq(groupMembers.groupId, groupId),
     memberId === undefined ? undefined : eq(groupMembers.memberId, memberId),
   );
-export function listGroups(
+export async function listGroups(
   context: TenantReadContext<"directory">,
   query: GroupQuery,
 ) {
   const { tx: executor, organizationId } = context;
-  return executor
-    .select()
-    .from(groups)
-    .where(
-      and(
-        isNull(groups.deletedAt),
-        eq(groups.organizationId, organizationId),
-        query.q === undefined
-          ? undefined
-          : or(
-              ilike(groups.name, `%${query.q}%`),
-              ilike(groups.slug, `%${query.q}%`),
-            ),
-        query.status === undefined
-          ? undefined
-          : eq(groups.status, query.status),
-        beforeCursor(groups.id, query.cursor),
-      ),
-    )
-    .orderBy(desc(groups.id))
-    .limit(query.limit + 1);
+  return cursorPage(
+    await executor
+      .select()
+      .from(groups)
+      .where(
+        and(
+          isNull(groups.deletedAt),
+          eq(groups.organizationId, organizationId),
+          query.q === undefined
+            ? undefined
+            : or(
+                ilike(groups.name, `%${query.q}%`),
+                ilike(groups.slug, `%${query.q}%`),
+              ),
+          query.status === undefined
+            ? undefined
+            : eq(groups.status, query.status),
+          beforeCursor(groups.id, query.cursor),
+        ),
+      )
+      .orderBy(desc(groups.id))
+      .limit(query.limit + 1),
+    query.limit,
+  );
 }
 function findGroupQuery(
   executor: Executor,
@@ -254,36 +258,40 @@ export async function deleteGroup(
     },
   };
 }
-export function listGroupMembers(
+export async function listGroupMembers(
   context: TenantReadContext<"directory">,
   groupId: string,
   query: PageQuery,
 ) {
   const { tx: executor, organizationId } = context;
-  return executor
-    .select({
-      memberId: members.id,
-      userId: users.id,
-      email: users.email,
-      name: users.name,
-      validFrom: groupMembers.validFrom,
-      validUntil: groupMembers.validUntil,
-      effective: sql<boolean>`(${isEffective(groupMembers)})`,
-    })
-    .from(groupMembers)
-    .innerJoin(members, eq(members.id, groupMembers.memberId))
-    .innerJoin(users, eq(users.id, members.userId))
-    .where(
-      and(
-        isNull(users.deletedAt),
-        isNull(members.deletedAt),
-        isNull(groupMembers.deletedAt),
-        membershipWhere(organizationId, groupId),
-        beforeCursor(groupMembers.memberId, query.cursor),
-      ),
-    )
-    .orderBy(desc(groupMembers.memberId))
-    .limit(query.limit + 1);
+  return cursorPage(
+    await executor
+      .select({
+        memberId: members.id,
+        userId: users.id,
+        email: users.email,
+        name: users.name,
+        validFrom: groupMembers.validFrom,
+        validUntil: groupMembers.validUntil,
+        effective: sql<boolean>`(${isEffective(groupMembers)})`,
+      })
+      .from(groupMembers)
+      .innerJoin(members, eq(members.id, groupMembers.memberId))
+      .innerJoin(users, eq(users.id, members.userId))
+      .where(
+        and(
+          isNull(users.deletedAt),
+          isNull(members.deletedAt),
+          isNull(groupMembers.deletedAt),
+          membershipWhere(organizationId, groupId),
+          beforeCursor(groupMembers.memberId, query.cursor),
+        ),
+      )
+      .orderBy(desc(groupMembers.memberId))
+      .limit(query.limit + 1),
+    query.limit,
+    "memberId",
+  );
 }
 function findGroupMemberQuery(
   executor: Executor,

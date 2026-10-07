@@ -15,7 +15,6 @@ import {
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { revokeClientTokens } from "../db/queries/oauth-tokens.ts";
 import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
-import { cursorPage } from "../http/pagination.ts";
 import { ProblemError } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
 import { generateClientSecret, hashClientSecret } from "./client-secrets.ts";
@@ -245,7 +244,7 @@ export async function listClients(
   context: PlatformReadContext,
   query: queries.ClientQuery,
 ) {
-  return cursorPage(await queries.listClients(context, query), query.limit);
+  return queries.listClients(context, query);
 }
 export async function getClient(
   context: PlatformReadContext,

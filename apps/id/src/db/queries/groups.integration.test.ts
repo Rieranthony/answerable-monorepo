@@ -56,17 +56,18 @@ test("group CRUD is scoped, filtered and paginated", async () => {
     name: "Other",
   });
   expect(await queries.findGroup(db, org.id, a.id)).toEqual(a);
+  expect(await queries.listGroups(db, org.id, { limit: 1 })).toMatchObject({
+    items: [{ id: b.id }],
+    nextCursor: b.id,
+  });
   expect(
-    (await queries.listGroups(db, org.id, { limit: 1 })).map((row) => row.id),
-  ).toEqual([b.id, a.id]);
-  expect(
-    (await queries.listGroups(db, org.id, { limit: 1, cursor: b.id })).map(
-      (row) => row.id,
-    ),
+    (
+      await queries.listGroups(db, org.id, { limit: 1, cursor: b.id })
+    ).items.map((row) => row.id),
   ).toEqual([a.id]);
   for (const q of ["FINANCE", "aCCouNts"])
     expect(
-      (await queries.listGroups(db, org.id, { limit: 10, q })).map(
+      (await queries.listGroups(db, org.id, { limit: 10, q })).items.map(
         (row) => row.id,
       ),
     ).toEqual([a.id]);
@@ -79,7 +80,7 @@ test("group CRUD is scoped, filtered and paginated", async () => {
   expect(
     (
       await queries.listGroups(db, org.id, { limit: 10, status: "disabled" })
-    ).map((row) => row.id),
+    ).items.map((row) => row.id),
   ).toEqual([a.id]);
   expect(
     await queries.setGroupStatus(db, org.id, a.id, "active"),
@@ -133,7 +134,8 @@ test("group membership upserts preserve omitted windows, compute effectiveness a
     validUntil: future,
   });
   expect(
-    (await queries.listGroupMembers(db, org.id, group.id, { limit: 10 }))[0],
+    (await queries.listGroupMembers(db, org.id, group.id, { limit: 10 }))
+      .items[0],
   ).toMatchObject({
     memberId: ids[0],
     email: "person0@example.com",
@@ -147,20 +149,23 @@ test("group membership upserts preserve omitted windows, compute effectiveness a
   });
   expect(second.created).toBe(true);
   expect(
-    (await queries.listGroupMembers(db, org.id, group.id, { limit: 1 })).map(
-      (row) => [row.memberId, row.effective],
-    ),
+    (
+      await queries.listGroupMembers(db, org.id, group.id, { limit: 10 })
+    ).items.map((row) => [row.memberId, row.effective]),
   ).toEqual([
     [ids[1], false],
     [ids[0], true],
   ]);
+  expect(
+    await queries.listGroupMembers(db, org.id, group.id, { limit: 1 }),
+  ).toMatchObject({ items: [{ memberId: ids[1] }], nextCursor: ids[1] });
   expect(
     (
       await queries.listGroupMembers(db, org.id, group.id, {
         limit: 1,
         cursor: ids[1],
       })
-    ).map((row) => row.memberId),
+    ).items.map((row) => row.memberId),
   ).toEqual([ids[0]!]);
   await queries.upsertGroupMember(db, {
     ...input,
@@ -168,13 +173,13 @@ test("group membership upserts preserve omitted windows, compute effectiveness a
     validUntil: past,
   });
   expect(
-    (await queries.listGroupMembers(db, org.id, group.id, { limit: 10 }))[1]
-      ?.effective,
+    (await queries.listGroupMembers(db, org.id, group.id, { limit: 10 }))
+      .items[1]?.effective,
   ).toBe(false);
   await queries.upsertGroupMember(db, { ...input, validUntil: null });
   expect(
-    (await queries.listGroupMembers(db, org.id, group.id, { limit: 10 }))[1]
-      ?.effective,
+    (await queries.listGroupMembers(db, org.id, group.id, { limit: 10 }))
+      .items[1]?.effective,
   ).toBe(true);
   await expect(
     queries.upsertGroupMember(db, {
@@ -196,7 +201,8 @@ test("group membership upserts preserve omitted windows, compute effectiveness a
     await queries.findGroupMember(db, other.id, group.id, ids[0]!),
   ).toBeNull();
   expect(
-    await queries.listGroupMembers(db, other.id, group.id, { limit: 10 }),
+    (await queries.listGroupMembers(db, other.id, group.id, { limit: 10 }))
+      .items,
   ).toEqual([]);
   expect(
     await queries.removeGroupMember(db, other.id, group.id, ids[0]!),
@@ -212,7 +218,7 @@ test("group membership upserts preserve omitted windows, compute effectiveness a
   ).toBeNull();
   await db.delete(members).where(eq(members.id, ids[1]!));
   expect(
-    await queries.listGroupMembers(db, org.id, group.id, { limit: 10 }),
+    (await queries.listGroupMembers(db, org.id, group.id, { limit: 10 })).items,
   ).toEqual([]);
 });
 

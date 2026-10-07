@@ -9,7 +9,6 @@ import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/organizations.ts";
 import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
 import { revokeOrganizationMachineTokens } from "../db/queries/oauth-tokens.ts";
-import { cursorPage } from "../http/pagination.ts";
 import { ProblemError } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
 
@@ -55,10 +54,7 @@ export async function listOrganizations(
   context: PlatformReadContext,
   query: queries.OrganizationQuery,
 ) {
-  return cursorPage(
-    await queries.listOrganizations(context, query),
-    query.limit,
-  );
+  return queries.listOrganizations(context, query);
 }
 
 export async function getOrganization(context: TenantReadContext<"directory">) {

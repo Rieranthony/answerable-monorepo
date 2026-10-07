@@ -17,7 +17,8 @@ import {
   isNull,
 } from "drizzle-orm";
 
-import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
+import type { PageQuery } from "../../http/pagination.ts";
+import { beforeCursor, cursorPage } from "./lists.ts";
 import { createId } from "../../lib/id.ts";
 import type { Executor } from "../client.ts";
 import {
@@ -58,31 +59,37 @@ export type ClientQuery = PageQuery & {
   organizationId?: string;
   disabled?: boolean;
 };
-export function listClients(context: PlatformReadContext, query: ClientQuery) {
+export async function listClients(
+  context: PlatformReadContext,
+  query: ClientQuery,
+) {
   const { tx: executor } = context;
-  return executor
-    .select(publicSelection)
-    .from(oauthClients)
-    .where(
-      and(
-        isNull(oauthClients.deletedAt),
-        query.q === undefined
-          ? undefined
-          : or(
-              ilike(oauthClients.name, `%${query.q}%`),
-              ilike(oauthClients.clientId, `%${query.q}%`),
-            ),
-        query.organizationId === undefined
-          ? undefined
-          : eq(oauthClients.organizationId, query.organizationId),
-        query.disabled === undefined
-          ? undefined
-          : eq(oauthClients.disabled, query.disabled),
-        beforeCursor(oauthClients.id, query.cursor),
-      ),
-    )
-    .orderBy(desc(oauthClients.id))
-    .limit(query.limit + 1);
+  return cursorPage(
+    await executor
+      .select(publicSelection)
+      .from(oauthClients)
+      .where(
+        and(
+          isNull(oauthClients.deletedAt),
+          query.q === undefined
+            ? undefined
+            : or(
+                ilike(oauthClients.name, `%${query.q}%`),
+                ilike(oauthClients.clientId, `%${query.q}%`),
+              ),
+          query.organizationId === undefined
+            ? undefined
+            : eq(oauthClients.organizationId, query.organizationId),
+          query.disabled === undefined
+            ? undefined
+            : eq(oauthClients.disabled, query.disabled),
+          beforeCursor(oauthClients.id, query.cursor),
+        ),
+      )
+      .orderBy(desc(oauthClients.id))
+      .limit(query.limit + 1),
+    query.limit,
+  );
 }
 function publicClientQuery(executor: Executor, clientId: string) {
   return executor

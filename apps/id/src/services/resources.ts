@@ -11,7 +11,6 @@ import {
 import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/oauth-resources.ts";
 import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
-import { cursorPage } from "../http/pagination.ts";
 import { ProblemError } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
 
@@ -70,7 +69,7 @@ export async function listResources(
   context: PlatformReadContext,
   query: queries.ResourceQuery,
 ) {
-  return cursorPage(await queries.listResources(context, query), query.limit);
+  return queries.listResources(context, query);
 }
 export async function getResource(
   context: PlatformReadContext,

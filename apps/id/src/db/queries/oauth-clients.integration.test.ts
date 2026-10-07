@@ -136,20 +136,21 @@ test("client administration queries cover writes, filters, pagination, missing r
   });
   expect(await queries.findClient(db, a.clientId)).toEqual(a);
   expect(await queries.lockClient(db, a.clientId)).toEqual(a);
+  expect(await queries.listClients(db, { limit: 1 })).toMatchObject({
+    items: [{ id: c.id }],
+    nextCursor: c.id,
+  });
   expect(
-    (await queries.listClients(db, { limit: 1 })).map((r) => r.id),
-  ).toEqual([c.id, b.id]);
-  expect(
-    (await queries.listClients(db, { limit: 2, cursor: b.id })).map(
+    (await queries.listClients(db, { limit: 2, cursor: b.id })).items.map(
       (r) => r.id,
     ),
   ).toEqual([a.id]);
   for (const q of ["ALPHA", "fIrSt"])
     expect(
-      (await queries.listClients(db, { limit: 10, q })).map((r) => r.id),
+      (await queries.listClients(db, { limit: 10, q })).items.map((r) => r.id),
     ).toEqual([a.id]);
   expect(
-    (await queries.listClients(db, { limit: 10, organizationId })).map(
+    (await queries.listClients(db, { limit: 10, organizationId })).items.map(
       (r) => r.id,
     ),
   ).toEqual([a.id]);
@@ -163,12 +164,12 @@ test("client administration queries cover writes, filters, pagination, missing r
     disabled: true,
   });
   expect(
-    (await queries.listClients(db, { limit: 10, disabled: true })).map(
+    (await queries.listClients(db, { limit: 10, disabled: true })).items.map(
       (r) => r.id,
     ),
   ).toEqual([a.id]);
   expect(
-    (await queries.listClients(db, { limit: 10, disabled: false })).map(
+    (await queries.listClients(db, { limit: 10, disabled: false })).items.map(
       (r) => r.id,
     ),
   ).toEqual([c.id, b.id]);

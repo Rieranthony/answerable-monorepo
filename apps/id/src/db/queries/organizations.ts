@@ -17,7 +17,8 @@ import {
   ssoProviders,
 } from "../schema/index.ts";
 import type { LifecycleStatus } from "../schema/vocabulary.ts";
-import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
+import type { PageQuery } from "../../http/pagination.ts";
+import { beforeCursor, cursorPage } from "./lists.ts";
 import { createId } from "../../lib/id.ts";
 
 export type OrganizationInput = {
@@ -32,31 +33,34 @@ export type OrganizationQuery = PageQuery & {
   status?: LifecycleStatus;
 };
 
-export function listOrganizations(
+export async function listOrganizations(
   context: PlatformReadContext,
   query: OrganizationQuery,
 ) {
   const { tx: executor } = context;
-  return executor
-    .select()
-    .from(organizations)
-    .where(
-      and(
-        isNull(organizations.deletedAt),
-        query.q === undefined
-          ? undefined
-          : or(
-              ilike(organizations.name, `%${query.q}%`),
-              ilike(organizations.slug, `%${query.q}%`),
-            ),
-        query.status === undefined
-          ? undefined
-          : eq(organizations.status, query.status),
-        beforeCursor(organizations.id, query.cursor),
-      ),
-    )
-    .orderBy(desc(organizations.id))
-    .limit(query.limit + 1);
+  return cursorPage(
+    await executor
+      .select()
+      .from(organizations)
+      .where(
+        and(
+          isNull(organizations.deletedAt),
+          query.q === undefined
+            ? undefined
+            : or(
+                ilike(organizations.name, `%${query.q}%`),
+                ilike(organizations.slug, `%${query.q}%`),
+              ),
+          query.status === undefined
+            ? undefined
+            : eq(organizations.status, query.status),
+          beforeCursor(organizations.id, query.cursor),
+        ),
+      )
+      .orderBy(desc(organizations.id))
+      .limit(query.limit + 1),
+    query.limit,
+  );
 }
 
 export async function readOrganization(

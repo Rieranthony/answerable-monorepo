@@ -10,7 +10,8 @@ import {
   entitlements,
   oauthClientResources,
 } from "../schema/index.ts";
-import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
+import type { PageQuery } from "../../http/pagination.ts";
+import { beforeCursor, cursorPage } from "./lists.ts";
 import { createId } from "../../lib/id.ts";
 
 export type ResourceInput = {
@@ -30,31 +31,34 @@ export type ResourcePatch = Partial<
   >
 >;
 export type ResourceQuery = PageQuery & { q?: string; disabled?: boolean };
-export function listResources(
+export async function listResources(
   context: PlatformReadContext,
   query: ResourceQuery,
 ) {
   const { tx: executor } = context;
-  return executor
-    .select()
-    .from(oauthResources)
-    .where(
-      and(
-        isNull(oauthResources.deletedAt),
-        query.q === undefined
-          ? undefined
-          : or(
-              ilike(oauthResources.name, `%${query.q}%`),
-              ilike(oauthResources.identifier, `%${query.q}%`),
-            ),
-        query.disabled === undefined
-          ? undefined
-          : eq(oauthResources.disabled, query.disabled),
-        beforeCursor(oauthResources.id, query.cursor),
-      ),
-    )
-    .orderBy(desc(oauthResources.id))
-    .limit(query.limit + 1);
+  return cursorPage(
+    await executor
+      .select()
+      .from(oauthResources)
+      .where(
+        and(
+          isNull(oauthResources.deletedAt),
+          query.q === undefined
+            ? undefined
+            : or(
+                ilike(oauthResources.name, `%${query.q}%`),
+                ilike(oauthResources.identifier, `%${query.q}%`),
+              ),
+          query.disabled === undefined
+            ? undefined
+            : eq(oauthResources.disabled, query.disabled),
+          beforeCursor(oauthResources.id, query.cursor),
+        ),
+      )
+      .orderBy(desc(oauthResources.id))
+      .limit(query.limit + 1),
+    query.limit,
+  );
 }
 export function readResource(context: PlatformReadContext, identifier: string) {
   const { tx } = context;
