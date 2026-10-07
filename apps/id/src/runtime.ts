@@ -37,14 +37,8 @@ export async function startRuntime(
       platformOrganizationName: environment.platformOrganizationName,
       adminResourceIdentifier: environment.adminResourceIdentifier,
     });
-    const summary = Object.entries(seeded)
-      .map(
-        ([row, result]) =>
-          `${row}: created=${result.created}, updated=${"updated" in result ? result.updated : false}`,
-      )
-      .join("; ");
     console.log(
-      `[id] seeded platform organisation ${seeded.organization.slug} (${summary})`,
+      `[id] platform organisation ${seeded.slug}: ${seeded.created ? "provisioned" : "verified"}`,
     );
     console.log(
       "[id] platform applications",

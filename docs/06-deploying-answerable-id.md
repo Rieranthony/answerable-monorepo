@@ -108,7 +108,7 @@ bun --filter @answerable/id db:migrate
 
 The migration connection waits at most 5 s for a lock and 5 minutes for a statement. While DDL waits for a table lock, every later query on that table queues behind it, so on a live database a migration gives up rather than stall the service; rerun it once the blocking transaction ends. The statement bound stops a runaway statement from holding its locks indefinitely.
 
-**3. Start `apps/id`** with the configuration above. Startup verifies the runtime role, seeds the platform organisation, admin resource and `platform-admins` group, then listens. An unsafe role or missing variable fails the process before it listens; read the error, it names the variable or the privilege.
+**3. Start `apps/id`** with the configuration above. Startup verifies the runtime role and, on an empty database, seeds the platform organisation, admin resource, `platform-admins` group, its entitlement and the platform capability, then listens. Later starts verify that binding, refuse a changed `ADMIN_RESOURCE_IDENTIFIER` and restore only the admin resource's definition; the rest belongs to operators. An unsafe role or missing variable fails the process before it listens; read the error, it names the variable or the privilege.
 
 ```bash
 bun --filter @answerable/id build && bun apps/id/dist/server.js

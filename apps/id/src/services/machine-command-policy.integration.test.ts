@@ -10,7 +10,6 @@ import {
 } from "../db/schema/index.ts";
 import { authorizePlatformMutation } from "./platform-context.ts";
 import { updateCapability } from "./capabilities.ts";
-import { updateResource } from "./resources.ts";
 import { createAuth } from "../auth.ts";
 import { createDefaultPrincipalDeps } from "../http/principal.ts";
 import { disableClient } from "./clients.ts";
@@ -123,16 +122,15 @@ for (const source of ["capability", "resource", "client"] as const)
           else if (source === "client")
             await disableClient(context, claims.clientId);
           else
-            await updateResource(
-              context,
-              resource!.identifier,
-              {
+            // The admin API refuses the bound resource; a start rewrites it.
+            await context.tx
+              .update(oauthResources)
+              .set({
                 allowedScopes: resource!.allowedScopes!.filter(
                   (scope) => scope !== "platform:users",
                 ),
-              },
-              resource!,
-            );
+              })
+              .where(eq(oauthResources.id, resource!.id));
           if (order === "revocation-first") {
             reached();
             await gate;

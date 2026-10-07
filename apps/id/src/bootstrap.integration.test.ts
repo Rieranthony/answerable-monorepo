@@ -17,6 +17,7 @@ import {
   entitlements,
   groups,
   oauthResources,
+  organizationCapabilities,
   organizations,
 } from "./db/schema/index.ts";
 import { adminScopes } from "./http/admin/scopes.ts";
@@ -55,43 +56,40 @@ async function rows() {
   };
 }
 
-const auditChanges = (created: boolean, updated = false) =>
-  Object.fromEntries(
-    ["organization", "resource", "group", "entitlement", "capability"].map(
-      (key) => [key, { created, updated }],
-    ),
-  );
+const definition = {
+  name: "Answerable ID admin API",
+  accessTokenTtl: 600,
+  allowedScopes: [...adminScopes],
+};
 
-test("creates the complete platform, repeats without changes and repairs drift", async () => {
+test("the first start provisions the platform; later starts change only the admin resource's definition", async () => {
   const first = await bootstrap(db, actor, options);
-  for (const row of Object.values(first)) expect(row.created).toBe(true);
+  expect(first.created).toBe(true);
   const seeded = await rows();
   for (const table of Object.values(seeded)) expect(table).toHaveLength(1);
   expect(seeded.organization[0]).toMatchObject({
-    id: first.organization.id,
+    id: first.organizationId,
     slug: "answerable",
     name: "Answerable",
     status: "active",
   });
+  expect(first.slug).toBe("answerable");
   expect(seeded.resource[0]).toMatchObject({
-    id: first.resource.id,
+    id: first.resourceId,
     identifier: options.adminResourceIdentifier,
-    name: "Answerable ID admin API",
-    accessTokenTtl: 600,
-    allowedScopes: [...adminScopes],
+    ...definition,
     disabled: false,
   });
   expect(seeded.group[0]).toMatchObject({
-    id: first.group.id,
-    organizationId: first.organization.id,
+    id: first.groupId,
+    organizationId: first.organizationId,
     slug: platformAdminsGroupSlug,
     name: "Platform admins",
     status: "active",
   });
   expect(seeded.entitlement[0]).toMatchObject({
-    id: first.entitlement.id,
-    organizationId: first.organization.id,
-    groupId: first.group.id,
+    organizationId: first.organizationId,
+    groupId: first.groupId,
     memberId: null,
     clientId: null,
     resource: options.adminResourceIdentifier,
@@ -102,17 +100,16 @@ test("creates the complete platform, repeats without changes and repairs drift",
   expect(audit[0]).toMatchObject({
     action: "bootstrap.applied",
     ...actor,
-    organizationId: first.organization.id,
+    organizationId: first.organizationId,
     targetType: "organization",
-    targetId: first.organization.id,
+    targetId: first.organizationId,
     outcome: "success",
-    data: auditChanges(true),
-  });
-  expect(audit[0]!.data).toMatchObject({
-    capability: {
-      after: {
+    data: {
+      created: true,
+      resource: { before: null, after: definition },
+      capability: {
         id: expect.any(String),
-        organizationId: first.organization.id,
+        organizationId: first.organizationId,
         resource: options.adminResourceIdentifier,
         grantKind: "admin_session",
         scopes: [...adminScopes],
@@ -121,46 +118,46 @@ test("creates the complete platform, repeats without changes and repairs drift",
       },
     },
   });
-  const second = await bootstrap(db, actor, options);
-  for (const row of Object.values(second)) {
-    expect(row.created).toBe(false);
-    if ("updated" in row) expect(row.updated).toBe(false);
-  }
-  expect(await rows()).toEqual(seeded);
-  audit = await db.select().from(auditEvents).orderBy(auditEvents.id);
-  expect(audit).toHaveLength(2);
-  expect(audit[1]!.data).toMatchObject(auditChanges(false));
 
+  // A start that changes nothing records nothing.
+  const second = await bootstrap(db, actor, options);
+  expect(second).toEqual({ ...first, created: false });
+  expect(await rows()).toEqual(seeded);
+  expect(await db.select().from(auditEvents)).toHaveLength(1);
+
+  // Operators own the organisation, the group and the entitlement after the
+  // first start; the admin resource's definition stays the code's.
   await db
     .update(oauthResources)
     .set({ accessTokenTtl: 42, name: "Drift", allowedScopes: [] })
-    .where(eq(oauthResources.id, first.resource.id));
+    .where(eq(oauthResources.id, first.resourceId));
   await db
     .update(entitlements)
     .set({ scopes: ["platform:read"] })
-    .where(eq(entitlements.id, first.entitlement.id));
+    .where(eq(entitlements.groupId, first.groupId));
+  await db
+    .update(groups)
+    .set({ name: "Staff" })
+    .where(eq(groups.id, first.groupId));
   const third = await bootstrap(db, actor, {
     ...options,
     platformOrganizationName: "Answerable platform",
   });
-  for (const row of [third.organization, third.resource, third.entitlement])
-    expect(row.updated).toBe(true);
-  for (const row of Object.values(third)) expect(row.created).toBe(false);
-  const repaired = await rows();
-  expect(repaired.organization[0]!.name).toBe("Answerable platform");
-  expect(repaired.resource[0]).toMatchObject({
-    accessTokenTtl: 600,
-    name: "Answerable ID admin API",
-    allowedScopes: [...adminScopes],
-  });
-  expect(repaired.entitlement[0]!.scopes).toEqual(platformScopes);
+  expect(third).toEqual({ ...first, created: false });
+  const after = await rows();
+  expect(after.organization[0]!.name).toBe("Answerable");
+  expect(after.group[0]!.name).toBe("Staff");
+  expect(after.entitlement[0]!.scopes).toEqual(["platform:read"]);
+  expect(after.resource[0]).toMatchObject(definition);
   audit = await db.select().from(auditEvents).orderBy(auditEvents.id);
-  expect(audit).toHaveLength(3);
-  expect(audit[2]!.data).toMatchObject({
-    ...auditChanges(false),
-    organization: { created: false, updated: true },
-    resource: { created: false, updated: true },
-    entitlement: { created: false, updated: true },
+  expect(audit).toHaveLength(2);
+  expect(audit[1]!.data).toEqual({
+    created: false,
+    resource: {
+      before: { name: "Drift", accessTokenTtl: 42, allowedScopes: [] },
+      after: definition,
+    },
+    capability: null,
   });
 });
 
@@ -171,10 +168,8 @@ test("concurrent first starts seed and bind one platform", async () => {
       bootstrap(replicas.db, actor, options),
       bootstrap(replicas.db, actor, options),
     ]);
-    expect(seeds[1]!.organization.id).toBe(seeds[0]!.organization.id);
-    expect(
-      seeds.map(({ organization }) => organization.created).sort(),
-    ).toEqual([false, true]);
+    expect(seeds[1]!.organizationId).toBe(seeds[0]!.organizationId);
+    expect(seeds.map(({ created }) => created).sort()).toEqual([false, true]);
     for (const table of Object.values(await rows()))
       expect(table).toHaveLength(1);
   } finally {
@@ -229,8 +224,8 @@ test("changing the configured slug cannot designate another organisation as the 
     ...options,
     platformOrganizationSlug: "other-tenant",
   });
-  expect(next.organization.id).toBe(first.organization.id);
-  expect(next.group.id).toBe(first.group.id);
+  expect(next.organizationId).toBe(first.organizationId);
+  expect(next.groupId).toBe(first.groupId);
 });
 
 test("bootstrap does not adopt an unrelated existing resource", async () => {
@@ -260,7 +255,7 @@ test("system binding protects its rows and rejects a changed admin audience", as
     // The runtime role may neither rewrite nor remove the binding.
     for (const command of [
       sql`delete from system_bindings`,
-      sql`update system_bindings set group_id = ${bound.group.id}`,
+      sql`update system_bindings set group_id = ${bound.groupId}`,
     ])
       await expect(
         Promise.resolve(connections.runtime.db.execute(command)),
@@ -277,8 +272,8 @@ test("system binding protects its rows and rejects a changed admin audience", as
     const retire = sql`deleted_at = now(), status = 'disabled'`;
     await expect(
       softDelete([
-        sql`update entitlements set ${retire} where group_id = ${bound.group.id}`,
-        sql`update groups set ${retire} where id = ${bound.group.id}`,
+        sql`update entitlements set ${retire} where group_id = ${bound.groupId}`,
+        sql`update groups set ${retire} where id = ${bound.groupId}`,
       ]),
     ).rejects.toMatchObject({
       cause: { code: "23503", constraint: "system_bindings_group_live_fk" },
@@ -287,7 +282,7 @@ test("system binding protects its rows and rejects a changed admin audience", as
       softDelete([
         sql`update entitlements set ${retire} where resource = ${options.adminResourceIdentifier}`,
         sql`update organization_capabilities set ${retire} where resource = ${options.adminResourceIdentifier}`,
-        sql`update oauth_resources set deleted_at = now(), disabled = true where id = ${bound.resource.id}`,
+        sql`update oauth_resources set deleted_at = now(), disabled = true where id = ${bound.resourceId}`,
       ]),
     ).rejects.toMatchObject({
       cause: {
@@ -301,7 +296,6 @@ test("system binding protects its rows and rejects a changed admin audience", as
 });
 
 test("bootstrap preserves explicit restrictions on the bound platform capability", async () => {
-  const { organizationCapabilities } = await import("./db/schema/index.ts");
   await bootstrap(db, actor, options);
   const [row] = await db
     .update(organizationCapabilities)
@@ -313,4 +307,15 @@ test("bootstrap preserves explicit restrictions on the bound platform capability
     .returning();
   await bootstrap(db, actor, options);
   expect(await db.select().from(organizationCapabilities)).toEqual([row!]);
+});
+
+test("a removed platform capability stays removed", async () => {
+  await bootstrap(db, actor, options);
+  await db
+    .update(organizationCapabilities)
+    .set({ deletedAt: sql`now()`, status: "disabled" });
+  await bootstrap(db, actor, options);
+  const capabilities = await db.select().from(organizationCapabilities);
+  expect(capabilities).toHaveLength(1);
+  expect(capabilities[0]!.deletedAt).not.toBeNull();
 });

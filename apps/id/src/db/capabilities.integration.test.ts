@@ -30,7 +30,7 @@ beforeAll(async () => {
     },
   );
   organizationId = createId();
-  foreignId = seeded.organization.id;
+  foreignId = seeded.organizationId;
   clientId = `machine-${createId()}`;
   resource = `https://${createId()}.example`;
   await connection.db

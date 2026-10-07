@@ -1,6 +1,5 @@
-import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { eq } from "drizzle-orm";
-import { oauthResources, systemBindings } from "../db/schema/index.ts";
+import { systemBindings } from "../db/schema/index.ts";
 import { revokeResourceGrantContexts } from "../db/queries/grant-contexts.ts";
 import { requireNoCapabilityReferences } from "./capabilities.ts";
 import {
@@ -85,24 +84,12 @@ export async function updateResource(
   patch: queries.ResourcePatch,
   expected?: { id: string; revision: number },
 ) {
-  const { tx } = context;
-  // Preserve root admission ordering when this resource can activate platform authority.
-  if (patch.allowedScopes !== undefined) {
-    const [binding] = await tx
-      .select({ organizationId: systemBindings.organizationId })
-      .from(systemBindings)
-      .innerJoin(
-        oauthResources,
-        eq(oauthResources.id, systemBindings.resourceInstanceId),
-      )
-      .where(eq(oauthResources.identifier, identifier));
-    if (binding)
-      await lockOrganizationForCommand(context, binding.organizationId);
-  }
   const existing = found(
     await queries.lockResourceForCommand(context, identifier),
     notFound,
   );
+  // The bound admin resource's definition belongs to the code; boot restores it.
+  await protect(context.tx, existing.id);
   assertRevision(
     existing,
     expected,

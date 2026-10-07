@@ -81,7 +81,7 @@ Soft-deleted entitlements, group assignments and memberships have one evidence s
 | `admin.root_request` | `organizationId` from the path, otherwise null. |
 | `auth.signin.succeeded` | `userId`, `authenticationAccountId`, `authenticationProviderId`, `authenticationProviderRevision`, `upstreamAuthTime`. |
 | `auth.signin.rejected`, `auth.signout` | Null. |
-| `bootstrap.applied` | What the start created or updated: `organization`, `resource`, `capability`, `group`, `entitlement`. |
+| `bootstrap.applied` | Recorded only when a start created or changed something. `created` (true on the first start, which provisioned the platform), `resource` (the admin resource's `name`, `accessTokenTtl` and `allowedScopes` `before`, null on creation, and `after`), `capability` (the platform ceiling the first start seeded, otherwise null). |
 | `capability.created`, `capability.updated`, `capability.update_unchanged` | `before` (null on creation), `after`. |
 | `capability.removed`, `domain.deleted`, `group_member.removed` | `before`, `after`, `deletionMode: "soft"`; `group_member.removed` adds `groupId`. |
 | `client.created`, `resource.created` | `before: null`, `after`. |

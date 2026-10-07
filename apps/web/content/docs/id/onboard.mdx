@@ -32,7 +32,7 @@ openssl rand -base64 48
 
    Also configure independent upstream token keys before sign-in: `UPSTREAM_TOKEN_SECRETS=[{"version":1,"value":"<canonical-base64url-encoded random 32-byte key>"}]`. The first version encrypts upstream access, refresh and ID tokens; retain previous versions for reads. Missing keys make sign-in fail with `500 authentication_unavailable`. For rotation, distribute the new key to every instance before making it the first entry. Do not reuse authentication keys.
 
-   Apply the migrations before starting the service; migration also provisions the restricted runtime database role (`DATABASE_RUNTIME_ROLE`, default `answerable_id_runtime`). On an empty database, startup creates and binds the platform organisation, the admin API resource and the `platform-admins` group. Repeated migration and startup preserve those IDs. `PLATFORM_ORGANIZATION_NAME` names the organisation; the default is `Answerable`. Production key delivery, capacity and recovery objectives remain release work.
+   Apply the migrations before starting the service; migration also provisions the restricted runtime database role (`DATABASE_RUNTIME_ROLE`, default `answerable_id_runtime`). On an empty database, startup creates and binds the platform organisation, the admin API resource and the `platform-admins` group. Repeated migration and startup preserve those IDs. `PLATFORM_ORGANIZATION_NAME` names the organisation at that first start; the default is `Answerable`. Rename it later through the admin API: a restart does not change it back. Production key delivery, capacity and recovery objectives remain release work.
 
    ```bash
    bun --filter @answerable/id db:migrate

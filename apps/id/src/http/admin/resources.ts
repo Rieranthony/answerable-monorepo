@@ -154,7 +154,7 @@ export const routes = {
     operationId: "updateResource",
     summary: "Update resource (URL-encode {resource})",
     description:
-      "Accepts the If-Match ETag from getResource. Stale supplied revisions return 412; committed replay precedes the old revision check. An unchanged patch records noop without advancing the revision. Change the resource configuration and return the updated record, recording the change in the audit log. The {resource} URL must be percent-encoded in the path; prefer getResource to inspect settings, and validation_failed or not_found identifies malformed input or a missing resource.",
+      "Accepts the If-Match ETag from getResource. Stale supplied revisions return 412; committed replay precedes the old revision check. An unchanged patch records noop without advancing the revision. Change the resource configuration and return the updated record, recording the change in the audit log. The {resource} URL must be percent-encoded in the path; prefer getResource to inspect settings, and validation_failed, not_found or resource_protected identifies malformed input, a missing resource or the protected admin resource, whose definition every start of the service restores.",
     tag: "Resources",
     platformScope: "platform:write",
     kind: "write",

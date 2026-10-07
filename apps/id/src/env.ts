@@ -95,7 +95,7 @@ const environmentSchema = z
       .string()
       .regex(slugPattern)
       .default("answerable"),
-    /** Display name of the platform organisation seeded at startup. */
+    /** Display name of the platform organisation the first start seeds; operators own it afterwards. */
     PLATFORM_ORGANIZATION_NAME: z.string().trim().min(1).default("Answerable"),
     /** The RFC 8707 resource indicator (aud) of the admin API itself. */
     ADMIN_RESOURCE_IDENTIFIER: z.url().optional(),

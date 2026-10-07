@@ -757,7 +757,9 @@ Set `ADMIN_CAPABILITY_CREATE_KEY` once for this approval and use the installatio
 
 The same GET, PATCH, revision and replay contract applies. Removing a tenant ceiling removes its direct administration authority without deleting assignments or another tenant's ceiling. Existing tenants require explicit review and approval before this enforcement is deployed.
 
-The platform ceiling is seeded under the immutable system binding. Restart preserves restrictions on existing capability rows; an absent live ceiling is seeded again. Its capability can be changed or removed. Recover lost platform authority with the root secret and `ROOT_ADMIN_BREAK_GLASS=true`.
+The first start seeds the platform ceiling under the immutable system binding. After that it belongs to operators: it can be changed or removed, a restart preserves its restrictions, and a removed ceiling stays removed. Recover lost platform authority with the root secret and `ROOT_ADMIN_BREAK_GLASS=true`.
+
+The bound admin resource is different: its name, token lifetime and scopes belong to the code. `updateResource`, `disableResource` and `eraseResource` refuse it with `resource_protected`, and every start restores its definition, so a release that adds an admin scope reaches it.
 
 | Code                          | Meaning                                                                         | What to do                                                                             |
 | ----------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |

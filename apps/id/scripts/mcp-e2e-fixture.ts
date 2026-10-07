@@ -219,7 +219,7 @@ if (plan.platform && platformUpstream) {
     "staff",
     plan.platform.signIns,
   );
-  const organizationId = seeded.organization.id;
+  const organizationId = seeded.organizationId;
   await connectDirectory(organizationId, staff);
   platform = { organizationId, domain: staff.domain, email: staff.email };
 }

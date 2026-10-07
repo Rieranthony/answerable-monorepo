@@ -63,7 +63,7 @@ beforeAll(async () => {
   const client = await createClient(connection.db, systemActor("token-test"), {
     clientId,
     name: "Token test",
-    organizationId: bootstrapped.organization.id,
+    organizationId: bootstrapped.organizationId,
     grantTypes: ["client_credentials"],
     tokenEndpointAuthMethod: "client_secret_basic",
     redirectUris: [],
@@ -76,7 +76,7 @@ beforeAll(async () => {
     environment.adminResourceIdentifier,
   );
   await approveMachineCapability(connection.db, {
-    organizationId: bootstrapped.organization.id,
+    organizationId: bootstrapped.organizationId,
     clientId,
     resource: environment.adminResourceIdentifier,
     scopes: [...platformScopes],
@@ -162,11 +162,11 @@ test("integration: a bootstrapped client mints a resource JWT and calls the admi
     principal: {
       type: "client",
       clientId: clientId,
-      organizationId: bootstrapped.organization.id,
+      organizationId: bootstrapped.organizationId,
     },
     grants: [
       {
-        organizationId: bootstrapped.organization.id,
+        organizationId: bootstrapped.organizationId,
         organizationSlug: "answerable",
         isPlatform: true,
         scopes,
@@ -258,7 +258,7 @@ test("integration: an expired resource JWT cannot call the admin API", async () 
   await connection.db
     .update(oauthResources)
     .set({ accessTokenTtl: 1 })
-    .where(eq(oauthResources.id, bootstrapped.resource.id));
+    .where(eq(oauthResources.id, bootstrapped.resourceId));
   try {
     const token = await mintedToken();
     setSystemTime(new Date(Date.now() + 60_000));
@@ -268,7 +268,7 @@ test("integration: an expired resource JWT cannot call the admin API", async () 
     await connection.db
       .update(oauthResources)
       .set({ accessTokenTtl: 600 })
-      .where(eq(oauthResources.id, bootstrapped.resource.id));
+      .where(eq(oauthResources.id, bootstrapped.resourceId));
   }
 });
 
@@ -340,7 +340,7 @@ test("private-key client credentials refuse a replayed, misaddressed or expired 
   await createClient(connection.db, systemActor("token-test"), {
     clientId: privateKeyClient,
     name: "Private key test",
-    organizationId: bootstrapped.organization.id,
+    organizationId: bootstrapped.organizationId,
     grantTypes: ["client_credentials"],
     tokenEndpointAuthMethod: "client_secret_basic",
     redirectUris: [],
@@ -353,7 +353,7 @@ test("private-key client credentials refuse a replayed, misaddressed or expired 
     environment.adminResourceIdentifier,
   );
   await approveMachineCapability(connection.db, {
-    organizationId: bootstrapped.organization.id,
+    organizationId: bootstrapped.organizationId,
     clientId: privateKeyClient,
     resource: environment.adminResourceIdentifier,
     scopes: [...platformScopes],

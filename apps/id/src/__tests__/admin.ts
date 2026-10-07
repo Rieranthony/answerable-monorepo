@@ -115,7 +115,7 @@ export async function createAdminFixture(
     const client = await createClient(db, systemActor("fixture"), {
       clientId: "answerable-bootstrap",
       name: "Admin fixture",
-      organizationId: bootstrapped.organization.id,
+      organizationId: bootstrapped.organizationId,
       grantTypes: ["client_credentials"],
       tokenEndpointAuthMethod: "client_secret_basic",
       redirectUris: [],
@@ -128,16 +128,16 @@ export async function createAdminFixture(
       environment.adminResourceIdentifier,
     );
     await approveMachineCapability(db, {
-      organizationId: bootstrapped.organization.id,
+      organizationId: bootstrapped.organizationId,
       clientId: client.clientId,
       resource: environment.adminResourceIdentifier,
       scopes: [...platformScopes],
     });
     expect(client.clientSecret).toBeString();
     const platform = {
-      organizationId: bootstrapped.organization.id,
-      slug: bootstrapped.organization.slug,
-      groupId: bootstrapped.group.id,
+      organizationId: bootstrapped.organizationId,
+      slug: bootstrapped.slug,
+      groupId: bootstrapped.groupId,
       adminResource: environment.adminResourceIdentifier,
       client: {
         clientId: client.clientId,

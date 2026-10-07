@@ -9,20 +9,11 @@ import { oauthClientAssertions } from "./db/schema/index.ts";
 import { startRuntime } from "./runtime.ts";
 
 const seedResult: BootstrapResult = {
-  organization: {
-    id: "org",
-    slug: "custom-platform",
-    created: true,
-    updated: false,
-  },
-  resource: {
-    id: "resource",
-    identifier: "https://admin.example.com",
-    created: false,
-    updated: true,
-  },
-  group: { id: "group", created: true },
-  entitlement: { id: "entitlement", created: false, updated: false },
+  organizationId: "org",
+  slug: "custom-platform",
+  groupId: "group",
+  resourceId: "resource",
+  created: true,
 };
 
 test("runtime emits bounded operational summaries and stops the reporter on shutdown", async () => {
@@ -334,8 +325,8 @@ test("startup reports only platform application availability after the seed line
         { allowTestEnvironment: true, seed: async () => seedResult },
       );
       try {
-        expect(log.mock.calls[0]![0]).toStartWith(
-          "[id] seeded platform organisation",
+        expect(log.mock.calls[0]![0]).toBe(
+          "[id] platform organisation custom-platform: provisioned",
         );
         expect(log.mock.calls[1]).toEqual([
           "[id] platform applications",

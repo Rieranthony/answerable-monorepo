@@ -49,7 +49,7 @@ test("real runtime login can bootstrap, audit and issue a machine token", async 
   const client = await createClient(runtime.db, actor, {
     clientId: "runtime-machine",
     name: "Runtime",
-    organizationId: seeded.organization.id,
+    organizationId: seeded.organizationId,
     grantTypes: ["client_credentials"],
     redirectUris: [],
     tokenEndpointAuthMethod: "client_secret_basic",
@@ -62,7 +62,7 @@ test("real runtime login can bootstrap, audit and issue a machine token", async 
     environment.adminResourceIdentifier,
   );
   await approveMachineCapability(owner.db, {
-    organizationId: seeded.organization.id,
+    organizationId: seeded.organizationId,
     clientId: client.clientId,
     resource: environment.adminResourceIdentifier,
     scopes: ["platform:read"],
@@ -115,7 +115,7 @@ test("real runtime login can bootstrap, audit and issue a machine token", async 
           reason: "approved",
           grantType: "client_credentials",
           subjectType: "client",
-          organization: { id: seeded.organization.id },
+          organization: { id: seeded.organizationId },
           client: { clientId: client.clientId },
           resource: { identifier: environment.adminResourceIdentifier },
           requestedScopes: ["platform:read"],
@@ -158,7 +158,7 @@ test("real runtime login can bootstrap, audit and issue a machine token", async 
     {
       actorType: "client",
       actorId: client.clientId,
-      organizationId: seeded.organization.id,
+      organizationId: seeded.organizationId,
       outcome: "denied",
       reason: "invalid_scope",
       data: { stage: "authorization" },

@@ -5,7 +5,6 @@ import { inPlatformWrite } from "../__tests__/platform-context.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import {
   organizationCapabilities,
-  oauthResources,
   members,
   users,
   entitlements,
@@ -14,7 +13,6 @@ import { hasPlatformWriter } from "../db/queries/grants.ts";
 import { createId } from "../lib/id.ts";
 import { authorizePlatformMutation } from "./platform-context.ts";
 import { updateCapability } from "./capabilities.ts";
-import { updateResource } from "./resources.ts";
 import { enableUser } from "./users.ts";
 
 let fixture: AdminFixture;
@@ -31,7 +29,9 @@ afterEach(async () => {
   await fixture?.close();
 });
 
-for (const source of ["capability", "resource", "new-member"] as const)
+// The bound admin resource cannot activate a writer through the admin API:
+// updateResource refuses it, and only a start restores its definition.
+for (const source of ["capability", "new-member"] as const)
   for (const order of ["command-first", "activation-first"] as const)
     test(`root admission and first writer activation are ordered: ${source}, ${order}`, async () => {
       const [capability] = await fixture.db
@@ -46,12 +46,7 @@ for (const source of ["capability", "resource", "new-member"] as const)
             eq(organizationCapabilities.grantKind, "admin_session"),
           ),
         );
-      const [resource] = await fixture.db
-        .select()
-        .from(oauthResources)
-        .where(eq(oauthResources.identifier, fixture.platform.adminResource));
       let capabilityBefore = capability!;
-      let resourceBefore = resource!;
       if (source === "capability")
         [capabilityBefore] = await fixture.db
           .update(organizationCapabilities)
@@ -61,16 +56,6 @@ for (const source of ["capability", "resource", "new-member"] as const)
             ),
           })
           .where(eq(organizationCapabilities.id, capability!.id))
-          .returning();
-      else if (source === "resource")
-        [resourceBefore] = await fixture.db
-          .update(oauthResources)
-          .set({
-            allowedScopes: resource!.allowedScopes!.filter(
-              (scope) => scope !== "platform:write",
-            ),
-          })
-          .where(eq(oauthResources.id, resource!.id))
           .returning();
       else {
         const platformMembers = await fixture.db
@@ -154,13 +139,6 @@ for (const source of ["capability", "resource", "new-member"] as const)
               capability!.id,
               { scopes: capability!.scopes },
               capabilityBefore,
-            );
-          else if (source === "resource")
-            await updateResource(
-              context,
-              resource!.identifier,
-              { allowedScopes: resource!.allowedScopes! },
-              resourceBefore,
             );
           else {
             // Exercise the membership FK rather than relying on a service's explicit lock.

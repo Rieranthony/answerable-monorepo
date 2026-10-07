@@ -196,6 +196,7 @@ test("resource conflicts, protection, confirmation and validation use problem re
   expect((await request(path + "/disable", "POST")).status).toBe(200);
   expect((await request(path + "/disable", "POST")).status).toBe(200);
   for (const [suffix, method, body] of [
+    ["", "PATCH", { name: "Renamed" }],
     ["/disable", "POST", undefined],
     ["", "DELETE", { confirm: fixture.platform.adminResource }],
   ] as const) {
