@@ -37,19 +37,6 @@ function FieldLabel({
   )
 }
 
-function FieldDescription({
-  className,
-  ...props
-}: FieldPrimitive.Description.Props) {
-  return (
-    <FieldPrimitive.Description
-      data-slot="field-description"
-      className={cn("text-sm text-muted-foreground", className)}
-      {...props}
-    />
-  )
-}
-
 function FieldError({ className, ...props }: FieldPrimitive.Error.Props) {
   return (
     <FieldPrimitive.Error
@@ -60,4 +47,4 @@ function FieldError({ className, ...props }: FieldPrimitive.Error.Props) {
   )
 }
 
-export { Field, FieldLabel, FieldDescription, FieldError }
+export { Field, FieldLabel, FieldError }
