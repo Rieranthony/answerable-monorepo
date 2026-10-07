@@ -16,24 +16,11 @@ export async function authorizeCommand(
   environment: Environment,
   required: {
     freshAuthentication?: boolean;
-    platform: AdminScope | readonly AdminScope[];
-    tenant?: {
-      organizationId: string;
-      scope: AdminScope | readonly AdminScope[];
-    };
+    platform: AdminScope;
+    tenant?: { organizationId: string; scope: AdminScope };
   },
   claims?: BearerClaims,
 ): Promise<"platform" | "tenant"> {
-  const platformScopes =
-    typeof required.platform === "string"
-      ? [required.platform]
-      : required.platform;
-  const tenantScopes =
-    required.tenant === undefined
-      ? []
-      : typeof required.tenant.scope === "string"
-        ? [required.tenant.scope]
-        : required.tenant.scope;
   if (principal.type === "root") {
     if (
       !environment.rootAdminSecret ||
@@ -91,9 +78,7 @@ export async function authorizeCommand(
       await freshAuthenticationGuard(tx, principal.sessionId);
     if (
       grants.some(
-        (grant) =>
-          grant.isPlatform &&
-          platformScopes.some((scope) => grant.scopes.includes(scope)),
+        (grant) => grant.isPlatform && grant.scopes.includes(required.platform),
       )
     )
       return "platform";
@@ -102,7 +87,7 @@ export async function authorizeCommand(
       grants.some(
         (grant) =>
           grant.organizationId === required.tenant?.organizationId &&
-          tenantScopes.some((scope) => grant.scopes.includes(scope)),
+          grant.scopes.includes(required.tenant.scope),
       )
     )
       return "tenant";
@@ -134,11 +119,11 @@ export async function authorizeCommand(
       claims.scopes.includes(scope) &&
       client.clientCredentialsScopes?.includes(scope) &&
       (client.resourceScopes === null || client.resourceScopes.includes(scope));
-    if (client.isPlatform && platformScopes.some(allowed)) return "platform";
+    if (client.isPlatform && allowed(required.platform)) return "platform";
     if (
       required.tenant &&
       client.organizationId === required.tenant.organizationId &&
-      tenantScopes.some(allowed)
+      allowed(required.tenant.scope)
     )
       return "tenant";
   }
