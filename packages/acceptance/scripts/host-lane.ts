@@ -18,7 +18,7 @@ process.on("uncaughtException", fail)
 const librechat = { clientId: "librechat-lane", redirectUri: "http://localhost:3080/api/mcp/toolbox/oauth/callback" }
 const claudeCode = { clientId: "claude-code-lane", redirectUri: "http://localhost:47700/callback" }
 const hosts = [librechat, claudeCode]
-const compose = new URL("../host-lane/compose.yaml", import.meta.url).pathname
+const compose = Bun.fileURLToPath(new URL("../host-lane/compose.yaml", import.meta.url))
 
 // One company sign-in each for LibreChat and Claude Code, and spares for more tries. A refresh needs none.
 const id = await startId({ tenants: [{ slug: "host-lane", signIns: 12 }] })

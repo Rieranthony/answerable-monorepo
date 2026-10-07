@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+`bun run build` finds the view's entry file in a checkout whose path has a space or a non-ASCII character. No tool changes.
+
 ## 0.1.0
 
 The reference server, on `@answerable/mcp`, and the first provider the Toolbox mounts.

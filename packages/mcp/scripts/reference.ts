@@ -1,6 +1,6 @@
 import ts from "typescript"
 
-const root = new URL("../../../", import.meta.url).pathname
+const root = Bun.fileURLToPath(new URL("../../../", import.meta.url))
 const entries = [
   { name: "@answerable/auth", file: "packages/auth/src/index.ts", about: "Verify Answerable ID access tokens in any service." },
   { name: "@answerable/auth/testing", file: "packages/auth/src/testing.ts", about: "An in-process issuer that signs ID-shaped test tokens." },

@@ -2,7 +2,7 @@ import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { scaffoldSources } from "./mcp-templates"
 
-const repo = new URL("../", import.meta.url).pathname
+const repo = Bun.fileURLToPath(new URL("../", import.meta.url))
 const e2e = join(repo, "mcps/e2e")
 const pick = (from: Record<string, string>, names: string[]) => Object.fromEntries(names.map(name => [name, from[name]]))
 

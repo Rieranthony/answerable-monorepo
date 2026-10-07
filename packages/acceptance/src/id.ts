@@ -7,8 +7,8 @@ import { createAdmin } from "./admin"
 import { cleanup, onCleanup } from "./cleanup"
 import { step } from "./step"
 
-const compose = ["docker", "compose", "-p", "answerable-mcp-e2e", "-f", new URL("../compose.yaml", import.meta.url).pathname]
-const cwd = new URL("../../../apps/id/", import.meta.url).pathname
+const compose = ["docker", "compose", "-p", "answerable-mcp-e2e", "-f", Bun.fileURLToPath(new URL("../compose.yaml", import.meta.url))]
+const cwd = Bun.fileURLToPath(new URL("../../../apps/id/", import.meta.url))
 
 const spareSchema = z.object({
   slug: z.string(),

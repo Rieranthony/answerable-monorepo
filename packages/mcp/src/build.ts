@@ -2,7 +2,7 @@ import { z } from "zod"
 
 /** Bundle a browser entry file with Bun's bundler, in a separate process, and return each output file's path and text. */
 export async function bundleBrowser(entry: string) {
-  const worker = Bun.spawn([process.execPath, new URL("./build-worker.ts", import.meta.url).pathname, entry], { stdout: "pipe", stderr: "pipe" })
+  const worker = Bun.spawn([process.execPath, `${import.meta.dir}/build-worker.ts`, entry], { stdout: "pipe", stderr: "pipe" })
   const [code, stdout, stderr] = await Promise.all([worker.exited, new Response(worker.stdout).text(), new Response(worker.stderr).text()])
   if (code !== 0) throw new Error(`View build failed: ${stderr}`)
   return z.array(z.object({ path: z.string(), text: z.string() })).parse(JSON.parse(stdout))

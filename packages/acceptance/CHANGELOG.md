@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1
+
+`startId` and the host lane find `compose.yaml` and `apps/id` in a checkout whose path has a space or a non-ASCII character: they decode the file URL instead of passing its percent-encoded path to Docker Compose and Bun.
+
 ## 0.5.0
 
 What the test audit kept of the acceptance. Breaking: `approve` is no longer exported, and the lanes have no `--check`.
