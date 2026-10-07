@@ -1,6 +1,6 @@
 # Postgres storage for MCP servers
 
-The intent store, the hash-chained evidence and the migrator that an MCP server with a Postgres database shares. Used by the Toolbox; the admin MCP is its second consumer. Development and test only.
+The intent store, the hash-chained evidence and the migrator that an MCP server with a Postgres database shares. Used by the Toolbox; the admin MCP is its second consumer. Private to the monorepo; no npm release.
 
 ```ts
 import { SQL } from "bun"

@@ -14,4 +14,4 @@ UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-example test
 bun run mcp:check @answerable/mcp-example
 ```
 
-The first rewrites `manifest.json` after a change to a tool; the second runs the typecheck, the lint and the tests, with the conformance kit and a 100% coverage gate. `exports` makes the provider mountable in the Toolbox: [Add tools to the Toolbox](../../apps/web/content/docs/toolbox/add-tools.mdx).
+The first rewrites `manifest.json` after a change to a tool; the second runs the typecheck, the lint and the tests, with the conformance kit and a 100% coverage gate. The workspace has no `exports` map, since nothing mounts it; add one to mount the provider in the Toolbox: [Add tools to the Toolbox](../../apps/web/content/docs/toolbox/add-tools.mdx).
