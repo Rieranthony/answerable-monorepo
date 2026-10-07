@@ -5,6 +5,7 @@ import {
   pathParameter,
   confirmQuery,
   softDeletion,
+  pageSchema,
 } from "./schemas.ts";
 import { platformRead } from "./platform-read.ts";
 import type { Hono } from "hono";
@@ -94,12 +95,7 @@ export const routes = {
     responses: {
       200: {
         description: "Resources",
-        content: json(
-          z.object({
-            items: z.array(resourceSchema),
-            nextCursor: z.uuid().nullable(),
-          }),
-        ),
+        content: json(pageSchema(resourceSchema)),
       },
       ...problemResponses(400),
     },

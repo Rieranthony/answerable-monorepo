@@ -5,6 +5,7 @@ import {
   pathParameter,
   confirmQuery,
   softDeletion,
+  pageSchema,
 } from "./schemas.ts";
 import { platformRead } from "./platform-read.ts";
 import {
@@ -136,12 +137,7 @@ export const routes = {
     responses: {
       200: {
         description: "Clients",
-        content: json(
-          z.object({
-            items: z.array(clientSchema),
-            nextCursor: z.uuid().nullable(),
-          }),
-        ),
+        content: json(pageSchema(clientSchema)),
       },
       ...problemResponses(400),
     },

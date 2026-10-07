@@ -6,6 +6,7 @@ import {
   uuidParam,
   windowDates,
   windowSchema,
+  pageSchema,
 } from "./schemas.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
@@ -105,12 +106,7 @@ export const routes = {
     responses: {
       200: {
         description: "Capabilities",
-        content: json(
-          z.object({
-            items: z.array(capabilitySchema),
-            nextCursor: z.uuid().nullable(),
-          }),
-        ),
+        content: json(pageSchema(capabilitySchema)),
       },
       ...problemResponses(400, 404),
     },

@@ -6,6 +6,7 @@ import {
   uuidParam,
   confirmQuery,
   softDeletion,
+  pageSchema,
 } from "./schemas.ts";
 import { platformRead } from "./platform-read.ts";
 import { tenantRead } from "./tenant-read.ts";
@@ -77,12 +78,7 @@ export const routes = {
     responses: {
       200: {
         description: "Organisations",
-        content: json(
-          z.object({
-            items: z.array(organizationSchema),
-            nextCursor: z.uuid().nullable(),
-          }),
-        ),
+        content: json(pageSchema(organizationSchema)),
       },
       ...problemResponses(400),
     },

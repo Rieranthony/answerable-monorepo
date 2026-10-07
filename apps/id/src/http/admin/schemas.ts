@@ -8,6 +8,9 @@ export const softDeletion =
 export const json = (schema: z.ZodType) => ({
   "application/json": { schema: resolver(schema) },
 });
+/** A cursor page: nextCursor is the last item's id, or null on the last page. */
+export const pageSchema = (item: z.ZodType) =>
+  z.object({ items: z.array(item), nextCursor: z.uuid().nullable() });
 const operationReceiptSchema = z.object({
   operationId: z.uuid(),
   outcome: z.enum(operationOutcomes),

@@ -5,6 +5,7 @@ import {
   pathParameter,
   uuidParam,
   softDeletion,
+  pageSchema,
 } from "./schemas.ts";
 import { tenantRead } from "./tenant-read.ts";
 import type { Hono } from "hono";
@@ -78,12 +79,7 @@ export const routes = {
     responses: {
       200: {
         description: "Domains",
-        content: json(
-          z.object({
-            items: z.array(domainSchema),
-            nextCursor: z.uuid().nullable(),
-          }),
-        ),
+        content: json(pageSchema(domainSchema)),
       },
       ...problemResponses(400, 404),
     },

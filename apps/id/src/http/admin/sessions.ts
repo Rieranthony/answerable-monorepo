@@ -1,4 +1,10 @@
-import { commandJson, json, pathParameter, uuidParam } from "./schemas.ts";
+import {
+  commandJson,
+  json,
+  pathParameter,
+  uuidParam,
+  pageSchema,
+} from "./schemas.ts";
 import { platformRead } from "./platform-read.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
@@ -8,8 +14,6 @@ import { pageQuerySchema } from "../pagination.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
-const page = (schema: z.ZodType) =>
-  z.object({ items: z.array(schema), nextCursor: z.uuid().nullable() });
 import * as service from "../../services/sessions.ts";
 const sessionSchema = z.object({
   id: z.uuid(),
@@ -53,7 +57,7 @@ export const routes = {
     responses: {
       200: {
         description: "Success",
-        content: json(page(sessionSchema)),
+        content: json(pageSchema(sessionSchema)),
       },
       ...problemResponses(400, 404),
     },

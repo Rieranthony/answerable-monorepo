@@ -6,6 +6,7 @@ import {
   uuidParam,
   windowSchema,
   windowDates,
+  pageSchema,
 } from "./schemas.ts";
 import { platformRead } from "./platform-read.ts";
 import { tenantRead } from "./tenant-read.ts";
@@ -26,8 +27,6 @@ import { validate } from "../validation.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 import { lifecycleStatuses } from "../../db/schema/vocabulary.ts";
 import { uniqueSorted } from "../../lib/scopes.ts";
-const page = (schema: z.ZodType) =>
-  z.object({ items: z.array(schema), nextCursor: z.uuid().nullable() });
 const orgParams = uuidParam("organizationId");
 const entitlementSchema = z.object({
   id: z.uuid(),
@@ -82,7 +81,7 @@ export const routes = {
       200: {
         description: "Entitlements",
         content: json(
-          page(
+          pageSchema(
             entitlementSchema.extend({
               organization: z.object({ id: z.uuid(), slug: z.string() }),
             }),
@@ -107,7 +106,7 @@ export const routes = {
     responses: {
       200: {
         description: "Success",
-        content: json(page(entitlementSchema)),
+        content: json(pageSchema(entitlementSchema)),
       },
       ...problemResponses(400, 404),
     },

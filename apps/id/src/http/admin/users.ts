@@ -5,6 +5,7 @@ import {
   uuidParam,
   confirmQuery,
   softDeletion,
+  pageSchema,
 } from "./schemas.ts";
 import { platformRead } from "./platform-read.ts";
 import type { Hono } from "hono";
@@ -15,8 +16,6 @@ import { pageQuerySchema } from "../pagination.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
-const page = (schema: z.ZodType) =>
-  z.object({ items: z.array(schema), nextCursor: z.uuid().nullable() });
 import * as service from "../../services/users.ts";
 import { userStatuses } from "../../db/schema/vocabulary.ts";
 const userSchema = z.object({
@@ -73,7 +72,7 @@ export const routes = {
     kind: "read",
     parameters: [],
     responses: {
-      200: { description: "Success", content: json(page(userSchema)) },
+      200: { description: "Success", content: json(pageSchema(userSchema)) },
       ...problemResponses(400, 404),
     },
   },

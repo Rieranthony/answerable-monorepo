@@ -1,6 +1,6 @@
 import { platformRead } from "./platform-read.ts";
 import { tenantRead } from "./tenant-read.ts";
-import { json, pathParameter, uuidParam } from "./schemas.ts";
+import { json, pathParameter, uuidParam, pageSchema } from "./schemas.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
 import { auditActorTypes, auditOutcomes } from "../../db/schema/vocabulary.ts";
@@ -68,12 +68,7 @@ const auditSchema = z.object({
 const responses = {
   200: {
     description: "Success",
-    content: json(
-      z.object({
-        items: z.array(auditSchema),
-        nextCursor: z.uuid().nullable(),
-      }),
-    ),
+    content: json(pageSchema(auditSchema)),
   },
   ...problemResponses(400),
 };

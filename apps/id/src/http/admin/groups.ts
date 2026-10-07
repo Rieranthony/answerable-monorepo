@@ -8,6 +8,7 @@ import {
   windowDates,
   confirmQuery,
   softDeletion,
+  pageSchema,
 } from "./schemas.ts";
 import { tenantRead } from "./tenant-read.ts";
 import {
@@ -27,8 +28,6 @@ import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 import { lifecycleStatuses } from "../../db/schema/vocabulary.ts";
-const page = (schema: z.ZodType) =>
-  z.object({ items: z.array(schema), nextCursor: z.uuid().nullable() });
 const orgParams = uuidParam("organizationId");
 const groupSchema = z.object({
   id: z.uuid(),
@@ -94,7 +93,7 @@ export const routes = {
     responses: {
       200: {
         description: "Success",
-        content: json(page(groupSchema)),
+        content: json(pageSchema(groupSchema)),
       },
       ...problemResponses(400, 404),
     },
@@ -261,7 +260,10 @@ export const routes = {
     ),
     orgScope: "org:read",
     responses: {
-      200: { description: "Success", content: json(page(groupMemberSchema)) },
+      200: {
+        description: "Success",
+        content: json(pageSchema(groupMemberSchema)),
+      },
       ...problemResponses(400, 404),
     },
   },

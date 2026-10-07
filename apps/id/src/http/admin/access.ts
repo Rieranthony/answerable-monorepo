@@ -1,5 +1,5 @@
 import { tenantRead } from "./tenant-read.ts";
-import { json, pathParameter, uuidParam } from "./schemas.ts";
+import { json, pathParameter, uuidParam, pageSchema } from "./schemas.ts";
 import * as service from "../../services/access.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
@@ -113,19 +113,16 @@ const memberAccessSchema = z.object({
     ),
   ),
 });
-const targetAccessSchema = z.object({
-  items: z.array(
-    z.object({
-      memberId: z.uuid(),
-      userId: z.uuid(),
-      email: z.string(),
-      name: z.string(),
-      scopes: z.array(z.string()),
-      permission: permissionSchema,
-    }),
-  ),
-  nextCursor: z.uuid().nullable(),
-});
+const targetAccessSchema = pageSchema(
+  z.object({
+    memberId: z.uuid(),
+    userId: z.uuid(),
+    email: z.string(),
+    name: z.string(),
+    scopes: z.array(z.string()),
+    permission: permissionSchema,
+  }),
+);
 export const routes = {
   getMemberAccess: {
     method: "get",
