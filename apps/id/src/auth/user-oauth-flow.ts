@@ -5,7 +5,6 @@ import {
 } from "@better-auth/core/context";
 import {
   getOAuthProviderState,
-  type getOAuthProviderApi,
   type OAuthOptions,
 } from "@better-auth/oauth-provider";
 import { APIError, getSessionFromCtx } from "better-auth/api";
@@ -29,12 +28,15 @@ import { authTransaction } from "./database-adapter.ts";
 import { createResourceGrant } from "./create-resource-grant.ts";
 import { currentGrantAuthentication } from "./grant-authentication.ts";
 import { lockResourceGrantPolicy } from "./lock-resource-grant-policy.ts";
-import { userResourcePolicy } from "./user-resource-policy.ts";
+import {
+  userResourcePolicy,
+  type UserResourceDecision,
+} from "./user-resource-policy.ts";
+import type { NativeContext } from "./native-client-authentication.ts";
 import { rethrowGrantError } from "./grant-error.ts";
 import { narrowAuthorizationCode } from "./narrow-authorization-code.ts";
 import { recordUserOAuth } from "./user-oauth-audit.ts";
 
-type Context = Parameters<typeof getOAuthProviderApi>[0];
 const parameter = "answerable_flow";
 const prefix = "answerable-oauth-flow:";
 const flowSchema = z.object({
@@ -95,7 +97,10 @@ export function createUserOAuthFlow(
     },
   };
 
-  async function start(ctx: Context, run: (ctx: Context) => Promise<Response>) {
+  async function start(
+    ctx: NativeContext,
+    run: (ctx: NativeContext) => Promise<Response>,
+  ) {
     ctx.setHeader("Cache-Control", "no-store");
     // The allowlist serves GET only (http/auth-allowlist.ts).
     const query = ctx.query;
@@ -136,10 +141,13 @@ export function createUserOAuthFlow(
   }
 
   async function resume<T>(
-    ctx: Context,
+    ctx: NativeContext,
     ...operation:
       | [action: "details"]
-      | [action: "continue" | "consent", run: (ctx: Context) => Promise<T>]
+      | [
+          action: "continue" | "consent",
+          run: (ctx: NativeContext) => Promise<T>,
+        ]
   ) {
     const [action, run] = operation;
     ctx.setHeader("Cache-Control", "no-store");
@@ -218,10 +226,7 @@ export function createUserOAuthFlow(
         flow.status = "consent";
       }
       let grant: typeof grantContexts.$inferSelect | null = null;
-      let acceptedDecision: Extract<
-        Awaited<ReturnType<typeof userResourcePolicy>>,
-        { allowed: true }
-      > | null = null;
+      let acceptedDecision: UserResourceDecision | null = null;
       if (flow.grantId) {
         await lockResourceGrantPolicy(adapter, { id: flow.grantId, clientId });
         // Issue the entitled subset (RFC 6749 §3.3); issuance then checks it exactly.

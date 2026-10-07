@@ -19,18 +19,19 @@ import { currentGrantAuthentication } from "./grant-authentication.ts";
 import { assertUserTokenResponse } from "./user-token-assertions.ts";
 import { lockResourceGrantPolicy } from "./lock-resource-grant-policy.ts";
 import { bindGrantCode, withNativeCodeReplay } from "./native-code-replay.ts";
-import { withNativeClientAuthentication } from "./native-client-authentication.ts";
+import {
+  withNativeClientAuthentication,
+  type NativeContext,
+} from "./native-client-authentication.ts";
 import { withNativeRefreshFamily } from "./native-refresh-family.ts";
 import { withNativeTokenCleanup } from "./native-token-cleanup.ts";
 import { rethrowGrantError } from "./grant-error.ts";
-import { userResourcePolicy } from "./user-resource-policy.ts";
+import {
+  userResourcePolicy,
+  type UserResourceDecision,
+} from "./user-resource-policy.ts";
 import { recordUserOAuth } from "./user-oauth-audit.ts";
 
-type Context = Parameters<typeof getOAuthProviderApi>[0];
-type Decision = Extract<
-  Awaited<ReturnType<typeof userResourcePolicy>>,
-  { allowed: true }
->;
 const invalid = () => new APIError("BAD_REQUEST", { error: "invalid_grant" });
 const codeSchema = z.object({
   type: z.literal("authorization_code"),
@@ -54,10 +55,10 @@ const refreshSchema = z.object({
 
 export function createUserTokenBoundary() {
   const issuing = new AsyncLocalStorage<{
-    decision: Decision;
+    decision: UserResourceDecision;
     minted: boolean;
   }>();
-  function identity(decision: Decision) {
+  function identity(decision: UserResourceDecision) {
     return {
       subject_type: "user",
       organization_id: decision.grant.organizationId,
@@ -75,7 +76,7 @@ export function createUserTokenBoundary() {
     };
   }
   async function readDecision(
-    ctx: Context,
+    ctx: NativeContext,
     userId: string,
     clientId: string,
     referenceId: string,
@@ -157,7 +158,7 @@ export function createUserTokenBoundary() {
   };
 
   function userInfo(
-    ctx: Context,
+    ctx: NativeContext,
     native: ReturnType<typeof oauthProvider>["endpoints"]["oauth2UserInfo"],
   ) {
     return runWithTransaction(ctx.context.adapter, async () => {
@@ -178,7 +179,7 @@ export function createUserTokenBoundary() {
   }
 
   async function handle(
-    ctx: Context,
+    ctx: NativeContext,
     options: OAuthOptions<string[]>,
     token: ReturnType<typeof oauthProvider>["endpoints"]["oauth2Token"],
   ) {
@@ -265,7 +266,7 @@ export function createUserTokenBoundary() {
                 resources: stored.data.resources ?? [],
               };
             }
-            let decision: Decision | null = null;
+            let decision: UserResourceDecision | null = null;
             if (reference) {
               if (reference.resources.length > 1) throw invalid();
               const resource = reference.resources[0] ?? null;

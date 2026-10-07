@@ -1,12 +1,10 @@
-import type { getOAuthProviderApi } from "@better-auth/oauth-provider";
+import type { NativeAdapter } from "./native-client-authentication.ts";
 import { temporarilyUnavailable } from "./grant-error.ts";
-
-type Adapter = Parameters<typeof getOAuthProviderApi>[0]["context"]["adapter"];
 
 /** Run inside the grant transaction: native cleanup may catch adapter errors. */
 export async function withNativeTokenCleanup<T>(
-  adapter: Pick<Adapter, "deleteMany">,
-  run: (deleteMany: Adapter["deleteMany"]) => Promise<T>,
+  adapter: Pick<NativeAdapter, "deleteMany">,
+  run: (deleteMany: NativeAdapter["deleteMany"]) => Promise<T>,
 ): Promise<T> {
   let failed = false;
   const outcome = await run(async (input) => {

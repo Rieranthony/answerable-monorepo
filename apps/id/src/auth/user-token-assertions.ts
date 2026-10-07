@@ -6,13 +6,9 @@ import {
 import { APIError } from "better-auth/api";
 import { decodeJwt, decodeProtectedHeader } from "jose";
 import { z } from "zod";
-import type { userResourcePolicy } from "./user-resource-policy.ts";
+import type { NativeContext } from "./native-client-authentication.ts";
+import type { UserResourceDecision } from "./user-resource-policy.ts";
 
-type Context = Parameters<typeof getOAuthProviderApi>[0];
-type Decision = Extract<
-  Awaited<ReturnType<typeof userResourcePolicy>>,
-  { allowed: true }
->;
 const responseSchema = z.object({
   access_token: z.string().min(1),
   refresh_token: z.string().min(1).optional(),
@@ -49,9 +45,9 @@ function sameValues(actual: string[], expected: string[]) {
 /** Assert native output inside its transaction, including encrypted rotation replay.
  * These JWTs are freshly returned by the provider, not caller-supplied credentials. */
 export async function assertUserTokenResponse(input: {
-  ctx: Context;
+  ctx: NativeContext;
   options: OAuthOptions<string[]>;
-  decision: Decision;
+  decision: UserResourceDecision;
   identity: Record<string, unknown>;
   response: unknown;
   reference: { scopes: string[]; resources: string[]; nonce?: string };

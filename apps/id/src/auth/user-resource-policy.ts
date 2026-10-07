@@ -93,3 +93,9 @@ export async function userResourcePolicy(
     },
   );
 }
+
+/** An allowed decision and the grant it was evaluated for. */
+export type UserResourceDecision = Extract<
+  Awaited<ReturnType<typeof userResourcePolicy>>,
+  { allowed: true }
+>;

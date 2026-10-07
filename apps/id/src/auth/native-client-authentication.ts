@@ -5,21 +5,22 @@ import {
 } from "@better-auth/oauth-provider";
 import { APIError } from "better-auth/api";
 
-type Context = Parameters<typeof getOAuthProviderApi>[0];
-type Adapter = Context["context"]["adapter"];
-type Create = Adapter["create"];
+/** The endpoint context the native provider API takes, and its adapter. */
+export type NativeContext = Parameters<typeof getOAuthProviderApi>[0];
+export type NativeAdapter = NativeContext["context"]["adapter"];
+type Create = NativeAdapter["create"];
 type Authenticated = Awaited<
   ReturnType<ReturnType<typeof getOAuthProviderApi>["authenticateClient"]>
 >;
 
 /** Keep assertion consumption outside grant rollback while retaining native validation. */
 export async function withNativeClientAuthentication<T>(
-  ctx: Context,
+  ctx: NativeContext,
   options: OAuthOptions<string[]>,
   grantType: "authorization_code" | "refresh_token" | undefined,
   run: (
     authenticated: Authenticated,
-    nativeCreate: (adapter: Pick<Adapter, "create">) => Create,
+    nativeCreate: (adapter: Pick<NativeAdapter, "create">) => Create,
   ) => Promise<T>,
 ): Promise<T> {
   if (

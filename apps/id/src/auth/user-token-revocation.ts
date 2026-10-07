@@ -13,16 +13,18 @@ import { grantContexts } from "../db/schema/index.ts";
 import { setDatabaseScope } from "../db/isolation.ts";
 import { authTransaction } from "./database-adapter.ts";
 import { lockResourceGrantPolicy } from "./lock-resource-grant-policy.ts";
-import { withNativeClientAuthentication } from "./native-client-authentication.ts";
+import {
+  withNativeClientAuthentication,
+  type NativeContext,
+} from "./native-client-authentication.ts";
 import { withNativeRefreshFamily } from "./native-refresh-family.ts";
 import { withNativeTokenCleanup } from "./native-token-cleanup.ts";
 import { recordUserOAuth } from "./user-oauth-audit.ts";
 import { rethrowGrantError } from "./grant-error.ts";
 
-type Context = Parameters<typeof getOAuthProviderApi>[0];
 type Provider = ReturnType<typeof oauthProvider>;
 
-export function revokeUserToken(ctx: Context, provider: Provider) {
+export function revokeUserToken(ctx: NativeContext, provider: Provider) {
   ctx.setHeader("Cache-Control", "no-store");
   return withNativeClientAuthentication(
     ctx,

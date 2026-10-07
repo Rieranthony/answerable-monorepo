@@ -1,10 +1,9 @@
-import type { getOAuthProviderApi } from "@better-auth/oauth-provider";
+import type { NativeAdapter } from "./native-client-authentication.ts";
 import { APIError } from "better-auth/api";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Executor } from "../db/client.ts";
 import { revokeGrantContexts } from "../db/queries/grant-contexts.ts";
 import { grantContexts, oauthClients } from "../db/schema/index.ts";
-type Adapter = Parameters<typeof getOAuthProviderApi>[0]["context"]["adapter"];
 
 /** Bind only inside successful native issuance's transaction; the DB prevents replacement. */
 export async function bindGrantCode(
@@ -23,13 +22,13 @@ export async function bindGrantCode(
 
 /** Caller has authenticated this client; native code decides whether replay cleanup runs. */
 export async function withNativeCodeReplay<T>(
-  adapter: Adapter,
+  adapter: NativeAdapter,
   tx: Executor,
   input: { clientId: string; authorizationCodeId: string },
-  run: (scoped: Adapter) => Promise<T>,
+  run: (scoped: NativeAdapter) => Promise<T>,
 ): Promise<{ value: T } | { error: unknown }> {
   let invalidating = false;
-  const scoped: Adapter = {
+  const scoped: NativeAdapter = {
     ...adapter,
     deleteMany: async (query) => {
       const cleanup =
