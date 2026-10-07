@@ -47,13 +47,14 @@ writes `shutdown_failed` with the error's name and exits with status 1.
 **Monitoring handoff.** Configure the selected collector/scheduler to route these
 signals to an operator. No destination or numerical alert budget is configured here.
 An unexpected request error writes `[id] error` with `unexpected_error`; it and the
-`admin_denial_audit_unavailable` event name the error's class as `name` and, for a
-database error, its SQLSTATE as `code` and any `constraint`, never its message.
+`admin_denial_audit_unavailable` and `signin_rejection_audit_unavailable` events name
+the error's class as `name` and, for a database error, its SQLSTATE as `code` and any
+`constraint`, never its message.
 
 | Signal                                                                  | Operator check                                                                                                                               |
 | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | Rising 503 counts, active work and pool waiters                         | Compare with traffic and database limits; inspect authorised audit/history for context                                                       |
-| `admin_denial_audit_unavailable` or `token_rejection_audit_unavailable` | Investigate database/audit availability; refusal remains refusal                                                                             |
+| `admin_denial_audit_unavailable`, `token_rejection_audit_unavailable` or `signin_rejection_audit_unavailable` | Investigate database/audit availability; refusal remains refusal                                                                             |
 | `custody_preflight_failed`                                              | Keep recovery traffic closed; `reason` names absent keys, no signing key, an unsafe runtime role or a failed decryption                      |
 | `protocol_sweep_failed`, repeated                                       | Check database availability and lock waits; expired protocol rows accumulate until a sweep succeeds                                          |
 | Missing process summaries                                               | Check process health and collector delivery before interpreting demand                                                                       |

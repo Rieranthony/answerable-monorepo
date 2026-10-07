@@ -94,7 +94,12 @@ test("audit failure preserves the redirect and logs one line", async () => {
     expect((await app.request("/auth/sso/callback")).status).toBe(302);
     expect(log).toHaveBeenCalledTimes(1);
     expect(log.mock.calls[0]).toEqual([
-      'Sign-in audit failed for request "request"',
+      "[id] audit",
+      JSON.stringify({
+        event: "signin_rejection_audit_unavailable",
+        requestId: "request",
+        name: "Error",
+      }),
     ]);
   } finally {
     log.mockRestore();

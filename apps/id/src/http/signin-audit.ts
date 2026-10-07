@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { recordAuditEvent } from "../db/queries/audit.ts";
 import type { AppEnvironment } from "./context.ts";
 import { boundedUserAgent } from "../lib/user-agent.ts";
+import { errorFields } from "./problem.ts";
 import { federationFailureCodes } from "../services/federation.ts";
 
 const failureCodes = new Set<string>([
@@ -41,9 +42,14 @@ export async function recordRejectedSignIn(
       ip: context.get("clientIp"),
       userAgent: boundedUserAgent(context.req.header("user-agent")),
     });
-  } catch {
+  } catch (error) {
     console.error(
-      `Sign-in audit failed for request ${JSON.stringify(requestId)}`,
+      "[id] audit",
+      JSON.stringify({
+        event: "signin_rejection_audit_unavailable",
+        requestId,
+        ...errorFields(error),
+      }),
     );
   }
 }
