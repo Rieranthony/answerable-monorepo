@@ -18,7 +18,7 @@ import { problemHandler } from "./http/problem.ts";
 import { recordRejectedSignIn } from "./http/signin-audit.ts";
 import { createId } from "./lib/id.ts";
 import { limitRequestBody } from "./http/request-limits.ts";
-import { checkReadiness } from "./services/readiness.ts";
+import { checkDatabase } from "./db/queries/health.ts";
 import { publicOAuthMetadata } from "./http/oauth-metadata.ts";
 import type { OperationalMetrics } from "./operations/metrics.ts";
 
@@ -165,7 +165,7 @@ export function createApp(services: AppServices, testing: AppTesting = {}) {
     }),
     async (context) => {
       try {
-        await checkReadiness(context.get("db"));
+        await checkDatabase(context.get("db"));
         return context.json({ status: "ok" as const }, 200);
       } catch {
         return context.json({ status: "unavailable" as const }, 503);
