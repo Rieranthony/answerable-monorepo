@@ -1,4 +1,9 @@
 import type { Database } from "../db/client.ts";
+import type {
+  TenantReadAccess,
+  TenantReadContext,
+} from "../services/tenant-context.ts";
+import { inTenantRead } from "./tenant-command.ts";
 
 /** Bind fixture queries to the real authority issuer without repeating their signatures. */
 export function bindQuery<Context>(
@@ -14,12 +19,6 @@ export function bindQuery<Context>(
       issue(db, (context) => query(context, ...args));
 }
 
-import { inTenantRead } from "./tenant-command.ts";
-import type {
-  TenantReadAccess,
-  TenantReadContext,
-} from "../services/tenant-context.ts";
-
 export function bindTenantQuery<
   Access extends TenantReadAccess,
   Args extends unknown[],
@@ -29,7 +28,7 @@ export function bindTenantQuery<
   query: (context: TenantReadContext<Access>, ...args: Args) => Promise<Result>,
 ) {
   return (db: Database, organizationId: string, ...args: Args) =>
-    bindQuery<TenantReadContext<Access>>((db, run) =>
-      inTenantRead(db, organizationId, access, run),
-    )(query)(db, ...args);
+    inTenantRead(db, organizationId, access, (context) =>
+      query(context, ...args),
+    );
 }
