@@ -24,10 +24,6 @@ export const linkClientResource = bindQuery(inPlatformWrite)(
 export const unlinkClientResource = bindQuery(inPlatformWrite)(
   queries.unlinkClientResource,
 );
-export const countClientEntitlements = bindQuery(inPlatformWrite)(
-  queries.countClientEntitlements,
-);
-export const deleteClient = bindQuery(inPlatformWrite)(queries.deleteClient);
 export const findClient = bindQuery(inPlatformWrite)(
   queries.lockClientForCommand,
 );

@@ -1,4 +1,4 @@
-export const testDatabaseName = "answerable_id_test";
+const testDatabaseName = "answerable_id_test";
 
 export const testDatabaseUrl =
   process.env.TEST_DATABASE_URL ??

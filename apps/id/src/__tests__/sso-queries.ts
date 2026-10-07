@@ -2,10 +2,7 @@ import * as queries from "../db/queries/sso-providers.ts";
 import { bindQuery } from "./bind-query.ts";
 import { inPlatformWrite } from "./platform-context.ts";
 export type * from "../db/queries/sso-providers.ts";
-export {
-  redactSsoProvider,
-  serializeSsoProviderConfig,
-} from "../db/queries/sso-providers.ts";
+export { redactSsoProvider } from "../db/queries/sso-providers.ts";
 export const createSsoProvider = bindQuery(inPlatformWrite)(
   queries.createSsoProvider,
 );
