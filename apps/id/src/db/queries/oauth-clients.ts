@@ -9,7 +9,6 @@ import {
   and,
   desc,
   eq,
-  ilike,
   inArray,
   or,
   sql,
@@ -18,7 +17,7 @@ import {
 } from "drizzle-orm";
 
 import type { PageQuery } from "../../http/pagination.ts";
-import { beforeCursor, cursorPage } from "./lists.ts";
+import { beforeCursor, cursorPage, optionalEq, contains } from "./lists.ts";
 import { createId } from "../../lib/id.ts";
 import type { Executor } from "../client.ts";
 import {
@@ -71,18 +70,9 @@ export async function listClients(
       .where(
         and(
           isNull(oauthClients.deletedAt),
-          query.q === undefined
-            ? undefined
-            : or(
-                ilike(oauthClients.name, `%${query.q}%`),
-                ilike(oauthClients.clientId, `%${query.q}%`),
-              ),
-          query.organizationId === undefined
-            ? undefined
-            : eq(oauthClients.organizationId, query.organizationId),
-          query.disabled === undefined
-            ? undefined
-            : eq(oauthClients.disabled, query.disabled),
+          contains(query.q, oauthClients.name, oauthClients.clientId),
+          optionalEq(oauthClients.organizationId, query.organizationId),
+          optionalEq(oauthClients.disabled, query.disabled),
           beforeCursor(oauthClients.id, query.cursor),
         ),
       )

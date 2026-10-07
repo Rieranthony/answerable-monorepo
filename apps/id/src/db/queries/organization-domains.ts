@@ -3,7 +3,7 @@ import { sql, and, desc, eq, isNull } from "drizzle-orm";
 import type { PlatformWriteContext } from "../../services/platform-context.ts";
 import type { TenantReadContext } from "../../services/tenant-context.ts";
 import type { PageQuery } from "../../http/pagination.ts";
-import { beforeCursor, cursorPage } from "./lists.ts";
+import { beforeCursor, cursorPage, optionalEq } from "./lists.ts";
 import type { LifecycleStatus } from "../schema/vocabulary.ts";
 
 import { createId } from "../../lib/id.ts";
@@ -93,9 +93,7 @@ export async function listOrganizationDomains(
         and(
           isNull(organizationDomains.deletedAt),
           eq(organizationDomains.organizationId, organizationId),
-          query.status === undefined
-            ? undefined
-            : eq(organizationDomains.status, query.status),
+          optionalEq(organizationDomains.status, query.status),
           beforeCursor(organizationDomains.id, query.cursor),
         ),
       )

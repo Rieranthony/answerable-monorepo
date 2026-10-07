@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { PgDialect, pgTable, uuid } from "drizzle-orm/pg-core";
-import { beforeCursor, cursorPage } from "./lists.ts";
+import { PgDialect, pgTable, text, uuid } from "drizzle-orm/pg-core";
+import { beforeCursor, contains, cursorPage, optionalEq } from "./lists.ts";
 
 const cursor = "01900000-0000-7000-8000-000000000001";
 describe("unit: list helpers", () => {
@@ -38,5 +38,21 @@ describe("unit: list helpers", () => {
     expect(
       new PgDialect().sqlToQuery(beforeCursor(table.id, cursor)!),
     ).toMatchObject({ sql: '"items"."id" < $1', params: [cursor] });
+  });
+  test("filters only on given values and searches wildcards literally", () => {
+    const table = pgTable("items", { name: text(), slug: text() });
+    const dialect = new PgDialect();
+    expect(optionalEq(table.name, undefined)).toBeUndefined();
+    expect(dialect.sqlToQuery(optionalEq(table.name, "a")!)).toMatchObject({
+      sql: '"items"."name" = $1',
+      params: ["a"],
+    });
+    expect(contains(undefined, table.name)).toBeUndefined();
+    expect(
+      dialect.sqlToQuery(contains("50%_off\\", table.name, table.slug)!),
+    ).toMatchObject({
+      sql: '("items"."name" ilike $1 or "items"."slug" ilike $2)',
+      params: ["%50\\%\\_off\\\\%", "%50\\%\\_off\\\\%"],
+    });
   });
 });

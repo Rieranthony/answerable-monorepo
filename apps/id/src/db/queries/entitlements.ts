@@ -5,7 +5,7 @@ import type {
 } from "../../services/platform-context.ts";
 import { and, desc, eq, getTableColumns, sql, isNull } from "drizzle-orm";
 import type { PageQuery } from "../../http/pagination.ts";
-import { beforeCursor, cursorPage } from "./lists.ts";
+import { beforeCursor, cursorPage, optionalEq } from "./lists.ts";
 import type { LifecycleStatus } from "../schema/vocabulary.ts";
 import type { MemberWindow } from "./groups.ts";
 import { createId } from "../../lib/id.ts";
@@ -54,6 +54,15 @@ const entitlementWhere = (organizationId: string, entitlementId: string) =>
     eq(entitlements.organizationId, organizationId),
     eq(entitlements.id, entitlementId),
   );
+const entitlementFilters = (query: EntitlementQuery) => [
+  isNull(entitlements.deletedAt),
+  optionalEq(entitlements.clientId, query.clientId),
+  optionalEq(entitlements.resource, query.resource),
+  optionalEq(entitlements.memberId, query.memberId),
+  optionalEq(entitlements.groupId, query.groupId),
+  optionalEq(entitlements.status, query.status),
+  beforeCursor(entitlements.id, query.cursor),
+];
 export async function listEntitlements(
   context: TenantReadContext<"directory">,
   query: EntitlementQuery,
@@ -65,24 +74,8 @@ export async function listEntitlements(
       .from(entitlements)
       .where(
         and(
-          isNull(entitlements.deletedAt),
           eq(entitlements.organizationId, organizationId),
-          query.clientId === undefined
-            ? undefined
-            : eq(entitlements.clientId, query.clientId),
-          query.resource === undefined
-            ? undefined
-            : eq(entitlements.resource, query.resource),
-          query.memberId === undefined
-            ? undefined
-            : eq(entitlements.memberId, query.memberId),
-          query.groupId === undefined
-            ? undefined
-            : eq(entitlements.groupId, query.groupId),
-          query.status === undefined
-            ? undefined
-            : eq(entitlements.status, query.status),
-          beforeCursor(entitlements.id, query.cursor),
+          ...entitlementFilters(query),
         ),
       )
       .orderBy(desc(entitlements.id))
@@ -269,28 +262,7 @@ export async function listAllEntitlements(
         organizations,
         eq(organizations.id, entitlements.organizationId),
       )
-      .where(
-        and(
-          isNull(organizations.deletedAt),
-          isNull(entitlements.deletedAt),
-          query.clientId === undefined
-            ? undefined
-            : eq(entitlements.clientId, query.clientId),
-          query.resource === undefined
-            ? undefined
-            : eq(entitlements.resource, query.resource),
-          query.memberId === undefined
-            ? undefined
-            : eq(entitlements.memberId, query.memberId),
-          query.groupId === undefined
-            ? undefined
-            : eq(entitlements.groupId, query.groupId),
-          query.status === undefined
-            ? undefined
-            : eq(entitlements.status, query.status),
-          beforeCursor(entitlements.id, query.cursor),
-        ),
-      )
+      .where(and(isNull(organizations.deletedAt), ...entitlementFilters(query)))
       .orderBy(desc(entitlements.id))
       .limit(query.limit + 1),
     query.limit,

@@ -1,17 +1,8 @@
 import type { TenantReadContext } from "../../services/tenant-context.ts";
 import type { PlatformWriteContext } from "../../services/platform-context.ts";
-import {
-  and,
-  desc,
-  eq,
-  ilike,
-  or,
-  sql,
-  getTableColumns,
-  isNull,
-} from "drizzle-orm";
+import { and, desc, eq, getTableColumns, sql, isNull } from "drizzle-orm";
 import type { PageQuery } from "../../http/pagination.ts";
-import { beforeCursor, cursorPage } from "./lists.ts";
+import { beforeCursor, cursorPage, optionalEq, contains } from "./lists.ts";
 import type { LifecycleStatus } from "../schema/vocabulary.ts";
 import { isEffective } from "./effective.ts";
 import { createId } from "../../lib/id.ts";
@@ -59,7 +50,7 @@ const membershipWhere = (
   and(
     eq(groupMembers.organizationId, organizationId),
     eq(groupMembers.groupId, groupId),
-    memberId === undefined ? undefined : eq(groupMembers.memberId, memberId),
+    optionalEq(groupMembers.memberId, memberId),
   );
 export async function listGroups(
   context: TenantReadContext<"directory">,
@@ -74,15 +65,8 @@ export async function listGroups(
         and(
           isNull(groups.deletedAt),
           eq(groups.organizationId, organizationId),
-          query.q === undefined
-            ? undefined
-            : or(
-                ilike(groups.name, `%${query.q}%`),
-                ilike(groups.slug, `%${query.q}%`),
-              ),
-          query.status === undefined
-            ? undefined
-            : eq(groups.status, query.status),
+          contains(query.q, groups.name, groups.slug),
+          optionalEq(groups.status, query.status),
           beforeCursor(groups.id, query.cursor),
         ),
       )

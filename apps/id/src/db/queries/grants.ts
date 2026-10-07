@@ -2,6 +2,7 @@ import { withDatabaseScope } from "../isolation.ts";
 import { and, eq, inArray, sql, isNull } from "drizzle-orm";
 
 import type { Executor } from "../client.ts";
+import { optionalEq } from "./lists.ts";
 import {
   oauthResources,
   members,
@@ -59,9 +60,7 @@ export async function effectiveGrants(
             isNull(organizations.deletedAt),
             isNull(members.deletedAt),
             eq(members.userId, principal.userId),
-            authenticationOrganizationId === undefined
-              ? undefined
-              : eq(organizations.id, authenticationOrganizationId),
+            optionalEq(organizations.id, authenticationOrganizationId),
           ),
         )
         .orderBy(organizations.id)

@@ -1,6 +1,7 @@
 import type { PlatformReadContext } from "../../services/platform-context.ts";
 import type { TenantReadContext } from "../../services/tenant-context.ts";
-import { and, desc, eq, gte, lt, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lt, inArray, sql, type SQL } from "drizzle-orm";
+import { beforeCursor, cursorPage, optionalEq } from "./lists.ts";
 
 import { createId } from "../../lib/id.ts";
 import type { Executor } from "../client.ts";
@@ -187,90 +188,52 @@ async function queryAuditEvents(
   executor: Executor,
   filters: AuditEventFilters,
   page: { cursor?: string; limit: number },
+  where?: SQL,
 ): Promise<{ items: AuditEvent[]; nextCursor: string | null }> {
   const rows = await executor
     .select()
     .from(auditEvents)
     .where(
       and(
-        filters.operationId === undefined
+        where,
+        optionalEq(auditEvents.operationId, filters.operationId),
+        optionalEq(auditEvents.organizationId, filters.organizationId),
+        optionalEq(auditEvents.actorId, filters.actorId),
+        optionalEq(auditEvents.outcome, filters.outcome),
+        optionalEq(auditEvents.action, filters.action),
+        optionalEq(auditEvents.targetType, filters.targetType),
+        optionalEq(auditEvents.targetId, filters.targetId),
+        filters.from === undefined
           ? undefined
-          : eq(auditEvents.operationId, filters.operationId),
-        filters.organizationId !== undefined
-          ? eq(auditEvents.organizationId, filters.organizationId)
-          : undefined,
-        filters.actorId !== undefined
-          ? eq(auditEvents.actorId, filters.actorId)
-          : undefined,
-        filters.outcome === undefined
+          : gte(auditEvents.occurredAt, filters.from),
+        filters.to === undefined
           ? undefined
-          : eq(auditEvents.outcome, filters.outcome),
-        filters.action !== undefined
-          ? eq(auditEvents.action, filters.action)
-          : undefined,
-        filters.targetType !== undefined
-          ? eq(auditEvents.targetType, filters.targetType)
-          : undefined,
-        filters.targetId !== undefined
-          ? eq(auditEvents.targetId, filters.targetId)
-          : undefined,
-        filters.from !== undefined
-          ? gte(auditEvents.occurredAt, filters.from)
-          : undefined,
-        filters.to !== undefined
-          ? lt(auditEvents.occurredAt, filters.to)
-          : undefined,
-        page.cursor !== undefined ? lt(auditEvents.id, page.cursor) : undefined,
+          : lt(auditEvents.occurredAt, filters.to),
+        beforeCursor(auditEvents.id, page.cursor),
       ),
     )
     .orderBy(desc(auditEvents.id))
     .limit(page.limit + 1);
-  const items = rows.slice(0, page.limit);
-  return {
-    items,
-    nextCursor: rows.length > page.limit ? items.at(-1)!.id : null,
-  };
+  return cursorPage(rows, page.limit);
 }
 
-export async function listUserAuditEvents(
+export function listUserAuditEvents(
   context: PlatformReadContext,
   userId: string,
   filters: Pick<AuditEventFilters, "action" | "outcome" | "from" | "to">,
   page: { cursor?: string; limit: number },
-): Promise<{ items: AuditEvent[]; nextCursor: string | null }> {
-  const { tx: executor } = context;
-  const rows = await executor
-    .select()
-    .from(auditEvents)
-    .where(
-      and(
-        inArray(
-          auditEvents.id,
-          executor
-            .select({ id: auditEventUsers.eventId })
-            .from(auditEventUsers)
-            .where(eq(auditEventUsers.userId, userId)),
-        ),
-        filters.outcome === undefined
-          ? undefined
-          : eq(auditEvents.outcome, filters.outcome),
-        filters.action !== undefined
-          ? eq(auditEvents.action, filters.action)
-          : undefined,
-        filters.from !== undefined
-          ? gte(auditEvents.occurredAt, filters.from)
-          : undefined,
-        filters.to !== undefined
-          ? lt(auditEvents.occurredAt, filters.to)
-          : undefined,
-        page.cursor !== undefined ? lt(auditEvents.id, page.cursor) : undefined,
-      ),
-    )
-    .orderBy(desc(auditEvents.id))
-    .limit(page.limit + 1);
-  const items = rows.slice(0, page.limit);
-  return {
-    items,
-    nextCursor: rows.length > page.limit ? items.at(-1)!.id : null,
-  };
+) {
+  const { tx } = context;
+  return queryAuditEvents(
+    tx,
+    filters,
+    page,
+    inArray(
+      auditEvents.id,
+      tx
+        .select({ id: auditEventUsers.eventId })
+        .from(auditEventUsers)
+        .where(eq(auditEventUsers.userId, userId)),
+    ),
+  );
 }

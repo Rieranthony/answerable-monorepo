@@ -4,7 +4,7 @@ import type {
 } from "../../services/platform-context.ts";
 import type { TenantReadContext } from "../../services/tenant-context.ts";
 import { lockOrganization } from "../locks.ts";
-import { and, count, desc, eq, ilike, or, sql, isNull } from "drizzle-orm";
+import { and, count, desc, eq, sql, isNull } from "drizzle-orm";
 import {
   organizations,
   oauthClients,
@@ -18,7 +18,7 @@ import {
 } from "../schema/index.ts";
 import type { LifecycleStatus } from "../schema/vocabulary.ts";
 import type { PageQuery } from "../../http/pagination.ts";
-import { beforeCursor, cursorPage } from "./lists.ts";
+import { beforeCursor, cursorPage, optionalEq, contains } from "./lists.ts";
 import { createId } from "../../lib/id.ts";
 
 export type OrganizationInput = {
@@ -45,15 +45,8 @@ export async function listOrganizations(
       .where(
         and(
           isNull(organizations.deletedAt),
-          query.q === undefined
-            ? undefined
-            : or(
-                ilike(organizations.name, `%${query.q}%`),
-                ilike(organizations.slug, `%${query.q}%`),
-              ),
-          query.status === undefined
-            ? undefined
-            : eq(organizations.status, query.status),
+          contains(query.q, organizations.name, organizations.slug),
+          optionalEq(organizations.status, query.status),
           beforeCursor(organizations.id, query.cursor),
         ),
       )

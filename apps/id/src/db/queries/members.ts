@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, not, or, sql, isNull } from "drizzle-orm";
+import { and, desc, eq, not, sql, isNull } from "drizzle-orm";
 import type {
   TenantMemberContext,
   TenantReadContext,
@@ -12,7 +12,7 @@ import {
   entitlements,
 } from "../schema/index.ts";
 import type { PageQuery } from "../../http/pagination.ts";
-import { beforeCursor, cursorPage } from "./lists.ts";
+import { beforeCursor, contains, cursorPage, optionalEq } from "./lists.ts";
 import { isEffective } from "./effective.ts";
 import type { MemberWindow } from "./groups.ts";
 export type MemberQuery = PageQuery & {
@@ -52,15 +52,8 @@ export async function listMembers(
           isNull(users.deletedAt),
           isNull(members.deletedAt),
           eq(members.organizationId, organizationId),
-          query.email === undefined
-            ? undefined
-            : eq(users.email, query.email.toLowerCase()),
-          query.q === undefined
-            ? undefined
-            : or(
-                ilike(users.email, `%${query.q}%`),
-                ilike(users.name, `%${query.q}%`),
-              ),
+          optionalEq(users.email, query.email?.toLowerCase()),
+          contains(query.q, users.email, users.name),
           query.effective === undefined
             ? undefined
             : query.effective

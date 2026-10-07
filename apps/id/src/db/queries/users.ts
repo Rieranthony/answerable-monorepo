@@ -11,7 +11,6 @@ import {
   desc,
   eq,
   exists,
-  ilike,
   inArray,
   isNull,
   or,
@@ -31,7 +30,7 @@ import {
   oauthConsents,
 } from "../schema/index.ts";
 import type { PageQuery } from "../../http/pagination.ts";
-import { beforeCursor, cursorPage } from "./lists.ts";
+import { beforeCursor, cursorPage, optionalEq, contains } from "./lists.ts";
 import { isEffective } from "./effective.ts";
 
 export function retiredEmailFor(userId: string): string {
@@ -81,18 +80,9 @@ export async function listUsers(
       .where(
         and(
           isNull(users.deletedAt),
-          query.email === undefined
-            ? undefined
-            : eq(users.email, query.email.toLowerCase()),
-          query.q === undefined
-            ? undefined
-            : or(
-                ilike(users.email, `%${query.q}%`),
-                ilike(users.name, `%${query.q}%`),
-              ),
-          query.status === undefined
-            ? undefined
-            : eq(users.status, query.status),
+          optionalEq(users.email, query.email?.toLowerCase()),
+          contains(query.q, users.email, users.name),
+          optionalEq(users.status, query.status),
           query.organizationId === undefined
             ? undefined
             : exists(

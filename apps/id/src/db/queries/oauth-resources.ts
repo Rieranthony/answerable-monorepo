@@ -1,4 +1,4 @@
-import { sql, and, count, desc, eq, ilike, or, isNull } from "drizzle-orm";
+import { sql, and, count, desc, eq, or, isNull } from "drizzle-orm";
 import type {
   PlatformReadContext,
   PlatformWriteContext,
@@ -11,7 +11,7 @@ import {
   oauthClientResources,
 } from "../schema/index.ts";
 import type { PageQuery } from "../../http/pagination.ts";
-import { beforeCursor, cursorPage } from "./lists.ts";
+import { beforeCursor, cursorPage, optionalEq, contains } from "./lists.ts";
 import { createId } from "../../lib/id.ts";
 
 export type ResourceInput = {
@@ -43,15 +43,8 @@ export async function listResources(
       .where(
         and(
           isNull(oauthResources.deletedAt),
-          query.q === undefined
-            ? undefined
-            : or(
-                ilike(oauthResources.name, `%${query.q}%`),
-                ilike(oauthResources.identifier, `%${query.q}%`),
-              ),
-          query.disabled === undefined
-            ? undefined
-            : eq(oauthResources.disabled, query.disabled),
+          contains(query.q, oauthResources.name, oauthResources.identifier),
+          optionalEq(oauthResources.disabled, query.disabled),
           beforeCursor(oauthResources.id, query.cursor),
         ),
       )
