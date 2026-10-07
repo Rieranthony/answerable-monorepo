@@ -31,6 +31,7 @@ export type CapabilityInput = (
     }
   | { clientId: null; resource: string; grantKind: "admin_session" }
 ) & {
+  /** Unique and sorted, as the route normalises them for the journal. */
   scopes: string[];
   validFrom?: Date | null;
   validUntil?: Date | null;
@@ -187,7 +188,6 @@ export async function createCapability(
     .insert(organizationCapabilities)
     .values({
       ...input,
-      scopes: [...new Set(input.scopes)].sort(),
       organizationId,
       id: createId(),
     })
@@ -217,21 +217,15 @@ export async function updateCapability(
     expected,
     "Capability changed; read its current revision",
   );
-  const normalized = {
-    ...patch,
-    ...(patch.scopes === undefined
-      ? {}
-      : { scopes: [...new Set(patch.scopes)].sort() }),
-  };
   // Disabling an existing ceiling must remain possible after a registration narrows its scopes.
-  if (normalized.scopes !== undefined)
+  if (patch.scopes !== undefined)
     await validateTarget(context, organizationId, {
       clientId: before.clientId,
       grantKind: before.grantKind,
       resource: before.resource,
-      scopes: normalized.scopes,
+      scopes: patch.scopes,
     });
-  const changed = Object.entries(normalized).some(
+  const changed = Object.entries(patch).some(
     ([key, value]) =>
       value !== undefined &&
       JSON.stringify(value) !== JSON.stringify(before[key as keyof Row]),
@@ -240,7 +234,7 @@ export async function updateCapability(
     ? (
         await tx
           .update(organizationCapabilities)
-          .set(normalized)
+          .set(patch)
           .where(where(organizationId, id))
           .returning()
       )[0]!

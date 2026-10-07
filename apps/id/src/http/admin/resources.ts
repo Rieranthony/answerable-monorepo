@@ -20,6 +20,7 @@ import {
 import * as service from "../../services/resources.ts";
 import { resourceClassifications } from "../../db/schema/vocabulary.ts";
 import type { AppEnvironment } from "../context.ts";
+import { uniqueSorted } from "../../lib/scopes.ts";
 import { pageQuerySchema } from "../pagination.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
@@ -258,7 +259,7 @@ export function register(app: Hono<AppEnvironment>) {
       const parsed = createSchema.parse(await context.req.json());
       const input = {
         ...parsed,
-        allowedScopes: [...new Set(parsed.allowedScopes)].sort(),
+        allowedScopes: uniqueSorted(parsed.allowedScopes),
       };
       return platformCommand(
         context,
@@ -292,7 +293,7 @@ export function register(app: Hono<AppEnvironment>) {
     async (context) => {
       const input = patchSchema.parse(await context.req.json());
       if (input.allowedScopes)
-        input.allowedScopes = [...new Set(input.allowedScopes)].sort();
+        input.allowedScopes = uniqueSorted(input.allowedScopes);
       const expected = requireRevision(context.req.header("If-Match"));
       const identifier = context.req.param("resource")!;
       return platformCommand(

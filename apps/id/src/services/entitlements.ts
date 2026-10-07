@@ -13,6 +13,7 @@ import type { AuditAction } from "../db/queries/audit.ts";
 import { recordCommandEvent, statusAction } from "./audit.ts";
 import { found, ProblemError } from "../http/problem.ts";
 import { assertRevision } from "../http/admin/revision.ts";
+import { uniqueSorted } from "../lib/scopes.ts";
 function configuration(
   row: NonNullable<Awaited<ReturnType<typeof queries.findEntitlement>>>,
 ) {
@@ -31,7 +32,7 @@ function configuration(
     validUntil: row.validUntil,
   };
 }
-const scopeSet = (scopes: string[]) => [...new Set(scopes)].sort();
+
 type Configuration = ReturnType<typeof configuration>;
 async function audit(
   context: PlatformWriteContext,
@@ -116,7 +117,6 @@ export async function createEntitlement(
     await checkScopes(context, input.resource, input.scopes);
   const row = await queries.createEntitlement(context, {
     ...input,
-    scopes: scopeSet(input.scopes),
     organizationId,
   });
   await audit(context, "entitlement.created", {
@@ -144,14 +144,10 @@ export async function updateEntitlement(
   );
   if (patch.scopes !== undefined && existing.resource !== null)
     await checkScopes(context, existing.resource, patch.scopes);
-  const normalized = {
-    ...patch,
-    ...(patch.scopes === undefined ? {} : { scopes: scopeSet(patch.scopes) }),
-  };
   const changed =
-    (normalized.scopes !== undefined &&
-      JSON.stringify(normalized.scopes) !==
-        JSON.stringify(scopeSet(existing.scopes))) ||
+    (patch.scopes !== undefined &&
+      JSON.stringify(patch.scopes) !==
+        JSON.stringify(uniqueSorted(existing.scopes))) ||
     (patch.validFrom !== undefined &&
       patch.validFrom?.getTime() !== existing.validFrom?.getTime()) ||
     (patch.validUntil !== undefined &&
@@ -161,7 +157,7 @@ export async function updateEntitlement(
         context,
         organizationId,
         entitlementId,
-        normalized,
+        patch,
       ))!
     : existing;
   await audit(

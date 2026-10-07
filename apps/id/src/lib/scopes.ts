@@ -1,5 +1,5 @@
 /** Each scope once, in code-point order: the stored and compared form of a scope set. */
-export function uniqueSorted(values: Iterable<string>): string[] {
+export function uniqueSorted<T extends string>(values: Iterable<T>): T[] {
   return [...new Set(values)].sort();
 }
 

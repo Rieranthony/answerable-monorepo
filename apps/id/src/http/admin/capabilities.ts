@@ -11,6 +11,7 @@ import {
 import type { Hono } from "hono";
 import { z } from "zod";
 import type { AppEnvironment } from "../context.ts";
+import { uniqueSorted } from "../../lib/scopes.ts";
 import { pageQuerySchema } from "../pagination.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
@@ -246,7 +247,7 @@ export function register(app: Hono<AppEnvironment>) {
           validFrom: parsed.validFrom ?? null,
           validUntil: parsed.validUntil ?? null,
         }),
-        scopes: [...new Set(parsed.scopes)].sort(),
+        scopes: uniqueSorted(parsed.scopes),
       };
       return platformCommand(
         context,
@@ -282,7 +283,7 @@ export function register(app: Hono<AppEnvironment>) {
         ...windowDates(parsed),
         ...(parsed.scopes === undefined
           ? {}
-          : { scopes: [...new Set(parsed.scopes)].sort() }),
+          : { scopes: uniqueSorted(parsed.scopes) }),
       };
       return platformCommand(
         context,

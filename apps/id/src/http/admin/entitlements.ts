@@ -345,7 +345,7 @@ export function register(app: Hono<AppEnvironment>) {
         ...windowDates(parsed),
         ...(parsed.scopes === undefined
           ? {}
-          : { scopes: [...new Set(parsed.scopes)].sort() }),
+          : { scopes: uniqueSorted(parsed.scopes) }),
       };
       return platformCommand(
         context,

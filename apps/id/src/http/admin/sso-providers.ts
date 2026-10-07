@@ -27,6 +27,7 @@ import type { Hono } from "hono";
 import { z } from "zod";
 import { platformCommand } from "./command.ts";
 import type { AppEnvironment } from "../context.ts";
+import { uniqueSorted } from "../../lib/scopes.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
@@ -276,7 +277,7 @@ export function register(app: Hono<AppEnvironment>) {
         input.oidc.tokenEndpointAuthentication ??= "client_secret_post";
       input.oidc.discoveryEndpoint ??= `${input.issuer}/.well-known/openid-configuration`;
       if (input.oidc.scopes)
-        input.oidc.scopes = [...new Set(input.oidc.scopes)].sort();
+        input.oidc.scopes = uniqueSorted(input.oidc.scopes);
       return platformCommand(
         context,
         "write",
