@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.0
+
+`createTestIssuer` no longer takes `issuer`, which no test set. Breaking only for a caller that passed it: the test issuer is always `https://id.test`.
+
 ## 0.5.1
 
 No behaviour change for a server. The default HTTP client is the global `fetch` as it is when the verifier is created. Tests now hold the algorithm allow-list, expiry with no clock tolerance, discovery that answers with a redirect, an audience list, and a person's token without `organization_id`, `grant_id`, `client_id` or `scope`.

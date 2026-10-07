@@ -117,7 +117,6 @@ An in-process issuer that signs ID-shaped test tokens.
 ```ts
 function createTestIssuer(options?: {
   algorithm?: "EdDSA" | "ES256" | "RS256"
-  issuer?: string
 }): Promise<TestIssuer>
 ```
 
@@ -138,7 +137,7 @@ const principal = await verify(await issuer.sign({ resource: "https://example.te
 
 ```ts
 type TestIssuer = {
-  /** The issuer URL to trust; default `https://id.test`. */
+  /** The issuer URL to trust: `https://id.test`. */
   issuer: string
   /**
    * Sign an access token for `resource`, with ID's user claims: `upstream_auth_time` is the signing time, as for a person who has just signed in.

@@ -2,7 +2,7 @@ import { decodeJwt, exportJWK, generateKeyPair, SignJWT, UnsecuredJWT, type JWK 
 
 /** A local Answerable ID issuer for tests: it publishes keys and signs tokens, and listens on no port. */
 export type TestIssuer = {
-  /** The issuer URL to trust; default `https://id.test`. */
+  /** The issuer URL to trust: `https://id.test`. */
   issuer: string
   /**
    * Sign an access token for `resource`, with ID's user claims: `upstream_auth_time` is the signing time, as for a person who has just signed in.
@@ -41,7 +41,7 @@ export type TestIssuer = {
  * const principal = await verify(await issuer.sign({ resource: "https://example.test/mcp", scopes: ["example:read"] }))
  * ```
  */
-export async function createTestIssuer(options: { algorithm?: "EdDSA" | "ES256" | "RS256"; issuer?: string } = {}): Promise<TestIssuer> {
+export async function createTestIssuer(options: { algorithm?: "EdDSA" | "ES256" | "RS256" } = {}): Promise<TestIssuer> {
   const alg = options.algorithm ?? "EdDSA"
   const keys: JWK[] = []
   let signingKey: CryptoKey
@@ -55,7 +55,7 @@ export async function createTestIssuer(options: { algorithm?: "EdDSA" | "ES256" 
     keys.push({ ...await exportJWK(pair.publicKey), kid, alg })
   }
   await rotate()
-  const issuer = options.issuer ?? "https://id.test"
+  const issuer = "https://id.test"
   return {
     issuer,
     async fetch(input, init) {
