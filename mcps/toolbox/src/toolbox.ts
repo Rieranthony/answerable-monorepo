@@ -28,10 +28,11 @@ const text = (value: unknown) => (typeof value === "string" ? value : undefined)
 
 /**
  * The Toolbox: one MCP endpoint that serves each person the capabilities their organisation granted them. It ingests every provider's manifest
- * (refusing a changed contract under an old version), reads each caller's grant strings from ID, the organisation's catalogue and the host
- * client's settings on every request, serves the direct or the meta projection, keeps intents in Postgres, records evidence and a span for every
- * call and every intent transition, answers `RESULT_TOO_LARGE` for a read above 100 KiB, tells listening callers when a grant changes, answers `GET /health` from the database
- * and serves the platform-tier admin API under `/admin/v1`.
+ * (refusing a changed contract under an old version), reads each caller's grant strings from ID through a 60-second cache that the poller
+ * invalidates, and the organisation's catalogue and the host client's settings on every request, serves the direct or the meta projection, keeps
+ * intents in Postgres, records evidence and a span for every call and every intent transition, answers `RESULT_TOO_LARGE` for a read above
+ * 100 KiB, tells listening callers when a grant changes, answers `GET /health` from the database and serves the platform-tier admin API under
+ * `/admin/v1`.
  */
 export async function createToolbox({ providers, auth, db, id, spans }: ToolboxConfig) {
   const grants = createGrantsReader({ id, resource: auth.resource, changed: () => server.toolsChanged() })
