@@ -1,6 +1,6 @@
 import { createMetadata, SITE } from "@/lib/metadata"
 import { BulletSquare } from "@/components/bullet-square"
-import { DitherGradient } from "@/components/dither-kit/gradient"
+import { DitherWash } from "@/components/dither-wash"
 import {
   ExpandableSection,
   ExpandableSections,
@@ -238,9 +238,7 @@ export default function Page() {
           plus the gaps between them (mb-6 and mt-32), and it sits under
           in-flow content so the tiles paint over it. */}
       <footer className="relative mt-32 px-6 pt-32 pb-6">
-        <DitherGradient
-          from="white"
-          direction="up"
+        <DitherWash
           opacity={0.15}
           className="-z-10 max-lg:top-[calc(-152px_-_100vw_*_18_/_17)]"
         />
