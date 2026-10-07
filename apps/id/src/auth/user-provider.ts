@@ -81,7 +81,7 @@ export function userOAuthProvider(
       },
     ],
   });
-  const provider = machineOAuthProvider(db, native.options, native);
+  const provider = machineOAuthProvider(db, native);
   const authorize = native.endpoints.oauth2Authorize;
   const continuation = native.endpoints.oauth2Continue;
   const consent = native.endpoints.oauth2Consent;

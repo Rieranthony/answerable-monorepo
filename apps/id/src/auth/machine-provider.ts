@@ -8,7 +8,6 @@ import {
 import {
   getOAuthProviderApi,
   type oauthProvider,
-  type OAuthOptions,
 } from "@better-auth/oauth-provider";
 import { APIError, createAuthEndpoint } from "better-auth/api";
 import type { Database } from "../db/client.ts";
@@ -24,7 +23,6 @@ import { prepareMachineGrant } from "./machine-identity.ts";
 /** Authenticate once; keep issuance and policy evidence in one transaction. */
 export function machineOAuthProvider(
   db: Database,
-  options: OAuthOptions<string[]>,
   provider: ReturnType<typeof oauthProvider>,
 ) {
   const token = provider.endpoints.oauth2Token;

@@ -102,7 +102,7 @@ function testAuth(
         },
         schema: { jwks: { modelName: "jwk" } },
       }),
-      machineOAuthProvider(connection.db, options, oauthProvider(options)),
+      machineOAuthProvider(connection.db, oauthProvider(options)),
     ],
   });
 }
