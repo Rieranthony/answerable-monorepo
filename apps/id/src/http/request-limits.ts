@@ -2,7 +2,7 @@ import type { MiddlewareHandler } from "hono";
 import type { AppEnvironment } from "./context.ts";
 
 export const maxRequestBodyBytes = 256 * 1024;
-export const requestBodyTimeoutMs = 5_000;
+const requestBodyTimeoutMs = 5_000;
 
 export const requestBoundaryResponses = {
   408: {

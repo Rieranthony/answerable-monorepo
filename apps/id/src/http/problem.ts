@@ -30,8 +30,6 @@ export const problemSchema = z
   })
   .loose();
 
-export type Problem = z.output<typeof problemSchema>;
-
 export function problem(
   context: Context<AppEnvironment>,
   error: ProblemError,
@@ -92,7 +90,7 @@ export function problemResponses(...statuses: number[]) {
   );
 }
 
-export function databaseBusy() {
+function databaseBusy() {
   return new ProblemError(
     503,
     "database_busy",
