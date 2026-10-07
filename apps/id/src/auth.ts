@@ -154,11 +154,6 @@ export function createAuth(db: Database, environment: Environment) {
           defaultValue: "inert",
           input: false,
         },
-        disabledAt: {
-          type: "date",
-          required: false,
-          input: false,
-        },
         retiredEmail: {
           type: "string",
           required: false,
@@ -190,26 +185,10 @@ export function createAuth(db: Database, environment: Environment) {
                 input: false,
                 returned: false,
               },
-              authorizationVersion: {
-                type: "number",
-                required: true,
-                defaultValue: 1,
-                input: false,
-              },
               status: {
                 type: "string",
                 required: true,
                 defaultValue: "active",
-                input: false,
-              },
-              disabledAt: {
-                type: "date",
-                required: false,
-                input: false,
-              },
-              updatedAt: {
-                type: "date",
-                required: false,
                 input: false,
               },
             },
@@ -226,17 +205,6 @@ export function createAuth(db: Database, environment: Environment) {
                 type: "string",
                 required: true,
                 defaultValue: "active",
-                input: false,
-              },
-              revokedAt: { type: "date", required: false, input: false },
-              validFrom: {
-                type: "date",
-                required: false,
-                input: false,
-              },
-              validUntil: {
-                type: "date",
-                required: false,
                 input: false,
               },
             },

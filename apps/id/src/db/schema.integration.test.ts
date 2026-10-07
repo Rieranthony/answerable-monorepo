@@ -160,18 +160,14 @@ describe("integration: PostgreSQL schema", () => {
       }),
     ).rejects.toThrow('The field "role" does not exist');
 
+    // Federation reads a membership's status and deletion through Better Auth.
     const membership = await insertMember(organization.id, user.id);
-    const validUntil = new Date(Date.now() + 86_400_000);
-    await context.adapter.update({
-      model: "member",
-      where: [{ field: "id", value: membership.id }],
-      update: { validUntil },
-    });
-    const [updatedMembership] = await connection.db
-      .select()
-      .from(members)
-      .where(eq(members.id, membership.id));
-    expect(updatedMembership!.validUntil).toEqual(validUntil);
+    expect(
+      await context.adapter.findOne({
+        model: "member",
+        where: [{ field: "id", value: membership.id }],
+      }),
+    ).toMatchObject({ status: "active", deletedAt: null });
 
     const openApi = await auth.api.generateOpenAPISchema();
     expect(Object.keys(openApi.paths)).toContain("/organization/create");

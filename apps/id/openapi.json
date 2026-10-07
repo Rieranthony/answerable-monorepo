@@ -69,11 +69,6 @@
             "default": "inert",
             "readOnly": true
           },
-          "disabledAt": {
-            "type": "string",
-            "format": "date-time",
-            "readOnly": true
-          },
           "retiredEmail": {
             "type": "string",
             "readOnly": true
