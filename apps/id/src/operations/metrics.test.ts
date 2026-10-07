@@ -8,12 +8,15 @@ import {
 import { createOperationalMetrics } from "./metrics.ts";
 
 test("operational summaries retain in-flight work across windows without request identifiers or payloads", async () => {
-  const db = stubDatabase();
-  const metrics = createOperationalMetrics(db.$client);
+  const metrics = createOperationalMetrics({
+    totalCount: 0,
+    idleCount: 0,
+    waitingCount: 0,
+  });
   const entered = Promise.withResolvers<void>();
   const release = Promise.withResolvers<void>();
   const app = createApp({
-    db,
+    db: stubDatabase(),
     metrics,
     environment: testEnvironment(),
     auth: {

@@ -177,14 +177,4 @@ export function stubAuth(): Auth {
   } as unknown as Auth;
 }
 
-export function stubDatabase(poolMax = 10): Database {
-  return {
-    marker: "database",
-    $client: {
-      options: { max: poolMax },
-      totalCount: 0,
-      idleCount: 0,
-      waitingCount: 0,
-    },
-  } as unknown as Database;
-}
+export const stubDatabase = () => ({}) as Database;
