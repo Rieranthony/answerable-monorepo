@@ -26,12 +26,12 @@
       "description": "Read-only sign-in and SSO diagnostics"
     },
     {
-      "name": "Platform",
-      "description": "Fleet analysis summaries"
-    },
-    {
       "name": "Audit",
       "description": "Audit event reads"
+    },
+    {
+      "name": "Operations",
+      "description": "Committed operation reads"
     },
     {
       "name": "Users",
@@ -76,6 +76,10 @@
     {
       "name": "Organizations",
       "description": "Organisation administration"
+    },
+    {
+      "name": "Capabilities",
+      "description": "Organisation capability administration"
     },
     {
       "name": "Me",

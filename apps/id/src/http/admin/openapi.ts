@@ -19,8 +19,8 @@ export const adminSecuritySchemes = {
 } as const;
 export const adminTags = [
   { name: "Diagnostics", description: "Read-only sign-in and SSO diagnostics" },
-  { name: "Platform", description: "Fleet analysis summaries" },
   { name: "Audit", description: "Audit event reads" },
+  { name: "Operations", description: "Committed operation reads" },
   { name: "Users", description: "User administration" },
   { name: "Sessions", description: "Session administration" },
   {
@@ -38,6 +38,10 @@ export const adminTags = [
     description: "Organisation SSO provider administration",
   },
   { name: "Organizations", description: "Organisation administration" },
+  {
+    name: "Capabilities",
+    description: "Organisation capability administration",
+  },
   { name: "Me", description: "Current principal and effective grants" },
 ];
 
