@@ -136,13 +136,10 @@ describe("integration: PostgreSQL schema", () => {
       { name: "Better Auth User", email: "better-auth@example.com" },
       { method: "admin" },
     );
-    const session = await adapter.createSession(user.id);
 
     expect(isUuidV7(user.id)).toBe(true);
-    expect(isUuidV7(session.id)).toBe(true);
     expect(user.status).toBe("inert");
     expect((await adapter.findUserById(user.id))?.email).toBe(user.email);
-    expect((await adapter.findSession(session.token))?.user.id).toBe(user.id);
 
     const organization = await context.adapter.create<
       { name: string; slug: string },

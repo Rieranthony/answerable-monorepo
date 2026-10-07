@@ -106,59 +106,53 @@ export function createSsoOriginBoundary(verifiedSso?: VerifiedSso) {
   const before: NonNullable<
     NonNullable<SessionHooks["create"]>["before"]
   > = async (session, context) => {
-    const adapter = context
-      ? await getCurrentAdapter(context.context.adapter)
-      : undefined;
-    const origin = adapter ? origins.get(adapter) : undefined;
-    if (origin) {
-      const tx = authTransaction(adapter!);
-      await verifiedSso?.beforeSession(tx, origin.upstreamAuthTime);
-    }
-    if (adapter) origins.delete(adapter);
-    if (origin && origin.userId !== session.userId)
-      throw new APIError("FORBIDDEN", {
-        code: "authentication_origin_mismatch",
-      });
-    if (context?.path === "/sso/callback" && !origin)
+    const adapter =
+      context && (await getCurrentAdapter(context.context.adapter));
+    const origin = adapter && origins.get(adapter);
+    // Only native SSO resolution in this transaction supplies an origin.
+    if (!adapter || !origin)
       throw new APIError("FORBIDDEN", {
         code: "authentication_origin_missing",
       });
-    const id = session.id ?? createId();
-    if (origin) {
-      // The native create.after hook is deferred until commit. Insert here using
-      // the transaction and reserve the session ID before the adapter creates it.
-      await recordAuditEvent(authTransaction(adapter!), {
-        actorType: "user",
-        actorId: session.userId,
-        organizationId: origin.authenticationOrganizationId,
-        action: "auth.signin.succeeded",
-        targetType: "session",
-        targetId: id,
-        outcome: "success",
-        requestId: context?.headers?.get("x-request-id") ?? null,
-        ip: session.ipAddress,
-        userAgent: boundedUserAgent(session.userAgent),
-        data: {
-          userId: session.userId,
-          authenticationAccountId: origin.authenticationAccountId,
-          authenticationProviderId: origin.authenticationProviderId,
-          authenticationProviderRevision: origin.authenticationProviderRevision,
-          upstreamAuthTime: origin.upstreamAuthTime?.toISOString() ?? null,
-        },
+    const tx = authTransaction(adapter);
+    await verifiedSso?.beforeSession(tx, origin.upstreamAuthTime);
+    origins.delete(adapter);
+    if (origin.userId !== session.userId)
+      throw new APIError("FORBIDDEN", {
+        code: "authentication_origin_mismatch",
       });
-    }
+    const id = createId();
+    // The native create.after hook is deferred until commit. Insert here using
+    // the transaction and reserve the session ID before the adapter creates it.
+    await recordAuditEvent(tx, {
+      actorType: "user",
+      actorId: session.userId,
+      organizationId: origin.authenticationOrganizationId,
+      action: "auth.signin.succeeded",
+      targetType: "session",
+      targetId: id,
+      outcome: "success",
+      requestId: context?.headers?.get("x-request-id") ?? null,
+      ip: session.ipAddress,
+      userAgent: boundedUserAgent(session.userAgent),
+      data: {
+        userId: session.userId,
+        authenticationAccountId: origin.authenticationAccountId,
+        authenticationProviderId: origin.authenticationProviderId,
+        authenticationProviderRevision: origin.authenticationProviderRevision,
+        upstreamAuthTime: origin.upstreamAuthTime?.toISOString() ?? null,
+      },
+    });
     return {
       data: {
         ...session,
         id,
         userAgent: boundedUserAgent(session.userAgent),
-        authenticationAccountId: origin?.authenticationAccountId ?? null,
-        upstreamAuthTime: origin?.upstreamAuthTime ?? null,
-        authenticationOrganizationId:
-          origin?.authenticationOrganizationId ?? null,
-        authenticationProviderId: origin?.authenticationProviderId ?? null,
-        authenticationProviderRevision:
-          origin?.authenticationProviderRevision ?? null,
+        authenticationAccountId: origin.authenticationAccountId,
+        upstreamAuthTime: origin.upstreamAuthTime,
+        authenticationOrganizationId: origin.authenticationOrganizationId,
+        authenticationProviderId: origin.authenticationProviderId,
+        authenticationProviderRevision: origin.authenticationProviderRevision,
       },
     };
   };

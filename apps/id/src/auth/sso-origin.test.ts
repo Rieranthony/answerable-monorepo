@@ -8,7 +8,7 @@ test("session input cannot manufacture origin without trusted resolution", async
     userId: "user",
     token: "token",
     ipAddress: "192.0.2.1",
-    userAgent: "x".repeat(513),
+    userAgent: "Browser",
     createdAt: new Date(),
     updatedAt: new Date(),
     expiresAt: new Date(),
@@ -18,26 +18,10 @@ test("session input cannot manufacture origin without trusted resolution", async
   };
   for (const context of [
     null,
-    { context: { adapter: {} } } as Parameters<typeof boundary.before>[1],
-  ]) {
-    expect(await boundary.before(session, context)).toMatchObject({
-      data: {
-        ipAddress: "192.0.2.1",
-        userAgent: null,
-        authenticationAccountId: null,
-        upstreamAuthTime: null,
-        authenticationOrganizationId: null,
-        authenticationProviderId: null,
-        authenticationProviderRevision: null,
-      },
+    { context: { adapter: {} } },
+    { path: "/sso/callback", context: { adapter: {} } },
+  ] as Parameters<typeof boundary.before>[1][])
+    await expect(boundary.before(session, context)).rejects.toMatchObject({
+      body: { code: "authentication_origin_missing" },
     });
-  }
-  await expect(
-    boundary.before(session, {
-      path: "/sso/callback",
-      context: { adapter: {} },
-    } as Parameters<typeof boundary.before>[1]),
-  ).rejects.toMatchObject({
-    body: { code: "authentication_origin_missing" },
-  });
 });
