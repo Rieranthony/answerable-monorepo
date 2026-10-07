@@ -20,3 +20,12 @@ export function assertDisposableTestDatabase(
     );
   }
 }
+
+/** Empty the public schema and forget every applied migration. Assert first. */
+export async function resetPublicSchema(client: {
+  query(text: string): Promise<unknown>;
+}): Promise<void> {
+  await client.query("drop schema public cascade");
+  await client.query("drop schema if exists drizzle cascade");
+  await client.query("create schema public");
+}

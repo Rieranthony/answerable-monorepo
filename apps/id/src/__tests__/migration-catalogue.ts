@@ -5,6 +5,7 @@ import { readMigrationFiles } from "drizzle-orm/migrator";
 import type { Pool, PoolClient } from "pg";
 
 import * as schema from "../db/schema/index.ts";
+import { resetPublicSchema } from "./test-database.ts";
 
 const migrationsFolder = fileURLToPath(
   new URL("../../drizzle", import.meta.url),
@@ -82,9 +83,7 @@ export async function buildCatalogue(
   const client = await pool.connect();
   try {
     await client.query("begin");
-    await client.query("drop schema public cascade");
-    await client.query("drop schema if exists drizzle cascade");
-    await client.query("create schema public");
+    await resetPublicSchema(client);
     for (const statement of statements) await client.query(statement);
     return await readCatalogue(client);
   } finally {

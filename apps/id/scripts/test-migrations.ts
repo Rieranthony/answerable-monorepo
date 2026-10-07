@@ -13,6 +13,7 @@ import {
 import { testEnvironment } from "../src/__tests__/support.ts";
 import {
   assertDisposableTestDatabase,
+  resetPublicSchema,
   testDatabaseUrl,
 } from "../src/__tests__/test-database.ts";
 
@@ -40,13 +41,8 @@ async function realRows() {
     )
   ).rows;
 }
-async function reset() {
-  await control.query("drop schema public cascade");
-  await control.query("drop schema if exists drizzle cascade");
-  await control.query("create schema public");
-}
 try {
-  await reset();
+  await resetPublicSchema(control);
   await runMigrations(connection.db);
   assert.deepEqual(await receipts(), expectedReceipts);
   assert.deepEqual(
@@ -69,7 +65,7 @@ try {
   console.log("A repeated run applies nothing and preserves real rows");
 
   // Leave a clean migrated test schema for the serial correctness suite.
-  await reset();
+  await resetPublicSchema(control);
   await runMigrations(connection.db);
   console.log(
     `Migration proof passed: ${expectedReceipts.length} committed migration(s)`,

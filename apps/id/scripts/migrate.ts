@@ -2,19 +2,11 @@ import { configureRuntimeRole } from "../src/db/runtime-role.ts";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
-import {
-  assertDisposableTestDatabase,
-  testDatabaseUrl,
-} from "../src/__tests__/test-database.ts";
 import { runMigrations } from "../src/db/migrate.ts";
 import * as schema from "../src/db/schema/index.ts";
 import { z } from "zod";
 
-const isTest = process.argv.includes("--test");
-if (isTest) assertDisposableTestDatabase("migrate");
-const databaseUrl = isTest
-  ? testDatabaseUrl
-  : z.url().parse(Bun.env.DATABASE_MIGRATION_URL);
+const databaseUrl = z.url().parse(Bun.env.DATABASE_MIGRATION_URL);
 // While DDL waits for a table lock, every later query on that table queues behind it, so a
 // migration on a live database gives up after a few seconds rather than stall the service.
 // The statement bound stops a runaway statement from holding its locks indefinitely.
@@ -28,11 +20,10 @@ const pool = new Pool({
 try {
   const db = drizzle({ client: pool, schema });
   await runMigrations(db);
-  if (!isTest)
-    await configureRuntimeRole(
-      db,
-      Bun.env.DATABASE_RUNTIME_ROLE ?? "answerable_id_runtime",
-    );
+  await configureRuntimeRole(
+    db,
+    Bun.env.DATABASE_RUNTIME_ROLE ?? "answerable_id_runtime",
+  );
 } finally {
   await pool.end();
 }
