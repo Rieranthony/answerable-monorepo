@@ -6,6 +6,7 @@ The V0 cleanup of the kit.
 
 - A request that fails outside a tool, such as `allow`, `project` or `policyClass` throwing something other than a `ToolError`, is logged as `[mcp] request failed` with the error; it answered HTTP 500 with nothing in the log. The SDK's refusals of a malformed request, such as an unsupported protocol version, are logged on the same line.
 - When `allow` throws a `ToolError`, the call answers its envelope only for a name a tool could have: lowercase letters, digits and underscores, up to 64. Any other name answers unknown tool. The server used to register the name as sent, and the SDK printed it, newlines included, in five warning lines.
+- Breaking: a commit checks the commit token before the intent's status, so a replay of a committed intent, and the `COMMIT_IN_PROGRESS`, `INTENT_EXPIRED`, `INTENT_STALE`, `INTENT_CONSUMED` and pending `APPROVAL_REQUIRED` answers, need the intent's token; any other answers `COMMIT_TOKEN_INVALID`. A replay used to return the receipt for any token (R21). The permission check still follows the status, so a caller who lost the mutation still gets the receipt of their own commit.
 
 ## 0.8.0
 

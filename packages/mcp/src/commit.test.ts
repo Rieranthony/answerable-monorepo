@@ -253,17 +253,22 @@ test("a human-class intent waits for an approval: both commit tools answer APPRO
   expect(docs.get("d1")).toEqual({ title: "First", version: 1 })
 })
 
-test("a wrong token answers COMMIT_TOKEN_INVALID and leaves the intent committable", async () => {
+test("a wrong token answers COMMIT_TOKEN_INVALID and leaves the intent committable; a replay needs the token too", async () => {
   const { connect } = await serve()
   const client = await connect()
   const intent = await ok(client, "docs_rename", { id: "d1", title: "Renamed" })
   const other = await ok(client, "docs_rename", { id: "d2", title: "Renamed" })
-  for (const commit_token of [other.commit_token, `act_${"A".repeat(43)}`, ""]) {
-    expect(await refused(client, "test_commit", { intent_id: intent.intent_id, commit_token })).toEqual({
-      code: "COMMIT_TOKEN_INVALID", message: `The commit token does not match intent ${intent.intent_id}`, retry: { policy: "never" }, request_id: requestId,
-    })
+  const wrong = async () => {
+    for (const commit_token of [other.commit_token, `act_${"A".repeat(43)}`, ""]) {
+      expect(await refused(client, "test_commit", { intent_id: intent.intent_id, commit_token })).toEqual({
+        code: "COMMIT_TOKEN_INVALID", message: `The commit token does not match intent ${intent.intent_id}`, retry: { policy: "never" }, request_id: requestId,
+      })
+    }
   }
+  await wrong()
   expect(await ok(client, "test_commit", commitArgs(intent))).toMatchObject({ idempotent_replay: false })
+  await wrong()
+  expect(await ok(client, "test_commit", commitArgs(intent))).toMatchObject({ idempotent_replay: true })
 })
 
 test("another person, membership or client answers PRINCIPAL_MISMATCH before anything else; an unknown intent answers INTENT_NOT_FOUND", async () => {

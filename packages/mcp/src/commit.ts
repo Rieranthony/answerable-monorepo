@@ -94,13 +94,14 @@ export async function commitIntent(request: CommitRequest): Promise<Receipt> {
   if (owner.user_id !== principal.userId || owner.membership_id !== principal.membershipId || owner.client_id !== principal.clientId) {
     throw new ToolError("PRINCIPAL_MISMATCH", `Intent ${intent_id} belongs to another person, membership or client; prepare your own`)
   }
+  // The token before the status, so that a replay, and what became of the intent, needs it too.
+  if (hashToken(input.commit_token) !== intent.commit_token_hash) throw new ToolError("COMMIT_TOKEN_INVALID", `The commit token does not match intent ${intent_id}`)
   if (intent.status !== "prepared") return settled(intent, id)
   const mutation = mutations.find(({ identity, version }) => identity === intent.capability_identity && version === intent.capability_version)
   if (!mutation) {
     throw new ToolError("INTENT_NOT_FOUND", `Intent ${intent_id} is for ${intent.capability_identity} version ${intent.capability_version}, which this server does not serve; prepare it again`)
   }
   if (!permitted(mutation)) throw new ToolError("PERMISSION_DENIED", `Your access no longer covers ${mutation.identity}`)
-  if (hashToken(input.commit_token) !== intent.commit_token_hash) throw new ToolError("COMMIT_TOKEN_INVALID", `The commit token does not match intent ${intent_id}`)
   // A class that rose since prepare asks for what a fresh prepare would; the intent stays prepared.
   const current = await policyClass(mutation)
   if (strictness[current] > strictness[intent.policy_class]) {

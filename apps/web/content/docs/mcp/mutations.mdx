@@ -129,9 +129,9 @@ They return the receipt:
 
 1. The intent exists: else `INTENT_NOT_FOUND`.
 2. The caller's user, membership and client are the preparer's: else `PRINCIPAL_MISMATCH`, before anything about the intent is revealed.
-3. Its status: `committed` returns the stored receipt with `idempotent_replay: true`; `committing` answers `COMMIT_IN_PROGRESS`; `expired`, `stale` and `failed` answer `INTENT_EXPIRED`, `INTENT_STALE` and `INTENT_CONSUMED`; `awaiting_approval` answers `APPROVAL_REQUIRED`.
-4. This server serves the intent's capability version, else `INTENT_NOT_FOUND`; the caller can still use the mutation (the token carries its scopes, or a hub's `allow` still admits it), else `PERMISSION_DENIED`.
-5. The SHA-256 of `commit_token` matches: else `COMMIT_TOKEN_INVALID`.
+3. The SHA-256 of `commit_token` matches: else `COMMIT_TOKEN_INVALID`, so a replay needs the token too.
+4. Its status: `committed` returns the stored receipt with `idempotent_replay: true`; `committing` answers `COMMIT_IN_PROGRESS`; `expired`, `stale` and `failed` answer `INTENT_EXPIRED`, `INTENT_STALE` and `INTENT_CONSUMED`; `awaiting_approval` answers `APPROVAL_REQUIRED`.
+5. This server serves the intent's capability version, else `INTENT_NOT_FOUND`; the caller can still use the mutation (the token carries its scopes, or a hub's `allow` still admits it), else `PERMISSION_DENIED`.
 6. The policy class is no stricter now: `policyClass` runs again for the caller, and a class stricter than the intent's (`agent` to `controlled` or `human`, `controlled` to `human`) answers `APPROVAL_REQUIRED` with the class and commit tool a fresh prepare would give. Prepare again.
 7. The tool matches the class, and a controlled intent's `preview_summary` matches: else `APPROVAL_REQUIRED` with `details.approval`.
 8. The intent moves to `committing`: the token is spent.
@@ -140,7 +140,7 @@ They return the receipt:
 
 A refusal in steps 1 to 7 leaves the intent committable. [MCP errors](/docs/mcp/errors) has every code.
 
-**Replay.** A repeat by the same principal returns the same receipt with `idempotent_replay: true`; `commit` runs once.
+**Replay.** A repeat by the same principal with the same commit token returns the same receipt with `idempotent_replay: true`; `commit` runs once.
 
 **Concurrency.** A commit while another runs answers `COMMIT_IN_PROGRESS`. The store claims an intent by compare-and-set, so two commits never both run.
 
