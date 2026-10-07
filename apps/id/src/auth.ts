@@ -151,8 +151,8 @@ export function createAuth(db: Database, environment: Environment) {
           input: false,
           returned: false,
         },
-        // Every user Better Auth creates starts inert, including one created
-        // by a successful upstream login; activation is an explicit step.
+        // A user created without a status, such as an import placeholder,
+        // starts inert; federation creates its users active.
         status: {
           type: [...userStatuses],
           required: true,
