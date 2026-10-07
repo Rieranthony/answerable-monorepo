@@ -31,6 +31,13 @@ type OwnOidc = OidcEndpoints & {
   tokenEndpointAuthentication?: TokenEndpointAuthentication;
 };
 type PlatformOidc = OidcEndpoints & { credentials: "platform" };
+/** The stored oidc_config: the input's credentials and endpoints with the
+ * issuer and the fixed protocol settings serialisation adds. */
+type StoredOidcConfig = (OwnOidc | PlatformOidc) & {
+  issuer: string;
+  pkce: boolean;
+  overrideUserInfo: boolean;
+};
 export type CreateSsoProviderInput = {
   organizationId: string;
   providerId: string;
@@ -64,16 +71,12 @@ export function serializeSsoProviderConfig(
     tokenEndpoint: input.oidc.tokenEndpoint,
     tokenEndpointAuthentication:
       input.oidc.tokenEndpointAuthentication ?? "client_secret_post",
-    privateKeyId: undefined,
-    privateKeyAlgorithm: undefined,
     jwksEndpoint: input.oidc.jwksEndpoint,
     pkce: true,
     discoveryEndpoint:
       input.oidc.discoveryEndpoint ??
       `${input.issuer}/.well-known/openid-configuration`,
-    mapping: undefined,
     scopes: input.oidc.scopes,
-    userInfoEndpoint: undefined,
     overrideUserInfo: false,
   });
 }
@@ -225,9 +228,7 @@ export function redactSsoProvider(
   row: typeof ssoProviders.$inferSelect,
   ids: PlatformApplicationIds = {},
 ) {
-  const config = JSON.parse(
-    row.oidcConfig ?? "{}",
-  ) as CreateSsoProviderInput["oidc"];
+  const config = JSON.parse(row.oidcConfig ?? "{}") as StoredOidcConfig;
   const application = platformApplicationFor(row.issuer);
   const platform = config.credentials === "platform";
   const id = application ? ids[application] : undefined;
@@ -251,7 +252,7 @@ export function redactSsoProvider(
       tokenEndpoint: config.tokenEndpoint,
       jwksEndpoint: config.jwksEndpoint,
       scopes: config.scopes,
-      pkce: (config as { pkce?: boolean }).pkce,
+      pkce: config.pkce,
       hasClientSecret: platform ? Boolean(id) : Boolean(config.clientSecret),
     },
     createdAt: row.createdAt,
