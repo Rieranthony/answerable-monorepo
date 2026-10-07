@@ -27,6 +27,7 @@ import { pageQuerySchema } from "../pagination.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
+import { slugPattern } from "../../db/schema/columns.ts";
 import { lifecycleStatuses } from "../../db/schema/vocabulary.ts";
 const orgParams = uuidParam("organizationId");
 const groupSchema = z.object({
@@ -63,7 +64,7 @@ const querySchema = pageQuerySchema.extend({
   status: z.enum(lifecycleStatuses).optional(),
 });
 const createSchema = z.object({
-  slug: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/),
+  slug: z.string().regex(slugPattern),
   name: z.string().min(1).max(200),
 });
 const patchSchema = z

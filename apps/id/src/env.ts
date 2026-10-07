@@ -2,6 +2,7 @@ import { findInvalidTrustedProxies } from "@better-auth/core/utils/ip";
 import { z } from "zod";
 import type { PlatformApplications } from "./auth/platform-applications.ts";
 import { upstreamTokenSecretsSchema } from "./auth/upstream-token-storage.ts";
+import { slugPattern } from "./db/schema/columns.ts";
 
 const applicationSecrets = z.string().transform((value, context) => {
   const entries = value.split(",").map((entry) => {
@@ -92,7 +93,7 @@ const environmentSchema = z
     /** Initial platform slug; persisted system bindings determine authority afterwards. */
     PLATFORM_ORGANIZATION_SLUG: z
       .string()
-      .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/)
+      .regex(slugPattern)
       .default("answerable"),
     /** Display name of the platform organisation seeded at startup. */
     PLATFORM_ORGANIZATION_NAME: z.string().trim().min(1).default("Answerable"),

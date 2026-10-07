@@ -18,6 +18,7 @@ import {
 } from "./revision.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
+import { slugPattern } from "../../db/schema/columns.ts";
 import { lifecycleStatuses } from "../../db/schema/vocabulary.ts";
 import { platformCommand } from "./command.ts";
 import * as service from "../../services/organizations.ts";
@@ -44,7 +45,7 @@ const querySchema = pageQuerySchema.extend({
 });
 const name = z.string().min(1).max(200);
 const createSchema = z.object({
-  slug: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/),
+  slug: z.string().regex(slugPattern),
   name,
 });
 const patchSchema = z

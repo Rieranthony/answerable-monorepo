@@ -105,8 +105,10 @@ export const disabledCheck = (
 ) => check(name, sql`(${status} = 'disabled') = (${disabledAt} is not null)`);
 
 /** Lowercase labels separated by single hyphens: `contoso`, `omni-chat`. */
+export const slugPattern = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
 export const slugCheck = (name: string, column: PgColumn) =>
-  check(name, sql`${column} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`);
+  check(name, sql`${column} ~ ${sql.raw(quoteLiteral(slugPattern.source))}`);
 
 /** A lowercase ASCII host name with at least two labels (IDNs as punycode). */
 export const hostnamePattern =

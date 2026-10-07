@@ -1,7 +1,8 @@
+import { slugPattern } from "../../db/schema/columns.ts";
+
 export type LoginRoute =
   { mode: "auto"; organizationSlug: string } | { mode: "form"; email?: string };
 
-const ORGANIZATION_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const EMAIL_ADDRESS = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function decideLoginRoute(params: URLSearchParams): LoginRoute {
@@ -10,7 +11,7 @@ export function decideLoginRoute(params: URLSearchParams): LoginRoute {
 
   if (
     organizationSlug !== null &&
-    ORGANIZATION_SLUG.test(organizationSlug) &&
+    slugPattern.test(organizationSlug) &&
     !params.has("login_hint")
   ) {
     return { mode: "auto", organizationSlug };
