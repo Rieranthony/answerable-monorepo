@@ -52,11 +52,8 @@ export const source = loader(
   { baseUrl: "/docs", plugins: [openapi.loaderPlugin()] },
 )
 
-export function getPageImageUrl(
-  page: (typeof source)["$inferPage"],
-  format: "png" | "webp" = "png",
-) {
-  const segments = [...page.slugs, `image.${format}`]
+export function getPageImageUrl(page: (typeof source)["$inferPage"]) {
+  const segments = [...page.slugs, "image.png"]
 
   return {
     segments,

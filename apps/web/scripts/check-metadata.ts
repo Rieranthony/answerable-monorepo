@@ -108,14 +108,10 @@ for (const path of [
   "/og/default.png",
   "/og/docs/image.png",
   "/og/docs/id/sign-in/image.png",
-  "/og/docs/id/sign-in/image.webp",
 ]) {
   const response = await fetch(base + path)
   assert.equal(response.status, 200)
-  assert.equal(
-    response.headers.get("content-type"),
-    path.endsWith("png") ? "image/png" : "image/webp",
-  )
+  assert.equal(response.headers.get("content-type"), "image/png")
   const buffer = Buffer.from(await response.arrayBuffer())
   const decoded = sharp(buffer)
   const metadata = await decoded.metadata()
