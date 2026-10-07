@@ -28,7 +28,7 @@ afterAll(async () => {
 test("provider queries create, find, update, redact and delete", async () => {
   const db = connection.db;
   const org = await createOrganization(db, { slug: "alpha", name: "Alpha" });
-  expect(await queries.findSsoProviderByOrganization(db, org.id)).toBeNull();
+  expect(await queries.lockSsoProvider(db, org.id)).toBeNull();
   expect(await queries.deleteSsoProvider(db, createId())).toBeNull();
   const input = {
     organizationId: org.id,
@@ -39,8 +39,8 @@ test("provider queries create, find, update, redact and delete", async () => {
   };
   const row = await queries.createSsoProvider(db, input);
   expect(row.domain).toBe("acme.example.com");
-  expect(await queries.findSsoProviderByOrganization(db, org.id)).toEqual(row);
-  const redacted = queries.redactSsoProvider(row);
+  expect(await queries.lockSsoProvider(db, org.id)).toEqual(row);
+  const redacted = productionQueries.redactSsoProvider(row);
   expect(redacted.oidc).toMatchObject({
     clientId: "client",
     hasClientSecret: true,
@@ -68,14 +68,14 @@ test("provider queries create, find, update, redact and delete", async () => {
   expect(updated.updatedAt.getTime()).toBeGreaterThanOrEqual(
     row.updatedAt.getTime(),
   );
-  expect(queries.redactSsoProvider(updated).oidc).toEqual({
+  expect(productionQueries.redactSsoProvider(updated).oidc).toEqual({
     ...oidc,
     credentials: "own",
     pkce: true,
     hasClientSecret: false,
   });
   expect(
-    queries.redactSsoProvider({ ...row, oidcConfig: null }).oidc
+    productionQueries.redactSsoProvider({ ...row, oidcConfig: null }).oidc
       .hasClientSecret,
   ).toBe(false);
   expect(await queries.deleteSsoProvider(db, org.id)).toMatchObject({
@@ -85,7 +85,7 @@ test("provider queries create, find, update, redact and delete", async () => {
     oidcConfig: null,
   });
   expect(await queries.deleteSsoProvider(db, org.id)).toBeNull();
-  expect(await queries.findSsoProviderByOrganization(db, org.id)).toBeNull();
+  expect(await queries.lockSsoProvider(db, org.id)).toBeNull();
 });
 
 test("provider update timestamps use the database clock despite application clock skew", async () => {
@@ -147,7 +147,7 @@ test("SSO read projections expose only their intended configuration", async () =
   });
   await inTenantRead(connection.db, org.id, "directory", async (context) => {
     const result = await productionQueries.readSsoProvider(context);
-    expect(result).toEqual(queries.redactSsoProvider(row));
+    expect(result).toEqual(productionQueries.redactSsoProvider(row));
     expect(JSON.stringify(result)).not.toContain("not-for-readers");
   });
   await inTenantRead(connection.db, org.id, "memberAccess", async (context) =>

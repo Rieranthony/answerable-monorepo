@@ -7,7 +7,7 @@ import {
   auditEvents,
   verifications,
 } from "../db/schema/index.ts";
-import { recordAuditEvent } from "../__tests__/audit-queries.ts";
+import { recordAuditEvent } from "../db/queries/audit.ts";
 import { executeOperation } from "./operations.ts";
 
 let connection: DatabaseConnection;

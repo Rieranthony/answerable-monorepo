@@ -1,10 +1,6 @@
 import * as queries from "../db/queries/oauth-clients.ts";
 import { bindQuery } from "./bind-query.ts";
 import { inPlatformRead, inPlatformWrite } from "./platform-context.ts";
-export {
-  findClientPrincipal,
-  type ClientPrincipalRow,
-} from "../db/client-principal.ts";
 export type * from "../db/queries/oauth-clients.ts";
 export const listClients = bindQuery(inPlatformRead)(queries.listClients);
 export const listClientResources = bindQuery(inPlatformRead)(
@@ -24,7 +20,6 @@ export const linkClientResource = bindQuery(inPlatformWrite)(
 export const unlinkClientResource = bindQuery(inPlatformWrite)(
   queries.unlinkClientResource,
 );
-export const findClient = bindQuery(inPlatformWrite)(
+export const lockClient = bindQuery(inPlatformWrite)(
   queries.lockClientForCommand,
 );
-export const lockClient = findClient;

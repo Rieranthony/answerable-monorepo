@@ -2,10 +2,8 @@ import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createDatabase, type DatabaseConnection } from "./client.ts";
-import {
-  recordAuditEvent,
-  listAuditEvents,
-} from "../__tests__/audit-queries.ts";
+import { listAuditEvents } from "../__tests__/audit-queries.ts";
+import { recordAuditEvent } from "./queries/audit.ts";
 import { executeOperation } from "../services/operations.ts";
 import { adminOperations, auditEvents, verifications } from "./schema/index.ts";
 import { createId } from "../lib/id.ts";

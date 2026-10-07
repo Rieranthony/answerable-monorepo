@@ -69,7 +69,7 @@ const service = {
   getSsoProvider: (db: Database, org: string) =>
     inTenantRead(db, org, "directory", implementation.getSsoProvider),
 };
-import { findSsoProviderByOrganization } from "../__tests__/sso-queries.ts";
+import { lockSsoProvider } from "../__tests__/sso-queries.ts";
 const input = {
   issuer: "https://login.example.com",
   domain: "acme.example.com",
@@ -150,7 +150,7 @@ const changedInput = {
 for (const mode of ["create", "update", "delete"] as const) {
   test(`SSO ${mode} audit failure rolls back configuration and grant revocation`, async () => {
     const { db, org } = await grantFixture(mode !== "create");
-    const beforeProvider = await findSsoProviderByOrganization(db, org.id);
+    const beforeProvider = await lockSsoProvider(db, org.id);
     const beforeGrants = await db
       .select()
       .from(grantContexts)
@@ -164,9 +164,7 @@ for (const mode of ["create", "update", "delete"] as const) {
         ? service.deleteSsoProvider(db, invalidActor, org.id)
         : service.putSsoProvider(db, invalidActor, org.id, changedInput),
     ).rejects.toThrow();
-    expect(await findSsoProviderByOrganization(db, org.id)).toEqual(
-      beforeProvider,
-    );
+    expect(await lockSsoProvider(db, org.id)).toEqual(beforeProvider);
     expect(
       await db.select().from(grantContexts).orderBy(grantContexts.id),
     ).toEqual(beforeGrants);
@@ -294,7 +292,7 @@ for (const transition of [
       beforeInput,
       applicationIds,
     );
-    const before = await findSsoProviderByOrganization(db, org.id);
+    const before = await lockSsoProvider(db, org.id);
     const changed = transition !== "platform-platform";
     const result = await inPlatformWrite(
       db,
@@ -309,7 +307,7 @@ for (const transition of [
       actor,
     );
     expect(result.changed).toBe(changed);
-    const after = await findSsoProviderByOrganization(db, org.id);
+    const after = await lockSsoProvider(db, org.id);
     if (!changed) expect(after).toEqual(before);
     const stored = JSON.parse(after!.oidcConfig!);
     expect(

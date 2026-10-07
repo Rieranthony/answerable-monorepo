@@ -715,8 +715,8 @@ test("capability RLS permits tenant inspection but denies tenant ceiling writes"
 });
 
 test("runtime erasure audit creates protected indirect subject references through its trigger", async () => {
-  const { recordAuditEvent, listUserAuditEvents } =
-    await import("../__tests__/audit-queries.ts");
+  const { listUserAuditEvents } = await import("../__tests__/audit-queries.ts");
+  const { recordAuditEvent } = await import("./queries/audit.ts");
   const affected = crypto.randomUUID();
   const row = await recordAuditEvent(runtime.db, {
     actorType: "system",
@@ -738,8 +738,8 @@ test("runtime erasure audit creates protected indirect subject references throug
 });
 
 test("runtime lifecycle audit indexes recorded users without direct subject write privileges", async () => {
-  const { recordAuditEvent, listUserAuditEvents } =
-    await import("../__tests__/audit-queries.ts");
+  const { listUserAuditEvents } = await import("../__tests__/audit-queries.ts");
+  const { recordAuditEvent } = await import("./queries/audit.ts");
   const affected = crypto.randomUUID();
   const expected = [];
   for (const targetType of ["client", "resource", "organization"] as const) {

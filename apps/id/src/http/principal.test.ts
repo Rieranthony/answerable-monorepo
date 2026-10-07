@@ -10,7 +10,7 @@ import {
   type JWTPayload,
 } from "jose";
 import type { AuditEventInput } from "../__tests__/audit-queries.ts";
-import type { ClientPrincipalRow } from "../__tests__/client-queries.ts";
+import type { ClientPrincipalRow } from "../db/client-principal.ts";
 import {
   stubAuth,
   stubDatabase,

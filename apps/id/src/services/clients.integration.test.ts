@@ -100,7 +100,7 @@ test("client lifecycle hides digests, returns secrets once, revokes tokens, chan
   expect(created.hasClientSecret).toBe(true);
   expect(created.responseTypes).toEqual([]);
   const originalDigest = hashClientSecret(created.clientSecret!);
-  expect((await queries.findClient(db, created.clientId))?.clientSecret).toBe(
+  expect((await queries.lockClient(db, created.clientId))?.clientSecret).toBe(
     originalDigest,
   );
   const read = await service.getClient(db, created.clientId);
@@ -128,7 +128,7 @@ test("client lifecycle hides digests, returns secrets once, revokes tokens, chan
   expect(updated).not.toHaveProperty("clientSecret");
   const rotated = await service.rotateSecret(db, actor, created.clientId);
   expect(rotated.clientSecret).not.toBe(created.clientSecret);
-  expect((await queries.findClient(db, created.clientId))?.clientSecret).toBe(
+  expect((await queries.lockClient(db, created.clientId))?.clientSecret).toBe(
     hashClientSecret(rotated.clientSecret),
   );
   expect(hashClientSecret(rotated.clientSecret)).not.toBe(originalDigest);
@@ -250,7 +250,7 @@ test("public and private key clients have no secret; generated IDs and response 
     expect(client.hasClientSecret).toBe(false);
     expect(client).not.toHaveProperty("clientSecret");
     expect(
-      (await queries.findClient(db, client.clientId))?.clientSecret,
+      (await queries.lockClient(db, client.clientId))?.clientSecret,
     ).toBeNull();
     await expect(
       service.rotateSecret(db, actor, client.clientId),
@@ -421,7 +421,7 @@ test("erasure checks existence, confirmation and entitlements in order", async (
   await deleteEntitlement(db, organizationId, grant.id);
   await service.linkResource(db, actor, client.clientId, resource);
   await service.eraseClient(db, actor, client.clientId, client.clientId);
-  expect(await queries.findClient(db, client.clientId)).toBeNull();
+  expect(await queries.lockClient(db, client.clientId)).toBeNull();
   const unowned = await service.createClient(db, actor, publicInput);
   await service.eraseClient(db, actor, unowned.clientId, unowned.clientId);
   const events = await db

@@ -16,7 +16,7 @@ import {
   organizations,
   users,
 } from "./schema/index.ts";
-import { recordAuditEvent } from "../__tests__/audit-queries.ts";
+import { recordAuditEvent } from "./queries/audit.ts";
 import {
   listOrganizationAuditEvents as readOrganizationAudit,
   listUserAuditEvents as readUserAudit,

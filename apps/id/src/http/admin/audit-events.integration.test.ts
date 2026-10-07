@@ -1,7 +1,4 @@
-import {
-  recordAuditEvent,
-  type AuditEvent,
-} from "../../__tests__/audit-queries.ts";
+import { recordAuditEvent, type AuditEvent } from "../../db/queries/audit.ts";
 import { createId } from "../../lib/id.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { decodeJwt } from "jose";
@@ -159,7 +156,6 @@ test("tenant readers see their sign-ins and denied attempts only", async () => {
 test("staff read retained tenant history after erasure without opening unknown history", async () => {
   const { createOrganization } =
     await import("../../__tests__/organization-queries.ts");
-  const { recordAuditEvent } = await import("../../__tests__/audit-queries.ts");
   const { organizations } = await import("../../db/schema/index.ts");
   const { eq } = await import("drizzle-orm");
   const { createId } = await import("../../lib/id.ts");

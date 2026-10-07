@@ -52,7 +52,7 @@ import { routes } from "./sso-providers.ts";
 import { responseSchema } from "../../__tests__/openapi-response.ts";
 const ssoProviderSchema = responseSchema("getSsoProvider", 200);
 import {
-  findSsoProviderByOrganization,
+  lockSsoProvider,
   createSsoProvider,
 } from "../../__tests__/sso-queries.ts";
 const input = {
@@ -130,9 +130,8 @@ test("platformAdmin creates and updates without replacing the secret, then delet
   });
   expectRedacted(body);
   expect(
-    JSON.parse(
-      (await findSsoProviderByOrganization(fixture.db, org.id))!.oidcConfig!,
-    ).clientSecret,
+    JSON.parse((await lockSsoProvider(fixture.db, org.id))!.oidcConfig!)
+      .clientSecret,
   ).toBe(input.oidc.clientSecret);
   expect((await request(org.id, "", "DELETE")).status).toBe(204);
   expect((await request(org.id)).status).toBe(404);
@@ -342,9 +341,7 @@ test("SSO retries recover historical redacted results without replacing later cr
   expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
   await expectReceipt(fixture.db, replay);
   expect(
-    JSON.parse(
-      (await findSsoProviderByOrganization(fixture.db, org.id))!.oidcConfig!,
-    ),
+    JSON.parse((await lockSsoProvider(fixture.db, org.id))!.oidcConfig!),
   ).toMatchObject({ clientId: "later-client", clientSecret: "later-secret" });
   expect((await command(org.id, "sso-create", "PUT", replacement)).status).toBe(
     409,
@@ -354,14 +351,12 @@ test("SSO retries recover historical redacted results without replacing later cr
   expect(
     (await command(org.id, "sso-recreate", "PUT", replacement)).status,
   ).toBe(201);
-  const current = await findSsoProviderByOrganization(fixture.db, org.id);
+  const current = await lockSsoProvider(fixture.db, org.id);
   expect(current!.id).not.toBe(original.id);
   const deleteReplay = await command(org.id, "sso-delete", "DELETE");
   expect(deleteReplay.status).toBe(204);
   expect(deleteReplay.headers.get("Idempotency-Replayed")).toBe("true");
-  expect((await findSsoProviderByOrganization(fixture.db, org.id))!.id).toBe(
-    current!.id,
-  );
+  expect((await lockSsoProvider(fixture.db, org.id))!.id).toBe(current!.id);
   const events = await fixture.db
     .select()
     .from(auditEvents)
@@ -460,7 +455,7 @@ test("omitted Google oidc uses platform defaults and explicit platform retries r
     .from(adminOperations)
     .where(eq(adminOperations.id, noop.headers.get("Operation-Id")!));
   expect(operation!.outcome).toBe("noop");
-  const stored = (await findSsoProviderByOrganization(fixture.db, org.id))!;
+  const stored = (await lockSsoProvider(fixture.db, org.id))!;
   expect(JSON.parse(stored.oidcConfig!)).not.toHaveProperty("clientId");
   expect(JSON.parse(stored.oidcConfig!)).not.toHaveProperty("clientSecret");
 });
@@ -509,10 +504,7 @@ test("platform validation rejects row credentials and unsupported or unconfigure
 });
 test("tenantReader sees the platform client id without credentials", async () => {
   const organizationId = fixture.tenant.organizationId;
-  const previous = await findSsoProviderByOrganization(
-    fixture.db,
-    organizationId,
-  );
+  const previous = await lockSsoProvider(fixture.db, organizationId);
   const { ssoProviders, entitlements, users } =
     await import("../../db/schema/index.ts");
   const { signInThroughIdp } = await import("../../__tests__/federation.ts");

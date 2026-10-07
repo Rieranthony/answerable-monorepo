@@ -7,7 +7,7 @@ import {
 } from "../../__tests__/admin.ts";
 import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
 import { auditEvents, oauthAccessTokens } from "../../db/schema/index.ts";
-import { findClient } from "../../__tests__/client-queries.ts";
+import { lockClient } from "../../__tests__/client-queries.ts";
 import { hashClientSecret } from "../../services/client-secrets.ts";
 import { createId } from "../../lib/id.ts";
 import { routes, clientSchema } from "./clients.ts";
@@ -300,7 +300,7 @@ test("private key and public clients work through both admin credentials", async
     });
     expect(publicClient).not.toHaveProperty("clientSecret");
     expect(
-      (await findClient(fixture.db, publicClient.clientId))?.clientSecret,
+      (await lockClient(fixture.db, publicClient.clientId))?.clientSecret,
     ).toBeNull();
   }
 });

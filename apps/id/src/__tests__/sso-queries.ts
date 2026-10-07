@@ -2,7 +2,6 @@ import * as queries from "../db/queries/sso-providers.ts";
 import { bindQuery } from "./bind-query.ts";
 import { inPlatformWrite } from "./platform-context.ts";
 export type * from "../db/queries/sso-providers.ts";
-export { redactSsoProvider } from "../db/queries/sso-providers.ts";
 export const createSsoProvider = bindQuery(inPlatformWrite)(
   queries.createSsoProvider,
 );
@@ -12,6 +11,6 @@ export const updateSsoProvider = bindQuery(inPlatformWrite)(
 export const deleteSsoProvider = bindQuery(inPlatformWrite)(
   queries.deleteSsoProvider,
 );
-export const findSsoProviderByOrganization = bindQuery(inPlatformWrite)(
+export const lockSsoProvider = bindQuery(inPlatformWrite)(
   queries.findSsoProviderForCommand,
 );

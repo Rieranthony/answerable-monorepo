@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import { approveMachineCapability } from "../../__tests__/capabilities.ts";
-import { findClientPrincipal } from "../../__tests__/client-queries.ts";
+import { findClientPrincipal } from "../client-principal.ts";
 import { testEnvironment } from "../../__tests__/support.ts";
 import { createId } from "../../lib/id.ts";
 import { createDatabase, type DatabaseConnection } from "../client.ts";
@@ -134,7 +134,6 @@ test("client administration queries cover writes, filters, pagination, missing r
     name: "Third",
     redirectUris: [],
   });
-  expect(await queries.findClient(db, a.clientId)).toEqual(a);
   expect(await queries.lockClient(db, a.clientId)).toEqual(a);
   expect(await queries.listClients(db, { limit: 1 })).toMatchObject({
     items: [{ id: c.id }],
@@ -179,7 +178,6 @@ test("client administration queries cover writes, filters, pagination, missing r
   expect(await queries.setClientSecret(db, a.clientId, "digest")).toMatchObject(
     { clientSecret: "digest" },
   );
-  expect(await queries.findClient(db, "missing")).toBeNull();
   expect(await queries.lockClient(db, "missing")).toBeNull();
   expect(
     await queries.updateClient(db, "missing", { name: "Missing" }),

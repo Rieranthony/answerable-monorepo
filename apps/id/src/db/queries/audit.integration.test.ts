@@ -2,11 +2,11 @@ import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import { inPlatformRead } from "../../__tests__/platform-context.ts";
 import * as productionAuditQueries from "./audit.ts";
+import { recordAuditEvent } from "./audit.ts";
 
 import {
   listAuditEvents,
   listUserAuditEvents,
-  recordAuditEvent,
   type AuditEventFilters,
   type AuditEventInput,
 } from "../../__tests__/audit-queries.ts";
