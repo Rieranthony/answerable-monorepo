@@ -242,11 +242,10 @@ export function register(app: Hono<AppEnvironment>) {
         { memberId },
         200,
         async (tenant) => {
-          const before = await service.getMemberConfiguration(tenant, memberId);
-          const body = await service.reinstate(tenant, memberId);
+          const { row, changed } = await service.reinstate(tenant, memberId);
           return {
-            body,
-            changed: before.membershipStatus !== "active",
+            body: row,
+            changed,
             resultReference: { type: "member", id: memberId },
           };
         },

@@ -309,7 +309,10 @@ test("revocation retains identity, denies tenant A, preserves tenant B and requi
     (await service.getMember(db, org.id, original.id)).membershipStatus,
   ).toBe("revoked");
   expect(await service.reinstate(db, actor, org.id, original.id)).toMatchObject(
-    { membershipStatus: "active", revokedAt: null, groups: [] },
+    {
+      row: { membershipStatus: "active", revokedAt: null, groups: [] },
+      changed: true,
+    },
   );
   expect(await memberAccess(db, org.id, original.id)).toEqual({
     effective: true,

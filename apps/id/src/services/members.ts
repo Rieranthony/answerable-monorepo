@@ -113,14 +113,12 @@ export async function reinstate(
   const accessBefore = await memberAccess(context, memberId);
   const row = found(await queries.reinstateMember(context, memberId), notFound);
   const accessAfter = await memberAccess(context, memberId);
+  const changed = before.membershipStatus !== "active";
   await recordCommandEvent(context, {
     organizationId,
     targetType: "member",
     targetId: memberId,
-    action:
-      before.membershipStatus === "active"
-        ? "member.reinstatement_unchanged"
-        : "member.reinstated",
+    action: changed ? "member.reinstated" : "member.reinstatement_unchanged",
     data: {
       userId: row.userId,
       reason: "administrative_reinstatement",
@@ -136,7 +134,10 @@ export async function reinstate(
       },
     },
   });
-  return found(await queries.findMember(context, memberId), notFound);
+  return {
+    row: found(await queries.findMember(context, memberId), notFound),
+    changed,
+  };
 }
 
 export async function getMemberConfiguration(
