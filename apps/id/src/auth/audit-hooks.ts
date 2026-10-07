@@ -9,7 +9,7 @@ type Session = {
   ipAddress?: string | null;
   userAgent?: string | null;
 };
-type Context = { headers?: Headers } | null;
+type Context = { path?: string; headers?: Headers } | null;
 
 export function sessionAuditHooks(db: Executor) {
   async function record(
@@ -31,11 +31,14 @@ export function sessionAuditHooks(db: Executor) {
       userAgent: boundedUserAgent(session.userAgent),
     });
   }
-  // Sign-in success commits in the SSO session-creation transaction.
+  // Sign-in success commits in the SSO session-creation transaction. Better Auth
+  // also deletes an expired session it reads; only /sign-out is a sign-out.
   return {
     delete: {
-      after: (session: Session, context: Context) =>
-        record(session, context, "auth.signout"),
+      after: async (session: Session, context: Context) => {
+        if (context?.path === "/sign-out")
+          await record(session, context, "auth.signout");
+      },
     },
   };
 }

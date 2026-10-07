@@ -678,6 +678,31 @@ describe("integration: federated sign-in", () => {
       authenticationProviderRevision: provider!.revision,
     });
   });
+  test("expired-session cleanup is not audited as a sign-out", async () => {
+    await seedProvider();
+    issuer.enqueue(entraClaims());
+    const result = await signIn();
+    expect(errorCode(result.location)).toBeNull();
+    await connection.db
+      .update(sessions)
+      .set({ expiresAt: new Date(Date.now() - 1000) });
+    const read = await app.request("/auth/get-session", {
+      headers: {
+        Cookie: result.cookies
+          .map((value) => value.split(";", 1)[0])
+          .join("; "),
+      },
+    });
+    expect(read.status).toBe(200);
+    expect(await read.json()).toBeNull();
+    expect(await connection.db.select().from(sessions)).toHaveLength(0);
+    expect(
+      await connection.db
+        .select()
+        .from(auditEvents)
+        .where(eq(auditEvents.action, "auth.signout")),
+    ).toHaveLength(0);
+  });
   test("a failed origin insert rolls back native SSO user, account, membership and session creation", async () => {
     await seedProvider();
     await connection.db.execute(
