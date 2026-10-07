@@ -1,6 +1,6 @@
 import type { ActorMetadata } from "../services/actor.ts";
 import type { Database, Executor } from "../db/client.ts";
-import { testEnvironment } from "./support.ts";
+import { rootAuthority } from "./platform-context.ts";
 import {
   authorizeTenantMemberCommand,
   withTenantRead,
@@ -17,11 +17,7 @@ export async function inTenant<T>(
 ) {
   return db.transaction(async (tx) => {
     const context = await authorizeTenantMemberCommand(tx, {
-      principal: { type: "root", grants: [] },
-      environment: testEnvironment({
-        rootAdminSecret: "service-test",
-        rootAdminBreakGlass: true,
-      }),
+      ...rootAuthority,
       organizationId,
     });
     return context.run(run, metadata);
@@ -34,17 +30,5 @@ export function inTenantRead<T, Access extends TenantReadAccess>(
   access: Access,
   run: (context: TenantReadContext<Access>) => Promise<T>,
 ) {
-  return withTenantRead(
-    db,
-    {
-      principal: { type: "root", grants: [] },
-      environment: testEnvironment({
-        rootAdminSecret: "service-test",
-        rootAdminBreakGlass: true,
-      }),
-      organizationId,
-    },
-    access,
-    run,
-  );
+  return withTenantRead(db, { ...rootAuthority, organizationId }, access, run);
 }
