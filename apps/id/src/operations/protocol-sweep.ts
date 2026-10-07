@@ -55,6 +55,15 @@ export async function sweepExpiredProtocolRows(
   return deleted;
 }
 
+/** The SQLSTATE of a database error, or of the error a query wrapped. */
+function sqlState(error: unknown) {
+  for (const candidate of [error, (error as { cause?: unknown })?.cause]) {
+    const code = (candidate as { code?: unknown } | undefined)?.code;
+    if (typeof code === "string" && /^[0-9A-Z]{5}$/.test(code)) return code;
+  }
+  return undefined;
+}
+
 /** Sweep on a timer; zero disables. Logs counts only when a sweep deleted rows. */
 export function startProtocolSweep(
   db: Database,
@@ -75,10 +84,17 @@ export function startProtocolSweep(
           "[id] protocol sweep",
           JSON.stringify({ event: "protocol_sweep", deleted }),
         );
-    } catch {
+    } catch (error) {
+      // The SQLSTATE tells a timeout from a lock wait or a privilege; the
+      // message can hold query detail and stays out.
+      const code = sqlState(error);
       console.error(
         "[id] protocol sweep",
-        JSON.stringify({ level: "error", event: "protocol_sweep_failed" }),
+        JSON.stringify({
+          level: "error",
+          event: "protocol_sweep_failed",
+          ...(code ? { code } : {}),
+        }),
       );
     }
   };

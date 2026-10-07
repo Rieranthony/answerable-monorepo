@@ -36,8 +36,8 @@ transactions of at most `PROTOCOL_SWEEP_BATCH` rows (default 1000). Rotated refr
 tokens stay until their own expiry. An advisory lock lets one process delete at a
 time; a process that finds it taken skips the rest of that run. A run that deleted
 rows writes `[id] protocol sweep` followed by JSON with the count per table; expiry
-records no audit. A failed run writes only `protocol_sweep_failed` and the next
-interval retries. Shutdown stops it after the running batch. Better Auth deletes
+records no audit. A failed run writes only `protocol_sweep_failed`, with the
+SQLSTATE as `code` when the database gave one, and the next interval retries. Shutdown stops it after the running batch. Better Auth deletes
 expired `verifications` itself.
 
 **Monitoring handoff.** Configure the selected collector/scheduler to route these

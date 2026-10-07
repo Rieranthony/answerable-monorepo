@@ -309,6 +309,36 @@ test("a failed sweep logs only its event and the next tick sweeps again", () =>
     );
   }));
 
+test("a failed sweep logs the database error's SQLSTATE and nothing else", () =>
+  withTimers(async ({ timers, error }) => {
+    const failing = {
+      transaction: async () => {
+        throw new Error("Failed query: private statement", {
+          cause: Object.assign(new Error("private database detail"), {
+            code: "57014",
+          }),
+        });
+      },
+    } as unknown as Database;
+    const sweep = startProtocolSweep(failing, {
+      intervalMs: 1_000,
+      batchSize: 1,
+    });
+    timers[0]!.callback();
+    await until(() => error.mock.calls.length === 1);
+    await sweep.stop();
+    expect(error.mock.calls).toEqual([
+      [
+        "[id] protocol sweep",
+        JSON.stringify({
+          level: "error",
+          event: "protocol_sweep_failed",
+          code: "57014",
+        }),
+      ],
+    ]);
+  }));
+
 test("a zero interval starts no timer", () =>
   withTimers(async ({ timers }) => {
     await startProtocolSweep(runtime.db, {
