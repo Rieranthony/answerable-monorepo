@@ -206,7 +206,7 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/sso-provider/tes
 | Problem code            | Meaning                                                                              | What to do                                                |
 | ----------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------- |
 | `insecure_issuer`       | A fetched endpoint or issuer is not an absolute HTTPS URL.                           | Correct the configured URLs.                              |
-| `private_host`          | A host is private or resolves to a private address.                                  | Use public provider endpoints.                            |
+| `private_host`          | A host, or an address it resolves to, is not publicly routable (RFC 6890 special-purpose ranges, `localhost`, `.local`, `.internal`). | Use public provider endpoints.                            |
 | `discovery_unreachable` | Discovery failed, timed out or returned a non-success status; redirects are refused. | Check the discovery URL and connectivity.                 |
 | `discovery_invalid`     | Discovery JSON is missing required URLs or exceeds the size limit.                   | Correct the provider's discovery document.                |
 | `untrusted_origin` | A discovered endpoint origin is missing from `BETTER_AUTH_TRUSTED_ORIGINS`. | Ask Answerable staff to add its exact trusted origin and check outbound HTTPS, then rerun the test. |

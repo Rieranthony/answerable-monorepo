@@ -1,5 +1,6 @@
 import dns from "node:dns/promises";
-import { BlockList, isIP } from "node:net";
+import { isIP } from "node:net";
+import { isPublicRoutableHost } from "@better-auth/core/utils/host";
 import { z } from "zod";
 import { type PlatformReadContext } from "./platform-context.ts";
 import { readSsoEndpoints } from "../db/queries/sso-providers.ts";
@@ -22,35 +23,15 @@ export type SsoTestOptions = {
   timeoutMs?: number;
   allowPrivateHosts?: boolean;
 };
-const privateNetworks = new BlockList();
-for (const [address, prefix] of [
-  ["0.0.0.0", 8],
-  ["10.0.0.0", 8],
-  ["127.0.0.0", 8],
-  ["169.254.0.0", 16],
-  ["172.16.0.0", 12],
-  ["192.168.0.0", 16],
-] as const)
-  privateNetworks.addSubnet(address, prefix, "ipv4");
-for (const [address, prefix] of [
-  ["::", 128],
-  ["::1", 128],
-  ["fc00::", 7],
-  ["fe80::", 10],
-] as const)
-  privateNetworks.addSubnet(address, prefix, "ipv6");
-
+/** Better Auth's SSRF gate (the RFC 6890 special-purpose ranges, localhost and
+ * cloud metadata names), plus the internal-only .internal and .local names. */
 function isPrivateHost(hostname: string) {
   const host = hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "");
   return (
-    host === "localhost" ||
-    host.endsWith(".localhost") ||
-    host === "internal" ||
-    host.endsWith(".internal") ||
-    host === "local" ||
-    host.endsWith(".local") ||
-    (isIP(host) !== 0 &&
-      privateNetworks.check(host, isIP(host) === 6 ? "ipv6" : "ipv4"))
+    !isPublicRoutableHost(host) ||
+    ["internal", "local"].some(
+      (name) => host === name || host.endsWith(`.${name}`),
+    )
   );
 }
 const discoverySchema = z.object({
@@ -150,7 +131,7 @@ export async function testSsoProvider(
     }
     return true;
   }
-  // Like the sign-in guard, reject hostnames resolving to internal addresses.
+  // As Better Auth's sign-in guard does, refuse names resolving to internal addresses.
   async function publicDestination(value: string) {
     const host = new URL(value).hostname.replace(/^\[|\]$/g, "");
     if (options.allowPrivateHosts || isIP(host)) return true;
