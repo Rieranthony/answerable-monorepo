@@ -43,7 +43,6 @@ export async function organizationAcceptsDomain(
     )
     .where(
       and(
-        isNull(organizations.deletedAt),
         isNull(organizationDomains.deletedAt),
         eq(organizationDomains.domain, normalizeDomain(domain)),
         eq(organizationDomains.organizationId, organizationId),
@@ -66,7 +65,6 @@ export async function findDomainOrganizationSlug(db: Executor, domain: string) {
     )
     .where(
       and(
-        isNull(organizations.deletedAt),
         isNull(organizationDomains.deletedAt),
         eq(organizationDomains.domain, normalizeDomain(domain)),
         eq(organizationDomains.status, "active"),

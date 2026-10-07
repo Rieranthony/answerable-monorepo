@@ -57,7 +57,6 @@ export async function effectiveGrants(
         .innerJoin(organizations, eq(organizations.id, members.organizationId))
         .where(
           and(
-            isNull(organizations.deletedAt),
             isNull(members.deletedAt),
             eq(members.userId, principal.userId),
             optionalEq(organizations.id, authenticationOrganizationId),
@@ -100,8 +99,6 @@ export async function effectiveGrants(
         .where(
           and(
             isNull(oauthResources.deletedAt),
-            isNull(organizations.deletedAt),
-            isNull(users.deletedAt),
             isNull(members.deletedAt),
             eq(members.userId, principal.userId),
             inArray(
@@ -158,8 +155,6 @@ export async function hasPlatformWriter(
       .where(
         and(
           isNull(oauthResources.deletedAt),
-          isNull(organizations.deletedAt),
-          isNull(users.deletedAt),
           isNull(members.deletedAt),
           inArray(organizations.id, organizationIds),
         ),

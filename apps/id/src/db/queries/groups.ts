@@ -264,8 +264,6 @@ export async function listGroupMembers(
       .innerJoin(users, eq(users.id, members.userId))
       .where(
         and(
-          isNull(users.deletedAt),
-          isNull(members.deletedAt),
           isNull(groupMembers.deletedAt),
           membershipWhere(organizationId, groupId),
           beforeCursor(groupMembers.memberId, query.cursor),

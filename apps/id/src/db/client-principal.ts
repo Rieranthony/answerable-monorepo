@@ -93,9 +93,7 @@ export async function findClientPrincipal(
       )
       .where(
         and(
-          isNull(oauthResources.deletedAt),
           isNull(oauthClientResources.deletedAt),
-          isNull(organizations.deletedAt),
           isNull(oauthClients.deletedAt),
           eq(oauthClients.id, identity.id),
           eq(oauthResources.identifier, resource),

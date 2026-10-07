@@ -220,7 +220,6 @@ export async function readEntitlementAudience(
       .where(
         and(
           isNull(groupMembers.deletedAt),
-          isNull(members.deletedAt),
           eq(members.organizationId, organizationId),
           eq(groupMembers.groupId, groupId),
         ),
@@ -262,7 +261,7 @@ export async function listAllEntitlements(
         organizations,
         eq(organizations.id, entitlements.organizationId),
       )
-      .where(and(isNull(organizations.deletedAt), ...entitlementFilters(query)))
+      .where(and(...entitlementFilters(query)))
       .orderBy(desc(entitlements.id))
       .limit(query.limit + 1),
     query.limit,

@@ -49,7 +49,6 @@ export async function listMembers(
       .innerJoin(users, eq(users.id, members.userId))
       .where(
         and(
-          isNull(users.deletedAt),
           isNull(members.deletedAt),
           eq(members.organizationId, organizationId),
           optionalEq(users.email, query.email?.toLowerCase()),
@@ -77,11 +76,7 @@ export async function findMember(
     .from(members)
     .innerJoin(users, eq(users.id, members.userId))
     .where(
-      and(
-        isNull(users.deletedAt),
-        isNull(members.deletedAt),
-        memberWhere(organizationId, memberId),
-      ),
+      and(isNull(members.deletedAt), memberWhere(organizationId, memberId)),
     );
   if (!row) return null;
   const memberships = await executor
@@ -96,7 +91,6 @@ export async function findMember(
     .innerJoin(groups, eq(groups.id, groupMembers.groupId))
     .where(
       and(
-        isNull(groups.deletedAt),
         isNull(groupMembers.deletedAt),
         eq(groupMembers.organizationId, organizationId),
         eq(groupMembers.memberId, memberId),

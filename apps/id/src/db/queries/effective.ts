@@ -42,7 +42,6 @@ export function matchingEntitlements(executor: Executor) {
             and(
               eq(groupMembers.memberId, members.id),
               eq(groups.status, "active"),
-              isNull(groups.deletedAt),
               isEffective(groupMembers),
             ),
           ),

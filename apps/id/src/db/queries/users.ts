@@ -144,13 +144,7 @@ export async function findUser(context: PlatformReadContext, userId: string) {
     })
     .from(members)
     .innerJoin(organizations, eq(organizations.id, members.organizationId))
-    .where(
-      and(
-        isNull(organizations.deletedAt),
-        isNull(members.deletedAt),
-        eq(members.userId, userId),
-      ),
-    )
+    .where(and(isNull(members.deletedAt), eq(members.userId, userId)))
     .orderBy(desc(members.id));
   const identities = await executor
     .select({

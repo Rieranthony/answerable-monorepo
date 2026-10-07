@@ -50,9 +50,6 @@ export async function findMachineCapability(
     )
     .where(
       and(
-        isNull(organizations.deletedAt),
-        isNull(oauthClients.deletedAt),
-        isNull(oauthResources.deletedAt),
         isNull(organizationCapabilities.deletedAt),
         eq(organizationCapabilities.organizationId, input.organizationId),
         eq(organizationCapabilities.clientId, input.clientId),

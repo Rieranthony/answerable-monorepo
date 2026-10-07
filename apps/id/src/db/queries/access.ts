@@ -46,7 +46,6 @@ export type MemberAccess = {
 const activeOrganization = and(
   eq(organizations.id, members.organizationId),
   eq(organizations.status, "active"),
-  isNull(organizations.deletedAt),
 );
 export async function memberAccess(
   context: TenantReadContext<"memberAccess"> | TenantMemberContext,
@@ -97,9 +96,6 @@ export async function memberAccess(
     )
     .where(
       and(
-        isNull(oauthResources.deletedAt),
-        isNull(oauthClients.deletedAt),
-        isNull(users.deletedAt),
         isNull(members.deletedAt),
         eq(members.organizationId, organizationId),
         eq(members.id, memberId),
@@ -193,10 +189,7 @@ export async function targetAccess(
     .crossJoinLateral(sql`unnest(${entitlements.scopes}) as s(scope)`)
     .where(
       and(
-        isNull(oauthResources.deletedAt),
-        isNull(oauthClients.deletedAt),
         isNull(entitlements.deletedAt),
-        isNull(users.deletedAt),
         isNull(members.deletedAt),
         eq(members.organizationId, organizationId),
         isEffective(members),
