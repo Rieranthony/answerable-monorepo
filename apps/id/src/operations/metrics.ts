@@ -1,8 +1,6 @@
-type PoolObservation = {
-  totalCount?: number;
-  idleCount?: number;
-  waitingCount?: number;
-};
+import type { Pool } from "pg";
+
+type PoolObservation = Pick<Pool, "totalCount" | "idleCount" | "waitingCount">;
 
 function requestClass(path: string) {
   if (path === "/healthz") return "health";
@@ -60,9 +58,9 @@ export function createOperationalMetrics(pool: PoolObservation) {
         active,
         peakActive,
         pool: {
-          total: pool.totalCount ?? 0,
-          idle: pool.idleCount ?? 0,
-          waiting: pool.waitingCount ?? 0,
+          total: pool.totalCount,
+          idle: pool.idleCount,
+          waiting: pool.waitingCount,
         },
         requests: [...requests.values()],
       };
