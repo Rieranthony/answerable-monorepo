@@ -51,4 +51,4 @@ Tool output: scratchpad `baseline/knip.txt`, `baseline/jscpd.txt` (session scrat
 
 ## Audit findings by area (phase 2)
 
-(pending: A, B1, B2, C, D, E, F running)
+The seven audits are in `audits/`: `a-id-auth.md` (26 findings), `b1-admin-http-services.md` (38), `B2.md` (32), `c-id-shell.md` (35), `d-mcp-kit.md` (14), `e-mcp-servers-acceptance.md` (16), `f-web-ui.md` (26). The verdicts are in `task_plan.md` "Decisions"; the outcome is in `conclusions.md`.

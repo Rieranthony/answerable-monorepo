@@ -14,8 +14,8 @@
 | 1 | Mechanical baseline: knip (unused files, exports, dependencies), jscpd (duplicated blocks), tsc unused locals, smell greps, env and script inventories | complete |
 | 2 | Audits by area (Opus for ID and the SDK, Sonnet for the servers and the web), read-only, findings with evidence into `audits/` | complete: 7 audits, 187 findings |
 | 3 | Consolidate: one findings table with a verdict per item (delete, simplify, dedupe, fix, keep with reason); cross-check contradictions; decide | complete: decisions per area below |
-| 4 | Implement by area in waves, each with its workspace's gates; coordinator reviews every diff | in_progress |
-| 5 | Full gates on the branch, docs and READMEs updated, branch pushed for CI, memory updated | pending |
+| 4 | Implement by area in waves, each with its workspace's gates; coordinator reviews every diff | complete: G, F (23 commits), D+E (27), B2+B1+C+A (119), C35 (2), three coordinator commits |
+| 5 | Full gates on the branch, docs and READMEs updated, branch pushed for CI, memory updated | in_progress: gates green on the final tree; conclusions.md written; pushing for CI |
 
 ## Layout
 

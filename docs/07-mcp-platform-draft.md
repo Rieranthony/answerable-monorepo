@@ -24,7 +24,7 @@ MCPs live in `mcps/*`. Better Auth stays in ID; an MCP never creates accounts or
 
 **Tests in-process.** `createTestMcp` drives the official MCP client against the server's fetch handler, and the verifier fetches keys from an in-process test issuer. MCP unit tests open no port, so they also run in sandboxes that cannot bind one, such as Codex's. The Toolbox's suite needs Postgres.
 
-**Acceptance through the real product.** The fixture runs ID from production migrations and its restricted runtime role, and provisions everything through the admin API with the root secret, as an operator would. The journeys use the SDK's own OAuth client, as hosts do, and a real browser on ID's pages. Company directories are local test issuers.
+**Acceptance through the real product.** The acceptance runs ID from production migrations and its restricted runtime role, and the kit provisions everything through the admin API with the root secret, as an operator would. The journeys use the SDK's own OAuth client, as hosts do, and a real browser on ID's pages. Company directories are local test issuers.
 
 ## Not yet
 

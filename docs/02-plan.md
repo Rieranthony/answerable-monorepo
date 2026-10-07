@@ -117,3 +117,10 @@ RFC 8693 token exchange (built off the critical path, contributed upstream) · S
 - A second audit payload version before launch: every event is version 1 with one `data` shape per action; the first change after launch adds version 2.
 - Personal (user-owned) OAuth clients: a client belongs to an organisation, and user erasure has no owned-client branch.
 - Directory-managed groups before a directory sync exists: a group nothing syncs would stay empty and grant nothing.
+- A runtime registry for ID's capability contexts (WeakSet membership checks, single-use flags, frozen copies): the private-symbol brand types hold the kinds at compile time and typed `no-floating-promises` lint holds the lifetime ([V0 cleanup](goals/v0-cleanup/conclusions.md)).
+- Route metadata restated per admin route (the idempotency sentence, the `Idempotency-Key` parameter, the response headers, the standard problems): `adminRoute()` derives them from `kind`.
+- A local not-found helper or audit wrapper per service: `found` and `recordCommandEvent`.
+- Boot repairing operator-owned rows (the platform organisation's name, group, entitlement or capability) at every start: the first start provisions, later starts verify the binding and sync only the admin resource's code-owned definition.
+- A Redis service or variable in the local environment before code reads it.
+- A forced theme through a client provider on a dark-only site: a static `class="dark"`.
+- Counting a grant string from a client-limited entitlement for every host: a `client_resource` target counts through its own client only.
