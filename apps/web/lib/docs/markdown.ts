@@ -29,12 +29,7 @@ export function markdownTable(headers: string[], rows: string[][]) {
  * The type as written when it is short, else the simplified form the HTML table shows; `?` already says optional.
  * A `@remarks` tag in the source names the type outright, as it does for the HTML table.
  */
-export function displayType({
-  type,
-  simplifiedType,
-  required,
-  tags,
-}: TypeField) {
+function displayType({ type, simplifiedType, required, tags }: TypeField) {
   if (tags?.some((tag) => tag.name === "remarks")) return simplifiedType
   const written = required ? type : type.replace(/ \| undefined$/, "")
 
@@ -55,11 +50,6 @@ export function typeTableRows(fields: TypeField[]) {
     `\`${displayType(field)}\``,
     field.description,
   ])
-}
-
-/** A type table as a Markdown table. */
-export function typeTableMarkdown(fields: TypeField[]) {
-  return markdownTable(typeTableHeaders, typeTableRows(fields))
 }
 
 /** Number the `###` headings of a Steps block, `### 1. Scaffold a server`, as the page numbers its steps. */

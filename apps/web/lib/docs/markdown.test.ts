@@ -5,7 +5,8 @@ import {
   codeFence,
   markdownTable,
   numberSteps,
-  typeTableMarkdown,
+  typeTableHeaders,
+  typeTableRows,
 } from "./markdown"
 
 const field = {
@@ -17,7 +18,7 @@ const field = {
 }
 
 test("a type table escapes pipes, joins lines and marks optional fields", () => {
-  expect(typeTableMarkdown([field])).toBe(
+  expect(markdownTable(typeTableHeaders, typeTableRows([field]))).toBe(
     [
       "| Field | Type | Description |",
       "| --- | --- | --- |",
@@ -33,7 +34,9 @@ test("a long type falls back to its simplified form", () => {
     type: `{ ${"a: string; ".repeat(8)}}`,
   }
 
-  expect(typeTableMarkdown([long])).toContain("| `risk` | `union` |")
+  expect(markdownTable(typeTableHeaders, typeTableRows([long]))).toContain(
+    "| `risk` | `union` |",
+  )
 })
 
 test("a code fence carries its title and outgrows a fence inside the code", () => {

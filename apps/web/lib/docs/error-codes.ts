@@ -5,7 +5,7 @@ import { errorCodes, type ErrorCode } from "../../../../packages/mcp/src/errors"
 
 type Meaning = { meaning: string; action: string }
 
-export const errorMeanings: Record<ErrorCode, Meaning> = {
+const errorMeanings: Record<ErrorCode, Meaning> = {
   INVALID_INPUT: {
     meaning: "The input failed the schema or a business rule",
     action: "Fix the fields in `details.field_violations`",

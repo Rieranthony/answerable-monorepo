@@ -86,7 +86,7 @@ export const ACTIVE_PHOTO = "/mosaic/p8.webp"
  * `size` is the dot grid in REAL pixels, so it is independent of how large
  * the mosaic is drawn; it only tracks the capture resolution.
  */
-export type DitherType = "random" | "2x2" | "4x4" | "8x8"
+type DitherType = "random" | "2x2" | "4x4" | "8x8"
 
 export interface DitherSettings {
   type: DitherType
@@ -111,7 +111,7 @@ export const MOSAIC_DITHER: DitherSettings = {
   colorHighlight: "#e6e6e6",
 }
 
-export type Rot = 0 | 90 | 180 | 270
+type Rot = 0 | 90 | 180 | 270
 
 export interface Mark {
   shape: "square" | "comma" | "semicolon" | "focus-comma"

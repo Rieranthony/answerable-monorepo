@@ -81,7 +81,7 @@ export type Worksheet = {
   setDataValidation(range: GridRange, rule: ValidationRule): Promise<unknown>
 }
 
-export type OpenedSheet = {
+type OpenedSheet = {
   sheet: Worksheet
   /** IANA name from the spreadsheet's settings; timestamps are written in it. */
   timeZone?: string

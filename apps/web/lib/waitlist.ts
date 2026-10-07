@@ -6,7 +6,7 @@ import {
 } from "./sheets"
 
 export type WaitlistInput = { email: string; country: string }
-export type WaitlistErrors = Partial<Record<"email" | "country", string>>
+type WaitlistErrors = Partial<Record<"email" | "country", string>>
 
 export type WaitlistState =
   | { status: "idle" }
