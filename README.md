@@ -38,7 +38,7 @@ Current contracts describe implemented behaviour; historical reports retain impl
 
 ## Local environment
 
-`bun dev` starts Docker (Postgres + Redis) first, then the apps. Requirements: Docker Desktop (Compose v2) and Bun 1.3.1. The web app runs at `http://localhost:47100` and Answerable ID at `http://localhost:47300`.
+`bun dev` starts Docker (Postgres) first, then the apps. Requirements: Docker Desktop (Compose v2) and Bun 1.3.1. The web app runs at `http://localhost:47100` and Answerable ID at `http://localhost:47300`.
 
 ```bash
 bun install
@@ -60,7 +60,6 @@ bun dev
 | `e2e MCP`  | 47500     | The reference MCP (`bun run mcp:dev`); a scaffolded MCP uses 47510 |
 | `admin MCP` | 47520    | The admin MCP (`bun run admin:dev`)                           |
 | `postgres` | 47432     | `answerable_id`, plus `answerable_id_test` for the test suite; `answerable_toolbox` and `answerable_toolbox_test` for the Toolbox; `answerable_admin` and `answerable_admin_test` for the admin MCP; `answerable_mcp_postgres_test` for `packages/mcp-postgres` |
-| `redis`    | 47379     | Session read-cache — later; unused by v1 code                 |
 
 The MCP acceptance (`bun run mcp:test:e2e`) owns 47532 (its own disposable PostgreSQL), 47600, 47602, 47603, 47604, 47605 and 47606 (the admin MCP), and never touches the normal ID database; run one acceptance at a time. `bun packages/acceptance/scripts/admin-lane.ts` keeps ID, the admin MCP and the Toolbox up on the same ports, with 47700 and 47701 for Claude Code's callbacks, for trying the onboarding story from Claude Code by hand ([Set up the admin MCP](apps/web/content/docs/admin/setup.mdx)); the admin journeys run the same story headlessly, and the lane cannot run beside the acceptance. Uncommon host ports so nothing clashes with other local projects. Answerable ID itself runs on the host at `http://localhost:47300`. Other commands: `bun run env:down` · `bun run env:reset` (wipes data) · `bun run test` (Answerable ID against Postgres, plus the web unit tests) · `bun run build` · `bun run lint`.
 

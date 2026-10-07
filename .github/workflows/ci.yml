@@ -13,10 +13,7 @@ jobs:
     timeout-minutes: 15
     env:
       NODE_ENV: test
-      DATABASE_URL: postgres://answerable:answerable@localhost:47432/answerable_id
       TEST_DATABASE_URL: postgres://answerable:answerable@localhost:47432/answerable_id_test
-      BETTER_AUTH_URL: http://localhost:47300
-      BETTER_AUTH_SECRET: ci-only-secret-that-is-at-least-32-characters
 
     steps:
       - uses: actions/checkout@v4
@@ -31,7 +28,7 @@ jobs:
       - name: Start disposable PostgreSQL
         run: docker compose up -d --wait postgres
 
-      - name: Prove fresh migration and interrupted installation
+      - name: Prove fresh and repeated migration
         run: bun --filter @answerable/id test:migrations
 
       - name: Type-check

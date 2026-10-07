@@ -17,7 +17,7 @@ This is the dependency order, not a deployment claim. The [design](03-answerable
 
 ## Local environment
 
-`bun dev` starts the compose services and apps. Web: 47100; ID: 47300; Postgres: 47432; Redis: 47379. Test reset targets only the guarded `answerable_id_test` database. See [ID commands](../apps/id/README.md#commands).
+`bun dev` starts the compose services and apps. Web: 47100; ID: 47300; Postgres: 47432. Test reset targets only the guarded `answerable_id_test` database. See [ID commands](../apps/id/README.md#commands).
 
 ## Build order
 

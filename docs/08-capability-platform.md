@@ -261,6 +261,7 @@ Rate limits per organisation, per (organisation, principal), per (organisation, 
 8. Every use, refusal and mutation transition is evidence; evidence is append-only and verifiable.
 9. Annotations describe, they never authorise.
 10. Nothing identity-related leaves `apps/id`: the hub is a consumer of ID's tokens and admin API.
+11. The hub's admin API trusts ID for who may call it: a machine token with `toolbox:admin` is accepted without checking the client's organisation, because only platform staff can link a client to the admin resource in ID.
 
 ## Not yet
 
