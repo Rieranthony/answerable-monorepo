@@ -1,5 +1,6 @@
 import { revokeErasedUserGrantContexts } from "./grant-contexts.ts";
 import { lockUser as lockUserRow } from "../locks.ts";
+import { eraseTokensAndConsents } from "./oauth-tokens.ts";
 import type {
   PlatformReadContext,
   PlatformUsersContext,
@@ -13,7 +14,6 @@ import {
   exists,
   inArray,
   isNull,
-  or,
   sql,
 } from "drizzle-orm";
 
@@ -27,7 +27,6 @@ import {
   entitlements,
   oauthAccessTokens,
   oauthRefreshTokens,
-  oauthConsents,
 } from "../schema/index.ts";
 import type { PageQuery } from "../../http/pagination.ts";
 import { beforeCursor, cursorPage, optionalEq, contains } from "./lists.ts";
@@ -210,57 +209,8 @@ export async function deleteUser(
     .select({ id: members.id })
     .from(members)
     .where(and(isNull(members.deletedAt), eq(members.userId, userId)));
-  const refreshWhere = eq(oauthRefreshTokens.userId, userId);
-  const erasedRefreshIds = tx
-    .select({ id: oauthRefreshTokens.id })
-    .from(oauthRefreshTokens)
-    .where(refreshWhere);
-  const deletedAccessTokens = await tx
-    .delete(oauthAccessTokens)
-    .where(
-      or(
-        eq(oauthAccessTokens.userId, userId),
-        inArray(oauthAccessTokens.refreshId, erasedRefreshIds),
-      ),
-    )
-    .returning({
-      id: oauthAccessTokens.id,
-      userId: oauthAccessTokens.userId,
-      clientId: oauthAccessTokens.clientId,
-      sessionId: oauthAccessTokens.sessionId,
-      refreshId: oauthAccessTokens.refreshId,
-      scopes: oauthAccessTokens.scopes,
-      resources: oauthAccessTokens.resources,
-      expiresAt: oauthAccessTokens.expiresAt,
-      revoked: oauthAccessTokens.revoked,
-    });
-  const deletedRefreshTokens = await tx
-    .delete(oauthRefreshTokens)
-    .where(refreshWhere)
-    .returning({
-      id: oauthRefreshTokens.id,
-      userId: oauthRefreshTokens.userId,
-      clientId: oauthRefreshTokens.clientId,
-      sessionId: oauthRefreshTokens.sessionId,
-      scopes: oauthRefreshTokens.scopes,
-      resources: oauthRefreshTokens.resources,
-      expiresAt: oauthRefreshTokens.expiresAt,
-      revoked: oauthRefreshTokens.revoked,
-    });
-  const softDeletedConsents = await tx
-    .update(oauthConsents)
-    .set({ deletedAt: sql`now()` })
-    .where(
-      and(isNull(oauthConsents.deletedAt), eq(oauthConsents.userId, userId)),
-    )
-    .returning({
-      deletedAt: oauthConsents.deletedAt,
-      id: oauthConsents.id,
-      userId: oauthConsents.userId,
-      clientId: oauthConsents.clientId,
-      scopes: oauthConsents.scopes,
-      resources: oauthConsents.resources,
-    });
+  const { deletedAccessTokens, deletedRefreshTokens, softDeletedConsents } =
+    await eraseTokensAndConsents(tx, "userId", userId);
   const clearedAccessTokenSessions = await tx
     .update(oauthAccessTokens)
     .set({ sessionId: null })
