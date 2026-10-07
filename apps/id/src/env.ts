@@ -46,6 +46,26 @@ const upstreamTokenSecrets = z.string().transform((value, context) => {
   }
 });
 
+/** The largest delay setTimeout honours; above it the timer fires at once. */
+const maxTimerMs = 2_147_483_647;
+
+/** A timer interval: zero disables it, otherwise at least a second. */
+const intervalMs = (fallback: number) =>
+  z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(maxTimerMs)
+    .refine(
+      (value) => value === 0 || value >= 1000,
+      "Use zero to disable or at least 1000 milliseconds",
+    )
+    .default(fallback);
+
+/** A positive count or duration that a timer or the database accepts. */
+const positiveInt32 = (fallback: number) =>
+  z.coerce.number().int().min(1).max(maxTimerMs).default(fallback);
+
 const optionalCredential = z.preprocess(
   (value) =>
     typeof value === "string" && value.trim() === "" ? undefined : value,
@@ -95,61 +115,15 @@ const environmentSchema = z
       .min(0)
       .max(Number.MAX_SAFE_INTEGER)
       .default(0),
-    OPERATIONAL_LOG_INTERVAL_MS: z.coerce
-      .number()
-      .int()
-      .min(0)
-      .max(2_147_483_647)
-      .refine(
-        (value) => value === 0 || value >= 1000,
-        "Use zero to disable or at least 1000 milliseconds",
-      )
-      .default(30_000),
-    PROTOCOL_SWEEP_INTERVAL_MS: z.coerce
-      .number()
-      .int()
-      .min(0)
-      .max(2_147_483_647)
-      .refine(
-        (value) => value === 0 || value >= 1000,
-        "Use zero to disable or at least 1000 milliseconds",
-      )
-      .default(60_000),
-    PROTOCOL_SWEEP_BATCH: z.coerce
-      .number()
-      .int()
-      .min(1)
-      .max(2_147_483_647)
-      .default(1_000),
-    DATABASE_POOL_MAX: z.coerce.number().int().min(1).default(20),
-    DATABASE_POOL_IDLE_TIMEOUT_MS: z.coerce
-      .number()
-      .int()
-      .min(1)
-      .default(10_000),
-    DATABASE_STATEMENT_TIMEOUT_MS: z.coerce
-      .number()
-      .int()
-      .min(1)
-      .max(2_147_483_647)
-      .default(10_000),
-    DATABASE_LOCK_TIMEOUT_MS: z.coerce
-      .number()
-      .int()
-      .min(1)
-      .max(2_147_483_647)
-      .default(2_000),
-    DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS: z.coerce
-      .number()
-      .int()
-      .min(1)
-      .max(2_147_483_647)
-      .default(15_000),
-    DATABASE_CONNECTION_TIMEOUT_MS: z.coerce
-      .number()
-      .int()
-      .min(1)
-      .default(5_000),
+    OPERATIONAL_LOG_INTERVAL_MS: intervalMs(30_000),
+    PROTOCOL_SWEEP_INTERVAL_MS: intervalMs(60_000),
+    PROTOCOL_SWEEP_BATCH: positiveInt32(1_000),
+    DATABASE_POOL_MAX: positiveInt32(20),
+    DATABASE_POOL_IDLE_TIMEOUT_MS: positiveInt32(10_000),
+    DATABASE_STATEMENT_TIMEOUT_MS: positiveInt32(10_000),
+    DATABASE_LOCK_TIMEOUT_MS: positiveInt32(2_000),
+    DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS: positiveInt32(15_000),
+    DATABASE_CONNECTION_TIMEOUT_MS: positiveInt32(5_000),
     OPENAPI_ENABLED: z.enum(["true", "false"]).optional(),
   })
   .refine(
