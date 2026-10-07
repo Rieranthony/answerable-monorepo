@@ -8,5 +8,4 @@ Run `bun run mosaic` from `apps/web` to centre-crop it to 2:3, resize it to
 and is the only photograph loaded by the mosaic.
 
 The browser shader applies the halftone using the settings in `MOSAIC_DITHER`
-in `lib/mosaic-layout.ts`. The development tuner previews adjustments and copies
-settings to paste into `MOSAIC_DITHER`.
+in `lib/mosaic-layout.ts`.
