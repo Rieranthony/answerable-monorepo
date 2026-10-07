@@ -1,6 +1,6 @@
 import "server-only"
 
-import { COMMA_PATH } from "@/components/logo"
+import { COMMA_PATH, COMMA_VIEW_BOX } from "@answerable/ui/lib/logo"
 
 const MAX_TITLE_LENGTH = 58
 
@@ -71,12 +71,7 @@ export function DocsOgImage({
           lineHeight: 1,
         }}
       >
-        <svg
-          viewBox="1103.79 215.998 48.21 72.002"
-          width="27"
-          height="40"
-          fill="#000000"
-        >
+        <svg viewBox={COMMA_VIEW_BOX} width="27" height="40" fill="#000000">
           <path d={COMMA_PATH} />
         </svg>
         <span style={{ fontWeight: 700 }}>Answerable</span>

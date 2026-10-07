@@ -9,6 +9,8 @@
  * The PRNG call order defines the layout; treat any reordering as a reseed.
  */
 
+import { COMMA_BOX } from "@answerable/ui/lib/logo"
+
 export const MOSAIC = {
   seed: 20260829,
   cols: 17,
@@ -71,13 +73,6 @@ export const MOSAIC = {
   staggerMs: 240,
 } as const
 
-/** Bounding box of COMMA_PATH in the logo's own coordinates. */
-export const COMMA_BOX = {
-  x: 1103.79,
-  y: 215.998,
-  w: 48.21,
-  h: 72.002,
-} as const
 /** Normalizes the comma to a 48-unit-wide, cell-local shape (undistorted). */
 export const COMMA_SCALE = 48 / COMMA_BOX.w
 

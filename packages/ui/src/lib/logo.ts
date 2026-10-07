@@ -5,6 +5,17 @@
 export const COMMA_PATH =
   "M1152 215.998V263.833L1127.72 288H1103.79C1103.79 288 1117.9 272.422 1124.57 266.992L1124.56 263.833H1104L1104.01 215.998H1152Z"
 
+/** Bounding box of COMMA_PATH in the logo's own coordinates. */
+export const COMMA_BOX = {
+  x: 1103.79,
+  y: 215.998,
+  w: 48.21,
+  h: 72.002,
+} as const
+
+/** The comma's box as an SVG `viewBox`: the comma on its own canvas. */
+export const COMMA_VIEW_BOX = `${COMMA_BOX.x} ${COMMA_BOX.y} ${COMMA_BOX.w} ${COMMA_BOX.h}`
+
 export const LOGO_PATHS: readonly { id: string; d: string }[] = [
   {
     id: "square-tl",

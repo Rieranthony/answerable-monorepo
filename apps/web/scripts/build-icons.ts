@@ -1,10 +1,10 @@
 import { writeFile } from "node:fs/promises"
 import sharp from "sharp"
-import { COMMA_PATH } from "../components/logo"
+import { COMMA_PATH, COMMA_VIEW_BOX } from "@answerable/ui/lib/logo"
 
 // Run from apps/web: bun scripts/build-icons.ts
 const svg = Buffer.from(
-  `<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180" viewBox="0 0 180 180"><rect width="180" height="180" fill="black"/><svg x="54" y="36" width="72" height="108" viewBox="1103.79 215.998 48.21 72.002"><path fill="white" d="${COMMA_PATH}"/></svg></svg>`,
+  `<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180" viewBox="0 0 180 180"><rect width="180" height="180" fill="black"/><svg x="54" y="36" width="72" height="108" viewBox="${COMMA_VIEW_BOX}"><path fill="white" d="${COMMA_PATH}"/></svg></svg>`,
 )
 await sharp(svg).png().toFile("app/apple-icon.png")
 

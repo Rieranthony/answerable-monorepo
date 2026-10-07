@@ -3,15 +3,14 @@
 import { useCallback, useEffect, useState } from "react"
 import { preload } from "react-dom"
 
-import { COMMA_PATH } from "@/components/logo"
 import { MosaicDither, useDitherSettings } from "@/components/mosaic-dither"
 import {
   ACTIVE_PHOTO,
-  COMMA_BOX,
   COMMA_SCALE,
   computeMosaicLayout,
   MOSAIC,
 } from "@/lib/mosaic-layout"
+import { COMMA_BOX, COMMA_PATH } from "@answerable/ui/lib/logo"
 import { cn } from "@answerable/ui/lib/utils"
 
 /**
