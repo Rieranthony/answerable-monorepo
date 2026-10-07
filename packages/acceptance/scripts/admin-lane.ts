@@ -4,7 +4,7 @@ import { decodeJwt } from "jose"
 import { z } from "zod"
 import { adminResource, startAdminStack } from "../src/admin-mcp"
 import { cleanup, onCleanup } from "../src/cleanup"
-import { launchBrowser, linkClient, serve, setSsoProvider, signIn, startId, step } from "../src/index"
+import { launchBrowser, linkClient, serve, serveCallback, setSsoProvider, signIn, startId, step } from "../src/index"
 import { toolboxResource, type HostClient } from "../src/toolbox"
 
 // A failure must not leave ID, its database and the servers running behind it.
@@ -46,10 +46,9 @@ const browser = await launchBrowser()
 
 /** Sign a person in as Claude Code does, with the kit's browser, listening on the host client's callback port only while it runs: Claude Code listens there itself. */
 async function signInAs(host: HostClient, resource: string, scope: string, person: { slug: string; email: string }) {
-  const callback = new URL(host.redirectUri)
-  const listener = serve(Number(callback.port), () => new Response("Signed in"))
+  const listener = serveCallback(host.redirectUri)
   try {
-    return await signIn(browser, { idOrigin: manifest.idOrigin, resource, clientId: host.clientId, callback: callback.href, scopes: [scope] }, { ...person, scopes: [scope] })
+    return await signIn(browser, { idOrigin: manifest.idOrigin, resource, clientId: host.clientId, callback: host.redirectUri, scopes: [scope] }, { ...person, scopes: [scope] })
   } finally {
     listener.stop(true)
   }

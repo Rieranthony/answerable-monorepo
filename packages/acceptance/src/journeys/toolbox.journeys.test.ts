@@ -6,7 +6,7 @@ import { allowedScopes } from "@answerable/mcp-toolbox/grants"
 import type { Client } from "@modelcontextprotocol/client"
 import { decodeJwt } from "jose"
 import { z } from "zod"
-import { connect, launchBrowser, refusal, serve, signIn, startId, step, tool, type Id, type OAuthSession } from "../index"
+import { connect, intentSchema, launchBrowser, refreshRefused, refusal, serve, serveCallback, signIn, startId, step, tool, type Id, type OAuthSession } from "../index"
 import { startToolboxStack, toolboxResource as resource } from "../toolbox"
 
 const callback = "http://127.0.0.1:47603/callback"
@@ -21,7 +21,6 @@ const tenants = [
 const records = ["e2e_records_create", "e2e_records_delete", "e2e_records_list", "e2e_records_show"]
 const commits = ["toolbox_commit", "toolbox_commit_confirmed"]
 const metaTools = ["toolbox_whoami", "toolbox_search", "toolbox_describe", "toolbox_execute", "toolbox_prepare", ...commits]
-const intentSchema = z.object({ intent_id: z.uuid(), commit_token: z.string(), commit_tool: z.string(), policy_class: z.string(), preview: z.object({ summary: z.string() }) })
 const commitArgs = ({ intent_id, commit_token }: z.infer<typeof intentSchema>) => ({ intent_id, commit_token })
 const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
 
@@ -69,7 +68,7 @@ beforeAll(async () => {
     return read(principal)
   }
   serve(47_604, toolbox.fetch)
-  serve(Number(new URL(callback).port), () => new Response("Signed in. You can close this page."))
+  serveCallback(callback)
   // The catalogue is the ceiling: gamma may use e2e but has no entitlement to any of it until J3. Alpha also signs in through the meta host client.
   step("Enabling the Toolbox for each organisation through its admin API, then entitling members and setting the meta host client")
   for (const { slug, grants } of tenants) {
@@ -260,13 +259,7 @@ describe("J3 grant change without re-authorisation", () => {
 test("J2: disabling gamma's organisation stops refresh with invalid_grant", async () => {
   const { oauth, organizationId } = session("toolbox-gamma")
   await id.admin("POST", `/organizations/${organizationId}/disable`)
-  const refused = await fetch(oauth.state.discovery!.authorizationServerMetadata!.token_endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "refresh_token", client_id: clientId, refresh_token: String(oauth.state.tokens?.refresh_token), resource }),
-  })
-  expect(refused.status).toBe(400)
-  expect(await refused.json()).toMatchObject({ error: "invalid_grant" })
+  await refreshRefused(oauth, clientId, resource)
 })
 
 describe("J10 evidence", () => {

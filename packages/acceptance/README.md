@@ -14,9 +14,9 @@ Requires Bun 1.3.1 and Docker Compose. It starts PostgreSQL in a Compose project
 | --- | --- |
 | `src/id.ts` | `startId`: Compose, the ID fixture (`apps/id/scripts/mcp-e2e-fixture.ts`) with its plan (`tenants`, `platform`, `spares`), the manifest, `stop` |
 | `src/admin.ts` | `createAdmin` and the provisioning functions over ID's admin API, including `registerMachine` and `setSsoProvider` |
-| `src/oauth.ts` | The SDK's OAuth client provider in memory, which `signIn` fills |
+| `src/oauth.ts` | The SDK's OAuth client provider in memory, which `signIn` fills, and `refreshRefused` |
 | `src/browser.ts` | `launchBrowser`, `signIn`, `signInRefused` and `verifySignIn`: the SDK challenge and ID's pages in Chromium |
-| `src/mcp.ts` | `serve`, `connect`, `tool` and `refusal` |
+| `src/mcp.ts` | `serve`, `serveCallback`, `connect`, `tool`, `refusal` and the journeys' `intentSchema` |
 | `src/cleanup.ts` | What `stop` and Ctrl-C run, and a collection of garbage after them |
 | `src/toolbox.ts` | `startToolboxStack`: the Toolbox registered in ID with its host clients, its machine client and a staff client, its database and its poller; the Toolbox journeys and the host lane start from it |
 | `src/admin-mcp.ts` | `startAdminStack`: the admin MCP and the Toolbox registered in ID as the admin MCP's setup page shows, with a database each and the Toolbox's poller; the admin journeys and the admin lane start from it |

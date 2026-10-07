@@ -4,6 +4,8 @@
 
 `startId` and the host lane find `compose.yaml` and `apps/id` in a checkout whose path has a space or a non-ASCII character: they decode the file URL instead of passing its percent-encoded path to Docker Compose and Bun.
 
+- `refreshRefused(session, clientId, resource)`, `serveCallback(callback)` and `intentSchema` are exported: the three journeys each wrote the refused refresh after a disabled organisation, the callback server and a schema of the prepared intent, and the admin lane its own callback server.
+
 ## 0.5.0
 
 What the test audit kept of the acceptance. Breaking: `approve` is no longer exported, and the lanes have no `--check`.

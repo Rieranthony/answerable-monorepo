@@ -9,12 +9,15 @@ import { z } from "zod"
 import {
   connect,
   grantOrganisation,
+  intentSchema,
   launchBrowser,
   linkClient,
+  refreshRefused,
   refusal,
   registerClient,
   registerResource,
   serve,
+  serveCallback,
   signIn,
   startId,
   step,
@@ -38,14 +41,6 @@ const readTools = ["identity_get", "records_list", "records_show"]
 const allTools = [...readTools, "records_create", "records_delete", "e2e_commit", "e2e_commit_confirmed"]
 const protocols = ["2025", "2026-07-28"] as const
 
-const intentSchema = z.object({
-  intent_id: z.uuid(),
-  commit_token: z.string(),
-  commit_tool: z.string(),
-  policy_class: z.string(),
-  expires_at: z.iso.datetime(),
-  preview: z.object({ summary: z.string(), changes: z.array(z.unknown()) }),
-})
 const recordSchema = z.object({ id: z.uuid(), organizationId: z.uuid(), title: z.string(), version: z.number() })
 const receiptSchema = z.object({ intent_id: z.uuid(), status: z.string(), idempotent_replay: z.boolean(), results: z.record(z.string(), z.unknown()) })
 const identitySchema = z.object({ userId: z.string(), organizationId: z.string(), scopes: z.array(z.string()) })
@@ -79,7 +74,7 @@ beforeAll(async () => {
   const provider = createE2eProvider({ records: createRecordStore(), viewHtml: "<!doctype html><title>Records</title>" })
   serve(47_602, createMcpServer({ provider, auth: { issuer: manifest.idOrigin, resource } }).fetch)
   serve(47_605, createMcpServer({ provider, auth: { issuer: manifest.idOrigin, resource: otherResource } }).fetch)
-  serve(Number(new URL(callback).port), () => new Response("Signed in. You can close this page."))
+  serveCallback(callback)
   browser = await launchBrowser()
 })
 afterAll(() => id?.stop())
@@ -202,15 +197,7 @@ test("disabling an organisation stops refresh with invalid_grant, while the acce
     step(`${slug}: disabling the organisation stops refresh`)
     const { oauth, organizationId } = session(slug)
     await id.admin("POST", `/organizations/${organizationId}/disable`)
-    const endpoint = oauth.state.discovery?.authorizationServerMetadata?.token_endpoint
-    expect(endpoint).toBeString()
-    const refused = await fetch(endpoint!, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ grant_type: "refresh_token", client_id: clientId, refresh_token: String(oauth.state.tokens?.refresh_token), resource }),
-    })
-    expect(refused.status).toBe(400)
-    expect(await refused.json()).toMatchObject({ error: "invalid_grant" })
+    await refreshRefused(oauth, clientId, resource)
     const client = await clientFor(slug, "2025")
     expect((await tool(client, "identity_get")).organizationId).toBe(organizationId)
   }

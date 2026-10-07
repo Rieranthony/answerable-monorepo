@@ -8,7 +8,10 @@ import type { BrowserContext } from "@playwright/test"
 import { decodeJwt } from "jose"
 import { z } from "zod"
 import { adminResource, startAdminStack } from "../admin-mcp"
-import { connect, grantOrganisation, launchBrowser, refusal, serve, setSsoProvider, signIn, signInRefused, startId, step, tool, verifySignIn, type Id, type OAuthSession } from "../index"
+import {
+  connect, grantOrganisation, intentSchema, launchBrowser, refreshRefused, refusal, serve, serveCallback, setSsoProvider, signIn, signInRefused, startId, step, tool, verifySignIn,
+  type Id, type OAuthSession,
+} from "../index"
 import { toolboxResource } from "../toolbox"
 
 const callback = "http://127.0.0.1:47603/callback"
@@ -27,10 +30,6 @@ const adminTools = [...teamTools, ...ordinary, ...commits].toSorted()
 const ownerTools = [...adminTools, ...critical].toSorted()
 const toolboxTools = ["toolbox_whoami", "e2e_identity_get", "e2e_records_create", "e2e_records_delete", "e2e_records_list", "e2e_records_show", "toolbox_commit", "toolbox_commit_confirmed"].toSorted()
 
-const intentSchema = z.object({
-  intent_id: z.uuid(), commit_token: z.string(), commit_tool: z.string(), policy_class: z.string(),
-  targets: z.array(z.object({ resource_type: z.string(), resource_id: z.string(), version: z.object({ kind: z.string(), value: z.string() }) })), preview: z.object({ summary: z.string() }),
-})
 const receiptSchema = z.object({
   receipt_id: z.uuid(), intent_id: z.uuid(), status: z.literal("committed"), results: z.record(z.string(), z.unknown()),
   committed_by: z.object({ client_id: z.string() }), idempotent_replay: z.boolean(),
@@ -125,7 +124,7 @@ beforeAll(async () => {
   adminMcp = stack.adminMcp()
   serve(47_606, request => adminMcp.fetch(request))
   serve(47_604, stack.toolbox.fetch)
-  serve(Number(new URL(callback).port), () => new Response("Signed in. You can close this page."))
+  serveCallback(callback)
   browser = await launchBrowser()
   staffBrowser = await browser.newContext()
 })
@@ -315,13 +314,7 @@ describe("A3 the Toolbox outcome", () => {
     const { receipt } = await change(staffClient, "organisations_disable", { organizationId: newco.organizationId })
     expect(receipt.results).toMatchObject({ organizationId: newco.organizationId, status: "disabled" })
     await audited(staffClient, receipt)
-    const refused = await fetch(person.state.discovery!.authorizationServerMetadata!.token_endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ grant_type: "refresh_token", client_id: toolboxHost.clientId, refresh_token: String(person.state.tokens?.refresh_token), resource: toolboxResource }),
-    })
-    expect(refused.status).toBe(400)
-    expect(await refused.json()).toMatchObject({ error: "invalid_grant" })
+    await refreshRefused(person, toolboxHost.clientId, toolboxResource)
   })
 })
 

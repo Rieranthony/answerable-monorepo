@@ -1,6 +1,6 @@
 export { grantOrganisation, linkClient, registerClient, registerMachine, registerResource, setSsoProvider, type Admin } from "./admin"
 export { launchBrowser, signIn, signInRefused, verifySignIn } from "./browser"
 export { startId, type Id } from "./id"
-export { connect, refusal, serve, tool } from "./mcp"
-export type { OAuthSession } from "./oauth"
+export { connect, intentSchema, refusal, serve, serveCallback, tool } from "./mcp"
+export { refreshRefused, type OAuthSession } from "./oauth"
 export { step } from "./step"

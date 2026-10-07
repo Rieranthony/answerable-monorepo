@@ -148,7 +148,7 @@ Keep these free. PostgreSQL belongs to the Compose project `answerable-mcp-e2e` 
 
 ## The kit
 
-`@answerable/acceptance` (`packages/acceptance`) exports these functions. Everything that a journey varies is provisioned by the kit through ID's admin API with the root secret; only the organisations, domains and company directories of the plan (`tenants`, `platform` and `spares`) come from the fixture.
+`@answerable/acceptance` (`packages/acceptance`) exports these functions, and `intentSchema`, the Zod schema of what a prepare tool answers as far as the journeys read it. Everything that a journey varies is provisioned by the kit through ID's admin API with the root secret; only the organisations, domains and company directories of the plan (`tenants`, `platform` and `spares`) come from the fixture.
 
 | Function | What it does |
 | --- | --- |
@@ -162,6 +162,7 @@ Keep these free. PostgreSQL belongs to the Compose project `answerable-mcp-e2e` 
 | `registerMachine(admin, organizationId, clientId, audiences)` | Registers a machine client owned by the organisation, for the `client_credentials` grant. `audiences` maps each resource to the scopes the client may ask there: `{ [manifest.adminResource]: ["platform:read"], [toolboxAdmin]: ["toolbox:admin"] }`. Returns `{ clientId, clientSecret }`; ID shows the secret once. |
 | `setSsoProvider(admin, organizationId, spare)` | Sets an organisation's single sign-on to a spare directory from `manifest.spares`, with the directory's own credentials. The organisation must already hold `spare.domain`. |
 | `serve(port, fetch)` | Serves a fetch handler on a loopback port until the kit stops. |
+| `serveCallback(callback)` | Serves the sign-in's OAuth callback URL on its port until the kit stops, answering the browser ID sends back. |
 | `launchBrowser()` | Starts headless Chromium with Playwright's signal handlers off, so cleanup runs on Ctrl-C. |
 | `signIn(browser, { idOrigin, resource, clientId, callback, scopes }, { slug, email, scopes })` | Signs one person in as a host does, in a browser, or in one of its contexts when ID's session must carry from one sign-in to the next: the SDK follows the MCP's `401`, a real browser completes ID's pages, the SDK exchanges the code. Returns an `OAuthSession`, `{ provider, state }`: the SDK's `OAuthClientProvider` for a client registered in ID ahead of time, and the tokens, authorisation URL and discovery result it saved. The first `scopes` are what the MCP advertises; the second are what the organisation is entitled to, and the consent page must list exactly those and name the rest as not approved. |
 | `verifySignIn(context, idOrigin)` | What ID's Security page asks of a person whose last company sign-in is too old: in the context that holds their ID session, opens `<idOrigin>/security`, chooses **Verify sign-in**, and returns when the company directory has brought the browser back. ID makes a new session, so the next `signIn` through the context carries the new sign-in time. Throws with ID's message when ID refuses. Takes one queued sign-in. |
@@ -169,6 +170,7 @@ Keep these free. PostgreSQL belongs to the Compose project `answerable-mcp-e2e` 
 | `connect(resource, provider, protocol)` | Connects the official MCP client, as a `"2025"` client or pinned to `"2026-07-28"`. A `"2026-07-28"` client hears `tools/list_changed` once it calls `listen({ toolsListChanged: true })` with a handler set by `setNotificationHandler`, as J3 does. |
 | `tool(client, name, args?)` | Calls a tool and returns its `structuredContent`. A failed call throws with the envelope's code and message. |
 | `refusal(client, name, args?)` | Calls a tool that must fail and returns the `error` of its envelope, read with [`errorOf`](/docs/mcp/testing#serve-a-provider-in-process). |
+| `refreshRefused(session, clientId, resource)` | Refreshes the session's tokens for `resource` as `clientId` and throws unless ID answers `400 invalid_grant`, as it does once the organisation is disabled. |
 | `step(message)` | Prints `[acceptance] message`. |
 
 ## Write a journey
@@ -180,7 +182,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test"
 import { createMcpServer } from "@answerable/mcp"
 import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
 import { createRecordStore } from "@answerable/mcp-e2e/records"
-import { connect, grantOrganisation, launchBrowser, linkClient, registerClient, registerResource, serve, signIn, startId, tool, type Id, type OAuthSession } from "../index"
+import { connect, grantOrganisation, launchBrowser, linkClient, registerClient, registerResource, serve, serveCallback, signIn, startId, tool, type Id, type OAuthSession } from "../index"
 
 const resource = "http://127.0.0.1:47602/mcp"
 const callback = "http://127.0.0.1:47603/callback"
@@ -199,7 +201,7 @@ beforeAll(async () => {
   await grantOrganisation(admin, acme.organizationId, { clientId, resource, scopes })
   const provider = createE2eProvider({ records: createRecordStore(), viewHtml: "<!doctype html>" })
   serve(47_602, createMcpServer({ provider, auth: { issuer: manifest.idOrigin, resource } }).fetch)
-  serve(47_603, () => new Response("Signed in"))
+  serveCallback(callback)
   oauth = await signIn(await launchBrowser(), { idOrigin: manifest.idOrigin, resource, clientId, callback, scopes }, { slug: acme.slug, email: acme.email, scopes })
 })
 afterAll(() => id?.stop())
