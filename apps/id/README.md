@@ -9,7 +9,6 @@ Identity and authorisation service for Answerable. Own-tenant SSO, verified link
 - Admin API: `/api/admin/v1` — caller, organisations, domains, SSO provider, users, sessions, members, groups and group members, clients and their owners/resource links, resources, entitlements, access views and audit events
 - Public OpenAPI contract: `/openapi.json` — the reachable routes only; snapshot: `apps/id/openapi.json`
 - Admin OpenAPI: `/api/admin/openapi.json` — snapshot: `apps/id/openapi.admin.json`; regenerate both snapshots with `bun run openapi:export`
-- Admin docs: `/api/admin/docs` in development and test only
 - Liveness: `/healthz` (no database query)
 - Readiness: `/readyz` (one `select 1`)
 

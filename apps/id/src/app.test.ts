@@ -122,10 +122,9 @@ describe("unit: Hono application", () => {
 
     expect((await app.request("/openapi.json")).status).toBe(404);
     expect((await app.request("/api/admin/openapi.json")).status).toBe(404);
-    expect((await app.request("/api/admin/docs")).status).toBe(404);
   });
 
-  test("keeps the OpenAPI contract but hides interactive docs in production", async () => {
+  test("serves the OpenAPI contract in production when enabled", async () => {
     const app = createApp({
       auth: stubAuth(),
       db: stubDatabase(),
@@ -134,7 +133,6 @@ describe("unit: Hono application", () => {
 
     expect((await app.request("/openapi.json")).status).toBe(200);
     expect((await app.request("/api/admin/openapi.json")).status).toBe(200);
-    expect((await app.request("/api/admin/docs")).status).toBe(404);
   });
 
   test("forwards only allowlisted Better Auth routes", async () => {

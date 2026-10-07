@@ -1,6 +1,5 @@
 import { createPagesApp, isPagePath } from "./http/pages/index.ts";
 import { getIP } from "@better-auth/core/utils/ip";
-import { Scalar } from "@scalar/hono-api-reference";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { describeRoute, openAPIRouteHandler, resolver } from "hono-openapi";
@@ -200,15 +199,6 @@ export function createApp(services: AppServices, testing: AppTesting = {}) {
         },
       }),
     );
-    if (services.environment.nodeEnv !== "production") {
-      app.get(
-        "/api/admin/docs",
-        Scalar({
-          pageTitle: "Answerable ID Admin API",
-          url: "/api/admin/openapi.json",
-        }),
-      );
-    }
   }
 
   app.all("/auth/*", async (context) => {
