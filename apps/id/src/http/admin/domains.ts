@@ -187,7 +187,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "deleteOrganizationDomain",
         { organizationId, domainId },
         204,
         async (platform) => {
@@ -227,7 +226,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "createOrganizationDomain",
         { organizationId, ...input },
         201,
         async (platform) => {
@@ -251,7 +249,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "disableOrganizationDomain",
         { organizationId, domainId },
         200,
         async (platform) => {
@@ -279,7 +276,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "enableOrganizationDomain",
         { organizationId, domainId },
         200,
         async (platform) => {

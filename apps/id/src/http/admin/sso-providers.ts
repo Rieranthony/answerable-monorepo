@@ -302,7 +302,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "putSsoProvider",
         operationJson({ organizationId, expected, input }),
         200,
         async (platform) => {
@@ -338,7 +337,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "deleteSsoProvider",
         { organizationId },
         204,
         async (platform) => {

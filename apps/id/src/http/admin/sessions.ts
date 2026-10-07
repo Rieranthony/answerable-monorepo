@@ -144,7 +144,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "users",
-        "revokeUserSessions",
         operationJson({ userId }),
         200,
         async (platform) => {
@@ -168,7 +167,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "users",
-        "revokeUserSession",
         operationJson({ userId, sessionId }),
         204,
         async (platform) => {

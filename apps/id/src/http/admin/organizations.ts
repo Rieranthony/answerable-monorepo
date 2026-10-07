@@ -266,20 +266,13 @@ export function register(app: Hono<AppEnvironment>) {
     validate("json", createSchema),
     async (context) => {
       const input = createSchema.parse(await context.req.json());
-      return platformCommand(
-        context,
-        "write",
-        "createOrganization",
-        input,
-        201,
-        async (platform) => {
-          const body = await service.createOrganization(platform, input);
-          return {
-            body,
-            resultReference: { type: "organization", id: body.id },
-          };
-        },
-      );
+      return platformCommand(context, "write", input, 201, async (platform) => {
+        const body = await service.createOrganization(platform, input);
+        return {
+          body,
+          resultReference: { type: "organization", id: body.id },
+        };
+      });
     },
   );
   registerRoute(
@@ -308,7 +301,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "updateOrganization",
         { organizationId, ...(expected ? { expected } : {}), patch },
         200,
         async (platform) => {
@@ -342,7 +334,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "disableOrganization",
         { organizationId },
         200,
         async (platform) => {
@@ -368,7 +359,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "enableOrganization",
         { organizationId },
         200,
         async (platform) => {
@@ -396,7 +386,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "eraseOrganization",
         { organizationId, confirm },
         204,
         async (platform) => {

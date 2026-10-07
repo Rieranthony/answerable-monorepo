@@ -271,7 +271,6 @@ export function register(app: Hono<AppEnvironment>) {
       const memberId = context.req.param("memberId")!;
       return tenantMemberCommand(
         context,
-        "reinstateMember",
         organizationId,
         { memberId },
         200,
@@ -334,7 +333,6 @@ export function register(app: Hono<AppEnvironment>) {
       const memberId = context.req.param("memberId")!;
       return tenantMemberCommand(
         context,
-        "updateMember",
         organizationId,
         operationJson({ memberId, patch, expected }),
         200,
@@ -363,7 +361,6 @@ export function register(app: Hono<AppEnvironment>) {
       const memberId = context.req.param("memberId")!;
       return tenantMemberCommand(
         context,
-        "removeMember",
         organizationId,
         { memberId },
         204,

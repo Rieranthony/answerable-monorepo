@@ -420,7 +420,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "eraseClient",
         { clientId, confirm },
         204,
         async (platform) => {
@@ -473,7 +472,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "createClient",
         operationJson(input),
         201,
         async (platform) => {
@@ -512,7 +510,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "updateClient",
         operationJson({ clientId, expected, patch: input }),
         200,
         async (platform) => {
@@ -546,7 +543,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "disableClient",
         { clientId },
         200,
         async (platform) => {
@@ -569,7 +565,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "enableClient",
         { clientId },
         200,
         async (platform) => {
@@ -592,7 +587,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "rotateClientSecret",
         { clientId },
         200,
         async (platform) => ({
@@ -613,7 +607,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "setClientOwner",
         { clientId, ...input },
         200,
         async (platform) => ({
@@ -638,7 +631,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "linkClientResource",
         { clientId, resource },
         201,
         async (platform) => {
@@ -667,7 +659,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "unlinkClientResource",
         { clientId, resource },
         204,
         async (platform) => {

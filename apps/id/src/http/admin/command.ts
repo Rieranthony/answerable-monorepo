@@ -54,7 +54,6 @@ type CommandOptions = {
 
 async function httpCommand<T>(
   context: Context<AppEnvironment>,
-  name: string,
   input: OperationJson,
   statusCode: number,
   authority: {
@@ -85,7 +84,8 @@ async function httpCommand<T>(
     {
       actorInstance: `${actor.actorType}:${actor.actorId}`,
       authorityScope: authority.scope,
-      name,
+      // The route's operationId names the command in the journal.
+      name: context.get("operationId")!,
       key,
       input,
     },
@@ -129,7 +129,6 @@ async function httpCommand<T>(
 export function platformCommand<Access extends "users" | "write">(
   context: Context<AppEnvironment>,
   access: Access,
-  name: string,
   input: OperationJson,
   statusCode: number,
   mutate: (platform: PlatformMutationContext<Access>) => Promise<CommandResult>,
@@ -137,7 +136,6 @@ export function platformCommand<Access extends "users" | "write">(
 ) {
   return httpCommand(
     context,
-    name,
     input,
     statusCode,
     {
@@ -160,7 +158,6 @@ export function platformCommand<Access extends "users" | "write">(
 
 export function tenantMemberCommand(
   context: Context<AppEnvironment>,
-  name: string,
   organizationId: string,
   input: OperationJson,
   statusCode: number,
@@ -168,7 +165,6 @@ export function tenantMemberCommand(
 ) {
   return httpCommand(
     context,
-    name,
     { organizationId, input },
     statusCode,
     {

@@ -435,7 +435,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "createGroup",
         operationJson({ organizationId, input }),
         201,
         async (platform) => {
@@ -474,7 +473,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "updateGroup",
         operationJson({ organizationId, groupId, expected, patch }),
         200,
         async (platform) => {
@@ -510,7 +508,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "disableGroup",
         operationJson({ organizationId, groupId }),
         200,
         async (platform) => {
@@ -538,7 +535,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "enableGroup",
         operationJson({ organizationId, groupId }),
         200,
         async (platform) => {
@@ -568,7 +564,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "eraseGroup",
         operationJson({ organizationId, groupId, confirm }),
         204,
         async (platform) => {
@@ -632,7 +627,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "putGroupMember",
         operationJson({ organizationId, groupId, memberId, expected, window }),
         200,
         async (platform) => {
@@ -674,7 +668,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "removeGroupMember",
         operationJson({ organizationId, groupId, memberId }),
         204,
         async (platform) => {

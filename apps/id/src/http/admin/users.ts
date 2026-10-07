@@ -240,7 +240,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "users",
-        "disableUser",
         operationJson({ userId }),
         200,
         async (platform) => {
@@ -263,7 +262,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "users",
-        "enableUser",
         operationJson({ userId }),
         200,
         async (platform) => {
@@ -286,7 +284,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "users",
-        "retireUserEmail",
         operationJson({ userId }),
         200,
         async (platform) => {
@@ -311,7 +308,6 @@ export function register(app: Hono<AppEnvironment>) {
       return platformCommand(
         context,
         "write",
-        "eraseUser",
         operationJson({ userId, confirm }),
         204,
         async (platform) => {
