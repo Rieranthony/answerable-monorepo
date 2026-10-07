@@ -70,7 +70,7 @@ export async function prepareMachineGrant<T extends { clientId: string }>(
 }
 
 /** Claim inputs come from the provider's authenticated client, never metadata. */
-export function machineIdentity(): OAuthProviderExtension {
+export function machineIdentity() {
   return {
     claims: {
       accessToken: async ({ ctx, client, user, grantType }) => {
@@ -123,5 +123,5 @@ export function machineIdentity(): OAuthProviderExtension {
         };
       },
     },
-  };
+  } satisfies OAuthProviderExtension;
 }

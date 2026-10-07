@@ -73,10 +73,10 @@ export function userOAuthProvider(
         claims: {
           accessToken: (input) =>
             input.grantType === "client_credentials"
-              ? machine.claims!.accessToken!(input)
-              : user.extension.claims!.accessToken!(input),
-          idToken: user.extension.claims!.idToken,
-          userInfo: user.extension.claims!.userInfo,
+              ? machine.claims.accessToken(input)
+              : user.extension.claims.accessToken(input),
+          idToken: user.extension.claims.idToken,
+          userInfo: user.extension.claims.userInfo,
         },
       },
     ],

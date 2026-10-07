@@ -138,7 +138,7 @@ export function createUserTokenBoundary() {
       throw invalid();
     return identity(decision);
   };
-  const extension: OAuthProviderExtension = {
+  const extension = {
     claims: {
       accessToken: claims,
       idToken: claims,
@@ -155,7 +155,7 @@ export function createUserTokenBoundary() {
         );
       },
     },
-  };
+  } satisfies OAuthProviderExtension;
 
   function userInfo(
     ctx: NativeContext,
