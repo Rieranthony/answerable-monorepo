@@ -8,26 +8,32 @@ import {
   requireTenantMemberContext,
   type TenantMemberContext,
 } from "../../services/tenant-context.ts";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
+import type { Executor } from "../client.ts";
 import { grantContexts } from "../schema/index.ts";
 
-/** Irreversible tenant-local revocation; returning rows are the actual audit effects. */
+/** Irreversibly revoke the live grant contexts `where` selects. Callers add
+ * `.returning(…)` when the rows are audit effects. */
+export function revokeGrantContexts(executor: Executor, where: SQL) {
+  return executor
+    .update(grantContexts)
+    .set({ revokedAt: sql`statement_timestamp()` })
+    .where(and(where, isNull(grantContexts.revokedAt)));
+}
+
+/** Tenant-local revocation; returning rows are the actual audit effects. */
 export function revokeMemberGrantContexts(
   context: TenantMemberContext,
   memberId: string,
 ) {
   const { tx: executor, organizationId } = requireTenantMemberContext(context);
-  return executor
-    .update(grantContexts)
-    .set({ revokedAt: sql`statement_timestamp()` })
-    .where(
-      and(
-        eq(grantContexts.organizationId, organizationId),
-        eq(grantContexts.memberId, memberId),
-        isNull(grantContexts.revokedAt),
-      ),
-    )
-    .returning({ id: grantContexts.id });
+  return revokeGrantContexts(
+    executor,
+    and(
+      eq(grantContexts.organizationId, organizationId),
+      eq(grantContexts.memberId, memberId),
+    )!,
+  ).returning({ id: grantContexts.id });
 }
 
 export function revokeUserGrantContexts(
@@ -35,16 +41,13 @@ export function revokeUserGrantContexts(
   userId: string,
 ) {
   const { tx: executor } = requirePlatformUsersContext(context);
-  return executor
-    .update(grantContexts)
-    .set({ revokedAt: sql`statement_timestamp()` })
-    .where(
-      and(eq(grantContexts.userId, userId), isNull(grantContexts.revokedAt)),
-    )
-    .returning({
-      id: grantContexts.id,
-      organizationId: grantContexts.organizationId,
-    });
+  return revokeGrantContexts(
+    executor,
+    eq(grantContexts.userId, userId),
+  ).returning({
+    id: grantContexts.id,
+    organizationId: grantContexts.organizationId,
+  });
 }
 
 /** Erasure's revocation: the same rows as revokeUserGrantContexts, under platform write. */
@@ -53,17 +56,14 @@ export function revokeErasedUserGrantContexts(
   userId: string,
 ) {
   const { tx: executor } = requirePlatformWriteContext(context);
-  return executor
-    .update(grantContexts)
-    .set({ revokedAt: sql`statement_timestamp()` })
-    .where(
-      and(eq(grantContexts.userId, userId), isNull(grantContexts.revokedAt)),
-    )
-    .returning({
-      id: grantContexts.id,
-      organizationId: grantContexts.organizationId,
-      userId: grantContexts.userId,
-    });
+  return revokeGrantContexts(
+    executor,
+    eq(grantContexts.userId, userId),
+  ).returning({
+    id: grantContexts.id,
+    organizationId: grantContexts.organizationId,
+    userId: grantContexts.userId,
+  });
 }
 
 export function revokeOrganizationGrantContexts(
@@ -71,16 +71,10 @@ export function revokeOrganizationGrantContexts(
   organizationId: string,
 ) {
   const { tx: executor } = requirePlatformWriteContext(context);
-  return executor
-    .update(grantContexts)
-    .set({ revokedAt: sql`statement_timestamp()` })
-    .where(
-      and(
-        eq(grantContexts.organizationId, organizationId),
-        isNull(grantContexts.revokedAt),
-      ),
-    )
-    .returning({ id: grantContexts.id, userId: grantContexts.userId });
+  return revokeGrantContexts(
+    executor,
+    eq(grantContexts.organizationId, organizationId),
+  ).returning({ id: grantContexts.id, userId: grantContexts.userId });
 }
 
 export function revokeSessionGrantContexts(
@@ -89,20 +83,16 @@ export function revokeSessionGrantContexts(
   sessionId: string,
 ) {
   const { tx: executor } = requirePlatformUsersContext(context);
-  return executor
-    .update(grantContexts)
-    .set({ revokedAt: sql`statement_timestamp()` })
-    .where(
-      and(
-        eq(grantContexts.userId, userId),
-        eq(grantContexts.authenticationSessionId, sessionId),
-        isNull(grantContexts.revokedAt),
-      ),
-    )
-    .returning({
-      id: grantContexts.id,
-      organizationId: grantContexts.organizationId,
-    });
+  return revokeGrantContexts(
+    executor,
+    and(
+      eq(grantContexts.userId, userId),
+      eq(grantContexts.authenticationSessionId, sessionId),
+    )!,
+  ).returning({
+    id: grantContexts.id,
+    organizationId: grantContexts.organizationId,
+  });
 }
 
 export function revokeResourceGrantContexts(
@@ -110,20 +100,14 @@ export function revokeResourceGrantContexts(
   resourceInstanceId: string,
 ) {
   const { tx: executor } = requirePlatformWriteContext(context);
-  return executor
-    .update(grantContexts)
-    .set({ revokedAt: sql`statement_timestamp()` })
-    .where(
-      and(
-        eq(grantContexts.resourceInstanceId, resourceInstanceId),
-        isNull(grantContexts.revokedAt),
-      ),
-    )
-    .returning({
-      id: grantContexts.id,
-      organizationId: grantContexts.organizationId,
-      userId: grantContexts.userId,
-    });
+  return revokeGrantContexts(
+    executor,
+    eq(grantContexts.resourceInstanceId, resourceInstanceId),
+  ).returning({
+    id: grantContexts.id,
+    organizationId: grantContexts.organizationId,
+    userId: grantContexts.userId,
+  });
 }
 
 export function revokeClientGrantContexts(
@@ -131,18 +115,12 @@ export function revokeClientGrantContexts(
   clientInstanceId: string,
 ) {
   const { tx: executor } = requirePlatformWriteContext(context);
-  return executor
-    .update(grantContexts)
-    .set({ revokedAt: sql`statement_timestamp()` })
-    .where(
-      and(
-        eq(grantContexts.clientInstanceId, clientInstanceId),
-        isNull(grantContexts.revokedAt),
-      ),
-    )
-    .returning({
-      id: grantContexts.id,
-      organizationId: grantContexts.organizationId,
-      userId: grantContexts.userId,
-    });
+  return revokeGrantContexts(
+    executor,
+    eq(grantContexts.clientInstanceId, clientInstanceId),
+  ).returning({
+    id: grantContexts.id,
+    organizationId: grantContexts.organizationId,
+    userId: grantContexts.userId,
+  });
 }

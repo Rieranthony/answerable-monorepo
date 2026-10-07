@@ -1,7 +1,8 @@
 import { isAPIError } from "better-auth/api";
 import type { getOAuthProviderApi } from "@better-auth/oauth-provider";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { Executor } from "../db/client.ts";
+import { revokeGrantContexts } from "../db/queries/grant-contexts.ts";
 import { grantContexts } from "../db/schema/index.ts";
 
 type Adapter = Parameters<typeof getOAuthProviderApi>[0]["context"]["adapter"];
@@ -36,15 +37,7 @@ export async function withNativeRefreshFamily<T>(
           ),
         );
       if (familyLookup) {
-        await tx
-          .update(grantContexts)
-          .set({ revokedAt: sql`statement_timestamp()` })
-          .where(
-            and(
-              eq(grantContexts.id, grant.id),
-              isNull(grantContexts.revokedAt),
-            ),
-          );
+        await revokeGrantContexts(tx, eq(grantContexts.id, grant.id));
         await tx.execute(sql`savepoint native_family_cleanup`);
         invalidating = true;
       }

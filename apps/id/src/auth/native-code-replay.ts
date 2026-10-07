@@ -2,6 +2,7 @@ import type { getOAuthProviderApi } from "@better-auth/oauth-provider";
 import { APIError } from "better-auth/api";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Executor } from "../db/client.ts";
+import { revokeGrantContexts } from "../db/queries/grant-contexts.ts";
 import { grantContexts, oauthClients } from "../db/schema/index.ts";
 type Adapter = Parameters<typeof getOAuthProviderApi>[0]["context"]["adapter"];
 
@@ -43,22 +44,19 @@ export async function withNativeCodeReplay<T>(
             (w.connector === undefined || w.connector === "AND"),
         );
       if (cleanup && !invalidating) {
-        await tx
-          .update(grantContexts)
-          .set({ revokedAt: sql`statement_timestamp()` })
-          .where(
-            and(
-              eq(grantContexts.authorizationCodeId, input.authorizationCodeId),
-              inArray(
-                grantContexts.clientInstanceId,
-                tx
-                  .select({ id: oauthClients.id })
-                  .from(oauthClients)
-                  .where(eq(oauthClients.clientId, input.clientId)),
-              ),
-              isNull(grantContexts.revokedAt),
+        await revokeGrantContexts(
+          tx,
+          and(
+            eq(grantContexts.authorizationCodeId, input.authorizationCodeId),
+            inArray(
+              grantContexts.clientInstanceId,
+              tx
+                .select({ id: oauthClients.id })
+                .from(oauthClients)
+                .where(eq(oauthClients.clientId, input.clientId)),
             ),
-          );
+          )!,
+        );
         await tx.execute(sql`savepoint native_code_cleanup`);
         invalidating = true;
       }

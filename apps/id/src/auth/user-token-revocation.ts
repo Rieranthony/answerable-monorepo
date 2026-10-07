@@ -7,7 +7,8 @@ import {
   type oauthProvider,
 } from "@better-auth/oauth-provider";
 import { isAPIError } from "better-auth/api";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import { revokeGrantContexts } from "../db/queries/grant-contexts.ts";
 import { grantContexts } from "../db/schema/index.ts";
 import { setDatabaseScope } from "../db/isolation.ts";
 import { authTransaction } from "./database-adapter.ts";
@@ -135,15 +136,7 @@ export function revokeUserToken(ctx: Context, provider: Provider) {
               : { value: await execute(boundAdapter) };
           if (grant) {
             if (refresh)
-              await tx
-                .update(grantContexts)
-                .set({ revokedAt: sql`statement_timestamp()` })
-                .where(
-                  and(
-                    eq(grantContexts.id, grant.id),
-                    isNull(grantContexts.revokedAt),
-                  ),
-                );
+              await revokeGrantContexts(tx, eq(grantContexts.id, grant.id));
             await recordUserOAuth(tx, {
               action: "oauth.user.revoked",
               actor: "client",
