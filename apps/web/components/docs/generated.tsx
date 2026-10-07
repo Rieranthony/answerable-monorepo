@@ -39,21 +39,13 @@ function codeBlock({
 }
 
 const today = new Date().toISOString().slice(0, 10)
-const languages: Record<string, string> = {
-  ts: "ts",
-  md: "md",
-  example: "dotenv",
-}
+const languages: Record<string, string> = { ts: "ts", example: "dotenv" }
+// The example name every page scaffolds with: `mcps/acme/<file>`.
+const SCAFFOLD_NAME = "acme"
 
 /** A file exactly as `bun run mcp:new <name>` writes it, dated the day the docs were built. */
-export function ScaffoldFile({
-  name = "acme",
-  file,
-}: {
-  name?: string
-  file: string
-}) {
-  const source = scaffoldSources(name, today)[file]
+export function ScaffoldFile({ file }: { file: string }) {
+  const source = scaffoldSources(SCAFFOLD_NAME, today)[file]
 
   if (source === undefined) {
     throw new Error(`mcp:new writes no ${file} from a template`)
@@ -62,7 +54,7 @@ export function ScaffoldFile({
   return codeBlock({
     code: source,
     lang: languages[file.split(".").pop()!] ?? "text",
-    title: `mcps/${name}/${file}`,
+    title: `mcps/${SCAFFOLD_NAME}/${file}`,
   })
 }
 

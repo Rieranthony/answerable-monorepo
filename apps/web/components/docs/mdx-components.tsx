@@ -5,7 +5,6 @@ import { asMarkdown, md } from "fumadocs-core/server"
 import { Callout as UiCallout } from "fumadocs-ui/components/callout"
 import { Card as UiCard, Cards as UiCards } from "fumadocs-ui/components/card"
 import { Step as UiStep, Steps as UiSteps } from "fumadocs-ui/components/steps"
-import { Tab as UiTab, Tabs as UiTabs } from "fumadocs-ui/components/tabs"
 import { createGenerator } from "fumadocs-typescript"
 import type { ReactNode } from "react"
 
@@ -69,18 +68,6 @@ export function Card({
   }
 
   return <UiCard title={title} href={href} description={description} />
-}
-
-export function Tabs({ items, children }: Children & { items: string[] }) {
-  if (asMarkdown()) return md`${children}`
-
-  return <UiTabs items={items}>{children}</UiTabs>
-}
-
-export function Tab({ value, children }: Children & { value: string }) {
-  if (asMarkdown()) return md`**${value}**\n\n${children}\n\n`
-
-  return <UiTab value={value}>{children}</UiTab>
 }
 
 // One TypeScript project for every table. No file-system cache: its key covers only the named file, so a change to a

@@ -15,8 +15,6 @@ import {
   Cards,
   Step,
   Steps,
-  Tab,
-  Tabs,
 } from "@/components/docs/mdx-components"
 
 export function getMDXComponents(components?: MDXComponents): MDXComponents {
@@ -28,8 +26,6 @@ export function getMDXComponents(components?: MDXComponents): MDXComponents {
     Cards,
     Step,
     Steps,
-    Tab,
-    Tabs,
     ErrorCodes,
     GrantStrings,
     ManifestEntry,
