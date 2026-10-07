@@ -357,13 +357,9 @@ test("member configuration omits identity and rejects missing organisations", as
   ).rejects.toMatchObject({ status: 404 });
 });
 
-test("tenant actor is immutable and the command runner cannot be reused", async () => {
+test("tenant actor identity comes from authority, never metadata", async () => {
   const { db, org, ids } = await seed();
   const { authorizeTenantMemberCommand } = await import("./tenant-context.ts");
-  const principal: import("../http/principal.ts").Principal = {
-    type: "root",
-    grants: [],
-  };
   const metadata = {
     ...actor,
     actorType: "user" as const,
@@ -371,37 +367,22 @@ test("tenant actor is immutable and the command runner cannot be reused", async 
   };
   await db.transaction(async (tx) => {
     const authority = await authorizeTenantMemberCommand(tx, {
-      principal,
+      principal: { type: "root", grants: [] },
       organizationId: org.id,
       environment: testEnvironment({
         rootAdminSecret: "test",
         rootAdminBreakGlass: true,
       }),
     });
-    Object.assign(principal, { type: "user", userId: createId() });
-    try {
-      await authority.run(async (context) => {
-        expect(context.actor).toMatchObject({
-          actorType: "system",
-          actorId: "root",
-          requestId: actor.requestId,
-        });
-        expect(Object.isFrozen(context.actor)).toBe(true);
-        expect(() =>
-          Object.assign(context.actor, { actorId: "forged" }),
-        ).toThrow();
-        metadata.requestId = "changed";
-        await expect(authority.run(async () => {}, metadata)).rejects.toThrow(
-          "Invalid or expired",
-        );
-        await memberService.remove(context, ids[0]!);
-      }, metadata);
-    } finally {
-      authority.close();
-    }
-    await expect(authority.run(async () => {}, metadata)).rejects.toThrow(
-      "Invalid or expired",
-    );
+    await authority.run(async (context) => {
+      expect(context.actor).toMatchObject({
+        actorType: "system",
+        actorId: "root",
+        requestId: actor.requestId,
+      });
+      metadata.requestId = "changed";
+      await memberService.remove(context, ids[0]!);
+    }, metadata);
   });
   expect(await db.select().from(auditEvents)).toMatchObject([
     {

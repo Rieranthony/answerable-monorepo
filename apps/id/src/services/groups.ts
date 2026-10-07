@@ -1,7 +1,4 @@
-import {
-  requirePlatformWriteContext,
-  type PlatformWriteContext,
-} from "./platform-context.ts";
+import { type PlatformWriteContext } from "./platform-context.ts";
 import { type TenantReadContext } from "./tenant-context.ts";
 import * as queries from "../db/queries/groups.ts";
 import { findMemberForAssignment } from "../db/queries/members.ts";
@@ -89,7 +86,7 @@ export async function createGroup(
   organizationId: string,
   input: Omit<queries.CreateGroupInput, "organizationId">,
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   requireRow(await lockOrganizationForCommand(context, organizationId));
   const row = await queries.createGroup(context, { ...input, organizationId });
   await audit(tx, actor, organizationId, row.id, "group.created", {
@@ -105,7 +102,7 @@ export async function updateGroup(
   patch: queries.GroupPatch,
   expected?: { id: string; revision: number },
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   const before = await lockedGroup(context, organizationId, groupId);
   if (
     expected &&
@@ -139,7 +136,7 @@ async function setStatus(
   groupId: string,
   status: "active" | "disabled",
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   const existing = await lockedGroup(context, organizationId, groupId);
   const changed = existing.status !== status;
   const policySources = changed
@@ -188,7 +185,7 @@ export async function eraseGroup(
   groupId: string,
   confirm: string,
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   const before = await lockedGroup(context, organizationId, groupId);
   if (confirm !== groupId)
     throw new ProblemError(
@@ -231,7 +228,7 @@ export async function putMember(
   window: queries.MemberWindow,
   expected?: { id: string; revision: number } | null,
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   await lockedGroup(context, organizationId, groupId);
   const member = requireRow(
     await findMemberForAssignment(context, organizationId, memberId),
@@ -301,7 +298,7 @@ export async function removeMember(
   groupId: string,
   memberId: string,
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   await lockedGroup(context, organizationId, groupId);
   const before = requireRow(
     await queries.findGroupMemberForCommand(

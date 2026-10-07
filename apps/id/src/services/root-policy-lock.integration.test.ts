@@ -125,21 +125,17 @@ for (const source of ["capability", "resource", "new-member"] as const)
           );
           commandPid = pid.rows[0]!.pid;
           const authority = await authorizePlatformUsersCommand(tx, caller);
-          try {
-            await authority.run(
-              async (context) => {
-                if (order === "command-first") {
-                  reached();
-                  await gate;
-                }
-                mutated = true;
-                return enableUser(context, targetId);
-              },
-              { requestId: "root-policy-lock" },
-            );
-          } finally {
-            authority.close();
-          }
+          await authority.run(
+            async (context) => {
+              if (order === "command-first") {
+                reached();
+                await gate;
+              }
+              mutated = true;
+              return enableUser(context, targetId);
+            },
+            { requestId: "root-policy-lock" },
+          );
         });
       const activate = () =>
         inPlatformWrite(writer.db, async (context) => {
@@ -264,15 +260,13 @@ for (const source of ["capability", "resource", "new-member"] as const)
       ).toBe(true);
       await expect(
         reader.db.transaction(async (tx) => {
-          const authority = await authorizePlatformUsersCommand(tx, caller);
-          authority.close();
+          await authorizePlatformUsersCommand(tx, caller);
         }),
       ).rejects.toMatchObject({ code: "root_locked" });
       await reader.db.transaction(async (tx) => {
-        const authority = await authorizePlatformUsersCommand(tx, {
+        await authorizePlatformUsersCommand(tx, {
           ...caller,
           environment: { ...caller.environment, rootAdminBreakGlass: true },
         });
-        authority.close();
       });
     });

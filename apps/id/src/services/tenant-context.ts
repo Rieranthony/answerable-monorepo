@@ -13,7 +13,6 @@ import { ProblemError } from "../http/problem.ts";
 import { authorizeCommand } from "./command-authority.ts";
 
 const tenantCommand = Symbol("tenantCommand");
-const issuedContexts = new WeakSet<object>();
 type ScopedContext<Access extends string> = Readonly<{
   [tenantCommand]: true;
   access: Access;
@@ -48,7 +47,6 @@ export async function authorizeTenantMemberCommand(
   tx: Executor,
   input: TenantAuthority,
 ) {
-  input = { ...input, principal: { ...input.principal } };
   const identity = actorIdentity(input.principal);
   // Serialise member writes with other tenant authority changes.
   // Re-read authority after any preceding tenant revocation has committed.
@@ -73,45 +71,26 @@ export async function authorizeTenantMemberCommand(
     access: "write",
     organizationId: input.organizationId,
   });
-  let active = true;
   return {
-    close() {
-      active = false;
-    },
+    /** The actor needs the operation id, which exists only after authorisation. */
     async run<T>(
       run: (context: TenantMemberContext) => Promise<T>,
       metadata: ActorMetadata,
     ): Promise<T> {
-      if (!active)
-        throw new Error("Invalid or expired tenant command authorisation");
-      active = false;
-      const context = Object.freeze({
-        [tenantCommand]: true as const,
-        access: "command" as const,
+      const context: TenantMemberContext = {
+        [tenantCommand]: true,
+        access: "command",
         tx,
         organizationId: organization.id,
         actor: commandActor(identity, metadata),
         async revalidate() {
           if (input.principal.type === "user") await authorize();
         },
-      });
-      issuedContexts.add(context);
-      try {
-        await context.revalidate();
-        const result = await run(context);
-        return result;
-      } finally {
-        issuedContexts.delete(context);
-      }
+      };
+      await context.revalidate();
+      return run(context);
     },
   };
-}
-
-/** Reject reconstructed contexts and contexts whose command callback has ended. */
-export function requireTenantMemberContext(context: TenantMemberContext) {
-  if (!issuedContexts.has(context) || context.access !== "command")
-    throw new Error("Invalid or expired tenant member context");
-  return context;
 }
 
 /** Scope and transaction lifetime are fixed here, rather than supplied by readers. */
@@ -148,52 +127,11 @@ export async function withTenantRead<T, Access extends TenantReadAccess>(
       access: "read",
       organizationId: input.organizationId,
     });
-    const context = Object.freeze({
-      [tenantCommand]: true as const,
+    return run({
+      [tenantCommand]: true,
       access,
       tx,
       organizationId: input.organizationId,
     });
-    issuedContexts.add(context);
-    try {
-      return await run(context);
-    } finally {
-      issuedContexts.delete(context);
-    }
   });
-}
-
-export function requireTenantDirectoryContext(
-  context: TenantReadContext<"directory">,
-) {
-  if (!issuedContexts.has(context) || context.access !== "directory")
-    throw new Error("Invalid or expired tenant member directory context");
-  return context;
-}
-
-export function requireTenantMemberConfigurationContext(
-  context: TenantMemberContext | TenantReadContext<"configuration">,
-) {
-  if (
-    !issuedContexts.has(context) ||
-    (context.access !== "configuration" && context.access !== "command")
-  )
-    throw new Error("Invalid or expired tenant member configuration context");
-  return context;
-}
-
-export function requireTenantMemberAccessContext(
-  context: TenantReadContext<"memberAccess">,
-) {
-  if (!issuedContexts.has(context) || context.access !== "memberAccess")
-    throw new Error("Invalid or expired tenant member access context");
-  return context;
-}
-
-export function requireTenantHistoryContext(
-  context: TenantReadContext<"history">,
-) {
-  if (!issuedContexts.has(context) || context.access !== "history")
-    throw new Error("Invalid or expired tenant history context");
-  return context;
 }

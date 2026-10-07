@@ -1,5 +1,4 @@
 import {
-  requirePlatformWriteContext,
   type PlatformWriteContext,
   type PlatformReadContext,
 } from "./platform-context.ts";
@@ -47,7 +46,7 @@ async function audit(
       }
     | { before: null; after: Configuration; deletionMode?: "soft" },
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   const target = data.before ?? data.after;
   // A change names the memberships it reaches; a no-op names none.
   const audience = action.endsWith("_unchanged")
@@ -140,7 +139,6 @@ export async function updateEntitlement(
   patch: queries.EntitlementPatch,
   expected?: { id: string; revision: number },
 ) {
-  requirePlatformWriteContext(context);
   const existing = await lockedEntitlement(
     context,
     organizationId,
@@ -190,7 +188,6 @@ async function setStatus(
   entitlementId: string,
   status: "active" | "disabled",
 ) {
-  requirePlatformWriteContext(context);
   const existing = await lockedEntitlement(
     context,
     organizationId,
@@ -237,7 +234,6 @@ export async function removeEntitlement(
   organizationId: string,
   entitlementId: string,
 ) {
-  requirePlatformWriteContext(context);
   const before = await lockedEntitlement(
     context,
     organizationId,

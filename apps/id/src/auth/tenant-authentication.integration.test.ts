@@ -426,19 +426,15 @@ for (const consumer of ["grant", "human"] as const) {
               environment: fixture.environment,
               organizationId: fixture.tenant.organizationId,
             });
-            try {
-              await authority.run(
-                (context) =>
-                  updateWindow(
-                    context,
-                    fixture.principals.tenantReader.memberId,
-                    { validUntil: new Date("2100-01-01") },
-                  ),
-                { requestId: "admission-race" },
-              );
-            } finally {
-              authority.close();
-            }
+            await authority.run(
+              (context) =>
+                updateWindow(
+                  context,
+                  fixture.principals.tenantReader.memberId,
+                  { validUntil: new Date("2100-01-01") },
+                ),
+              { requestId: "admission-race" },
+            );
           }
           if (order === "admission-first") {
             ready.resolve();

@@ -1,7 +1,4 @@
-import {
-  requireTenantMemberAccessContext,
-  type TenantReadContext,
-} from "./tenant-context.ts";
+import { type TenantReadContext } from "./tenant-context.ts";
 import * as queries from "../db/queries/access.ts";
 import { findMemberConfiguration } from "../db/queries/members.ts";
 import { findClientForAccess } from "../db/queries/oauth-clients.ts";
@@ -16,7 +13,6 @@ export async function getMemberAccess(
   context: TenantReadContext<"memberAccess">,
   memberId: string,
 ) {
-  requireTenantMemberAccessContext(context);
   requireRow(await findMemberConfiguration(context, memberId));
   return queries.memberAccess(context, memberId);
 }

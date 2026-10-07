@@ -39,11 +39,7 @@ export async function inPlatformUsers<T>(
         rootAdminBreakGlass: true,
       }),
     });
-    try {
-      return await authorized.run(run, metadata);
-    } finally {
-      authorized.close();
-    }
+    return authorized.run(run, metadata);
   });
 }
 
@@ -64,11 +60,7 @@ export async function inPlatformWrite<T>(
         rootAdminBreakGlass: true,
       }),
     });
-    try {
-      return await authorized.run(run, metadata);
-    } finally {
-      authorized.close();
-    }
+    return authorized.run(run, metadata);
   });
 }
 

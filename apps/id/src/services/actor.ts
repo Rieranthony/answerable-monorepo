@@ -44,12 +44,12 @@ export function commandActor(
   identity: Pick<Actor, "actorType" | "actorId">,
   metadata: ActorMetadata,
 ): Readonly<Actor> {
-  return Object.freeze({
+  return {
     actorType: identity.actorType,
     actorId: identity.actorId,
     requestId: metadata.requestId,
     operationId: metadata.operationId,
     ip: metadata.ip,
     userAgent: metadata.userAgent,
-  });
+  };
 }

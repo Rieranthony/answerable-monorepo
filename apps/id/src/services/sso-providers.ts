@@ -2,10 +2,7 @@ import {
   platformApplicationFor,
   type PlatformApplicationIds,
 } from "../auth/platform-applications.ts";
-import {
-  requirePlatformWriteContext,
-  type PlatformWriteContext,
-} from "./platform-context.ts";
+import { type PlatformWriteContext } from "./platform-context.ts";
 import { type TenantReadContext } from "./tenant-context.ts";
 import { isDeepStrictEqual } from "node:util";
 import type { Executor } from "../db/client.ts";
@@ -77,7 +74,7 @@ export async function putSsoProvider(
   expected?: { id: string; revision: number } | null,
   ids: PlatformApplicationIds = {},
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   const organization = requireRow(
     await lockOrganizationForCommand(context, organizationId),
   );
@@ -181,7 +178,7 @@ export async function deleteSsoProvider(
   organizationId: string,
   ids: PlatformApplicationIds = {},
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   requireRow(await lockOrganizationForCommand(context, organizationId));
   const before = requireRow(
     await queries.findSsoProviderForCommand(context, organizationId),

@@ -13,14 +13,8 @@ import { createId } from "../lib/id.ts";
 import type { PageQuery } from "../http/pagination.ts";
 import { beforeCursor, cursorPage } from "../db/queries/lists.ts";
 import { ProblemError } from "../http/problem.ts";
-import {
-  requirePlatformWriteContext,
-  type PlatformWriteContext,
-} from "./platform-context.ts";
-import {
-  requireTenantDirectoryContext,
-  type TenantReadContext,
-} from "./tenant-context.ts";
+import { type PlatformWriteContext } from "./platform-context.ts";
+import { type TenantReadContext } from "./tenant-context.ts";
 
 type Row = typeof organizationCapabilities.$inferSelect;
 export type CapabilityInput = (
@@ -58,7 +52,7 @@ export async function listCapabilities(
   context: TenantReadContext<"directory">,
   query: PageQuery,
 ) {
-  const { tx, organizationId } = requireTenantDirectoryContext(context);
+  const { tx, organizationId } = context;
   return cursorPage(
     await tx
       .select()
@@ -79,7 +73,7 @@ export async function getCapability(
   context: TenantReadContext<"directory">,
   id: string,
 ) {
-  const { tx, organizationId } = requireTenantDirectoryContext(context);
+  const { tx, organizationId } = context;
   return required(
     (
       await tx
@@ -95,7 +89,7 @@ async function validateTarget(
   organizationId: string,
   input: Pick<Row, "clientId" | "resource" | "grantKind" | "scopes">,
 ) {
-  const { tx } = requirePlatformWriteContext(context);
+  const { tx } = context;
   const client =
     input.clientId !== null
       ? required(await readClient(context, input.clientId))
@@ -171,7 +165,7 @@ function audit(
   before: Row | null,
   changed: boolean,
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   return recordAuditEvent(tx, {
     ...actor,
     organizationId: row.organizationId,
@@ -192,7 +186,7 @@ export async function createCapability(
   organizationId: string,
   input: CapabilityInput,
 ) {
-  const { tx } = requirePlatformWriteContext(context);
+  const { tx } = context;
   required(await lockOrganizationForCommand(context, organizationId));
   await validateTarget(context, organizationId, input);
   const [row] = await tx
@@ -214,7 +208,7 @@ export async function updateCapability(
   patch: CapabilityPatch,
   expected?: { id: string; revision: number },
 ) {
-  const { tx } = requirePlatformWriteContext(context);
+  const { tx } = context;
   required(await lockOrganizationForCommand(context, organizationId));
   const before = required(
     (
@@ -270,7 +264,7 @@ export async function removeCapability(
   organizationId: string,
   id: string,
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   required(await lockOrganizationForCommand(context, organizationId));
   const before = required(
     (
@@ -301,7 +295,7 @@ export async function requireNoCapabilityReferences(
   context: PlatformWriteContext,
   target: { clientId: string } | { resource: string },
 ) {
-  const { tx } = requirePlatformWriteContext(context);
+  const { tx } = context;
   const rows = await tx
     .select({ id: organizationCapabilities.id })
     .from(organizationCapabilities)

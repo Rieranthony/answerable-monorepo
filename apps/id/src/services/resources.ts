@@ -4,7 +4,6 @@ import { oauthResources, systemBindings } from "../db/schema/index.ts";
 import { revokeResourceGrantContexts } from "../db/queries/grant-contexts.ts";
 import { requireNoCapabilityReferences } from "./capabilities.ts";
 import {
-  requirePlatformWriteContext,
   type PlatformWriteContext,
   type PlatformReadContext,
 } from "./platform-context.ts";
@@ -87,7 +86,7 @@ export async function createResource(
   context: PlatformWriteContext,
   input: queries.ResourceInput,
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   const row = await queries.createResource(context, input);
   await audit(tx, actor, row.identifier, "resource.created", {
     before: null,
@@ -101,7 +100,7 @@ export async function updateResource(
   patch: queries.ResourcePatch,
   expected?: { id: string; revision: number },
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   // Preserve root admission ordering when this resource can activate platform authority.
   if (patch.allowedScopes !== undefined) {
     const [binding] = await tx
@@ -166,7 +165,7 @@ async function setDisabled(
   identifier: string,
   disabled: boolean,
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   const existing = requireResource(
     await queries.lockResourceForCommand(context, identifier),
   );
@@ -201,7 +200,7 @@ export async function eraseResource(
   identifier: string,
   confirm: string,
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   const existing = requireResource(
     await queries.lockResourceForCommand(context, identifier),
   );

@@ -1,7 +1,6 @@
 import { revokeClientGrantContexts } from "../db/queries/grant-contexts.ts";
 import { requireNoCapabilityReferences } from "./capabilities.ts";
 import {
-  requirePlatformWriteContext,
   type PlatformWriteContext,
   type PlatformReadContext,
 } from "./platform-context.ts";
@@ -263,7 +262,7 @@ export async function createClient(
   context: PlatformWriteContext,
   input: CreateClientInput,
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   validateClient(input);
   if (input.organizationId)
     requireRow(await lockOrganizationForCommand(context, input.organizationId));
@@ -303,7 +302,7 @@ export async function updateClient(
   patch: queries.ClientPatch,
   expected?: { id: string; revision: number },
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   const existing = requireRow(
     await queries.lockClientForCommand(context, clientId),
   );
@@ -345,7 +344,7 @@ async function setDisabled(
   clientId: string,
   disabled: boolean,
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   const existing = requireRow(
     await queries.lockClientForCommand(context, clientId),
   );
@@ -410,7 +409,7 @@ export async function rotateSecret(
   context: PlatformWriteContext,
   clientId: string,
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   const existing = requireRow(
     await queries.lockClientForCommand(context, clientId),
   );
@@ -464,7 +463,7 @@ export async function setOwner(
   clientId: string,
   organizationId: string | null,
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   const existing = requireRow(
     await queries.lockClientForCommand(context, clientId),
   );
@@ -493,7 +492,7 @@ export async function linkResource(
   clientId: string,
   resource: string,
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   const client = requireRow(
     await queries.lockClientForCommand(context, clientId),
   );
@@ -516,7 +515,7 @@ export async function unlinkResource(
   clientId: string,
   resource: string,
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   const client = requireRow(
     await queries.lockClientForCommand(context, clientId),
   );
@@ -544,7 +543,7 @@ export async function eraseClient(
   clientId: string,
   confirm: string,
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   const existing = requireRow(
     await queries.lockClientForCommand(context, clientId),
   );

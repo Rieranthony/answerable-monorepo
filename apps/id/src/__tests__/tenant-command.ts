@@ -24,11 +24,7 @@ export async function inTenant<T>(
       }),
       organizationId,
     });
-    try {
-      return await context.run(run, metadata);
-    } finally {
-      context.close();
-    }
+    return context.run(run, metadata);
   });
 }
 

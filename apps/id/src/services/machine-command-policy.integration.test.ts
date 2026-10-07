@@ -86,21 +86,17 @@ for (const source of ["capability", "resource", "client"] as const)
           );
           commandPid = pid.rows[0]!.pid;
           const authority = await authorizePlatformUsersCommand(tx, caller);
-          try {
-            await authority.run(
-              async (context) => {
-                if (order === "command-first") {
-                  reached();
-                  await gate;
-                }
-                mutated = true;
-                return enableUser(context, targetId);
-              },
-              { requestId: "command-policy-lock" },
-            );
-          } finally {
-            authority.close();
-          }
+          await authority.run(
+            async (context) => {
+              if (order === "command-first") {
+                reached();
+                await gate;
+              }
+              mutated = true;
+              return enableUser(context, targetId);
+            },
+            { requestId: "command-policy-lock" },
+          );
         });
       const change = () =>
         inPlatformWrite(writer.db, async (context) => {
@@ -199,8 +195,7 @@ for (const source of ["capability", "resource", "client"] as const)
       );
       await expect(
         reader.db.transaction(async (tx) => {
-          const authority = await authorizePlatformUsersCommand(tx, caller);
-          authority.close();
+          await authorizePlatformUsersCommand(tx, caller);
         }),
       ).rejects.toMatchObject({
         code: source === "client" ? "invalid_token" : "insufficient_scope",
@@ -258,16 +253,12 @@ test("machine token expiry during a policy wait is checked before command admiss
     );
     readerPid = pid.rows[0]!.pid;
     const authority = await authorizePlatformUsersCommand(tx, caller);
-    try {
-      await authority.run(
-        async () => {
-          mutated = true;
-        },
-        { requestId: "expired-machine-policy-wait" },
-      );
-    } finally {
-      authority.close();
-    }
+    await authority.run(
+      async () => {
+        mutated = true;
+      },
+      { requestId: "expired-machine-policy-wait" },
+    );
   });
   const settledCommand = command.then(
     () => {
@@ -306,16 +297,10 @@ test("machine token expiry during a policy wait is checked before command admiss
     setSystemTime();
   }
   expect(mutated).toBe(false);
-  const admit = (currentClaims: typeof claims) =>
-    reader.db.transaction(async (tx) => {
-      const authority = await authorizePlatformUsersCommand(tx, {
-        ...caller,
-        claims: currentClaims,
-      });
-      authority.close();
+  await reader.db.transaction(async (tx) => {
+    await authorizePlatformUsersCommand(tx, {
+      ...caller,
+      claims: await deps.verifyBearer(token),
     });
-  await admit(await deps.verifyBearer(token));
-  await expect(
-    admit({ ...claims, expiresAt: Number.NaN }),
-  ).rejects.toMatchObject({ code: "invalid_token" });
+  });
 });

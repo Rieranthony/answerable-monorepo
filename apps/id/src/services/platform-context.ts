@@ -11,7 +11,6 @@ import type { Principal, BearerClaims } from "../http/principal.ts";
 import { authorizeCommand } from "./command-authority.ts";
 
 const platformRead = Symbol("platformRead");
-const activeContexts = new WeakSet<PlatformReadContext>();
 export type PlatformReadContext = Readonly<{
   [platformRead]: true;
   tx: Executor;
@@ -39,24 +38,11 @@ export function withPlatformRead<T>(
       caller.claims,
     );
     await setDatabaseScope(tx, { kind: "platform", access: "read" });
-    const context = Object.freeze({ [platformRead]: true as const, tx });
-    activeContexts.add(context);
-    try {
-      return await run(context);
-    } finally {
-      activeContexts.delete(context);
-    }
+    return run({ [platformRead]: true, tx });
   });
 }
 
-export function requirePlatformReadContext(context: PlatformReadContext) {
-  if (!activeContexts.has(context))
-    throw new Error("Invalid or expired platform read context");
-  return context;
-}
-
 const platformMutation = Symbol("platformMutation");
-const activeMutationContexts = new WeakSet<object>();
 type PlatformMutationContext<Access extends "users" | "write"> = Readonly<{
   revalidate: () => Promise<void>;
   [platformMutation]: true;
@@ -72,7 +58,6 @@ async function authorizePlatformMutation<Access extends "users" | "write">(
   caller: PlatformCaller,
   access: Access,
 ) {
-  caller = { ...caller, principal: { ...caller.principal } };
   const identity = actorIdentity(caller.principal);
   const authorize = () =>
     authorizeCommand(
@@ -92,20 +77,14 @@ async function authorizePlatformMutation<Access extends "users" | "write">(
       ? { kind: "platform", access: "write" }
       : { kind: "platform-users" },
   );
-  let active = true;
   return {
-    close() {
-      active = false;
-    },
-    async run<T>(
+    /** The actor needs the operation id, which exists only after authorisation. */
+    run<T>(
       run: (context: PlatformMutationContext<Access>) => Promise<T>,
       metadata: ActorMetadata,
     ): Promise<T> {
-      if (!active)
-        throw new Error("Invalid or expired platform command authorisation");
-      active = false;
-      const context = Object.freeze({
-        [platformMutation]: true as const,
+      return run({
+        [platformMutation]: true,
         access,
         actor: commandActor(identity, metadata),
         tx,
@@ -113,12 +92,6 @@ async function authorizePlatformMutation<Access extends "users" | "write">(
           if (caller.principal.type === "user") await authorize();
         },
       });
-      activeMutationContexts.add(context);
-      try {
-        return await run(context);
-      } finally {
-        activeMutationContexts.delete(context);
-      }
     },
   };
 }
@@ -135,14 +108,4 @@ export function authorizePlatformWriteCommand(
   caller: PlatformCaller,
 ) {
   return authorizePlatformMutation(tx, caller, "write");
-}
-export function requirePlatformUsersContext(context: PlatformUsersContext) {
-  if (!activeMutationContexts.has(context) || context.access !== "users")
-    throw new Error("Invalid or expired platform users context");
-  return context;
-}
-export function requirePlatformWriteContext(context: PlatformWriteContext) {
-  if (!activeMutationContexts.has(context) || context.access !== "write")
-    throw new Error("Invalid or expired platform write context");
-  return context;
 }

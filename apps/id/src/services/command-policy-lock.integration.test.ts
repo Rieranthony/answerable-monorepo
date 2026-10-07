@@ -85,21 +85,17 @@ for (const source of ["capability", "resource"] as const)
           );
           commandPid = pid.rows[0]!.pid;
           const authority = await authorizePlatformUsersCommand(tx, caller);
-          try {
-            await authority.run(
-              async (context) => {
-                if (order === "command-first") {
-                  reached();
-                  await gate;
-                }
-                mutated = true;
-                return enableUser(context, targetId);
-              },
-              { requestId: "command-policy-lock" },
-            );
-          } finally {
-            authority.close();
-          }
+          await authority.run(
+            async (context) => {
+              if (order === "command-first") {
+                reached();
+                await gate;
+              }
+              mutated = true;
+              return enableUser(context, targetId);
+            },
+            { requestId: "command-policy-lock" },
+          );
         });
       const change = () =>
         inPlatformWrite(writer.db, async (context) => {
@@ -193,8 +189,7 @@ for (const source of ["capability", "resource"] as const)
       );
       await expect(
         reader.db.transaction(async (tx) => {
-          const authority = await authorizePlatformUsersCommand(tx, caller);
-          authority.close();
+          await authorizePlatformUsersCommand(tx, caller);
         }),
       ).rejects.toMatchObject({ code: "insufficient_scope" });
     });
@@ -251,16 +246,12 @@ test("session expiry during a policy lock wait denies the command before mutatio
       },
       environment: fixture.environment,
     });
-    try {
-      await authority.run(
-        async () => {
-          mutated = true;
-        },
-        { requestId: "expired-policy-wait" },
-      );
-    } finally {
-      authority.close();
-    }
+    await authority.run(
+      async () => {
+        mutated = true;
+      },
+      { requestId: "expired-policy-wait" },
+    );
   });
   const settledCommand = command.then(
     () => {
@@ -362,7 +353,6 @@ test("concurrent policy lock upgrades roll back one command and permit same-key 
           },
           { requestId: name },
         ),
-      (authority) => authority.close(),
     );
   const outcomes = await Promise.all(
     [0, 1].map((index) =>

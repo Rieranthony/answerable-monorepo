@@ -3,7 +3,6 @@ import {
   revokeUserGrantContexts,
 } from "../db/queries/grant-contexts.ts";
 import {
-  requirePlatformUsersContext,
   type PlatformUsersContext,
   type PlatformReadContext,
 } from "./platform-context.ts";
@@ -56,7 +55,7 @@ export async function revokeUserSession(
   userId: string,
   sessionId: string,
 ) {
-  const { tx, actor } = requirePlatformUsersContext(context);
+  const { tx, actor } = context;
   requireRow(await lockUser(context, userId));
   const before = requireRow(
     await queries.findUserSession(context, userId, sessionId),
@@ -86,7 +85,7 @@ export async function revokeUserSessions(
   context: PlatformUsersContext,
   userId: string,
 ) {
-  const { tx, actor } = requirePlatformUsersContext(context);
+  const { tx, actor } = context;
   requireRow(await lockUser(context, userId));
   const sessionIds = await queries.deleteUserSessionIds(context, userId);
   const revoked = sessionIds.length;

@@ -47,7 +47,6 @@ test("an audit event can precede its operation inside the transaction and be que
         resultReference: { type: "test", id: operationId },
       };
     },
-    () => {},
   );
   const history = await listAuditEvents(
     connection.db,

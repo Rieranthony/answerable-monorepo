@@ -1,6 +1,5 @@
 import { revokeOrganizationGrantContexts } from "../db/queries/grant-contexts.ts";
 import {
-  requirePlatformWriteContext,
   type PlatformWriteContext,
   type PlatformReadContext,
 } from "./platform-context.ts";
@@ -65,7 +64,7 @@ export async function createOrganization(
   context: PlatformWriteContext,
   input: queries.OrganizationInput,
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   const row = await queries.createOrganization(context, input);
   await audit(tx, actor, row.id, "organization.created", {
     before: null,
@@ -80,7 +79,7 @@ export async function updateOrganization(
   patch: queries.OrganizationPatch,
   expected?: { id: string; revision: number },
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   const before = requireOrganization(
     await queries.lockOrganizationForCommand(context, id),
   );
@@ -113,7 +112,7 @@ export async function disableOrganization(
   context: PlatformWriteContext,
   id: string,
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   const existing = requireOrganization(
     await queries.lockOrganizationForCommand(context, id),
   );
@@ -153,7 +152,7 @@ export async function enableOrganization(
   context: PlatformWriteContext,
   id: string,
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   const existing = requireOrganization(
     await queries.lockOrganizationForCommand(context, id),
   );
@@ -179,7 +178,7 @@ export async function eraseOrganization(
   id: string,
   confirm: string,
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   const before = requireOrganization(
     await queries.lockOrganizationForCommand(context, id),
   );

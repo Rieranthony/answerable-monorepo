@@ -1,7 +1,4 @@
-import {
-  requirePlatformWriteContext,
-  type PlatformWriteContext,
-} from "./platform-context.ts";
+import { type PlatformWriteContext } from "./platform-context.ts";
 import { type TenantReadContext } from "./tenant-context.ts";
 import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/organization-domains.ts";
@@ -61,7 +58,7 @@ export async function createDomain(
   organizationId: string,
   input: { domain: string },
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   requireRow(await lockOrganizationForCommand(context, organizationId));
   const row = await queries.createOrganizationDomain(context, {
     organizationId,
@@ -80,7 +77,7 @@ async function setStatus(
   domainId: string,
   status: "active" | "disabled",
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   requireRow(await lockOrganizationForCommand(context, organizationId));
   const existing = requireRow(
     await queries.findOrganizationDomainForCommand(
@@ -134,7 +131,7 @@ export async function deleteOrganizationDomain(
   organizationId: string,
   domainId: string,
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   requireRow(await lockOrganizationForCommand(context, organizationId));
   const before = requireRow(
     await queries.findOrganizationDomainForCommand(

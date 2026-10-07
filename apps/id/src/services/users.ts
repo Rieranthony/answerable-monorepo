@@ -3,9 +3,7 @@ import { members, oauthResources, systemBindings } from "../db/schema/index.ts";
 import { hasPlatformWriter } from "../db/queries/grants.ts";
 import { revokeUserGrantContexts } from "../db/queries/grant-contexts.ts";
 import {
-  requirePlatformWriteContext,
   type PlatformWriteContext,
-  requirePlatformUsersContext,
   type PlatformUsersContext,
   type PlatformReadContext,
 } from "./platform-context.ts";
@@ -91,7 +89,7 @@ export async function disableUser(
   context: PlatformUsersContext,
   userId: string,
 ) {
-  const { tx, actor } = requirePlatformUsersContext(context);
+  const { tx, actor } = context;
   const existing = requireUser(await queries.lockUser(context, userId));
   await protectPlatformUser(tx, userId);
   const stateChanged = existing.status !== "disabled";
@@ -127,7 +125,7 @@ export async function enableUser(
   context: PlatformUsersContext,
   userId: string,
 ) {
-  const { tx, actor } = requirePlatformUsersContext(context);
+  const { tx, actor } = context;
   const existing = requireUser(await queries.lockUser(context, userId));
   if (existing.retiredEmail !== null)
     throw new ProblemError(
@@ -154,7 +152,7 @@ export async function retireUserEmail(
   context: PlatformUsersContext,
   userId: string,
 ) {
-  const { tx, actor } = requirePlatformUsersContext(context);
+  const { tx, actor } = context;
   const existing = requireUser(await queries.lockUser(context, userId));
   if (existing.status !== "disabled")
     throw new ProblemError(
@@ -180,7 +178,7 @@ export async function eraseUser(
   userId: string,
   confirm: string,
 ) {
-  const { tx, actor } = requirePlatformWriteContext(context);
+  const { tx, actor } = context;
   const before = requireUser(await queries.lockUser(context, userId));
   if (confirm !== userId)
     throw new ProblemError(

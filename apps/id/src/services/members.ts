@@ -4,9 +4,6 @@ import * as queries from "../db/queries/members.ts";
 import type { MemberWindow } from "../db/queries/groups.ts";
 import type { Executor } from "../db/client.ts";
 import {
-  requireTenantMemberContext,
-  requireTenantDirectoryContext,
-  requireTenantMemberConfigurationContext,
   type TenantReadContext,
   type TenantMemberContext,
 } from "./tenant-context.ts";
@@ -44,14 +41,12 @@ export async function listMembers(
   context: TenantReadContext<"directory">,
   query: queries.MemberQuery,
 ) {
-  requireTenantDirectoryContext(context);
   return queries.listMembers(context, query);
 }
 export async function getMember(
   context: TenantReadContext<"directory">,
   memberId: string,
 ) {
-  requireTenantDirectoryContext(context);
   return requireRow(await queries.findMember(context, memberId));
 }
 export async function updateWindow(
@@ -60,7 +55,7 @@ export async function updateWindow(
   patch: MemberWindow,
   expected?: { id: string; revision: number },
 ) {
-  const { tx, organizationId, actor } = requireTenantMemberContext(context);
+  const { tx, organizationId, actor } = context;
   const before = requireRow(
     await queries.findMemberConfiguration(context, memberId),
   );
@@ -92,7 +87,7 @@ export async function updateWindow(
   return { body: row, changed: row.revision !== before.revision };
 }
 export async function remove(context: TenantMemberContext, memberId: string) {
-  const { tx, organizationId, actor } = requireTenantMemberContext(context);
+  const { tx, organizationId, actor } = context;
   const before = requireRow(await queries.findMember(context, memberId));
   const accessBefore = await memberAccess(context, memberId);
   const row = requireRow(await queries.revokeMember(context, memberId));
@@ -137,7 +132,7 @@ export async function reinstate(
   context: TenantMemberContext,
   memberId: string,
 ) {
-  const { tx, organizationId, actor } = requireTenantMemberContext(context);
+  const { tx, organizationId, actor } = context;
   const before = requireRow(await queries.findMember(context, memberId));
   const accessBefore = await memberAccess(context, memberId);
   const row = requireRow(await queries.reinstateMember(context, memberId));
@@ -172,6 +167,5 @@ export async function getMemberConfiguration(
   context: TenantMemberContext | TenantReadContext<"configuration">,
   memberId: string,
 ) {
-  requireTenantMemberConfigurationContext(context);
   return requireRow(await queries.findMemberConfiguration(context, memberId));
 }

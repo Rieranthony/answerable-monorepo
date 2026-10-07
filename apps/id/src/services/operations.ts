@@ -50,7 +50,6 @@ export function executeOperation<Authority>(
     operationId: string,
     authority: Authority,
   ) => Promise<Result & { body?: Json }>,
-  releaseAuthority: (authority: Authority) => void,
 ) {
   const identity = {
     actorInstance: command.actorInstance,
@@ -65,55 +64,51 @@ export function executeOperation<Authority>(
       sql`select pg_try_advisory_xact_lock(hashtextextended(${canonical(identity)}, 0)) as acquired`,
     );
     const authority = await authorize(tx);
-    try {
-      if (!lock.rows[0]!.acquired)
+    if (!lock.rows[0]!.acquired)
+      throw new ProblemError(
+        409,
+        "operation_in_progress",
+        "Operation is in progress",
+        "Retry with the same key and input.",
+        { retryable: true },
+      );
+    const [existing] = await tx
+      .select()
+      .from(adminOperations)
+      .where(
+        and(
+          eq(adminOperations.actorInstance, identity.actorInstance),
+          eq(adminOperations.authorityScope, identity.authorityScope),
+          eq(adminOperations.name, identity.name),
+          eq(adminOperations.keyDigest, identity.keyDigest),
+        ),
+      );
+    if (existing) {
+      if (existing.fingerprint !== fingerprint)
         throw new ProblemError(
           409,
-          "operation_in_progress",
-          "Operation is in progress",
-          "Retry with the same key and input.",
-          { retryable: true },
+          "idempotency_key_reused",
+          "Idempotency key was used for different input",
+          undefined,
+          { retryable: false },
         );
-      const [existing] = await tx
-        .select()
-        .from(adminOperations)
-        .where(
-          and(
-            eq(adminOperations.actorInstance, identity.actorInstance),
-            eq(adminOperations.authorityScope, identity.authorityScope),
-            eq(adminOperations.name, identity.name),
-            eq(adminOperations.keyDigest, identity.keyDigest),
-          ),
-        );
-      if (existing) {
-        if (existing.fingerprint !== fingerprint)
-          throw new ProblemError(
-            409,
-            "idempotency_key_reused",
-            "Idempotency key was used for different input",
-            undefined,
-            { retryable: false },
-          );
-        return {
-          operation: existing,
-          replayed: true,
-          body: {
-            operationId: existing.id,
-            outcome: existing.outcome,
-            statusCode: existing.statusCode,
-            resultReference: existing.resultReference,
-          },
-        };
-      }
-      const id = createId();
-      const { body, ...result } = await mutate(tx, id, authority);
-      const [operation] = await tx
-        .insert(adminOperations)
-        .values({ id, ...identity, fingerprint, ...result })
-        .returning();
-      return { operation: operation!, replayed: false, body };
-    } finally {
-      releaseAuthority(authority);
+      return {
+        operation: existing,
+        replayed: true,
+        body: {
+          operationId: existing.id,
+          outcome: existing.outcome,
+          statusCode: existing.statusCode,
+          resultReference: existing.resultReference,
+        },
+      };
     }
+    const id = createId();
+    const { body, ...result } = await mutate(tx, id, authority);
+    const [operation] = await tx
+      .insert(adminOperations)
+      .values({ id, ...identity, fingerprint, ...result })
+      .returning();
+    return { operation: operation!, replayed: false, body };
   });
 }

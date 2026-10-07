@@ -62,7 +62,6 @@ async function httpCommand<T>(
   authority: {
     scope: string;
     authorize: (tx: Executor, freshAuthentication: boolean) => Promise<T>;
-    release: (authority: T) => void;
   },
   mutate: (tx: Executor, actor: Actor, authority: T) => Promise<CommandResult>,
   options: CommandOptions,
@@ -115,7 +114,6 @@ async function httpCommand<T>(
         body: operationJson(result.body),
       };
     },
-    authority.release,
   );
   if (options.etag && !result.replayed)
     context.header("ETag", options.etag(result.body!));
@@ -152,7 +150,6 @@ export function platformCommand(
           claims: context.get("bearerClaims"),
           freshAuthentication,
         }),
-      release: (authorized) => authorized.close(),
     },
     (_tx, actor, authorized) => authorized.run(mutate, actor),
     options,
@@ -181,7 +178,6 @@ export function platformUsersCommand(
           claims: context.get("bearerClaims"),
           freshAuthentication,
         }),
-      release: (authorized) => authorized.close(),
     },
     (_tx, actor, authorized) => authorized.run(mutate, actor),
     options,
@@ -211,7 +207,6 @@ export function tenantMemberCommand(
           organizationId,
           freshAuthentication,
         }),
-      release: (authorized) => authorized.close(),
     },
     (_tx, actor, tenant) => tenant.run(mutate, actor),
     {},

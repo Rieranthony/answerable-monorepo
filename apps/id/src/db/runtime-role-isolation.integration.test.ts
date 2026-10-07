@@ -21,8 +21,6 @@ test("access queries use issued tenant contexts on a restricted connection", asy
   const { organizations, users, members, oauthResources, entitlements } =
     await import("./schema/index.ts");
   const { memberAccess, targetAccess } = await import("./queries/access.ts");
-  const { requireTenantMemberAccessContext } =
-    await import("../services/tenant-context.ts");
   const memberQueries = await import("./queries/members.ts");
   const { inTenant, inTenantRead } =
     await import("../__tests__/tenant-command.ts");
@@ -72,10 +70,6 @@ test("access queries use issued tenant contexts on a restricted connection", asy
           effective: false,
           targets: [],
         });
-        // The query reads the context it is given; the registry refuses copies.
-        expect(() => requireTenantMemberAccessContext({ ...context })).toThrow(
-          "Invalid or expired",
-        );
       },
     );
     await inTenantRead(runtime.db, tenant.id, "directory", async (context) => {
@@ -308,10 +302,6 @@ test("group and entitlement queries preserve tenant scope under the runtime logi
 
 test("restricted audit readers retain tenant isolation and person history after erasure", async () => {
   const auditQueries = await import("./queries/audit.ts");
-  const { requireTenantHistoryContext } =
-    await import("../services/tenant-context.ts");
-  const { requirePlatformReadContext } =
-    await import("../services/platform-context.ts");
   const { inTenantRead } = await import("../__tests__/tenant-command.ts");
   const { inPlatformRead } = await import("../__tests__/platform-context.ts");
   const { users, organizations } = await import("./schema/index.ts");
@@ -363,13 +353,6 @@ test("restricted audit readers retain tenant isolation and person history after 
             .filter((event) => event.organizationId === organizationId)
             .map((event) => event.id),
         );
-        expect(requireTenantHistoryContext(context)).toBe(context);
-        expect(() => requireTenantHistoryContext({ ...context })).toThrow(
-          "Invalid or expired",
-        );
-        expect(() => requirePlatformReadContext(context as never)).toThrow(
-          "Invalid or expired",
-        );
       },
     );
   await inPlatformRead(runtime.db, async (context) => {
@@ -381,10 +364,6 @@ test("restricted audit readers retain tenant isolation and person history after 
     );
     expect(result.items.map((row) => row.id).sort()).toEqual(
       events.map((event) => event.id).sort(),
-    );
-    expect(requirePlatformReadContext(context)).toBe(context);
-    expect(() => requirePlatformReadContext({ ...context })).toThrow(
-      "Invalid or expired",
     );
   });
 });
