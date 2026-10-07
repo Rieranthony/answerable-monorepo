@@ -9,6 +9,38 @@ const ownsObjects = sql`
   or exists(select 1 from pg_database where datname = current_database() and datdba = r.oid)
 `;
 
+/** Product tables: rows are tombstoned or revoked, never deleted by runtime. */
+const productTables = [
+  "users",
+  "organizations",
+  "accounts",
+  "members",
+  "organization_domains",
+  "groups",
+  "group_members",
+  "entitlements",
+  "oauth_clients",
+  "oauth_resources",
+  "oauth_client_resources",
+  "oauth_consents",
+  "sso_providers",
+  "organization_capabilities",
+  "grant_contexts",
+];
+/** Tables whose rows row-level security limits to the transaction's scope. */
+const rlsTables = [
+  "groups",
+  "group_members",
+  "entitlements",
+  "organization_capabilities",
+  "grant_contexts",
+  "members",
+  "organization_domains",
+  "sso_providers",
+  "audit_events",
+  "audit_event_users",
+];
+
 /** Provision permissions only; login credentials belong to deployment tooling. */
 export function configureRuntimeRole(db: Database, roleName: string) {
   if (!/^[a-z][a-z0-9_]{0,62}$/.test(roleName))
@@ -57,7 +89,10 @@ export function configureRuntimeRole(db: Database, roleName: string) {
       sql`grant select, insert, update, delete on all tables in schema public to ${role}`,
     );
     await tx.execute(
-      sql`revoke delete on users, organizations, accounts, members, organization_domains, groups, group_members, entitlements, oauth_clients, oauth_resources, oauth_client_resources, oauth_consents, sso_providers, organization_capabilities, grant_contexts from ${role}`,
+      sql`revoke delete on ${sql.join(
+        productTables.map((table) => sql.identifier(table)),
+        sql`, `,
+      )} from ${role}`,
     );
     await tx.execute(sql`revoke update, delete on audit_events from ${role}`);
     await tx.execute(
@@ -78,8 +113,8 @@ export async function assertRuntimeRole(db: Database) {
     select
       (${elevatedRole}) or (${ownsObjects})
       or (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
-        where n.nspname = 'public' and c.relname in ('groups', 'group_members', 'entitlements', 'organization_capabilities', 'grant_contexts', 'members', 'organization_domains', 'sso_providers', 'audit_events', 'audit_event_users') and c.relrowsecurity) <> 10
-      or exists(select 1 from unnest(array['users','organizations','accounts','members','organization_domains','groups','group_members','entitlements','oauth_clients','oauth_resources','oauth_client_resources','oauth_consents','sso_providers','organization_capabilities','grant_contexts']) as product(table_name) where has_table_privilege(current_user, product.table_name, 'DELETE,TRUNCATE,TRIGGER'))
+        where n.nspname = 'public' and c.relname = any(${sql.param(rlsTables)}::text[]) and c.relrowsecurity) <> ${rlsTables.length}
+      or exists(select 1 from unnest(${sql.param(productTables)}::text[]) as product(table_name) where has_table_privilege(current_user, product.table_name, 'DELETE,TRUNCATE,TRIGGER'))
       or has_schema_privilege(current_user, 'public', 'CREATE')
       or has_database_privilege(current_user, current_database(), 'TEMP')
       or has_table_privilege(current_user, 'audit_events', 'UPDATE,DELETE,TRUNCATE,TRIGGER')
