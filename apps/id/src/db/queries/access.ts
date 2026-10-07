@@ -23,6 +23,7 @@ import {
 } from "../schema/index.ts";
 import { beforeCursor, type PageQuery } from "../../http/pagination.ts";
 import { isEffective, matchingEntitlements } from "./effective.ts";
+import { uniqueSorted } from "../../lib/scopes.ts";
 
 export type AccessTarget =
   | { clientId: string; resource?: string }
@@ -143,7 +144,7 @@ export async function memberAccess(
             scopes: [],
             via: [],
           };
-    target.scopes = [...new Set(sources.flatMap((row) => row.scopes))].sort();
+    target.scopes = uniqueSorted(sources.flatMap((row) => row.scopes));
     target.via = sources.map((row) => ({
       entitlementId: row.id,
       principal:
