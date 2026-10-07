@@ -107,10 +107,6 @@ export const ERRORS: Record<string, ErrorDescription> = {
   },
 };
 
-export function describeError(code: string | null): ErrorDescription {
+export function describeError(code?: string | null): ErrorDescription {
   return (code && ERRORS[code]) || FALLBACK;
-}
-
-export function describeSSOError(code: string | undefined): ErrorDescription {
-  return describeError(code ?? null);
 }

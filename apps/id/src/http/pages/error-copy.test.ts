@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 
-import { describeError, describeSSOError, ERRORS } from "./error-copy.ts";
+import { describeError, ERRORS } from "./error-copy.ts";
 
 test("describes every known error without exposing its code and falls back otherwise", () => {
   const fallback = describeError(null);
   for (const code of Object.keys(ERRORS)) {
-    const description = describeSSOError(code);
+    const description = describeError(code);
     expect(description, code).toBe(ERRORS[code]!);
     expect(description, code).not.toEqual(fallback);
     expect(description.title.length, code).toBeGreaterThan(0);
@@ -13,5 +13,5 @@ test("describes every known error without exposing its code and falls back other
     expect(`${description.title} ${description.body}`).not.toContain(code);
   }
   for (const code of [undefined, "unexpected_server_detail"])
-    expect(describeSSOError(code)).toBe(fallback);
+    expect(describeError(code)).toBe(fallback);
 });

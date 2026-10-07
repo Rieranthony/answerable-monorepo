@@ -14,7 +14,7 @@ import {
   emailPattern,
   pendingOAuthQuery,
 } from "../login-routing.ts";
-import { describeSSOError, type ErrorDescription } from "../error-copy.ts";
+import { describeError, type ErrorDescription } from "../error-copy.ts";
 import { LoginForm, SignedIn } from "../views/login.tsx";
 
 export async function startSignIn(
@@ -79,9 +79,9 @@ async function renderLogin(context: PageContext, message?: ErrorDescription) {
       );
       if (result.ok && result.data?.url)
         return context.redirect(result.data.url, 302);
-      message = describeSSOError(result.data?.code);
+      message = describeError(result.data?.code);
     } catch {
-      message = describeSSOError(undefined);
+      message = describeError();
     }
   }
   return context.render(
@@ -104,7 +104,7 @@ export function registerLogin(app: Hono<AppEnvironment>) {
     const body = await context.req.parseBody();
     const email =
       typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-    let message = describeSSOError(undefined);
+    let message = describeError();
     const domain = email.slice(email.lastIndexOf("@") + 1);
     if (emailPattern.test(email)) {
       try {
@@ -113,7 +113,7 @@ export function registerLogin(app: Hono<AppEnvironment>) {
           domain,
         );
         if (!slug) {
-          message = describeSSOError("provider_not_found");
+          message = describeError("provider_not_found");
         } else {
           const result = await startSignIn(
             context,
@@ -123,10 +123,10 @@ export function registerLogin(app: Hono<AppEnvironment>) {
           );
           if (result.ok && result.data?.url)
             return context.redirect(result.data.url, 302);
-          message = describeSSOError(result.data?.code);
+          message = describeError(result.data?.code);
         }
       } catch {
-        message = describeSSOError(undefined);
+        message = describeError();
       }
     }
     return context.render(
