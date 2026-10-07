@@ -11,7 +11,8 @@
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "bun test",
-    "mosaic": "bun scripts/build-mosaic.ts"
+    "mosaic": "bun scripts/build-mosaic.ts",
+    "check:metadata": "bun scripts/check-metadata.ts"
   },
   "dependencies": {
     "@answerable/countries": "workspace:*",

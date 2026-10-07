@@ -13,6 +13,8 @@ From the repository root, copy `apps/web/.env.example` to `apps/web/.env.local`,
 
 Set `PORT` to override the web port for a preview. Next.js reads the web environment files from this directory, not the repository root.
 
+To check a production build, run `bun run build`, serve it with `PORT=47101 bun run start`, then run `bun run check:metadata` from this directory (pass another origin as an argument). It checks the canonical, Open Graph and robots tags, structured data, sitemap, icons and OG images.
+
 ## Local OAuth test
 
 Open `http://localhost:47100/oauth-test` after starting both apps. This development-only page is an independent confidential OAuth/OIDC client of Answerable ID. ID serves all login, organisation selection, consent, security and error pages at `http://localhost:47300`. Microsoft returns to ID at `/auth/sso/callback`; ID returns to this app at `/api/oauth-test/callback`.
