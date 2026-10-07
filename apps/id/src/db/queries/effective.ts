@@ -12,14 +12,14 @@ export function isEffective(table: {
   validFrom: PgColumn;
   validUntil: PgColumn;
   status?: PgColumn;
-  deletedAt?: PgColumn;
+  deletedAt: PgColumn;
 }): SQL {
   // Evaluate at this statement, not the start of a transaction that may have waited.
   const window = sql`(${table.validFrom} is null or ${table.validFrom} <= statement_timestamp()) and (${table.validUntil} is null or ${table.validUntil} > statement_timestamp())`;
 
   // Parenthesised so callers can negate or combine it without precedence
   // surprises (`not (a and b)`, `x or (a and b)`).
-  const present = table.deletedAt ? isNull(table.deletedAt) : sql`true`;
+  const present = isNull(table.deletedAt);
   return table.status
     ? sql`(${present} and ${table.status} = 'active' and ${window})`
     : sql`(${present} and ${window})`;

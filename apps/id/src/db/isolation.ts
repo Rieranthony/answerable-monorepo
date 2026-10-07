@@ -2,7 +2,6 @@ import { sql } from "drizzle-orm";
 import type { Executor } from "./client.ts";
 
 type DatabaseScope =
-  | { kind: "none" }
   | { kind: "protocol" }
   | { kind: "platform"; access: "read" | "write" }
   | { kind: "tenant"; access: "read" | "write"; organizationId: string }
