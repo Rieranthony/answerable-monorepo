@@ -1,5 +1,5 @@
 import type { NativeAdapter } from "./native-client-authentication.ts";
-import { APIError } from "better-auth/api";
+import { APIError, isAPIError } from "better-auth/api";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Executor } from "../db/client.ts";
 import { revokeGrantContexts } from "../db/queries/grant-contexts.ts";
@@ -74,7 +74,7 @@ export async function withNativeCodeReplay<T>(
     return { value };
   } catch (error) {
     if (!invalidating) throw error;
-    if (!(error instanceof APIError && error.body?.error === "invalid_grant"))
+    if (!(isAPIError(error) && error.body?.error === "invalid_grant"))
       await tx.execute(sql`rollback to savepoint native_code_cleanup`);
     await tx.execute(sql`release savepoint native_code_cleanup`);
     return { error };

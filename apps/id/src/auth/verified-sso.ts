@@ -9,6 +9,7 @@ import type {
 import type { DBTransactionAdapter, BetterAuthPlugin } from "better-auth";
 import {
   APIError,
+  isAPIError,
   addOAuthServerContext,
   createAuthEndpoint,
   createAuthMiddleware,
@@ -188,7 +189,7 @@ export function createVerifiedSso(db: Database) {
     try {
       await current(tx, flow);
     } catch (error) {
-      if (error instanceof APIError) return reject(error.body!.code!);
+      if (isAPIError(error)) return reject(error.body!.code!);
       throw error;
     }
     const [provider] = await tx
