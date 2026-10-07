@@ -22,6 +22,7 @@ import { logEvent } from "./lib/log.ts";
 import { createSsoOriginBoundary } from "./auth/sso-origin.ts";
 import { upstreamTokenStorage } from "./auth/upstream-token-storage.ts";
 import { createVerifiedSso } from "./auth/verified-sso.ts";
+import { grantLifetimeSeconds } from "./auth/user-oauth-flow.ts";
 
 export function createAuth(db: Database, environment: Environment) {
   const verifiedSso = createVerifiedSso(db);
@@ -262,6 +263,7 @@ export function createAuth(db: Database, environment: Environment) {
       userOAuthProvider(
         db,
         {
+          refreshTokenExpiresIn: grantLifetimeSeconds,
           refreshTokenReuseInterval:
             environment.oauthRefreshReuseIntervalSeconds,
           // hashClientSecret mirrors this digest for bootstrap clients.

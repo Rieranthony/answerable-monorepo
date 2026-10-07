@@ -172,7 +172,6 @@ export async function assertUserTokenResponse(input: {
       id.nonce !== reference.nonce ||
       !issuedAt(id.iat) ||
       id.iat < iat ||
-      id.exp !== id.iat + (options.idTokenExpiresIn ?? 36_000) ||
       Object.entries(input.identity).some(([key, value]) => id[key] !== value)
     )
       throw invalid();

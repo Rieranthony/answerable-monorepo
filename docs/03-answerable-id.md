@@ -59,7 +59,7 @@ Login-only access tokens are opaque. Resource access tokens require `typ: at+jwt
 
 Permission intersects live identities, own-tenant authentication, effective membership, registration, exact links, capability ceilings, matching assignments and requested scopes. Login and resource permission are separate. Refresh requires its own matching ceiling, including login-only grants. Unrelated assignments cannot create a new pair.
 
-The default grant lifetime is 30 days and browser flow lifetime is ten minutes. Token lifetimes follow the pinned provider's configured bounds; consumers use the returned expiry. Optional refresh reuse is bounded by `OAUTH_REFRESH_REUSE_INTERVAL_SECONDS` (default zero) and rechecks current policy before returning cached tokens. See [OAuth](../apps/web/content/docs/id/oauth.mdx).
+A grant and its refresh tokens last 30 days, and a browser flow ten minutes. Other token lifetimes follow the pinned provider's configured bounds; consumers use the returned expiry. Optional refresh reuse is bounded by `OAUTH_REFRESH_REUSE_INTERVAL_SECONDS` (default zero) and rechecks current policy before returning cached tokens. See [OAuth](../apps/web/content/docs/id/oauth.mdx).
 
 ## Lifecycle: joiners, movers, leavers
 

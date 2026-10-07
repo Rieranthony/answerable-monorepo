@@ -62,7 +62,7 @@ For a service grant, include the same `resource` URL. Public clients use their r
 
 **ID token.** Returned only when the issued scopes include `openid`. Verify its signature using discovery's keys, issuer, audience and expiry. At code exchange, also verify the original nonce; refresh ID tokens omit it. `sub` is the stable global user UUID. Profile and email claims come from UserInfo under the consented scopes or individual claims request, not from the ID token. Email is display data.
 
-**Access token.** Login-only tokens are opaque and can call UserInfo. Service tokens are JWTs whose audience includes the requested resource. An ID token is not a service access token. Native token expiry comes from provider defaults and configured resource lifetimes; the immutable authorisation context also expires after 30 days.
+**Access token.** Login-only tokens are opaque and can call UserInfo. Service tokens are JWTs whose audience includes the requested resource. An ID token is not a service access token. Refresh tokens and the immutable authorisation context expire after 30 days; other token expiry comes from provider defaults and configured resource lifetimes.
 
 | Claim                                | Meaning                                                             |
 | ------------------------------------ | ------------------------------------------------------------------- |

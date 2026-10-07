@@ -32,6 +32,8 @@ import type { NativeContext } from "./native-client-authentication.ts";
 import { narrowAuthorizationCode } from "./narrow-authorization-code.ts";
 import { recordUserOAuth } from "./user-oauth-audit.ts";
 
+/** A user grant lasts 30 days; createAuth gives its refresh tokens the same. */
+export const grantLifetimeSeconds = 2_592_000;
 const parameter = "answerable_flow";
 const prefix = "answerable-oauth-flow:";
 const flowSchema = z.object({
@@ -236,7 +238,7 @@ export function createUserOAuthFlow(
             resource,
             scopes,
           },
-          options.refreshTokenExpiresIn ?? 2_592_000,
+          grantLifetimeSeconds,
         );
         flow.grantId = grant.id;
         flow.status = "consent";
