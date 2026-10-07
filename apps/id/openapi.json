@@ -65,11 +65,7 @@
             "readOnly": true
           },
           "status": {
-            "type": [
-              "inert",
-              "active",
-              "disabled"
-            ],
+            "type": "string",
             "default": "inert",
             "readOnly": true
           },

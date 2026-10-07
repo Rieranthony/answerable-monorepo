@@ -10,11 +10,6 @@ import { organization } from "better-auth/plugins/organization";
 import { sessionAuditHooks } from "./auth/audit-hooks.ts";
 import type { Database } from "./db/client.ts";
 import { answerableSchema } from "./auth/answerable-schema.ts";
-import {
-  lifecycleStatuses,
-  userStatuses,
-  membershipStatuses,
-} from "./db/schema/vocabulary.ts";
 import type { Environment } from "./env.ts";
 import { errorFields } from "./http/problem.ts";
 import { createId } from "./lib/id.ts";
@@ -154,7 +149,7 @@ export function createAuth(db: Database, environment: Environment) {
         // A user created without a status, such as an import placeholder,
         // starts inert; federation creates its users active.
         status: {
-          type: [...userStatuses],
+          type: "string",
           required: true,
           defaultValue: "inert",
           input: false,
@@ -202,7 +197,7 @@ export function createAuth(db: Database, environment: Environment) {
                 input: false,
               },
               status: {
-                type: [...lifecycleStatuses],
+                type: "string",
                 required: true,
                 defaultValue: "active",
                 input: false,
@@ -228,7 +223,7 @@ export function createAuth(db: Database, environment: Environment) {
                 returned: false,
               },
               status: {
-                type: [...membershipStatuses],
+                type: "string",
                 required: true,
                 defaultValue: "active",
                 input: false,
