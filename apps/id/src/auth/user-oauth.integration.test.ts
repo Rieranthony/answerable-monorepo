@@ -40,7 +40,10 @@ import { createAuth } from "../auth.ts";
 import { createDatabase, type Database, type Executor } from "../db/client.ts";
 import { withDatabaseScope } from "../db/isolation.ts";
 import { memberAccess } from "../db/queries/access.ts";
-import { configureRuntimeRole } from "../db/runtime-role.ts";
+import {
+  createRuntimeLogin,
+  type RuntimeLogin,
+} from "../__tests__/runtime-role.ts";
 import {
   accounts,
   auditEvents,
@@ -105,7 +108,7 @@ import { userResourcePolicy } from "./user-resource-policy.ts";
 let fixture: AdminFixture;
 let runtime: ReturnType<typeof createDatabase>;
 let auth: ReturnType<typeof createAuth>;
-let role: string;
+let login: RuntimeLogin | undefined;
 let browserCookie: string;
 const clientId = "omnichat";
 const resource = "https://m365.example/mcp";
@@ -116,7 +119,7 @@ const secret = "production-oauth-test-client-secret";
 beforeEach(async () => {
   fixture = undefined!;
   runtime = undefined!;
-  role = "";
+  login = undefined;
   fixture = await createAdminFixture();
   browserCookie = fixture.principals.tenantAdmin.cookie;
   await fixture.db.insert(oauthClients).values({
@@ -182,20 +185,10 @@ beforeEach(async () => {
       scopes: ["mail:read"],
     },
   ]);
-  role = `id_test_oauth_${crypto.randomUUID().replaceAll("-", "")}`;
-  await configureRuntimeRole(fixture.db, role);
-  const password = crypto.randomUUID().replaceAll("-", "");
-  await fixture.db.execute(
-    sql.raw(`alter role "${role}" login password '${password}'`),
-  );
-  const url = new URL(fixture.environment.databaseUrl);
-  url.username = role;
-  url.password = password;
-  runtime = createDatabase({
-    ...fixture.environment,
-    databaseUrl: url.toString(),
+  login = await createRuntimeLogin(fixture.db, fixture.environment, {
     databasePoolMax: 4,
   });
+  runtime = login.connection;
   const provider = createAuth(runtime.db, fixture.environment);
   const app = createApp({
     auth: provider,
@@ -206,11 +199,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await runtime?.close();
-  if (fixture && role) {
-    await fixture.db.execute(sql`drop owned by ${sql.identifier(role)}`);
-    await fixture.db.execute(sql`drop role ${sql.identifier(role)}`);
-  }
+  await login?.drop();
   await fixture?.close();
 });
 

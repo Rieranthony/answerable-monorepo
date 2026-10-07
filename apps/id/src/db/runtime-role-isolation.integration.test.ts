@@ -4,19 +4,17 @@ import { eq, sql } from "drizzle-orm";
 import { testEnvironment } from "../__tests__/support.ts";
 import { bootstrap, systemActor } from "../bootstrap.ts";
 import { type DatabaseConnection } from "./client.ts";
-import {
-  closeRuntimeRole,
-  openRuntimeRole,
-} from "../__tests__/runtime-role.ts";
+import { openRuntimeRole } from "../__tests__/runtime-role.ts";
 
+let roles: Awaited<ReturnType<typeof openRuntimeRole>>;
 let owner: DatabaseConnection;
 let runtime: DatabaseConnection;
-const roleName = `id_test_runtime_${crypto.randomUUID().replaceAll("-", "")}`;
 const environment = testEnvironment();
 beforeAll(async () => {
-  ({ owner, runtime } = await openRuntimeRole(environment, roleName));
+  roles = await openRuntimeRole(environment);
+  ({ owner, runtime } = roles);
 });
-afterAll(() => closeRuntimeRole({ owner, runtime }, roleName));
+afterAll(() => roles?.close());
 test("access queries use issued tenant contexts on a restricted connection", async () => {
   const { organizations, users, members, oauthResources, entitlements } =
     await import("./schema/index.ts");
@@ -55,7 +53,7 @@ test("access queries use issued tenant contexts on a restricted connection", asy
   }
   expect(
     (await runtime.db.execute(sql`select current_user as name`)).rows,
-  ).toEqual([{ name: roleName }]);
+  ).toEqual([{ name: roles.role }]);
   for (const tenant of tenants) {
     await inTenantRead(
       runtime.db,

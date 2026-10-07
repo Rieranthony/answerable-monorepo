@@ -12,7 +12,7 @@ import { createAuth } from "../auth.ts";
 import { createApp } from "../app.ts";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
-import { configureRuntimeRole } from "../db/runtime-role.ts";
+import { createRuntimeLogin } from "../__tests__/runtime-role.ts";
 import {
   auditEvents,
   auditEventUsers,
@@ -621,22 +621,13 @@ test("client authentication storage failure is unattributed and excludes excepti
 });
 
 test("restricted runtime records failed authentication without a claimed-client subject", async () => {
-  const role = `id_test_auth_attempt_${crypto.randomUUID().replaceAll("-", "")}`;
-  await configureRuntimeRole(connection.db, role);
-  const password = crypto.randomUUID().replaceAll("-", "");
-  await connection.db.execute(
-    sql.raw(`alter role "${role}" login password '${password}'`),
-  );
-  const url = new URL(environment.databaseUrl);
-  url.username = role;
-  url.password = password;
-  const settings = { ...environment, databaseUrl: url.toString() };
-  const runtime = createDatabase(settings);
+  const login = await createRuntimeLogin(connection.db, environment);
+  const runtime = login.connection;
   try {
     app = createApp({
       db: runtime.db,
-      auth: createAuth(runtime.db, settings),
-      environment: settings,
+      auth: createAuth(runtime.db, login.environment),
+      environment: login.environment,
     });
     expect(
       (await mint("restricted-auth-denial", { secret: "wrong-credential" }))
@@ -657,9 +648,7 @@ test("restricted runtime records failed authentication without a claimed-client 
     expect(JSON.stringify(event)).not.toContain(client.clientId);
     expect(await issuedEvents()).toHaveLength(0);
   } finally {
-    await runtime.close();
-    await connection.db.execute(sql`drop owned by ${sql.identifier(role)}`);
-    await connection.db.execute(sql`drop role ${sql.identifier(role)}`);
+    await login.drop();
   }
 });
 

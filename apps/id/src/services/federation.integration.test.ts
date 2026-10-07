@@ -32,7 +32,11 @@ import {
 import { isUuidV7, testEnvironment } from "../__tests__/support.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import { assertDisposableTestDatabase } from "../__tests__/test-database.ts";
-import { assertRuntimeRole, configureRuntimeRole } from "../db/runtime-role.ts";
+import { assertRuntimeRole } from "../db/runtime-role.ts";
+import {
+  createRuntimeLogin,
+  type RuntimeLogin,
+} from "../__tests__/runtime-role.ts";
 import { createOrganizationDomain } from "../__tests__/domain-queries.ts";
 import { createSsoProvider } from "../__tests__/sso-queries.ts";
 import {
@@ -55,7 +59,7 @@ const entraIssuer = `https://login.microsoftonline.com/${tenantId}/v2.0`;
 let issuer: OidcIssuer;
 let connection: DatabaseConnection;
 let runtime: DatabaseConnection;
-const roleName = `id_test_sso_${crypto.randomUUID().replaceAll("-", "")}`;
+let login: RuntimeLogin;
 let app: App;
 let beforeTokenResponse: (() => Promise<void>) | undefined;
 
@@ -71,19 +75,8 @@ beforeAll(async () => {
     trustedOrigins: [issuer.origin, new URL(callbackURL).origin],
   });
   connection = createDatabase({ ...environment, databasePoolMax: 3 });
-  await configureRuntimeRole(connection.db, roleName);
-  const password = crypto.randomUUID().replaceAll("-", "");
-  await connection.db.execute(
-    sql.raw(`alter role "${roleName}" login password '${password}'`),
-  );
-  const url = new URL(environment.databaseUrl);
-  url.username = roleName;
-  url.password = password;
-  runtime = createDatabase({
-    ...environment,
-    databaseUrl: url.toString(),
-    databasePoolMax: 1,
-  });
+  login = await createRuntimeLogin(connection.db, environment);
+  runtime = login.connection;
   app = createApp({
     auth: createAuth(runtime.db, environment),
     db: runtime.db,
@@ -110,9 +103,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   issuer.stop();
-  await runtime?.close();
-  await connection.db.execute(sql`drop owned by ${sql.identifier(roleName)}`);
-  await connection.db.execute(sql`drop role ${sql.identifier(roleName)}`);
+  await login?.drop();
   await connection.close();
 });
 
@@ -328,7 +319,7 @@ describe("integration: federated sign-in", () => {
     await assertRuntimeRole(runtime.db);
     expect(
       (await runtime.db.execute(sql`select current_user as name`)).rows,
-    ).toEqual([{ name: roleName }]);
+    ).toEqual([{ name: login.role }]);
     await seedProvider();
     for (const attempt of ["denied", "accepted"] as const) {
       issuer.enqueue(entraClaims(attempt === "denied" ? { acct: 1 } : {}));
@@ -483,7 +474,7 @@ describe("integration: federated sign-in", () => {
         let callbackPid = 0;
         for (let attempt = 0; attempt < 100; attempt++) {
           const active = await connection.db.execute(
-            sql`select pid from pg_stat_activity where usename = ${roleName} and cardinality(pg_blocking_pids(pid)) > 0`,
+            sql`select pid from pg_stat_activity where usename = ${login.role} and cardinality(pg_blocking_pids(pid)) > 0`,
           );
           if (active.rows.length) {
             callbackPid = Number(active.rows[0]!.pid);

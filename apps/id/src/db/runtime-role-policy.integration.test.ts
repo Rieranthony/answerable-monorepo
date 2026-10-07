@@ -6,19 +6,17 @@ import { createAuth } from "../auth.ts";
 import { type DatabaseConnection } from "./client.ts";
 import { auditEvents } from "./schema/index.ts";
 import { assertRuntimeRole } from "./runtime-role.ts";
-import {
-  closeRuntimeRole,
-  openRuntimeRole,
-} from "../__tests__/runtime-role.ts";
+import { openRuntimeRole } from "../__tests__/runtime-role.ts";
 
+let roles: Awaited<ReturnType<typeof openRuntimeRole>>;
 let owner: DatabaseConnection;
 let runtime: DatabaseConnection;
-const roleName = `id_test_runtime_${crypto.randomUUID().replaceAll("-", "")}`;
 const environment = testEnvironment();
 beforeAll(async () => {
-  ({ owner, runtime } = await openRuntimeRole(environment, roleName));
+  roles = await openRuntimeRole(environment);
+  ({ owner, runtime } = roles);
 });
-afterAll(() => closeRuntimeRole({ owner, runtime }, roleName));
+afterAll(() => roles?.close());
 test("restricted runtime evaluates exact user pairs through scoped policy reads", async () => {
   const { createSsoProvider } = await import("../__tests__/sso-queries.ts");
   const { setDatabaseScope, withDatabaseScope } =

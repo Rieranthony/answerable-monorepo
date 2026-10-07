@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql, type SQL } from "drizzle-orm";
 
-import { closeRuntimeRole, openRuntimeRole } from "./__tests__/runtime-role.ts";
+import { openRuntimeRole } from "./__tests__/runtime-role.ts";
 import { testEnvironment } from "./__tests__/support.ts";
 import { assertDisposableTestDatabase } from "./__tests__/test-database.ts";
 import {
@@ -246,8 +246,7 @@ test("bootstrap does not adopt an unrelated existing resource", async () => {
 });
 
 test("system binding protects its rows and rejects a changed admin audience", async () => {
-  const role = `id_test_runtime_${crypto.randomUUID().replaceAll("-", "")}`;
-  const connections = await openRuntimeRole(testEnvironment(), role);
+  const connections = await openRuntimeRole(testEnvironment());
   try {
     const bound = await bootstrap(db, actor, options);
     await expect(
@@ -297,7 +296,7 @@ test("system binding protects its rows and rejects a changed admin audience", as
       },
     });
   } finally {
-    await closeRuntimeRole(connections, role);
+    await connections.close();
   }
 });
 

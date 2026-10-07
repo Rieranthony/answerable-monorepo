@@ -11,7 +11,11 @@ import { createAuth } from "../auth.ts";
 import { createDatabase } from "../db/client.ts";
 import { withDatabaseScope } from "../db/isolation.ts";
 import * as auditQueries from "../db/queries/audit.ts";
-import { assertRuntimeRole, configureRuntimeRole } from "../db/runtime-role.ts";
+import { assertRuntimeRole } from "../db/runtime-role.ts";
+import {
+  createRuntimeLogin,
+  type RuntimeLogin,
+} from "../__tests__/runtime-role.ts";
 import {
   accounts,
   auditEvents,
@@ -42,7 +46,7 @@ let fixture: AdminFixture;
 let runtime: ReturnType<typeof createDatabase>;
 let app: ReturnType<typeof createApp>;
 let nativeAuth: ReturnType<typeof createAuth>;
-let role: string;
+let login: RuntimeLogin;
 let clock: ReturnType<typeof databaseClock>;
 let foreignMember: string;
 const clientId = "tenant-authentication-proof";
@@ -50,20 +54,10 @@ const resource = "https://resource.example/tenant-authentication";
 
 beforeEach(async () => {
   fixture = await createAdminFixture();
-  role = `id_test_admission_${crypto.randomUUID().replaceAll("-", "")}`;
-  await configureRuntimeRole(fixture.db, role);
-  const password = crypto.randomUUID().replaceAll("-", "");
-  await fixture.db.execute(
-    sql.raw(`alter role "${role}" login password '${password}'`),
-  );
-  const url = new URL(fixture.environment.databaseUrl);
-  url.username = role;
-  url.password = password;
-  runtime = createDatabase({
-    ...fixture.environment,
-    databaseUrl: url.toString(),
+  login = await createRuntimeLogin(fixture.db, fixture.environment, {
     databasePoolMax: 2,
   });
+  runtime = login.connection;
   clock = databaseClock(runtime.pool);
   await assertRuntimeRole(runtime.db);
   fixture.environment.trustedProxyCidrs = ["10.0.0.0/8"];
@@ -107,12 +101,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await runtime?.close();
-  if (fixture) {
-    await fixture.db.execute(sql`drop owned by ${sql.identifier(role)}`);
-    await fixture.db.execute(sql`drop role ${sql.identifier(role)}`);
-    await fixture.close();
-  }
+  await login?.drop();
+  await fixture?.close();
 });
 
 async function currentSession() {

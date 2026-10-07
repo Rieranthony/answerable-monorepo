@@ -19,20 +19,19 @@ const linkResource = platformWriteService(linkResourceImplementation);
 import { type DatabaseConnection } from "./client.ts";
 import { auditEvents } from "./schema/index.ts";
 import { configureRuntimeRole, assertRuntimeRole } from "./runtime-role.ts";
-import {
-  closeRuntimeRole,
-  openRuntimeRole,
-} from "../__tests__/runtime-role.ts";
+import { openRuntimeRole } from "../__tests__/runtime-role.ts";
 
+let roles: Awaited<ReturnType<typeof openRuntimeRole>>;
 let owner: DatabaseConnection;
 let runtime: DatabaseConnection;
-const roleName = `id_test_runtime_${crypto.randomUUID().replaceAll("-", "")}`;
+let roleName: string;
 const ownerRole = `id_test_owner_${crypto.randomUUID().replaceAll("-", "")}`;
 const environment = testEnvironment();
 beforeAll(async () => {
-  ({ owner, runtime } = await openRuntimeRole(environment, roleName));
+  roles = await openRuntimeRole(environment);
+  ({ owner, runtime, role: roleName } = roles);
 });
-afterAll(() => closeRuntimeRole({ owner, runtime }, roleName));
+afterAll(() => roles?.close());
 test("real runtime login can bootstrap, audit and issue a machine token", async () => {
   await configureRuntimeRole(owner.db, roleName);
   await assertRuntimeRole(runtime.db);

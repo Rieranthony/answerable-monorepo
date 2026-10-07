@@ -9,8 +9,8 @@ import { generateKeyPair, SignJWT } from "jose";
 import { createApp } from "../app.ts";
 import { createAuth } from "../auth.ts";
 import { bootstrap, platformScopes, systemActor } from "../bootstrap.ts";
-import { createDatabase, type DatabaseConnection } from "../db/client.ts";
-import { configureRuntimeRole } from "../db/runtime-role.ts";
+import { createDatabase } from "../db/client.ts";
+import { createRuntimeLogin, type RuntimeLogin } from "./runtime-role.ts";
 import { upsertGroupMember } from "./group-queries.ts";
 import {
   createClient as createClientImplementation,
@@ -80,15 +80,10 @@ export async function createAdminFixture(
   });
   const connection = createDatabase(environment);
   const { db } = connection;
-  let runtime: DatabaseConnection | undefined;
-  let role: string | undefined;
+  let login: RuntimeLogin | undefined;
   async function close() {
     issuer.stop();
-    await runtime?.close();
-    if (role) {
-      await db.execute(sql`drop owned by ${sql.identifier(role)}`);
-      await db.execute(sql`drop role ${sql.identifier(role)}`);
-    }
+    await login?.drop();
     await connection.close();
   }
   try {
@@ -99,19 +94,9 @@ export async function createAdminFixture(
       oauth_client_resources, oauth_resources, oauth_clients, jwks,
       members, sessions, accounts, verifications, organizations, users cascade
     `);
-    if (options.restrictedRole) {
-      role = `id_test_fixture_${crypto.randomUUID().replaceAll("-", "")}`;
-      await configureRuntimeRole(db, role);
-      const password = crypto.randomUUID().replaceAll("-", "");
-      await db.execute(
-        sql.raw(`alter role "${role}" login password '${password}'`),
-      );
-      const url = new URL(environment.databaseUrl);
-      url.username = role;
-      url.password = password;
-      runtime = createDatabase({ ...environment, databaseUrl: url.toString() });
-    }
-    const appDb = runtime?.db ?? db;
+    if (options.restrictedRole)
+      login = await createRuntimeLogin(db, environment);
+    const appDb = login?.connection.db ?? db;
     const auth = createAuth(appDb, environment);
     if (options.originChecks) {
       const context = await auth.$context;
@@ -347,7 +332,7 @@ export async function createAdminFixture(
       /** The connection the app serves on: the runtime role when restricted. */
       appDb,
       /** The runtime role's name when restricted. */
-      runtimeRole: role,
+      runtimeRole: login?.role,
       environment,
       issuer,
       trustedOrigin,

@@ -2,18 +2,17 @@
 // It provisions each tenant's organisation, domain and company directory, optionally the platform organisation's and the spare directories, and leaves everything else to the admin API.
 // Test-only: never imported by a production service.
 import { rename } from "node:fs/promises";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { createApp } from "../src/app.ts";
 import { createAuth } from "../src/auth.ts";
 import { bootstrap, systemActor } from "../src/bootstrap.ts";
 import { createDatabase } from "../src/db/client.ts";
 import { runMigrations } from "../src/db/migrate.ts";
-import { configureRuntimeRole } from "../src/db/runtime-role.ts";
 import {
   startOidcIssuer,
   type OidcClaims,
 } from "../src/__tests__/oidc-issuer.ts";
+import { createRuntimeLogin } from "../src/__tests__/runtime-role.ts";
 import { testEnvironment } from "../src/__tests__/support.ts";
 
 const [planPath, manifestPath] = process.argv.slice(2);
@@ -80,20 +79,8 @@ const seeded = await bootstrap(setup.db, systemActor("mcp-e2e"), {
   platformOrganizationName: "Answerable",
   adminResourceIdentifier: environment.adminResourceIdentifier,
 });
-// Serve through the restricted runtime role, as production does.
-const role = "mcp_e2e_runtime";
-await configureRuntimeRole(setup.db, role);
-const password = crypto.randomUUID();
-await setup.db.execute(
-  sql.raw(`ALTER ROLE "${role}" LOGIN PASSWORD '${password}'`),
-);
-const runtimeUrl = new URL(databaseUrl);
-runtimeUrl.username = role;
-runtimeUrl.password = password;
-const runtime = createDatabase({
-  ...environment,
-  databaseUrl: runtimeUrl.href,
-});
+// Serve through a restricted runtime role, as production does.
+const runtime = (await createRuntimeLogin(setup.db, environment)).connection;
 const auth = createAuth(runtime.db, environment);
 // The acceptance runs this fixture under bun test, so NODE_ENV is test and Better Auth would skip its
 // origin and CSRF checks; the journeys prove ID as deployed, with the checks on.

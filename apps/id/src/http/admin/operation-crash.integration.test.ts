@@ -6,7 +6,10 @@ import {
   type AdminFixture,
 } from "../../__tests__/admin.ts";
 import { assertDisposableTestDatabase } from "../../__tests__/test-database.ts";
-import { configureRuntimeRole } from "../../db/runtime-role.ts";
+import {
+  createRuntimeLogin,
+  type RuntimeLogin,
+} from "../../__tests__/runtime-role.ts";
 import {
   adminOperations,
   auditEvents,
@@ -15,30 +18,21 @@ import {
 import { createId } from "../../lib/id.ts";
 
 let fixture: AdminFixture;
-let roleName: string;
-let databaseUrl: string;
+let login: RuntimeLogin;
 const children: Bun.Subprocess[] = [];
 beforeEach(async () => {
   assertDisposableTestDatabase("administrative process crash proof");
   fixture = await createAdminFixture({ databasePoolMax: 3 });
-  roleName = `id_test_crash_${crypto.randomUUID().replaceAll("-", "")}`;
-  await configureRuntimeRole(fixture.db, roleName);
-  const password = crypto.randomUUID().replaceAll("-", "");
-  await fixture.db.execute(
-    sql.raw(`alter role "${roleName}" login password '${password}'`),
-  );
-  const url = new URL(fixture.environment.databaseUrl);
-  url.username = roleName;
-  url.password = password;
-  databaseUrl = url.toString();
+  login = await createRuntimeLogin(fixture.db, fixture.environment, {
+    databasePoolMax: 1,
+  });
 });
 afterEach(async () => {
   for (const child of children.splice(0)) {
     if (child.exitCode === null) child.kill("SIGKILL");
     await child.exited;
   }
-  await fixture.db.execute(sql`drop owned by ${sql.identifier(roleName)}`);
-  await fixture.db.execute(sql`drop role ${sql.identifier(roleName)}`);
+  await login.drop();
   await fixture.close();
 });
 async function worker(holdResponse: boolean) {
@@ -71,7 +65,7 @@ async function worker(holdResponse: boolean) {
   children.push(child);
   child.stdin.write(
     JSON.stringify({
-      environment: { ...fixture.environment, databaseUrl, databasePoolMax: 1 },
+      environment: login.environment,
       holdResponse,
     }),
   );

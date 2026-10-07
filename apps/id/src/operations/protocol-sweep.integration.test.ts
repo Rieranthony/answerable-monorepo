@@ -1,10 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { asc, count, sql } from "drizzle-orm";
 
-import {
-  closeRuntimeRole,
-  openRuntimeRole,
-} from "../__tests__/runtime-role.ts";
+import { openRuntimeRole } from "../__tests__/runtime-role.ts";
 import { testEnvironment } from "../__tests__/support.ts";
 import type { Database, DatabaseConnection } from "../db/client.ts";
 import {
@@ -22,9 +19,9 @@ import {
   sweepExpiredProtocolRows,
 } from "./protocol-sweep.ts";
 
+let roles: Awaited<ReturnType<typeof openRuntimeRole>>;
 let owner: DatabaseConnection;
 let runtime: DatabaseConnection;
-const roleName = `id_test_sweep_${crypto.randomUUID().replaceAll("-", "")}`;
 const userId = createId();
 const clientId = `sweep-${userId}`;
 const hours = (offset: number) => new Date(Date.now() + offset * 3_600_000);
@@ -36,7 +33,8 @@ const none = {
 };
 
 beforeAll(async () => {
-  ({ owner, runtime } = await openRuntimeRole(testEnvironment(), roleName));
+  roles = await openRuntimeRole(testEnvironment());
+  ({ owner, runtime } = roles);
   await owner.db
     .insert(users)
     .values({ id: userId, name: "Sweep", email: `${userId}@example.com` });
@@ -47,7 +45,7 @@ beforeAll(async () => {
     redirectUris: [],
   });
 });
-afterAll(() => closeRuntimeRole({ owner, runtime }, roleName));
+afterAll(() => roles?.close());
 beforeEach(async () => {
   await owner.db.delete(sessions);
   await owner.db.delete(oauthClientAssertions);

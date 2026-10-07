@@ -3,32 +3,26 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import { createAdminFixture, type AdminFixture } from "../__tests__/admin.ts";
 import { createDatabase, type DatabaseConnection } from "./client.ts";
-import { configureRuntimeRole } from "./runtime-role.ts";
+import {
+  createRuntimeLogin,
+  type RuntimeLogin,
+} from "../__tests__/runtime-role.ts";
 import { createApp } from "../app.ts";
 import { createAuth } from "../auth.ts";
 import { adminOperations, auditEvents, organizations } from "./schema/index.ts";
 let fixture: AdminFixture;
 let runtime: DatabaseConnection;
+let login: RuntimeLogin;
 let app: ReturnType<typeof createApp>;
-const role = `id_test_deadline_${crypto.randomUUID().replaceAll("-", "")}`;
 beforeAll(async () => {
   fixture = await createAdminFixture();
-  await configureRuntimeRole(fixture.db, role);
-  const password = crypto.randomUUID().replaceAll("-", "");
-  await fixture.db.execute(
-    sql.raw(`alter role "${role}" login password '${password}'`),
-  );
-  const url = new URL(fixture.environment.databaseUrl);
-  url.username = role;
-  url.password = password;
-  const environment = {
-    ...fixture.environment,
-    databaseUrl: url.toString(),
+  login = await createRuntimeLogin(fixture.db, fixture.environment, {
     databaseStatementTimeoutMs: 500,
     databaseLockTimeoutMs: 100,
     databaseIdleInTransactionTimeoutMs: 1500,
-  };
-  runtime = createDatabase(environment);
+  });
+  runtime = login.connection;
+  const environment = login.environment;
   app = createApp({
     auth: createAuth(runtime.db, environment),
     db: runtime.db,
@@ -36,7 +30,7 @@ beforeAll(async () => {
   });
 });
 afterAll(async () => {
-  await runtime?.close();
+  await login?.drop();
   if (fixture) {
     await fixture.db.execute(
       sql`drop trigger if exists test_statement_pause on admin_operations`,
@@ -44,8 +38,6 @@ afterAll(async () => {
     await fixture.db.execute(
       sql`drop function if exists test_statement_pause()`,
     );
-    await fixture.db.execute(sql`drop owned by ${sql.identifier(role)}`);
-    await fixture.db.execute(sql`drop role ${sql.identifier(role)}`);
     await fixture.close();
   }
 });
