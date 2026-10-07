@@ -182,7 +182,6 @@ export function Mosaic({ className }: { className?: string }) {
                   width={PW}
                   height={H}
                   className={m.gray ? "grayscale" : undefined}
-                  {...({ loading: "lazy" } as object)}
                 />
               </g>
             </g>
