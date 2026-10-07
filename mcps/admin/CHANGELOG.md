@@ -6,6 +6,7 @@ No tool changes. `readAdminEnvironment` is built on `@answerable/mcp`'s `parseEn
 
 - Every write sends the intent's id, which `commit` now receives from `@answerable/mcp`, as `Idempotency-Key` (`<intent id>.<step>` for `staff_revoke`), where it sent a UUIDv7 that `prepare` minted into the plan. Plans no longer carry `key`, and `newKey` is gone. An intent prepared before this version and committed after it sends its id, not its old key.
 - The reads that need every page of an ID list use `@answerable/id-admin` 0.5.0's `pages`, with the same requests.
+- A read that binds a target, answered without an `ETag`, or a write answered without an `Operation-Id`, throws an error naming the missing header (the call answers `INTERNAL` and the server logs it), where it used to pass `null` on as a string. ID sends both today.
 
 ## 0.2.5
 

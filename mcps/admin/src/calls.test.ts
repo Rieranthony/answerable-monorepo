@@ -62,3 +62,10 @@ test("ID asking to be asked again answers UPSTREAM_UNAVAILABLE after its Retry-A
     expect(running.received.filter(({ request }) => request === "POST /api/admin/v1/organizations")).toHaveLength(2)
   } finally { log.mockRestore() }
 })
+
+test("a read without the ETag a target binds, or a write's answer without its Operation-Id, throws naming what is missing instead of passing on null", async () => {
+  const applied = writing([{ body: { id: "row" }, etag: null, operationId: null, replayed: false }])
+  expect(await write(applied.calls)).toEqual(new Error("Answerable ID applied POST /organizations but answered without an Operation-Id, which the receipt needs"))
+  const reading = createCalls({ read: async () => ({ body: { id: "row" }, etag: null }) } as unknown as IdAdmin)
+  expect(await reading.version("/organizations/org", context).catch((error: unknown) => error)).toEqual(new Error("Answerable ID answered GET /organizations/org without an ETag, which the target's version needs"))
+})

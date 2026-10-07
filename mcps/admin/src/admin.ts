@@ -1,6 +1,6 @@
 import type { SQL } from "bun"
 import type { IdAdmin } from "@answerable/id-admin"
-import { createMcpServer, errorCodeOf, type ToolError, type IdVerifierConfig, type UserPrincipal } from "@answerable/mcp"
+import { createMcpServer, errorCodeOf, ToolError, type IdVerifierConfig, type UserPrincipal } from "@answerable/mcp"
 import { createEvidence, createPostgresIntentStore, type EvidenceEvent } from "@answerable/mcp-postgres"
 import { reauthenticationRequired } from "./fresh"
 import { createAdminProvider } from "./provider"
@@ -50,9 +50,9 @@ export function createAdminMcp({ auth, db, id, platform, freshSeconds = 1800, to
       const settled = await run().then(data => ({ data }), (failure: unknown) => ({ failure }))
       const code = "failure" in settled ? errorCodeOf(settled.failure) : undefined
       const ran = { execution_id: call.executionId, request_id: String(call.requestId), upstream: call.tool.identity === "admin/toolbox.enable" ? "toolbox" : "id" }
-      await record(call.principal, call.tool, code === reauthenticationRequired
+      await record(call.principal, call.tool, "failure" in settled && settled.failure instanceof ToolError && settled.failure.code === reauthenticationRequired
         // A critical operation refused for a stale sign-in is a denial, with the times that decided it.
-        ? { kind: "capability.denied", outcome: "denied", reason: "stale_authentication", data: (settled as { failure: ToolError }).failure.details, ...ran }
+        ? { kind: "capability.denied", outcome: "denied", reason: "stale_authentication", data: settled.failure.details, ...ran }
         : { kind: "capability.completed", ...ran, ...(code ? { outcome: "failure", error_code: code } : { outcome: "success" }) })
       if ("failure" in settled) throw settled.failure
       return settled.data

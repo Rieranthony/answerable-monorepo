@@ -44,9 +44,12 @@ export function createCalls(id: IdAdmin) {
     for await (const page of pages(path, next => need<{ items: Item[]; nextCursor: string | null }>(next, context, missing))) items.push(...page)
     return items
   }
-  // A read with ID's ETag, the version a target binds; ID's 404 is undefined.
+  // A read with ID's ETag, the version a target binds; ID's 404 is undefined, and an answer without an ETag throws.
   async function version<T>(path: string, { executionId }: ToolContext) {
-    return await found(id.read(path, { requestId: executionId })).catch(upstream) as { body: T; etag: string } | undefined
+    const answer = await found(id.read(path, { requestId: executionId })).catch(upstream)
+    if (answer === undefined) return undefined
+    if (answer.etag === null) throw new Error(`Answerable ID answered GET ${path} without an ETag, which the target's version needs`)
+    return { body: answer.body as T, etag: answer.etag }
   }
   async function versioned<T>(path: string, context: ToolContext, missing: string) {
     const answer = await version<T>(path, context)
@@ -57,8 +60,8 @@ export function createCalls(id: IdAdmin) {
    * A write with the intent's idempotency key and the call's execution id. When ID does not answer, or answers with a 5xx, it is sent once more with
    * the same key, which ID replays if the first one was applied; when it still fails, or ID answers that a write with the key is still running,
    * `UPSTREAM_UNAVAILABLE` says the outcome is unknown. ID refusing a stale `If-Match` answers `INTENT_STALE`. Returns the `Operation-Id` ID sends with
-   * every command (`apps/id/src/http/admin/command.ts`) and the id of the row it made or changed, which a replayed answer carries in its
-   * receipt; a `204` has none.
+   * every command (`apps/id/src/http/admin/command.ts`), throwing when it is missing, and the id of the row it made or changed, which a replayed
+   * answer carries in its receipt; a `204` has none.
    */
   async function write(method: "POST" | "PATCH" | "PUT" | "DELETE", path: string, { body, ifMatch, ifNoneMatch, key }: Write, { executionId }: ToolContext) {
     const send = () => id.manage(method, path, { body, ifMatch, ifNoneMatch, idempotencyKey: key, requestId: executionId })
@@ -67,8 +70,9 @@ export function createCalls(id: IdAdmin) {
         if (error instanceof IdError && (error.status === 0 || error.status >= 500)) return send()
         throw error
       })
+      if (answer.operationId === null) throw new Error(`Answerable ID applied ${method} ${path} but answered without an Operation-Id, which the receipt needs`)
       const row = answer.body as { id?: string; resultReference?: { id: string } } | null
-      return { operationId: answer.operationId as string, id: (answer.replayed ? row?.resultReference?.id : row?.id) as string }
+      return { operationId: answer.operationId, id: (answer.replayed ? row?.resultReference?.id : row?.id) as string }
     } catch (error) {
       if (error instanceof IdError && error.status === 412) {
         throw new ToolError("INTENT_STALE", `Answerable ID refused the write because ${path} changed after the commit checked it; prepare it again`, {
