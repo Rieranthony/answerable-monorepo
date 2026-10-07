@@ -87,20 +87,13 @@ function publicClientQuery(executor: Executor, clientId: string) {
     )
     .for("share");
 }
+/** A command waits on the share lock, then re-checks its authority. */
 export async function readClient(
-  context: PlatformReadContext,
+  context: PlatformReadContext | PlatformWriteContext,
   clientId: string,
 ) {
-  const { tx } = context;
-  const [row] = await publicClientQuery(tx, clientId);
-  return row ?? null;
-}
-export async function readClientForPolicy(
-  context: PlatformWriteContext,
-  clientId: string,
-) {
-  const { tx } = context;
-  const [row] = await publicClientQuery(tx, clientId);
+  const [row] = await publicClientQuery(context.tx, clientId);
+  if ("revalidate" in context) await context.revalidate();
   return row ?? null;
 }
 export async function lockClientForCommand(

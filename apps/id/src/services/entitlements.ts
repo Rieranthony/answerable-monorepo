@@ -7,7 +7,7 @@ import { type TenantReadContext } from "./tenant-context.ts";
 import * as queries from "../db/queries/entitlements.ts";
 import { findMemberForAssignment } from "../db/queries/members.ts";
 import { findGroupForCommand } from "../db/queries/groups.ts";
-import { readClientForPolicy } from "../db/queries/oauth-clients.ts";
+import { readClient } from "../db/queries/oauth-clients.ts";
 import { readResourceForPolicy } from "../db/queries/oauth-resources.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
@@ -119,7 +119,7 @@ export async function createEntitlement(
       await findGroupForCommand(context, organizationId, input.groupId),
     );
   if (input.clientId !== undefined)
-    requireRow(await readClientForPolicy(context, input.clientId));
+    requireRow(await readClient(context, input.clientId));
   if (input.resource !== undefined)
     await checkScopes(context, input.resource, input.scopes);
   const row = await queries.createEntitlement(context, {

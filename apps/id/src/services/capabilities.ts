@@ -6,7 +6,7 @@ import {
   systemBindings,
 } from "../db/schema/index.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
-import { readClientForPolicy } from "../db/queries/oauth-clients.ts";
+import { readClient } from "../db/queries/oauth-clients.ts";
 import { readResourceForPolicy } from "../db/queries/oauth-resources.ts";
 import { recordAuditEvent } from "../db/queries/audit.ts";
 import { createId } from "../lib/id.ts";
@@ -98,7 +98,7 @@ async function validateTarget(
   const { tx } = requirePlatformWriteContext(context);
   const client =
     input.clientId !== null
-      ? required(await readClientForPolicy(context, input.clientId))
+      ? required(await readClient(context, input.clientId))
       : null;
   const resource =
     input.resource === null

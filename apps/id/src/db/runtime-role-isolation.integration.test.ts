@@ -805,10 +805,7 @@ test("restricted client queries exclude digests and preserve shared registration
   });
   await inPlatformWrite(runtime.db, async (context) => {
     for (const client of clients) {
-      const policy = await queries.readClientForPolicy(
-        context,
-        client.clientId,
-      );
+      const policy = await queries.readClient(context, client.clientId);
       expect(policy).not.toHaveProperty("clientSecret");
       expect(policy?.hasClientSecret).toBe(client.clientSecret !== null);
       expect(
