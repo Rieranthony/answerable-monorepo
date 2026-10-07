@@ -38,20 +38,11 @@ export async function startToolboxStack(id: Id, { hosts, database, fetch }: { ho
   const organisations = z.object({ items: z.array(z.object({ id: z.uuid(), slug: z.string() })) }).parse(await admin("GET", "/organizations?q=answerable"))
   const platform = organisations.items.find(organisation => organisation.slug === "answerable")!
   const hub = await registerMachine(admin, platform.id, "toolbox-hub", { [manifest.adminResource]: ["platform:read", "platform:write"] })
-  const staff = await registerMachine(admin, platform.id, "toolbox-staff", { [toolboxAdmin]: ["toolbox:admin"] })
-  /** A token for the Toolbox's admin resource, as the staff client. */
-  async function staffToken() {
-    const response = await globalThis.fetch(new URL("/auth/oauth2/token", manifest.idOrigin), {
-      method: "POST",
-      headers: { Authorization: `Basic ${btoa(`${staff.clientId}:${staff.clientSecret}`)}`, "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ grant_type: "client_credentials", resource: toolboxAdmin, scope: "toolbox:admin" }),
-    })
-    if (!response.ok) throw new Error(`ID refused the staff client a token for ${toolboxAdmin} (${response.status}): ${await response.text()}`)
-    return z.object({ access_token: z.string() }).parse(await response.json()).access_token
-  }
+  const staff = createIdAdmin({ issuer: manifest.idOrigin, adminResource: manifest.adminResource, ...await registerMachine(admin, platform.id, "toolbox-staff", { [toolboxAdmin]: ["toolbox:admin"] }) })
   // ID makes its signing key when it signs its first token, and two first tokens at once make two keys: a verifier that read the keys between them
-  // refuses the second's token for 30 seconds. The Toolbox's poller and the first enable call would ask together, so one token comes first.
-  await staffToken()
+  // refuses the second's token for 30 seconds. The Toolbox's poller and the first enable call would ask together, so the staff client's token comes
+  // first, kept for the admin calls; nothing is sent with it yet.
+  await staff.withToken(toolboxAdmin, "toolbox:admin", async () => new Response())
 
   step(`Creating and migrating ${database}, and starting the Toolbox with the e2e provider`)
   const db = await createDatabase(database)
@@ -73,11 +64,11 @@ export async function startToolboxStack(id: Id, { hosts, database, fetch }: { ho
     spans,
     /** The Toolbox's admin API as the staff client: the status and the JSON body. */
     async adminApi(method: string, path: string, body?: unknown) {
-      const response = await globalThis.fetch(`${new URL(toolboxResource).origin}/admin/v1${path}`, {
+      const response = await staff.withToken(toolboxAdmin, "toolbox:admin", token => globalThis.fetch(`${new URL(toolboxResource).origin}/admin/v1${path}`, {
         method,
-        headers: { Authorization: `Bearer ${await staffToken()}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+        headers: { Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
         body: body === undefined ? undefined : JSON.stringify(body),
-      })
+      }))
       const text = await response.text()
       return { status: response.status, body: (text ? JSON.parse(text) : {}) as Record<string, unknown> }
     },
