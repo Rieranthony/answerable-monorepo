@@ -58,6 +58,7 @@ export function MosaicDither({
 
     return startMosaicCapture({
       getCanvas: () => hostRef.current?.querySelector("canvas") ?? null,
+      minWidth: CAPTURE_W,
       scratch,
       previousFrame,
       onCapture: (blob) => onCapture(URL.createObjectURL(blob)),

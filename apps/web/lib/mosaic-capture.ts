@@ -2,9 +2,18 @@ const POLL_MS = 100
 const CONCEDE_MS = 6_000
 const HARD_CAP_MS = 20_000
 
-/** Ignore flat buffers and the previous frame while the shader catches up. */
-function probe(canvas: HTMLCanvasElement, scratch: CanvasRenderingContext2D) {
-  if (!canvas.width || !canvas.height) return null
+/**
+ * Ignore flat buffers, the previous frame and canvases narrower than
+ * `minWidth` while the shader catches up. A canvas that has not been sized yet
+ * (in a hidden tab, never) holds the browser's 300×150 default, and a frame
+ * that small would stay on the hero for the life of the page.
+ */
+function probe(
+  canvas: HTMLCanvasElement,
+  scratch: CanvasRenderingContext2D,
+  minWidth: number,
+) {
+  if (canvas.width < minWidth || !canvas.height) return null
   const { width, height } = scratch.canvas
   scratch.drawImage(canvas, 0, 0, width, height)
   const { data } = scratch.getImageData(0, 0, width, height)
@@ -20,12 +29,15 @@ function probe(canvas: HTMLCanvasElement, scratch: CanvasRenderingContext2D) {
 /** Capture one frame; cancellation also invalidates pending blob callbacks. */
 export function startMosaicCapture({
   getCanvas,
+  minWidth,
   scratch,
   previousFrame,
   onCapture,
   onUnavailable,
 }: {
   getCanvas: () => HTMLCanvasElement | null
+  /** The narrowest canvas worth committing, in pixels. */
+  minWidth: number
   scratch: CanvasRenderingContext2D
   previousFrame: { current: string | null }
   onCapture: (blob: Blob, signature: string) => void
@@ -52,7 +64,7 @@ export function startMosaicCapture({
   timer = window.setInterval(() => {
     try {
       const canvas = getCanvas()
-      const signature = canvas ? probe(canvas, scratch) : null
+      const signature = canvas ? probe(canvas, scratch, minWidth) : null
       if (canvas && signature && signature !== previousFrame.current) {
         stop()
         // Remember even a pending frame so a settings change cannot recapture it.

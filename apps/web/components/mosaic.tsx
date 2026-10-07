@@ -73,12 +73,16 @@ export function Mosaic({ className }: { className?: string }) {
 
   return (
     <>
-      <MosaicDither
-        photo={ACTIVE_PHOTO}
-        settings={MOSAIC_DITHER}
-        onCapture={onCapture}
-        onUnavailable={onUnavailable}
-      />
+      {/* Only until the first frame is committed or given up on: the
+          off-screen shader canvas is 1152×1728 and has no use afterwards. */}
+      {!revealed && (
+        <MosaicDither
+          photo={ACTIVE_PHOTO}
+          settings={MOSAIC_DITHER}
+          onCapture={onCapture}
+          onUnavailable={onUnavailable}
+        />
+      )}
       <svg
         viewBox={`0 0 ${W} ${H}`}
         preserveAspectRatio="xMaxYMid slice"

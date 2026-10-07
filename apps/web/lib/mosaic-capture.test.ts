@@ -8,6 +8,7 @@ let complete: BlobCallback | undefined
 let hidden = false
 let now = 0
 let tone = 1
+let canvasWidth = 1152
 let captures: string[]
 let unavailable: number
 let previousFrame: { current: string | null }
@@ -20,6 +21,7 @@ beforeEach(() => {
   hidden = false
   now = 0
   tone = 1
+  canvasWidth = 1152
   captures = []
   unavailable = 0
   previousFrame = { current: null }
@@ -65,7 +67,9 @@ afterEach(() => {
 
 function start(hasCanvas = true) {
   const canvas = {
-    width: 1152,
+    get width() {
+      return canvasWidth
+    },
     height: 1728,
     toBlob: (callback: BlobCallback) => {
       complete = callback
@@ -80,6 +84,7 @@ function start(hasCanvas = true) {
   } as unknown as CanvasRenderingContext2D
   return startMosaicCapture({
     getCanvas: () => (hasCanvas ? canvas : null),
+    minWidth: 1152,
     scratch,
     previousFrame,
     onCapture: (_blob, signature) => captures.push(signature),
@@ -171,4 +176,18 @@ test("settings changes wait for a frame different from the previous capture", ()
   complete!(new Blob(["frame"]))
   expect(captures).toEqual(["1", "2"])
   cleanupNext()
+})
+
+test("a canvas narrower than the minimum is not committed until it grows", () => {
+  canvasWidth = 300
+  const cleanup = start()
+  tick!()
+  expect(tick).toBeDefined()
+  expect(complete).toBeUndefined()
+  canvasWidth = 1152
+  tick!()
+  expect(tick).toBeUndefined()
+  complete!(new Blob(["frame"]))
+  expect(captures).toEqual(["1"])
+  cleanup()
 })
