@@ -56,6 +56,7 @@ Take all 14: D1, D2, D7, D9 (dead exports and options), D3 (`onerror` on `create
 ### B2, queries, db, operations (audit `audits/B2.md`)
 - Take all 32. B2-2 (Q3): `isNull(table.deletedAt)` everywhere, no `live()` helper; area A converts its `sql` sites too. B2-3 (Q1): adopt "filter `deleted_at` on the table you read; a parent reached through a live foreign key needs no predicate", with each deleted predicate's foreign key named in the commit and verified in `drizzle/0000_initial.sql`; B2-12's three exact repeats first. B2-4, B2-29 (Q2): the audit payload shapes change before launch; docs/04 changes with them. B2-31 (Q4): delete with C10. B2-28: `no-duplicate-imports` added to ID's lint.
 - Q7 (`entitlements_scopes_check` not refusing null elements): schema, out of scope; recorded as a follow-up for the owner.
+- Revised at implementation: B2-13 kept (29 tests, not 5, use the session-less `effectiveGrants` path as the permission suite's seam for multi-organisation cases; both production callers pass a session); B2-14 taken only for the four `undefined` keys (the stored bytes are revision-bound and a test pins them). The list helpers live in `db/queries/lists.ts`.
 
 ### G, repository (findings.md)
 Take G1 (Redis service and variable), G3 (turbo lists, with C34), G4 (unlinked report), G5 (`knip.json` kept, command in AGENTS.md); G2, G6, G7 keep.
