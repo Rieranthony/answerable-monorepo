@@ -7,7 +7,7 @@ export function Document({
   footer,
 }: {
   title: string;
-  children: Child;
+  children?: Child;
   footer?: Child;
 }) {
   return (

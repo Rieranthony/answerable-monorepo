@@ -1,7 +1,7 @@
 import { findDomainOrganizationSlug } from "../../../db/queries/organization-domains.ts";
 import { DirectoryLogos } from "../views/directory-logos.tsx";
 import type { Hono } from "hono";
-import { jsx } from "hono/jsx";
+import { jsx, type Child } from "hono/jsx";
 import type { AppEnvironment } from "../../context.ts";
 import {
   applyCookies,
@@ -39,6 +39,13 @@ export async function startSignIn(
   return result;
 }
 
+function renderSignIn(context: PageContext, view: Child) {
+  return context.render(view, {
+    title: "Sign in",
+    footer: jsx(DirectoryLogos, {}),
+  });
+}
+
 async function renderLogin(context: PageContext, message?: ErrorDescription) {
   const query = new URL(context.req.url).searchParams;
   const pending = pendingOAuthQuery(query);
@@ -61,12 +68,9 @@ async function renderLogin(context: PageContext, message?: ErrorDescription) {
   const route = decideLoginRoute(query);
   if (email && !mustAuthenticate) {
     if (pending) return context.redirect(`/authorize?${pending}`, 302);
-    return context.render(
+    return renderSignIn(
+      context,
       jsx(SignedIn, { email, query: query.toString(), message }),
-      {
-        title: "Sign in",
-        footer: jsx(DirectoryLogos, {}),
-      },
     );
   }
   if (route.mode === "auto" && !message) {
@@ -84,16 +88,13 @@ async function renderLogin(context: PageContext, message?: ErrorDescription) {
       message = describeError();
     }
   }
-  return context.render(
+  return renderSignIn(
+    context,
     jsx(LoginForm, {
       email: route.mode === "form" ? route.email : undefined,
       query: query.toString(),
       message,
     }),
-    {
-      title: "Sign in",
-      footer: jsx(DirectoryLogos, {}),
-    },
   );
 }
 
@@ -129,12 +130,9 @@ export function registerLogin(app: Hono<AppEnvironment>) {
         message = describeError();
       }
     }
-    return context.render(
+    return renderSignIn(
+      context,
       jsx(LoginForm, { email, query: query.toString(), message }),
-      {
-        title: "Sign in",
-        footer: jsx(DirectoryLogos, {}),
-      },
     );
   });
   app.post("/sign-out", async (context) => {

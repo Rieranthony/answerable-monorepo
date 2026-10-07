@@ -59,15 +59,7 @@ export function createPagesApp(): Hono<AppEnvironment> {
       context.header("Cache-Control", "no-store");
       await next();
     });
-    app.use(
-      route,
-      jsxRenderer(
-        ({ children, title, footer }) => Document({ children, title, footer }),
-        {
-          docType: true,
-        },
-      ),
-    );
+    app.use(route, jsxRenderer(Document, { docType: true }));
   }
   // The build writes the compiled stylesheet next to the bundle; source runs
   // compile it on each request.
