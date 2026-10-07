@@ -1,12 +1,11 @@
 import type { Context } from "hono";
 import type { AppEnvironment } from "../context.ts";
 import { isAllowedAuthRoute } from "../auth-allowlist.ts";
-import { serviceUrl } from "../../lib/service-url.ts";
 
 export type PageContext = Context<AppEnvironment>;
 
 export function serviceOrigin(context: PageContext): string {
-  return serviceUrl(context.get("environment"));
+  return context.get("environment").betterAuthUrl;
 }
 
 export async function callAuth<T = { url?: string; code?: string }>(

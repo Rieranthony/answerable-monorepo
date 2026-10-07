@@ -79,7 +79,8 @@ const environmentSchema = z
       .default("development"),
     PORT: z.coerce.number().int().min(1).max(65_535).default(47_300),
     DATABASE_URL: z.url(),
-    BETTER_AUTH_URL: z.url(),
+    /** The issuer, the pages' origin and the admin audience's base: one spelling, without a trailing slash. */
+    BETTER_AUTH_URL: z.url().transform((url) => url.replace(/\/+$/, "")),
     BETTER_AUTH_SECRET: z.string().min(32),
     BETTER_AUTH_SECRETS: applicationSecrets.optional(),
     GOOGLE_CLIENT_ID: optionalCredential,
@@ -209,7 +210,7 @@ const environmentSchema = z
     platformOrganizationName: environment.PLATFORM_ORGANIZATION_NAME,
     adminResourceIdentifier: (
       environment.ADMIN_RESOURCE_IDENTIFIER ??
-      `${environment.BETTER_AUTH_URL.replace(/\/+$/, "")}/api/admin`
+      `${environment.BETTER_AUTH_URL}/api/admin`
     ).replace(/\/+$/, ""),
     rootAdminSecret: environment.ROOT_ADMIN_SECRET,
     rootAdminBreakGlass: environment.ROOT_ADMIN_BREAK_GLASS === "true",

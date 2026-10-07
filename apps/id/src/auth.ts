@@ -1,4 +1,3 @@
-import { serviceUrl } from "./lib/service-url.ts";
 import { authDatabaseAdapter } from "./auth/database-adapter.ts";
 import { userOAuthProvider } from "./auth/user-provider.ts";
 import { sso } from "@better-auth/sso";
@@ -47,7 +46,7 @@ export function createAuth(db: Database, environment: Environment) {
   const auth = betterAuth({
     appName: "Answerable ID",
     onAPIError: {
-      errorURL: `${serviceUrl(environment)}/error`,
+      errorURL: `${environment.betterAuthUrl}/error`,
       onError(error) {
         if (isAPIError(error)) return;
 
@@ -272,10 +271,10 @@ export function createAuth(db: Database, environment: Environment) {
             environment.oauthRefreshReuseIntervalSeconds,
           // hashClientSecret mirrors this digest for bootstrap clients.
           storeClientSecret: "hashed",
-          loginPage: `${serviceUrl(environment)}/login`,
-          consentPage: `${serviceUrl(environment)}/consent`,
+          loginPage: `${environment.betterAuthUrl}/login`,
+          consentPage: `${environment.betterAuthUrl}/consent`,
         },
-        `${serviceUrl(environment)}/authorize`,
+        `${environment.betterAuthUrl}/authorize`,
       ),
       openAPI({ disableDefaultReference: true }),
     ],

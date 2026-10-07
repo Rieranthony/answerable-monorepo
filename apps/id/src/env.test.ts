@@ -93,7 +93,6 @@ describe("unit: environment", () => {
     });
   });
 
-
   test("operational reporting is disabled by zero or runs at least once a second", () => {
     for (const value of ["0", "1000"]) {
       expect(
@@ -135,13 +134,18 @@ describe("unit: environment", () => {
       ).toThrow(EnvironmentValidationError);
   });
 
-  test("normalises the default resource URL and rejects invalid admin configuration", () => {
-    expect(
-      parseEnvironment({
-        ...requiredEnvironment,
-        BETTER_AUTH_URL: "https://id.example.com/",
-      }).adminResourceIdentifier,
-    ).toBe("https://id.example.com/api/admin");
+  test("normalises the ID URL and the default resource URL and rejects invalid admin configuration", () => {
+    // The issuer, the pages and the admin audience must spell the origin alike.
+    for (const suffix of ["", "/", "///"])
+      expect(
+        parseEnvironment({
+          ...requiredEnvironment,
+          BETTER_AUTH_URL: `https://id.example.com${suffix}`,
+        }),
+      ).toMatchObject({
+        betterAuthUrl: "https://id.example.com",
+        adminResourceIdentifier: "https://id.example.com/api/admin",
+      });
     for (const slug of ["Bad", "-bad", "bad-", "bad--slug", "bad_slug", ""]) {
       expect(() =>
         parseEnvironment({
