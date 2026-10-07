@@ -78,6 +78,7 @@ const sources = [
   ...scan("**/*.mdx", content).map((file) => join(content, file)),
   join(web, "lib/docs/error-codes.ts"),
   join(web, "components/docs/generated.tsx"),
+  join(web, "app/llms.txt/route.ts"),
 ]
 
 test("every docs link reaches a page and every anchor a heading on it", () => {
