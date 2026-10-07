@@ -97,16 +97,13 @@ export function createUserOAuthFlow(
 
   async function start(ctx: Context, run: (ctx: Context) => Promise<Response>) {
     ctx.setHeader("Cache-Control", "no-store");
-    const query = ctx.request?.method === "POST" ? ctx.body : ctx.query;
+    // The allowlist serves GET only (http/auth-allowlist.ts).
+    const query = ctx.query;
     if (query?.[parameter]) throw invalid();
     const flowId = createId();
     const next = { ...query, [parameter]: flowId };
     // Native validates the client, redirect, resource, scopes and PKCE before signing.
-    const response = await run({
-      ...ctx,
-      query: next,
-      ...(ctx.request?.method === "POST" ? { body: next } : {}),
-    });
+    const response = await run({ ...ctx, query: next });
     const location = response.headers.get("location");
     const result = location
       ? new URL(location)
