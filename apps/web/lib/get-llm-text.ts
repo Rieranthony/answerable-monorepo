@@ -20,10 +20,6 @@ export async function getLLMText(
   ]
 
   if (page.type === "openapi") {
-    const contractUrl =
-      page.slugs[1] === "admin-api"
-        ? "https://id.answerable.org/api/admin/openapi.json"
-        : "https://id.answerable.org/openapi.json"
     const { bundled } = page.data.getSchema()
     const { operations = [] } = page.data.getOpenAPIPageProps()
     const sections = operations.map((operation) => {
@@ -35,7 +31,7 @@ export async function getLLMText(
     return [
       ...head,
       ...sections,
-      `Schemas referenced by \`$ref\` are in the full contract: ${contractUrl}`,
+      `Schemas referenced by \`$ref\` are shown in full on this operation's page: ${SITE.origin}${page.url}`,
     ]
       .filter(Boolean)
       .join("\n\n")
