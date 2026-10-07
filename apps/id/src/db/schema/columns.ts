@@ -107,3 +107,10 @@ export const disabledCheck = (
 /** Lowercase labels separated by single hyphens: `contoso`, `omni-chat`. */
 export const slugCheck = (name: string, column: PgColumn) =>
   check(name, sql`${column} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`);
+
+/** A lowercase ASCII host name with at least two labels (IDNs as punycode). */
+export const hostnamePattern =
+  "^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$";
+
+export const hostnameCheck = (name: string, column: PgColumn) =>
+  check(name, sql`${column} ~ ${sql.raw(quoteLiteral(hostnamePattern))}`);

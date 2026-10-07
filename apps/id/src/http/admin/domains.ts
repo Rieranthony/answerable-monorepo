@@ -19,6 +19,7 @@ import { validate } from "../validation.ts";
 import { standardResponses } from "./openapi.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 import { lifecycleStatuses } from "../../db/schema/vocabulary.ts";
+import { hostnamePattern } from "../../db/schema/columns.ts";
 import { pageQuerySchema } from "../pagination.ts";
 import * as service from "../../services/domains.ts";
 
@@ -26,7 +27,7 @@ export const hostSchema = z
   .string()
   .trim()
   .toLowerCase()
-  .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/);
+  .regex(new RegExp(hostnamePattern));
 const domainSchema = z.object({
   id: z.uuid(),
   organizationId: z.uuid(),

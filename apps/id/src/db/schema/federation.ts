@@ -11,7 +11,13 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { organizations } from "./auth.ts";
-import { id, softDeletion, softDeletionChecks, timestamps } from "./columns.ts";
+import {
+  hostnameCheck,
+  id,
+  softDeletion,
+  softDeletionChecks,
+  timestamps,
+} from "./columns.ts";
 
 // Persisted configuration owned by @better-auth/sso. The organization and
 // normalized domain constraints are Answerable's tenant-boundary additions.
@@ -46,9 +52,6 @@ export const ssoProviders = pgTable(
     uniqueIndex("sso_providers_organization_id_unique")
       .on(table.organizationId)
       .where(sql`${table.deletedAt} is null`),
-    check(
-      "sso_providers_domain_normalized_check",
-      sql`${table.domain} ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'`,
-    ),
+    hostnameCheck("sso_providers_domain_normalized_check", table.domain),
   ],
 ).enableRLS();

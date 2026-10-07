@@ -16,6 +16,7 @@ import {
 import { members, organizations } from "./auth.ts";
 import {
   effectiveWindow,
+  hostnameCheck,
   id,
   slugCheck,
   softDeletion,
@@ -70,11 +71,7 @@ export const organizationDomains = pgTable(
       table.status,
       lifecycleStatuses,
     ),
-    // Lowercase ASCII host name with at least two labels (IDNs as punycode).
-    check(
-      "organization_domains_domain_normalized_check",
-      sql`${table.domain} ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'`,
-    ),
+    hostnameCheck("organization_domains_domain_normalized_check", table.domain),
   ],
 ).enableRLS();
 /**
