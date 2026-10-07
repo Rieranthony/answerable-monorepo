@@ -3,7 +3,7 @@ import { slugPattern } from "../../db/schema/columns.ts";
 export type LoginRoute =
   { mode: "auto"; organizationSlug: string } | { mode: "form"; email?: string };
 
-const EMAIL_ADDRESS = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function decideLoginRoute(params: URLSearchParams): LoginRoute {
   const organizationSlug = params.get("organization");
@@ -17,7 +17,7 @@ export function decideLoginRoute(params: URLSearchParams): LoginRoute {
     return { mode: "auto", organizationSlug };
   }
 
-  if (loginHint !== null && EMAIL_ADDRESS.test(loginHint)) {
+  if (loginHint !== null && emailPattern.test(loginHint)) {
     return { mode: "form", email: loginHint };
   }
 

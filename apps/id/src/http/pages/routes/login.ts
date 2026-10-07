@@ -9,7 +9,11 @@ import {
   serviceOrigin,
   type PageContext,
 } from "../gateway.ts";
-import { decideLoginRoute, pendingOAuthQuery } from "../login-routing.ts";
+import {
+  decideLoginRoute,
+  emailPattern,
+  pendingOAuthQuery,
+} from "../login-routing.ts";
 import { describeSSOError, type ErrorDescription } from "../error-copy.ts";
 import { LoginForm, SignedIn } from "../views/login.tsx";
 
@@ -102,7 +106,7 @@ export function registerLogin(app: Hono<AppEnvironment>) {
       typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
     let message = describeSSOError(undefined);
     const domain = email.slice(email.lastIndexOf("@") + 1);
-    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (emailPattern.test(email)) {
       try {
         const slug = await findDomainOrganizationSlug(
           context.get("db"),
