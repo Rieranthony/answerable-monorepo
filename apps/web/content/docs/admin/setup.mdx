@@ -157,6 +157,7 @@ It starts ID on `47600`, the admin MCP on `47606` and the Toolbox on `47604`, ma
 1. **The staff member**, `staff@answerable.example.test`, and the `claude mcp add` command for the admin MCP with the fixed client `claude-code-admin` and callback port `47700`.
 2. **The organisation to create**: slug `newco`, with the domain `newco.example.test`.
 3. **The Toolbox**: the `claude mcp add` command with the client `claude-code-toolbox` and callback port `47701`, and the new organisation's person, `tester@newco.example.test`.
+4. **Some tools, not all**: the narrower grant to try next, and the two tools it leaves the person.
 
 At ID's email step type the address given; the company sign-in that follows accepts it. Then, in Claude Code:
 
@@ -168,7 +169,8 @@ At ID's email step type the address given; the company sign-in that follows acce
 | 4 | Ask: `Enable the Toolbox for newco from claude-code-toolbox with e2e, and grant everyone in newco e2e/records on http://127.0.0.1:47604/mcp.` | Two more previews and receipts. A directory with its own credentials needs a client secret that no tool takes, so the lane sets the SSO provider itself when an organisation holds `newco.example.test` |
 | 5 | **Authenticate** the Toolbox again as the new person. Ask: `Call toolbox_whoami, then list the records.` | The grant `e2e/records`, and seven tools: `toolbox_whoami`, the four `e2e_records` tools and the two commit tools |
 | 6 | As the staff member, ask: `Revoke that grant.` | The Toolbox drops the tools from the same token within its cache window |
-| 7 | As the staff member, ask: `Show ID's audit events for the receipt's operation id.` | The machine client is the actor, and `requestId` is the commit's execution id |
+| 7 | Ask: `Create the group staff in newco, grant it e2e/records.list on http://127.0.0.1:47604/mcp, and add tester@newco.example.test to it.` | Three previews and receipts; `members_list` finds the member, who has signed in. Within a minute the Toolbox lists two tools for the same sign-in, `toolbox_whoami` and `e2e_records_list`, and `toolbox_whoami` shows the grant `e2e/records.list`: [Some tools, not all](/docs/admin#some-tools-not-all) |
+| 8 | As the staff member, ask: `Show ID's audit events for the receipt's operation id.` | The machine client is the actor, and `requestId` is the commit's execution id |
 
 The admin journeys run these steps headlessly, from the same registrations, with the kit's browser: [What the admin journeys prove](/docs/mcp/local-testing#what-the-admin-journeys-prove).
 

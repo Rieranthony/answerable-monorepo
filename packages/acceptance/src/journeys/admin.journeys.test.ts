@@ -54,9 +54,12 @@ let staffMember: string
 let colleague: OAuthSession
 let colleagueClient: Client
 let colleagueMember: string
-let newco: { organizationId: string; entitlementId: string }
+let newco: { organizationId: string; entitlementId: string; groupId: string }
 let idem: string
 const writes: { tool: string; receipt: Receipt }[] = []
+// The new organisation's person in the Toolbox from A3 on: their session, and a client that asks the server on every list.
+let person: OAuthSession
+let toolbox: Client
 // What the admin MCP asked ID, for the evidence report: each member access read with its latency, and token requests.
 const asked = { access: [] as number[], tokens: 0 }
 
@@ -96,6 +99,16 @@ type Row = {
   seq: number; kind: string; outcome: string; capability_identity: string | null; execution_id: string | null; intent_id: string | null; receipt_id: string | null
   actor_id: string; reason: string | null; error_code: string | null; upstream: string | null; data: Record<string, unknown>
 }
+/** Poll the Toolbox's tools/list with the person's own token until it is `wanted`, and return the milliseconds it took. */
+async function until(wanted: string[]) {
+  const started = performance.now()
+  while (JSON.stringify(await names(toolbox)) !== JSON.stringify(wanted)) {
+    if (performance.now() - started > 75_000) throw new Error(`The Toolbox still lists ${(await names(toolbox)).join(", ")} after 75 seconds`)
+    await Bun.sleep(1_000)
+  }
+  return Math.round(performance.now() - started)
+}
+
 const chain = (): Promise<Row[]> => stack.database`select seq::int as seq, kind, outcome, capability_identity, execution_id::text as execution_id, intent_id::text as intent_id,
   receipt_id::text as receipt_id, actor_id, reason, error_code, upstream, data from evidence_events where organisation_id = ${platformOrganization()} order by seq`
 
@@ -216,7 +229,7 @@ describe("A2 onboarding through the MCP", () => {
     expect(receipt).toMatchObject({ status: "committed", idempotent_replay: false, results: { slug: "newco" } })
     const organizationId = z.uuid().parse(receipt.results.organizationId)
     expect(await id.admin("GET", `/organizations/${organizationId}`)).toMatchObject({ slug: "newco", name: "Newco", status: "active" })
-    newco = { organizationId, entitlementId: "" }
+    newco = { organizationId, entitlementId: "", groupId: "" }
     const event = await audited(staffClient, receipt)
     step(`organisations_create: ID's audit row ${event.action} by ${event.actorId}, request id ${event.requestId}`)
   })
@@ -232,8 +245,9 @@ describe("A2 onboarding through the MCP", () => {
     })
   })
 
-  test("groups_create makes a group in the new organisation", async () => {
+  test("groups_create makes a group in the new organisation, which A8 grants one tool", async () => {
     const { receipt } = await change(staffClient, "groups_create", { organizationId: newco.organizationId, slug: "staff", name: "Staff" })
+    newco.groupId = z.uuid().parse(receipt.results.groupId)
     await audited(staffClient, receipt)
     expect(await tool(staffClient, "groups_list", { organizationId: newco.organizationId })).toMatchObject({ items: [{ slug: "staff", name: "Staff", status: "active" }] })
   })
@@ -261,19 +275,6 @@ describe("A2 onboarding through the MCP", () => {
 })
 
 describe("A3 the Toolbox outcome", () => {
-  let person: OAuthSession
-  let toolbox: Client
-
-  /** Poll the Toolbox's tools/list with the person's own token until it is `wanted`, and return the milliseconds it took. */
-  async function until(wanted: string[]) {
-    const started = performance.now()
-    while (JSON.stringify(await names(toolbox)) !== JSON.stringify(wanted)) {
-      if (performance.now() - started > 75_000) throw new Error(`The Toolbox still lists ${(await names(toolbox)).join(", ")} after 75 seconds`)
-      await Bun.sleep(1_000)
-    }
-    return Math.round(performance.now() - started)
-  }
-
   test("after the enable and the grant the new organisation's person signs in to the Toolbox, lists toolbox_whoami and the e2e tools, and calls one", async () => {
     const spare = id.manifest.spares[0]!
     person = await signIn(browser, toolboxTarget(), { slug: spare.slug, email: spare.email, scopes: ["toolbox"] })
@@ -297,20 +298,66 @@ describe("A3 the Toolbox outcome", () => {
     expect(refused.headers.get("www-authenticate")).toMatch(/resource_metadata=/)
   })
 
-  test("access_revoke takes the tools away from the same token within the Toolbox's 60-second cache window, and access_enable brings them back", async () => {
+  test("access_revoke takes the tools away from the same token within the Toolbox's 60-second cache window", async () => {
     const { receipt } = await change(staffClient, "access_revoke", { organizationId: newco.organizationId, entitlementId: newco.entitlementId })
     await audited(staffClient, receipt)
     const gone = await until(["toolbox_whoami"])
     step(`toolbox: the e2e tools were gone ${gone} ms after access_revoke, polling tools/list every second with the same token`)
     expect(gone).toBeLessThan(60_000)
+  })
+})
+
+// Some tools, not all: a grant string that names one capability, held through a group or by one member, while the organisation-wide grant is disabled.
+describe("A8 tool-level access", () => {
+  const memberPage = z.object({ items: z.array(z.object({ id: z.uuid(), email: z.string() })) })
+  let member: string
+
+  test("members_list by the person's email finds their member: the one their Toolbox token names", async () => {
+    const { items } = memberPage.parse(await tool(staffClient, "members_list", { organizationId: newco.organizationId, email: id.manifest.spares[0]!.email }))
+    expect(items).toHaveLength(1)
+    member = items[0]!.id
+    expect(claims(person).membership_id).toBe(member)
+  })
+
+  test("access_grant of e2e/records.list to the group, then groups_addmember: the same token lists that one tool and calls it; e2e_records_show is the unknown-tool error and a denial in the Toolbox's evidence", async () => {
+    const granted = await change(staffClient, "access_grant", { organizationId: newco.organizationId, principal: { kind: "group", id: newco.groupId }, resource: toolboxResource, scopes: ["e2e/records.list"] })
+    await audited(staffClient, granted.receipt)
+    const added = await change(staffClient, "groups_addmember", { organizationId: newco.organizationId, groupId: newco.groupId, memberId: member })
+    await audited(staffClient, added.receipt)
+    const listed = await until(["e2e_records_list", "toolbox_whoami"])
+    step(`toolbox: e2e_records_list alone listed ${listed} ms after the group's grant and the membership`)
+    expect(listed).toBeLessThan(60_000)
+    expect(await tool(toolbox, "toolbox_whoami")).toMatchObject({ grants: ["e2e/records.list"], capabilities: [{ identity: "e2e/records.list", kind: "read", policy_class: null }] })
+    expect(await tool(toolbox, "e2e_records_list")).toEqual({ items: [], next_cursor: null, has_more: false })
+    await expect(toolbox.callTool({ name: "e2e_records_show", arguments: {} })).rejects.toThrow("Tool e2e_records_show not found")
+    const denied = await stack.toolboxDatabase`select kind, outcome, capability_identity, reason from evidence_events where organisation_id = ${newco.organizationId} and kind = 'capability.denied'`
+    expect(denied).toEqual([{ kind: "capability.denied", outcome: "denied", capability_identity: "e2e/records.show", reason: "not granted" }])
+  })
+
+  test("access_grant of e2e/records.create to the member alone: the list adds the prepare tool and the two commit tools, and toolbox_whoami shows both grants", async () => {
+    const { receipt } = await change(staffClient, "access_grant", { organizationId: newco.organizationId, principal: { kind: "member", id: member }, resource: toolboxResource, scopes: ["e2e/records.create"] })
+    await audited(staffClient, receipt)
+    const listed = await until(["e2e_records_create", "e2e_records_list", "toolbox_commit", "toolbox_commit_confirmed", "toolbox_whoami"])
+    step(`toolbox: e2e_records_create and the commit tools listed ${listed} ms after the member's grant`)
+    expect(listed).toBeLessThan(60_000)
+    expect(await tool(toolbox, "toolbox_whoami")).toMatchObject({ grants: ["e2e/records.create", "e2e/records.list"] })
+  })
+
+  test("groups_dropmember: the group's tool goes from the same token and the member's own stays", async () => {
+    const { receipt } = await change(staffClient, "groups_dropmember", { organizationId: newco.organizationId, groupId: newco.groupId, memberId: member })
+    await audited(staffClient, receipt)
+    const left = await until(["e2e_records_create", "toolbox_commit", "toolbox_commit_confirmed", "toolbox_whoami"])
+    step(`toolbox: e2e_records_list gone ${left} ms after groups_dropmember`)
+    expect(left).toBeLessThan(60_000)
+    expect(await tool(toolbox, "toolbox_whoami")).toMatchObject({ grants: ["e2e/records.create"] })
+  })
+
+  test("access_enable of the organisation-wide grant brings every e2e tool back; organisations_disable by an owner with a recent sign-in: the organisation's refresh answers invalid_grant", async () => {
     const again = await change(staffClient, "access_enable", { organizationId: newco.organizationId, entitlementId: newco.entitlementId })
     await audited(staffClient, again.receipt)
     const back = await until(toolboxTools)
     step(`toolbox: the e2e tools were back ${back} ms after access_enable`)
     expect(back).toBeLessThan(60_000)
-  })
-
-  test("organisations_disable by an owner with a recent sign-in: the organisation's refresh answers invalid_grant", async () => {
     const { receipt } = await change(staffClient, "organisations_disable", { organizationId: newco.organizationId })
     expect(receipt.results).toMatchObject({ organizationId: newco.organizationId, status: "disabled" })
     await audited(staffClient, receipt)

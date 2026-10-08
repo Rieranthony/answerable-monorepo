@@ -562,6 +562,43 @@ Tree: branch `claude/test-audit` at 30f44d8 plus the acceptance fixture change, 
 
 **Not measured here:** the per-case fixture cost of `createAdminFixture` (a median 619 ms before each of the ID auth files' cases in the audit) was left as it is; CI's wall time after this change is read from the first run on `main`.
 
+## 8 October 2026: tool-level access through the admin MCP (journey A8)
+
+Tree: `main` at d25108b plus this change, uncommitted when measured. Versions: Bun 1.3.1; Playwright 1.63.0; `@answerable/acceptance` 0.5.2; `@answerable/mcp-admin` and `@answerable/mcp-toolbox` unchanged. One acceptance ran at a time, beside the owner's services, at one-minute load averages of 7 to 9.
+
+**The question.** Whether staff can give one member, or a group, of a client organisation access to one tool of the Toolbox, not a whole provider or domain, through the admin MCP, and whether the lane shows it. The code already allowed it: a grant string may name one capability ([`docs/08`](../docs/08-capability-platform.md#authority)), `access_grant` takes any principal and any scope the resource allows, and `toolbox_enable` widens the Toolbox resource to every capability string of the providers it enables. Nothing proved it against real ID: the Toolbox journeys grant organisation-wide strings, the admin journeys granted `e2e` to everyone in the new organisation, and the group A2 created stayed empty. No code of the admin MCP or the Toolbox changed.
+
+**What landed.** Journey A8 in `packages/acceptance/src/journeys/admin.journeys.test.ts`, after A3's `access_revoke`, while the organisation-wide grant is disabled: `members_list` by the person's email finds their member, the one their Toolbox token names; `access_grant` of `e2e/records.list` to the group A2 made, then `groups_addmember`; `access_grant` of `e2e/records.create` to the member alone; `groups_dropmember`; then A3's `access_enable` and `organisations_disable`, moved to its end. The person's one Toolbox token is polled every second until each list appears. `startAdminStack` returns `toolboxDatabase`, so the journey reads the Toolbox's evidence. The admin lane prints a fourth step with the narrower grant to try. Pages: [`/docs/admin`](../apps/web/content/docs/admin/index.mdx) gained "Some tools, not all" and a Not yet row for changing an entitlement's scopes, [`/docs/admin/setup`](../apps/web/content/docs/admin/setup.mdx) the lane's step, [`/docs/mcp/local-testing`](../apps/web/content/docs/mcp/local-testing.mdx) the A8 steps, [`/docs/toolbox/admin`](../apps/web/content/docs/toolbox/admin.mdx) the link back; `docs/11` the rule and the Not yet row; `docs/02` the register row `Q-ADMIN-ACCESS-UPDATE`.
+
+| Check | Result |
+| --- | --- |
+| `bun run mcp:test:e2e` | 57 pass, 0 fail across 5 files, 132.3 seconds; nothing left behind |
+| The admin journeys alone, three runs | 25 pass, 0 fail: 98.1, 97.6 and 97.0 seconds (20 tests and 49.8 seconds on 2 October: A8's three new waits on the Toolbox's poller are the difference) |
+| `bun run typecheck`, `bun run lint`, `bun run build` | Pass (14, 14 and 3 tasks) |
+| `bun --filter web test` | 88 pass, including the link check over the new anchor `/docs/admin#some-tools-not-all` |
+
+**Measured, three runs of the admin journeys alone:**
+
+| What | Result |
+| --- | --- |
+| Tools gone from the same token after `access_revoke` of the organisation-wide grant | 6.1, 7.1 and 8.2 seconds |
+| `toolbox_whoami` and `e2e_records_list`, and nothing else, listed after the group's grant of `e2e/records.list` and `groups_addmember` | 14.2, 14.2 and 13.2 seconds |
+| `e2e_records_create` and the two commit tools added after the member's grant of `e2e/records.create` | 15.2, 14.4 and 15.2 seconds |
+| `e2e_records_list` gone and `e2e_records_create` kept after `groups_dropmember` | 14.2, 14.2 and 14.3 seconds |
+| Every `e2e` tool back after `access_enable` | 15.3, 15.2 and 14.2 seconds |
+| `toolbox_whoami` after each change | `grants` `e2e/records.list` with one capability; then `e2e/records.create e2e/records.list`; then `e2e/records.create` |
+| `e2e_records_show` with the group's grant only | `Tool e2e_records_show not found`; the Toolbox's chain for the organisation holds exactly one `capability.denied` row, `e2e/records.show`, reason `not granted` |
+| `members_list` by email | One member, whose id is the token's `membership_id` |
+| Evidence chain of the platform organisation | 133 events in each run, verified: `capability.completed` 70, `capability.denied` 7, `intent.prepared` 19, `intent.committed` 18, `receipt.issued` 18, `intent.stale` 1; 16 ID audit rows by the machine client for 16 committed writes other than `toolbox_enable`, each joined by `requestId` to its commit's row |
+| What the admin MCP asked ID in a whole file | 114 member-access reads and 3 token requests |
+| `tools/list` with the live access read, 25 requests with one token | Medians 44.6, 38.7 and 36.2 ms, maxima 71.4, 56.8 and 44.3 ms; the reads inside them medians 33.3, 29.8 and 27.8 ms, maxima 63.3, 46.0 and 33.3 ms |
+
+**Found by testing.**
+
+- **A narrower grant shows only while the wide one is disabled.** Grants add up and nothing denies, so A8 had to run between A3's `access_revoke` and its `access_enable`; the lane's step says to revoke the organisation-wide grant first for the same reason.
+- **Changing a group's set of tools is not a tool.** ID keeps one entitlement per principal and target and `access_grant` refuses a second, so A8 gives the member their own entitlement rather than widening the group's; staff who want to change a group's tools use ID's `updateEntitlement` with cURL, or one group per set of tools. Registered as `Q-ADMIN-ACCESS-UPDATE`.
+- **The poller once polled after ID had stopped.** In the full run, after the admin journeys' `afterAll` stopped ID, the Toolbox's grants poller logged `[toolbox] reading ID's audit log failed … Unable to connect` once and the run went on to pass: the kit's cleanup stops ID before the poller that was registered after it. Harmless, seen in 1 of 4 runs, not changed.
+
 ## Limits
 
 The acceptance uses local test issuers for company directories, a pre-registered public client and loopback HTTP. It does not certify Claude.ai, another host, another company directory or a production deployment; the host lane above records LibreChat and Claude Code by hand.

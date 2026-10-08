@@ -105,6 +105,12 @@ Each write is a prepare tool: it changes nothing and returns an intent, which `a
 
 **Refused at prepare.** A write that would change nothing, or that ID would refuse, answers before anything is recorded: `PRECONDITION_FAILED` for a taken slug, a domain already routed, a member already in the group or not in it, an identical entitlement, an organisation already in that status, a role already held or not held; `INVALID_INPUT` for a scope the resource does not allow, an issuer `sso_set` does not take, or a provider or host client the Toolbox or ID does not know.
 
+### Some tools, not all
+
+A [grant string](/docs/toolbox#grant-strings) can name one capability, such as `e2e/records.list`, as well as a provider or a domain. To give a group one tool: `groups_create`, then `access_grant` to the group, `principal` `{ "kind": "group", "id": … }` with that string in `scopes`, then `groups_addmember` for each person, who must have signed in once. `groups_dropmember` takes the tool away again, and `access_grant` with `{ "kind": "member", "id": … }` gives one person a tool of their own. The Toolbox applies each change to the person's current token within 60 seconds; the admin journeys prove it against real ID: [What the admin journeys prove](/docs/mcp/local-testing#what-the-admin-journeys-prove), A8.
+
+Two rules shape it. Grants add up and nothing denies: an organisation-wide grant of `e2e` covers every tool whatever else is granted, so revoke it first. And ID keeps one entitlement per principal and resource, so `access_grant` refuses a second: to change which tools a group holds, change the entitlement's scopes with [updateEntitlement](/docs/id/admin-api/entitlements/updateEntitlement), or keep one group per set of tools and move people between them.
+
 ## Make a change
 
 ```json
@@ -314,6 +320,7 @@ Every tool error is the envelope [MCP errors](/docs/mcp/errors) describes, with 
 | --- | --- |
 | Inviting a person before their first sign-in | ID has no invitation route. Grant the organisation or a group; the person appears at their first sign-in; then `groups_addmember` |
 | Deleting an organisation, a group, a member or an entitlement | Disable instead: `organisations_disable`, `access_revoke` |
+| Changing the scopes of an entitlement | [updateEntitlement](/docs/id/admin-api/entitlements/updateEntitlement) with cURL; or one group per set of tools, moved with `groups_addmember` and `groups_dropmember` |
 | SSO providers with their own credentials | cURL, as [Connect the directory](/docs/id/onboard#connect-the-directory) shows |
 | Human approval of a write | Every write is controlled class; the critical operations are owner-only and need a recent sign-in |
 | Registering clients and resources, users, sessions, disabling domains, member windows and removal | cURL, as [Onboard an organisation](/docs/id/onboard) and [Manage your organisation](/docs/id/manage) show |

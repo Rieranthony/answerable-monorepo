@@ -109,28 +109,35 @@ The admin API's evidence check and host client rows are held by the Toolbox's ow
 
 7. After the enable and the grant the new organisation's person signs in to the Toolbox, lists `toolbox_whoami`, `e2e_identity_get`, the four `e2e_records` tools and the two commit tools, and calls `e2e_identity_get` and `e2e_records_list`.
 8. The admin MCP answers `401` to that person's Toolbox token, which the Toolbox accepts: a token is good for its own audience only.
-9. `access_revoke` takes the tools away from the same token 8.1 to 9.2 seconds later in five runs, polling `tools/list` every second; the Toolbox's poller reads ID's audit log every 15 seconds and its grant cache lasts 60. `access_enable` brings them back 14.2 to 15.2 seconds later.
-10. `organisations_disable` by an owner with a recent sign-in: the organisation's refresh answers `invalid_grant`.
+9. `access_revoke` takes the tools away from the same token 6.1 to 8.2 seconds later in three runs, polling `tools/list` every second; the Toolbox's poller reads ID's audit log every 15 seconds and its grant cache lasts 60.
+
+**A8, tool-level access.** A grant string that names one capability, held through a group and by one member, while the organisation-wide grant is disabled: [Some tools, not all](/docs/admin#some-tools-not-all).
+
+10. `members_list` by the person's email finds their member: the one their Toolbox token names as `membership_id`.
+11. `access_grant` of `e2e/records.list` to the group A2 made, then `groups_addmember` of the person: 13.2 to 14.2 seconds later the same token lists `toolbox_whoami` and `e2e_records_list` and nothing else, `toolbox_whoami` shows the one grant and the one capability, and `e2e_records_list` runs. `e2e_records_show` is the unknown-tool error, and the Toolbox's evidence for the organisation holds one `capability.denied` row, for `e2e/records.show` with reason `not granted`.
+12. `access_grant` of `e2e/records.create` to the member alone: 14.4 to 15.2 seconds later the list adds `e2e_records_create` and the two commit tools, and `toolbox_whoami` shows both grants.
+13. `groups_dropmember`: 14.2 to 14.3 seconds later `e2e_records_list` is gone and `e2e_records_create` stays.
+14. `access_enable` of the organisation-wide grant brings every `e2e` tool back 14.2 to 15.3 seconds later. Then `organisations_disable` by an owner with a recent sign-in: the organisation's refresh answers `invalid_grant`.
 
 **A4, refusals.**
 
-11. A member of a client organisation is refused at ID's chooser. Granted the admin resource deliberately, they get a token whose organisation is the client's: the admin MCP lists no tool and `admin_whoami` is the unknown-tool error, with a `capability.denied` row, reason `not_platform`.
-12. The owner makes the colleague an `admin` with `staff_grant`. The colleague calling `organisations_disable` gets the unknown-tool error and a `capability.denied` row (`held` `admin`, `needed` `owner`). Their `groups_addmember` of themselves to the platform organisation's owner group gets `PERMISSION_DENIED`; the owner group still holds only the owner, and no intent was stored.
-13. Renaming an organisation through ID's admin API between the prepare and the commit of `organisations_update` answers `INTENT_STALE`, with `details.targets` holding the ETag the prepare bound and the one ID holds now: `"<id>:1"` and `"<id>:2"`.
+15. A member of a client organisation is refused at ID's chooser. Granted the admin resource deliberately, they get a token whose organisation is the client's: the admin MCP lists no tool and `admin_whoami` is the unknown-tool error, with a `capability.denied` row, reason `not_platform`.
+16. The owner makes the colleague an `admin` with `staff_grant`. The colleague calling `organisations_disable` gets the unknown-tool error and a `capability.denied` row (`held` `admin`, `needed` `owner`). Their `groups_addmember` of themselves to the platform organisation's owner group gets `PERMISSION_DENIED`; the owner group still holds only the owner, and no intent was stored.
+17. Renaming an organisation through ID's admin API between the prepare and the commit of `organisations_update` answers `INTENT_STALE`, with `details.targets` holding the ETag the prepare bound and the one ID holds now: `"<id>:1"` and `"<id>:2"`.
 
 **A5, idempotency.**
 
-14. Committing one intent twice at once: one call answers the receipt with `idempotent_replay: false` and the other `COMMIT_IN_PROGRESS`, in five runs. A third commit answers the same receipt with `idempotent_replay: true`. ID holds one organisation with that slug and one `organization.created` audit row; the chain holds one `intent.committed` and one `receipt.issued` for the intent.
+18. Committing one intent twice at once: one call answers the receipt with `idempotent_replay: false` and the other `COMMIT_IN_PROGRESS`, in five runs. A third commit answers the same receipt with `idempotent_replay: true`. ID holds one organisation with that slug and one `organization.created` audit row; the chain holds one `intent.committed` and one `receipt.issued` for the intent.
 
 **A6, freshness.** The admin MCP runs with `ADMIN_FRESH_SECONDS=10` for this journey.
 
-15. A critical tool's prepare answers `ADMIN_REAUTHENTICATION_REQUIRED` with the remedy of [Sign in again](/docs/admin#sign-in-again) in its message, `retry.policy` `after_state_change` and the token's `upstream_auth_time` in `details`; a read tool still works, and a `capability.denied` row with reason `stale_authentication` is recorded. Authorising again in the host alone, through the browser that holds ID's session, gives a token with the same `sid` and the same `upstream_auth_time`: still refused.
-16. The remedy, run exactly as the message says: **Verify sign-in** on ID's Security page in that browser, then a new authorisation. The token has a new `sid` and a later `upstream_auth_time`, and the critical tool prepares and commits: 0.9 to 1.0 seconds for the three steps. Against the fixture as it was, which stamped `auth_time` once at boot, ID refused the Verify sign-in with "Your provider must confirm when you authenticated"; the fixture now stamps each sign-in with the time it happens.
-17. After the window passes, a token refreshed from that authorisation carries the same `upstream_auth_time` and is refused again: a refresh never counts as a sign-in.
+19. A critical tool's prepare answers `ADMIN_REAUTHENTICATION_REQUIRED` with the remedy of [Sign in again](/docs/admin#sign-in-again) in its message, `retry.policy` `after_state_change` and the token's `upstream_auth_time` in `details`; a read tool still works, and a `capability.denied` row with reason `stale_authentication` is recorded. Authorising again in the host alone, through the browser that holds ID's session, gives a token with the same `sid` and the same `upstream_auth_time`: still refused.
+20. The remedy, run exactly as the message says: **Verify sign-in** on ID's Security page in that browser, then a new authorisation. The token has a new `sid` and a later `upstream_auth_time`, and the critical tool prepares and commits: 0.9 to 1.0 seconds for the three steps. Against the fixture as it was, which stamped `auth_time` once at boot, ID refused the Verify sign-in with "Your provider must confirm when you authenticated"; the fixture now stamps each sign-in with the time it happens.
+21. After the window passes, a token refreshed from that authorisation carries the same `upstream_auth_time` and is refused again: a refresh never counts as a sign-in.
 
 **A7, evidence.**
 
-18. The platform organisation's chain verifies (108 to 109 events in three runs), and holds `capability.completed`, `capability.denied`, `intent.prepared`, `intent.committed`, `receipt.issued` and `intent.stale` rows. Every ID audit row of a write by the machine client names the execution id of a commit that succeeded, and there are as many (12) as intents committed other than `toolbox_enable`, whose writes the Toolbox makes with its own client; `staff_revoke`'s receipt names one operation per group left. The admin MCP asked ID 101 to 102 times for a member's access and 3 times for a token.
+22. The platform organisation's chain verifies (133 events in three runs), and holds `capability.completed`, `capability.denied`, `intent.prepared`, `intent.committed`, `receipt.issued` and `intent.stale` rows. Every ID audit row of a write by the machine client names the execution id of a commit that succeeded, and there are as many (16) as intents committed other than `toolbox_enable`, whose writes the Toolbox makes with its own client; `staff_revoke`'s receipt names one operation per group left. The admin MCP asked ID 114 times for a member's access and 3 times for a token.
 
 ## Ports
 

@@ -102,6 +102,10 @@ At ID's email step type the address given below; the company sign-in that follow
    then /mcp, choose answerable-toolbox and Authenticate. Before step 2 ID stops this person with "Access is unavailable for this organisation". After it, the Toolbox lists seven tools:
    toolbox_whoami, the four e2e_records tools and the two commit tools; toolbox_whoami shows the grant e2e/records.
 
+4. Some tools, not all: ask Claude to revoke that grant, create the group staff in ${spare.slug}, grant it e2e/records.list on ${toolboxResource} and add ${spare.email} to it;
+   members_list finds the member, who has signed in. Within a minute the Toolbox lists two tools for the same sign-in: toolbox_whoami and e2e_records_list, and toolbox_whoami
+   shows the grant e2e/records.list. Taking the person out of the group removes the tool again.
+
 When the previous sign-in at your company directory is older than 30 minutes, the critical tools (organisations_disable, organisations_enable, staff_grant, staff_revoke) ask you to sign in again:
 open ${manifest.idOrigin}/security in the browser you signed in with and choose Verify sign-in, then clear the server's authentication in Claude Code and authenticate again.
 

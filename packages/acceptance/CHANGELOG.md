@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2
+
+- The admin journeys prove tool-level access against real ID (A8, after A3): `access_grant` of a grant string that names one capability, `e2e/records.list`, to a group the person joins with `groups_addmember`; `e2e/records.create` to the member alone; then `groups_dropmember`. The person's same Toolbox token lists each change within the cache window, and a call to a tool outside the grant is the unknown-tool error with a denial in the Toolbox's evidence. A3's `access_enable` and `organisations_disable` moved to the end of A8: a narrower grant shows only while the organisation-wide one is disabled.
+- `startAdminStack` returns `toolboxDatabase`, the Toolbox's database, so a journey can read its evidence.
+- The admin lane prints a fourth step: the narrower grant to try, and the two tools it leaves the person.
+
 ## 0.5.1
 
 `startId` and the host lane find `compose.yaml` and `apps/id` in a checkout whose path has a space or a non-ASCII character: they decode the file URL instead of passing its percent-encoded path to Docker Compose and Bun.

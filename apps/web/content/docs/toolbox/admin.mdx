@@ -177,7 +177,7 @@ curl "$ID/api/admin/v1/organizations/$ORG/entitlements" -H "Idempotency-Key: e2e
   -d '{"memberId":"'"$MEMBER"'","resource":"'"$MCP"'","scopes":["e2e/records.list"]}'
 ```
 
-Rows are additive and there is no deny. ID refuses a scope the resource does not allow, so a provider you mount later needs one more enable call, which widens `allowedScopes` first. A change reaches the person within 60 seconds. Until organisation administrators can do this themselves, staff do: tenant-tier writes are Not yet.
+Rows are additive and there is no deny. ID refuses a scope the resource does not allow, so a provider you mount later needs one more enable call, which widens `allowedScopes` first. A change reaches the person within 60 seconds. Until organisation administrators can do this themselves, staff do: tenant-tier writes are Not yet. Through [the admin MCP](/docs/admin#some-tools-not-all), `access_grant` makes the same entitlement with a preview and a receipt.
 
 ## Check evidence
 

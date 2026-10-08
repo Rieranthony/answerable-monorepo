@@ -86,5 +86,7 @@ export async function startAdminStack(id: Id, { adminHost, toolboxHost, fetch }:
     groups,
     /** The admin MCP's database: its intents and its evidence. */
     database: adminDb,
+    /** The Toolbox's database: its catalogue, intents and evidence. */
+    toolboxDatabase: toolboxDb,
   }
 }
