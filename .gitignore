@@ -15,6 +15,9 @@ out/
 # env
 .env*
 
+# cluster credentials: database-ca's manual fallback writes admin.kubeconfig at the root (infra/README.md)
+*.kubeconfig
+
 # typescript
 next-env.d.ts
 
