@@ -46,6 +46,10 @@ database:
   # The ConfigMap, applied by the deploy, whose ca.pem verifies the database's certificate: /etc/ssl/db/ca.pem, the
   # sslrootcert of every database URL.
   caConfigMap: postgres-ca
+  # The host and port the services reach the database at, which the ops bootstrap writes into their URLs. Empty: those of
+  # the administrative URL in the postgres-admin Secret.
+  host: ""
+  port: ""
 
 # ID's TRUSTED_PROXY_CIDRS: the hops whose X-Forwarded-For entries ID skips (Cloudflare's ranges, the load balancer's
 # network, the pod range). Required in production; ID refuses to start without it.
@@ -74,8 +78,11 @@ id:
   platformOrganization:
     slug: answerable
     name: Answerable
-  # BETTER_AUTH_TRUSTED_ORIGINS: origin-only URLs; production requires at least one.
+  # BETTER_AUTH_TRUSTED_ORIGINS: origin-only URLs; production requires at least one. A company directory on a private
+  # network must be listed here, and reachable through extraEgress.
   trustedOrigins: []
+  # More egress rules for ID's pods (NetworkPolicy egress entries), such as a company directory on a private network.
+  extraEgress: []
   microsoftClientId: ""
   googleClientId: ""
   # Any other non-secret variable from docs/06's configuration table.
@@ -116,11 +123,17 @@ migrations:
   backoffLimit: 1
   activeDeadlineSeconds: 600
 
-# The ops image's Jobs (brief B3): bootstrap creates the databases' logins and writes their Secrets before the
-# migrations; register creates the two machine clients in ID after the release. The pipeline switches one on per run.
+# The ops image's Jobs (infra/ops/README.md): bootstrap creates the databases and their logins and writes their Secrets
+# before the migrations; register registers the Toolbox and the admin MCP in ID after the release, writes their client
+# Secrets and starts them. The pipeline switches one on per run (deploy.ts run-job).
 ops:
   bootstrap: false
   register: false
+  # Claude Code's --callback-port, in the redirect URI of the host clients register creates (docs/admin/setup).
+  claudeCallbackPort: 47700
+  activeDeadlineSeconds: 600
+  # How long a finished Job, and its pod's log, stays before Kubernetes removes it; the next run replaces it anyway.
+  ttlSecondsAfterFinished: 86400
   resources:
     requests: { cpu: 100m, memory: 128Mi }
     limits: { memory: 256Mi }
@@ -140,6 +153,7 @@ networkPolicy:
         cidr: 0.0.0.0/0
         except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]
   httpsPorts: [443]
-  # The Kubernetes API, for the ops Jobs that write Secrets.
+  # The Kubernetes API, for the ops Jobs that read and write Secrets: where the kubernetes Service's traffic goes once it
+  # is translated to the API server's address. Each environment sets it; without it the ops Jobs cannot run.
   kubernetesApi: []
   kubernetesApiPorts: [443, 6443]

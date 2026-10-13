@@ -56,6 +56,13 @@ adminMcp:
   autoscaling: { enabled: true, minReplicas: 2, maxReplicas: 4 }
 
 networkPolicy:
+  # The Kubernetes API for the ops Jobs: Civo runs the control plane outside the cluster, at a public endpoint on 6443
+  # (infra/civo/README.md). Its address is the cluster module's api_endpoint output; until this file carries it, any
+  # address on 6443, for the ops Jobs' pods only.
+  kubernetesApi:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+  kubernetesApiPorts: [6443]
   # The Civo database sits in the environment's private network (infra/civo/envs/production, network_cidr).
   database:
     - ipBlock:

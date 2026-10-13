@@ -1,8 +1,9 @@
 # The kind stack's PostgreSQL 17, standing in for the managed database: TLS only (plain connections are refused by
 # pg_hba), a server certificate from a certificate authority of its own (database-ca, which the services trust through
-# the postgres-ca ConfigMap and nothing else), and per database an owner login and a restricted runtime login, as the
-# ops bootstrap creates them in a cloud. The test creates the Secret postgres-bootstrap first: the superuser's password and
-# logins.sql, which runs once when the data directory is created (infra/k8s/local/stack.ts writes it with throwaway passwords).
+# the postgres-ca ConfigMap and nothing else), and, as a managed database starts, one administrative login that may create
+# databases and roles but is not a superuser. The ops bootstrap Job creates the databases and their logins with it. The
+# test creates the Secret postgres-bootstrap first: the superuser's password and admin.sql, which runs once when the data
+# directory is created (infra/k8s/local/stack.ts writes it with a throwaway password).
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
@@ -174,4 +175,4 @@ spec:
             secretName: postgres-bootstrap
             defaultMode: 0440
             items:
-              - { key: logins.sql, path: logins.sql }
+              - { key: admin.sql, path: admin.sql }

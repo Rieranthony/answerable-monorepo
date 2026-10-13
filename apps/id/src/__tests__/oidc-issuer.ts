@@ -27,6 +27,11 @@ export async function startOidcIssuer(
   options: {
     beforeTokenResponse?: () => Promise<void>;
     refreshToken?: string;
+    /** Where it listens: 127.0.0.1 and a free port unless given, such as 0.0.0.0 for a cluster's pods to reach it. */
+    hostname?: string;
+    port?: number;
+    /** Its issuer and the base of its discovery document's endpoints, when that is not the address it listens on. */
+    origin?: string;
   } = {},
 ) {
   const { privateKey, publicKey } = await generateKeyPair("RS256");
@@ -44,8 +49,8 @@ export async function startOidcIssuer(
   let origin = "";
 
   const server = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
+    hostname: options.hostname ?? "127.0.0.1",
+    port: options.port ?? 0,
     async fetch(request) {
       const url = new URL(request.url);
       if (
@@ -130,7 +135,7 @@ export async function startOidcIssuer(
       return new Response("not found", { status: 404 });
     },
   });
-  origin = `http://${server.hostname}:${server.port}`;
+  origin = options.origin ?? `http://${server.hostname}:${server.port}`;
 
   return {
     origin,

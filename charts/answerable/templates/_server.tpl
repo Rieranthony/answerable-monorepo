@@ -1,12 +1,17 @@
 {{/*
 One server: its ServiceAccount, Deployment, Service, Ingress, HorizontalPodAutoscaler and PodDisruptionBudget.
 Takes root, component (the resource name), image, port, values (its block of values), host, env (rendered variables),
-readiness (the readiness path) and liveness (an HTTP path, or empty for a TCP check). Traefik streams responses as they come, which the MCP endpoints' server-sent events need.
+readiness (the readiness path), liveness (an HTTP path, or empty for a TCP check) and clientSecret (the Secret holding its
+ID client secret, or empty). Traefik streams responses as they come, which the MCP endpoints' server-sent events need.
+A server whose client Secret does not exist yet waits at zero replicas rather than failing to start: the ops register Job
+writes the Secret and scales it up (infra/ops/README.md), and the next upgrade, finding the Secret, renders it as usual.
+`helm template` has no cluster to look in, so it renders such a server at zero.
 */}}
 {{- define "answerable.server" -}}
 {{- $root := .root -}}
 {{- $values := .values -}}
 {{- $scope := dict "root" $root "component" .component -}}
+{{- $waiting := and .clientSecret (not (lookup "v1" "Secret" $root.Release.Namespace .clientSecret)) -}}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -22,7 +27,10 @@ metadata:
   labels:
     {{- include "answerable.labels" $scope | nindent 4 }}
 spec:
-  {{- if not $values.autoscaling.enabled }}
+  {{- if $waiting }}
+  # Until ops register writes the Secret {{ .clientSecret }} and starts this server.
+  replicas: 0
+  {{- else if not $values.autoscaling.enabled }}
   replicas: {{ $values.replicas }}
   {{- end }}
   revisionHistoryLimit: 5
