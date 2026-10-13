@@ -229,4 +229,5 @@ Civo's list prices, measured on 10 October 2026 from its pricing page; USD a mon
 - **The AWS and Google roots.** The images, charts, secrets scheme and pipeline are cloud-neutral; each cloud needs its own thin Terraform root ([portability](goals/aws-deploy/portability.md)).
 - **From D15:** a second region, Redis, an email provider, KMS-backed token signing ([`Q-AID-KMS`](02-plan.md#open-register)), scheduled scale-to-zero for staging, Cloudflare Access in front of the admin MCP.
 - **Bot Fight Mode as code** (the token would need Bot Management Edit).
+- **Cloudflare's managed WAF rules as code.** [D18](goals/aws-deploy/decisions.md) names the free managed ruleset; the `edge` module does not set it, so the zone keeps whatever Cloudflare enables by default.
 - **A retention decision** for audit and evidence rows ([`Q-EVIDENCE-RETENTION`](02-plan.md#open-register)).

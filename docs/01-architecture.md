@@ -47,11 +47,11 @@ A token carrying a user's identity is only ever issued when that user's own auth
 | Base | **Better Auth** (`@better-auth/oauth-provider` ≥ 1.7.0): organizations, SSO federation, JWT signing, OAuth 2.1 provider; house behavior as custom plugins, never forks |
 | Runtime / language | **Bun everywhere, including production**; TypeScript end-to-end |
 | HTTP | **Hono** (Better Auth mounted on it) |
-| Database | **Postgres 15+** for all state — users, organizations, SSO configs, entitlements, sessions, refresh-token families, consents, client registrations, audit. Drizzle owns the schema; administrative changes use the versioned Hono API under `/api/admin`, never routine direct SQL |
+| Database | **PostgreSQL 17** for all state — users, organizations, SSO configs, entitlements, sessions, refresh-token families, consents, client registrations, audit. Drizzle owns the schema; administrative changes use the versioned Hono API under `/api/admin`, never routine direct SQL |
 | Cache | **Redis** as a read cache for sessions — later, not used by v1 code |
 | Testing | Test-driven; CI enforces full coverage of our own code (`bun test --coverage`) |
-| Edge | No CDN/WAF in front of our services for now; TLS terminates at the ingress (the design doc's Cloudflare front is under review — `Q-AID-CDN`) |
-| Hosting | Civo London: isolated network, K3s, managed Postgres, admin access via the tailnet ([`03-answerable-id.md` §Hosting](03-answerable-id.md#hosting)) |
+| Edge | **Cloudflare** in front of ID, the Toolbox and the admin MCP: TLS at the edge and again at Traefik in the cluster, origin pulls verified with Answerable's own certificate, no challenges on the API hostnames, no caching except static `/assets/` ([`12-deployment.md`](12-deployment.md#network-and-ingress)) |
+| Hosting | **Civo London (LON1)**: one Civo account per environment, Civo Kubernetes, Civo Database PostgreSQL 17, Cloudflare in front ([`12-deployment.md`](12-deployment.md)). The images, the chart and the pipeline are cloud-neutral, so AWS or Google needs only its own Terraform root: Not yet. The web app stays on Vercel |
 | Shared packages | Built: `ui` (`@answerable/ui`, shadcn/Base UI components and the Tailwind theme, source-only), `countries` (`@answerable/countries`, ISO data). Planned: `auth` (JWT verification middleware + client helpers for every consumer), `utils` (logging/redaction, env, crypto, backoff) |
 
 ## How the next app or MCP server plugs in

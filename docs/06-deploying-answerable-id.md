@@ -13,11 +13,13 @@ Everything below is derived from the code on this branch: `apps/id/src/env.ts` (
 | --- | --- | --- |
 | `apps/id` | One Bun process serving the OAuth/OIDC provider, the admin API, login, selection, consent, error and security pages, health and discovery on `PORT` (default 47300) | Stateless apart from per-process rate-limit buckets and a five-minute JWKS cache, so replicas are fine |
 | `apps/web` | Next.js site and docs | Public website |
-| PostgreSQL 16 | The only state: users, sessions, native OAuth state, policy, audit, command receipts | Local compose uses `postgres:16-alpine`; production needs your own instance with backups |
+| PostgreSQL 17 | The only state: users, sessions, native OAuth state, policy, audit, command receipts | Local compose uses `postgres:17-alpine`; production needs your own instance with backups |
 | Ingress | TLS termination and the `x-forwarded-for` header | The **only** network path to `apps/id`; see the first requirement below |
 | Redis | Reserved for later caching | Not used by `apps/id` today; do not provision it for ID |
 
 ID serves its own login, selection, consent, error and security pages at `BETTER_AUTH_URL` (`/login`, `/authorize`, `/consent`, `/error`, `/security`).
+
+Answerable's own deployment of ID, the Toolbox and the admin MCP (Civo, Kubernetes, Cloudflare in front) is described in [`12-deployment.md`](12-deployment.md), and operated with [`infra/README.md`](../infra/README.md).
 
 ## Requirements and why they exist
 
@@ -90,7 +92,7 @@ Optional, with defaults that hold for a first deployment: `ADMIN_RESOURCE_IDENTI
 
 ## Install, in order
 
-**1. Database.** Create the database and the runtime login on your PostgreSQL 16 instance. The login has no privileges yet; `db:migrate` grants them.
+**1. Database.** Create the database and the runtime login on your PostgreSQL 17 instance. The login has no privileges yet; `db:migrate` grants them.
 
 ```sql
 CREATE DATABASE answerable_id;
@@ -181,7 +183,7 @@ If you ever remove the last platform administrator, set `ROOT_ADMIN_BREAK_GLASS=
 
 ## Not ready yet
 
-These include release evidence and unbuilt capabilities. The release gate in `../reports/answerable-id-release-decision-plan.md` lists them as E1 to E8; the ones a deployment plan must schedule are:
+These include release evidence and unbuilt capabilities. The release gate in `../reports/answerable-id-release-decision-plan.md` lists them as E1 to E8; the ones a deployment plan must schedule are below. The topology, the interim secret store (`sops` and `age`) and the backup system Answerable deploys with are in [`12-deployment.md`](12-deployment.md); what they prove waits for the first staging deployment's evidence.
 
 - Real tenant validation against an Entra tenant and a second provider (E1) and against the first consumer (E2, E3): Not yet. See the [release plan](02-plan.md#open-register).
 - Publisher verification and an Entra certificate credential: Not yet. Track [Q-PUBLISHER-VERIFICATION and Q-ENTRA-CERTIFICATE](02-plan.md#open-register); the certificate work gates E1.
