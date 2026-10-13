@@ -8,7 +8,7 @@ import { startGrantsPoller } from "./poller"
 import { createTracer } from "./spans"
 import { createToolbox } from "./toolbox"
 
-const { databaseUrl, auth, port, id: idConfig, otlpEndpoint } = readToolboxEnvironment(process.env)
+const { databaseUrl, auth, hostname, port, id: idConfig, otlpEndpoint } = readToolboxEnvironment(process.env)
 const db = new SQL(databaseUrl)
 const telemetry = createTracer(otlpEndpoint)
 const id = createIdAdmin(idConfig)
@@ -16,7 +16,7 @@ const id = createIdAdmin(idConfig)
 const toolbox = await createToolbox({ providers: [createE2eProvider({ records: createRecordStore(), viewHtml })], auth, db, id, spans: telemetry.tracer })
 //#endregion
 const poller = startGrantsPoller({ id, grants: toolbox.grants })
-const server = Bun.serve({ hostname: "127.0.0.1", port, fetch: toolbox.fetch })
+const server = Bun.serve({ hostname, port, fetch: toolbox.fetch })
 console.log(`Toolbox serving ${auth.resource}`)
 let closing = false
 async function close() {

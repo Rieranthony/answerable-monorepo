@@ -27,3 +27,26 @@ test("the entry point serves against the database, answers /health and stops on 
     server.kill()
   }
 }, 30_000)
+
+test("the entry point listens on TOOLBOX_HOST", async () => {
+  const build = Bun.spawn([process.execPath, "run", "--filter", "@answerable/mcp-e2e", "build"], { cwd: directory, stdout: "ignore", stderr: "pipe" })
+  expect(await build.exited, await new Response(build.stderr).text()).toBe(0)
+  const probe = Bun.serve({ hostname: "::1", port: 0, fetch: () => new Response() })
+  const { port } = probe
+  probe.stop(true)
+  const id = "http://127.0.0.1:1"
+  const env = {
+    ...process.env, TOOLBOX_DATABASE_URL: database.url, TOOLBOX_ID_ISSUER: id, TOOLBOX_RESOURCE_URL: `http://[::1]:${port}/mcp`, TOOLBOX_PORT: String(port),
+    TOOLBOX_HOST: "::1", TOOLBOX_ID_CLIENT_ID: "toolbox-hub", TOOLBOX_ID_CLIENT_SECRET: "secret", TOOLBOX_ID_ADMIN_RESOURCE: `${id}/api/admin`,
+  }
+  const server = Bun.spawn([process.execPath, "src/server.ts"], { cwd: directory, env, stdout: "pipe", stderr: "ignore" })
+  try {
+    expect(new TextDecoder().decode((await server.stdout.getReader().read()).value)).toContain("Toolbox serving")
+    expect(await (await fetch(`http://[::1]:${port}/health`)).json()).toEqual({ status: "ok" })
+    // Bound to the IPv6 loopback only, so nothing listens on the IPv4 loopback's port.
+    await expect(fetch(`http://127.0.0.1:${port}/health`)).rejects.toThrow()
+  } finally {
+    server.kill()
+    await server.exited
+  }
+}, 30_000)

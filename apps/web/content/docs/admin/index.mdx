@@ -243,7 +243,8 @@ Read from the root `.env` by `bun run admin:dev`; every variable is listed in `d
 | --- | --- | --- |
 | `ADMIN_ID_ISSUER` | Answerable ID's origin; [Sign in again](#sign-in-again) names its `/security` page | `http://localhost:47300` |
 | `ADMIN_RESOURCE_URL` | The admin MCP's URL as registered in ID: the token audience; its path is the endpoint | `http://localhost:47520/mcp` |
-| `ADMIN_PORT` | The loopback port | `47520` (the default) |
+| `ADMIN_HOST` | The address to listen on. The container image sets `0.0.0.0` | `127.0.0.1` (the default) |
+| `ADMIN_PORT` | The port | `47520` (the default) |
 | `ADMIN_DATABASE_URL` | Intents and evidence | `postgres://answerable:answerable@localhost:47432/answerable_admin` |
 | `ADMIN_TEST_DATABASE_URL` | The test database, reset by `db:test:migrate` | `postgres://answerable:answerable@localhost:47432/answerable_admin_test` (the default) |
 | `ADMIN_ID_CLIENT_ID`, `ADMIN_ID_CLIENT_SECRET` | The machine client, owned by the platform organisation | `admin-mcp` and its secret |
