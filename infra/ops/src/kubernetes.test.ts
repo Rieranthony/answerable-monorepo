@@ -36,13 +36,14 @@ test("reads a Secret's keys decoded, with the ServiceAccount's token and the clu
   expect(calls[0]).toMatchObject({ method: "GET", url: `https://kubernetes.default.svc${secretPath}/id-database`, headers: { Authorization: "Bearer sa-token" }, ca: "CA PEM" })
 })
 
-test("writes one key: a merge patch on an existing Secret, else a new Opaque Secret labelled as the ops Jobs'", async () => {
+test("writes one key: a merge patch on an existing Secret, else a new Opaque Secret labelled as the ops Jobs', each as the field manager answerable-ops", async () => {
   const existing = client({ [`PATCH ${secretPath}/id-database`]: { status: 200, body: {} } })
   await existing.kube.writeSecretKey("id-database", "DATABASE_URL", "postgres://y")
-  expect(existing.calls).toEqual([expect.objectContaining({ method: "PATCH", headers: expect.objectContaining({ "Content-Type": "application/merge-patch+json" }), body: { data: { DATABASE_URL: base64("postgres://y") } } })])
+  expect(existing.calls).toEqual([expect.objectContaining({ method: "PATCH", url: `https://kubernetes.default.svc${secretPath}/id-database?fieldManager=answerable-ops`, headers: expect.objectContaining({ "Content-Type": "application/merge-patch+json" }), body: { data: { DATABASE_URL: base64("postgres://y") } } })])
   const missing = client({ [`POST ${secretPath}`]: { status: 201, body: {} } })
   await missing.kube.writeSecretKey("toolbox-id-client", "TOOLBOX_ID_CLIENT_SECRET", "s3cret")
   expect(missing.calls.map(call => call.method)).toEqual(["PATCH", "POST"])
+  expect(missing.calls[1]!.url).toBe(`https://kubernetes.default.svc${secretPath}?fieldManager=answerable-ops`)
   expect(missing.calls[1]!.body).toEqual({
     apiVersion: "v1",
     kind: "Secret",
@@ -72,7 +73,7 @@ test("reads a Deployment's replicas, 1 when unset as Kubernetes defaults it, und
   expect(await kube.replicas("unset")).toBe(1)
   expect(await kube.replicas("admin-mcp")).toBeUndefined()
   await kube.setReplicas("toolbox", 2)
-  expect(calls.at(-1)).toMatchObject({ method: "PATCH", url: `https://kubernetes.default.svc${deploymentPath}/toolbox`, body: { spec: { replicas: 2 } } })
+  expect(calls.at(-1)).toMatchObject({ method: "PATCH", url: `https://kubernetes.default.svc${deploymentPath}/toolbox?fieldManager=answerable-ops`, body: { spec: { replicas: 2 } } })
   await expect(kube.setReplicas("admin-mcp", 1)).rejects.toThrow("Kubernetes answered 404 NotFound to PATCH Deployment admin-mcp")
   const broken = client({ [`GET ${deploymentPath}/toolbox`]: { status: 500 } })
   await expect(broken.kube.replicas("toolbox")).rejects.toThrow("Kubernetes answered 500 to GET Deployment toolbox")

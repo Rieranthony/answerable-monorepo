@@ -1,4 +1,4 @@
-{{- /* The admin MCP. Configuration: apps/web/content/docs/admin/index.mdx. It exits at start until ID knows its machine client (ops register). */ -}}
+{{- /* The admin MCP. Configuration: apps/web/content/docs/admin/index.mdx. It waits at zero replicas until ops register has created its machine client in ID. */ -}}
 {{- define "answerable.adminMcpEnv" -}}
 - name: ADMIN_ID_ISSUER
   value: {{ include "answerable.idUrl" . | quote }}
@@ -23,5 +23,6 @@
   "host" .Values.hostnames.adminMcp
   "env" (include "answerable.adminMcpEnv" .)
   "readiness" "/health"
-  "liveness" "") }}
+  "liveness" ""
+  "clientSecret" "admin-id-client") }}
 {{- end }}

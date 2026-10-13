@@ -88,7 +88,7 @@ describe("charts/answerable", () => {
         for (const workload of workloads(manifests)) {
           for (const container of containersOf(workload)) {
             for (const variable of container.env ?? []) {
-              if (/SECRET|PASSWORD|TOKEN|DATABASE(_MIGRATION)?_URL$/.test(variable.name)) expect(variable.valueFrom?.secretKeyRef, `${workload.metadata.name} ${variable.name}`).toBeDefined()
+              if (/SECRET|PASSWORD|TOKEN|DATABASE(_MIGRATION|_ADMIN)?_URL$/.test(variable.name)) expect(variable.valueFrom?.secretKeyRef, `${workload.metadata.name} ${variable.name}`).toBeDefined()
               expect(String(variable.value ?? "")).not.toMatch(/^postgres(ql)?:\/\//)
             }
           }
@@ -105,8 +105,6 @@ describe("charts/answerable", () => {
           expect(podSpec(job).automountServiceAccountToken).toBe(false)
         }
         const bootstrap = named(manifests, "Job", "ops-bootstrap")
-        // The kind stack names no ops image until the ops image exists (brief B3), so its Jobs are absent there.
-        if (name === "values-local.yaml") return expect(bootstrap).toBeUndefined()
         expect(bootstrap!.metadata.annotations?.["helm.sh/hook"]).toBe("pre-install,pre-upgrade")
         for (const job of migrations) expect(weight(job)).toBeGreaterThan(weight(bootstrap!))
         expect(named(manifests, "Job", "ops-register")!.metadata.annotations?.["helm.sh/hook"]).toBe("post-install,post-upgrade")
@@ -125,7 +123,7 @@ describe("charts/answerable", () => {
 
       test("each Deployment rolls with no unavailable pod, probes readiness, spreads over nodes and has a disruption budget", () => {
         const deployments = manifests.filter(manifest => manifest.kind === "Deployment")
-        expect(deployments.map(deployment => deployment.metadata.name).sort()).toEqual(name === "values-local.yaml" ? ["id", "toolbox"] : ["admin-mcp", "id", "toolbox"])
+        expect(deployments.map(deployment => deployment.metadata.name).sort()).toEqual(["admin-mcp", "id", "toolbox"])
         for (const deployment of deployments) {
           expect(deployment.spec.strategy).toMatchObject({ type: "RollingUpdate", rollingUpdate: { maxUnavailable: 0 } })
           expect(containersOf(deployment)[0].readinessProbe?.httpGet?.path).toBe(deployment.metadata.name === "id" ? "/readyz" : "/health")
@@ -137,7 +135,7 @@ describe("charts/answerable", () => {
 
       test("one Ingress per hostname, behind the origin-pull certificate check, with a certificate from cert-manager", () => {
         const ingresses = manifests.filter(manifest => manifest.kind === "Ingress")
-        expect(ingresses.length).toBe(name === "values-local.yaml" ? 2 : 3)
+        expect(ingresses.length).toBe(3)
         for (const ingress of ingresses) {
           expect(ingress.spec.ingressClassName).toBe("traefik")
           expect(ingress.metadata.annotations).toMatchObject({
@@ -150,6 +148,59 @@ describe("charts/answerable", () => {
           expect(ingress.spec.rules.length).toBe(1)
           expect(ingress.spec.tls).toEqual([{ hosts: [ingress.spec.rules[0].host], secretName: `${ingress.metadata.name}-tls` }])
         }
+      })
+
+      test("the ops Jobs: one attempt, their own ServiceAccount's token, the administrative login or the ID token from Secrets, the database's authority", () => {
+        const bootstrap = named(manifests, "Job", "ops-bootstrap")!
+        const register = named(manifests, "Job", "ops-register")!
+        for (const job of [bootstrap, register]) {
+          expect(job.spec).toMatchObject({ backoffLimit: 0, ttlSecondsAfterFinished: expect.any(Number), activeDeadlineSeconds: expect.any(Number) })
+          expect(podSpec(job)).toMatchObject({ serviceAccountName: "ops", automountServiceAccountToken: true, restartPolicy: "Never" })
+          expect(containersOf(job)[0].command.slice(0, 2)).toEqual(["bun", "infra/ops/src/cli.ts"])
+          expect(env(job, "OPS_NAMESPACE").valueFrom).toEqual({ fieldRef: { fieldPath: "metadata.namespace" } })
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          expect(containersOf(job)[0].volumeMounts.find((mount: any) => mount.mountPath === "/etc/ssl/db")).toMatchObject({ name: "postgres-ca", readOnly: true })
+        }
+        expect(containersOf(bootstrap)[0].command[2]).toBe("bootstrap")
+        expect(new Set(secretReferences(bootstrap))).toEqual(new Set(["postgres-admin"]))
+        expect(env(bootstrap, "OPS_DATABASE_ADMIN_URL").valueFrom.secretKeyRef).toEqual({ name: "postgres-admin", key: "OPS_DATABASE_ADMIN_URL" })
+        expect(containersOf(register)[0].command[2]).toBe("register")
+        // A staff token when the operator has stored one, else the root secret; either may be absent, and the command says which it needs.
+        expect(env(register, "OPS_ID_TOKEN").valueFrom.secretKeyRef).toEqual({ name: "ops-staff-token", key: "OPS_ID_TOKEN", optional: true })
+        expect(env(register, "OPS_ID_ROOT_SECRET").valueFrom.secretKeyRef).toEqual({ name: "id-env", key: "ROOT_ADMIN_SECRET", optional: true })
+        expect(env(register, "OPS_ID_URL").value).toBe(env(named(manifests, "Deployment", "toolbox")!, "TOOLBOX_ID_ISSUER").value)
+        expect(env(register, "OPS_TOOLBOX_URL").value).toBe(env(named(manifests, "Deployment", "toolbox")!, "TOOLBOX_RESOURCE_URL").value.replace(/\/mcp$/, ""))
+        expect(env(register, "OPS_ADMIN_MCP_URL").value).toBe(env(named(manifests, "Deployment", "admin-mcp")!, "ADMIN_RESOURCE_URL").value.replace(/\/mcp$/, ""))
+        const replicas = name === "values-local.yaml" ? 1 : 2
+        expect(env(register, "OPS_START_DEPLOYMENTS").value).toBe(`toolbox=${replicas},admin-mcp=${replicas}`)
+      })
+
+      test("the ops ServiceAccount reads and patches exactly the Secrets its Jobs own, and only register touches the two Deployments", () => {
+        const role = named(manifests, "Role", "ops")!
+        expect(role.rules).toEqual([
+          { apiGroups: [""], resources: ["secrets"], resourceNames: ["id-database-owner", "id-database", "toolbox-database-owner", "toolbox-database", "admin-database-owner", "admin-database", "toolbox-id-client", "admin-id-client"], verbs: ["get", "patch"] },
+          { apiGroups: [""], resources: ["secrets"], verbs: ["create"] },
+          { apiGroups: ["apps"], resources: ["deployments"], resourceNames: ["toolbox", "admin-mcp"], verbs: ["get", "patch"] },
+        ])
+        expect(named(manifests, "ServiceAccount", "ops")!.automountServiceAccountToken).toBe(false)
+        expect(named(manifests, "RoleBinding", "ops")).toMatchObject({ roleRef: { kind: "Role", name: "ops" }, subjects: [{ kind: "ServiceAccount", name: "ops" }] })
+        const bootstrapOnly = render("answerable", values, { "image.tag": tag, "ops.bootstrap": "true" })
+        expect(named(bootstrapOnly, "Role", "ops")!.rules).toEqual([
+          { apiGroups: [""], resources: ["secrets"], resourceNames: ["id-database-owner", "id-database", "toolbox-database-owner", "toolbox-database", "admin-database-owner", "admin-database"], verbs: ["get", "patch"] },
+          { apiGroups: [""], resources: ["secrets"], verbs: ["create"] },
+        ])
+        expect(named(bootstrapOnly, "Role", "ops")!.metadata.annotations?.["helm.sh/hook"]).toBe("pre-install,pre-upgrade")
+        const registerOnly = render("answerable", values, { "image.tag": tag, "ops.register": "true" })
+        expect(named(registerOnly, "Role", "ops")!.rules[0].resourceNames).toEqual(["toolbox-id-client", "admin-id-client"])
+        expect(named(registerOnly, "Role", "ops")!.metadata.annotations?.["helm.sh/hook"]).toBe("post-install,post-upgrade")
+      })
+
+      test("the Toolbox and the admin MCP wait at zero replicas while their client Secret is missing, which helm template, with no cluster, always finds", () => {
+        expect(named(manifests, "Deployment", "toolbox")!.spec.replicas).toBe(0)
+        expect(named(manifests, "Deployment", "admin-mcp")!.spec.replicas).toBe(0)
+        const id = named(manifests, "Deployment", "id")!
+        if (name === "values-local.yaml") expect(id.spec.replicas).toBe(1)
+        else expect(id.spec.replicas).toBeUndefined()
       })
 
       test("NetworkPolicies deny by default, admit only Traefik to the services and let every pod resolve names", () => {
@@ -203,11 +254,32 @@ describe("charts/answerable", () => {
     })
   }
 
-  test("the ops Jobs render only when switched on and an ops image is named", () => {
-    const off = render("answerable", [], { "image.tag": tag })
-    expect(off.filter(manifest => manifest.metadata.name.startsWith("ops-"))).toEqual([])
-    const noImage = render("answerable", [], { "image.tag": tag, "ops.bootstrap": "true", "ops.register": "true", "images.ops.repository": "" })
-    expect(noImage.filter(manifest => manifest.kind === "Job" && manifest.metadata.name.startsWith("ops-"))).toEqual([])
+  test("the ops Jobs and their account render only when switched on and an ops image is named; their NetworkPolicy whenever the image is named", () => {
+    const ops = (manifests: Manifest[]) => manifests.filter(manifest => manifest.metadata.name === "ops" || manifest.metadata.name.startsWith("ops-")).map(manifest => `${manifest.kind}/${manifest.metadata.name}`).sort()
+    // The Jobs are hooks, which run before the release's own resources: the policy must already be there from the release before.
+    expect(ops(render("answerable", [], { "image.tag": tag }))).toEqual(["NetworkPolicy/ops"])
+    expect(ops(render("answerable", [], { "image.tag": tag, "ops.bootstrap": "true", "ops.register": "true", "images.ops.repository": "" }))).toEqual([])
+    expect(ops(render("answerable", [], { "image.tag": tag, "ops.register": "true" }))).toEqual(["Job/ops-register", "NetworkPolicy/ops", "Role/ops", "RoleBinding/ops", "ServiceAccount/ops"])
+  })
+
+  for (const file of overlays("answerable")) {
+    test(`${file}: the ops Jobs reach the Kubernetes API, the database and HTTPS, and nothing else`, () => {
+      const policy = named(render("answerable", [file], { "image.tag": tag }), "NetworkPolicy", "ops")!
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ports = policy.spec.egress.map((rule: any) => rule.ports.map((port: any) => port.port).sort((a: number, b: number) => a - b))
+      expect(ports).toContainEqual([53, 53])
+      expect(ports).toContainEqual([5432])
+      expect(ports).toContainEqual(file === "values-local.yaml" ? [443, 6443] : [6443])
+      expect(policy.spec.ingress).toBeUndefined()
+    })
+  }
+
+  test("id.extraEgress adds to ID's policy alone", () => {
+    const extra = { to: [{ ipBlock: { cidr: "192.0.2.10/32" } }], ports: [{ port: 47710, protocol: "TCP" }] }
+    const manifests = render("answerable", ["values-local.yaml"], { "image.tag": tag, "id.extraEgress[0].to[0].ipBlock.cidr": "192.0.2.10/32", "id.extraEgress[0].ports[0].port": "47710", "id.extraEgress[0].ports[0].protocol": "TCP" })
+    for (const policy of manifests.filter(manifest => manifest.kind === "NetworkPolicy")) {
+      expect(policy.spec.egress?.some((rule: unknown) => Bun.deepEquals(rule, extra)) ?? false, policy.metadata.name).toBe(policy.metadata.name === "id")
+    }
   })
 
   test("an image with a digest runs by digest, the exact bytes verified; one without runs by the shared tag", () => {

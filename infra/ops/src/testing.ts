@@ -26,7 +26,7 @@ export function fakeKubernetes({ secrets = {}, deployments = {} }: { secrets?: R
  * ID's admin API as `register` uses it, in memory, behaving as ID does where it matters: writes are idempotent per caller and key (a replay
  * answers the receipt, not the object, so no client secret; the same key with other input is `409 idempotency_key_reused`), a second object
  * with the same identity is `409 conflict`, a client's secret is answered once and rotation answers a new one, and `rootLocked` refuses the
- * root secret with `403 root_locked`. `calls` records each request's method, path and key.
+ * root secret with `403 root_locked`. `calls` records each request's method, path, key and bearer token.
  */
 export function fakeIdAdmin({ rootSecret = "root-secret", platformSlug = "answerable", rootLocked = false }: { rootSecret?: string; platformSlug?: string; rootLocked?: boolean } = {}) {
   const platform = "0190a000-0000-7000-8000-000000000001"
@@ -40,7 +40,7 @@ export function fakeIdAdmin({ rootSecret = "root-secret", platformSlug = "answer
     groups: new Map<string, string>(),
     operations: new Map<string, { fingerprint: string; status: number }>(),
     rotations: 0,
-    calls: [] as { method: string; path: string; key: string | null }[],
+    calls: [] as { method: string; path: string; key: string | null; token: string | undefined }[],
     failures: new Map<string, number>(),
   }
   const problem = (status: number, code: string) => Response.json({ type: "about:blank", title: code, status, code, request_id: "r" }, { status, headers: { "Content-Type": "application/problem+json" } })
@@ -86,8 +86,8 @@ export function fakeIdAdmin({ rootSecret = "root-secret", platformSlug = "answer
     const method = init?.method ?? "GET"
     const headers = new Headers(init?.headers)
     const key = headers.get("Idempotency-Key")
-    state.calls.push({ method, path, key })
     const token = headers.get("Authorization")?.replace(/^Bearer /, "")
+    state.calls.push({ method, path, key, token })
     if (token === rootSecret && state.rootLocked) return problem(403, "root_locked")
     if (!token) return problem(401, "unauthorized")
     const failing = state.failures.get(`${method} ${path}`)

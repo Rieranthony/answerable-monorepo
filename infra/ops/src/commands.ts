@@ -36,14 +36,16 @@ const bootstrapEnv = z.object({
 const origin = z.url().transform(url => url.replace(/\/+$/, ""))
 const registerEnv = z.object({
   OPS_ID_URL: origin,
-  OPS_ID_TOKEN: nonEmpty,
+  // A staff token when one is given (the chart reads it from the ops-staff-token Secret), else ID's root secret.
+  OPS_ID_TOKEN: nonEmpty.optional(),
+  OPS_ID_ROOT_SECRET: nonEmpty.optional(),
   OPS_TOOLBOX_URL: origin,
   OPS_ADMIN_MCP_URL: origin,
   OPS_PLATFORM_SLUG: nonEmpty.default("answerable"),
   OPS_CLAUDE_CALLBACK_PORT: z.coerce.number().int().min(1).max(65535).default(47700),
   // name=replicas, comma-separated: Deployments to start from zero once their client secrets exist.
   OPS_START_DEPLOYMENTS: z.string().regex(/^(\s*[a-z0-9-]+=\d+\s*)(,\s*[a-z0-9-]+=\d+\s*)*$/, "Expected name=replicas, comma-separated").optional(),
-})
+}).refine(env => env.OPS_ID_TOKEN ?? env.OPS_ID_ROOT_SECRET, { path: ["OPS_ID_TOKEN"], message: "Required: a staff token, or ID's root secret as OPS_ID_ROOT_SECRET" })
 
 /** Parse `env` with `schema`, or throw naming each variable that is missing or invalid, never its value. */
 function read<T extends z.ZodType>(schema: T, env: Record<string, string | undefined>): z.output<T> {
@@ -81,7 +83,7 @@ export async function main(argv: string[], env: Record<string, string | undefine
         }
       } else {
         const config = settings as z.output<typeof registerEnv>
-        await register({ id: config.OPS_ID_URL, token: config.OPS_ID_TOKEN, toolbox: config.OPS_TOOLBOX_URL, adminMcp: config.OPS_ADMIN_MCP_URL, platformSlug: config.OPS_PLATFORM_SLUG, callbackPort: config.OPS_CLAUDE_CALLBACK_PORT, store: secrets, fetch: deps.fetch, log: deps.log })
+        await register({ id: config.OPS_ID_URL, token: (config.OPS_ID_TOKEN ?? config.OPS_ID_ROOT_SECRET)!, toolbox: config.OPS_TOOLBOX_URL, adminMcp: config.OPS_ADMIN_MCP_URL, platformSlug: config.OPS_PLATFORM_SLUG, callbackPort: config.OPS_CLAUDE_CALLBACK_PORT, store: secrets, fetch: deps.fetch, log: deps.log })
         // The servers wait at zero replicas until their client secrets exist (charts/answerable); start them now that they do.
         for (const entry of config.OPS_START_DEPLOYMENTS?.split(",") ?? []) {
           const [name, count] = entry.trim().split("=") as [string, string]
@@ -90,7 +92,7 @@ export async function main(argv: string[], env: Record<string, string | undefine
           else if (replicas > 0) deps.log(`${name}: already running`)
           else {
             await kube!.setReplicas(name, Number(count))
-            deps.log(`${name}: started with ${count} replicas`)
+            deps.log(`${name}: scaled from 0 to ${count}`)
           }
         }
       }

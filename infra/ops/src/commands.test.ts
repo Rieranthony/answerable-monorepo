@@ -55,7 +55,7 @@ test("register registers in ID, stores the client secrets, then starts the serve
   expect(code).toBe(0)
   expect(Object.keys(kube.secrets).sort()).toEqual(["admin-id-client", "toolbox-id-client"])
   expect(kube.deployments).toEqual({ toolbox: 2, "admin-mcp": 1, other: 3 })
-  expect(out).toContain("toolbox: started with 2 replicas")
+  expect(out).toContain("toolbox: scaled from 0 to 2")
   expect(out).toContain("other: already running")
   expect(out).toContain("missing: no such Deployment")
 })
@@ -66,13 +66,23 @@ test("register uses the platform slug and callback port when given", async () =>
   expect(out).toContain("--callback-port 47701")
 })
 
+test("register takes ID's root secret when no staff token is given, and the staff token over it when both are", async () => {
+  const { OPS_ID_TOKEN: root, ...withoutToken } = registerEnv
+  const fromRoot = await run(["register"], { ...withoutToken, OPS_ID_ROOT_SECRET: root })
+  expect(fromRoot.code).toBe(0)
+  expect(new Set(fromRoot.id.state.calls.map(call => call.token))).toEqual(new Set([root]))
+  const fromStaff = await run(["register"], { ...registerEnv, OPS_ID_TOKEN: "a-staff-token", OPS_ID_ROOT_SECRET: root })
+  expect(fromStaff.code).toBe(0)
+  expect(new Set(fromStaff.id.state.calls.map(call => call.token))).toEqual(new Set(["a-staff-token"]))
+})
+
 test("a missing or invalid variable is named, with exit code 2, before anything is done", async () => {
   const missing = await run(["bootstrap"], {})
   expect(missing).toMatchObject({ code: 2, statements: [] })
   expect(missing.err).toContain("OPS_DATABASE_ADMIN_URL")
   const noToken = await run(["register"], { ...registerEnv, OPS_ID_TOKEN: "" })
   expect(noToken.code).toBe(2)
-  expect(noToken.err).toContain("OPS_ID_TOKEN")
+  expect(noToken.err).toBe("OPS_ID_TOKEN: Required: a staff token, or ID's root secret as OPS_ID_ROOT_SECRET")
   const badStart = await run(["register"], { ...registerEnv, OPS_START_DEPLOYMENTS: "toolbox" })
   expect(badStart.err).toContain("OPS_START_DEPLOYMENTS")
   const noFile = await run(["bootstrap"], { OPS_DATABASE_ADMIN_URL: adminUrl, OPS_STORE: "file" })

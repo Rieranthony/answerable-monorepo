@@ -25,6 +25,8 @@ type Options = {
 }
 
 const encode = (value: string) => Buffer.from(value).toString("base64")
+// The name Kubernetes records as the writer of each field the Jobs set (managedFields), such as a Deployment's replicas.
+const asOps = "fieldManager=answerable-ops"
 const decode = (value: string) => Buffer.from(value, "base64").toString()
 
 /** A client for the API server over HTTPS, verified against the cluster's certificate authority. Errors name the object and the status, never a value. */
@@ -53,10 +55,10 @@ export function createKubernetes({ server, token, ca, namespace, fetch = globalT
       return Object.fromEntries(Object.entries(data).map(([key, value]) => [key, decode(value)]))
     },
     async writeSecretKey(name, key, value) {
-      const patched = await call("PATCH", `${secrets}/${name}`, { data: { [key]: encode(value) } })
+      const patched = await call("PATCH", `${secrets}/${name}?${asOps}`, { data: { [key]: encode(value) } })
       if (patched.ok) return
       if (patched.status !== 404) throw await refusal(patched, "PATCH", `Secret ${name}`)
-      const created = await call("POST", secrets, {
+      const created = await call("POST", `${secrets}?${asOps}`, {
         apiVersion: "v1",
         kind: "Secret",
         metadata: { name, namespace, labels: { "app.kubernetes.io/managed-by": "answerable-ops" } },
@@ -73,7 +75,7 @@ export function createKubernetes({ server, token, ca, namespace, fetch = globalT
       return spec.replicas ?? 1
     },
     async setReplicas(name, replicas) {
-      const response = await call("PATCH", `${deployments}/${name}`, { spec: { replicas } })
+      const response = await call("PATCH", `${deployments}/${name}?${asOps}`, { spec: { replicas } })
       if (!response.ok) throw await refusal(response, "PATCH", `Deployment ${name}`)
     },
   }

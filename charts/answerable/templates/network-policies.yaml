@@ -1,7 +1,10 @@
 {{- /*
 Nothing moves in this namespace unless a policy below allows it. The servers take connections only from Traefik;
 every pod may resolve names; the servers and the Jobs reach the database; the servers and the ops Jobs reach HTTPS
-outside the private ranges (ID through Cloudflare, the identity providers); the ops Jobs reach the Kubernetes API.
+outside the private ranges (ID through Cloudflare, the identity providers); the ops Jobs reach the Kubernetes API; ID
+reaches what id.extraEgress adds, such as a company directory on a private network. The ops policy exists whenever an ops
+image is named, not only in a run that switches a Job on: the Jobs are hooks, which run before the release's own
+resources are applied, so a policy rendered only with them would not exist yet when bootstrap runs.
 */ -}}
 {{- $np := .Values.networkPolicy -}}
 {{- define "answerable.egressDns" -}}
@@ -71,6 +74,11 @@ spec:
     {{- include "answerable.egressDns" $ | nindent 4 }}
     {{- include "answerable.egressDatabase" $ | nindent 4 }}
     {{- include "answerable.egressHttps" $ | nindent 4 }}
+    {{- if eq $server.component "id" }}
+    {{- with $.Values.id.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- end }}
 {{- end }}
 {{- end }}
 ---
@@ -88,7 +96,7 @@ spec:
   egress:
     {{- include "answerable.egressDns" . | nindent 4 }}
     {{- include "answerable.egressDatabase" . | nindent 4 }}
-{{- if and .Values.images.ops.repository (or .Values.ops.bootstrap .Values.ops.register) }}
+{{- if .Values.images.ops.repository }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

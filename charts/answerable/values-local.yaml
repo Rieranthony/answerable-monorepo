@@ -44,17 +44,10 @@ toolbox:
   replicas: 1
   autoscaling: { enabled: false }
 
-# The admin MCP exits at start until ID knows its machine client, which the ops register Job creates (brief B3). Its
-# migration still runs.
+# The Toolbox and the admin MCP wait at zero replicas until the ops register Job writes their client Secrets.
 adminMcp:
-  enabled: false
   replicas: 1
   autoscaling: { enabled: false }
-
-# No ops image yet (brief B3), so no ops Job. The images run by the local tag, never by digest.
-images:
-  ops:
-    repository: ""
 
 networkPolicy:
   database:
@@ -73,3 +66,10 @@ networkPolicy:
         matchLabels:
           app.kubernetes.io/name: traefik
   httpsPorts: [48444]
+  # The Kubernetes API for the ops Jobs: the kubernetes Service, and the control-plane node on kind's Docker network that
+  # it is translated to.
+  kubernetesApi:
+    - ipBlock:
+        cidr: 10.96.0.1/32
+    - ipBlock:
+        cidr: 172.16.0.0/12

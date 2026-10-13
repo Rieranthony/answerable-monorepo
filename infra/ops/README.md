@@ -11,12 +11,14 @@ Both are safe to run again: a second run changes nothing. Neither prints a passw
 
 ## Run them
 
-From the pipeline: `bun infra/pipeline/src/deploy.ts run-job bootstrap` (or `register`) switches the Job on for one upgrade (`ops.bootstrap` or `ops.register`), then restarts the Toolbox and the admin MCP. By hand, against the cluster the kubeconfig names:
+From the pipeline: the `ops.yml` workflow, or `bun infra/pipeline/src/cli.ts run-job register --environment staging` (`infra/pipeline/README.md`), switches the Job on for one upgrade (`ops.bootstrap` or `ops.register`) and, after `register`, restarts the Toolbox and the admin MCP. By hand, against the cluster the kubeconfig names:
 
 ```bash
-helm upgrade answerable charts/answerable -n answerable --reuse-values --set ops.bootstrap=true --wait
+helm upgrade answerable charts/answerable -n answerable --reuse-values --set ops.bootstrap=true --wait --wait-for-jobs
 kubectl -n answerable logs job/ops-bootstrap
 ```
+
+The first deploy of an environment runs `bootstrap` with the install (the migrations need its Secrets), then `register` once ID is up.
 
 Outside a cluster, with a file instead of Kubernetes Secrets:
 
@@ -38,7 +40,8 @@ Exit codes: `0` done, `1` failed (the message says why), `2` wrong usage or a mi
 | `OPS_DATABASE_HOST`, `OPS_DATABASE_PORT` | `bootstrap` | The database address written into the services' URLs. Default: the administrative URL's |
 | `OPS_DATABASE_SSLROOTCERT` | `bootstrap` | The certificate authority path in the services' URLs. Default `/etc/ssl/db/ca.pem`, where the chart mounts `postgres-ca` |
 | `OPS_ID_URL` | `register` | Answerable ID's origin |
-| `OPS_ID_TOKEN` | `register` | ID's root secret while no person is a platform administrator; afterwards a staff token (`docs/id/onboard`). The chart reads it from the `ops-staff-token` Secret when that exists, else from `id-env`'s `ROOT_ADMIN_SECRET` |
+| `OPS_ID_TOKEN` | `register` | A staff token (`docs/id/onboard`), needed once a person is a platform administrator and ID refuses the root secret. The chart reads it from the `ops-staff-token` Secret (key `OPS_ID_TOKEN`) when that exists |
+| `OPS_ID_ROOT_SECRET` | `register` | ID's root secret, used when `OPS_ID_TOKEN` is not set. The chart reads it from `id-env`'s `ROOT_ADMIN_SECRET` |
 | `OPS_TOOLBOX_URL`, `OPS_ADMIN_MCP_URL` | `register` | The two servers' origins |
 | `OPS_PLATFORM_SLUG` | `register` | The platform organisation's slug. Default `answerable` |
 | `OPS_CLAUDE_CALLBACK_PORT` | `register` | Claude Code's `--callback-port` in the host clients' redirect URI. Default `47700` |
