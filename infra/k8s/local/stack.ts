@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { buildDependencies, charts, helmEnv, repo } from "../helm"
@@ -11,13 +11,20 @@ const here = join(repo, "infra/k8s/local")
 export const hosts = { id: "id.127-0-0-1.sslip.io", toolbox: "toolbox.127-0-0-1.sslip.io", adminMcp: "admin-mcp.127-0-0-1.sslip.io" }
 export const origin = (host: string) => `https://${host}:48443`
 
-/** The three images, built from the repository root and loaded into the cluster under the local tag. */
+/** The four images, built from the repository root and loaded into the cluster under the local tag. */
 export const images = [
   { name: "id", dockerfile: "apps/id/Dockerfile" },
   { name: "toolbox", dockerfile: "mcps/toolbox/Dockerfile" },
   { name: "admin-mcp", dockerfile: "mcps/admin/Dockerfile" },
+  { name: "ops", dockerfile: "infra/ops/Dockerfile" },
 ] as const
 export const image = (name: string) => `ghcr.io/rieranthony/answerable/${name}:local`
+
+/** The company directory's port on the host (apps/id/scripts/stack-directories.ts). */
+export const directoryPort = 47_710
+
+/** The database's administrative login, as a managed database hands one out: it may create databases and roles, and is not a superuser. */
+export const databaseAdmin = "dbadmin"
 
 type Result = { exitCode: number; stdout: string; stderr: string }
 
@@ -34,7 +41,7 @@ const secret = () => Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toS
 
 /** Wall-clock time of each step, printed at the end of the run. */
 export const timings: [string, number][] = []
-async function step<T>(name: string, work: () => Promise<T>): Promise<T> {
+export async function step<T>(name: string, work: () => Promise<T>): Promise<T> {
   const started = performance.now()
   try {
     return await work()
@@ -43,11 +50,11 @@ async function step<T>(name: string, work: () => Promise<T>): Promise<T> {
   }
 }
 
-/** Every value the stack generates for itself; nothing here outlives the cluster. */
+/** Every value the stack generates for itself; nothing here outlives the cluster. The ops bootstrap generates the logins' passwords. */
 function generateSecrets() {
   return {
     superuser: secret(),
-    passwords: { idOwner: secret(), idRuntime: secret(), toolboxOwner: secret(), toolboxRuntime: secret(), adminOwner: secret(), adminRuntime: secret() },
+    admin: secret(),
     rootAdminSecret: `${secret()}${secret()}`,
     betterAuthSecret: `${secret()}${secret()}`,
     upstreamKey: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url"),
@@ -55,30 +62,92 @@ function generateSecrets() {
 }
 
 /**
- * What the database runs once, when its data directory is created: the three databases, each owned by its own login, and
- * the restricted runtime logins the services use, as the ops bootstrap creates them in a cloud. The runtime logins get
- * their privileges from the migrate Jobs (configureRuntimeRole). The passwords are hex, so they need no quoting.
+ * What the database runs once, when its data directory is created: the administrative login alone, as a managed database
+ * starts. The ops bootstrap Job creates the databases and their logins with it. The password is hex, so it needs no quoting.
  */
-function loginsSql({ passwords }: ReturnType<typeof generateSecrets>) {
-  const restricted = "NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS"
-  return [
-    `CREATE ROLE answerable_id_owner LOGIN PASSWORD '${passwords.idOwner}';`,
-    `CREATE ROLE answerable_toolbox_owner LOGIN PASSWORD '${passwords.toolboxOwner}';`,
-    `CREATE ROLE answerable_admin_owner LOGIN PASSWORD '${passwords.adminOwner}';`,
-    `CREATE ROLE answerable_id_runtime LOGIN PASSWORD '${passwords.idRuntime}' ${restricted};`,
-    `CREATE ROLE answerable_toolbox_runtime LOGIN PASSWORD '${passwords.toolboxRuntime}' ${restricted};`,
-    `CREATE ROLE answerable_admin_runtime LOGIN PASSWORD '${passwords.adminRuntime}' ${restricted};`,
-    "CREATE DATABASE answerable_id OWNER answerable_id_owner;",
-    "CREATE DATABASE answerable_toolbox OWNER answerable_toolbox_owner;",
-    "CREATE DATABASE answerable_admin OWNER answerable_admin_owner;",
-    "",
-  ].join("\n")
+const adminSql = ({ admin }: ReturnType<typeof generateSecrets>) => `CREATE ROLE ${databaseAdmin} LOGIN PASSWORD '${admin}' CREATEDB CREATEROLE;\n`
+
+const database = "postgres.database.svc.cluster.local:5432"
+
+/** One company directory a person signs in with, as `setSsoProvider` in packages/acceptance takes it. */
+export type Directory = { slug: string; domain: string; email: string; issuer: string; authorizationEndpoint: string; tokenEndpoint: string; jwksEndpoint: string; clientId: string; clientSecret: string }
+
+/**
+ * Where ID's pods reach this host: host.docker.internal as the kind node resolves it (Docker Desktop), else the gateway of
+ * kind's Docker network (Docker on Linux, where the host owns that address).
+ */
+async function hostFromPods(gateway: string | undefined) {
+  const lookup = await exec(["docker", "exec", `${cluster}-control-plane`, "getent", "ahostsv4", "host.docker.internal"], { allowFailure: true })
+  const address = lookup.stdout.trim().split(/\s+/)[0]
+  if (lookup.exitCode === 0 && address && /^\d+\.\d+\.\d+\.\d+$/.test(address)) return address
+  if (!gateway) throw new Error("The kind node resolves no host.docker.internal and kind's Docker network has no IPv4 gateway: the pods cannot reach the company directory on this host")
+  return gateway
 }
 
-const databaseUrl = (login: string, password: string, database: string) =>
-  `postgres://${login}:${password}@postgres.database.svc.cluster.local:5432/${database}?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem`
+/**
+ * The platform organisation's company directory, on this host (apps/id/scripts/stack-directories.ts): the browser reaches
+ * its authorisation endpoint at 127.0.0.1, ID's pods its token endpoint and keys at `podHost`. Its one person signs in up to
+ * three times. Returns the directory and how to stop it.
+ */
+async function startDirectory(workdir: string, podHost: string) {
+  const plan = join(workdir, "directories-plan.json")
+  const manifest = join(workdir, "directories.json")
+  await Bun.write(plan, JSON.stringify({ hostname: "0.0.0.0", port: directoryPort, browserHost: "http://127.0.0.1", podHost: `http://${podHost}`, directories: [{ slug: "answerable", person: "staff", signIns: 3 }] }))
+  const child = Bun.spawn([process.execPath, "apps/id/scripts/stack-directories.ts", plan, manifest], { cwd: repo, stdout: "ignore", stderr: "inherit" })
+  const stop = async () => {
+    child.kill()
+    await child.exited
+  }
+  for (const deadline = Date.now() + 30_000; !(await Bun.file(manifest).exists()); await Bun.sleep(200)) {
+    if (child.exitCode !== null) throw new Error(`The company directory stopped with ${child.exitCode}; is port ${directoryPort} free?`)
+    if (Date.now() > deadline) {
+      await stop()
+      throw new Error("Timed out after 30 seconds waiting for the company directory")
+    }
+  }
+  const { directories } = (await Bun.file(manifest).json()) as { directories: Directory[] }
+  return { directory: directories[0]!, stop }
+}
 
-/** The kind stack: build, create, install, and the handles the proofs use. `stop` deletes the cluster. */
+/**
+ * Cloudflare's stand-in for a browser on this host. Traefik demands the origin-pull client certificate, and Playwright's
+ * `clientCertificates` hang under Bun (measured: a navigation never loads, while the same script under Node loads in under a
+ * second), so Chromium is sent here instead: `hostResolverRules` maps the public names to [::1], where this proxy listens
+ * on 48443 (Traefik's host port is 127.0.0.1 only), presents `serverCert` (the browser ignores certificate errors), and
+ * forwards each request to Traefik with the origin-pull certificate, as Cloudflare does. Traefik sees the Docker network's
+ * gateway, an untrusted address, as for any visitor.
+ */
+export function startBrowserEdge({ stackCa, originPullCert, serverCert }: { stackCa: string; originPullCert: { cert: string; key: string }; serverCert: { cert: string; key: string } }) {
+  const names = new Set(Object.values(hosts))
+  const server = Bun.serve({
+    hostname: "::1",
+    port: 48_443,
+    tls: serverCert,
+    async fetch(request) {
+      const url = new URL(request.url)
+      if (!names.has(url.hostname)) return new Response("Not a stack hostname", { status: 421 })
+      const headers = new Headers(request.headers)
+      // Bun's fetch fails to connect when given a Host header with a port (measured: ConnectionRefused); the URL names the host.
+      headers.delete("host")
+      // Traefik answers uncompressed, so the body passes through as it came.
+      headers.delete("accept-encoding")
+      const upstream = await fetch(`${origin(url.hostname)}${url.pathname}${url.search}`, {
+        method: request.method,
+        headers,
+        body: ["GET", "HEAD"].includes(request.method) ? undefined : await request.arrayBuffer(),
+        redirect: "manual",
+        tls: { ca: stackCa, ...originPullCert },
+      })
+      const answer = new Headers(upstream.headers)
+      answer.delete("content-encoding")
+      answer.delete("content-length")
+      return new Response(upstream.body, { status: upstream.status, headers: answer })
+    },
+  })
+  return { hostResolverRules: [...names].map(name => `MAP ${name} [::1]`).join(","), stop: () => server.stop(true) }
+}
+
+/** The kind stack: build, create, install, bootstrap, register, and the handles the proofs use. `stop` deletes the cluster. */
 export async function startStack() {
   const workdir = mkdtempSync(join(tmpdir(), "answerable-stack-"))
   const kubeconfig = join(workdir, "kubeconfig")
@@ -92,7 +161,9 @@ export async function startStack() {
   }
   const secrets = generateSecrets()
   let created = false
+  let directory: Awaited<ReturnType<typeof startDirectory>> | undefined
   const stop = async () => {
+    await directory?.stop()
     if (created && !process.env.INFRA_STACK_KEEP) await exec(["kind", "delete", "cluster", "--name", cluster, "--kubeconfig", kubeconfig], { allowFailure: true })
     rmSync(workdir, { recursive: true, force: true })
   }
@@ -103,13 +174,18 @@ export async function startStack() {
   try {
     const revision = (await exec(["git", "rev-parse", "HEAD"])).stdout.trim()
     // The images build while the cluster and its platform come up.
-    const built = step("build the three images", () => Promise.all(images.map(({ name, dockerfile }) =>
+    const built = step("build the four images", () => Promise.all(images.map(({ name, dockerfile }) =>
       exec(["docker", "build", "-f", dockerfile, "-t", image(name), "--build-arg", `REVISION=${revision}`, "."]))))
     built.catch(() => {})
     await step("create the kind cluster", async () => {
       created = true
       await exec(["kind", "create", "cluster", "--config", join(here, "kind.yaml"), "--kubeconfig", kubeconfig, "--wait", "180s"])
     })
+    // The address the laptop's requests reach Traefik from: the IPv4 gateway of kind's Docker network.
+    const gateways = (await exec(["docker", "network", "inspect", "kind", "--format", "{{range .IPAM.Config}}{{.Gateway}} {{end}}"])).stdout.trim().split(/\s+/)
+    const dockerGateway = gateways.find(address => /^\d+\.\d+\.\d+\.\d+$/.test(address))
+    const podHost = await hostFromPods(dockerGateway)
+    directory = await step("start the company directory on the host", () => startDirectory(workdir, podHost))
     // Terraform creates the namespaces in a cloud, with the restricted Pod Security Standard enforced on answerable.
     await kubectl(["create", "namespace", "platform"])
     await kubectl(["create", "namespace", "database"])
@@ -119,7 +195,7 @@ export async function startStack() {
       await helm(["upgrade", "--install", "platform", join(charts, "platform"), "--namespace", "platform", "--values", join(charts, "platform/values-local.yaml"), "--wait", "--timeout", "10m"])
     })
     await step("start the database and the edge", async () => {
-      await apply("database", [{ apiVersion: "v1", kind: "Secret", metadata: { name: "postgres-bootstrap" }, stringData: { SUPERUSER_PASSWORD: secrets.superuser, "logins.sql": loginsSql(secrets) } }])
+      await apply("database", [{ apiVersion: "v1", kind: "Secret", metadata: { name: "postgres-bootstrap" }, stringData: { SUPERUSER_PASSWORD: secrets.superuser, "admin.sql": adminSql(secrets) } }])
       await kubectl(["apply", "-f", join(here, "database.yaml"), "-f", join(here, "edge.yaml")])
       await kubectl(["wait", "-n", "platform", "certificate/edge-tls", "certificate/edge-origin-pull", "--for=condition=Ready", "--timeout=180s"])
       await kubectl(["wait", "-n", "database", "certificate/postgres-tls", "--for=condition=Ready", "--timeout=180s"])
@@ -133,39 +209,44 @@ export async function startStack() {
     const stackCa = (await readSecret("platform", "local-ca"))["ca.crt"]
     const databaseCa = (await readSecret("database", "database-ca"))["ca.crt"]
     const originPullCa = (await readSecret("platform", "origin-pull-ca"))["ca.crt"]
-    await step("install charts/answerable", async () => {
-      const { passwords } = secrets
+
+    // ID trusts the directory's two origins and may reach it on this host: what an operator configures for a company directory on a private network.
+    const localValues = Bun.YAML.parse(readFileSync(join(charts, "answerable/values-local.yaml"), "utf8")) as { id: { trustedOrigins: string[] } }
+    const trustedOrigins = [...localValues.id.trustedOrigins, directory.directory.issuer, new URL(directory.directory.tokenEndpoint).origin]
+    const extraEgress = [{ to: [{ ipBlock: { cidr: `${podHost}/32` } }], ports: [{ port: directoryPort, protocol: "TCP" }] }]
+    /** `helm upgrade --install` of charts/answerable as the pipeline runs it, with the local values, the directory's settings and `sets`. */
+    const release = (sets: string[]) => helm([
+      "upgrade", "--install", "answerable", join(charts, "answerable"), "--namespace", "answerable", "--values", join(charts, "answerable/values-local.yaml"),
+      "--set-json", `id.trustedOrigins=${JSON.stringify(trustedOrigins)}`, "--set-json", `id.extraEgress=${JSON.stringify(extraEgress)}`,
+      ...sets.flatMap(set => ["--set", set]), "--wait", "--wait-for-jobs", "--timeout", "10m",
+    ])
+    await step("install charts/answerable with the ops bootstrap", async () => {
       const opaque = (name: string, data: Record<string, string>) => ({ apiVersion: "v1", kind: "Secret", metadata: { name }, type: "Opaque", stringData: data })
-      // What the deploy applies from the sops file and the ops Jobs write in a cloud; here, throwaway values.
+      // What the deploy applies from the sops file in a cloud; here, throwaway values. The ops Jobs write the rest.
       await apply("answerable", [
         opaque("id-env", { BETTER_AUTH_SECRET: secrets.betterAuthSecret, ROOT_ADMIN_SECRET: secrets.rootAdminSecret, UPSTREAM_TOKEN_SECRETS: JSON.stringify([{ version: 1, value: secrets.upstreamKey }]) }),
-        opaque("id-database", { DATABASE_URL: databaseUrl("answerable_id_runtime", passwords.idRuntime, "answerable_id") }),
-        opaque("id-database-owner", { DATABASE_MIGRATION_URL: databaseUrl("answerable_id_owner", passwords.idOwner, "answerable_id") }),
-        opaque("toolbox-database", { TOOLBOX_DATABASE_URL: databaseUrl("answerable_toolbox_runtime", passwords.toolboxRuntime, "answerable_toolbox") }),
-        opaque("toolbox-database-owner", { TOOLBOX_DATABASE_MIGRATION_URL: databaseUrl("answerable_toolbox_owner", passwords.toolboxOwner, "answerable_toolbox") }),
-        opaque("admin-database", { ADMIN_DATABASE_URL: databaseUrl("answerable_admin_runtime", passwords.adminRuntime, "answerable_admin") }),
-        opaque("admin-database-owner", { ADMIN_DATABASE_MIGRATION_URL: databaseUrl("answerable_admin_owner", passwords.adminOwner, "answerable_admin") }),
-        // ID does not know these clients until the ops register Job exists (brief B3): the Toolbox's grants poller fails and says so.
-        opaque("toolbox-id-client", { TOOLBOX_ID_CLIENT_SECRET: secret() }),
-        opaque("admin-id-client", { ADMIN_ID_CLIENT_SECRET: secret() }),
+        opaque("postgres-admin", { OPS_DATABASE_ADMIN_URL: `postgres://${databaseAdmin}:${secrets.admin}@${database}/postgres?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem` }),
         opaque("cloudflare-origin-pull-ca", { "ca.crt": originPullCa }),
         { apiVersion: "v1", kind: "ConfigMap", metadata: { name: "postgres-ca" }, data: { "ca.pem": databaseCa } },
         { apiVersion: "v1", kind: "ConfigMap", metadata: { name: "local-ca" }, data: { "ca.pem": stackCa } },
       ])
-      await helm(["upgrade", "--install", "answerable", join(charts, "answerable"), "--namespace", "answerable", "--values", join(charts, "answerable/values-local.yaml"), "--wait", "--timeout", "10m"])
+      await release(["ops.bootstrap=true"])
+    })
+    // As deploy.ts run-job register does: one upgrade with the Job switched on. The Job starts the two servers it registered.
+    await step("run the ops register", async () => {
+      await release(["ops.register=true"])
+      for (const deployment of ["toolbox", "admin-mcp"]) await kubectl(["rollout", "status", "-n", "answerable", `deploy/${deployment}`, "--timeout=300s"])
     })
     const client = await readSecret("platform", "edge-origin-pull")
     const edgeServer = await readSecret("platform", "edge-tls")
-    // The address the laptop's requests reach Traefik from: the IPv4 gateway of kind's Docker network.
-    const gateways = (await exec(["docker", "network", "inspect", "kind", "--format", "{{range .IPAM.Config}}{{.Gateway}} {{end}}"])).stdout.trim().split(/\s+/)
-    const dockerGateway = gateways.find(address => /^\d+\.\d+\.\d+\.\d+$/.test(address))
-    return { kubectl, helm, kubeconfig, readSecret, secrets, stop, stackCa, dockerGateway, databaseCa, originPullCert: { cert: client["tls.crt"], key: client["tls.key"] }, otherCert: { cert: edgeServer["tls.crt"], key: edgeServer["tls.key"] } }
+    return { kubectl, helm, release, kubeconfig, readSecret, secrets, stop, stackCa, dockerGateway, podHost, directory: directory.directory, databaseCa, originPullCert: { cert: client["tls.crt"]!, key: client["tls.key"]! }, edgeCert: { cert: edgeServer["tls.crt"]!, key: edgeServer["tls.key"]! } }
   } catch (error) {
     if (created) {
-      // Show what the cluster says before it goes.
+      // Show what the cluster says before it goes: the pods, the last events, and the Jobs' logs.
       const pods = await kubectl(["get", "pods", "-A", "-o", "wide"], { allowFailure: true })
       const events = await kubectl(["get", "events", "-A", "--sort-by=.lastTimestamp"], { allowFailure: true })
-      console.error(pods.stdout, events.stdout.split("\n").slice(-40).join("\n"))
+      const jobs = await kubectl(["logs", "-n", "answerable", "-l", "app.kubernetes.io/component in (ops,migrate)", "--prefix", "--tail=40"], { allowFailure: true })
+      console.error(pods.stdout, events.stdout.split("\n").slice(-40).join("\n"), jobs.stdout)
     }
     await stop()
     throw error

@@ -120,7 +120,8 @@ jobs:
       - name: Check infrastructure code
         run: bun run infra:check
 
-  # The three images built and run in a kind cluster with both charts, as a cloud runs them (bun run infra:test).
+  # The four images (id, toolbox, admin-mcp, ops) built and run in a kind cluster with both charts, as a cloud runs them,
+  # with the ops Jobs and a staff sign-in in Chromium (bun run infra:test, infra/k8s/local/README.md).
   # arm64, like the laptops the stack also runs on; only after validate, so a red suite never builds images.
   containers:
     needs: validate
@@ -157,6 +158,11 @@ jobs:
           tar -xzf kubeconform.tar.gz kubeconform
           install -m 0755 kubeconform "$bin/kubeconform"
           echo "$bin" >> "$GITHUB_PATH"
+
+      # The staff sign-in drives ID's pages in Chromium, through the acceptance kit.
+      - name: Install the browser for the staff sign-in
+        working-directory: packages/acceptance
+        run: bun x playwright install --with-deps chromium
 
       - name: Prove the images and the charts in a kind cluster
         run: bun run infra:test

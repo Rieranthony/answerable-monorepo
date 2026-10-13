@@ -1,15 +1,23 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { exec, hosts, image, images, origin, type Stack, startStack, timings } from "./stack"
+import { type Admin, connect, serveCallback, setSsoProvider, signIn, tool } from "@answerable/acceptance"
+import { chromium } from "@playwright/test"
+import { databaseAdmin, exec, hosts, image, images, origin, type Stack, startBrowserEdge, startStack, step, timings } from "./stack"
 
-// bun run infra:test: the three images, a kind cluster with charts/platform and charts/answerable as a cloud runs them,
-// a TLS-only PostgreSQL 17, and the proofs that the stack behaves as production must. Needs Docker, kind, kubectl and
-// helm, and public DNS for *.127-0-0-1.sslip.io. Deletes its cluster at the end, on failure and on Ctrl-C; set
-// INFRA_STACK_KEEP=1 to keep it for a look (then delete it with kind delete cluster --name answerable-local).
+// bun run infra:test: the four images, a kind cluster with charts/platform and charts/answerable as a cloud runs them,
+// a TLS-only PostgreSQL 17 holding only an administrative login, the ops Jobs that bootstrap the databases and register
+// the servers in ID, a staff member's sign-in through the cluster, and the proofs that the stack behaves as production
+// must. Needs Docker, kind, kubectl and helm, Playwright's Chromium (cd packages/acceptance && bun x playwright install
+// chromium), ports 47700, 47710 and [::1]:48443 on this host, and public DNS for *.127-0-0-1.sslip.io. Deletes its cluster at the end,
+// on failure and on Ctrl-C; set INFRA_STACK_KEEP=1 to keep it for a look (then delete it with kind delete cluster --name
+// answerable-local).
 
 let stack: Stack | undefined
 const started = performance.now()
 
+// The acceptance kit stops what it opened on Ctrl-C and exits at once, before the cluster is deleted: this file's handler
+// replaces it, and the process's exit ends the servers the kit started.
 for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]] as const) {
+  process.removeAllListeners(signal)
   process.on(signal, () => void (stack?.stop() ?? Promise.resolve()).finally(() => process.exit(code)))
 }
 
@@ -24,9 +32,9 @@ afterAll(async () => {
   console.log(`\nThe stack, step by step (seconds): ${timings.map(([name, seconds]) => `${name} ${seconds}`).join("; ")}; everything ${total}`)
 })
 
-/** A request through Traefik, as Cloudflare makes it: the origin-pull client certificate, the stack's CA trusted. */
+/** A request through Traefik, as Cloudflare makes it: the origin-pull client certificate, the stack's CA trusted. One that hangs fails after 30 seconds. */
 function viaIngress(url: string, init: RequestInit = {}, certificate: { cert: string; key: string } | null = stack!.originPullCert) {
-  return fetch(url, { ...init, tls: { ca: stack!.stackCa, ...(certificate ?? {}) }, redirect: "manual" })
+  return fetch(url, { signal: AbortSignal.timeout(30_000), ...init, tls: { ca: stack!.stackCa, ...(certificate ?? {}) }, redirect: "manual" })
 }
 
 /** Run a script with Bun in a running pod of a Deployment and return its last line of output, parsed. */
@@ -89,7 +97,8 @@ describe("the edge's checks", () => {
     // Each from a fresh process: this one's fetch would resume the TLS sessions its earlier requests opened with the
     // origin-pull certificate, which a server accepts as verified.
     expect(await freshRequest(`${origin(hosts.id)}/healthz`, stack!.originPullCert)).toEqual({ status: 200 })
-    for (const certificate of [null, stack!.otherCert]) {
+    // The edge's own certificate is one Cloudflare's CA did not sign.
+    for (const certificate of [null, stack!.edgeCert]) {
       const outcome = await freshRequest(`${origin(hosts.id)}/healthz`, certificate)
       expect(outcome.status).toBeUndefined()
       expect(outcome.error).toEqual(expect.any(String))
@@ -228,11 +237,174 @@ describe("inside the cluster", () => {
     expect(next.stdout).toContain("platform organisation answerable: verified")
   }, 240_000)
 
-  test("the three migrations ran to completion as the release's hooks, the admin MCP's while its server waits for registration", async () => {
+  test("the migrations and the two ops Jobs ran to completion as the release's hooks", async () => {
     const { stdout } = await stack!.kubectl(["get", "jobs", "-n", "answerable", "-o", "json"])
     const jobs = (JSON.parse(stdout) as { items: { metadata: { name: string }; status: { succeeded?: number } }[] }).items
-    for (const name of ["id-migrate", "toolbox-migrate", "admin-migrate"]) expect(jobs.find(job => job.metadata.name === name)?.status.succeeded, name).toBe(1)
+    for (const name of ["id-migrate", "toolbox-migrate", "admin-migrate", "ops-bootstrap", "ops-register"]) expect(jobs.find(job => job.metadata.name === name)?.status.succeeded, name).toBe(1)
   })
+})
+
+/** ID's admin API as root, through Traefik, as `@answerable/acceptance`'s `Admin`: a fresh Idempotency-Key per call, a status outside 2xx throws. */
+const rootAdmin: Admin = async (method, path, body, headers) => {
+  const response = await viaIngress(`${origin(hosts.id)}/api/admin/v1${path}`, {
+    method,
+    headers: { authorization: `Bearer ${stack!.secrets.rootAdminSecret}`, "idempotency-key": crypto.randomUUID(), ...(body === undefined ? {} : { "content-type": "application/json" }), ...headers },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  const text = await response.text()
+  if (!response.ok) throw new Error(`${method} ${path} answered ${response.status}: ${text}`)
+  return text ? JSON.parse(text) : {}
+}
+
+/** Run SQL as the database's superuser over its local socket; the rows, one per line, columns joined by |. */
+async function psql(sql: string) {
+  const { stdout } = await stack!.kubectl(["exec", "-n", "database", "statefulset/postgres", "-c", "postgres", "--", "psql", "-U", "postgres", "-d", "postgres", "-tAc", sql])
+  return stdout.trim().split("\n")
+}
+
+/** The six URL Secrets the ops bootstrap writes, with their login and database. */
+const urlSecrets = [
+  ["id-database-owner", "DATABASE_MIGRATION_URL", "answerable_id_owner", "answerable_id"],
+  ["id-database", "DATABASE_URL", "answerable_id_runtime", "answerable_id"],
+  ["toolbox-database-owner", "TOOLBOX_DATABASE_MIGRATION_URL", "answerable_toolbox_owner", "answerable_toolbox"],
+  ["toolbox-database", "TOOLBOX_DATABASE_URL", "answerable_toolbox_runtime", "answerable_toolbox"],
+  ["admin-database-owner", "ADMIN_DATABASE_MIGRATION_URL", "answerable_admin_owner", "answerable_admin"],
+  ["admin-database", "ADMIN_DATABASE_URL", "answerable_admin_runtime", "answerable_admin"],
+] as const
+const clientSecrets = [["toolbox-id-client", "TOOLBOX_ID_CLIENT_SECRET"], ["admin-id-client", "ADMIN_ID_CLIENT_SECRET"]] as const
+
+/** Every value the ops Jobs generated, for checking that no log prints one. */
+async function generatedValues() {
+  const values: string[] = []
+  for (const [name, key] of urlSecrets) values.push(decodeURIComponent(new URL((await stack!.readSecret("answerable", name))[key]!).password))
+  for (const [name, key] of clientSecrets) values.push((await stack!.readSecret("answerable", name))[key]!)
+  return values
+}
+
+const jobLog = async (job: string) => (await stack!.kubectl(["logs", "-n", "answerable", `job/${job}`])).stdout
+
+describe("the ops Jobs", () => {
+  test("bootstrap, with an administrative login that is not a superuser, made each database its owner's, with a restricted runtime login and nothing for PUBLIC", async () => {
+    expect(await psql(`select rolsuper || '|' || rolcreatedb || '|' || rolcreaterole from pg_roles where rolname = '${databaseAdmin}'`)).toEqual(["false|true|true"])
+    expect(await psql("select datname || ' ' || pg_get_userbyid(datdba) from pg_database where datname like 'answerable_%' order by datname")).toEqual([
+      "answerable_admin answerable_admin_owner", "answerable_id answerable_id_owner", "answerable_toolbox answerable_toolbox_owner",
+    ])
+    // super, createdb, createrole, inherit, replication, bypassrls: none.
+    expect(await psql("select rolname, rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls from pg_roles where rolname like 'answerable\\_%\\_runtime' order by rolname")).toEqual([
+      "answerable_admin_runtime|f|f|f|f|f|f", "answerable_id_runtime|f|f|f|f|f|f", "answerable_toolbox_runtime|f|f|f|f|f|f",
+    ])
+    expect(await psql("select count(*) from pg_database d, aclexplode(d.datacl) acl where d.datname like 'answerable_%' and acl.grantee = 0")).toEqual(["0"])
+    for (const database of ["answerable_id", "answerable_toolbox", "answerable_admin"]) {
+      const runtime = `${database}_runtime`
+      expect(await psql(`select has_database_privilege('${runtime}', '${database}', 'CONNECT') || ' ' || has_database_privilege('${runtime}', '${database}', 'TEMP')`), database).toEqual(["true false"])
+    }
+  })
+
+  test("bootstrap wrote six URLs, each its login's, verifying the database with the mounted certificate authority, with a 32-byte password", async () => {
+    for (const [name, key, login, database] of urlSecrets) {
+      const url = new URL((await stack!.readSecret("answerable", name))[key]!)
+      expect(`${url.protocol}//${decodeURIComponent(url.username)}@${url.host}${url.pathname}${url.search}`, name).toBe(`postgres://${login}@postgres.database.svc.cluster.local:5432/${database}?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem`)
+      expect(Buffer.from(decodeURIComponent(url.password), "base64url").length, name).toBe(32)
+    }
+    const log = await jobLog("ops-bootstrap")
+    expect(log).toContain("answerable_id: created, owned by answerable_id_owner")
+    for (const value of await generatedValues()) expect(log.includes(value)).toBe(false)
+  })
+
+  test("register stored both machine clients' secrets, started the Toolbox and the admin MCP, and printed Claude Code's commands without a secret", async () => {
+    for (const [name, key] of clientSecrets) expect((await stack!.readSecret("answerable", name))[key]?.length, name).toBeGreaterThan(20)
+    for (const deployment of ["toolbox", "admin-mcp"]) {
+      const { stdout } = await stack!.kubectl(["get", "deployment", "-n", "answerable", deployment, "-o", "jsonpath={.status.readyReplicas}"])
+      expect(stdout, deployment).toBe("1")
+    }
+    expect(await (await viaIngress(`${origin(hosts.adminMcp)}/health`)).json()).toEqual({ status: "ok" })
+    const log = await jobLog("ops-register")
+    expect(log).toContain(`claude mcp add --transport http answerable-admin ${origin(hosts.adminMcp)}/mcp --client-id claude-code-admin --callback-port 47700`)
+    expect(log).toContain("toolbox: scaled from 0 to 1")
+    expect(log).toContain("admin-mcp: scaled from 0 to 1")
+    for (const value of [...await generatedValues(), stack!.secrets.rootAdminSecret]) expect(log.includes(value)).toBe(false)
+  })
+
+  test("a machine-token round trip: the admin MCP's client gets a toolbox:admin token from ID and lists the Toolbox's providers", async () => {
+    const clientSecret = (await stack!.readSecret("answerable", "admin-id-client")).ADMIN_ID_CLIENT_SECRET!
+    const toolboxAdmin = `${origin(hosts.toolbox)}/admin`
+    const issued = await viaIngress(`${origin(hosts.id)}/auth/oauth2/token`, {
+      method: "POST",
+      headers: { authorization: `Basic ${Buffer.from(`admin-mcp:${clientSecret}`).toString("base64")}`, "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "client_credentials", resource: toolboxAdmin, scope: "toolbox:admin" }),
+    })
+    expect(issued.status).toBe(200)
+    const { access_token: token } = await issued.json() as { access_token: string }
+    const providers = await viaIngress(`${toolboxAdmin}/v1/providers`, { headers: { authorization: `Bearer ${token}` } })
+    expect(providers.status).toBe(200)
+    expect(((await providers.json()) as { items: unknown[] }).items.length).toBeGreaterThan(0)
+    // The same request without the token is refused.
+    expect((await viaIngress(`${toolboxAdmin}/v1/providers`)).status).toBe(401)
+  })
+})
+
+describe("a staff member signs in through the cluster", () => {
+  test("with the platform's company directory on this host, in Chromium through Traefik, and the official MCP client calls admin_whoami: no role, then owner", async () => {
+    const idOrigin = origin(hosts.id)
+    const adminResource = `${origin(hosts.adminMcp)}/mcp`
+    const callback = "http://localhost:47700/callback"
+    const { directory } = stack!
+    const platform = ((await rootAdmin("GET", "/organizations?q=answerable&limit=100")).items as { id: string; slug: string }[]).find(item => item.slug === "answerable")!.id
+    // As an operator connects the platform organisation to its company directory on the first run (docs/06, step 6).
+    await rootAdmin("POST", `/organizations/${platform}/domains`, { domain: directory.domain })
+    await setSsoProvider(rootAdmin, platform, directory)
+    // The MCP SDK and the kit call fetch themselves: the stack's origins take the origin-pull certificate, as through Cloudflare.
+    const original = globalThis.fetch
+    const stackOrigins = new Set(Object.values(hosts).map(origin))
+    globalThis.fetch = Object.assign((input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : String(input))
+      return stackOrigins.has(url.origin) ? original(input, { ...init, tls: { ca: stack!.stackCa, ...stack!.originPullCert } }) : original(input, init)
+    }, original)
+    // Chromium reaches Traefik through the browser's stand-in for Cloudflare, which presents the origin-pull certificate.
+    const edge = startBrowserEdge({ stackCa: stack!.stackCa, originPullCert: stack!.originPullCert, serverCert: stack!.edgeCert })
+    const browser = await chromium.launch({ headless: true, args: [`--host-resolver-rules=${edge.hostResolverRules}`] })
+    const listener = serveCallback(callback)
+    try {
+      const context = await browser.newContext({ ignoreHTTPSErrors: true })
+      const session = await step("sign a staff member in through the browser", () => signIn(context, { idOrigin, resource: adminResource, clientId: "claude-code-admin", callback, scopes: ["admin"] }, { slug: "answerable", email: directory.email, scopes: ["admin"] }))
+      const client = await connect(adminResource, session.provider, "2025")
+      try {
+        const claims = JSON.parse(Buffer.from(session.state.tokens!.access_token.split(".")[1]!, "base64url").toString()) as { membership_id: string; organization_id: string; client_id: string }
+        expect(claims).toMatchObject({ organization_id: platform, client_id: "claude-code-admin" })
+        expect(await tool(client, "admin_whoami")).toMatchObject({ organizationId: platform, membershipId: claims.membership_id, role: null, nextStep: expect.stringContaining("Ask an owner") })
+        // Root makes them the first owner (docs/admin/setup); the admin MCP reads the role on each request.
+        const owner = ((await rootAdmin("GET", `/organizations/${platform}/groups?q=answerable-owner&limit=100`)).items as { id: string; slug: string }[]).find(item => item.slug === "answerable-owner")!.id
+        await rootAdmin("PUT", `/organizations/${platform}/groups/${owner}/members/${claims.membership_id}`, {}, { "if-none-match": "*" })
+        expect(await tool(client, "admin_whoami")).toMatchObject({ role: "owner", nextStep: null })
+      } finally {
+        await client.close()
+      }
+    } finally {
+      globalThis.fetch = original
+      listener.stop(true)
+      await browser.close()
+      edge.stop()
+    }
+  }, 180_000)
+})
+
+describe("running the ops Jobs again", () => {
+  test("bootstrap and register once more, as deploy.ts run-job does: every login keeps its password, every Secret is untouched, nothing is rotated", async () => {
+    const versions = async () => Object.fromEntries(await Promise.all([...urlSecrets, ...clientSecrets].map(async ([name]) => [name, (await stack!.kubectl(["get", "secret", "-n", "answerable", name, "-o", "jsonpath={.metadata.resourceVersion}"])).stdout])))
+    const before = await versions()
+    await step("run bootstrap and register again", () => stack!.release(["ops.bootstrap=true", "ops.register=true"]))
+    expect(await versions()).toEqual(before)
+    const bootstrap = await jobLog("ops-bootstrap")
+    expect(bootstrap).not.toContain("URL written")
+    expect(bootstrap).toContain("answerable_toolbox_runtime: password set to the one its Secret holds")
+    const register = await jobLog("ops-register")
+    expect(register).not.toContain("rotated")
+    expect(register).not.toContain("secret stored")
+    expect(register).toContain("toolbox: already running")
+    // The services still connect with the passwords they hold.
+    expect(await (await viaIngress(`${origin(hosts.id)}/readyz`)).json()).toEqual({ status: "ok" })
+    expect(await (await viaIngress(`${origin(hosts.adminMcp)}/health`)).json()).toEqual({ status: "ok" })
+  }, 600_000)
 })
 
 // Last, because it changes the cluster and restores it: each of the two TLS options alone demands Cloudflare's
