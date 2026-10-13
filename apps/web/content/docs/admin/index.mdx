@@ -235,6 +235,16 @@ bun run admin:dev
 
 It prints `Admin MCP serving http://localhost:47520/mcp for platform organisation <id>`. The admin MCP has no tables of its own: `db:migrate` applies the intent and evidence tables of `@answerable/mcp-postgres`.
 
+### Database roles
+
+The admin MCP migrates as the schema owner and serves as a restricted login, as [Answerable ID](/docs/id/onboard#first-run) and [the Toolbox](/docs/toolbox#database-roles) do.
+
+- **`db:migrate`** connects with `ADMIN_DATABASE_MIGRATION_URL`, applies the migrations, then grants `ADMIN_DATABASE_RUNTIME_ROLE` exactly what the admin MCP needs and takes back anything else. It runs again safely.
+- **The admin MCP** connects with `ADMIN_DATABASE_URL`, the runtime login, and refuses to listen when that login is a superuser, owns anything, or could change the evidence.
+- **The runtime role** reads and adds evidence, erases payload bodies, and moves and sweeps intents, and nothing else.
+
+The local login comes from `infra/postgres/init/005-create-mcp-runtime-roles.sql` when the Postgres volume is created; on an older volume, run the file once, as [Run it](/docs/admin/setup#run-it) shows.
+
 ## Environment
 
 Read from the root `.env` by `bun run admin:dev`; every variable is listed in `default.env`.
@@ -244,7 +254,9 @@ Read from the root `.env` by `bun run admin:dev`; every variable is listed in `d
 | `ADMIN_ID_ISSUER` | Answerable ID's origin; [Sign in again](#sign-in-again) names its `/security` page | `http://localhost:47300` |
 | `ADMIN_RESOURCE_URL` | The admin MCP's URL as registered in ID: the token audience; its path is the endpoint | `http://localhost:47520/mcp` |
 | `ADMIN_PORT` | The loopback port | `47520` (the default) |
-| `ADMIN_DATABASE_URL` | Intents and evidence | `postgres://answerable:answerable@localhost:47432/answerable_admin` |
+| `ADMIN_DATABASE_URL` | Intents and evidence, as the runtime login; the owner is refused at start | `postgres://answerable_admin_runtime:answerable@localhost:47432/answerable_admin` |
+| `ADMIN_DATABASE_MIGRATION_URL` | The same database as its schema owner, for `db:migrate` only | `postgres://answerable:answerable@localhost:47432/answerable_admin` |
+| `ADMIN_DATABASE_RUNTIME_ROLE` | The role `db:migrate` provisions: the user of `ADMIN_DATABASE_URL` | `answerable_admin_runtime` (the default) |
 | `ADMIN_TEST_DATABASE_URL` | The test database, reset by `db:test:migrate` | `postgres://answerable:answerable@localhost:47432/answerable_admin_test` (the default) |
 | `ADMIN_ID_CLIENT_ID`, `ADMIN_ID_CLIENT_SECRET` | The machine client, owned by the platform organisation | `admin-mcp` and its secret |
 | `ADMIN_ID_ADMIN_RESOURCE` | ID's admin resource, ID's `ADMIN_RESOURCE_IDENTIFIER` | `http://localhost:47300/api/admin` |
@@ -309,6 +321,11 @@ Every tool error is the envelope [MCP errors](/docs/mcp/errors) describes, with 
 | `The admin MCP cannot start: Answerable ID refused the client credentials of <id> (<status>)…` | ID refused the machine client at start | Fix `ADMIN_ID_CLIENT_ID`, `ADMIN_ID_CLIENT_SECRET` or its `platform:read` capability |
 | `The admin MCP cannot start: Answerable ID did not answer the token request…` | ID is not running at `ADMIN_ID_ISSUER` | Start ID, or correct the variable |
 | `Invalid admin MCP configuration: <VARIABLE>: …` at start | A variable is missing or invalid | Set it as in [Environment](#environment) |
+| `The admin MCP cannot start: Database role <role> is not a restricted runtime role: …` | `ADMIN_DATABASE_URL` is the owner, a superuser, or a login with more than the admin MCP needs; the message names each problem | Point `ADMIN_DATABASE_URL` at the runtime login, then run `db:migrate`, which takes back extra privileges |
+| `password authentication failed for user "answerable_admin_runtime"` | The runtime login does not exist, or has another password: `db:migrate` creates a missing role without a login or password | Run `005-create-mcp-runtime-roles.sql` once, as [Run it](/docs/admin/setup#run-it) shows |
+| Log `permission denied for table <table>` | The runtime role lacks a grant: the database was migrated by an older version | Run `db:migrate` |
+| `Refusing to provision <role> as a runtime role: …` from `db:migrate` | `ADMIN_DATABASE_RUNTIME_ROLE` names a role with an attribute beyond login, a membership or an ownership | Name an unprivileged role |
+| `Set ADMIN_DATABASE_MIGRATION_URL…` from `db:migrate` | The owner's URL is not set | Set it as in [Environment](#environment) |
 | `503 {"status":"unavailable"}` from `/health` | The database does not answer | Check `ADMIN_DATABASE_URL` and Postgres |
 | Log `relation "evidence_events" does not exist`, and every call fails | The database is not migrated | Run `bun --env-file=.env run --filter @answerable/mcp-admin db:migrate` |
 | `db:migrate` fails with `column "checksum" does not exist` | The database was migrated before the migrations were reset | Drop its `public` schema, then run `db:migrate` again |

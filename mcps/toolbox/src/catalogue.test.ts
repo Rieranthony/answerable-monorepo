@@ -1,13 +1,12 @@
-import { afterAll, beforeAll, expect, test } from "bun:test"
+import { afterAll, expect, test } from "bun:test"
 import { defineMutation, defineProvider, defineTool } from "@answerable/mcp"
 import { z } from "zod"
 import { ingest, readCatalogue, writeCatalogue } from "./catalogue"
-import { migrate } from "./db/migrate"
-import { database } from "./test/database"
+import { serving } from "./test/database"
 
-const db = database.connect()
-beforeAll(() => migrate(db))
-afterAll(() => db.close())
+const login = await serving()
+const { db } = login
+afterAll(() => login.drop())
 
 const providerId = () => `c${crypto.randomUUID().slice(0, 8)}`
 function provider(id: string, { version = "2026-09-29", title = "Search tickets", limit = 100, extra = [] as string[] } = {}) {

@@ -1,13 +1,12 @@
-import { afterAll, beforeAll, expect, test } from "bun:test"
+import { afterAll, expect, test } from "bun:test"
 import { readCatalogue, writeCatalogue } from "./catalogue"
-import { migrate } from "./db/migrate"
 import { allowedScopes } from "./grants"
-import { database } from "./test/database"
+import { serving } from "./test/database"
 import { createHub, providerId, records, resource } from "./test/hub"
 
-const db = database.connect()
-beforeAll(() => migrate(db))
-afterAll(() => db.close())
+const login = await serving()
+const { db } = login
+afterAll(() => login.drop())
 
 const path = encodeURIComponent(resource)
 const api = "/api/admin/v1"

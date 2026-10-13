@@ -1,5 +1,6 @@
 import { SQL } from "bun"
 import { createIdAdmin } from "@answerable/id-admin"
+import { assertRuntimeRole } from "@answerable/mcp-postgres"
 import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
 import { createRecordStore } from "@answerable/mcp-e2e/records"
 import { viewHtml } from "@answerable/mcp-e2e/view"
@@ -10,6 +11,12 @@ import { createToolbox } from "./toolbox"
 
 const { databaseUrl, auth, port, id: idConfig, otlpEndpoint } = readToolboxEnvironment(process.env)
 const db = new SQL(databaseUrl)
+// Serve as the restricted runtime login only: the owner could drop the evidence triggers. Checked before the boot's ingest writes anything.
+await assertRuntimeRole(db).catch(async (error: Error) => {
+  await db.close()
+  console.error(`The Toolbox cannot start: ${error.message}`)
+  process.exit(1)
+})
 const telemetry = createTracer(otlpEndpoint)
 const id = createIdAdmin(idConfig)
 //#region providers

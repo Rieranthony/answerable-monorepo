@@ -1,5 +1,6 @@
 // The admin lane: real Answerable ID, the admin MCP and the Toolbox, kept up for an owner to onboard an organisation with Claude Code by hand.
 // Not a test and not part of `mcp:test:e2e`. Run it from the repository root: `bun packages/acceptance/scripts/admin-lane.ts`.
+// startAdminStack migrates each server's database as the owner and serves each server as its runtime login, as the journeys do.
 import { decodeJwt } from "jose"
 import { z } from "zod"
 import { adminResource, startAdminStack } from "../src/admin-mcp"
