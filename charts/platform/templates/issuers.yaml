@@ -1,0 +1,75 @@
+{{- /*
+cert-manager's resources need its CRDs and its webhook, which this same release installs. As post-install and
+post-upgrade hooks they are created after both exist: cert-manager's own startup check (a post-install hook of weight 1)
+waits for the webhook, and these come after it.
+*/ -}}
+{{- define "platform.hook" -}}
+helm.sh/hook: post-install,post-upgrade
+helm.sh/hook-weight: {{ . | quote }}
+helm.sh/hook-delete-policy: before-hook-creation
+{{- end -}}
+{{- with .Values.issuers.letsencrypt }}
+{{- if .enabled }}
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt
+  annotations:
+    {{- include "platform.hook" 10 | nindent 4 }}
+spec:
+  acme:
+    server: {{ .server }}
+    {{- with .email }}
+    email: {{ . | quote }}
+    {{- end }}
+    privateKeySecretRef:
+      name: letsencrypt-account
+    solvers:
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: cloudflare-api-token
+              key: api-token
+{{- end }}
+{{- end }}
+{{- if .Values.issuers.local.enabled }}
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: local-root
+  annotations:
+    {{- include "platform.hook" 10 | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: local-ca
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    {{- include "platform.hook" 11 | nindent 4 }}
+spec:
+  isCA: true
+  commonName: Answerable local stack CA
+  secretName: local-ca
+  duration: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: local-root
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: local
+  annotations:
+    {{- include "platform.hook" 12 | nindent 4 }}
+spec:
+  ca:
+    secretName: local-ca
+{{- end }}

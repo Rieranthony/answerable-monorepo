@@ -1,0 +1,26 @@
+# The kind stack (infra/k8s/local). kind publishes the controller's host ports on the laptop's 127.0.0.1:48443 and
+# 48080; there is no cloud load balancer and no Cloudflare. The stack adds Cloudflare's stand-in for calls made inside
+# the cluster, an nginx beside the controller, once cert-manager has issued its certificates
+# (infra/k8s/local/platform-edge.yaml).
+
+ingress-nginx:
+  controller:
+    replicaCount: 1
+    hostPort:
+      enabled: true
+      ports:
+        http: 48080
+        https: 48443
+    nodeSelector:
+      ingress-ready: "true"
+      kubernetes.io/os: linux
+    service:
+      type: ClusterIP
+    config:
+      # The edge reaches the controller from 127.0.0.1; the laptop's requests arrive from the Docker network's gateway,
+      # untrusted, as a visitor's would.
+      proxy-real-ip-cidr: 127.0.0.1/32
+
+issuers:
+  local:
+    enabled: true

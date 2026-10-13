@@ -60,6 +60,9 @@
     "@answerable/acceptance#test": {
       "cache": false
     },
+    "@answerable/infra-k8s#test": {
+      "cache": false
+    },
     "@answerable/scripts#test": {
       "cache": false
     },

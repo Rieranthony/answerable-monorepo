@@ -1,0 +1,132 @@
+# Defaults: production-shaped and cloud-neutral. Each environment's overlay (values-<cloud>-<environment>.yaml) sets its
+# hostnames, trusted proxies, network and sizes; the pipeline sets image.tag. The chart creates no namespace, no Secret and
+# no database certificate: Terraform creates the namespace, the deploy applies the human-provided Secrets from the sops
+# file and the postgres-ca ConfigMap, and the ops Jobs write the generated Secrets.
+
+image:
+  registry: ghcr.io/rieranthony/answerable
+  # sha-<40 hex> from the pipeline, local on a laptop. "unset" makes a forgotten tag fail visibly rather than run a mutable one.
+  tag: unset
+  pullPolicy: IfNotPresent
+
+# The public origins are https://<hostname>, with :<publicPort> when it is not 443 (the kind stack's 48443).
+hostnames:
+  id: id.answerable.org
+  toolbox: toolbox.answerable.org
+  adminMcp: admin-mcp.answerable.org
+publicPort: ""
+
+ingress:
+  className: nginx
+  # The cert-manager ClusterIssuer that issues each hostname's certificate (charts/platform).
+  clusterIssuer: letsencrypt
+  # The Secret, in this namespace, whose ca.crt verifies Cloudflare's origin-pull client certificate (D19).
+  originPullCaSecret: cloudflare-origin-pull-ca
+
+database:
+  # The ConfigMap, applied by the deploy, whose ca.pem verifies the database's certificate: /etc/ssl/db/ca.pem, the
+  # sslrootcert of every database URL.
+  caConfigMap: postgres-ca
+  # Until the MCP runtime roles land (brief B1), the Toolbox and the admin MCP connect with their owner login, read from
+  # the *-database-owner Secrets. Only the kind stack sets this; never an environment.
+  mcpOwnerLogins: false
+
+# ID's TRUSTED_PROXY_CIDRS: the hops whose X-Forwarded-For entries ID skips (Cloudflare's ranges, the load balancer's
+# network, the pod range). Required in production; ID refuses to start without it.
+trustedProxyCidrs: []
+
+# A ConfigMap whose ca.pem the services trust for outbound HTTPS (NODE_EXTRA_CA_CERTS), for an issuer whose certificate is
+# not public. Only the kind stack needs it.
+extraCaConfigMap: ""
+
+# Entries for the pods' /etc/hosts. Only the kind stack needs them, to reach the public hostnames inside the cluster.
+hostAliases: []
+
+# How hard the scheduler spreads a Deployment's replicas over nodes: ScheduleAnyway or DoNotSchedule.
+spreadOverNodes: ScheduleAnyway
+
+id:
+  replicas: 2
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+  resources:
+    requests: { cpu: 250m, memory: 256Mi }
+    limits: { memory: 768Mi }
+  runtimeRole: answerable_id_runtime
+  platformOrganization:
+    slug: answerable
+    name: Answerable
+  # BETTER_AUTH_TRUSTED_ORIGINS: origin-only URLs; production requires at least one.
+  trustedOrigins: []
+  microsoftClientId: ""
+  googleClientId: ""
+  # Any other non-secret variable from docs/06's configuration table.
+  env: {}
+
+toolbox:
+  enabled: true
+  replicas: 2
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 4
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 512Mi }
+  clientId: toolbox-hub
+  runtimeRole: answerable_toolbox_runtime
+  env: {}
+
+adminMcp:
+  enabled: true
+  replicas: 2
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 4
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 384Mi }
+  clientId: admin-mcp
+  runtimeRole: answerable_admin_runtime
+  env: {}
+
+migrations:
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 512Mi }
+  backoffLimit: 1
+  activeDeadlineSeconds: 600
+
+# The ops image's Jobs (brief B3): bootstrap creates the databases' logins and writes their Secrets before the
+# migrations; register creates the two machine clients in ID after the release. The pipeline switches one on per run.
+ops:
+  image:
+    repository: ghcr.io/rieranthony/answerable/ops
+  bootstrap: false
+  register: false
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 256Mi }
+
+networkPolicy:
+  # The pods allowed to reach the services: ingress-nginx's controller.
+  ingressController:
+    namespace: platform
+    podLabels:
+      app.kubernetes.io/name: ingress-nginx
+      app.kubernetes.io/component: controller
+  # Where the database is, reached on databasePort.
+  database: []
+  databasePort: 5432
+  # Where HTTPS goes: ID through Cloudflare, the identity providers, the Toolbox's admin API; never the private ranges.
+  https:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]
+  httpsPorts: [443]
+  # The Kubernetes API, for the ops Jobs that write Secrets.
+  kubernetesApi: []
+  kubernetesApiPorts: [443, 6443]

@@ -1,0 +1,89 @@
+{{- /*
+The migrations: one Job per database, from the server's own image, before every install and upgrade and after the ops
+bootstrap (D10). Each mounts only its own owner login, which the services never receive. They run whether or not the
+server is enabled, so a schema is never behind its image. Helm runs hooks one at a time in weight order and waits for
+each; the last run of each Job stays for its logs until the next upgrade replaces it.
+*/ -}}
+{{- define "answerable.migration" -}}
+{{- $root := .root -}}
+{{- $scope := dict "root" $root "component" "migrate" -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .name }}
+  labels:
+    {{- include "answerable.labels" $scope | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: {{ .weight | quote }}
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: {{ $root.Values.migrations.backoffLimit }}
+  activeDeadlineSeconds: {{ $root.Values.migrations.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "answerable.labels" $scope | nindent 8 }}
+    spec:
+      serviceAccountName: migrate
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      {{- include "answerable.podCommon" $root | nindent 6 }}
+      containers:
+        - name: migrate
+          image: {{ include "answerable.image" (dict "root" $root "name" .image) }}
+          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          command: {{ toJson .command }}
+          env:
+            {{- .env | nindent 12 }}
+          resources:
+            {{- toYaml $root.Values.migrations.resources | nindent 12 }}
+          securityContext:
+            {{- include "answerable.containerSecurityContext" $root | nindent 12 }}
+          volumeMounts:
+            {{- include "answerable.volumeMounts" $root | nindent 12 }}
+{{- end -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: migrate
+  labels:
+    {{- include "answerable.labels" (dict "root" . "component" "migrate") | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-30"
+    helm.sh/hook-delete-policy: before-hook-creation
+automountServiceAccountToken: false
+---
+{{ include "answerable.migration" (dict
+  "root" .
+  "name" "id-migrate"
+  "image" "id"
+  "weight" -10
+  "command" (list "bun" "apps/id/scripts/migrate.ts")
+  "env" (printf "%s\n- name: DATABASE_RUNTIME_ROLE\n  value: %s" (include "answerable.secretEnv" (dict "name" "DATABASE_MIGRATION_URL" "secret" "id-database-owner" "key" "DATABASE_MIGRATION_URL")) (.Values.id.runtimeRole | quote))) }}
+---
+{{- $toolboxEnv := printf "%s\n- name: TOOLBOX_DATABASE_RUNTIME_ROLE\n  value: %s" (include "answerable.secretEnv" (dict "name" "TOOLBOX_DATABASE_MIGRATION_URL" "secret" "toolbox-database-owner" "key" "TOOLBOX_DATABASE_MIGRATION_URL")) (.Values.toolbox.runtimeRole | quote) }}
+{{- if .Values.database.mcpOwnerLogins }}
+{{- /* Until brief B1, the migrate script reads the owner URL as TOOLBOX_DATABASE_URL. */ -}}
+{{- $toolboxEnv = printf "%s\n%s" $toolboxEnv (include "answerable.secretEnv" (dict "name" "TOOLBOX_DATABASE_URL" "secret" "toolbox-database-owner" "key" "TOOLBOX_DATABASE_MIGRATION_URL")) }}
+{{- end }}
+{{ include "answerable.migration" (dict
+  "root" .
+  "name" "toolbox-migrate"
+  "image" "toolbox"
+  "weight" -9
+  "command" (list "bun" "mcps/toolbox/scripts/migrate.ts")
+  "env" $toolboxEnv) }}
+---
+{{- $adminEnv := printf "%s\n- name: ADMIN_DATABASE_RUNTIME_ROLE\n  value: %s" (include "answerable.secretEnv" (dict "name" "ADMIN_DATABASE_MIGRATION_URL" "secret" "admin-database-owner" "key" "ADMIN_DATABASE_MIGRATION_URL")) (.Values.adminMcp.runtimeRole | quote) }}
+{{- if .Values.database.mcpOwnerLogins }}
+{{- $adminEnv = printf "%s\n%s" $adminEnv (include "answerable.secretEnv" (dict "name" "ADMIN_DATABASE_URL" "secret" "admin-database-owner" "key" "ADMIN_DATABASE_MIGRATION_URL")) }}
+{{- end }}
+{{ include "answerable.migration" (dict
+  "root" .
+  "name" "admin-migrate"
+  "image" "admin-mcp"
+  "weight" -8
+  "command" (list "bun" "mcps/admin/scripts/migrate.ts")
+  "env" $adminEnv) }}

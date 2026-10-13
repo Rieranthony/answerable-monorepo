@@ -1,0 +1,117 @@
+{{/* The public origin of a hostname: https://<host>, with the port when it is not 443. */}}
+{{- define "answerable.origin" -}}
+https://{{ .host }}{{ with .root.Values.publicPort }}:{{ . }}{{ end }}
+{{- end -}}
+
+{{- define "answerable.idUrl" -}}
+{{ include "answerable.origin" (dict "root" . "host" .Values.hostnames.id) }}
+{{- end -}}
+
+{{- define "answerable.toolboxUrl" -}}
+{{ include "answerable.origin" (dict "root" . "host" .Values.hostnames.toolbox) }}
+{{- end -}}
+
+{{- define "answerable.adminMcpUrl" -}}
+{{ include "answerable.origin" (dict "root" . "host" .Values.hostnames.adminMcp) }}
+{{- end -}}
+
+{{/* Selector labels of a component: the stable subset of its labels. */}}
+{{- define "answerable.selectorLabels" -}}
+app.kubernetes.io/name: answerable
+app.kubernetes.io/instance: {{ .root.Release.Name }}
+app.kubernetes.io/component: {{ .component }}
+{{- end -}}
+
+{{- define "answerable.labels" -}}
+{{ include "answerable.selectorLabels" . }}
+app.kubernetes.io/part-of: answerable
+app.kubernetes.io/version: {{ .root.Values.image.tag | quote }}
+app.kubernetes.io/managed-by: {{ .root.Release.Service }}
+helm.sh/chart: {{ printf "%s-%s" .root.Chart.Name .root.Chart.Version }}
+{{- end -}}
+
+{{/* An image of ours at the release's tag. */}}
+{{- define "answerable.image" -}}
+{{ .root.Values.image.registry }}/{{ .name }}:{{ .root.Values.image.tag }}
+{{- end -}}
+
+{{/* The restricted Pod Security Standard, for every pod: non-root as the images' bun user, the runtime's seccomp profile. */}}
+{{- define "answerable.podSecurityContext" -}}
+runAsNonRoot: true
+runAsUser: 1000
+runAsGroup: 1000
+fsGroup: 1000
+seccompProfile:
+  type: RuntimeDefault
+{{- end -}}
+
+{{- define "answerable.containerSecurityContext" -}}
+runAsNonRoot: true
+allowPrivilegeEscalation: false
+readOnlyRootFilesystem: true
+capabilities:
+  drop: [ALL]
+{{- end -}}
+
+{{/* The volumes every pod mounts: a writable /tmp, the database's certificate authority, and the stack's extra one. */}}
+{{- define "answerable.volumes" -}}
+- name: tmp
+  emptyDir:
+    sizeLimit: 64Mi
+- name: postgres-ca
+  configMap:
+    name: {{ .Values.database.caConfigMap }}
+    items:
+      - key: ca.pem
+        path: ca.pem
+{{- with .Values.extraCaConfigMap }}
+- name: extra-ca
+  configMap:
+    name: {{ . }}
+    items:
+      - key: ca.pem
+        path: ca.pem
+{{- end }}
+{{- end -}}
+
+{{- define "answerable.volumeMounts" -}}
+- name: tmp
+  mountPath: /tmp
+- name: postgres-ca
+  mountPath: /etc/ssl/db
+  readOnly: true
+{{- if .Values.extraCaConfigMap }}
+- name: extra-ca
+  mountPath: /etc/ssl/extra
+  readOnly: true
+{{- end }}
+{{- end -}}
+
+{{/* Variables every container gets: the extra certificate authority when there is one. */}}
+{{- define "answerable.commonEnv" -}}
+{{- if .Values.extraCaConfigMap }}
+- name: NODE_EXTRA_CA_CERTS
+  value: /etc/ssl/extra/ca.pem
+{{- end }}
+{{- end -}}
+
+{{/* A value from a Secret, by name and key. */}}
+{{- define "answerable.secretEnv" -}}
+- name: {{ .name }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ .secret }}
+      key: {{ .key }}
+{{- end -}}
+
+{{/* The parts of a pod spec every workload shares. */}}
+{{- define "answerable.podCommon" -}}
+securityContext:
+  {{- include "answerable.podSecurityContext" . | nindent 2 }}
+{{- with .Values.hostAliases }}
+hostAliases:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+volumes:
+  {{- include "answerable.volumes" . | nindent 2 }}
+{{- end -}}

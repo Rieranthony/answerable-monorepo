@@ -1,0 +1,36 @@
+{{- /* Answerable ID: the bundle, as a restricted runtime login. Configuration: docs/06-deploying-answerable-id.md. */ -}}
+{{- define "answerable.idEnv" -}}
+- name: BETTER_AUTH_URL
+  value: {{ include "answerable.idUrl" . | quote }}
+- name: BETTER_AUTH_TRUSTED_ORIGINS
+  value: {{ join "," .Values.id.trustedOrigins | quote }}
+- name: TRUSTED_PROXY_CIDRS
+  value: {{ join "," .Values.trustedProxyCidrs | quote }}
+- name: PLATFORM_ORGANIZATION_SLUG
+  value: {{ .Values.id.platformOrganization.slug | quote }}
+- name: PLATFORM_ORGANIZATION_NAME
+  value: {{ .Values.id.platformOrganization.name | quote }}
+{{- with .Values.id.microsoftClientId }}
+- name: MICROSOFT_CLIENT_ID
+  value: {{ . | quote }}
+{{- end }}
+{{- with .Values.id.googleClientId }}
+- name: GOOGLE_CLIENT_ID
+  value: {{ . | quote }}
+{{- end }}
+{{ include "answerable.secretEnv" (dict "name" "DATABASE_URL" "secret" "id-database" "key" "DATABASE_URL") }}
+{{- end -}}
+{{- /* id-env holds ID's own secrets, by their variable names: BETTER_AUTH_SECRET, UPSTREAM_TOKEN_SECRETS, ROOT_ADMIN_SECRET and the platform applications' client secrets. */ -}}
+{{- $envFrom := "- secretRef:\n    name: id-env" -}}
+{{ include "answerable.server" (dict
+  "root" .
+  "component" "id"
+  "image" "id"
+  "port" 47300
+  "values" .Values.id
+  "host" .Values.hostnames.id
+  "env" (include "answerable.idEnv" .)
+  "envFrom" $envFrom
+  "readiness" "/readyz"
+  "liveness" "/healthz"
+  "streams" false) }}
