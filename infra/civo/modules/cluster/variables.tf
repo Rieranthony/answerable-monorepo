@@ -24,8 +24,9 @@ variable "network_cidr" {
 }
 
 variable "allowed_api_cidrs" {
-  description = "The addresses allowed to reach the Kubernetes API on 6443, as CIDRs: the operators' and the deploy runners' egress. Never the whole internet."
+  description = "The addresses allowed to reach the Kubernetes API on 6443, as CIDRs: the operators' and the deploy runners' egress. Never the whole internet. Sensitive so that plans posted on a public repository do not print an operator's address."
   type        = list(string)
+  sensitive   = true
 
   validation {
     condition     = length(var.allowed_api_cidrs) > 0

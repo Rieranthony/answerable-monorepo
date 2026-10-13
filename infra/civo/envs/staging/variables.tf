@@ -27,6 +27,7 @@ variable "network_cidr" {
 variable "allowed_api_cidrs" {
   description = "The addresses that may reach the Kubernetes API, as CIDRs. Not committed (an operator's address is personal data in a public repository): set TF_VAR_allowed_api_cidrs, for example '[\"198.51.100.7/32\"]'."
   type        = list(string)
+  sensitive   = true
 }
 
 variable "node_size" {
