@@ -74,27 +74,29 @@ export async function configureRuntimeRole(db: SQL, role: string, grants: readon
     const unknown = grant.privileges.find(privilege => !privileges.has(privilege))
     if (unknown) throw new Error(`Invalid privilege "${unknown}" on ${grant.table}`)
   }
+  // Quoted, so that a valid name that is also a keyword, such as "user", stays a name.
+  const quoted = quote(role)
   await db.begin(async tx => {
     await tx`select pg_advisory_xact_lock(hashtext('answerable:mcp-runtime-role'))`
     if (!(await tx`select 1 from pg_roles where rolname = ${role}`).length) {
-      await tx.unsafe(`create role ${role} nologin nosuperuser nocreatedb nocreaterole noinherit noreplication nobypassrls`)
+      await tx.unsafe(`create role ${quoted} nologin nosuperuser nocreatedb nocreaterole noinherit noreplication nobypassrls`)
     }
     const problems = await standing(tx, role)
     if (problems.length) throw new Error(`Refusing to provision ${role} as a runtime role: ${problems.join("; ")}`)
     const [{ database }] = await tx`select current_database() as database`
     await tx.unsafe(`
       revoke create on schema public from public;
-      revoke temporary on database ${quote(database)} from public, ${role};
-      revoke all on schema public from ${role};
-      grant usage on schema public to ${role};
-      revoke all on all tables in schema public from public, ${role};
-      revoke all on all sequences in schema public from public, ${role};
-      revoke all on all functions in schema public from ${role};
-      alter default privileges revoke all on tables from public, ${role};
-      alter default privileges revoke all on sequences from public, ${role};
-      alter default privileges in schema public revoke all on tables from public, ${role};
-      alter default privileges in schema public revoke all on sequences from public, ${role};
-      ${grants.filter(grant => grant.privileges.length).map(grant => `grant ${grant.privileges.join(", ")} on ${grant.table} to ${role};`).join("\n")}
+      revoke temporary on database ${quote(database)} from public, ${quoted};
+      revoke all on schema public from ${quoted};
+      grant usage on schema public to ${quoted};
+      revoke all on all tables in schema public from public, ${quoted};
+      revoke all on all sequences in schema public from public, ${quoted};
+      revoke all on all functions in schema public from ${quoted};
+      alter default privileges revoke all on tables from public, ${quoted};
+      alter default privileges revoke all on sequences from public, ${quoted};
+      alter default privileges in schema public revoke all on tables from public, ${quoted};
+      alter default privileges in schema public revoke all on sequences from public, ${quoted};
+      ${grants.filter(grant => grant.privileges.length).map(grant => `grant ${grant.privileges.join(", ")} on public.${quote(grant.table)} to ${quoted};`).join("\n")}
     `).simple()
   })
 }

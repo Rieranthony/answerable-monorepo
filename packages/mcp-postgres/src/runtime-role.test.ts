@@ -125,6 +125,15 @@ test("a role is created without login when it does not exist, and refused when i
   }
 })
 
+test("a role name that is also a keyword stays a name", async () => {
+  try {
+    await configureRuntimeRole(owner, "user", [{ table: "intents", privileges: ["select"] }])
+    expect<unknown>(await owner`select has_table_privilege('user', 'public.intents', 'SELECT') as select, has_table_privilege('user', 'public.intents', 'INSERT') as insert`).toEqual([{ select: true, insert: false }])
+  } finally {
+    await owner.unsafe(`drop owned by "user"; drop role "user"`)
+  }
+})
+
 test("a role name, a table name or a privilege that is not plainly one is refused before anything runs", async () => {
   await expect(configureRuntimeRole(owner, "Runtime; drop table intents", runtimeGrants)).rejects.toThrow('Invalid runtime role name "Runtime; drop table intents"')
   await expect(configureRuntimeRole(owner, login.role, [{ table: "intents; drop table intents", privileges: ["select"] }])).rejects.toThrow('Invalid table name "intents; drop table intents"')
