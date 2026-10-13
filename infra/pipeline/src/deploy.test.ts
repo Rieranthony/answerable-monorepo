@@ -151,13 +151,13 @@ stringData:
 })
 
 describe("deploy", () => {
-  test("logs in, applies the decrypted secrets and upgrades the release atomically", async () => {
+  test("logs in, applies the decrypted secrets and upgrades the release, rolling back on failure", async () => {
     const f = await fixture(happy)
     await deploy({ environment: "staging", imageTag: TAG }, f.deps)
     expect(f.runner.commands()).toEqual([
       `sops --decrypt ${SECRETS}`,
       "kubectl apply -n answerable -f -",
-      `helm upgrade --install answerable charts/answerable --namespace answerable --atomic --wait --timeout 10m -f ${VALUES} --set image.tag=${TAG}`,
+      `helm upgrade --install answerable charts/answerable --namespace answerable --rollback-on-failure --wait --timeout 10m -f ${VALUES} --set image.tag=${TAG}`,
     ])
     expect(f.log()).toContain(`Deployed ${TAG} to staging.`)
   })
@@ -214,7 +214,7 @@ describe("deploy", () => {
     const f = await fixture(happy)
     await deploy({ environment: "staging", imageTag: TAG, bootstrap: true }, f.deps)
     expect(f.runner.commands().at(-1)).toBe(
-      `helm upgrade --install answerable charts/answerable --namespace answerable --atomic --wait --wait-for-jobs --timeout 10m -f ${VALUES} --set image.tag=${TAG} --set ops.bootstrap=true`,
+      `helm upgrade --install answerable charts/answerable --namespace answerable --rollback-on-failure --wait --wait-for-jobs --timeout 10m -f ${VALUES} --set image.tag=${TAG} --set ops.bootstrap=true`,
     )
   })
 
@@ -327,7 +327,7 @@ describe("runJob", () => {
     await runJob({ environment: "staging", job: "register" }, f.deps)
     expect(f.runner.commands()).toEqual([
       "helm get values answerable --namespace answerable -o json",
-      `helm upgrade answerable charts/answerable --namespace answerable --atomic --wait --wait-for-jobs --timeout 10m -f ${VALUES} --set image.tag=${OLD_TAG} --set ops.register=true`,
+      `helm upgrade answerable charts/answerable --namespace answerable --rollback-on-failure --wait --wait-for-jobs --timeout 10m -f ${VALUES} --set image.tag=${OLD_TAG} --set ops.register=true`,
       "kubectl get deployments -n answerable -o name",
       "kubectl rollout restart -n answerable deployment.apps/answerable-toolbox deployment.apps/answerable-admin-mcp",
       "kubectl rollout status -n answerable deployment.apps/answerable-toolbox --timeout=10m",
@@ -340,7 +340,7 @@ describe("runJob", () => {
     const f = await fixture(registerReply)
     await runJob({ environment: "staging", job: "bootstrap", imageTag: TAG, timeout: "5m" }, f.deps)
     expect(f.runner.commands()).toEqual([
-      `helm upgrade answerable charts/answerable --namespace answerable --atomic --wait --wait-for-jobs --timeout 5m -f ${VALUES} --set image.tag=${TAG} --set ops.bootstrap=true`,
+      `helm upgrade answerable charts/answerable --namespace answerable --rollback-on-failure --wait --wait-for-jobs --timeout 5m -f ${VALUES} --set image.tag=${TAG} --set ops.bootstrap=true`,
     ])
   })
 

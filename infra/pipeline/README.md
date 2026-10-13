@@ -6,13 +6,13 @@ How a push becomes a deployment, and how to run the pieces by hand. The workspac
 
 | Workflow | Starts | What it does |
 | --- | --- | --- |
-| `deploy-staging.yml` | A push to `main`; or by hand with `image_tag` | Runs `ci.yml`, builds the four images once (`id`, `toolbox`, `admin-mcp`, `ops`) and signs them, upgrades the staging release, smoke-tests staging. By hand it skips the build and redeploys an image that exists |
-| `promote-production.yml` | By hand (`image_tag`, default `staging`; `apply_infra`, default on) | Reads the tag staging runs, checks the images' signatures, waits for the reviewer's approval, applies `infra/civo/envs/production`, upgrades the production release with the same tag, smoke-tests production |
+| `deploy-staging.yml` | A push to `main`; or by hand with `image_tag` | Runs `ci.yml`, builds the four images (`id`, `toolbox`, `admin-mcp`, `ops`) for amd64 and arm64, joins each pair into one tagged manifest list and signs it, upgrades the staging release, smoke-tests staging. By hand it skips the build and redeploys an image that exists |
+| `promote-production.yml` | By hand (`image_tag`, default `staging`; `apply_infra`, default on) | Reads the tag staging runs, checks the images' signatures on the digests their tags point to, waits for the reviewer's approval, applies `infra/civo/envs/production`, upgrades the production release with the same tag, smoke-tests production |
 | `ops.yml` | By hand (`environment`, `command`) | Runs a one-off ops Job (`register`) in an environment, restarts the Toolbox and the admin MCP, smoke-tests |
 | `infra.yml` | A change under `infra/**` or `charts/**` | `bun run infra:check`; on a pull request a Terraform plan of staging as a sticky comment; on `main` a Terraform apply of staging |
 | `ci.yml` | A pull request or a push to any branch but `main`; called by `deploy-staging.yml` | The existing checks. A push to `main` gets its checks from `deploy-staging.yml`, so a push has one set of results and only a commit that passed them is built |
 
-Every action is pinned by commit SHA, every binary by version and SHA-256 (`.github/actions/setup-tools`). Jobs hold `contents: read` and nothing more, except `images` (`packages: write`, `id-token: write` for the signature) and the plan comment (`pull-requests: write`).
+Every action is pinned by commit SHA, every binary by version and SHA-256 (`.github/actions/setup-tools`). Jobs hold `contents: read` and nothing more, except `build` (`packages: write`), `manifest` (`packages: write`, `id-token: write` for the signature) and the plan comment (`pull-requests: write`).
 
 ## What each GitHub environment holds
 
@@ -42,9 +42,9 @@ There are no variables: the hostnames follow from the environment name (`staging
 
 ## How a deploy runs
 
-1. **Images.** `docker/build-push-action` builds each Dockerfile once, for one platform, with provenance (`mode=max`) and an SBOM, and pushes `ghcr.io/rieranthony/answerable/<image>:sha-<commit>`. `cosign sign` signs the digest keylessly with the workflow's identity.
+1. **Images.** Each of the four images is built twice, by `docker/build-push-action` on a native runner per architecture (`ubuntu-24.04` for amd64, `ubuntu-24.04-arm` for arm64, no emulation), with provenance (`mode=max`) and an SBOM, and pushed by digest with no tag; the digest travels to the next job as an artifact. One `manifest` job per image then runs `docker buildx imagetools create` over the two digests to make `ghcr.io/rieranthony/answerable/<image>:sha-<commit>`, checks that it serves exactly amd64 and arm64, and `cosign sign` signs the manifest list's digest keylessly with the workflow's identity.
 2. **Secrets.** `sops --decrypt <environment>/secrets.enc.yaml` is piped straight to `kubectl apply -n answerable -f -`. The decrypted text lives in memory only: it is never written to disk, never logged, and a kubectl complaint is printed with the secret values blanked.
-3. **Release.** `helm upgrade --install answerable charts/answerable --namespace answerable --atomic --wait --timeout 10m -f <values> --set image.tag=<tag>`. The chart's hook Jobs run first: the optional `ops-bootstrap`, then the migrations, each with the owner login that the services never receive. `--atomic` rolls the release back when a Job fails or the pods never become ready, and the script then prints the logs of every Job whose name contains `migrate`, `bootstrap` or `register`.
+3. **Release.** `helm upgrade --install answerable charts/answerable --namespace answerable --rollback-on-failure --wait --timeout 10m -f <values> --set image.tag=<tag>`. The chart's hook Jobs run first: the optional `ops-bootstrap`, then the migrations, each with the owner login that the services never receive. `--rollback-on-failure` rolls the release back when a Job fails or the pods never become ready, and the script then prints the logs of every Job whose name contains `migrate`, `bootstrap` or `register`.
 4. **Smoke test.** From the public internet, through Cloudflare: ID's `/healthz`, `/readyz`, discovery (the `issuer` must be the ID hostname), its signing keys, the Toolbox's and the admin MCP's `/health`, and both protected-resource metadata documents naming the issuer. It retries for up to five minutes, because a first certificate and the edge take a while.
 
 `helm history answerable -n answerable` is the deploy log.
@@ -96,7 +96,7 @@ The unit tests use a fake runner. `bun run --filter @answerable/infra-pipeline r
 
 ## Known limits
 
-- **Architecture.** `images` builds `linux/arm64` on GitHub's free arm64 runners (`IMAGE_PLATFORM` and `runs-on` in `deploy-staging.yml`). The cluster's nodes must run arm64; if Civo's do not, change the platform and the runner to `linux/amd64` and `ubuntu-24.04`.
+- **Architecture.** Civo does not document its nodes' architecture, and the local kind cluster on a Mac is arm64, so every tag is a manifest list for `linux/amd64` and `linux/arm64`. That is two builds per image, both on native runners, and no emulation. Another architecture is one more entry in the `build` matrix of `deploy-staging.yml`.
 - **Last-applied annotation.** `kubectl apply` stores the Secret's data in the object's `last-applied-configuration` annotation. It is readable by whoever can read the Secret anyway.
 - **Plans run the repository's Terraform code with the Civo key.** A pull request from this repository can read the `infra-staging` secrets; a pull request from a fork cannot. Treat write access as access to the staging account.
 - **Staging's tag is read in the `staging` environment.** `promote-production.yml` uses the staging deployer token, with no deployment record, only to run `helm get values`.
@@ -104,4 +104,4 @@ The unit tests use a fake runner. `bun run --filter @answerable/infra-pipeline r
 
 ## Keep the pins current
 
-`.github/actions/setup-tools/action.yml` lists each tool's version and SHA-256; change both together, taking the checksum from the release's own checksum file. Each action's `uses:` line carries its commit SHA and the tag it is. Helm 4 deprecates `--atomic` for `--rollback-on-failure`; `deploy.ts` still uses `--atomic`, which works and warns.
+`.github/actions/setup-tools/action.yml` lists each tool's version and SHA-256; change both together, taking the checksum from the release's own checksum file. Each action's `uses:` line carries its commit SHA and the tag it is. `setup-tools` pins Helm 4, which deprecated `--atomic` for `--rollback-on-failure`, so `deploy.ts` uses the new flag; Helm 3 does not know it.

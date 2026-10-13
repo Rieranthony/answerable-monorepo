@@ -1,7 +1,8 @@
 name: Deploy staging
 
-# A push to main runs CI, builds and signs the four images once, upgrades the staging release and smoke-tests it
-# through the public hostnames. A manual run redeploys an image that already exists, which is how staging rolls back.
+# A push to main runs CI, builds the four images once for amd64 and arm64 and signs them, upgrades the staging
+# release and smoke-tests it through the public hostnames. A manual run redeploys an image that already exists,
+# which is how staging rolls back.
 # What this does and which secrets it needs: infra/pipeline/README.md.
 
 on:
@@ -29,8 +30,6 @@ defaults:
 
 env:
   REGISTRY: ghcr.io/rieranthony/answerable
-  # The runner and the platform go together: the nodes must run the architecture the images are built for.
-  IMAGE_PLATFORM: linux/arm64
 
 jobs:
   ci:
@@ -40,19 +39,23 @@ jobs:
     permissions:
       contents: read
 
-  images:
-    name: Build ${{ matrix.image }}
+  # Each image is built twice, once per architecture, each on a runner of that architecture (no emulation), and
+  # pushed by digest only. Civo does not document its nodes' architecture and the local kind cluster is arm64, so
+  # the tag below is a manifest list that serves both.
+  build:
+    name: Build ${{ matrix.image }} for ${{ matrix.arch }}
     needs: ci
     if: github.event_name == 'push'
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 30
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
-      id-token: write
     strategy:
       fail-fast: false
       matrix:
+        image: [id, toolbox, admin-mcp, ops]
+        arch: [amd64, arm64]
         include:
           - image: id
             dockerfile: apps/id/Dockerfile
@@ -62,6 +65,10 @@ jobs:
             dockerfile: mcps/admin/Dockerfile
           - image: ops
             dockerfile: infra/ops/Dockerfile
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -75,15 +82,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      # Pushed by digest, without a tag. Provenance and an SBOM make the result a small index of its own: the
+      # image and its attestations.
+      - name: Build and push by digest
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          platforms: ${{ env.IMAGE_PLATFORM }}
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ matrix.image }}:sha-${{ github.sha }}
+          platforms: linux/${{ matrix.arch }}
           build-args: |
             REVISION=${{ github.sha }}
           labels: |
@@ -92,21 +99,96 @@ jobs:
             org.opencontainers.image.title=answerable-${{ matrix.image }}
           provenance: mode=max
           sbom: true
-          cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
+
+      # The digest travels to the manifest job as the name of an empty file.
+      - name: Export the digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digest-${{ matrix.image }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  manifest:
+    name: Publish ${{ matrix.image }}
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [id, toolbox, admin-mcp, ops]
+    steps:
+      - name: Name the image and the tag
+        env:
+          NAME: ${{ matrix.image }}
+        run: |
+          echo "IMAGE=$REGISTRY/$NAME" >> "$GITHUB_ENV"
+          echo "TAG=sha-$GITHUB_SHA" >> "$GITHUB_ENV"
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: digest-${{ matrix.image }}-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/digests
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # One tag over both architectures' builds. The tag is created only when both exist.
+      - name: Create the manifest list
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          sources=()
+          for digest in *; do sources+=("$IMAGE@sha256:$digest"); done
+          if [ "${#sources[@]}" -ne 2 ]; then
+            echo "::error::expected a digest for amd64 and for arm64, found ${#sources[@]}"
+            exit 1
+          fi
+          docker buildx imagetools create -t "$IMAGE:$TAG" "${sources[@]}"
+
+      - name: Check the platforms and read the digest
+        id: index
+        run: |
+          platforms=$(docker buildx imagetools inspect "$IMAGE:$TAG" --format '{{json .Manifest}}' \
+            | jq -r '[.manifests[].platform | select(.os == "linux") | .architecture] | sort | join(",")')
+          if [ "$platforms" != "amd64,arm64" ]; then
+            echo "::error::$IMAGE:$TAG serves '$platforms', expected amd64,arm64"
+            exit 1
+          fi
+          echo "digest=$(docker buildx imagetools inspect "$IMAGE:$TAG" --format '{{.Manifest.Digest}}')" >> "$GITHUB_OUTPUT"
 
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
-      # Keyless: the signature names this workflow on main, which promote-production.yml checks before it deploys.
-      - name: Sign the image
+      # Keyless, on the manifest list's digest: the signature names this workflow on main, which
+      # promote-production.yml checks before it deploys.
+      - name: Sign the manifest list
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ matrix.image }}@${{ steps.build.outputs.digest }}
-        run: cosign sign --yes "$IMAGE"
+          DIGEST: ${{ steps.index.outputs.digest }}
+        run: cosign sign --yes "$IMAGE@$DIGEST"
 
   deploy:
     name: Deploy to staging
-    needs: [ci, images]
-    # A manual run skips ci and images; a failure of either stops the deploy.
+    needs: [ci, build, manifest]
+    # A manual run skips all three; a failure of any of them stops the deploy.
     if: ${{ github.ref == 'refs/heads/main' && !cancelled() && !failure() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
