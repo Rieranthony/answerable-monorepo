@@ -1,10 +1,10 @@
 locals {
   name = "answerable-${var.environment}-cluster"
 
-  # Marketplace applications, comma-separated, a leading "-" removing a default one. Civo installs Traefik by default,
-  # named Traefik-v2-nodeport in `civo kubernetes show` and in the Civo CLI's own removal example; ingress-nginx from
-  # the platform chart is the one controller (D22), so Traefik goes. metrics-server, also a default, stays: the
-  # HorizontalPodAutoscalers read it. Civo cannot change applications after creation.
+  # Marketplace applications, comma-separated, a leading "-" removing a default one. Civo installs its own Traefik by
+  # default, named Traefik-v2-nodeport in `civo kubernetes show` and in the Civo CLI's own removal example. The edge
+  # is the Traefik that charts/platform pins (D31), so Civo's copy goes and only one controller exists. metrics-server,
+  # also a default, stays: the HorizontalPodAutoscalers read it. Civo cannot change applications after creation.
   applications = "-Traefik-v2-nodeport"
 
   # Who may reach the Kubernetes API: the operators' addresses, plus the whole internet while api_open_to_internet
@@ -28,7 +28,7 @@ resource "civo_vpc_firewall" "this" {
     action     = "allow"
   }
 
-  # Kubernetes' NodePort range: the Civo load balancer forwards 443 to ingress-nginx's node port on every node.
+  # Kubernetes' NodePort range: the Civo load balancer forwards 443 to Traefik's node port on every node.
   ingress_rule {
     label      = "node-ports"
     protocol   = "tcp"
@@ -117,7 +117,7 @@ resource "civo_kubernetes_cluster" "this" {
   lifecycle {
     postcondition {
       condition     = !anytrue([for app in self.installed_applications : strcontains(lower(app.application), "traefik")])
-      error_message = "Civo installed Traefik despite the removal in `applications`; correct the application's name in modules/cluster/main.tf and recreate the cluster, or remove it with `civo kubernetes applications remove`."
+      error_message = "Civo installed its marketplace Traefik despite the removal in `applications` (the edge is charts/platform's own Traefik, D31); correct the application's name in modules/cluster/main.tf and recreate the cluster, or remove it with `civo kubernetes applications remove`."
     }
   }
 }

@@ -1,5 +1,5 @@
 output "firewall_id" {
-  description = "The load balancer firewall's ID, for the ingress-nginx Service's `kubernetes.civo.com/firewall-id` annotation."
+  description = "The load balancer firewall's ID, for the Traefik Service's `kubernetes.civo.com/firewall-id` annotation."
   value       = civo_vpc_firewall.this.id
 }
 

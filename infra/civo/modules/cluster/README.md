@@ -9,7 +9,7 @@ Civo clusters always have a public address. The firewall carries only the rules 
 | Rule | Protocol and port | From | Why | Source |
 | --- | --- | --- | --- | --- |
 | `kubernetes-api` | TCP 6443 | `allowed_api_cidrs`, plus `0.0.0.0/0` when `api_open_to_internet` is true (staging only) | The Kubernetes API | [k3s requirements](https://docs.k3s.io/installation/requirements#inbound-rules-for-k3s-nodes) |
-| `node-ports` | TCP 30000-32767 | The private network | The Civo load balancer forwards 443 to ingress-nginx's node port | [Kubernetes NodePort range](https://kubernetes.io/docs/concepts/services-networking/service/#type-nodeport); [Civo load balancers](https://www.civo.com/docs/networking/load-balancers/creating-load-balancers) |
+| `node-ports` | TCP 30000-32767 | The private network | The Civo load balancer forwards 443 to Traefik's node port | [Kubernetes NodePort range](https://kubernetes.io/docs/concepts/services-networking/service/#type-nodeport); [Civo load balancers](https://www.civo.com/docs/networking/load-balancers/creating-load-balancers) |
 | `kubelet` | TCP 10250 | The private network | The kubelet: metrics-server's scrapes, the API server's logs and exec | [k3s requirements](https://docs.k3s.io/installation/requirements#inbound-rules-for-k3s-nodes) |
 | `cilium-vxlan` | UDP 8472 | The private network | Cilium's VXLAN overlay, which carries pod-to-pod traffic between nodes | [Cilium firewall rules](https://docs.cilium.io/en/stable/operations/system_requirements/#firewall-rules) |
 | `cilium-health` | TCP 4240 | The private network | cilium-health's probes between nodes | [Cilium firewall rules](https://docs.cilium.io/en/stable/operations/system_requirements/#firewall-rules) |
