@@ -21,6 +21,13 @@ The [enterprise foundation](docs/05-id-enterprise-foundation.md) implementation 
 | `mcps/admin` | The admin MCP: a staff-only server that reads and changes organisations, domains, SSO providers, groups, access and staff roles in ID, and enables the Toolbox, each tool behind a role read live from ID and each change a prepared intent the person confirms | Local acceptance passes |
 | `packages/acceptance` | The acceptance kit and journeys: real ID, the official MCP OAuth client, a browser and ID's pages | Locally tested |
 | `scripts` | Repository scripts: `bun run mcp:new <name>` scaffolds an MCP server | Locally tested |
+| `infra/civo` | Terraform for the two Civo environments: network, cluster, PostgreSQL 17, firewalls, state bucket, the platform chart, the deployer and the Cloudflare zone | Validated and tested with mocked providers; not applied |
+| `charts/answerable` | The Helm chart of ID, the Toolbox and the admin MCP, with their migrations and the ops Jobs | Proved in the kind stack |
+| `charts/platform` | The Helm chart of the cluster's shared pieces: Traefik with the origin-pull TLS options, cert-manager and its issuers, the Grafana agent (off) | Proved in the kind stack |
+| `infra/k8s` | The kind stack (`infra/k8s/local`): both charts and the four images in a local cluster, `bun run infra:test`; and the chart tests | Locally tested |
+| `infra/ops` | The ops image: `bootstrap` (databases and logins) and `register` (the MCPs in ID), run as Kubernetes Jobs | Locally tested |
+| `infra/pipeline` | The scripts the deploy workflows call: `deploy`, `run-job`, `current-tag`, `smoke` | Locally tested |
+| `infra/setup` | The commands a person runs once per environment: `bun run setup <command>` | Locally tested |
 | `apps/community-mcp` | The tutor MCP (the Omni Accelerator community inside OmniChat)                                                                                                      | **Parked** until Answerable ID ships — its docs and Circle mocks stay in that folder, out of the plan                                                    |
 
 ## Reading order
@@ -33,6 +40,7 @@ The [enterprise foundation](docs/05-id-enterprise-foundation.md) implementation 
 | 4   | [`docs/03-answerable-id.md`](docs/03-answerable-id.md) — **the Answerable ID design (canonical)** — read in full  | 8 min |
 | 5   | [`docs/04-answerable-id-schema.md`](docs/04-answerable-id-schema.md) — implemented schema contract and invariants | 6 min |
 | 6   | [`docs/06-deploying-answerable-id.md`](docs/06-deploying-answerable-id.md) — what a production deployment needs and why   | 6 min |
+| 7   | [`docs/12-deployment.md`](docs/12-deployment.md) — where Answerable runs: Civo, Kubernetes, Cloudflare, the pipeline | 7 min |
 
 Current contracts describe implemented behaviour; historical reports retain implementation evidence. Open items use stable IDs such as `Q-PUBLISHER-VERIFICATION`.
 
@@ -59,9 +67,10 @@ bun dev
 | `toolbox`  | 47400     | The Toolbox MCP (`bun run toolbox:dev`)                       |
 | `e2e MCP`  | 47500     | The reference MCP (`bun run mcp:dev`); a scaffolded MCP uses 47510 |
 | `admin MCP` | 47520    | The admin MCP (`bun run admin:dev`)                           |
+| `kind stack` | 48443  | Traefik in the local cluster of `bun run infra:test`, with 47710 and 47700 below |
 | `postgres` | 47432     | `answerable_id`, plus `answerable_id_test` for the test suite; `answerable_toolbox` and `answerable_toolbox_test` for the Toolbox; `answerable_admin` and `answerable_admin_test` for the admin MCP; `answerable_mcp_postgres_test` for `packages/mcp-postgres` |
 
-The MCP acceptance (`bun run mcp:test:e2e`) owns 47532 (its own disposable PostgreSQL), 47600, 47602, 47603, 47604, 47605 and 47606 (the admin MCP), and never touches the normal ID database; run one acceptance at a time. `bun packages/acceptance/scripts/admin-lane.ts` keeps ID, the admin MCP and the Toolbox up on the same ports, with 47700 and 47701 for Claude Code's callbacks, for trying the onboarding story from Claude Code by hand ([Set up the admin MCP](apps/web/content/docs/admin/setup.mdx)); the admin journeys run the same story headlessly, and the lane cannot run beside the acceptance. Uncommon host ports so nothing clashes with other local projects. Answerable ID itself runs on the host at `http://localhost:47300`. Other commands: `bun run env:down` · `bun run env:reset` (wipes data) · `bun run test` (Answerable ID against Postgres, plus the web unit tests) · `bun run build` · `bun run lint`.
+The kind stack (`bun run infra:test`, cluster `answerable-local`, one per machine) owns `127.0.0.1:48443` (Traefik), `[::1]:48443` (the browser's edge), 47710 (the stand-in company directory) and 47700 (the OAuth callback), which the acceptance's lanes also use, so it runs on its own. The MCP acceptance (`bun run mcp:test:e2e`) owns 47532 (its own disposable PostgreSQL), 47600, 47602, 47603, 47604, 47605 and 47606 (the admin MCP), and never touches the normal ID database; run one acceptance at a time. `bun packages/acceptance/scripts/admin-lane.ts` keeps ID, the admin MCP and the Toolbox up on the same ports, with 47700 and 47701 for Claude Code's callbacks, for trying the onboarding story from Claude Code by hand ([Set up the admin MCP](apps/web/content/docs/admin/setup.mdx)); the admin journeys run the same story headlessly, and the lane cannot run beside the acceptance. Uncommon host ports so nothing clashes with other local projects. Answerable ID itself runs on the host at `http://localhost:47300`. Other commands: `bun run env:down` · `bun run env:reset` (wipes data) · `bun run test` (Answerable ID against Postgres, plus the web unit tests) · `bun run build` · `bun run lint`.
 
 The development-only [OAuth test](apps/web/README.md#local-oauth-test) lets the web app exercise ID as an independent OAuth client at `http://localhost:47100/oauth-test`. ID owns every authentication page at `http://localhost:47300`.
 
@@ -88,10 +97,14 @@ The development-only [OAuth test](apps/web/README.md#local-oauth-test) lets the 
 
 Create an MCP with `mcp:new` and [Build your first MCP](apps/web/content/docs/mcp/quickstart.mdx), and mount it in the Toolbox with [Add tools to the Toolbox](apps/web/content/docs/toolbox/add-tools.mdx); the [standard](apps/web/content/docs/mcp/standard.mdx) says which rules the SDK, the conformance kit and the Toolbox enforce. [Connect Claude Code](apps/web/content/docs/mcp/claude-code.mdx) covers a real host; [The admin MCP](apps/web/content/docs/admin/index.mdx) covers the server for Answerable staff. Decisions: [MCP foundation](docs/07-mcp-platform-draft.md), [the capability platform](docs/08-capability-platform.md) and [the admin MCP](docs/11-admin-mcp.md); results: [evidence](reports/mcp-foundation-evidence.md). Normal `bun dev` starts apps only.
 
+### Deploying
+
+[`docs/12-deployment.md`](docs/12-deployment.md) says what runs where and why: Civo London, one account per environment, one Helm chart on Civo Kubernetes, Civo Database PostgreSQL 17, Cloudflare in front, secrets encrypted with `sops`, a push to `main` deploying staging and one approved click deploying production. [`infra/README.md`](infra/README.md) is the runbook: first setup, every deploy, promotion, rollback, scaling, rotation, restore and break glass. Not yet: the first staging deployment. `bun run infra:check` (charts, Terraform, workflows; no cloud, no Docker) and `bun run infra:test` (the kind stack; Docker) are the local gates, and CI runs both.
+
 ### Repository principles
 
 - **Bun everywhere**, including production. Hono for HTTP. Postgres for all state, including sessions; Redis as a read cache later.
 - **Test-driven.** Every change starts with a failing test. CI enforces full line/function coverage for ID and runs the shared-package, browser and real-ID MCP checks.
 - **Admin API first.** Organisation, domain, group, client, resource, entitlement, and user changes go through typed Hono routes under `/api/admin`, documented with OpenAPI; routes call services and grouped query modules.
-- **No CDN or WAF** in front of our services for now; TLS terminates at the ingress.
+- **Cloudflare in front** of the deployed services, with Traefik verifying its origin pulls; no challenges and no caching where machines call ([`docs/12`](docs/12-deployment.md#network-and-ingress)).
 - **Better Auth is the base**, pinned per milestone; house-specific behaviour ships as custom plugins, never forks.

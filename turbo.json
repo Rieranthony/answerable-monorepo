@@ -33,7 +33,9 @@
         "../../reports/**/*.md",
         "../../apps/*/*.md",
         "../../packages/*/*.md",
-        "../../mcps/*/*.md"
+        "../../mcps/*/*.md",
+        "../../infra/**/*.md",
+        "../../charts/**/*.md"
       ],
       "outputs": ["coverage/**"]
     },
