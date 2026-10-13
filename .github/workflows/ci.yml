@@ -1,8 +1,13 @@
 name: CI
 
 on:
+  # A push to main is checked by the CI job of deploy-staging.yml, which calls this workflow, so that a
+  # push has one set of checks and the images are built only from a commit these checks passed.
   push:
+    branches-ignore:
+      - main
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read

@@ -1,0 +1,107 @@
+name: Set up pinned tools
+description: >-
+  Installs the named command-line tools on a Linux x86-64 runner from their official releases. Each download
+  is checked against a SHA-256 pinned in this file, so a changed release fails the job. To bump a tool, change
+  its version and its checksum together; the checksum comes from the release's own checksum file.
+
+inputs:
+  tools:
+    description: >-
+      Space-separated tools to install: sops, helm, kubectl, terraform, tflint, trivy, kubeconform, actionlint.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install the tools
+      shell: bash
+      env:
+        TOOLS: ${{ inputs.tools }}
+      run: |
+        set -euo pipefail
+
+        if [ "$(uname -s)-$(uname -m)" != "Linux-x86_64" ]; then
+          echo "::error::setup-tools installs Linux x86-64 binaries only; this runner is $(uname -s)-$(uname -m)"
+          exit 1
+        fi
+
+        bin="$RUNNER_TEMP/tools/bin"
+        downloads="$RUNNER_TEMP/tools/downloads"
+        mkdir -p "$bin" "$downloads"
+
+        # fetch <url> <sha256> -> prints the path of the verified download
+        fetch() {
+          local file
+          file="$downloads/$(basename "$1")"
+          curl --fail --silent --show-error --location --retry 3 --output "$file" "$1"
+          if ! echo "$2  $file" | sha256sum --check --status; then
+            echo "::error::checksum mismatch for $1"
+            exit 1
+          fi
+          echo "$file"
+        }
+
+        for tool in $TOOLS; do
+          case "$tool" in
+            sops)
+              file=$(fetch https://github.com/getsops/sops/releases/download/v3.13.3/sops-v3.13.3.linux.amd64 \
+                e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b)
+              install -m 0755 "$file" "$bin/sops"
+              ;;
+            helm)
+              file=$(fetch https://get.helm.sh/helm-v4.3.0-linux-amd64.tar.gz \
+                86584a54def73570558f66f5111cc53dfed56689637ae32c1201205d494f54fb)
+              tar -xzf "$file" -C "$downloads" linux-amd64/helm
+              install -m 0755 "$downloads/linux-amd64/helm" "$bin/helm"
+              ;;
+            kubectl)
+              file=$(fetch https://dl.k8s.io/release/v1.34.12/bin/linux/amd64/kubectl \
+                90b7b9058ffeb5c10710bb1c73f541eaf426fb1b4e87df435db669de9a2564a2)
+              install -m 0755 "$file" "$bin/kubectl"
+              ;;
+            terraform)
+              file=$(fetch https://releases.hashicorp.com/terraform/1.16.5/terraform_1.16.5_linux_amd64.zip \
+                2bc2fcfff033265c9e02ca0351f01794eb122f62a9b2a49a3294b9e49eaab5e4)
+              unzip -q -o "$file" terraform -d "$bin"
+              ;;
+            tflint)
+              file=$(fetch https://github.com/terraform-linters/tflint/releases/download/v0.64.0/tflint_linux_amd64.zip \
+                cca9d13e2e1d7a2c627af60ff899a3c9b74212899416aeb96ec764d2ef954537)
+              unzip -q -o "$file" tflint -d "$bin"
+              ;;
+            trivy)
+              file=$(fetch https://github.com/aquasecurity/trivy/releases/download/v0.75.0/trivy_0.75.0_Linux-64bit.tar.gz \
+                c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f)
+              tar -xzf "$file" -C "$bin" trivy
+              ;;
+            kubeconform)
+              file=$(fetch https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz \
+                9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883)
+              tar -xzf "$file" -C "$bin" kubeconform
+              ;;
+            actionlint)
+              file=$(fetch https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+                8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8)
+              tar -xzf "$file" -C "$bin" actionlint
+              ;;
+            *)
+              echo "::error::setup-tools does not know a tool called '$tool'"
+              exit 1
+              ;;
+          esac
+        done
+
+        echo "$bin" >> "$GITHUB_PATH"
+        export PATH="$bin:$PATH"
+        for tool in $TOOLS; do
+          case "$tool" in
+            sops) sops --disable-version-check --version ;;
+            helm) helm version --short ;;
+            kubectl) kubectl version --client ;;
+            terraform) terraform version ;;
+            tflint) tflint --version ;;
+            trivy) trivy --version ;;
+            kubeconform) kubeconform -v ;;
+            actionlint) actionlint -version ;;
+          esac
+        done

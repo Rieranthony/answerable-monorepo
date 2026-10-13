@@ -1,0 +1,19 @@
+{
+  "name": "@answerable/infra-pipeline",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src rehearsal --max-warnings 0",
+    "rehearse": "bun rehearsal/rehearse.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/bun": "1.3.1",
+    "eslint": "9.39.5",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.48.1"
+  }
+}

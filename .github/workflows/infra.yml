@@ -1,0 +1,201 @@
+name: Infra
+
+# Checks on every change to the infrastructure code, a Terraform plan of staging on pull requests, and the apply of
+# staging when the change lands on main. Production applies only inside promote-production.yml.
+# Which secrets the infra-staging environment needs: infra/pipeline/README.md.
+
+on:
+  pull_request:
+    paths:
+      - infra/**
+      - charts/**
+      - .github/workflows/infra.yml
+      - .github/actions/**
+  push:
+    branches: [main]
+    paths:
+      - infra/**
+      - charts/**
+      - .github/workflows/infra.yml
+      - .github/actions/**
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.1
+
+      - uses: ./.github/actions/setup-tools
+        with:
+          tools: terraform helm kubeconform tflint trivy actionlint
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check the infrastructure code
+        run: bun run infra:check
+
+  plan:
+    name: Plan staging
+    needs: check
+    # A pull request from a fork gets no secrets, and no plan.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: infra-staging
+    # Planning a newer commit makes the plan of an older one useless.
+    concurrency:
+      group: infra-plan-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      pull-requests: write
+    defaults:
+      run:
+        shell: bash
+        working-directory: infra/civo/envs/staging
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-tools
+        with:
+          tools: terraform
+
+      - name: Terraform init
+        env:
+          TF_IN_AUTOMATION: "1"
+          CIVO_TOKEN: ${{ secrets.CIVO_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # Only when the state lives in an S3-compatible object store (Civo's) that the provider token cannot open.
+          AWS_ACCESS_KEY_ID: ${{ secrets.STATE_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.STATE_SECRET_ACCESS_KEY }}
+        run: terraform init -input=false
+
+      # -lock=false: a plan only reads, and a cancelled plan must not leave the state locked for the apply.
+      # Exit code 2 means the plan has changes, which is not a failure. Terraform masks sensitive values itself.
+      - name: Terraform plan
+        id: plan
+        env:
+          TF_IN_AUTOMATION: "1"
+          CIVO_TOKEN: ${{ secrets.CIVO_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # Only when the state lives in an S3-compatible object store (Civo's) that the provider token cannot open.
+          AWS_ACCESS_KEY_ID: ${{ secrets.STATE_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.STATE_SECRET_ACCESS_KEY }}
+        run: |
+          status=0
+          terraform plan -input=false -lock=false -no-color -detailed-exitcode -out=tfplan > plan.txt 2>&1 || status=$?
+          cat plan.txt
+          if [ "$status" -eq 1 ]; then exit 1; fi
+          terraform show -no-color tfplan > plan-full.txt
+          summary=$(grep -E '^(Plan:|No changes\.)' plan.txt | tail -n 1 || true)
+          echo "summary=${summary:-See the plan.}" >> "$GITHUB_OUTPUT"
+
+      - name: Comment the plan on the pull request
+        if: always() && steps.plan.outcome != 'skipped'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          OUTCOME: ${{ steps.plan.outcome }}
+          SUMMARY: ${{ steps.plan.outputs.summary }}
+        with:
+          script: |
+            const fs = require('fs')
+            const marker = '<!-- terraform-plan:staging -->'
+            const failed = process.env.OUTCOME !== 'success'
+            const file = failed ? 'plan.txt' : 'plan-full.txt'
+            const limit = 60000
+            let text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : 'No output.'
+            if (text.length > limit)
+              text = text.slice(0, limit) + '\n\n... cut here; the whole plan is in the workflow run.'
+            const heading = failed
+              ? 'The plan failed.'
+              : process.env.SUMMARY
+            const body = [
+              marker,
+              '### Terraform plan: staging',
+              '',
+              heading,
+              '',
+              '<details><summary>The plan</summary>',
+              '',
+              '```text',
+              text,
+              '```',
+              '',
+              '</details>',
+            ].join('\n')
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              ...context.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            })
+            const existing = comments.find((comment) => comment.body && comment.body.startsWith(marker))
+            if (existing)
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body })
+            else
+              await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body })
+
+  apply-staging:
+    name: Apply staging
+    needs: check
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: infra-staging
+    # Never cancelled halfway: a cancelled apply leaves the state locked and the infrastructure half changed.
+    concurrency:
+      group: infra-apply-staging
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+        working-directory: infra/civo/envs/staging
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-tools
+        with:
+          tools: terraform
+
+      - name: Terraform init
+        env:
+          TF_IN_AUTOMATION: "1"
+          CIVO_TOKEN: ${{ secrets.CIVO_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # Only when the state lives in an S3-compatible object store (Civo's) that the provider token cannot open.
+          AWS_ACCESS_KEY_ID: ${{ secrets.STATE_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.STATE_SECRET_ACCESS_KEY }}
+        run: terraform init -input=false
+
+      - name: Terraform apply
+        env:
+          TF_IN_AUTOMATION: "1"
+          CIVO_TOKEN: ${{ secrets.CIVO_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # Only when the state lives in an S3-compatible object store (Civo's) that the provider token cannot open.
+          AWS_ACCESS_KEY_ID: ${{ secrets.STATE_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.STATE_SECRET_ACCESS_KEY }}
+        run: terraform apply -input=false -auto-approve
