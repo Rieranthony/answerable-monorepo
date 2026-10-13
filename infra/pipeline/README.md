@@ -83,6 +83,10 @@ cosign verify ghcr.io/rieranthony/answerable/id:sha-<40 hex> \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
+## Rehearse against a real cluster
+
+The unit tests use a fake runner. `bun run --filter @answerable/infra-pipeline rehearse` runs the same scripts with the real `kubectl`, `helm` and `sops` against a throwaway `kind` cluster, signed in with a namespace-scoped ServiceAccount token. It deploys a stand-in chart, runs `register`, breaks a migration on purpose, and checks the token's reach. It needs Docker, `kind`, `kubectl`, `helm`, `sops` and `age-keygen`, takes two to three minutes, uses its own kubeconfig, and deletes its cluster. Add `-- --secrets list` to encrypt a `kind: List` file instead of several documents. It proves the scripts and the tools, not the chart.
+
 ## What the scripts assume of the chart
 
 - Release `answerable` of `charts/answerable` in namespace `answerable`, which Terraform creates (the deployer cannot create namespaces). Values overlays at `charts/answerable/values-civo-<environment>.yaml`.
