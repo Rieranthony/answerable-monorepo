@@ -30,9 +30,17 @@ app.kubernetes.io/managed-by: {{ .root.Release.Service }}
 helm.sh/chart: {{ printf "%s-%s" .root.Chart.Name .root.Chart.Version }}
 {{- end -}}
 
-{{/* An image of ours at the release's tag. */}}
+{{/* An image of ours: by digest when one is given, else at the release's tag. */}}
 {{- define "answerable.image" -}}
-{{ .root.Values.image.registry }}/{{ .name }}:{{ .root.Values.image.tag }}
+{{- $image := index .root.Values.images .name -}}
+{{- with $image.digest -}}
+{{- if not (regexMatch "^sha256:[0-9a-f]{64}$" .) -}}
+{{- fail (printf "images.%s.digest must be sha256: and 64 lower-case hex digits" $.name) -}}
+{{- end -}}
+{{ $image.repository }}@{{ . }}
+{{- else -}}
+{{ $image.repository }}:{{ $.root.Values.image.tag }}
+{{- end -}}
 {{- end -}}
 
 {{/* The restricted Pod Security Standard, for every pod: non-root as the images' bun user, the runtime's seccomp profile. */}}

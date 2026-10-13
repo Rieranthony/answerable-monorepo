@@ -202,8 +202,25 @@ describe("charts/answerable", () => {
   test("the ops Jobs render only when switched on and an ops image is named", () => {
     const off = render("answerable", [], { "image.tag": tag })
     expect(off.filter(manifest => manifest.metadata.name.startsWith("ops-"))).toEqual([])
-    const noImage = render("answerable", [], { "image.tag": tag, "ops.bootstrap": "true", "ops.register": "true", "ops.image.repository": "" })
+    const noImage = render("answerable", [], { "image.tag": tag, "ops.bootstrap": "true", "ops.register": "true", "images.ops.repository": "" })
     expect(noImage.filter(manifest => manifest.kind === "Job" && manifest.metadata.name.startsWith("ops-"))).toEqual([])
+  })
+
+  test("an image with a digest runs by digest, the exact bytes verified; one without runs by the shared tag", () => {
+    const digests = { id: "a".repeat(64), toolbox: "b".repeat(64), "admin-mcp": "c".repeat(64), ops: "d".repeat(64) }
+    const set = Object.fromEntries([["image.tag", tag], ["ops.bootstrap", "true"], ["ops.register", "true"], ...Object.entries(digests).map(([image, hex]) => [`images.${image}.digest`, `sha256:${hex}`])])
+    const pinned = render("answerable", ["values-civo-production.yaml"], set)
+    const images = new Set(workloads(pinned).flatMap(workload => containersOf(workload).map((container: { image: string }) => container.image)))
+    expect(images).toEqual(new Set(Object.entries(digests).map(([image, hex]) => `ghcr.io/rieranthony/answerable/${image}@sha256:${hex}`)))
+    // Only the Toolbox pinned: the others keep the tag.
+    const mixed = render("answerable", ["values-civo-production.yaml"], { "image.tag": tag, "images.toolbox.digest": `sha256:${digests.toolbox}` })
+    expect(containersOf(named(mixed, "Deployment", "toolbox")!)[0].image).toBe(`ghcr.io/rieranthony/answerable/toolbox@sha256:${digests.toolbox}`)
+    expect(containersOf(named(mixed, "Deployment", "id")!)[0].image).toBe(`ghcr.io/rieranthony/answerable/id:${tag}`)
+    expect(containersOf(named(mixed, "Job", "toolbox-migrate")!)[0].image).toBe(`ghcr.io/rieranthony/answerable/toolbox@sha256:${digests.toolbox}`)
+    // A digest that is not sha256 and 64 hex digits is refused, rather than deployed as something else.
+    const bad = run(templateArguments("answerable", [], { "image.tag": tag, "images.id.digest": "sha256:abc" }))
+    expect(bad.exitCode).not.toBe(0)
+    expect(bad.stderr).toContain("images.id.digest")
   })
 
   test("without an image tag the images say so, rather than falling back to a mutable tag", () => {

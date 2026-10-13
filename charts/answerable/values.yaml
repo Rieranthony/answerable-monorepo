@@ -4,10 +4,27 @@
 # file and the postgres-ca ConfigMap, and the ops Jobs write the generated Secrets.
 
 image:
-  registry: ghcr.io/rieranthony/answerable
-  # sha-<40 hex> from the pipeline, local on a laptop. "unset" makes a forgotten tag fail visibly rather than run a mutable one.
+  # sha-<40 hex> from the pipeline, local on a laptop: every image's tag unless it has a digest, and the release's version
+  # label. "unset" makes a forgotten tag fail visibly rather than run a mutable one.
   tag: unset
   pullPolicy: IfNotPresent
+
+# Each image's repository and, optionally, its digest (sha256:<64 hex>). With a digest the image runs as
+# <repository>@<digest>, the exact bytes the pipeline verified; without, as <repository>:<image.tag>.
+images:
+  id:
+    repository: ghcr.io/rieranthony/answerable/id
+    digest: ""
+  toolbox:
+    repository: ghcr.io/rieranthony/answerable/toolbox
+    digest: ""
+  admin-mcp:
+    repository: ghcr.io/rieranthony/answerable/admin-mcp
+    digest: ""
+  # The ops Jobs render only while this names a repository.
+  ops:
+    repository: ghcr.io/rieranthony/answerable/ops
+    digest: ""
 
 # The public origins are https://<hostname>, with :<publicPort> when it is not 443 (the kind stack's 48443).
 hostnames:
@@ -103,8 +120,6 @@ migrations:
 # The ops image's Jobs (brief B3): bootstrap creates the databases' logins and writes their Secrets before the
 # migrations; register creates the two machine clients in ID after the release. The pipeline switches one on per run.
 ops:
-  image:
-    repository: ghcr.io/rieranthony/answerable/ops
   bootstrap: false
   register: false
   resources:

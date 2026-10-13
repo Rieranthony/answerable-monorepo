@@ -3,7 +3,7 @@ The ops image's Jobs (brief B3), each switched on for one upgrade by the pipelin
 creates the logins the migrations use and writes their Secrets), register after the release (it needs ID up). Their
 ServiceAccount may write Secrets in this namespace and nothing else. Rendered only when an ops image is named.
 */ -}}
-{{- if and .Values.ops.image.repository (or .Values.ops.bootstrap .Values.ops.register) }}
+{{- if and .Values.images.ops.repository (or .Values.ops.bootstrap .Values.ops.register) }}
 {{- $scope := dict "root" . "component" "ops" }}
 {{- $hook := ternary "pre-install,pre-upgrade" "post-install,post-upgrade" .Values.ops.bootstrap }}
 {{- if and .Values.ops.bootstrap .Values.ops.register }}
@@ -63,7 +63,7 @@ spec:
       {{- include "answerable.podCommon" $ | nindent 6 }}
       containers:
         - name: ops
-          image: {{ $.Values.ops.image.repository }}:{{ $.Values.image.tag }}
+          image: {{ include "answerable.image" (dict "root" $ "name" "ops") }}
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
           args: [{{ $job }}]
           env:

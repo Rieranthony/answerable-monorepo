@@ -88,7 +88,7 @@ spec:
   egress:
     {{- include "answerable.egressDns" . | nindent 4 }}
     {{- include "answerable.egressDatabase" . | nindent 4 }}
-{{- if and .Values.ops.image.repository (or .Values.ops.bootstrap .Values.ops.register) }}
+{{- if and .Values.images.ops.repository (or .Values.ops.bootstrap .Values.ops.register) }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

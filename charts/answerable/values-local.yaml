@@ -56,9 +56,9 @@ adminMcp:
   replicas: 1
   autoscaling: { enabled: false }
 
-# No ops image yet (brief B3).
-ops:
-  image:
+# No ops image yet (brief B3), so no ops Job. The images run by the local tag, never by digest.
+images:
+  ops:
     repository: ""
 
 networkPolicy:
