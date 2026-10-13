@@ -1,7 +1,7 @@
 {{/*
 One server: its ServiceAccount, Deployment, Service, Ingress, HorizontalPodAutoscaler and PodDisruptionBudget.
 Takes root, component (the resource name), image, port, values (its block of values), host, env (rendered variables),
-readiness (the readiness path), liveness (an HTTP path, or empty for a TCP check) and streams (true for an MCP endpoint).
+readiness (the readiness path) and liveness (an HTTP path, or empty for a TCP check). Traefik streams responses as they come, which the MCP endpoints' server-sent events need.
 */}}
 {{- define "answerable.server" -}}
 {{- $root := .root -}}
@@ -121,14 +121,10 @@ metadata:
     {{- include "answerable.labels" $scope | nindent 4 }}
   annotations:
     cert-manager.io/cluster-issuer: {{ $root.Values.ingress.clusterIssuer }}
-    # Only Cloudflare holds a client certificate this CA signed (Authenticated Origin Pulls, D19).
-    nginx.ingress.kubernetes.io/auth-tls-secret: {{ $root.Release.Namespace }}/{{ $root.Values.ingress.originPullCaSecret }}
-    nginx.ingress.kubernetes.io/auth-tls-verify-client: "on"
-    nginx.ingress.kubernetes.io/auth-tls-verify-depth: "1"
-    {{- if .streams }}
-    # MCP responses stream as server-sent events: pass each event on as it comes.
-    nginx.ingress.kubernetes.io/proxy-buffering: "off"
-    {{- end }}
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    # Only Cloudflare holds a client certificate the origin-pull CA signed (Authenticated Origin Pulls, D19).
+    traefik.ingress.kubernetes.io/router.tls.options: {{ $root.Release.Namespace }}-{{ $root.Values.ingress.tlsOption }}@kubernetescrd
 spec:
   ingressClassName: {{ $root.Values.ingress.className }}
   tls:

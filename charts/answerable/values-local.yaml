@@ -1,6 +1,6 @@
 # The kind stack (infra/k8s/local, bun run infra:test): the images built on this machine, production mode, behind
-# ingress-nginx on https://<name>.127-0-0-1.sslip.io:48443. Public DNS resolves those names to 127.0.0.1 on the host,
-# where kind publishes the ingress; inside the cluster /etc/hosts sends them to the stand-in edge (hostAliases below).
+# Traefik on https://<name>.127-0-0-1.sslip.io:48443. Public DNS resolves those names to 127.0.0.1 on the host, where
+# kind publishes Traefik's port; inside the cluster /etc/hosts sends them to the stand-in edge (hostAliases below).
 
 image:
   tag: local
@@ -16,9 +16,9 @@ ingress:
   # The stack's own certificate authority (charts/platform, values-local.yaml).
   clusterIssuer: local
 
-# Cloudflare's stand-in: an nginx beside ingress-nginx in its pod (infra/k8s/local/edge.yaml), which presents the
-# origin-pull certificate for pods that call the public hostnames and reaches ingress-nginx from 127.0.0.1. The test
-# itself plays a visitor and connects straight to ingress-nginx from the Docker network's gateway, which is not trusted.
+# Cloudflare's stand-in: an nginx beside Traefik in its pod (infra/k8s/local/edge.yaml), which presents the origin-pull
+# certificate for pods that call the public hostnames and reaches Traefik from 127.0.0.1. The test itself plays a visitor
+# and connects straight to Traefik from the Docker network's gateway, which is not trusted.
 trustedProxyCidrs:
   - 127.0.0.1/32
 
@@ -64,13 +64,12 @@ networkPolicy:
       podSelector:
         matchLabels:
           app.kubernetes.io/name: postgres
-  # HTTPS to the public hostnames goes to the stand-in edge in ingress-nginx's pod.
+  # HTTPS to the public hostnames goes to the stand-in edge in Traefik's pod.
   https:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: platform
       podSelector:
         matchLabels:
-          app.kubernetes.io/name: ingress-nginx
-          app.kubernetes.io/component: controller
+          app.kubernetes.io/name: traefik
   httpsPorts: [48444]

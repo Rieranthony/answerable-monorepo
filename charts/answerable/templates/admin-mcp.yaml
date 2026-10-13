@@ -23,6 +23,5 @@
   "host" .Values.hostnames.adminMcp
   "env" (include "answerable.adminMcpEnv" .)
   "readiness" "/health"
-  "liveness" ""
-  "streams" true) }}
+  "liveness" "") }}
 {{- end }}

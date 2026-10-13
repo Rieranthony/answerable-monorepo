@@ -1,5 +1,5 @@
 {{- /*
-Nothing moves in this namespace unless a policy below allows it. The servers take connections only from ingress-nginx;
+Nothing moves in this namespace unless a policy below allows it. The servers take connections only from Traefik;
 every pod may resolve names; the servers and the Jobs reach the database; the servers and the ops Jobs reach HTTPS
 outside the private ranges (ID through Cloudflare, the identity providers); the ops Jobs reach the Kubernetes API.
 */ -}}

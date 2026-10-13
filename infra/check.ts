@@ -138,8 +138,8 @@ async function helmSteps() {
       readFileSync(join(chart, "Chart.yaml"), "utf8"),
     ) as { dependencies?: { name: string; repository: string }[] }
     if (declared.dependencies?.length) {
-      // `helm dependency build` resolves an HTTPS repository (ingress-nginx publishes no OCI chart) only once it is
-      // added; OCI ones need nothing. They are added to a repository list of this run's own, never the user's.
+      // `helm dependency build` resolves an HTTPS repository only once it is added; an OCI one needs nothing. Today every
+      // dependency is OCI; an HTTPS one would be added to a repository list of this run's own, never the user's.
       for (const dependency of declared.dependencies)
         if (dependency.repository.startsWith("https://"))
           await run(
@@ -265,9 +265,9 @@ const steps: { name: string; run: () => Promise<void> | void }[] = [
           join(infra, ".trivyignore"),
           "--skip-dirs",
           "**/.terraform",
-          // The dependency archives `helm dependency build` downloads are upstream charts (ingress-nginx,
-          // cert-manager, the Grafana agent), not ours: managing Secrets and webhooks is their job, and their
-          // findings are not ours to fix. Our own templates are scanned, and rendered and validated by the Helm step.
+          // The dependency archives `helm dependency build` downloads are upstream charts (Traefik, cert-manager,
+          // the Grafana agent), not ours: managing Secrets and webhooks is their job, and their findings are not
+          // ours to fix. Our own templates are scanned, and rendered and validated by the Helm step.
           "--skip-dirs",
           "charts/*/charts",
           show(target),

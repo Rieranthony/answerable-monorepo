@@ -156,7 +156,10 @@ export async function startStack() {
     })
     const client = await readSecret("platform", "edge-origin-pull")
     const edgeServer = await readSecret("platform", "edge-tls")
-    return { kubectl, helm, kubeconfig, readSecret, secrets, stop, stackCa, databaseCa, originPullCert: { cert: client["tls.crt"], key: client["tls.key"] }, otherCert: { cert: edgeServer["tls.crt"], key: edgeServer["tls.key"] } }
+    // The address the laptop's requests reach Traefik from: the IPv4 gateway of kind's Docker network.
+    const gateways = (await exec(["docker", "network", "inspect", "kind", "--format", "{{range .IPAM.Config}}{{.Gateway}} {{end}}"])).stdout.trim().split(/\s+/)
+    const dockerGateway = gateways.find(address => /^\d+\.\d+\.\d+\.\d+$/.test(address))
+    return { kubectl, helm, kubeconfig, readSecret, secrets, stop, stackCa, dockerGateway, databaseCa, originPullCert: { cert: client["tls.crt"], key: client["tls.key"] }, otherCert: { cert: edgeServer["tls.crt"], key: edgeServer["tls.key"] } }
   } catch (error) {
     if (created) {
       // Show what the cluster says before it goes.

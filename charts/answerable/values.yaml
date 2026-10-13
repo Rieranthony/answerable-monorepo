@@ -34,11 +34,13 @@ hostnames:
 publicPort: ""
 
 ingress:
-  className: nginx
+  # Traefik's IngressClass (charts/platform, D31).
+  className: traefik
   # The cert-manager ClusterIssuer that issues each hostname's certificate (charts/platform).
   clusterIssuer: letsencrypt
-  # The Secret, in this namespace, whose ca.crt verifies Cloudflare's origin-pull client certificate (D19).
-  originPullCaSecret: cloudflare-origin-pull-ca
+  # The Traefik TLSOption, in this namespace, that requires Cloudflare's origin-pull client certificate (D19); charts/platform
+  # renders it beside the Secret cloudflare-origin-pull-ca.
+  tlsOption: origin-pull
 
 database:
   # The ConfigMap, applied by the deploy, whose ca.pem verifies the database's certificate: /etc/ssl/db/ca.pem, the
@@ -124,12 +126,11 @@ ops:
     limits: { memory: 256Mi }
 
 networkPolicy:
-  # The pods allowed to reach the services: ingress-nginx's controller.
+  # The pods allowed to reach the services: Traefik's.
   ingressController:
     namespace: platform
     podLabels:
-      app.kubernetes.io/name: ingress-nginx
-      app.kubernetes.io/component: controller
+      app.kubernetes.io/name: traefik
   # Where the database is, reached on databasePort.
   database: []
   databasePort: 5432

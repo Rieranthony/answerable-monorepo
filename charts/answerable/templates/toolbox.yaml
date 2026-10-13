@@ -21,6 +21,5 @@
   "host" .Values.hostnames.toolbox
   "env" (include "answerable.toolboxEnv" .)
   "readiness" "/health"
-  "liveness" ""
-  "streams" true) }}
+  "liveness" "") }}
 {{- end }}

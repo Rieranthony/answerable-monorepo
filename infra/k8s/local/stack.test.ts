@@ -24,7 +24,7 @@ afterAll(async () => {
   console.log(`\nThe stack, step by step (seconds): ${timings.map(([name, seconds]) => `${name} ${seconds}`).join("; ")}; everything ${total}`)
 })
 
-/** A request through ingress-nginx, as Cloudflare makes it: the origin-pull client certificate, the stack's CA trusted. */
+/** A request through Traefik, as Cloudflare makes it: the origin-pull client certificate, the stack's CA trusted. */
 function viaIngress(url: string, init: RequestInit = {}, certificate: { cert: string; key: string } | null = stack!.originPullCert) {
   return fetch(url, { ...init, tls: { ca: stack!.stackCa, ...(certificate ?? {}) }, redirect: "manual" })
 }
@@ -50,7 +50,7 @@ describe("the images", () => {
   })
 })
 
-describe("through ingress-nginx, with Cloudflare's origin-pull certificate", () => {
+describe("through Traefik, with Cloudflare's origin-pull certificate", () => {
   test("ID answers health, readiness, discovery naming its issuer and its signing keys, and serves /auth to a visitor", async () => {
     const issuer = origin(hosts.id)
     expect(await (await viaIngress(`${issuer}/healthz`)).json()).toEqual({ status: "ok" })
@@ -74,28 +74,35 @@ describe("through ingress-nginx, with Cloudflare's origin-pull certificate", () 
     expect(metadata).toMatchObject({ resource: `${toolbox}/mcp`, authorization_servers: [origin(hosts.id)] })
   })
 
-  test("plain HTTP is redirected to HTTPS and serves nothing", async () => {
-    const response = await fetch(`http://${hosts.id}:48080/healthz`, { redirect: "manual" })
-    expect(response.status).toBe(308)
-    expect(response.headers.get("location")).toBe(`https://${hosts.id}/healthz`)
-  })
 })
 
+/** A request from a fresh process, which has no TLS session of this one's to resume. */
+async function freshRequest(url: string, certificate: { cert: string; key: string } | null) {
+  const script = `try { const r = await fetch(process.env.URL, { tls: JSON.parse(process.env.TLS) }); console.log(JSON.stringify({ status: r.status })) } catch (error) { console.log(JSON.stringify({ error: error.code ?? error.message })) }`
+  const tls = JSON.stringify({ ca: stack!.stackCa, ...(certificate ?? {}) })
+  const { stdout } = await exec([process.execPath, "-e", script], { env: { ...process.env, URL: url, TLS: tls } })
+  return JSON.parse(stdout.trim()) as { status?: number; error?: string }
+}
+
 describe("the edge's checks", () => {
-  test("ingress-nginx refuses a request without a client certificate, or with one Cloudflare's CA did not sign, with 400", async () => {
-    // Each from a fresh process: this one's fetch resumes the TLS sessions its earlier requests opened with the
-    // origin-pull certificate, and nginx accepts a resumed session as verified.
+  test("Traefik refuses the TLS handshake without a client certificate, or with one Cloudflare's CA did not sign", async () => {
+    // Each from a fresh process: this one's fetch would resume the TLS sessions its earlier requests opened with the
+    // origin-pull certificate, which a server accepts as verified.
+    expect(await freshRequest(`${origin(hosts.id)}/healthz`, stack!.originPullCert)).toEqual({ status: 200 })
     for (const certificate of [null, stack!.otherCert]) {
-      const script = `const r = await fetch(process.env.URL, { tls: JSON.parse(process.env.TLS) }); console.log(JSON.stringify({ status: r.status, body: await r.text() }))`
-      const tls = JSON.stringify({ ca: stack!.stackCa, ...(certificate ?? {}) })
-      const { stdout } = await exec([process.execPath, "-e", script], { env: { ...process.env, URL: `${origin(hosts.id)}/healthz`, TLS: tls } })
-      const response = JSON.parse(stdout.trim()) as { status: number; body: string }
-      expect(response.status).toBe(400)
-      expect(response.body).toContain("SSL certificate")
+      const outcome = await freshRequest(`${origin(hosts.id)}/healthz`, certificate)
+      expect(outcome.status).toBeUndefined()
+      expect(outcome.error).toEqual(expect.any(String))
     }
   })
 
-  test("a forged X-Forwarded-For through the ingress does not change the address ID records", async () => {
+  test("a server name with no certificate is refused even with the client certificate (strict SNI)", async () => {
+    const outcome = await freshRequest(`https://unknown.127-0-0-1.sslip.io:48443/healthz`, stack!.originPullCert)
+    expect(outcome.status).toBeUndefined()
+    expect(outcome.error).toEqual(expect.any(String))
+  })
+
+  test("a forged X-Forwarded-For through Traefik does not change the address ID records: Traefik drops it and appends its peer", async () => {
     const issuer = origin(hosts.id)
     const created: Record<string, string> = {}
     for (const [label, forged] of [["plain", undefined], ["forged", "203.0.113.66"]] as const) {
@@ -110,14 +117,29 @@ describe("the edge's checks", () => {
     }
     const events = await (await viaIngress(`${issuer}/api/admin/v1/audit-events?limit=200`, { headers: { authorization: `Bearer ${stack!.secrets.rootAdminSecret}` } })).json() as { items: { requestId: string | null; ip: string | null }[] }
     const ipOf = (requestId: string) => events.items.find(event => event.requestId === requestId)?.ip
-    expect(ipOf(created.plain!)).toMatch(/^\d+\.\d+\.\d+\.\d+$/)
-    expect(ipOf(created.forged!)).toBe(ipOf(created.plain!))
-    expect(ipOf(created.forged!)).not.toBe("203.0.113.66")
+    // The laptop reaches Traefik from the Docker network's gateway, the peer Traefik appends.
+    expect(ipOf(created.plain!)).toBe(stack!.dockerGateway)
+    expect(ipOf(created.forged!)).toBe(stack!.dockerGateway)
+  })
+
+  test("through the edge, a trusted hop, Traefik keeps X-Forwarded-For and ID records the calling pod's own address", async () => {
+    const requestId = `infra-stack-pod-${Date.now()}`
+    const result = await inPod("toolbox", "/app/mcps/toolbox", `
+      const response = await fetch(process.env.TOOLBOX_ID_ISSUER + "/api/admin/v1/organizations", {
+        method: "POST",
+        headers: { authorization: "Bearer " + ${JSON.stringify(stack!.secrets.rootAdminSecret)}, "content-type": "application/json", "idempotency-key": ${JSON.stringify(requestId)}, "x-request-id": ${JSON.stringify(requestId)} },
+        body: JSON.stringify({ slug: "stack-from-pod", name: "Stack from a pod" }),
+      })
+      console.log(JSON.stringify({ status: response.status }))`)
+    expect(result.status).toBeLessThan(300)
+    const { stdout } = await stack!.kubectl(["get", "pods", "-n", "answerable", "-l", "app.kubernetes.io/component=toolbox", "-o", "jsonpath={.items[0].status.podIP}"])
+    const events = await (await viaIngress(`${origin(hosts.id)}/api/admin/v1/audit-events?limit=200`, { headers: { authorization: `Bearer ${stack!.secrets.rootAdminSecret}` } })).json() as { items: { requestId: string | null; ip: string | null }[] }
+    expect(events.items.find(event => event.requestId === requestId)?.ip).toBe(stdout.trim())
   })
 })
 
 describe("inside the cluster", () => {
-  test("ID refuses /auth to a caller that bypasses the ingress, and still answers health", async () => {
+  test("ID refuses /auth to a caller that bypasses Traefik, and still answers health", async () => {
     const forward = Bun.spawn(["kubectl", "port-forward", "-n", "answerable", "svc/id", "47399:47300"], { env: { ...process.env, KUBECONFIG: stackKubeconfig() }, stdout: "pipe", stderr: "pipe" })
     try {
       const reader = forward.stdout.getReader()
@@ -143,7 +165,7 @@ describe("inside the cluster", () => {
     expect(result.tokenStatus).toBe(401)
   })
 
-  test("NetworkPolicies admit only ingress-nginx to ID: the Toolbox cannot call ID's pods directly", async () => {
+  test("NetworkPolicies admit only Traefik to ID: the Toolbox cannot call ID's pods directly", async () => {
     const result = await inPod("toolbox", "/app/mcps/toolbox", `
       const outcome = await fetch("http://id.answerable.svc.cluster.local:47300/healthz", { signal: AbortSignal.timeout(4000) }).then(r => "answered " + r.status, e => "blocked: " + e.name)
       console.log(JSON.stringify({ outcome }))`)
@@ -211,6 +233,48 @@ describe("inside the cluster", () => {
     const jobs = (JSON.parse(stdout) as { items: { metadata: { name: string }; status: { succeeded?: number } }[] }).items
     for (const name of ["id-migrate", "toolbox-migrate", "admin-migrate"]) expect(jobs.find(job => job.metadata.name === name)?.status.succeeded, name).toBe(1)
   })
+})
+
+// Last, because it changes the cluster and restores it: each of the two TLS options alone demands Cloudflare's
+// certificate, so a lost reference or a lost default never opens a host. Traefik takes a few seconds to reload, so each
+// step waits until a certificate-less request gives the outcome it must, and a step that opens the host first proves the
+// reload happened.
+describe("the edge fails closed", () => {
+  const issuer = () => `${origin(hosts.id)}/healthz`
+  const withoutCertificate = async () => (await freshRequest(issuer(), null)).status === 200 ? "open" : "refused"
+  async function until(state: "open" | "refused") {
+    for (const deadline = Date.now() + 60_000; Date.now() < deadline; await Bun.sleep(1000)) if (await withoutCertificate() === state) return state
+    return withoutCertificate()
+  }
+  const kubectl = (args: string[]) => stack!.kubectl(args)
+  const defaultOption = () => kubectl(["get", "tlsoption", "-n", "answerable", "default", "-o", "json"])
+  const reference = "traefik.ingress.kubernetes.io/router.tls.options"
+
+  test("the default option alone refuses a host whose Ingress lost its reference, and the reference alone refuses without the default", async () => {
+    const saved = JSON.parse((await defaultOption()).stdout)
+    // Helm's ownership annotations come back with it, so the platform release still owns the option.
+    const restore = { apiVersion: saved.apiVersion, kind: saved.kind, metadata: { name: saved.metadata.name, namespace: saved.metadata.namespace, labels: saved.metadata.labels, annotations: saved.metadata.annotations }, spec: saved.spec }
+    try {
+      // Neither: the host is open, which shows the changes reached Traefik.
+      await kubectl(["delete", "tlsoption", "-n", "answerable", "default"])
+      await kubectl(["annotate", "ingress", "-n", "answerable", "id", `${reference}-`])
+      expect(await until("open")).toBe("open")
+      // The default alone.
+      await stack!.kubectl(["apply", "-f", "-"], { stdin: JSON.stringify(restore) })
+      expect(await until("refused")).toBe("refused")
+      expect(await freshRequest(issuer(), stack!.originPullCert)).toEqual({ status: 200 })
+      // Neither again, then the reference alone.
+      await kubectl(["delete", "tlsoption", "-n", "answerable", "default"])
+      expect(await until("open")).toBe("open")
+      await kubectl(["annotate", "ingress", "-n", "answerable", "id", `${reference}=answerable-origin-pull@kubernetescrd`])
+      expect(await until("refused")).toBe("refused")
+      expect(await freshRequest(issuer(), stack!.originPullCert)).toEqual({ status: 200 })
+    } finally {
+      await stack!.kubectl(["apply", "-f", "-"], { stdin: JSON.stringify(restore) })
+      await kubectl(["annotate", "--overwrite", "ingress", "-n", "answerable", "id", `${reference}=answerable-origin-pull@kubernetescrd`])
+    }
+    expect(await until("refused")).toBe("refused")
+  }, 300_000)
 })
 
 function stackKubeconfig() {

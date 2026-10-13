@@ -1,28 +1,30 @@
-# The kind stack (infra/k8s/local). kind publishes the controller's host ports on the laptop's 127.0.0.1:48443 and
-# 48080; there is no cloud load balancer and no Cloudflare. The stack adds Cloudflare's stand-in for calls made inside
-# the cluster, an nginx beside the controller, once cert-manager has issued its certificates
-# (infra/k8s/local/platform-edge.yaml).
+# The kind stack (infra/k8s/local). kind publishes Traefik's websecure host port on the laptop's 127.0.0.1:48443; there
+# is no cloud load balancer and no Cloudflare. The stack adds Cloudflare's stand-in for calls made inside the cluster, an
+# nginx beside Traefik in its pod, once cert-manager has issued its certificates (infra/k8s/local/platform-edge.yaml).
 
-ingress-nginx:
-  controller:
-    replicaCount: 1
-    # One node and fixed host ports: a new pod cannot start beside the old one, so the old one goes first.
-    updateStrategy:
-      type: Recreate
-    hostPort:
-      enabled: true
-      ports:
-        http: 48080
-        https: 48443
-    nodeSelector:
-      ingress-ready: "true"
-      kubernetes.io/os: linux
-    service:
+traefik:
+  deployment:
+    replicas: 1
+  podDisruptionBudget:
+    enabled: false
+  # One node and a fixed host port: a new pod cannot start beside the old one, so the old one goes first.
+  updateStrategy:
+    type: Recreate
+  nodeSelector:
+    ingress-ready: "true"
+    kubernetes.io/os: linux
+  service:
+    spec:
       type: ClusterIP
-    config:
-      # The edge reaches the controller from 127.0.0.1; the laptop's requests arrive from the Docker network's gateway,
-      # untrusted, as a visitor's would.
-      proxy-real-ip-cidr: 127.0.0.1/32
+  ports:
+    websecure:
+      hostPort: 48443
+      # The stand-in reaches Traefik from 127.0.0.1, so its X-Forwarded-For is kept, as Cloudflare's would be. The
+      # laptop's requests arrive from the Docker network's gateway, untrusted, as a visitor's would: Traefik drops
+      # their X-Forwarded-For and appends the gateway's address.
+      forwardedHeaders:
+        trustedIPs:
+          - 127.0.0.1/32
 
 issuers:
   local:

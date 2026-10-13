@@ -139,10 +139,12 @@ describe("charts/answerable", () => {
         const ingresses = manifests.filter(manifest => manifest.kind === "Ingress")
         expect(ingresses.length).toBe(name === "values-local.yaml" ? 2 : 3)
         for (const ingress of ingresses) {
-          expect(ingress.spec.ingressClassName).toBe("nginx")
+          expect(ingress.spec.ingressClassName).toBe("traefik")
           expect(ingress.metadata.annotations).toMatchObject({
-            "nginx.ingress.kubernetes.io/auth-tls-secret": "answerable/cloudflare-origin-pull-ca",
-            "nginx.ingress.kubernetes.io/auth-tls-verify-client": "on",
+            "traefik.ingress.kubernetes.io/router.entrypoints": "websecure",
+            "traefik.ingress.kubernetes.io/router.tls": "true",
+            // The TLSOption charts/platform renders in this namespace: Cloudflare's origin-pull certificate required.
+            "traefik.ingress.kubernetes.io/router.tls.options": "answerable-origin-pull@kubernetescrd",
             "cert-manager.io/cluster-issuer": expect.any(String),
           })
           expect(ingress.spec.rules.length).toBe(1)
@@ -150,7 +152,7 @@ describe("charts/answerable", () => {
         }
       })
 
-      test("NetworkPolicies deny by default, admit only ingress-nginx to the services and let every pod resolve names", () => {
+      test("NetworkPolicies deny by default, admit only Traefik to the services and let every pod resolve names", () => {
         const policies = manifests.filter(manifest => manifest.kind === "NetworkPolicy")
         const deny = policies.find(policy => Object.keys(policy.spec.podSelector).length === 0)
         expect(deny?.spec).toEqual({ podSelector: {}, policyTypes: ["Ingress", "Egress"] })
@@ -164,7 +166,7 @@ describe("charts/answerable", () => {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const sources = selecting.flatMap(policy => (policy.spec.ingress ?? []).flatMap((rule: any) => rule.from ?? []))
             expect(sources.length, workload.metadata.name).toBeGreaterThan(0)
-            for (const source of sources) expect(source).toMatchObject({ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": "platform" } }, podSelector: { matchLabels: { "app.kubernetes.io/name": "ingress-nginx" } } })
+            for (const source of sources) expect(source).toEqual({ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": "platform" } }, podSelector: { matchLabels: { "app.kubernetes.io/name": "traefik" } } })
           }
         }
       })
@@ -243,22 +245,41 @@ describe("charts/answerable", () => {
 })
 
 describe("charts/platform", () => {
-  test("pins ingress-nginx, cert-manager and the Grafana agent, named as Terraform's values address them", async () => {
-    const chart = Bun.YAML.parse(await Bun.file(join(charts, "platform/Chart.yaml")).text()) as { dependencies: { name: string; version: string }[] }
-    expect(chart.dependencies.map(dependency => dependency.name)).toEqual(["ingress-nginx", "cert-manager", "k8s-monitoring"])
-    for (const dependency of chart.dependencies) expect(dependency.version).toMatch(/^v?\d+\.\d+\.\d+$/)
+  test("pins Traefik, cert-manager and the Grafana agent, named as Terraform's values address them, all from OCI", async () => {
+    const chart = Bun.YAML.parse(await Bun.file(join(charts, "platform/Chart.yaml")).text()) as { dependencies: { name: string; version: string; repository: string }[] }
+    expect(chart.dependencies.map(dependency => [dependency.name, dependency.version])).toEqual([["traefik", "41.7.1"], ["cert-manager", "v1.21.2"], ["k8s-monitoring", "4.5.3"]])
+    for (const dependency of chart.dependencies) expect(dependency.repository).toStartWith("oci://")
   })
 
   for (const [name, values] of [["the defaults", []], ...overlays("platform").map(file => [file, [file]])] as [string, string[]][]) {
-    test(`${name}: ingress-nginx appends to X-Forwarded-For and trusts it only from the given ranges; Terraform's values merge`, () => {
-      const manifests = render("platform", values, { "ingress-nginx.controller.config.proxy-real-ip-cidr": "203.0.113.0/24", "ingress-nginx.controller.service.annotations.kubernetes\\.civo\\.com/firewall-id": "fw" })
-      const config = manifests.find(manifest => manifest.kind === "ConfigMap" && manifest.metadata.name === "platform-ingress-nginx-controller")!
-      expect(config.data).toMatchObject({ "use-forwarded-headers": "true", "compute-full-forwarded-for": "true", "proxy-real-ip-cidr": "203.0.113.0/24" })
-      const service = manifests.find(manifest => manifest.kind === "Service" && manifest.metadata.name === "platform-ingress-nginx-controller")!
+    test(`${name}: Traefik keeps forwarded headers only from Terraform's trusted addresses and appends its peer, refuses conflicting TLS options, and listens on 443 only`, () => {
+      const manifests = render("platform", values, { "traefik.ports.websecure.forwardedHeaders.trustedIPs": "{203.0.113.0/24,10.10.0.0/24}", "traefik.service.annotations.kubernetes\\.civo\\.com/firewall-id": "fw" })
+      const deployment = manifests.find(manifest => manifest.kind === "Deployment" && manifest.metadata.name === "platform-traefik")!
+      const args: string[] = deployment.spec.template.spec.containers.find((container: { name: string }) => container.name === "platform-traefik").args
+      expect(args).toContain("--entryPoints.websecure.forwardedHeaders.trustedIPs=203.0.113.0/24,10.10.0.0/24")
+      expect(args.filter(arg => /notAppendXForwardedFor=true|forwardedHeaders\.insecure/.test(arg))).toEqual([])
+      expect(args).toContain("--core.strictTLSOptions=true")
+      expect(args).toContain("--providers.kubernetesingress.crossProviderNamespaces=answerable")
+      expect(args).toContain("--providers.kubernetescrd.defaultTLSResourcesNamespace=answerable")
+      const service = manifests.find(manifest => manifest.kind === "Service" && manifest.metadata.name === "platform-traefik")!
       expect(service.metadata.annotations?.["kubernetes.civo.com/firewall-id"]).toBe("fw")
+      // Plain HTTP is Cloudflare's to redirect: nothing listens on port 80 behind the load balancer.
+      expect(service.spec.ports.map((port: { port: number }) => port.port)).toEqual([443])
       expect(manifests.filter(manifest => manifest.kind === "Namespace")).toEqual([])
     })
   }
+
+  test("every TLS connection must present Cloudflare's origin-pull certificate: the Ingresses' option and Traefik's default", () => {
+    const options = render("platform").filter(manifest => manifest.kind === "TLSOption")
+    expect(options.map(option => `${option.metadata.namespace}/${option.metadata.name}`).sort()).toEqual(["answerable/default", "answerable/origin-pull"])
+    for (const option of options) {
+      expect(option.spec).toEqual({
+        minVersion: "VersionTLS12",
+        sniStrict: true,
+        clientAuth: { secretNames: ["cloudflare-origin-pull-ca"], clientAuthType: "RequireAndVerifyClientCert" },
+      })
+    }
+  })
 
   test("the Civo overlays issue certificates from Let's Encrypt through Cloudflare, and the kind stack from its own CA", () => {
     for (const file of ["values-civo-staging.yaml", "values-civo-production.yaml"]) {

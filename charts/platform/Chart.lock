@@ -1,12 +1,12 @@
 dependencies:
-- name: ingress-nginx
-  repository: https://kubernetes.github.io/ingress-nginx
-  version: 4.15.1
+- name: traefik
+  repository: oci://ghcr.io/traefik/helm
+  version: 41.7.1
 - name: cert-manager
   repository: oci://quay.io/jetstack/charts
   version: v1.21.2
 - name: k8s-monitoring
   repository: oci://ghcr.io/grafana/helm-charts
   version: 4.5.3
-digest: sha256:a979f2f8a363b9a6819ef3c23dcc14c7431d5ee8d586e43c1e0e0586d0baf763
-generated: "2026-10-13T12:10:17.986077+02:00"
+digest: sha256:c9ac569d05d899ebf4727634f5f7cb392ceb94532650d07c12bcc3338a930dfb
+generated: "2026-10-13T13:33:55.537184+02:00"

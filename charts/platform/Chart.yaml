@@ -1,17 +1,16 @@
 apiVersion: v2
 name: platform
-description: "The cluster's shared controllers for Answerable: ingress-nginx, cert-manager and its issuers, and the Grafana agent. Installed once per cluster by Terraform (release platform, namespace platform)."
+description: "The cluster's shared controllers for Answerable: Traefik and the origin-pull TLS options, cert-manager and its issuers, and the Grafana agent. Installed once per cluster by Terraform (release platform, namespace platform)."
 type: application
-version: 0.1.0
+version: 0.2.0
 kubeVersion: ">=1.29.0-0"
 dependencies:
-  # The release name prefixes their objects (platform-ingress-nginx-controller); Terraform's values address the
-  # dependency by this name: ingress-nginx.controller.service.annotations, ingress-nginx.controller.config.
-  # ingress-nginx publishes no OCI chart: `helm dependency build` needs `helm repo add ingress-nginx <repository>` first
-  # (`helm dependency update` does not).
-  - name: ingress-nginx
-    version: 4.15.1
-    repository: https://kubernetes.github.io/ingress-nginx
+  # Traefik v3.7.14 (D31), in place of the retired ingress-nginx. Terraform's values address the dependency by this
+  # name: traefik.service.annotations and traefik.ports.websecure.forwardedHeaders.trustedIPs. Every dependency is an
+  # OCI chart, so `helm dependency build` needs no repository added.
+  - name: traefik
+    version: 41.7.1
+    repository: oci://ghcr.io/traefik/helm
   - name: cert-manager
     version: v1.21.2
     repository: oci://quay.io/jetstack/charts

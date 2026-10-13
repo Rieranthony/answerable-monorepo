@@ -32,5 +32,4 @@
   "env" (include "answerable.idEnv" .)
   "envFrom" $envFrom
   "readiness" "/readyz"
-  "liveness" "/healthz"
-  "streams" false) }}
+  "liveness" "/healthz") }}
