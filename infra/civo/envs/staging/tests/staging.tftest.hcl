@@ -175,3 +175,46 @@ run "plans_the_targeted_first_apply_without_the_origin_pull_ca" {
     error_message = "A plan targeting the cluster, the database and the firewalls must not need the origin-pull CA."
   }
 }
+
+# The cluster-admin credential reaches an operator only as a sensitive output, for break-glass and diagnostics
+# (`bun run setup database-ca`); the deploy holds the deployer's token instead.
+run "outputs_the_admin_kubeconfig_as_a_sensitive_value" {
+  command = plan
+
+  override_resource {
+    target          = module.cluster.civo_kubernetes_cluster.this
+    override_during = plan
+    values = {
+      kubeconfig = <<-EOT
+        apiVersion: v1
+        kind: Config
+        clusters:
+          - name: answerable
+            cluster:
+              server: https://74.220.1.2:6443
+              certificate-authority-data: Y2E=
+        users:
+          - name: admin
+            user:
+              client-certificate-data: Y2VydA==
+              client-key-data: a2V5
+        contexts:
+          - name: answerable
+            context:
+              cluster: answerable
+              user: admin
+        current-context: answerable
+      EOT
+    }
+  }
+
+  assert {
+    condition     = issensitive(output.admin_kubeconfig)
+    error_message = "admin_kubeconfig is the cluster-admin credential: it must be a sensitive output."
+  }
+
+  assert {
+    condition     = yamldecode(nonsensitive(output.admin_kubeconfig)).clusters[0].cluster.server == "https://74.220.1.2:6443"
+    error_message = "admin_kubeconfig must be the cluster's own kubeconfig."
+  }
+}

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { readFile, stat, chmod } from "node:fs/promises"
 import { join } from "node:path"
-import { ageInit, formatConfig, ruleRegex } from "./age"
+import { ageInit, ENCRYPTED_REGEX, formatConfig, ruleRegex } from "./age"
 import { pathsFor } from "./environments"
 import { createContext, createFakeRunner, createRoot, type RecordedCall } from "./testing"
 import { writeFile } from "node:fs/promises"
@@ -44,8 +44,11 @@ describe("age-init", () => {
     expect(paths.keyFile).toEndWith("home/.config/sops/age/answerable-staging.txt")
     expect((await stat(paths.keyFile)).mode & 0o777).toBe(0o600)
     expect(Bun.YAML.parse(await readFile(paths.sopsConfig, "utf8"))).toEqual({
-      creation_rules: [{ path_regex: "infra/civo/envs/staging/secrets\\.enc\\.yaml$", age: RECIPIENT }],
+      creation_rules: [
+        { path_regex: "infra/civo/envs/staging/secrets\\.enc\\.yaml$", age: RECIPIENT, encrypted_regex: "^(data|stringData)$" },
+      ],
     })
+    expect(await readFile(paths.sopsConfig, "utf8")).toContain('    encrypted_regex: "^(data|stringData)$"\n')
     expect(output()).toContain(`Recipient (public, committed in .sops.yaml): ${RECIPIENT}`)
     expect(output()).toContain(`Private key: ${paths.keyFile}`)
     expect(output()).toContain("Added the staging rule")
@@ -53,15 +56,15 @@ describe("age-init", () => {
   })
 
   test("keeps the other environment's rule and the existing key, and changes nothing the second time", async () => {
-    const production = `creation_rules:\n  - path_regex: ${ruleRegex("production")}\n    age: ${OTHER}\n`
+    const production = `creation_rules:\n  - path_regex: ${ruleRegex("production")}\n    age: ${OTHER}\n    encrypted_regex: ${ENCRYPTED_REGEX}\n`
     const { paths } = await fixture({ ".sops.yaml": production })
     const first = keygen()
     await ageInit({ environment: "staging", paths }, createContext({ run: first.run }).context)
     const written = await readFile(paths.sopsConfig, "utf8")
     expect(Bun.YAML.parse(written)).toEqual({
       creation_rules: [
-        { path_regex: ruleRegex("production"), age: OTHER },
-        { path_regex: ruleRegex("staging"), age: RECIPIENT },
+        { path_regex: ruleRegex("production"), age: OTHER, encrypted_regex: ENCRYPTED_REGEX },
+        { path_regex: ruleRegex("staging"), age: RECIPIENT, encrypted_regex: ENCRYPTED_REGEX },
       ],
     })
     const second = keygen()
@@ -89,10 +92,34 @@ describe("age-init", () => {
     )
     const { context, output } = createContext({ run: keygen().run })
     await ageInit({ environment: "staging", paths, force: true }, context)
-    expect(output()).toContain("Updated the staging rule")
+    expect(output()).toContain(
+      "Updated the staging rule in .sops.yaml: switched it to this key and set encrypted_regex to ^(data|stringData)$.",
+    )
     expect(Bun.YAML.parse(await readFile(paths.sopsConfig, "utf8"))).toEqual({
-      creation_rules: [{ path_regex: ruleRegex("staging"), age: RECIPIENT }],
+      creation_rules: [{ path_regex: ruleRegex("staging"), age: RECIPIENT, encrypted_regex: ENCRYPTED_REGEX }],
     })
+  })
+
+  test("adds encrypted_regex to an existing rule that lacks it, and says the Secrets file changes at its next encryption", async () => {
+    const { paths } = await fixture({
+      ".sops.yaml": `creation_rules:\n  - path_regex: ${ruleRegex("staging")}\n    age: ${RECIPIENT}\n`,
+      "infra/civo/envs/staging/secrets.enc.yaml": "sops: {}\n",
+    })
+    const { context, output } = createContext({ run: keygen().run })
+    await ageInit({ environment: "staging", paths }, context)
+    expect(Bun.YAML.parse(await readFile(paths.sopsConfig, "utf8"))).toEqual({
+      creation_rules: [{ path_regex: ruleRegex("staging"), age: RECIPIENT, encrypted_regex: ENCRYPTED_REGEX }],
+    })
+    expect(output()).toContain("Updated the staging rule in .sops.yaml: set encrypted_regex to ^(data|stringData)$.")
+    expect(output()).toContain("infra/civo/envs/staging/secrets.enc.yaml keeps the form it was encrypted in until it is encrypted again")
+
+    const other = await fixture({
+      ".sops.yaml": `creation_rules:\n  - path_regex: ${ruleRegex("staging")}\n    age: ${RECIPIENT}\n    encrypted_regex: ^data$\n`,
+    })
+    const second = createContext({ run: keygen().run })
+    await ageInit({ environment: "staging", paths: other.paths }, second.context)
+    expect(second.output()).toContain("set encrypted_regex to ^(data|stringData)$.")
+    expect(second.output()).not.toContain("keeps the form")
   })
 
   test("fails when age-keygen fails or answers no recipient", async () => {
