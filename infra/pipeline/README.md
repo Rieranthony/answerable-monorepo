@@ -99,7 +99,7 @@ Verify an image by hand:
 
 ```bash
 cosign verify ghcr.io/rieranthony/answerable/id@sha256:<64 hex> \
-  --certificate-identity https://github.com/Rieranthony/answerable/.github/workflows/deploy-staging.yml@refs/heads/main \
+  --certificate-identity https://github.com/Rieranthony/answerable-monorepo/.github/workflows/deploy-staging.yml@refs/heads/main \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
