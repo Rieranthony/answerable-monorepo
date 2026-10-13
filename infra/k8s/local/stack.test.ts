@@ -24,7 +24,28 @@ for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]] as const) {
 // The hooks and tests take bun test's --timeout, which the workspace's test script sets to 30 minutes.
 beforeAll(async () => {
   stack = await startStack()
+  // The Deployments are rolled out by now, but Traefik routes to a pod only once its provider has seen the new endpoints,
+  // a moment after the pod turns Ready: on GitHub's runner the Toolbox's first health call through the edge got Traefik's
+  // own answer instead. Wait until each server answers through the edge, as a visitor will reach it, before any test.
+  for (const url of [`${origin(hosts.id)}/readyz`, `${origin(hosts.toolbox)}/health`, `${origin(hosts.adminMcp)}/health`]) await untilServed(url)
 })
+
+/** Wait up to `ms` for `url`, through the edge, to answer 200 with `{ status: "ok" }`; otherwise diagnose the cluster and fail, naming the last answer. */
+async function untilServed(url: string, ms = 90_000) {
+  let last = "no answer"
+  for (const deadline = Date.now() + ms; Date.now() < deadline; await Bun.sleep(1000)) {
+    try {
+      const response = await viaIngress(url)
+      const body = await response.text()
+      if (response.status === 200 && body.includes('"ok"')) return
+      last = `${response.status} ${body.slice(0, 120)}`
+    } catch (error) {
+      last = (error as Error).message
+    }
+  }
+  await stack!.diagnose(`${url} did not answer through the edge within ${ms / 1000} s`)
+  throw new Error(`${url} did not answer { status: "ok" } through the edge within ${ms / 1000} s; last: ${last}`)
+}
 
 afterAll(async () => {
   await stack?.stop()
