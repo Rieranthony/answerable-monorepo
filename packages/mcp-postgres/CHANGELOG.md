@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0
+
+- `connect(url, options?)` opens a `Bun.SQL` pool that verifies the server against the URL's `sslrootcert`. Bun 1.3.1 reads `sslmode` from a URL but not `sslrootcert`, so `?sslmode=verify-full&sslrootcert=<file>` failed every handshake against a private certificate authority, and Postgres refused the parameter as a startup setting. A URL that names `sslrootcert` without `sslmode=verify-full` or `verify-ca` is refused.
+
 ## 0.4.0
 
 The intent store records its own evidence. Breaking: `withEvidence` and the `PostgresIntentStore` and `EvidenceKind` types are gone, and `createPostgresIntentStore` takes the evidence.

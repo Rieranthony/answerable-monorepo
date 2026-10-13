@@ -1,15 +1,15 @@
-import { SQL } from "bun"
 import { createIdAdmin } from "@answerable/id-admin"
 import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
 import { createRecordStore } from "@answerable/mcp-e2e/records"
 import { viewHtml } from "@answerable/mcp-e2e/view"
+import { connect } from "@answerable/mcp-postgres"
 import { readToolboxEnvironment } from "./environment"
 import { startGrantsPoller } from "./poller"
 import { createTracer } from "./spans"
 import { createToolbox } from "./toolbox"
 
 const { databaseUrl, auth, hostname, port, id: idConfig, otlpEndpoint } = readToolboxEnvironment(process.env)
-const db = new SQL(databaseUrl)
+const db = connect(databaseUrl)
 const telemetry = createTracer(otlpEndpoint)
 const id = createIdAdmin(idConfig)
 //#region providers

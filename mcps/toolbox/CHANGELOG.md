@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.6
+
+No tool changes. The Toolbox can run in a container.
+
+- `TOOLBOX_HOST` is the address the server listens on, `127.0.0.1` by default; the image sets `0.0.0.0`. It was always `127.0.0.1`.
+- The server and `scripts/migrate.ts` open the database with `@answerable/mcp-postgres` 0.5.0's `connect`, so `TOOLBOX_DATABASE_URL` can end in `?sslmode=verify-full&sslrootcert=<file>` and the server is verified against that certificate authority.
+
 ## 0.3.5
 
 A grant string on an entitlement limited to one host client (`kind: "client_resource"` in ID's member access view) counts only through that client. The Toolbox used to count it for every host the person signed in through, though ID reaches a pair's resource through its own client only and the admin MCP's `access_grant` promises "only through this OAuth client". The grant cache now holds the member's Toolbox targets for 60 seconds, as before, and each request takes the grant strings of its own client from them. Grants on the Toolbox resource itself, which the enable operation and the journeys use, are unchanged.

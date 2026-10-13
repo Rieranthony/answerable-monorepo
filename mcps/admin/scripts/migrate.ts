@@ -1,5 +1,4 @@
-import { SQL } from "bun"
-import { migrate, migrations } from "@answerable/mcp-postgres"
+import { connect, migrate, migrations } from "@answerable/mcp-postgres"
 import { z } from "zod"
 import { database } from "../src/test/database"
 
@@ -8,7 +7,7 @@ import { database } from "../src/test/database"
 const test = process.argv.includes("--test")
 const url = test ? database.url : z.url({ message: "Set ADMIN_DATABASE_URL to the admin MCP's Postgres URL" }).parse(Bun.env.ADMIN_DATABASE_URL)
 if (test) database.assertDisposable("reset")
-const db = new SQL({ url, max: 1 })
+const db = connect(url, { max: 1 })
 try {
   if (test) await db.unsafe("drop schema public cascade; create schema public").simple()
   const applied = await migrate(db, [migrations])

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.7
+
+No tool changes. The admin MCP can run in a container.
+
+- `ADMIN_HOST` is the address the server listens on, `127.0.0.1` by default; the image sets `0.0.0.0`. It was always `127.0.0.1`.
+- The server and `scripts/migrate.ts` open the database with `@answerable/mcp-postgres` 0.5.0's `connect`, so `ADMIN_DATABASE_URL` can end in `?sslmode=verify-full&sslrootcert=<file>` and the server is verified against that certificate authority.
+
 ## 0.2.6
 
 No tool changes. `readAdminEnvironment` is built on `@answerable/mcp`'s `parseEnvironment`, with the same messages, the error code that evidence records comes from its `errorCodeOf`, and the workspace no longer depends on `@answerable/auth`. Intents use `@answerable/mcp-postgres` 0.4.0's `createPostgresIntentStore(db, evidence)`, with the same evidence.
