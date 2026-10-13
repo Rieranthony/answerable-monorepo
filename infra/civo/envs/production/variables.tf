@@ -90,7 +90,7 @@ variable "hostnames" {
 }
 
 variable "platform_values_files" {
-  description = "Values files for charts/platform, relative to this directory, applied before the values Terraform owns."
+  description = "Values files for charts/platform, relative to this directory, applied before the values Terraform owns: the chart's own values-civo-<environment>.yaml. A missing file fails the plan."
   type        = list(string)
   default     = []
 }

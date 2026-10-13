@@ -25,7 +25,7 @@ The two roots share every `.tf` file byte for byte except `backend.tf`; their si
 | `database` | `civo_vpc_firewall`, `civo_database` | PostgreSQL 17; 5432 from the private network, not the nodes alone ([a known limit](#known-limits)); outbound to the private network only; 1, 3 or 5 nodes; `prevent_destroy` |
 | `ingress-firewall` | `civo_vpc_firewall`, `civo_vpc_reserved_ip` | 443 from exactly Cloudflare's IPv4 ranges; no port 80; outbound to the private network only |
 | `state` | `civo_object_store_credential`, `civo_object_store` | One 500 GB block, its own credential; `prevent_destroy` |
-| `platform` | the `answerable` and `platform` namespaces, `helm_release.platform` | The restricted Pod Security Standard enforced on `answerable`; the ingress Service names the firewall and claims the reserved address; ingress-nginx trusts `X-Forwarded-For` only from the ranges given |
+| `platform` | the `answerable` and `platform` namespaces, `helm_release.platform` | The restricted Pod Security Standard enforced on `answerable`; Traefik's Service names the firewall and claims the reserved address; Traefik's websecure entry point trusts `X-Forwarded-For` only from the ranges given; the chart's `values-civo-<environment>.yaml` must exist ([values Terraform sets](modules/platform/README.md)) |
 | `deployer` | ServiceAccount `deployer`, its Roles and bindings, a token Secret | Manages only what `helm upgrade` of `charts/answerable` touches, in `answerable`, and reads no other namespace (`read_namespaces = []` in both roots; the variable stays for a future diagnostic and never grants Secrets); no wildcards, no `escalate`, `bind`, `impersonate` or `exec` |
 | `edge` | three `cloudflare_dns_record`s, zone settings, origin pulls, two `cloudflare_ruleset`s | Proxied A records for exactly the three hostnames, each one label under the zone; Full (strict), TLS 1.2 minimum, HSTS; no browser check, no challenge and no cache (except `/assets/`) on those hostnames; never `www` or the apex |
 
@@ -92,8 +92,8 @@ Civo clusters always have a public API endpoint (6443). The cluster firewall dec
 - The zone's Cloudflare token has the five permissions above, Config Rules Edit and Cache Rules Edit included.
 - Bot Fight Mode is off in the zone (Security settings in the dashboard). The token cannot change it.
 - The zone has no `http_config_settings` or `http_request_cache_settings` ruleset made by hand. Cloudflare allows one per zone and phase; import an existing one with `terraform import 'module.edge.cloudflare_ruleset.config' 'zones/<zone id>/<ruleset id>'`.
-- `charts/platform` exists on the branch: the full apply installs it.
-- The zone's origin-pull certificate is uploaded before traffic is expected ([D19](../../docs/goals/aws-deploy/decisions.md)). Until then Cloudflare presents its shared certificate, which ingress-nginx refuses.
+- `charts/platform` exists on the branch, with its `values-civo-<environment>.yaml` overlay. The full apply installs it, and the plan fails, naming the path, if the overlay is missing.
+- The zone's origin-pull certificate is uploaded before traffic is expected ([D19](../../docs/goals/aws-deploy/decisions.md)). Until then Cloudflare presents its shared certificate, which Traefik refuses.
 
 ## First apply
 
@@ -165,12 +165,12 @@ Each of these could not be proved without a Civo account. Record the answer in [
 | Do production's nodes join and stay Ready with 6443 closed to the private network? k3s wants its server's 6443 reachable by every node; Civo runs the control plane and does not say whether nodes reach it through this firewall | `kubectl get nodes` after the cluster step, in production (staging's open API hides the question) | Bring it back to the coordinator: admitting 6443 from the network conflicts with 6443 answering the two variables only |
 | Do `kubectl logs` and `exec` work? The control plane reaches each kubelet on 10250, admitted from the private network only | `kubectl logs` on any pod | Admit 10250 from the control plane's address |
 | Does Civo's Cilium tunnel over VXLAN (UDP 8472)? | `kubectl -n kube-system exec ds/cilium -- cilium status` | Admit Geneve (UDP 6081), or nothing for native routing |
-| What address does ingress-nginx see? No PROXY protocol is configured, so it should be the load balancer's private address, which is why the private range is in `trusted_proxy_cidrs` | Read `X-Forwarded-For` at ID through the audit API | Enable `kubernetes.civo.com/loadbalancer-enable-proxy-protocol` with ingress-nginx's `use-proxy-protocol` |
+| What address does Traefik see? No PROXY protocol is configured, so it should be the load balancer's private address, which is why the private range is in Traefik's `trustedIPs` and in `trusted_proxy_cidrs` | Read `X-Forwarded-For` at ID through the audit API | Enable `kubernetes.civo.com/loadbalancer-enable-proxy-protocol` with Traefik's `ports.websecure.proxyProtocol.trustedIPs` |
 | Is the pod range k3s's default 10.42.0.0/16? | `kubectl get nodes -o jsonpath='{.items[*].spec.podCIDR}'` | Set `pod_cidr` |
 | Which certificate does the database present, and for which name? `verify-full` needs its CA and a matching host | `civo database show`; `openssl s_client -starttls postgres -connect <host>:5432` from a pod | Use `database_dns_endpoint` as the host, or ship the CA the dashboard offers |
 | The administrator's login and default database | `civo database credential answerable-staging-database` | Feed them to the `bootstrap` Job ([B3](../../docs/goals/aws-deploy/briefs/b3.md)) |
 | Do standbys and backups work with the database's outbound traffic limited to the private network? | The restore drill ([B7](../../docs/goals/aws-deploy/briefs/b7.md)) | Widen the database firewall's egress |
-| Does the platform chart accept the values Terraform sets (`ingress-nginx.controller.service.annotations`, `ingress-nginx.controller.config.proxy-real-ip-cidr`)? | `helm get values platform -n platform` | Match the keys in `modules/platform/main.tf` to the chart |
+| Does the platform chart accept the values Terraform sets (`traefik.service.annotations`, `traefik.ports.websecure.forwardedHeaders.trustedIPs`)? | `helm get values platform -n platform`; `kubectl -n platform get svc` shows the reserved address | Match the keys in `modules/platform/main.tf` to the chart |
 
 ## Day two
 
@@ -181,7 +181,7 @@ Each of these could not be proved without a Civo account. Record the answer in [
 
 ## Known limits
 
-- **PostgreSQL admits the private network, not the cluster's nodes alone.** Civo firewall rules match CIDRs. Node addresses come from the network and change as the pool changes, and no Civo resource puts a node pool in a range of its own (`civo_vpc_subnet` takes no range, and the cluster and node pool take a network, nothing narrower). By policy the network holds only this environment's nodes, the load balancer ingress-nginx's Service creates (which forwards only 443 to the node port and cannot open a connection to 5432), and the database with its standbys. Anything else that joined could reach 5432, but would still need a per-database login over `verify-full` TLS. Details in [`modules/database/README.md`](modules/database/README.md).
+- **PostgreSQL admits the private network, not the cluster's nodes alone.** Civo firewall rules match CIDRs. Node addresses come from the network and change as the pool changes, and no Civo resource puts a node pool in a range of its own (`civo_vpc_subnet` takes no range, and the cluster and node pool take a network, nothing narrower). By policy the network holds only this environment's nodes, the load balancer Traefik's Service creates (which forwards only 443 to the node port and cannot open a connection to 5432), and the database with its standbys. Anything else that joined could reach 5432, but would still need a per-database login over `verify-full` TLS. Details in [`modules/database/README.md`](modules/database/README.md).
 
 ## Not yet
 

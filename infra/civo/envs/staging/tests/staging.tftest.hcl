@@ -23,6 +23,21 @@ override_data {
 
 variables {
   allowed_api_cidrs = ["198.51.100.7/32"]
+  # charts/platform is not on every branch these tests run on; the platform module checks the overlay exists at plan
+  # time, and the run below checks terraform.tfvars names it.
+  platform_values_files = []
+}
+
+run "names_the_platform_charts_staging_overlay" {
+  command = plan
+
+  assert {
+    condition = can(regex(
+      "platform_values_files\\s*=\\s*\\[\\s*\"\\.\\./\\.\\./\\.\\./\\.\\./charts/platform/values-civo-${var.environment}\\.yaml\"\\s*\\]",
+      file("terraform.tfvars"),
+    ))
+    error_message = "terraform.tfvars must give the platform chart its staging overlay, ../../../../charts/platform/values-civo-staging.yaml."
+  }
 }
 
 run "names_everything_for_staging" {

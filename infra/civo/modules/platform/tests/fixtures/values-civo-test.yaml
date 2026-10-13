@@ -1,0 +1,4 @@
+# A stand-in for charts/platform/values-civo-<environment>.yaml in the platform module's tests.
+traefik:
+  deployment:
+    replicas: 2

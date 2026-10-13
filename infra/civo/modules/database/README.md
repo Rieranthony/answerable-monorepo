@@ -13,7 +13,7 @@ The brief asks for 5432 from the cluster's nodes only. Civo cannot express that:
 So the rule admits 5432 from the whole private network. By policy that network holds only this environment's:
 
 - **Cluster nodes.** Pods reach the database from their node's address.
-- **Load balancer.** Created by the cluster for ingress-nginx's Service, it forwards only its configured port (443, to ingress-nginx's node port). It cannot be made to open a connection to 5432.
+- **Load balancer.** Created by the cluster for Traefik's Service, it forwards only its configured port (443, to Traefik's node port). It cannot be made to open a connection to 5432.
 - **The database itself**, and its standbys in production.
 
 No instance and no other cluster may join it. Each environment is a separate Civo account, so staging's network and production's never meet.

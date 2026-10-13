@@ -3,7 +3,7 @@
 # deployer identity and the Cloudflare zone. envs/staging and envs/production share this file byte for byte
 # (`bun run infra:check` compares them); only backend.tf and terraform.tfvars differ.
 
-# Cloudflare's published ranges, read at every plan: the load balancer admits them and ingress-nginx trusts their
+# Cloudflare's published ranges, read at every plan: the load balancer admits them and Traefik trusts their
 # X-Forwarded-For. A change in Cloudflare's list shows up as a plan diff and needs an apply.
 data "cloudflare_ip_ranges" "this" {}
 
@@ -17,8 +17,8 @@ locals {
   cloudflare_cidrs = concat(data.cloudflare_ip_ranges.this.ipv4_cidrs, data.cloudflare_ip_ranges.this.ipv6_cidrs)
 
   # The proxies whose X-Forwarded-For the ingress and ID trust. Cloudflare connects to the load balancer; the load
-  # balancer connects to ingress-nginx from the private network (it passes TCP through without PROXY protocol, so
-  # ingress-nginx sees its private address); ingress-nginx reaches the services from the pod range.
+  # balancer connects to Traefik from the private network (it passes TCP through without PROXY protocol, so Traefik
+  # sees its private address); Traefik reaches the services from the pod range (D31).
   trusted_proxy_cidrs = concat(local.cloudflare_cidrs, [module.network.cidr_v4, var.pod_cidr])
 }
 
@@ -72,10 +72,10 @@ module "platform" {
   source = "../../modules/platform"
 
   chart_path                = "${path.module}/../../../../charts/platform"
-  values                    = [for file_path in var.platform_values_files : file("${path.module}/${file_path}")]
+  values_files              = [for file_path in var.platform_values_files : "${path.module}/${file_path}"]
   load_balancer_firewall_id = module.ingress_firewall.firewall_id
   load_balancer_ip          = module.ingress_firewall.ip
-  proxy_real_ip_cidrs       = concat(local.cloudflare_cidrs, [module.network.cidr_v4])
+  trusted_proxy_cidrs       = concat(local.cloudflare_cidrs, [module.network.cidr_v4])
 }
 
 module "deployer" {

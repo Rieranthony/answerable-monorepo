@@ -27,5 +27,5 @@ hostnames = {
   admin_mcp = "admin-mcp.answerable.org"
 }
 
-# The platform chart's own values files for this environment, relative to this directory, once charts/platform has them.
-platform_values_files = []
+# The platform chart's own overlay for this environment, relative to this directory; the plan fails if it is missing.
+platform_values_files = ["../../../../charts/platform/values-civo-production.yaml"]

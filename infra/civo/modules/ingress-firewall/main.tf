@@ -2,12 +2,12 @@ locals {
   name = "answerable-${var.environment}-load-balancer"
 }
 
-# The firewall of the Civo load balancer in front of ingress-nginx. The load balancer is created by Kubernetes, not by
-# Terraform: the platform chart's ingress-nginx Service of type LoadBalancer names this firewall in its
+# The firewall of the Civo load balancer in front of Traefik (D31). The load balancer is created by Kubernetes, not by
+# Terraform: the platform chart's Traefik Service of type LoadBalancer names this firewall in its
 # `kubernetes.civo.com/firewall-id` annotation. HTTPS is admitted from Cloudflare's published ranges and from nothing
-# else, so only Cloudflare reaches the origin; ingress-nginx then demands Cloudflare's origin-pull client certificate,
-# which a Cloudflare customer other than us cannot present (D18, D22). There is no port 80: Cloudflare redirects to
-# HTTPS at the edge. Outbound, the load balancer reaches its backends on the private network only.
+# else, so only Cloudflare reaches the origin; Traefik then demands Cloudflare's origin-pull client certificate (a
+# TLSOption with clientAuth), which a Cloudflare customer other than us cannot present (D18, D22). There is no port 80:
+# Cloudflare redirects to HTTPS at the edge. Outbound, the load balancer reaches its backends on the private network.
 resource "civo_vpc_firewall" "this" {
   name                 = local.name
   network_id           = var.network_id

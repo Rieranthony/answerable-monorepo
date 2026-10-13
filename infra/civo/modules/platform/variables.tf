@@ -8,14 +8,19 @@ variable "chart_path" {
   }
 }
 
-variable "values" {
-  description = "Values documents (YAML text) for the platform chart, applied in order before the values Terraform owns."
+variable "values_files" {
+  description = "Values files for the platform chart, as paths Terraform can open from the root module's directory (the chart's own values-civo-<environment>.yaml), applied in order before the values Terraform owns."
   type        = list(string)
   default     = []
+
+  validation {
+    condition     = alltrue([for path in var.values_files : fileexists(path)])
+    error_message = "A platform values file is missing: ${join(", ", [for path in var.values_files : path if !fileexists(path)])}. charts/platform ships values-civo-<environment>.yaml; check platform_values_files in terraform.tfvars and that the chart is on this branch."
+  }
 }
 
 variable "load_balancer_firewall_id" {
-  description = "The ID of the load balancer's firewall, which the ingress Service names so that Civo attaches it."
+  description = "The ID of the load balancer's firewall, which Traefik's Service names so that Civo attaches it."
   type        = string
 
   validation {
@@ -25,7 +30,7 @@ variable "load_balancer_firewall_id" {
 }
 
 variable "load_balancer_ip" {
-  description = "The reserved public IPv4 address the ingress Service claims for its load balancer."
+  description = "The reserved public IPv4 address Traefik's Service claims for its load balancer."
   type        = string
 
   validation {
@@ -34,17 +39,17 @@ variable "load_balancer_ip" {
   }
 }
 
-variable "proxy_real_ip_cidrs" {
-  description = "The ranges whose X-Forwarded-For ingress-nginx trusts (its proxy-real-ip-cidr): Cloudflare's ranges and the private network the load balancer forwards from."
+variable "trusted_proxy_cidrs" {
+  description = "The peers whose X-Forwarded-* headers Traefik's websecure entry point trusts (ports.websecure.forwardedHeaders.trustedIPs): the private network the load balancer forwards from, which is the peer Traefik sees without PROXY protocol, and Cloudflare's ranges, the peer it would see with it."
   type        = list(string)
 
   validation {
-    condition     = length(var.proxy_real_ip_cidrs) > 0 && alltrue([for cidr in var.proxy_real_ip_cidrs : can(cidrhost(cidr, 0))])
+    condition     = length(var.trusted_proxy_cidrs) > 0 && alltrue([for cidr in var.trusted_proxy_cidrs : can(cidrhost(cidr, 0))])
     error_message = "List at least one range, each a CIDR."
   }
 
   validation {
-    condition     = alltrue([for cidr in var.proxy_real_ip_cidrs : try(tonumber(split("/", cidr)[1]) > 0, false)])
+    condition     = alltrue([for cidr in var.trusted_proxy_cidrs : try(tonumber(split("/", cidr)[1]) > 0, false)])
     error_message = "Trusting X-Forwarded-For from the whole internet would let any client choose its own address."
   }
 }
