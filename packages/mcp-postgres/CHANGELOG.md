@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0
+
+A server runs as a restricted runtime login and migrates as the owner, as Answerable ID does, so that the evidence triggers hold against the credential the server holds. Nothing breaks: `migrate` is unchanged.
+
+- `configureRuntimeRole(db, role, grants)` provisions a server's runtime role after `migrate`: created without login when it does not exist, refused when privileged, a member of another role or an owner, then given exactly `grants` and nothing by default privileges. Idempotent.
+- `runtimeGrants` holds this package's tables' grants: events are appended and read, payloads also erased, intents moved and swept; nothing on `schema_migrations`. `Grant` and `Privilege` are the types a server's own grants use.
+- `assertRuntimeRole(db)` refuses to serve as a login with an attribute beyond login, a membership, an ownership, or a privilege that could change the evidence, and names each one.
+- `testDatabase(...).runtimeLogin(grants)` in `@answerable/mcp-postgres/testing` makes a provisioned login with a generated name and password, for a suite to serve through.
+
 ## 0.4.0
 
 The intent store records its own evidence. Breaking: `withEvidence` and the `PostgresIntentStore` and `EvidenceKind` types are gone, and `createPostgresIntentStore` takes the evidence.
