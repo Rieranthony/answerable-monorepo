@@ -30,6 +30,11 @@ bun infra/ops/src/cli.ts bootstrap
 
 Exit codes: `0` done, `1` failed (the message says why), `2` wrong usage or a missing or invalid variable (the message names it, never its value).
 
+Nothing waits for ever:
+
+- A call to ID or to the Kubernetes API that gets no answer within 30 s fails, naming the call. For the Kubernetes API, the message asks whether `networkPolicy.kubernetesApi` lets the pod reach it.
+- `bootstrap`'s statements fail after waiting 10 s for a lock or running for 60 s.
+
 ## Settings
 
 | Variable | Command | Meaning |

@@ -39,14 +39,20 @@ export async function exec(command: string[], options: { env?: Record<string, st
 /** A random password: 32 hex digits. */
 const secret = () => Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("hex")
 
-/** Wall-clock time of each step, printed at the end of the run. */
+/** Wall-clock time of each step, printed at the end of the run. Each step also says when it starts and ends, so a log that stops shows where. */
 export const timings: [string, number][] = []
 export async function step<T>(name: string, work: () => Promise<T>): Promise<T> {
   const started = performance.now()
+  let outcome = "failed"
+  console.log(`[stack] ${name}…`)
   try {
-    return await work()
+    const result = await work()
+    outcome = "done"
+    return result
   } finally {
-    timings.push([name, Math.round((performance.now() - started) / 100) / 10])
+    const seconds = Math.round((performance.now() - started) / 100) / 10
+    timings.push([name, seconds])
+    console.log(`[stack] ${name}: ${outcome} in ${seconds} s`)
   }
 }
 
@@ -147,6 +153,61 @@ export function startBrowserEdge({ stackCa, originPullCert, serverCert }: { stac
   return { hostResolverRules: [...names].map(name => `MAP ${name} [::1]`).join(","), stop: () => server.stop(true) }
 }
 
+/** How long any Helm call may wait: well inside the 10 minutes of the slowest test, so that a hang fails with its diagnosis. */
+const helmTimeout = "5m"
+
+type Kubectl = (args: string[], options?: { stdin?: string; allowFailure?: boolean }) => Promise<Result>
+
+/**
+ * What explains a failure, printed to standard error: every pod, the answerable namespace's events in order, a description
+ * of each pod that is not ready and each Job that is not complete, the ops and migration Jobs' logs, the database's
+ * sessions and what blocks them, the releases' history, and the node's allocated resources. Never a value of a Secret:
+ * `describe` names Secrets without reading them, the Jobs never print a value, and passwords in SQL are masked.
+ */
+async function diagnose(kubectl: Kubectl, helm: (args: string[]) => Promise<Result>, why: string) {
+  const section = (title: string, text: string) => console.error(`\n===== ${title} =====\n${text.trim() || "(nothing)"}`)
+  const show = async (title: string, args: string[]) => {
+    const result = await kubectl(args, { allowFailure: true })
+    section(title, result.stdout + (result.exitCode ? `\n${result.stderr}` : ""))
+  }
+  console.error(`\n##### Diagnosis: ${why} #####`)
+  await show("pods", ["get", "pods", "-A", "-o", "wide"])
+  await show("events in answerable", ["get", "events", "-n", "answerable", "--sort-by=.lastTimestamp"])
+  type Item = { metadata: { name: string }; status: { phase?: string; succeeded?: number; conditions?: { type: string; status: string }[] } }
+  const items = async (kind: string) => (JSON.parse((await kubectl(["get", kind, "-n", "answerable", "-o", "json"], { allowFailure: true })).stdout || "{\"items\":[]}") as { items: Item[] }).items
+  for (const pod of await items("pods")) {
+    const ready = pod.status.phase === "Succeeded" || pod.status.conditions?.some(condition => condition.type === "Ready" && condition.status === "True")
+    if (!ready) await show(`pod ${pod.metadata.name}, not ready`, ["describe", "pod", "-n", "answerable", pod.metadata.name])
+  }
+  for (const job of await items("jobs")) if (!job.status.succeeded) await show(`job ${job.metadata.name}, not complete`, ["describe", "job", "-n", "answerable", job.metadata.name])
+  await show("ops and migration logs", ["logs", "-n", "answerable", "-l", "app.kubernetes.io/component in (ops,migrate)", "--prefix", "--tail=80", "--all-containers"])
+  await show("database sessions", ["exec", "-n", "database", "statefulset/postgres", "-c", "postgres", "--", "psql", "-U", "postgres", "-d", "postgres", "-c",
+    "select pid, usename, datname, state, wait_event_type, wait_event, pg_blocking_pids(pid) as blocked_by, now() - xact_start as in_transaction, " +
+    "left(regexp_replace(query, $$password\\s+'[^']*'$$, 'password ***', 'gi'), 160) as query from pg_stat_activity where backend_type = 'client backend' order by xact_start nulls last"])
+  for (const release of ["answerable", "platform"]) {
+    const history = await helm(["history", release, "-n", release, "--max", "5"]).catch((error: Error) => ({ stdout: error.message }))
+    section(`helm history ${release}`, history.stdout)
+  }
+  await show("node", ["describe", "node"])
+}
+
+/**
+ * The kind config, and with INFRA_STACK_CPUS=<n> a node the size of an n-CPU CI runner: the kubelet reserves the rest of
+ * Docker's CPUs, so the scheduler sees n allocatable, and after creation the node's container is held to n CPUs of time.
+ */
+async function kindConfig(workdir: string) {
+  const cpus = Number(process.env.INFRA_STACK_CPUS || 0)
+  if (!cpus) return { path: join(here, "kind.yaml"), cpus }
+  const total = Number((await exec(["docker", "info", "--format", "{{.NCPU}}"])).stdout.trim())
+  if (!Number.isInteger(cpus) || cpus < 1 || cpus > total) throw new Error(`INFRA_STACK_CPUS must be a whole number from 1 to ${total}, the CPUs Docker has`)
+  const config = Bun.YAML.parse(readFileSync(join(here, "kind.yaml"), "utf8")) as { nodes: { kubeadmConfigPatches?: string[] }[] }
+  const node = config.nodes[0]!
+  node.kubeadmConfigPatches = [...(node.kubeadmConfigPatches ?? []), `kind: KubeletConfiguration\nsystemReserved:\n  cpu: "${total - cpus}"\n`]
+  const path = join(workdir, "kind.json")
+  await Bun.write(path, JSON.stringify(config))
+  return { path, cpus }
+}
+
 /** The kind stack: build, create, install, bootstrap, register, and the handles the proofs use. `stop` deletes the cluster. */
 export async function startStack() {
   const workdir = mkdtempSync(join(tmpdir(), "answerable-stack-"))
@@ -154,8 +215,24 @@ export async function startStack() {
   const originPullCaFile = join(workdir, "origin-pull-ca.pem")
   const databaseCaFile = join(workdir, "database-ca.pem")
   const env = { ...helmEnv, KUBECONFIG: kubeconfig }
-  const kubectl = (args: string[], options: { stdin?: string; allowFailure?: boolean } = {}) => exec(["kubectl", ...args], { env, ...options })
-  const helm = (args: string[]) => exec(["helm", ...args], { env })
+  const kubectl: Kubectl = (args, options = {}) => exec(["kubectl", ...args], { env, ...options })
+  const helmOnly = (args: string[]) => exec(["helm", ...args], { env })
+  const diagnosed = new WeakSet<object>()
+  /**
+   * A Helm call. An install or upgrade runs with --debug, which logs each hook and each resource it waits for (names and
+   * statuses, no values); when the call fails, the log's last lines and the cluster's diagnosis are printed before the error.
+   */
+  const helm = async (args: string[]) => {
+    const command = ["helm", ...args, ...(args[0] === "upgrade" ? ["--debug"] : [])]
+    const result = await exec(command, { env, allowFailure: true })
+    if (result.exitCode === 0) return result
+    const what = `helm ${args.slice(0, 2).join(" ")}`
+    console.error(`\n===== ${what}: the last lines of its log =====\n${result.stderr.trim().split("\n").slice(-60).join("\n")}`)
+    await diagnose(kubectl, helmOnly, `${what} exited with ${result.exitCode}`)
+    const error = new Error(`${what} exited with ${result.exitCode}: ${result.stderr.trim().split("\n").at(-1)}`)
+    diagnosed.add(error)
+    throw error
+  }
   const apply = (namespace: string, objects: object[]) => kubectl(["apply", "-n", namespace, "-f", "-"], { stdin: JSON.stringify({ apiVersion: "v1", kind: "List", items: objects }) })
   const readSecret = async (namespace: string, name: string) => {
     const { data } = JSON.parse((await kubectl(["get", "secret", "-n", namespace, name, "-o", "json"])).stdout) as { data: Record<string, string> }
@@ -180,8 +257,10 @@ export async function startStack() {
       exec(["docker", "build", "-f", dockerfile, "-t", image(name), "--build-arg", `REVISION=${revision}`, "."]))))
     built.catch(() => {})
     await step("create the kind cluster", async () => {
+      const config = await kindConfig(workdir)
       created = true
-      await exec(["kind", "create", "cluster", "--config", join(here, "kind.yaml"), "--kubeconfig", kubeconfig, "--wait", "180s"])
+      await exec(["kind", "create", "cluster", "--config", config.path, "--kubeconfig", kubeconfig, "--wait", "180s"])
+      if (config.cpus) await exec(["docker", "update", "--cpus", String(config.cpus), `${cluster}-control-plane`])
     })
     // The address the laptop's requests reach Traefik from: the IPv4 gateway of kind's Docker network.
     const gateways = (await exec(["docker", "network", "inspect", "kind", "--format", "{{range .IPAM.Config}}{{.Gateway}} {{end}}"])).stdout.trim().split(/\s+/)
@@ -194,7 +273,7 @@ export async function startStack() {
     await apply("default", [{ apiVersion: "v1", kind: "Namespace", metadata: { name: "answerable", labels: { "pod-security.kubernetes.io/enforce": "restricted", "pod-security.kubernetes.io/warn": "restricted", "pod-security.kubernetes.io/audit": "restricted" } } }])
     await step("install charts/platform", async () => {
       buildDependencies("platform")
-      await helm(["upgrade", "--install", "platform", join(charts, "platform"), "--namespace", "platform", "--values", join(charts, "platform/values-local.yaml"), "--wait", "--timeout", "10m"])
+      await helm(["upgrade", "--install", "platform", join(charts, "platform"), "--namespace", "platform", "--values", join(charts, "platform/values-local.yaml"), "--wait", "--timeout", helmTimeout])
     })
     await step("start the database and the edge", async () => {
       await apply("database", [{ apiVersion: "v1", kind: "Secret", metadata: { name: "postgres-bootstrap" }, stringData: { SUPERUSER_PASSWORD: secrets.superuser, "admin.sql": adminSql(secrets) } }])
@@ -203,7 +282,7 @@ export async function startStack() {
       await kubectl(["wait", "-n", "database", "certificate/postgres-tls", "--for=condition=Ready", "--timeout=180s"])
       // The stand-in's origin-pull CA reaches the chart as Terraform passes Cloudflare's: originPull.caPem, from a file.
       await Bun.write(originPullCaFile, (await readSecret("platform", "origin-pull-ca"))["ca.crt"]!)
-      await helm(["upgrade", "platform", join(charts, "platform"), "--namespace", "platform", "--values", join(charts, "platform/values-local.yaml"), "--values", join(here, "platform-edge.yaml"), "--set-file", `originPull.caPem=${originPullCaFile}`, "--wait", "--timeout", "10m"])
+      await helm(["upgrade", "platform", join(charts, "platform"), "--namespace", "platform", "--values", join(charts, "platform/values-local.yaml"), "--values", join(here, "platform-edge.yaml"), "--set-file", `originPull.caPem=${originPullCaFile}`, "--wait", "--timeout", helmTimeout])
       await kubectl(["rollout", "status", "-n", "database", "statefulset/postgres", "--timeout=300s"])
     })
     await step("load the images into the cluster", async () => {
@@ -220,11 +299,11 @@ export async function startStack() {
     const trustedOrigins = [...localValues.id.trustedOrigins, directory.directory.issuer, new URL(directory.directory.tokenEndpoint).origin]
     const extraEgress = [{ to: [{ ipBlock: { cidr: `${podHost}/32` } }], ports: [{ port: directoryPort, protocol: "TCP" }] }]
     /** `helm upgrade --install` of charts/answerable as the pipeline runs it, with the local values, the directory's settings and `sets`. */
-    const release = (sets: string[]) => helm([
+    const release = (sets: string[], timeout = helmTimeout) => helm([
       "upgrade", "--install", "answerable", join(charts, "answerable"), "--namespace", "answerable", "--values", join(charts, "answerable/values-local.yaml"),
       "--set-file", `database.caPem=${databaseCaFile}`,
       "--set-json", `id.trustedOrigins=${JSON.stringify(trustedOrigins)}`, "--set-json", `id.extraEgress=${JSON.stringify(extraEgress)}`,
-      ...sets.flatMap(set => ["--set", set]), "--wait", "--wait-for-jobs", "--timeout", "10m",
+      ...sets.flatMap(set => ["--set", set]), "--wait", "--wait-for-jobs", "--timeout", timeout,
     ])
     await step("install charts/answerable with the ops bootstrap", async () => {
       const opaque = (name: string, data: Record<string, string>) => ({ apiVersion: "v1", kind: "Secret", metadata: { name }, type: "Opaque", stringData: data })
@@ -244,15 +323,10 @@ export async function startStack() {
     })
     const client = await readSecret("platform", "edge-origin-pull")
     const edgeServer = await readSecret("platform", "edge-tls")
-    return { kubectl, helm, release, kubeconfig, readSecret, secrets, stop, stackCa, dockerGateway, podHost, directory: directory.directory, databaseCa, originPullCert: { cert: client["tls.crt"]!, key: client["tls.key"]! }, edgeCert: { cert: edgeServer["tls.crt"]!, key: edgeServer["tls.key"]! } }
+    return { kubectl, helm, release, diagnose: (why: string) => diagnose(kubectl, helmOnly, why), kubeconfig, readSecret, secrets, stop, stackCa, dockerGateway, podHost, directory: directory.directory, databaseCa, originPullCert: { cert: client["tls.crt"]!, key: client["tls.key"]! }, edgeCert: { cert: edgeServer["tls.crt"]!, key: edgeServer["tls.key"]! } }
   } catch (error) {
-    if (created) {
-      // Show what the cluster says before it goes: the pods, the last events, and the Jobs' logs.
-      const pods = await kubectl(["get", "pods", "-A", "-o", "wide"], { allowFailure: true })
-      const events = await kubectl(["get", "events", "-A", "--sort-by=.lastTimestamp"], { allowFailure: true })
-      const jobs = await kubectl(["logs", "-n", "answerable", "-l", "app.kubernetes.io/component in (ops,migrate)", "--prefix", "--tail=40"], { allowFailure: true })
-      console.error(pods.stdout, events.stdout.split("\n").slice(-40).join("\n"), jobs.stdout)
-    }
+    // Show what the cluster says before it goes.
+    if (created && !diagnosed.has(error as object)) await diagnose(kubectl, helmOnly, `the stack failed to start: ${(error as Error).message.split("\n")[0]}`)
     await stop()
     throw error
   }

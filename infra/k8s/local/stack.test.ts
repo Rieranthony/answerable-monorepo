@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { type Admin, connect, serveCallback, setSsoProvider, signIn, tool } from "@answerable/acceptance"
-import { chromium } from "@playwright/test"
-import { databaseAdmin, exec, hosts, image, images, origin, type Stack, startBrowserEdge, startStack, step, timings } from "./stack"
+import { type Admin, setSsoProvider } from "@answerable/acceptance"
+import type { SignInInput } from "./sign-in"
+import { databaseAdmin, exec, hosts, image, images, origin, type Stack, startStack, step, timings } from "./stack"
 
 // bun run infra:test: the four images, a kind cluster with charts/platform and charts/answerable as a cloud runs them,
 // a TLS-only PostgreSQL 17 holding only an administrative login, the ops Jobs that bootstrap the databases and register
@@ -35,6 +35,19 @@ afterAll(async () => {
 /** A request through Traefik, as Cloudflare makes it: the origin-pull client certificate, the stack's CA trusted. One that hangs fails after 30 seconds. */
 function viaIngress(url: string, init: RequestInit = {}, certificate: { cert: string; key: string } | null = stack!.originPullCert) {
   return fetch(url, { signal: AbortSignal.timeout(30_000), ...init, tls: { ca: stack!.stackCa, ...(certificate ?? {}) }, redirect: "manual" })
+}
+
+/**
+ * A long test's body, watched: still running after `ms`, shortly before bun test's own timeout ends it without a word, it
+ * prints the cluster's diagnosis, so that a hang explains itself in the log.
+ */
+async function watched<T>(name: string, ms: number, body: () => Promise<T>) {
+  const timer = setTimeout(() => void stack!.diagnose(`"${name}" is still running after ${ms / 1000} s`), ms)
+  try {
+    return await body()
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 /** Run a script with Bun in a running pod of a Deployment and return its last line of output, parsed. */
@@ -353,52 +366,27 @@ describe("the ops Jobs", () => {
 })
 
 describe("a staff member signs in through the cluster", () => {
-  test("with the platform's company directory on this host, in Chromium through Traefik, and the official MCP client calls admin_whoami: no role, then owner", async () => {
-    const idOrigin = origin(hosts.id)
-    const adminResource = `${origin(hosts.adminMcp)}/mcp`
-    const callback = "http://localhost:47700/callback"
+  test("with the platform's company directory on this host, in Chromium through Traefik, and the official MCP client calls admin_whoami: no role, then owner", () => watched("the staff sign-in", 150_000, async () => {
     const { directory } = stack!
     const platform = ((await rootAdmin("GET", "/organizations?q=answerable&limit=100")).items as { id: string; slug: string }[]).find(item => item.slug === "answerable")!.id
     // As an operator connects the platform organisation to its company directory on the first run (docs/06, step 6).
     await rootAdmin("POST", `/organizations/${platform}/domains`, { domain: directory.domain })
     await setSsoProvider(rootAdmin, platform, directory)
-    // The MCP SDK and the kit call fetch themselves: the stack's origins take the origin-pull certificate, as through Cloudflare.
-    const original = globalThis.fetch
-    const stackOrigins = new Set(Object.values(hosts).map(origin))
-    globalThis.fetch = Object.assign((input: string | URL | Request, init?: RequestInit) => {
-      const url = new URL(input instanceof Request ? input.url : String(input))
-      return stackOrigins.has(url.origin) ? original(input, { ...init, tls: { ca: stack!.stackCa, ...stack!.originPullCert } }) : original(input, init)
-    }, original)
-    // Chromium reaches Traefik through the browser's stand-in for Cloudflare, which presents the origin-pull certificate.
-    const edge = startBrowserEdge({ stackCa: stack!.stackCa, originPullCert: stack!.originPullCert, serverCert: stack!.edgeCert })
-    const browser = await chromium.launch({ headless: true, args: [`--host-resolver-rules=${edge.hostResolverRules}`] })
-    const listener = serveCallback(callback)
-    try {
-      const context = await browser.newContext({ ignoreHTTPSErrors: true })
-      const session = await step("sign a staff member in through the browser", () => signIn(context, { idOrigin, resource: adminResource, clientId: "claude-code-admin", callback, scopes: ["admin"] }, { slug: "answerable", email: directory.email, scopes: ["admin"] }))
-      const client = await connect(adminResource, session.provider, "2025")
-      try {
-        const claims = JSON.parse(Buffer.from(session.state.tokens!.access_token.split(".")[1]!, "base64url").toString()) as { membership_id: string; organization_id: string; client_id: string }
-        expect(claims).toMatchObject({ organization_id: platform, client_id: "claude-code-admin" })
-        expect(await tool(client, "admin_whoami")).toMatchObject({ organizationId: platform, membershipId: claims.membership_id, role: null, nextStep: expect.stringContaining("Ask an owner") })
-        // Root makes them the first owner (docs/admin/setup); the admin MCP reads the role on each request.
-        const owner = ((await rootAdmin("GET", `/organizations/${platform}/groups?q=answerable-owner&limit=100`)).items as { id: string; slug: string }[]).find(item => item.slug === "answerable-owner")!.id
-        await rootAdmin("PUT", `/organizations/${platform}/groups/${owner}/members/${claims.membership_id}`, {}, { "if-none-match": "*" })
-        expect(await tool(client, "admin_whoami")).toMatchObject({ role: "owner", nextStep: null })
-      } finally {
-        await client.close()
-      }
-    } finally {
-      globalThis.fetch = original
-      listener.stop(true)
-      await browser.close()
-      edge.stop()
-    }
-  }, 180_000)
+    const ownerGroup = ((await rootAdmin("GET", `/organizations/${platform}/groups?q=answerable-owner&limit=100`)).items as { id: string; slug: string }[]).find(item => item.slug === "answerable-owner")!.id
+    // Chromium runs in a process of its own, which signs in, calls admin_whoami, has root make the member an owner and calls
+    // it again (sign-in.ts says why it is not this process).
+    const input: SignInInput = { email: directory.email, platform, ownerGroup, rootAdminSecret: stack!.secrets.rootAdminSecret, stackCa: stack!.stackCa, originPullCert: stack!.originPullCert, edgeCert: stack!.edgeCert }
+    const { stdout } = await step("sign a staff member in through the browser", () => exec([process.execPath, "infra/k8s/local/sign-in.ts"], { stdin: JSON.stringify(input) }))
+    const result = JSON.parse(stdout.trim().split("\n").at(-1)!) as { claims: { organization_id: string; client_id: string; membership_id: string }; before: unknown; after: unknown }
+    expect(result.claims).toMatchObject({ organization_id: platform, client_id: "claude-code-admin" })
+    expect(result.before).toMatchObject({ organizationId: platform, membershipId: result.claims.membership_id, role: null, nextStep: expect.stringContaining("Ask an owner") })
+    // The admin MCP reads the role on each request: the same token is an owner's on the next call.
+    expect(result.after).toMatchObject({ role: "owner", nextStep: null })
+  }), 180_000)
 })
 
 describe("running the ops Jobs again", () => {
-  test("bootstrap and register once more, as deploy.ts run-job does: every login keeps its password, every Secret is untouched, nothing is rotated", async () => {
+  test("bootstrap and register once more, as deploy.ts run-job does: every login keeps its password, every Secret is untouched, nothing is rotated", () => watched("running the ops Jobs again", 420_000, async () => {
     const versions = async () => Object.fromEntries(await Promise.all([...urlSecrets, ...clientSecrets].map(async ([name]) => [name, (await stack!.kubectl(["get", "secret", "-n", "answerable", name, "-o", "jsonpath={.metadata.resourceVersion}"])).stdout])))
     const before = await versions()
     await step("run bootstrap and register again", () => stack!.release(["ops.bootstrap=true", "ops.register=true"]))
@@ -413,7 +401,7 @@ describe("running the ops Jobs again", () => {
     // The services still connect with the passwords they hold.
     expect(await (await viaIngress(`${origin(hosts.id)}/readyz`)).json()).toEqual({ status: "ok" })
     expect(await (await viaIngress(`${origin(hosts.adminMcp)}/health`)).json()).toEqual({ status: "ok" })
-  }, 600_000)
+  }), 600_000)
 })
 
 // Last, because it changes the cluster and restores it: each of the two TLS options alone demands Cloudflare's

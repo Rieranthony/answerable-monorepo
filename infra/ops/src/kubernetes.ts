@@ -22,6 +22,8 @@ type Options = {
   ca: string
   namespace: string
   fetch?: typeof globalThis.fetch
+  /** How long one call may take before it fails naming the object. */
+  timeoutMs?: number
 }
 
 const encode = (value: string) => Buffer.from(value).toString("base64")
@@ -30,7 +32,7 @@ const asOps = "fieldManager=answerable-ops"
 const decode = (value: string) => Buffer.from(value, "base64").toString()
 
 /** A client for the API server over HTTPS, verified against the cluster's certificate authority. Errors name the object and the status, never a value. */
-export function createKubernetes({ server, token, ca, namespace, fetch = globalThis.fetch }: Options): Kubernetes {
+export function createKubernetes({ server, token, ca, namespace, fetch = globalThis.fetch, timeoutMs = 30_000 }: Options): Kubernetes {
   const secrets = `${server}/api/v1/namespaces/${namespace}/secrets`
   const deployments = `${server}/apis/apps/v1/namespaces/${namespace}/deployments`
   async function call(method: string, url: string, body?: unknown) {
@@ -39,7 +41,11 @@ export function createKubernetes({ server, token, ca, namespace, fetch = globalT
       headers: { Authorization: `Bearer ${token}`, Accept: "application/json", ...(body === undefined ? {} : { "Content-Type": method === "PATCH" ? "application/merge-patch+json" : "application/json" }) },
       body: body === undefined ? undefined : JSON.stringify(body),
       tls: { ca },
-    } as RequestInit)
+      signal: AbortSignal.timeout(timeoutMs),
+    } as RequestInit).catch((error: Error) => {
+      // Behind a NetworkPolicy that admits no route to the API server, a call waits rather than failing.
+      throw error.name === "TimeoutError" ? new Error(`The Kubernetes API did not answer ${method} ${new URL(url).pathname} within ${timeoutMs / 1000} s: can this pod reach ${server} (networkPolicy.kubernetesApi)?`) : error
+    })
   }
   async function refusal(response: Response, method: string, what: string) {
     // The Status object's reason is a word such as Forbidden; its message is left out, in case it ever echoes the request.
