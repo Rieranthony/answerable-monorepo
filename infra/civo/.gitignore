@@ -1,0 +1,15 @@
+# Terraform's working directories and anything holding state: state carries the cluster's admin kubeconfig, the
+# database's administrator password and the deployer's token, and lives only in the environment's object store.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+
+# The first apply's local backend override (README, "First apply").
+*_override.tf
+
+# Shared modules are never applied on their own: `terraform init` writes their lock files and they are not kept.
+# The roots' lock files are committed with hashes for darwin_arm64, linux_amd64 and linux_arm64.
+modules/*/.terraform.lock.hcl
