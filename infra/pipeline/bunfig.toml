@@ -1,5 +1,8 @@
 [test]
 root = "src"
+# run.test.ts and the CLI's "runs as a program" test start real Bun processes; on a loaded machine two process starts can
+# outlast the 5-second default, so the suite allows 30 seconds a test. Every other test finishes in milliseconds.
+timeout = 30000
 coverage = true
 coverageSkipTestFiles = true
 coverageThreshold = { lines = 1, functions = 1 }
