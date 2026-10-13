@@ -1,0 +1,32 @@
+# The build context of apps/id/Dockerfile, mcps/toolbox/Dockerfile and mcps/admin/Dockerfile: the repository root.
+# The images carry sources, manifests and build output only: no environment file, test, coverage, git metadata or local install.
+.git
+.github
+.claude
+.env*
+**/node_modules
+**/.next
+**/.turbo
+**/dist
+**/coverage
+**/*.test.ts
+**/*.test.tsx
+**/__tests__
+**/*.md
+**/*.mdx
+docs
+reports
+charts
+
+# Workspaces no image runs: only their package.json, which the frozen install reads with the lockfile.
+apps/web/*
+!apps/web/package.json
+apps/community-mcp
+mcps/example/*
+!mcps/example/package.json
+packages/acceptance/*
+!packages/acceptance/package.json
+scripts/*
+!scripts/package.json
+infra/**
+!infra/*/package.json
