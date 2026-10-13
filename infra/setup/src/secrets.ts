@@ -128,10 +128,10 @@ function certManagerToken(env: Context["env"]): string {
   const token = requireVariable(
     env,
     "CERT_MANAGER_CLOUDFLARE_TOKEN",
-    "cert-manager's Cloudflare token, with Zone > DNS > Edit on the zone only",
+    "cert-manager's Cloudflare token, with Zone > DNS > Edit and Zone > Zone > Read on the zone only",
   )
   if (token === env.CLOUDFLARE_API_TOKEN?.trim())
-    throw new UsageError("CERT_MANAGER_CLOUDFLARE_TOKEN is Terraform's token: cert-manager gets its own, with Zone > DNS > Edit only")
+    throw new UsageError("CERT_MANAGER_CLOUDFLARE_TOKEN is Terraform's token: cert-manager gets its own, with Zone > DNS > Edit and Zone > Zone > Read only")
   return token
 }
 

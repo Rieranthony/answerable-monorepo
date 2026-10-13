@@ -142,7 +142,7 @@ A request travels Cloudflare → the Civo load balancer → Traefik → a servic
 | --- | --- | --- | --- |
 | `id-env` | `BETTER_AUTH_SECRET`, `UPSTREAM_TOKEN_SECRETS`, `ROOT_ADMIN_SECRET`; `MICROSOFT_CLIENT_ID` with `MICROSOFT_CLIENT_SECRET` and `GOOGLE_CLIENT_ID` with `GOOGLE_CLIENT_SECRET` when given | `init-secrets`, into `secrets.enc.yaml`; the deploy applies it | `init-secrets --rotate <key>`; `BETTER_AUTH_SECRET` only through the `BETTER_AUTH_SECRETS` ring |
 | `postgres-admin` | `OPS_DATABASE_ADMIN_URL` | `init-secrets`, from Terraform's `database_admin_url` | `init-secrets --rotate OPS_DATABASE_ADMIN_URL` |
-| `cloudflare-api-token` | `api-token`: Zone > DNS > Edit on the one zone, for cert-manager | `init-secrets`, from `CERT_MANAGER_CLOUDFLARE_TOKEN` | `init-secrets --rotate api-token` |
+| `cloudflare-api-token` | `api-token`: Zone > DNS > Edit and Zone > Zone > Read on the one zone, for cert-manager | `init-secrets`, from `CERT_MANAGER_CLOUDFLARE_TOKEN` | `init-secrets --rotate api-token` |
 | `id-database`, `id-database-owner`, `toolbox-database`, `toolbox-database-owner`, `admin-database`, `admin-database-owner` | `DATABASE_URL`, `DATABASE_MIGRATION_URL` and the `TOOLBOX_` and `ADMIN_` equivalents | `ops-bootstrap` | Empty the key, deploy |
 | `toolbox-id-client`, `admin-id-client` | `TOOLBOX_ID_CLIENT_SECRET`, `ADMIN_ID_CLIENT_SECRET` | `ops-register` | Empty the key, register again |
 | `ops-staff-token` | `OPS_ID_TOKEN` | The owner, by hand, only while registering again after root has locked | Delete it after use |

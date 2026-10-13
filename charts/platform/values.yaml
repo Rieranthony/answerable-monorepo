@@ -86,7 +86,7 @@ cert-manager:
 issuers:
   # Let's Encrypt through a DNS-01 challenge in the environment's Cloudflare zone: the Issuer letsencrypt in namespace,
   # beside the Ingresses. The token is the Secret cloudflare-api-token (key api-token) in that namespace, applied by the
-  # deploy from the sops file; it needs Zone > DNS > Edit on that one zone only.
+  # deploy from the sops file; it needs Zone > DNS > Edit and Zone > Zone > Read on that one zone, as cert-manager's Cloudflare guide lists.
   letsencrypt:
     enabled: false
     namespace: answerable

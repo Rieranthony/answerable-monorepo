@@ -110,7 +110,7 @@ Pool checkout, statements and request bodies have limits. Successful effects, au
 
 ## Hosting
 
-Bun runs in production, with TLS at ingress and no CDN/WAF for now. `https://id.answerable.org` is the documented configuration example, not evidence of a deployed issuer. Topology, replica count, databases, URLs and listener policy remain external inputs.
+Bun runs in production behind Cloudflare, with TLS at Cloudflare's edge and again at the in-cluster ingress, which admits only Cloudflare's origin-pull certificate ([`12-deployment.md`](12-deployment.md)). `https://id.answerable.org` is the documented configuration example, not evidence of a deployed issuer. Topology, replica count, databases, URLs and listener policy remain external inputs.
 
 ## Tailnet hardening
 

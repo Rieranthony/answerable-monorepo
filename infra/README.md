@@ -50,7 +50,7 @@ For the checks: `tflint` 0.64.0, `trivy` 0.75.0, `actionlint` 1.7.12 and `kubeco
 
 2. **Cloudflare.** The zone (`answerable-staging.uk` for staging, `answerable.org` for production) and **two API tokens scoped to that zone only**:
    - **Terraform's**, `CLOUDFLARE_API_TOKEN`: Zone > DNS > Edit, Zone > SSL and Certificates > Edit, Zone > Zone Settings > Edit, Zone > Config Rules > Edit, Zone > Cache Rules > Edit ([the list and why](civo/README.md#credentials)).
-   - **cert-manager's**, `CERT_MANAGER_CLOUDFLARE_TOKEN`: Zone > DNS > Edit, for the Let's Encrypt DNS-01 challenge. It must differ from the first.
+   - **cert-manager's**, `CERT_MANAGER_CLOUDFLARE_TOKEN`: Zone > DNS > Edit and Zone > Zone > Read on the zone, for the Let's Encrypt DNS-01 challenge ([cert-manager's Cloudflare guide](https://cert-manager.io/docs/configuration/acme/dns01/cloudflare/) lists both; without Zone Read the certificate stays pending). It must differ from the first.
    - **Bot Fight Mode off** in the zone's Security settings. No token can change it, and it would challenge every MCP host.
 3. **Microsoft Entra.** The environment's app registration, with the redirect URIs `https://id.answerable-staging.uk/auth/sso/callback` and `https://id.answerable-staging.uk/login` for staging, or production's in [`docs/06`](../docs/06-deploying-answerable-id.md#platform-applications-microsoft-entra-and-google). Its client ID and secret are `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET`. You also need the **tenant ID of Answerable's own staff directory** for ID's first run. A Google client is optional (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`).
 
