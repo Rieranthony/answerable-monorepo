@@ -54,7 +54,8 @@ async function createStateBucket(options: FirstApplyOptions, context: Context, t
   if ((await initialisedBackend(paths)) === "s3")
     throw new SetupError(
       `${shown(paths, paths.envDir)} already keeps its state in the bucket: the first apply has run. ` +
-        "Finish it with --resume (export AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY first)",
+        "Finish it with --resume (export AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY first). If it has not run, this " +
+        "machine initialised the root by hand: delete its .terraform directory and run first-apply again",
     )
 
   const override = join(paths.envDir, "backend_override.tf")
@@ -74,7 +75,8 @@ async function createStateBucket(options: FirstApplyOptions, context: Context, t
   }
   await rm(override)
   await terraform(context, paths, {
-    argv: ["terraform", "init", "-input=false", "-migrate-state", ...(options.yes ? ["-force-copy"] : [])],
+    // Terraform asks before it copies the state, unless -force-copy answers for it; -input=false would make it fail instead.
+    argv: ["terraform", "init", "-migrate-state", ...(options.yes ? ["-force-copy", "-input=false"] : [])],
     env: { ...tokens, ...state },
     what: "Step 3 (the state migration)",
   })

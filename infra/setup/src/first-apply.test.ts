@@ -53,7 +53,7 @@ describe("first-apply", () => {
       "terraform apply -target=module.state",
       "terraform output -raw state_access_key_id",
       "terraform output -raw state_secret_access_key",
-      "terraform init -input=false -migrate-state",
+      "terraform init -migrate-state",
       "terraform state list",
       "terraform apply -target=module.cluster -target=module.database -target=module.ingress_firewall",
     ])
@@ -86,7 +86,7 @@ describe("first-apply", () => {
     const { context, output } = createContext({ run: runner.run, env: { ...TOKENS, ALLOWED_API_CIDRS: '["198.51.100.7/32"]' } })
     await firstApply({ environment: "staging", paths, yes: true }, context)
     expect(runner.commands()).toContain("terraform apply -target=module.state -auto-approve")
-    expect(runner.commands()).toContain("terraform init -input=false -migrate-state -force-copy")
+    expect(runner.commands()).toContain("terraform init -migrate-state -force-copy -input=false")
     expect(runner.commands().at(-1)).toBe("terraform apply -auto-approve")
     expect(runner.calls.at(-1)!.options.env).toEqual({ ...TOKENS, TF_VAR_allowed_api_cidrs: '["198.51.100.7/32"]', ...STATE })
     expect(output()).toContain("Applied staging. Next:")

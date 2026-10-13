@@ -59,7 +59,7 @@ Runs [`infra/civo/README.md`](../civo/README.md#first-apply) § First apply, ste
 - **Step 5.** `terraform apply` of the cluster, the database and the firewalls.
 - **Step 6.** The full `terraform apply`, but only once `edge-ca/ca.pem` and `database-ca.pem` exist. Otherwise it stops and names the commands to run, then `first-apply --resume`.
 
-Terraform asks before each change unless you pass `--yes` (`-auto-approve`, and `-force-copy` for the migration). A failed step says which; rerun the command. It refuses a fresh run once this machine has initialised the root against the bucket: use `--resume`. Step 7 is `publish-env`; step 8, pinning the cluster version, is printed at the end.
+Terraform asks before each change and before it copies the state unless you pass `--yes` (`-auto-approve`, and `-force-copy` for the migration). A failed step says which; rerun the command. It refuses a fresh run once this machine has initialised the root against the bucket: use `--resume`. Step 7 is `publish-env`; step 8, pinning the cluster version, is printed at the end.
 
 ### `origin-pull --zone <zone>`
 
