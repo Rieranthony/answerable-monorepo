@@ -20,7 +20,7 @@ export const databases: Database[] = [
 ]
 
 /** 32 random bytes, base64url: a password with no character that needs quoting in a URL or SQL. */
-export function generatePassword() {
+function generatePassword() {
   return Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url")
 }
 

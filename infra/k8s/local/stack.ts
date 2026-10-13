@@ -21,7 +21,7 @@ export const images = [
 export const image = (name: string) => `ghcr.io/rieranthony/answerable/${name}:local`
 
 /** The company directory's port on the host (apps/id/scripts/stack-directories.ts). */
-export const directoryPort = 47_710
+const directoryPort = 47_710
 
 /** The database's administrative login, as a managed database hands one out: it may create databases and roles, and is not a superuser. */
 export const databaseAdmin = "dbadmin"
@@ -70,7 +70,7 @@ const adminSql = ({ admin }: ReturnType<typeof generateSecrets>) => `CREATE ROLE
 const database = "postgres.database.svc.cluster.local:5432"
 
 /** One company directory a person signs in with, as `setSsoProvider` in packages/acceptance takes it. */
-export type Directory = { slug: string; domain: string; email: string; issuer: string; authorizationEndpoint: string; tokenEndpoint: string; jwksEndpoint: string; clientId: string; clientSecret: string }
+type Directory = { slug: string; domain: string; email: string; issuer: string; authorizationEndpoint: string; tokenEndpoint: string; jwksEndpoint: string; clientId: string; clientSecret: string }
 
 /**
  * Where ID's pods reach this host: host.docker.internal as the kind node resolves it (Docker Desktop), else the gateway of
