@@ -86,3 +86,23 @@ run "serves_answerable_org_without_touching_www" {
     error_message = "Production's state must live in production's own bucket."
   }
 }
+
+# Without TF_VAR_allowed_api_cidrs production's API would admit nobody: the plan fails loudly instead.
+run "refuses_to_plan_without_operator_addresses" {
+  command = plan
+
+  variables {
+    allowed_api_cidrs = []
+  }
+
+  expect_failures = [var.allowed_api_cidrs]
+}
+
+run "lets_the_deployer_read_nothing_outside_answerable" {
+  command = plan
+
+  assert {
+    condition     = length(module.deployer.read_namespaces) == 0
+    error_message = "The pipeline reads nothing outside answerable, so the deployer may not either."
+  }
+}

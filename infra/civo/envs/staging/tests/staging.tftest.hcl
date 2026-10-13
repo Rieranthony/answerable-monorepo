@@ -95,3 +95,26 @@ run "serves_the_staging_zone" {
     error_message = "The state bucket and endpoint must be the ones backend.tf names."
   }
 }
+
+# The automated plans run with -input=false and no TF_VAR_allowed_api_cidrs: staging's open API needs no address.
+run "plans_without_operator_addresses" {
+  command = plan
+
+  variables {
+    allowed_api_cidrs = []
+  }
+
+  assert {
+    condition     = module.cluster.api_open_to_internet
+    error_message = "Staging must plan with no operator address, its API being open."
+  }
+}
+
+run "lets_the_deployer_read_nothing_outside_answerable" {
+  command = plan
+
+  assert {
+    condition     = length(module.deployer.read_namespaces) == 0
+    error_message = "The pipeline reads nothing outside answerable, so the deployer may not either."
+  }
+}

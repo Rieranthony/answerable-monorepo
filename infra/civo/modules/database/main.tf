@@ -3,8 +3,9 @@ locals {
 }
 
 # The database's firewall. Civo's default database firewall admits 5432 from everyone; this one admits it from the
-# private network only, which holds the cluster's nodes (pods reach the database from their node's address). Outbound,
-# the database may talk to its own network (its standbys) and nowhere else.
+# private network, which by policy holds only the cluster's nodes, its load balancer and this database. Nodes-only is
+# not expressible on Civo (rules match CIDRs, node addresses change, no subnet per pool): README.md, "Known limit".
+# Outbound, the database may talk to its own network (its standbys) and nowhere else.
 resource "civo_vpc_firewall" "this" {
   name                 = local.name
   network_id           = var.network_id

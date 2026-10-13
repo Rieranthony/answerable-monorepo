@@ -101,8 +101,50 @@ run "admits_the_api_from_the_listed_addresses_only" {
   }
 
   assert {
-    condition     = length(civo_vpc_firewall.this.ingress_rule) == 3
-    error_message = "The cluster firewall admits the API and the private network's TCP and UDP, nothing else."
+    condition     = length(civo_vpc_firewall.this.ingress_rule) == 6
+    error_message = "The cluster firewall admits the API and five node-to-node rules, nothing else."
+  }
+}
+
+# From the private network the firewall admits only what the load balancer and the nodes need of one another (see the
+# module README for the sources). A rule spanning every port, or any rule from the network reaching 6443, would let
+# anything on the network past allowed_api_cidrs, so neither may come back.
+run "admits_only_named_ports_from_the_private_network" {
+  command = plan
+
+  assert {
+    condition = toset([
+      for rule in civo_vpc_firewall.this.ingress_rule : "${rule.protocol}/${coalesce(rule.port_range, "-")}"
+      if rule.cidr == toset(["10.10.0.0/24"])
+      ]) == toset([
+      "tcp/30000-32767", # node ports: the load balancer to ingress-nginx
+      "tcp/10250",       # kubelet: metrics-server and the API server's logs and exec
+      "udp/8472",        # Cilium's VXLAN tunnel
+      "tcp/4240",        # cilium-health
+      "icmp/-",          # cilium-health's ping
+    ])
+    error_message = "From the private network: node ports, kubelet, Cilium's tunnel and health checks, and nothing else."
+  }
+
+  assert {
+    condition = alltrue([
+      for rule in civo_vpc_firewall.this.ingress_rule : (
+        rule.protocol == "icmp" ? true : (
+          strcontains(rule.port_range, "-")
+          ? !(tonumber(split("-", rule.port_range)[0]) <= 6443 && tonumber(split("-", rule.port_range)[1]) >= 6443)
+          : rule.port_range != "6443"
+        )
+      ) if rule.cidr == toset(["10.10.0.0/24"])
+    ])
+    error_message = "No rule from the private network may reach 6443; the API answers allowed_api_cidrs and api_open_to_internet only."
+  }
+
+  assert {
+    condition = alltrue([
+      for rule in civo_vpc_firewall.this.ingress_rule :
+      rule.port_range != "1-65535" && rule.port_range != "0-65535"
+    ])
+    error_message = "No inbound rule may span every port."
   }
 }
 
@@ -168,7 +210,7 @@ run "opens_the_api_when_asked_and_nothing_else" {
     condition = alltrue([
       for rule in civo_vpc_firewall.this.ingress_rule :
       !contains(rule.cidr, "0.0.0.0/0") && !contains(rule.cidr, "::/0") if rule.port_range != "6443"
-    ]) && length(civo_vpc_firewall.this.ingress_rule) == 3
+    ]) && length(civo_vpc_firewall.this.ingress_rule) == 6
     error_message = "Opening the API must open nothing but 6443."
   }
 
