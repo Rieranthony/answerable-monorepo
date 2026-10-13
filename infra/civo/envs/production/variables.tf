@@ -25,9 +25,15 @@ variable "network_cidr" {
 }
 
 variable "allowed_api_cidrs" {
-  description = "The addresses that may reach the Kubernetes API, as CIDRs. Not committed (an operator's address is personal data in a public repository): set TF_VAR_allowed_api_cidrs, for example '[\"198.51.100.7/32\"]'."
+  description = "The operators' own addresses that may reach the Kubernetes API, as CIDRs, for kubectl. Not committed (an operator's address is personal data in a public repository): set TF_VAR_allowed_api_cidrs, for example '[\"198.51.100.7/32\"]'. Empty by default so that automated runs with -input=false do not stop to ask; without the open API of staging, an empty list fails the plan."
   type        = list(string)
   sensitive   = true
+  default     = []
+
+  validation {
+    condition     = length(var.allowed_api_cidrs) > 0 || var.api_open_to_internet
+    error_message = "Set TF_VAR_allowed_api_cidrs: with the API closed to the internet, an empty list would let nobody reach the cluster."
+  }
 }
 
 variable "api_open_to_internet" {

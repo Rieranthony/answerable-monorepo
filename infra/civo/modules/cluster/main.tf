@@ -12,9 +12,9 @@ locals {
   api_sources = var.api_open_to_internet ? distinct(concat(var.allowed_api_cidrs, ["0.0.0.0/0"])) : var.allowed_api_cidrs
 }
 
-# Civo clusters always have a public address. This firewall keeps everything outside the private network away from it
-# except the Kubernetes API, and the API only from local.api_sources. The private network's own range is admitted so
-# that the load balancer reaches the ingress controller's node ports and the nodes reach one another.
+# Civo clusters always have a public address. This firewall admits the Kubernetes API from local.api_sources only,
+# and from the private network only the ports the load balancer and the nodes need of one another, each named below
+# with its source in the README. 6443 is never admitted from the network as such.
 resource "civo_vpc_firewall" "this" {
   name                 = local.name
   network_id           = var.network_id
@@ -28,20 +28,47 @@ resource "civo_vpc_firewall" "this" {
     action     = "allow"
   }
 
+  # Kubernetes' NodePort range: the Civo load balancer forwards 443 to ingress-nginx's node port on every node.
   ingress_rule {
-    label      = "private-network-tcp"
+    label      = "node-ports"
     protocol   = "tcp"
-    port_range = "1-65535"
+    port_range = "30000-32767"
+    cidr       = [var.network_cidr]
+    action     = "allow"
+  }
+
+  # k3s: the kubelet, which metrics-server scrapes and the API server reaches for logs and exec.
+  ingress_rule {
+    label      = "kubelet"
+    protocol   = "tcp"
+    port_range = "10250"
+    cidr       = [var.network_cidr]
+    action     = "allow"
+  }
+
+  # Cilium: the VXLAN overlay between nodes, which carries all pod-to-pod traffic.
+  ingress_rule {
+    label      = "cilium-vxlan"
+    protocol   = "udp"
+    port_range = "8472"
+    cidr       = [var.network_cidr]
+    action     = "allow"
+  }
+
+  # Cilium: cilium-health's HTTP and ping probes between nodes.
+  ingress_rule {
+    label      = "cilium-health"
+    protocol   = "tcp"
+    port_range = "4240"
     cidr       = [var.network_cidr]
     action     = "allow"
   }
 
   ingress_rule {
-    label      = "private-network-udp"
-    protocol   = "udp"
-    port_range = "1-65535"
-    cidr       = [var.network_cidr]
-    action     = "allow"
+    label    = "cilium-health-ping"
+    protocol = "icmp"
+    cidr     = [var.network_cidr]
+    action   = "allow"
   }
 
   egress_rule {

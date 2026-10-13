@@ -21,8 +21,8 @@ locals {
     { api_groups = ["cert-manager.io"], resources = ["certificates", "certificaterequests"], verbs = local.read },
   ]
 
-  # In the platform namespace the deployer reads what explains a failed rollout (the ingress controller's pods, logs
-  # and events) and nothing that holds a credential.
+  # Only in namespaces read_namespaces lists, which neither root does: there the deployer reads what explains a failed
+  # rollout (the ingress controller's pods, logs and events) and nothing that holds a credential.
   read_rules = [
     { api_groups = [""], resources = ["pods", "services", "endpoints", "events", "configmaps"], verbs = local.read },
     { api_groups = [""], resources = ["pods/log"], verbs = ["get"] },

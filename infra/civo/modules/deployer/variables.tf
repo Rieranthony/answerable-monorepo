@@ -9,7 +9,7 @@ variable "namespace" {
 }
 
 variable "read_namespaces" {
-  description = "Namespaces the deployer may read (pods, logs, events, workloads; never Secrets), to explain a failed rollout."
+  description = "Namespaces the deployer may also read (pods, logs, events, workloads; never Secrets). Empty by default and in both roots, because the pipeline reads nothing outside answerable; kept for a future diagnostic of a failed rollout."
   type        = list(string)
   default     = []
 

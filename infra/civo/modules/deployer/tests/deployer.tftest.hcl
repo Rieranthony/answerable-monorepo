@@ -1,10 +1,9 @@
 # The deploy workflow's identity (D25): a ServiceAccount that can do what `helm upgrade` of charts/answerable and the
-# secrets step need inside the answerable namespace, can read the platform namespace, and can do nothing else.
+# secrets step need inside the answerable namespace and nothing else; reading another namespace is opt-in.
 mock_provider "kubernetes" {}
 
 variables {
-  namespace       = "answerable"
-  read_namespaces = ["platform"]
+  namespace = "answerable"
 }
 
 run "creates_the_service_account_and_its_token" {
@@ -92,8 +91,22 @@ run "grants_what_helm_upgrade_needs_in_its_namespace_only" {
   }
 }
 
+run "reads_no_other_namespace_by_default" {
+  command = plan
+
+  assert {
+    condition     = length(kubernetes_role_v1.read) == 0 && length(kubernetes_role_binding_v1.read) == 0 && length(output.read_namespaces) == 0
+    error_message = "The pipeline reads nothing outside answerable, so by default the deployer may not either."
+  }
+}
+
+# Kept for a future diagnostic: what read_namespaces grants when it is set.
 run "reads_the_platform_namespace_and_nothing_more" {
   command = plan
+
+  variables {
+    read_namespaces = ["platform"]
+  }
 
   assert {
     condition     = kubernetes_role_v1.read["platform"].metadata[0].namespace == "platform" && kubernetes_role_binding_v1.read["platform"].metadata[0].namespace == "platform"

@@ -81,8 +81,9 @@ module "platform" {
 module "deployer" {
   source = "../../modules/deployer"
 
-  namespace       = module.platform.answerable_namespace
-  read_namespaces = [module.platform.platform_namespace]
+  namespace = module.platform.answerable_namespace
+  # The pipeline reads nothing outside answerable; list a namespace here only for a diagnostic.
+  read_namespaces = []
 }
 
 module "edge" {

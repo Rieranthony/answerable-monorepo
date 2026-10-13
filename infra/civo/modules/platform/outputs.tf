@@ -4,7 +4,7 @@ output "answerable_namespace" {
 }
 
 output "platform_namespace" {
-  description = "The shared controllers' namespace, which the deployer may read."
+  description = "The shared controllers' namespace."
   value       = kubernetes_namespace_v1.platform.metadata[0].name
 }
 
