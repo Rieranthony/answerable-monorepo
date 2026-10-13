@@ -1,6 +1,6 @@
 // `bun run infra:check`: every infrastructure gate that needs no cloud account, no credential and no Docker.
 // The steps run in order; the first failure stops the run and names its step. CI runs the same script.
-import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join, relative } from "node:path"
 
@@ -15,7 +15,10 @@ const kubernetesVersion = "1.33.0"
 const crdSchemas = "https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
 
 // One plugin cache for every Terraform directory, so a provider downloads once per machine rather than once per module.
-const terraformEnv = { ...process.env, TF_IN_AUTOMATION: "1", TF_PLUGIN_CACHE_DIR: process.env.TF_PLUGIN_CACHE_DIR ?? join(homedir(), ".terraform.d/plugin-cache") }
+// Terraform reports an error for a cache directory that does not exist, so it is created first.
+const pluginCache = process.env.TF_PLUGIN_CACHE_DIR ?? join(homedir(), ".terraform.d/plugin-cache")
+mkdirSync(pluginCache, { recursive: true })
+const terraformEnv = { ...process.env, TF_IN_AUTOMATION: "1", TF_PLUGIN_CACHE_DIR: pluginCache }
 
 const show = (path: string) => relative(repo, path) || "."
 
