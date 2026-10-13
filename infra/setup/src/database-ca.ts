@@ -1,15 +1,17 @@
 import { X509Certificate } from "node:crypto"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { isIP } from "node:net"
-import { writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { formatFacts, isSelfSigned, pemBlocks } from "./certificates"
 import { exists, type Context } from "./context"
 import { shown, type EnvironmentName, type Paths } from "./environments"
 import { SetupError } from "./errors"
 import { requireOpenSsl3 } from "./origin-pull"
 import { commandLine } from "./run"
-import { readOutput, stateEnv } from "./terraform"
+import { readOutput, stateEnv, type StateEnv } from "./terraform"
 
-/** The image the printed `kubectl run` uses: Alpine, pinned by digest, which installs openssl when it starts. */
+/** The image the `kubectl run` fetch uses: Alpine, pinned by digest, which installs openssl when it starts. */
 export const FETCH_IMAGE = "docker.io/library/alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6"
 
 /** What `database-ca` does. */
@@ -22,6 +24,8 @@ export type DatabaseCaOptions = {
   force?: boolean
   /** How long to wait for the database from this machine, in milliseconds. Default 15 000. */
   timeoutMs?: number
+  /** How long the pod may take, image pull and openssl install included, in milliseconds. Default 180 000. */
+  podTimeoutMs?: number
 }
 
 /** What the pod runs: install openssl, then print the chain the database presents. */
@@ -33,10 +37,60 @@ export function fetchScript(host: string, port: string): string {
 export function podCommand(environment: EnvironmentName, host: string, port: string): string {
   return [
     `kubectl --kubeconfig admin.kubeconfig run database-ca --namespace default --rm -i --restart=Never --quiet \\`,
-    `    --image=${FETCH_IMAGE} -- \\`,
+    `    --image=${FETCH_IMAGE} --command -- \\`,
     `    sh -c '${fetchScript(host, port)}' \\`,
     `    | bun run setup database-ca --environment ${environment} --from-stdin`,
   ].join("\n")
+}
+
+/**
+ * Fetch the chain from a pod in the cluster: Terraform's `admin_kubeconfig` goes to a 0600 file in a temporary
+ * directory for `kubectl`'s `KUBECONFIG`, and the directory is deleted whatever happens. The pod runs in `default`,
+ * where nothing restricts it, and deletes itself.
+ */
+async function fetchFromPod(options: DatabaseCaOptions, context: Context, state: StateEnv, host: string, port: string): Promise<string> {
+  const kubeconfig = await readOutput(context, options.paths.envDir, "admin_kubeconfig", state)
+  const directory = await mkdtemp(join(tmpdir(), "answerable-database-ca-"))
+  try {
+    const file = join(directory, "kubeconfig")
+    await writeFile(file, kubeconfig, { mode: 0o600 })
+    const pod = `database-ca-${Buffer.from(crypto.getRandomValues(new Uint8Array(3))).toString("hex")}`
+    const argv = [
+      "kubectl",
+      "run",
+      pod,
+      "--namespace",
+      "default",
+      "--rm",
+      "--attach",
+      "--restart=Never",
+      "--quiet",
+      `--image=${FETCH_IMAGE}`,
+      "--command",
+      "--",
+      "sh",
+      "-c",
+      fetchScript(host, port),
+    ]
+    context.out(`$ ${commandLine(argv)}\n  (KUBECONFIG: Terraform's admin_kubeconfig, in a 0600 temporary file)\n`)
+    const result = await context.run(argv, { env: { KUBECONFIG: file }, timeoutMs: options.podTimeoutMs ?? 180_000 })
+    if (pemBlocks(result.stdout).length > 0) return result.stdout
+    context.out(`
+The pod did not fetch a certificate either (exit ${result.exitCode}${lastLine(result.stderr)}). To run it yourself, put the
+cluster's admin kubeconfig in admin.kubeconfig, readable by you alone, and delete it afterwards:
+  (umask 077 && cd ${shown(options.paths, options.paths.envDir)} && terraform output -raw admin_kubeconfig) > admin.kubeconfig
+then, from the repository root:
+
+${podCommand(options.environment, host, port)}
+`)
+    throw new SetupError(`no certificate from ${host}:${port}, from this machine or from a pod`)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+}
+
+function lastLine(stderr: string): string {
+  return stderr.trim() ? `: ${stderr.trim().split("\n").at(-1)}` : ""
 }
 
 function names(certificate: X509Certificate): string {
@@ -48,12 +102,13 @@ function covers(certificate: X509Certificate, host: string): boolean {
 }
 
 /**
- * Record the database's CA certificate, trust-on-first-use: connect with `openssl s_client -starttls postgres` (or read
- * what a pod fetched, with `--from-stdin`), keep the self-signed root of the presented chain, or the topmost
- * certificate when no root is presented, write it to `database-ca.pem` and print what the operator must record.
+ * Record the database's CA certificate, trust-on-first-use: connect with `openssl s_client -starttls postgres`, from
+ * this machine or, when the private network keeps it out, from a pod through Terraform's `admin_kubeconfig` (or read
+ * what the operator's own pod fetched, with `--from-stdin`); keep the self-signed root of the presented chain, or the
+ * topmost certificate when no root is presented, write it to `database-ca.pem` and print what the operator must record.
  */
 export async function databaseCa(options: DatabaseCaOptions, context: Context): Promise<void> {
-  const { paths, environment } = options
+  const { paths } = options
   const caShown = shown(paths, paths.databaseCa)
   if ((await exists(paths.databaseCa)) && !options.force) throw new SetupError(`${caShown} exists. Run again with --force to replace it`)
 
@@ -71,17 +126,11 @@ export async function databaseCa(options: DatabaseCaOptions, context: Context): 
     const result = await context.run(argv, { timeoutMs: options.timeoutMs ?? 15_000 })
     text = result.stdout
     if (pemBlocks(text).length === 0) {
-      context.out(`
-The database at ${host}:${port} did not present a certificate to this machine (exit ${result.exitCode}${
-        result.stderr.trim() ? `: ${result.stderr.trim().split("\n").at(-1)}` : ""
-      }).
-It sits on the environment's private network, so fetch its chain from a pod in the cluster instead. With the cluster's
-admin kubeconfig in admin.kubeconfig (civo kubernetes config answerable-${environment}-cluster > admin.kubeconfig, or
-the Civo dashboard's download), run from the repository root:
-
-${podCommand(environment, host, port)}
-`)
-      throw new SetupError(`no certificate from ${host}:${port}; run the command above`)
+      context.out(
+        `The database at ${host}:${port} did not present a certificate to this machine (exit ${result.exitCode}${lastLine(result.stderr)}).\n` +
+          "It sits on the environment's private network: fetching its chain from a pod in the cluster instead.\n",
+      )
+      text = await fetchFromPod(options, context, state, host, port)
     }
   }
 

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { existsSync, readFileSync, statSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { databaseCa, FETCH_IMAGE, podCommand } from "./database-ca"
 import { pathsFor } from "./environments"
@@ -71,21 +72,85 @@ describe("database-ca", () => {
     expect(second.output()).toContain("It covers db.example")
   })
 
-  test("prints the pod command when the database does not answer here", async () => {
-    const { paths, runner } = await fixture({}, "10.10.0.5", (call) =>
-      call.argv[1] === "s_client" ? { exitCode: 1, stderr: "connect:errno=60\nconnect: Operation timed out\n" } : undefined,
-    )
+  test("fetches the chain from a pod through admin_kubeconfig when the database does not answer here", async () => {
+    const seen: { kubeconfig?: string; mode?: number; file?: string } = {}
+    const { paths, runner } = await fixture({}, "10.10.0.5", (call) => {
+      if (call.argv[1] === "s_client") return { exitCode: 1, stderr: "connect:errno=60\nconnect: Operation timed out\n" }
+      if (call.argv.join(" ") === "terraform output -raw admin_kubeconfig") return { stdout: "apiVersion: v1\nkind: Config\n" }
+      if (call.argv[0] === "kubectl") {
+        seen.file = call.options.env!.KUBECONFIG!
+        seen.kubeconfig = readFileSync(seen.file, "utf8")
+        seen.mode = statSync(seen.file).mode & 0o777
+        return { stdout: S_CLIENT([LEAF, INTERMEDIATE, ROOT]) }
+      }
+      return undefined
+    })
     const { context, output } = createContext({ run: runner.run, env: STATE })
-    await expect(databaseCa({ environment: "staging", paths, timeoutMs: 10 }, context)).rejects.toThrow(
-      "no certificate from 10.10.0.5:5432; run the command above",
-    )
+    await databaseCa({ environment: "staging", paths, timeoutMs: 10, podTimeoutMs: 20 }, context)
+    expect(await readFile(paths.databaseCa, "utf8")).toBe(ROOT)
     expect(runner.calls[3]!.options.timeoutMs).toBe(10)
+    expect(seen.kubeconfig).toBe("apiVersion: v1\nkind: Config\n")
+    expect(seen.mode).toBe(0o600)
+    expect(existsSync(seen.file!)).toBe(false)
+    const pod = runner.calls.find((call) => call.argv[0] === "kubectl")!
+    expect(pod.options.timeoutMs).toBe(20)
+    expect(pod.options.input).toBeUndefined()
+    expect(pod.argv.slice(0, 3)).toEqual(["kubectl", "run", pod.argv[2]!])
+    expect(pod.argv[2]).toMatch(/^database-ca-[0-9a-f]{6}$/)
+    expect(pod.argv.slice(3)).toEqual([
+      "--namespace",
+      "default",
+      "--rm",
+      "--attach",
+      "--restart=Never",
+      "--quiet",
+      `--image=${FETCH_IMAGE}`,
+      "--command",
+      "--",
+      "sh",
+      "-c",
+      "apk add --no-cache --quiet openssl >/dev/null && openssl s_client -starttls postgres -connect 10.10.0.5:5432 -showcerts </dev/null",
+    ])
     expect(output()).toContain("did not present a certificate to this machine (exit 1: connect: Operation timed out)")
+    expect(output()).toContain("fetching its chain from a pod in the cluster instead")
+    expect(output()).toContain("(KUBECONFIG: Terraform's admin_kubeconfig, in a 0600 temporary file)")
+    expect(output()).not.toContain("kind: Config")
+    expect(output()).toContain("It covers 10.10.0.5")
+  })
+
+  test("prints the pod command to run by hand when the pod fails too, and still deletes the kubeconfig", async () => {
+    let file = ""
+    const { paths, runner } = await fixture({}, "10.10.0.5", (call) => {
+      if (call.argv[1] === "s_client") return { exitCode: 143 }
+      if (call.argv.join(" ") === "terraform output -raw admin_kubeconfig") return { stdout: "apiVersion: v1\n" }
+      if (call.argv[0] === "kubectl") {
+        file = call.options.env!.KUBECONFIG!
+        return { exitCode: 1, stderr: "error: timed out waiting for the condition\n" }
+      }
+      return undefined
+    })
+    const { context, output } = createContext({ run: runner.run, env: STATE })
+    await expect(databaseCa({ environment: "staging", paths }, context)).rejects.toThrow(
+      "no certificate from 10.10.0.5:5432, from this machine or from a pod",
+    )
+    expect(existsSync(file)).toBe(false)
+    expect(runner.calls.find((call) => call.argv[0] === "kubectl")!.options.timeoutMs).toBe(180_000)
+    expect(output()).toContain("(exit 143).")
+    expect(output()).toContain("The pod did not fetch a certificate either (exit 1: error: timed out waiting for the condition)")
+    expect(output()).toContain("(umask 077 && cd infra/civo/envs/staging && terraform output -raw admin_kubeconfig) > admin.kubeconfig")
     expect(output()).toContain(podCommand("staging", "10.10.0.5", "5432"))
-    const quiet = await fixture({}, "10.10.0.5", (call) => (call.argv[1] === "s_client" ? { exitCode: 143 } : undefined))
-    const second = createContext({ run: quiet.runner.run, env: STATE })
-    await expect(databaseCa({ environment: "staging", paths: quiet.paths }, second.context)).rejects.toThrow("no certificate")
-    expect(second.output()).toContain("(exit 143).")
+
+    const missing = await fixture({}, "10.10.0.5", (call) => {
+      if (call.argv[1] === "s_client") return { exitCode: 1 }
+      if (call.argv[1] === "output" && call.argv[3] === "admin_kubeconfig") return { stdout: "x" }
+      if (call.argv[0] === "kubectl") return { exitCode: 127 }
+      return undefined
+    })
+    const second = createContext({ run: missing.runner.run, env: STATE })
+    await expect(databaseCa({ environment: "staging", paths: missing.paths }, second.context)).rejects.toThrow(
+      "from this machine or from a pod",
+    )
+    expect(second.output()).toContain("The pod did not fetch a certificate either (exit 127).")
   })
 
   test("reads a chain from standard input and keeps the topmost certificate when no root is presented", async () => {
@@ -141,7 +206,7 @@ describe("database-ca", () => {
 
   test("the pod command pins its image and pipes into --from-stdin", () => {
     const command = podCommand("production", "10.20.0.5", "5432")
-    expect(command).toContain(`--image=${FETCH_IMAGE}`)
+    expect(command).toContain(`--image=${FETCH_IMAGE} --command --`)
     expect(command).toContain("openssl s_client -starttls postgres -connect 10.20.0.5:5432 -showcerts </dev/null")
     expect(command).toEndWith("| bun run setup database-ca --environment production --from-stdin")
   })
