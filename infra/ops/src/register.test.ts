@@ -88,6 +88,15 @@ test("a locked root secret asks for a staff token", async () => {
   await expect(run()).rejects.toThrow("ID refused the root secret (root_locked): a platform administrator exists. Pass a staff token as OPS_ID_TOKEN")
 })
 
+test("a call ID does not answer fails, naming it, rather than holding the Job; a network error is passed on as it is", async () => {
+  const silent = (async (_input: string | URL | Request, init?: RequestInit) => new Promise((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(init.signal!.reason)))) as typeof globalThis.fetch
+  const quiet = register({ id: "https://id.example", token: "t", toolbox: "https://toolbox.example", adminMcp: "https://admin-mcp.example", platformSlug: "answerable", callbackPort: 47700, store: memoryStore().store, fetch: silent, log: () => {}, timeoutMs: 20 })
+  await expect(quiet).rejects.toThrow("GET /organizations?q=answerable&limit=100 got no answer from ID within 0.02 s")
+  const refused = (async () => { throw new TypeError("connection refused") }) as unknown as typeof globalThis.fetch
+  const down = register({ id: "https://id.example", token: "t", toolbox: "https://toolbox.example", adminMcp: "https://admin-mcp.example", platformSlug: "answerable", callbackPort: 47700, store: memoryStore().store, fetch: refused, log: () => {} })
+  await expect(down).rejects.toThrow("connection refused")
+})
+
 test("an unknown platform organisation and any other refusal are errors naming the call", async () => {
   await expect(setup(fakeIdAdmin({ platformSlug: "elsewhere" })).run()).rejects.toThrow("ID has no organisation with the slug answerable: set OPS_PLATFORM_SLUG")
   const failing = setup()

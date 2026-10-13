@@ -36,7 +36,24 @@
 
 The run prints each step's wall-clock time at the end.
 
-**The browser's edge.** Traefik demands Cloudflare's client certificate of every visitor, a browser included. Playwright's `clientCertificates` hang under Bun (the same script under Node works), so the sign-in sends Chromium to a small proxy in the test process instead (`startBrowserEdge` in `stack.ts`): Chromium maps the three names to `[::1]` (`--host-resolver-rules`), and the proxy forwards each request to Traefik with the origin-pull certificate, as Cloudflare does. The MCP client in the test process calls Traefik directly with the certificate.
+**The browser's edge.** Traefik demands Cloudflare's client certificate of every visitor, a browser included. Playwright's `clientCertificates` hang under Bun (the same script under Node works), so the sign-in sends Chromium to a small proxy instead (`startBrowserEdge` in `stack.ts`): Chromium maps the three names to `[::1]` (`--host-resolver-rules`), and the proxy forwards each request to Traefik with the origin-pull certificate, as Cloudflare does. The MCP client calls Traefik directly with the certificate. The sign-in runs in a process of its own (`sign-in.ts`): Chromium launched and closed inside the test's Bun process broke later children's pipes (a `kubectl` killed by SIGPIPE), and the test runs `kubectl` and Helm after it.
+
+## When it fails
+
+- **Each step** prints a line when it starts and when it ends (`[stack] run the ops register: done in 16.1 s`), so a log that stops shows where.
+- **Each Helm install or upgrade** runs with `--debug` and `--timeout 5m`, inside the slowest test's 10 minutes. When it fails, the stack prints the last 60 lines of Helm's log, which name the hook or resource it waited for and its status, and then the diagnosis.
+- **The diagnosis** (`diagnose` in `stack.ts`) contains:
+  - every pod, and the `answerable` namespace's events in order;
+  - a `describe` of each pod that is not ready and each Job that is not complete;
+  - the ops and migration Jobs' logs;
+  - the database's sessions, with what blocks them (passwords masked);
+  - both releases' history;
+  - `kubectl describe node`, with the allocated requests.
+- **A long test still running** shortly before its timeout prints the same diagnosis.
+
+## A node the size of a CI runner
+
+`INFRA_STACK_CPUS=4 bun run infra:test` gives the node 4 allocatable CPUs, as on the `ubuntu-24.04-arm` runner. The kubelet reserves the rest of Docker's CPUs, and the node's container is held to 4 CPUs of time.
 
 ## Keep the cluster for a look
 

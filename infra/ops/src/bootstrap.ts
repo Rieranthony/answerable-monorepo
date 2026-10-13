@@ -51,6 +51,9 @@ type Options = {
  */
 export async function bootstrap({ sql, store, host, port, sslRootCert, password = generatePassword, log = console.log }: Options) {
   const address = host.includes(":") ? `[${host}]` : host
+  // A statement that waits on a lock, or runs away, fails with PostgreSQL's reason instead of holding the Job until its deadline.
+  await sql("set lock_timeout = '10s'")
+  await sql("set statement_timeout = '60s'")
   for (const database of databases) {
     for (const [login, restricted] of [[database.owner, false], [database.runtime, true]] as const) {
       const where = `${login.ref.secret}/${login.ref.key}`

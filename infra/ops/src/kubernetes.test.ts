@@ -79,6 +79,14 @@ test("reads a Deployment's replicas, 1 when unset as Kubernetes defaults it, und
   await expect(broken.kube.replicas("toolbox")).rejects.toThrow("Kubernetes answered 500 to GET Deployment toolbox")
 })
 
+test("a call the API server does not answer fails naming the path and the egress setting; a network error is passed on", async () => {
+  const silent = (async (_input: string | URL | Request, init?: RequestInit) => new Promise((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(init.signal!.reason)))) as typeof globalThis.fetch
+  const kube = createKubernetes({ server: "https://10.43.0.1", token: "t", ca: "CA", namespace: "answerable", fetch: silent, timeoutMs: 20 })
+  await expect(kube.readSecret("id-database")).rejects.toThrow(`The Kubernetes API did not answer GET ${secretPath}/id-database within 0.02 s: can this pod reach https://10.43.0.1 (networkPolicy.kubernetesApi)?`)
+  const refused = (async () => { throw new TypeError("connection refused") }) as unknown as typeof globalThis.fetch
+  await expect(createKubernetes({ server: "https://10.43.0.1", token: "t", ca: "CA", namespace: "answerable", fetch: refused }).readSecret("x")).rejects.toThrow("connection refused")
+})
+
 test("inside a pod it reads the mounted ServiceAccount's token, certificate authority and namespace, and the API server from the environment", async () => {
   const directory = mkdtempSync(join(tmpdir(), "infra-ops-sa-"))
   try {

@@ -48,6 +48,8 @@ test("on an empty cluster: three databases owned by their owners, six logins, th
   const { store, values, writes } = memoryStore()
   const lines: string[] = []
   await bootstrap({ sql: pg.sql, store, ...options, log: line => lines.push(line) })
+  // No statement waits on a lock or runs for long: the Job fails with the reason instead of hanging.
+  expect(pg.state.statements.slice(0, 2)).toEqual(["set lock_timeout = '10s'", "set statement_timeout = '60s'"])
   expect(Object.keys(pg.state.owners).sort()).toEqual(["answerable_admin", "answerable_id", "answerable_toolbox"])
   for (const database of databases) {
     expect(pg.state.owners[database.name]).toBe(database.owner.name)

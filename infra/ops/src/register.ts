@@ -16,6 +16,8 @@ type Options = {
   store: SecretStore
   fetch?: typeof globalThis.fetch
   log?: (line: string) => void
+  /** How long one call to ID may take before register fails naming it. */
+  timeoutMs?: number
 }
 
 /** Where each machine client's secret goes: the Secrets the Toolbox and the admin MCP read. */
@@ -33,7 +35,7 @@ type Problem = { code?: string; title?: string }
  * replays, and an object that already exists (made under another key or by another caller) is left as it is. A machine client that exists
  * while its secret is not stored gets a new one, rotated in ID. Prints the Claude Code commands and the first owner's step; never a secret.
  */
-export async function register({ id, token, toolbox, adminMcp, platformSlug, callbackPort, store, fetch = globalThis.fetch, log = console.log }: Options) {
+export async function register({ id, token, toolbox, adminMcp, platformSlug, callbackPort, store, fetch = globalThis.fetch, log = console.log, timeoutMs = 30_000 }: Options) {
   const admin = `${id}/api/admin`
   const toolboxResource = `${toolbox}/mcp`
   const toolboxAdmin = `${toolbox}/admin`
@@ -45,6 +47,9 @@ export async function register({ id, token, toolbox, adminMcp, platformSlug, cal
       method,
       headers: { Authorization: `Bearer ${token}`, ...(key ? { "Idempotency-Key": key } : {}), ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    }).catch((error: Error) => {
+      throw error.name === "TimeoutError" ? new Error(`${method} ${path} got no answer from ID within ${timeoutMs / 1000} s`) : error
     })
     const text = await response.text()
     const parsed = (text ? JSON.parse(text) : {}) as Record<string, unknown> & Problem
