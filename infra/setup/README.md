@@ -143,7 +143,7 @@ With the root secret, finds the platform member with that email (sign in once fi
 bun run --filter @answerable/infra-setup prove
 ```
 
-Runs the real-tool paths that need no account, in a temporary directory it deletes: `age-init` with the real `age-keygen` against a throwaway `.sops.yaml` and key directory (`--sops-config`, `--key-dir`); `init-secrets` encrypting and decrypting with the real `sops` and that key, with Terraform's output faked; `origin-pull` with the real `openssl` and a fake Cloudflare, checking the curve, the lifetimes, the signature and that the uploaded key is the client's, and a rotation; `database-ca` against PostgreSQL 17 with TLS in Docker, from this machine and through the printed pod command's script in the same Alpine image. It needs `age-keygen`, `sops`, OpenSSL 3 and Docker, takes about half a minute, and removes its container and network.
+Runs the real-tool paths that need no account, in a temporary directory it deletes: `age-init` with the real `age-keygen` against a throwaway `.sops.yaml` and key directory (`--sops-config`, `--key-dir`); `init-secrets` encrypting and decrypting with the real `sops` and that key, with Terraform's output faked; `origin-pull` with the real `openssl` and a fake Cloudflare, checking the curve, the lifetimes, the signature and that the uploaded key is the client's, and a rotation; `database-ca` against PostgreSQL 17 with TLS in Docker, from this machine and through the printed pod command's script in the same Alpine image. It needs `age-keygen`, `sops`, OpenSSL 3 and Docker, takes a few seconds once the two images are pulled (6 s measured), and removes its container and network.
 
 ## Develop
 
