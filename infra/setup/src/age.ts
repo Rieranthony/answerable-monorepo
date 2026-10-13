@@ -11,6 +11,12 @@ export function ruleRegex(environment: EnvironmentName): string {
   return `infra/civo/envs/${environment}/secrets\\.enc\\.yaml$`
 }
 
+/**
+ * What `sops` encrypts in the Secrets file: the values under `data` and `stringData` only, so that `metadata.name` and
+ * the keys stay readable and a reviewer sees which Secret and which key changed. The MAC still covers every value.
+ */
+export const ENCRYPTED_REGEX = "^(data|stringData)$"
+
 const RECIPIENT = /^age1[02-9ac-hj-np-z]{58}$/
 
 type Rule = Record<string, unknown>
@@ -87,19 +93,33 @@ export async function ageInit(options: AgeInitOptions, context: Context): Promis
     : { rules: [], rest: {} }
   const regex = ruleRegex(environment)
   const rule = config.rules.find((candidate) => candidate.path_regex === regex)
-  if (rule?.age === recipient) {
+  const otherKey = rule !== undefined && rule.age !== recipient
+  if (otherKey && !options.force)
+    throw new SetupError(
+      `${configShown} encrypts ${environment} to another recipient (${String(rule.age)}), not to ${keyShown}. ` +
+        "Files encrypted to it stay readable only with its key. Run again with --force to switch the rule to this key, " +
+        "then re-encrypt the environment's file with `sops updatekeys`",
+    )
+  if (!rule) {
+    config.rules.push({ path_regex: regex, age: recipient, encrypted_regex: ENCRYPTED_REGEX })
+    await writeFile(paths.sopsConfig, formatConfig(config))
+    context.out(`Added the ${environment} rule in ${configShown}.\n`)
+  } else if (!otherKey && rule.encrypted_regex === ENCRYPTED_REGEX) {
     context.out(`${configShown} already encrypts ${environment} to this key; unchanged.\n`)
   } else {
-    if (rule && !options.force)
-      throw new SetupError(
-        `${configShown} encrypts ${environment} to another recipient (${String(rule.age)}), not to ${keyShown}. ` +
-          "Files encrypted to it stay readable only with its key. Run again with --force to switch the rule to this key, " +
-          "then re-encrypt the environment's file with `sops updatekeys`",
-      )
-    if (rule) rule.age = recipient
-    else config.rules.push({ path_regex: regex, age: recipient })
+    const changes = [
+      ...(otherKey ? ["switched it to this key"] : []),
+      ...(rule.encrypted_regex === ENCRYPTED_REGEX ? [] : [`set encrypted_regex to ${ENCRYPTED_REGEX}`]),
+    ]
+    rule.age = recipient
+    rule.encrypted_regex = ENCRYPTED_REGEX
     await writeFile(paths.sopsConfig, formatConfig(config))
-    context.out(`${rule ? "Updated" : "Added"} the ${environment} rule in ${configShown}.\n`)
+    context.out(`Updated the ${environment} rule in ${configShown}: ${changes.join(" and ")}.\n`)
+    if (await exists(paths.secretsFile))
+      context.out(
+        `${shown(paths, paths.secretsFile)} keeps the form it was encrypted in until it is encrypted again: ` +
+          "init-secrets --rotate <key> re-encrypts it under this rule.\n",
+      )
   }
 
   context.out(`
