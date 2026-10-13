@@ -3,6 +3,10 @@ name: Deploy staging
 # A push to main runs CI, applies staging's infrastructure, builds the four images once for amd64 and arm64 and
 # signs them, upgrades the staging release and smoke-tests it through the public hostnames. A manual run redeploys an
 # image that already exists, which is how staging rolls back.
+#
+# Every job after CI runs only when the repository variable DEPLOY_STAGING is 'true', so that this can land on main
+# before the staging environment exists and a push then runs CI alone.
+#
 # What this does and which secrets it needs: infra/pipeline/README.md.
 
 on:
@@ -44,7 +48,7 @@ jobs:
   infra:
     name: Apply the staging infrastructure
     needs: ci
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && vars.DEPLOY_STAGING == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     environment: infra-staging
@@ -89,7 +93,7 @@ jobs:
   build:
     name: Build ${{ matrix.image }} for ${{ matrix.arch }}
     needs: ci
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && vars.DEPLOY_STAGING == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     permissions:
@@ -165,6 +169,7 @@ jobs:
   manifest:
     name: Publish ${{ matrix.image }}
     needs: build
+    if: github.event_name == 'push' && vars.DEPLOY_STAGING == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -233,7 +238,7 @@ jobs:
     name: Deploy to staging
     needs: [ci, infra, build, manifest]
     # A manual run skips all four; a failure of any of them stops the deploy.
-    if: ${{ github.ref == 'refs/heads/main' && !cancelled() && !failure() }}
+    if: ${{ vars.DEPLOY_STAGING == 'true' && github.ref == 'refs/heads/main' && !cancelled() && !failure() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: staging
@@ -269,6 +274,7 @@ jobs:
   smoke:
     name: Smoke test staging
     needs: deploy
+    if: vars.DEPLOY_STAGING == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

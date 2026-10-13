@@ -29,10 +29,17 @@ async function fixture(
   const root = await createRoot({
     "charts/answerable/values-civo-staging.yaml": "",
     "infra/civo/envs/staging/secrets.enc.yaml": "sops: {}\n",
+    "infra/civo/envs/staging/database-ca.pem": "-----BEGIN CERTIFICATE-----\nMIIBdemo\n-----END CERTIFICATE-----\n",
   })
   cleanups.push(root.remove)
-  // The registry answers the same digest for every image.
-  const runner = createFakeRunner((call) => (call.argv[0] === "docker" ? { stdout: `${DIGEST}\n` } : reply(call)))
+  // The registry answers the same digest for every image, and both client Secrets exist.
+  const runner = createFakeRunner((call) =>
+    call.argv[0] === "docker"
+      ? { stdout: `${DIGEST}\n` }
+      : call.argv.slice(0, 3).join(" ") === "kubectl get secret"
+        ? { stdout: "secret/toolbox-id-client\nsecret/admin-id-client\n" }
+        : reply(call),
+  )
   const out: string[] = []
   const err: string[] = []
   const deps: CliDeps = {
@@ -55,7 +62,7 @@ describe("deploy", () => {
     const code = await main(["deploy", "--environment", "staging", "--image-tag", TAG], f.deps)
     expect(code).toBe(0)
     expect(f.runner.commands().filter((command) => command.startsWith("docker buildx imagetools inspect"))).toHaveLength(4)
-    expect(f.runner.commands()).toHaveLength(7)
+    expect(f.runner.commands()).toHaveLength(8)
     expect(f.err()).toContain(`Deployed ${TAG} to staging.`)
     expect(f.out()).toBe("")
   })
@@ -71,10 +78,10 @@ describe("deploy", () => {
     )
     expect(code).toBe(0)
     expect(f.runner.commands()[0]).toBe("sops --decrypt charts/answerable/values-civo-staging.yaml")
-    expect(f.runner.commands()[2]).toContain("--wait-for-jobs --timeout 15m -f infra/civo/envs/staging/secrets.enc.yaml")
-    expect(f.runner.commands()[2]).toEndWith("--set ops.bootstrap=true")
-    expect(f.runner.commands()[2]).toContain(`--set images.admin-mcp.digest=${DIGEST}`)
-    expect(f.runner.commands()).toHaveLength(3)
+    expect(f.runner.commands()[3]).toContain("--wait-for-jobs --timeout 15m -f infra/civo/envs/staging/secrets.enc.yaml")
+    expect(f.runner.commands()[3]).toEndWith("--set ops.bootstrap=true")
+    expect(f.runner.commands()[3]).toContain(`--set images.admin-mcp.digest=${DIGEST}`)
+    expect(f.runner.commands()).toHaveLength(4)
   })
 
   test("exits 1 and names the failing step", async () => {
@@ -143,7 +150,7 @@ describe("run-job", () => {
       f.deps,
     )
     expect(code).toBe(0)
-    expect(f.runner.commands()[5]).toContain(`--timeout 3m -f charts/answerable/values-civo-staging.yaml --set image.tag=${TAG}`)
+    expect(f.runner.commands()[5]).toContain(`--timeout 3m -f charts/answerable/values-civo-staging.yaml --set-file database.caPem=infra/civo/envs/staging/database-ca.pem --set image.tag=${TAG}`)
   })
 
   test("exits 2 without exactly one known job", async () => {

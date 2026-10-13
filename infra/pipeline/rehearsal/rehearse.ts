@@ -18,6 +18,9 @@ import { systemRunner } from "../src/run"
 const CLUSTER = "answerable-pipeline-rehearsal"
 const TAG = `sha-${"1".repeat(40)}`
 const NEXT_TAG = `sha-${"2".repeat(40)}`
+const SECOND_TAG = `sha-${"3".repeat(40)}`
+// What `bun run setup database-ca` writes: public, and rendered into the postgres-ca ConfigMap by the chart.
+const DATABASE_CA = "-----BEGIN CERTIFICATE-----\nMIIBrehearsal\n-----END CERTIFICATE-----\n"
 // What the registry would answer; the rehearsal pushes no image, so it hands the digests over.
 const DIGESTS = {
   id: `sha256:${"a".repeat(64)}`,
@@ -35,10 +38,19 @@ images:
   toolbox: {digest: ""}
   admin-mcp: {digest: ""}
   ops: {digest: ""}
+database:
+  caPem: ""
 failMigrate: false
 ops:
   bootstrap: false
   register: false
+`,
+  "templates/postgres-ca.yaml": `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-ca
+data:
+  ca.pem: {{ .Values.database.caPem | quote }}
 `,
   "templates/deployments.yaml": `{{- range $name := list "id" "toolbox" "admin-mcp" }}
 apiVersion: apps/v1
@@ -224,6 +236,7 @@ try {
   await writeFile(join(root, "charts/answerable/values-civo-staging.yaml"), "{}\n")
   await writeFile(join(root, "charts/answerable/values-fail.yaml"), "failMigrate: true\n")
   await mkdir(join(root, "infra/civo/envs/staging"), { recursive: true })
+  await writeFile(join(root, "infra/civo/envs/staging/database-ca.pem"), DATABASE_CA)
   await writeFile(join(work, "plain.yaml"), SECRETS[secretsShape])
   const encrypted = await run([
     "sops", "--encrypt", "--age", publicKey, "--input-type", "yaml", "--output-type", "yaml",
@@ -248,12 +261,14 @@ try {
     const actual = await releaseDigests()
     return Object.entries(DIGESTS).every(([name, digest]) => actual[name] === digest) && Object.keys(actual).length === 4
   }
+  const releaseValues = async () =>
+    JSON.parse((await run(["helm", "--kubeconfig", kubeconfig, "get", "values", "answerable", "-n", "answerable", "-o", "json"])).stdout)
   const releaseDigests = async () => {
-    const values = JSON.parse((await run(["helm", "--kubeconfig", kubeconfig, "get", "values", "answerable", "-n", "answerable", "-o", "json"])).stdout)
+    const values = await releaseValues()
     return Object.fromEntries(Object.entries(values.images ?? {}).map(([name, value]) => [name, (value as { digest: string }).digest]))
   }
 
-  // deploy, with the bootstrap Job.
+  // The first deploy, with the bootstrap Job. No client Secret exists yet, so it registers by itself.
   try {
     await deploy({ environment: "staging", imageTag: TAG, digests: DIGESTS, bootstrap: true }, deps)
     check("deploy succeeds", true)
@@ -269,6 +284,24 @@ try {
   check("the Deployments run the digests", (await pinned("answerable-id")) === DIGESTS.id && (await pinned("answerable-admin-mcp")) === DIGESTS["admin-mcp"])
   check("--bootstrap ran the bootstrap Job", (await kubectl("get", "job", "answerable-ops-bootstrap", "-n", "answerable", "-o", "name")).exitCode === 0)
   check("current-tag reads the tag back", (await currentTag(deps)) === TAG)
+  check("the first deploy registered by itself, and said why", log().includes("toolbox-id-client and admin-id-client do not exist in answerable yet, so this upgrade also runs register"))
+  check("the register Job ran in that upgrade", (await jsonpath("job", "answerable-ops-register", "{.status.succeeded}")) === "1")
+  check("the database's CA file reached the chart through --set-file", (await jsonpath("configmap", "postgres-ca", "{.data.ca\\.pem}")) === DATABASE_CA)
+
+  // What the real register Job writes. With both Secrets there, the next deploy must not register again: once a person
+  // holds platform:write, ID refuses the root secret register would use.
+  for (const [name, key] of [["toolbox-id-client", "TOOLBOX_ID_CLIENT_SECRET"], ["admin-id-client", "ADMIN_ID_CLIENT_SECRET"]] as const)
+    await kubectl("create", "secret", "generic", name, "-n", "answerable", `--from-literal=${key}=rehearsal`)
+  logs.length = 0
+  try {
+    await deploy({ environment: "staging", imageTag: SECOND_TAG, digests: DIGESTS }, deps)
+    check("the second deploy succeeds", true)
+  } catch (error) {
+    check("the second deploy succeeds", false, (error as Error).message)
+    console.log(log())
+  }
+  check("the second deploy did not register again", !log().includes("also runs register") && (await releaseValues()).ops?.register === undefined)
+  check("the second deploy moved the release to its tag", (await currentTag(deps)) === SECOND_TAG)
 
   // run-job register: the Job completes, then the Toolbox and the admin MCP restart, and ID does not.
   try {
@@ -282,7 +315,7 @@ try {
   check("the Toolbox restarted", (await jsonpath("deployment", "answerable-toolbox", restartedAt)) !== "")
   check("the admin MCP restarted", (await jsonpath("deployment", "answerable-admin-mcp", restartedAt)) !== "")
   check("ID did not restart", (await jsonpath("deployment", "answerable-id", restartedAt)) === "")
-  check("run-job kept the image tag", (await currentTag(deps)) === TAG)
+  check("run-job kept the image tag", (await currentTag(deps)) === SECOND_TAG)
   check("run-job kept the digests the release runs", await releaseRunsTheDigests())
 
   // A migration that fails: the deploy fails, the Job's logs are printed, the release stays where it was.
@@ -295,7 +328,7 @@ try {
   }
   check("a failing migration fails the deploy", failure instanceof PipelineError, (failure as Error | undefined)?.message)
   check("the migration's own logs are printed", log().includes("migration exploded: relation users does not exist"))
-  check("the release stays on the earlier tag", (await currentTag(deps)) === TAG)
+  check("the release stays on the earlier tag", (await currentTag(deps)) === SECOND_TAG)
 
   // The token reaches its namespace and nothing else, and the scripts use it rather than the admin kubeconfig.
   await writeFile(join(work, "ca.pem"), Buffer.from(authority, "base64").toString())

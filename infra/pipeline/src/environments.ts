@@ -44,6 +44,15 @@ export function defaultValuesFile(environment: EnvironmentName): string {
   return `charts/answerable/values-civo-${environment}.yaml`
 }
 
+/**
+ * The CA chain that verifies the managed database's certificate, relative to the repository root. It is public;
+ * `bun run setup database-ca --environment <environment>` writes it, and the chart renders it into the ConfigMap
+ * `postgres-ca`.
+ */
+export function defaultDatabaseCaFile(environment: EnvironmentName): string {
+  return `infra/civo/envs/${environment}/database-ca.pem`
+}
+
 /** The `sops`-encrypted Secret manifests of an environment, relative to the repository root. */
 export function defaultSecretsFile(environment: EnvironmentName): string {
   return `infra/civo/envs/${environment}/secrets.enc.yaml`
