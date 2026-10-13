@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util"
 import { resolve } from "node:path"
-import { currentTag, deploy, parseJob, runJob, type Deps } from "./deploy"
+import { currentTag, deploy, parseDigests, parseJob, runJob, type Deps } from "./deploy"
 import { hostsFor, parseEnvironment } from "./environments"
 import { PipelineError, UsageError } from "./errors"
 import { systemRunner, type Output, type Runner } from "./run"
@@ -36,13 +36,15 @@ export function systemDeps(): CliDeps {
 }
 
 const USAGE = `Usage:
-  bun infra/pipeline/src/cli.ts deploy --environment <staging|production> --image-tag <sha-commit> [--bootstrap] [--values <file>] [--secrets <file>] [--timeout <10m>]
-  bun infra/pipeline/src/cli.ts run-job <bootstrap|register> --environment <staging|production> [--image-tag <sha-commit>] [--values <file>] [--timeout <10m>]
+  bun infra/pipeline/src/cli.ts deploy --environment <staging|production> --image-tag <sha-commit> [--image-digest <image>=sha256:<hex> x4] [--bootstrap] [--values <file>] [--secrets <file>] [--timeout <10m>]
+  bun infra/pipeline/src/cli.ts run-job <bootstrap|register> --environment <staging|production> [--image-tag <sha-commit> [--image-digest <image>=sha256:<hex> x4]] [--values <file>] [--timeout <10m>]
   bun infra/pipeline/src/cli.ts current-tag
   bun infra/pipeline/src/cli.ts smoke --environment <staging|production> [--wait <seconds>] [--interval <seconds>]
 
-deploy, run-job and current-tag read the cluster from KUBE_SERVER, KUBE_CA and KUBE_TOKEN; deploy also needs
-SOPS_AGE_KEY. current-tag prints the tag the release runs on standard output; everything else reports on
+deploy and run-job pin the four images (id, toolbox, admin-mcp, ops) by manifest digest: given with
+--image-digest for all four, or looked up with docker buildx from the tag (run-job without a tag keeps the digests
+the release runs). deploy, run-job and current-tag read the cluster from KUBE_SERVER, KUBE_CA and KUBE_TOKEN;
+deploy also needs SOPS_AGE_KEY. current-tag prints the tag the release runs on standard output; everything else reports on
 standard error. smoke prints its table on standard output. Exit codes: 0 done, 1 failed, 2 wrong usage.
 `
 
@@ -80,6 +82,7 @@ async function runCommand(command: string, args: readonly string[], deps: CliDep
       const { values, positionals } = parse(args, {
         environment: { type: "string" },
         "image-tag": { type: "string" },
+        "image-digest": { type: "string", multiple: true },
         bootstrap: { type: "boolean" },
         values: { type: "string" },
         secrets: { type: "string" },
@@ -90,6 +93,7 @@ async function runCommand(command: string, args: readonly string[], deps: CliDep
         {
           environment: parseEnvironment(values.environment),
           imageTag: require_(values["image-tag"], "--image-tag"),
+          digests: parseDigests(values["image-digest"] ?? []),
           bootstrap: values.bootstrap,
           valuesFile: values.values,
           secretsFile: values.secrets,
@@ -103,6 +107,7 @@ async function runCommand(command: string, args: readonly string[], deps: CliDep
       const { values, positionals } = parse(args, {
         environment: { type: "string" },
         "image-tag": { type: "string" },
+        "image-digest": { type: "string", multiple: true },
         values: { type: "string" },
         timeout: { type: "string" },
       })
@@ -112,6 +117,7 @@ async function runCommand(command: string, args: readonly string[], deps: CliDep
           environment: parseEnvironment(values.environment),
           job: parseJob(positionals[0]),
           imageTag: values["image-tag"],
+          digests: parseDigests(values["image-digest"] ?? []),
           valuesFile: values.values,
           timeout: values.timeout,
         },

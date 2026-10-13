@@ -18,10 +18,28 @@ import { systemRunner } from "../src/run"
 const CLUSTER = "answerable-pipeline-rehearsal"
 const TAG = `sha-${"1".repeat(40)}`
 const NEXT_TAG = `sha-${"2".repeat(40)}`
+// What the registry would answer; the rehearsal pushes no image, so it hands the digests over.
+const DIGESTS = {
+  id: `sha256:${"a".repeat(64)}`,
+  toolbox: `sha256:${"b".repeat(64)}`,
+  "admin-mcp": `sha256:${"c".repeat(64)}`,
+  ops: `sha256:${"d".repeat(64)}`,
+}
 
 const CHART = {
   "Chart.yaml": "apiVersion: v2\nname: answerable\nversion: 0.0.0\n",
-  "values.yaml": "image:\n  tag: \"\"\nfailMigrate: false\nops:\n  bootstrap: false\n  register: false\n",
+  "values.yaml": `image:
+  tag: ""
+images:
+  id: {digest: ""}
+  toolbox: {digest: ""}
+  admin-mcp: {digest: ""}
+  ops: {digest: ""}
+failMigrate: false
+ops:
+  bootstrap: false
+  register: false
+`,
   "templates/deployments.yaml": `{{- range $name := list "id" "toolbox" "admin-mcp" }}
 apiVersion: apps/v1
 kind: Deployment
@@ -38,6 +56,7 @@ spec:
         app: {{ $name }}
       annotations:
         image-tag: {{ $.Values.image.tag | quote }}
+        image-digest: {{ (index $.Values.images $name).digest | quote }}
     spec:
       containers:
         - name: app
@@ -224,10 +243,19 @@ try {
   const log = () => logs.join("")
   const jsonpath = async (resource: string, name: string, path: string) =>
     (await kubectl("get", resource, name, "-n", "answerable", "-o", `jsonpath=${path}`)).stdout
+  const pinned = (deployment: string) => jsonpath("deployment", deployment, "{.spec.template.metadata.annotations.image-digest}")
+  const releaseRunsTheDigests = async () => {
+    const actual = await releaseDigests()
+    return Object.entries(DIGESTS).every(([name, digest]) => actual[name] === digest) && Object.keys(actual).length === 4
+  }
+  const releaseDigests = async () => {
+    const values = JSON.parse((await run(["helm", "--kubeconfig", kubeconfig, "get", "values", "answerable", "-n", "answerable", "-o", "json"])).stdout)
+    return Object.fromEntries(Object.entries(values.images ?? {}).map(([name, value]) => [name, (value as { digest: string }).digest]))
+  }
 
   // deploy, with the bootstrap Job.
   try {
-    await deploy({ environment: "staging", imageTag: TAG, bootstrap: true }, deps)
+    await deploy({ environment: "staging", imageTag: TAG, digests: DIGESTS, bootstrap: true }, deps)
     check("deploy succeeds", true)
   } catch (error) {
     check("deploy succeeds", false, (error as Error).message)
@@ -237,6 +265,8 @@ try {
   const applied = await jsonpath("secret", "id-env", "{.data.BETTER_AUTH_SECRET}")
   check("the decrypted Secrets were applied", Buffer.from(applied, "base64").toString() === "rehearsal-secret-value-one")
   check("the release runs the tag", (await jsonpath("deployment", "answerable-toolbox", "{.spec.template.metadata.annotations.image-tag}")) === TAG)
+  check("all four images are pinned by digest, admin-mcp's hyphenated key included", await releaseRunsTheDigests())
+  check("the Deployments run the digests", (await pinned("answerable-id")) === DIGESTS.id && (await pinned("answerable-admin-mcp")) === DIGESTS["admin-mcp"])
   check("--bootstrap ran the bootstrap Job", (await kubectl("get", "job", "answerable-ops-bootstrap", "-n", "answerable", "-o", "name")).exitCode === 0)
   check("current-tag reads the tag back", (await currentTag(deps)) === TAG)
 
@@ -253,12 +283,13 @@ try {
   check("the admin MCP restarted", (await jsonpath("deployment", "answerable-admin-mcp", restartedAt)) !== "")
   check("ID did not restart", (await jsonpath("deployment", "answerable-id", restartedAt)) === "")
   check("run-job kept the image tag", (await currentTag(deps)) === TAG)
+  check("run-job kept the digests the release runs", await releaseRunsTheDigests())
 
   // A migration that fails: the deploy fails, the Job's logs are printed, the release stays where it was.
   logs.length = 0
   let failure: unknown
   try {
-    await deploy({ environment: "staging", imageTag: NEXT_TAG, valuesFile: "charts/answerable/values-fail.yaml", timeout: "2m" }, deps)
+    await deploy({ environment: "staging", imageTag: NEXT_TAG, digests: DIGESTS, valuesFile: "charts/answerable/values-fail.yaml", timeout: "2m" }, deps)
   } catch (error) {
     failure = error
   }

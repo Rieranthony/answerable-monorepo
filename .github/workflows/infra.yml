@@ -1,18 +1,12 @@
 name: Infra
 
-# Checks on every change to the infrastructure code, a Terraform plan of staging on pull requests, and the apply of
-# staging when the change lands on main. Production applies only inside promote-production.yml.
+# A pull request that changes the infrastructure code gets the infrastructure checks and a Terraform plan of staging
+# as a comment. Nothing is applied here: staging applies in the `infra` job of deploy-staging.yml, ahead of every
+# deploy, and production applies inside promote-production.yml.
 # Which secrets the infra-staging environment needs: infra/pipeline/README.md.
 
 on:
   pull_request:
-    paths:
-      - infra/**
-      - charts/**
-      - .github/workflows/infra.yml
-      - .github/actions/**
-  push:
-    branches: [main]
     paths:
       - infra/**
       - charts/**
@@ -56,7 +50,7 @@ jobs:
     name: Plan staging
     needs: check
     # A pull request from a fork gets no secrets, and no plan.
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     environment: infra-staging
@@ -85,7 +79,6 @@ jobs:
           TF_IN_AUTOMATION: "1"
           CIVO_TOKEN: ${{ secrets.CIVO_TOKEN }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          # Only when the state lives in an S3-compatible object store (Civo's) that the provider token cannot open.
           AWS_ACCESS_KEY_ID: ${{ secrets.STATE_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.STATE_SECRET_ACCESS_KEY }}
         run: terraform init -input=false
@@ -98,9 +91,10 @@ jobs:
           TF_IN_AUTOMATION: "1"
           CIVO_TOKEN: ${{ secrets.CIVO_TOKEN }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          # Only when the state lives in an S3-compatible object store (Civo's) that the provider token cannot open.
           AWS_ACCESS_KEY_ID: ${{ secrets.STATE_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.STATE_SECRET_ACCESS_KEY }}
+          # Staging's API is open by its own switch, so an empty list is right when the secret is not set.
+          TF_VAR_allowed_api_cidrs: ${{ secrets.ALLOWED_API_CIDRS || '[]' }}
         run: |
           status=0
           terraform plan -input=false -lock=false -no-color -detailed-exitcode -out=tfplan > plan.txt 2>&1 || status=$?
@@ -119,11 +113,14 @@ jobs:
         with:
           script: |
             const fs = require('fs')
+            const path = require('path')
+            // This step does not run in the job's working directory, so the files are found by their full path.
+            const directory = path.join(process.env.GITHUB_WORKSPACE, 'infra/civo/envs/staging')
             const marker = '<!-- terraform-plan:staging -->'
             const failed = process.env.OUTCOME !== 'success'
-            const file = failed ? 'plan.txt' : 'plan-full.txt'
+            const file = path.join(directory, failed ? 'plan.txt' : 'plan-full.txt')
             const limit = 60000
-            let text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : 'No output.'
+            let text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : 'No output: ' + file + ' does not exist.'
             if (text.length > limit)
               text = text.slice(0, limit) + '\n\n... cut here; the whole plan is in the workflow run.'
             const heading = failed
@@ -153,49 +150,3 @@ jobs:
               await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body })
             else
               await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body })
-
-  apply-staging:
-    name: Apply staging
-    needs: check
-    if: github.event_name == 'push'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    environment: infra-staging
-    # Never cancelled halfway: a cancelled apply leaves the state locked and the infrastructure half changed.
-    concurrency:
-      group: infra-apply-staging
-      cancel-in-progress: false
-    permissions:
-      contents: read
-    defaults:
-      run:
-        shell: bash
-        working-directory: infra/civo/envs/staging
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: ./.github/actions/setup-tools
-        with:
-          tools: terraform
-
-      - name: Terraform init
-        env:
-          TF_IN_AUTOMATION: "1"
-          CIVO_TOKEN: ${{ secrets.CIVO_TOKEN }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          # Only when the state lives in an S3-compatible object store (Civo's) that the provider token cannot open.
-          AWS_ACCESS_KEY_ID: ${{ secrets.STATE_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.STATE_SECRET_ACCESS_KEY }}
-        run: terraform init -input=false
-
-      - name: Terraform apply
-        env:
-          TF_IN_AUTOMATION: "1"
-          CIVO_TOKEN: ${{ secrets.CIVO_TOKEN }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          # Only when the state lives in an S3-compatible object store (Civo's) that the provider token cannot open.
-          AWS_ACCESS_KEY_ID: ${{ secrets.STATE_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.STATE_SECRET_ACCESS_KEY }}
-        run: terraform apply -input=false -auto-approve

@@ -4,6 +4,7 @@ import { join, resolve } from "node:path"
 import {
   CHART,
   NAMESPACE,
+  REGISTRY,
   RELEASE,
   defaultSecretsFile,
   defaultValuesFile,
@@ -97,31 +98,57 @@ export function assertImageTag(tag: string): void {
   if (!IMAGE_TAG.test(tag)) throw new UsageError(`--image-tag must be sha- and the 40-character commit SHA, got "${tag}"`)
 }
 
+const IMAGE_NAMES = ["id", "toolbox", "admin-mcp", "ops"] as const
+
+/** One of the four images the release runs; the chart names them the same way in `images.<name>.digest`. */
+type ImageName = (typeof IMAGE_NAMES)[number]
+
+/** The manifest-list digest, `sha256:` and 64 hex characters, of each of the four images. */
+export type Digests = Record<ImageName, string>
+
+const DIGEST = /^sha256:[0-9a-f]{64}$/
+
 /**
- * Turn Secret manifests into a function that blanks their values out of a text. Only values under `data` and
- * `stringData` count, with their base64 forms. A manifest that cannot be read withholds the whole text.
+ * Read repeated `--image-digest <image>=sha256:<hex>` options. None gives `undefined`, which means "look the
+ * digests up"; some must be all four.
  */
-export function redactor(manifests: string): (text: string) => string {
-  const values = new Set<string>()
-  const collect = (node: unknown, inside: boolean): void => {
-    if (typeof node === "string") {
-      if (!inside) return
-      for (const value of [node, ...node.split("\n").map((line) => line.trim())])
-        if (value.length >= 4) {
-          values.add(value)
-          values.add(Buffer.from(value).toString("base64"))
-        }
-    } else if (Array.isArray(node)) for (const item of node) collect(item, inside)
-    else if (node && typeof node === "object")
-      for (const [key, child] of Object.entries(node)) collect(child, inside || key === "data" || key === "stringData")
+export function parseDigests(pairs: readonly string[]): Digests | undefined {
+  if (pairs.length === 0) return undefined
+  const found = new Map<string, string>()
+  for (const pair of pairs) {
+    const [name = "", digest = ""] = pair.split("=", 2)
+    if (!IMAGE_NAMES.some((image) => image === name))
+      throw new UsageError(`--image-digest names an unknown image "${name}"; the images are ${IMAGE_NAMES.join(", ")}`)
+    if (!DIGEST.test(digest)) throw new UsageError(`--image-digest ${name}= must be sha256: and 64 hex characters`)
+    if (found.has(name)) throw new UsageError(`--image-digest names ${name} twice`)
+    found.set(name, digest)
   }
-  try {
-    collect(Bun.YAML.parse(manifests), false)
-  } catch {
-    return () => "(output withheld: the manifests could not be parsed to redact it)"
+  const missing = IMAGE_NAMES.filter((name) => !found.has(name))
+  if (missing.length > 0)
+    throw new UsageError(`--image-digest must be given for all four images, or none; missing ${missing.join(", ")}`)
+  return Object.fromEntries(found) as Digests
+}
+
+/**
+ * Ask the registry which manifest list each image's tag points to, so that the release pins the bytes and not a
+ * tag that a rerun could move. Needs Docker with buildx; the packages are public, so no login.
+ */
+async function resolveDigests(imageTag: string, deps: Deps): Promise<Digests> {
+  const digests: Partial<Digests> = {}
+  for (const name of IMAGE_NAMES) {
+    const reference = `${REGISTRY}/${name}:${imageTag}`
+    const argv = ["docker", "buildx", "imagetools", "inspect", reference, "--format", "{{.Manifest.Digest}}"]
+    deps.log(`$ ${commandLine(argv)}\n`)
+    const result = await deps.run(argv, { cwd: deps.root })
+    const digest = result.stdout.trim()
+    if (result.exitCode !== 0 || !DIGEST.test(digest))
+      throw new PipelineError(
+        `could not resolve ${reference} to a manifest digest (exit ${result.exitCode}): ${result.stderr.trim() || digest || "no answer"}`,
+      )
+    deps.log(`${name} is ${digest}\n`)
+    digests[name] = digest
   }
-  const longestFirst = [...values].sort((a, b) => b.length - a.length)
-  return (text) => longestFirst.reduce((safe, value) => safe.replaceAll(value, "***"), text)
+  return digests as Digests
 }
 
 type Session = {
@@ -160,6 +187,10 @@ async function requireFiles(root: string, files: string[]): Promise<void> {
     }
 }
 
+// What `kubectl apply` prints for an object it applied: its kind, its name and what happened, nothing else.
+const APPLIED = /^[a-z][\w.-]*\/[\w.-]+ (created|configured|unchanged|serverside-applied)$/
+
+// Nothing of kubectl's own output is shown when the apply fails: an API error can quote a value, in any encoding.
 async function applySecrets(session: Session, secretsFile: string): Promise<void> {
   const decrypted = await session.quiet(["sops", "--decrypt", secretsFile])
   if (decrypted.exitCode !== 0)
@@ -167,9 +198,10 @@ async function applySecrets(session: Session, secretsFile: string): Promise<void
   const applied = await session.quiet(["kubectl", "apply", "-n", NAMESPACE, "-f", "-"], { input: decrypted.stdout })
   if (applied.exitCode !== 0)
     throw new PipelineError(
-      `kubectl apply of ${secretsFile} failed (exit ${applied.exitCode}): ${redactor(decrypted.stdout)(applied.stderr.trim())}`,
+      `kubectl apply of the secrets failed with exit code ${applied.exitCode}; run it by hand with the decrypted file to see why`,
     )
-  session.deps.log(applied.stdout)
+  for (const line of applied.stdout.split("\n"))
+    if (APPLIED.test(line.trim())) session.deps.log(`${line.trim()}\n`)
 }
 
 async function printJobDiagnostics(session: Session): Promise<void> {
@@ -185,7 +217,14 @@ async function printJobDiagnostics(session: Session): Promise<void> {
   }
 }
 
-type Upgrade = { install: boolean; imageTag: string; valuesFile: string; timeout: string; jobs: readonly OpsJob[] }
+type Upgrade = {
+  install: boolean
+  imageTag: string
+  digests: Digests
+  valuesFile: string
+  timeout: string
+  jobs: readonly OpsJob[]
+}
 
 async function upgrade(session: Session, plan: Upgrade): Promise<void> {
   const result = await session.show([
@@ -206,6 +245,7 @@ async function upgrade(session: Session, plan: Upgrade): Promise<void> {
     plan.valuesFile,
     "--set",
     `image.tag=${plan.imageTag}`,
+    ...IMAGE_NAMES.flatMap((name) => ["--set", `images.${name}.digest=${plan.digests[name]}`]),
     ...plan.jobs.flatMap((job) => ["--set", `ops.${job}=true`]),
   ])
   if (result.exitCode === 0) return
@@ -214,19 +254,25 @@ async function upgrade(session: Session, plan: Upgrade): Promise<void> {
   throw new PipelineError(`helm upgrade failed with exit code ${result.exitCode}`)
 }
 
-async function readCurrentTag(session: Session): Promise<string> {
+/** What the release runs now: the tag, and the digests when the release was deployed by digest. */
+type Release = { tag: string; digests: Digests | undefined }
+
+async function readRelease(session: Session): Promise<Release> {
   const result = await session.quiet(["helm", "get", "values", RELEASE, "--namespace", NAMESPACE, "-o", "json"])
   if (result.exitCode !== 0)
     throw new PipelineError(`helm get values failed with exit code ${result.exitCode}: ${result.stderr.trim()}`)
-  let tag: unknown
+  let values: { image?: { tag?: unknown }; images?: Record<string, { digest?: unknown } | undefined> } | null
   try {
-    tag = (JSON.parse(result.stdout) as { image?: { tag?: unknown } } | null)?.image?.tag
+    values = JSON.parse(result.stdout)
   } catch {
     throw new PipelineError("helm get values did not answer JSON")
   }
+  const tag = values?.image?.tag
   if (typeof tag !== "string" || !IMAGE_TAG.test(tag))
     throw new PipelineError(`release ${RELEASE} has no image.tag of the form sha-<commit>; has it been deployed?`)
-  return tag
+  const kept = IMAGE_NAMES.map((name) => values?.images?.[name]?.digest)
+  const complete = kept.every((digest) => typeof digest === "string" && DIGEST.test(digest))
+  return { tag, digests: complete ? (Object.fromEntries(IMAGE_NAMES.map((name, index) => [name, kept[index]])) as Digests) : undefined }
 }
 
 async function restartServers(session: Session, timeout: string): Promise<void> {
@@ -251,6 +297,8 @@ export type DeployOptions = {
   environment: EnvironmentName
   /** `sha-` and the commit SHA the images were built from. */
   imageTag: string
+  /** The digests to pin, when they have been verified already; otherwise they are looked up from the tag. */
+  digests?: Digests
   /** Also run the idempotent `ops` bootstrap Job in this upgrade. */
   bootstrap?: boolean
   /** The Helm values overlay; defaults to the environment's. */
@@ -262,8 +310,9 @@ export type DeployOptions = {
 }
 
 /**
- * Deploy an image tag to an environment: log in with the deployer token, apply the decrypted secrets, then
- * `helm upgrade --install --rollback-on-failure`. When the upgrade fails the migration and ops Jobs' logs are printed.
+ * Deploy an image tag to an environment: pin the four images by digest, log in with the deployer token, apply the
+ * decrypted secrets, then `helm upgrade --install --rollback-on-failure`. When the upgrade fails the migration and
+ * ops Jobs' logs are printed.
  */
 export async function deploy(options: DeployOptions, deps: Deps): Promise<void> {
   assertImageTag(options.imageTag)
@@ -271,11 +320,13 @@ export async function deploy(options: DeployOptions, deps: Deps): Promise<void> 
   const secretsFile = options.secretsFile ?? defaultSecretsFile(options.environment)
   await requireFiles(deps.root, [valuesFile, secretsFile])
   const cluster = readCluster(deps.env)
+  const digests = options.digests ?? (await resolveDigests(options.imageTag, deps))
   await withSession(deps, cluster, async (session) => {
     await applySecrets(session, secretsFile)
     await upgrade(session, {
       install: true,
       imageTag: options.imageTag,
+      digests,
       valuesFile,
       timeout: options.timeout ?? "10m",
       jobs: options.bootstrap ? ["bootstrap"] : [],
@@ -288,8 +339,10 @@ export async function deploy(options: DeployOptions, deps: Deps): Promise<void> 
 export type RunJobOptions = {
   environment: EnvironmentName
   job: OpsJob
-  /** The tag to keep; defaults to the one the release runs now. */
+  /** The tag to run; defaults to the one the release runs now, with the digests it runs. */
   imageTag?: string
+  /** The digests of `imageTag`, when they have been verified already; otherwise they are looked up. Needs `imageTag`. */
+  digests?: Digests
   /** The Helm values overlay; defaults to the environment's. */
   valuesFile?: string
   /** How long Helm and the restarts wait, as a Go duration; defaults to `10m`. */
@@ -297,18 +350,26 @@ export type RunJobOptions = {
 }
 
 /**
- * Run an `ops` Job once: upgrade the release with the Job's value switched on, wait for the Job, and after
- * `register` restart the Toolbox and the admin MCP so they read the client secrets the Job wrote.
+ * Run an `ops` Job once: upgrade the release, on what it runs now unless told otherwise, with the Job's value
+ * switched on, wait for the Job, and after `register` restart the Toolbox and the admin MCP so they read the client secrets the Job wrote.
  */
 export async function runJob(options: RunJobOptions, deps: Deps): Promise<void> {
   if (options.imageTag !== undefined) assertImageTag(options.imageTag)
+  if (options.digests && options.imageTag === undefined) throw new UsageError("digests belong to a tag: give the image tag with them")
   const valuesFile = options.valuesFile ?? defaultValuesFile(options.environment)
   await requireFiles(deps.root, [valuesFile])
   const cluster = readCluster(deps.env)
   const timeout = options.timeout ?? "10m"
   await withSession(deps, cluster, async (session) => {
-    const imageTag = options.imageTag ?? (await readCurrentTag(session))
-    await upgrade(session, { install: false, imageTag, valuesFile, timeout, jobs: [options.job] })
+    let imageTag = options.imageTag
+    let digests = options.digests
+    if (imageTag === undefined) {
+      const release = await readRelease(session)
+      imageTag = release.tag
+      digests = release.digests
+    }
+    digests ??= await resolveDigests(imageTag, deps)
+    await upgrade(session, { install: false, imageTag, digests, valuesFile, timeout, jobs: [options.job] })
     if (options.job === "register") await restartServers(session, timeout)
     deps.log(`\nRan ${options.job} in ${options.environment} on ${imageTag}.\n`)
   })
@@ -317,5 +378,5 @@ export async function runJob(options: RunJobOptions, deps: Deps): Promise<void> 
 /** The image tag an environment's release runs now, read from the release's own values. */
 export async function currentTag(deps: Deps): Promise<string> {
   const cluster = readCluster(deps.env)
-  return withSession(deps, cluster, readCurrentTag)
+  return withSession(deps, cluster, async (session) => (await readRelease(session)).tag)
 }

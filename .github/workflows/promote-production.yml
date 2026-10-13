@@ -47,6 +47,7 @@ jobs:
       contents: read
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
+      digests: ${{ steps.verify.outputs.digests }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -88,21 +89,26 @@ jobs:
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       # Each tag is a manifest list (amd64 and arm64), and deploy-staging.yml signs the list's digest. The digest the
-      # tag points to is read once and that digest is verified. Only deploy-staging.yml on main signs images, and it
-      # signs them only after CI passed, so a tag that verifies was built from a commit that passed CI. A tag typed by
-      # hand cannot name anything else.
+      # tag points to is read once, that digest is verified, and the production job deploys exactly those digests,
+      # so a rerun that moves a tag afterwards changes nothing. Only deploy-staging.yml on main signs images, and it
+      # signs them only after CI passed, so a tag that verifies was built from a commit that passed CI. A tag typed
+      # by hand cannot name anything else.
       - name: Verify the image signatures
+        id: verify
         env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           identity="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/.github/workflows/deploy-staging.yml@refs/heads/main"
+          digests=()
           for image in id toolbox admin-mcp ops; do
             digest=$(docker buildx imagetools inspect "$REGISTRY/$image:$TAG" --format '{{.Manifest.Digest}}')
             cosign verify "$REGISTRY/$image@$digest" \
               --certificate-identity "$identity" \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
             echo "verified $image:$TAG is $digest"
+            digests+=("$image=$digest")
           done
+          echo "digests=${digests[*]}" >> "$GITHUB_OUTPUT"
 
   # One job, so that the environment's reviewer approves once for the whole promotion. The Civo and Cloudflare tokens
   # reach the Terraform step only; the deploy step holds the namespace-scoped deployer token and nothing else.
@@ -116,6 +122,7 @@ jobs:
       contents: read
     env:
       IMAGE_TAG: ${{ needs.resolve.outputs.tag }}
+      IMAGE_DIGESTS: ${{ needs.resolve.outputs.digests }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -136,10 +143,15 @@ jobs:
           TF_IN_AUTOMATION: "1"
           CIVO_TOKEN: ${{ secrets.CIVO_TOKEN }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          # Only when the state lives in an S3-compatible object store (Civo's) that the provider token cannot open.
           AWS_ACCESS_KEY_ID: ${{ secrets.STATE_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.STATE_SECRET_ACCESS_KEY }}
+          # Production's Kubernetes API admits the operators' addresses and nothing else.
+          TF_VAR_allowed_api_cidrs: ${{ secrets.ALLOWED_API_CIDRS }}
         run: |
+          if [ -z "$TF_VAR_allowed_api_cidrs" ]; then
+            echo "::error::ALLOWED_API_CIDRS is not set on the production environment: a JSON list of the operators' addresses, such as [\"198.51.100.7/32\"]"
+            exit 1
+          fi
           terraform init -input=false
           terraform apply -input=false -auto-approve
 
@@ -149,7 +161,16 @@ jobs:
           KUBE_CA: ${{ secrets.KUBE_CA }}
           KUBE_TOKEN: ${{ secrets.KUBE_TOKEN }}
           SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
-        run: bun infra/pipeline/src/cli.ts deploy --environment production --image-tag "$IMAGE_TAG" --bootstrap
+        run: |
+          # The digests verified in the resolve job: <image>=sha256:<hex>, space-separated.
+          read -ra pairs <<< "$IMAGE_DIGESTS"
+          pins=()
+          for pair in "${pairs[@]}"; do pins+=(--image-digest "$pair"); done
+          if [ "${#pins[@]}" -ne 8 ]; then
+            echo "::error::expected the verified digest of all four images, got '$IMAGE_DIGESTS'"
+            exit 1
+          fi
+          bun infra/pipeline/src/cli.ts deploy --environment production --image-tag "$IMAGE_TAG" "${pins[@]}" --bootstrap
 
       - name: Summarise
         run: echo "Production runs \`$IMAGE_TAG\`." >> "$GITHUB_STEP_SUMMARY"
