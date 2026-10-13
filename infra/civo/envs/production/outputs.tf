@@ -70,6 +70,12 @@ output "database_dns_endpoint" {
   value       = module.database.dns_endpoint
 }
 
+output "database_admin_url" {
+  description = "The database administrator's URL, for OPS_DATABASE_ADMIN_URL in the postgres-admin Secret (`bun run setup init-secrets`): percent-encoded login, the private address, verify-full against /etc/ssl/db/ca.pem."
+  value       = module.database.admin_url
+  sensitive   = true
+}
+
 output "database_port" {
   description = "The database's port."
   value       = module.database.port

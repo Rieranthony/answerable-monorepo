@@ -111,3 +111,60 @@ run "refuses_a_size_that_is_not_a_database_size" {
 
   expect_failures = [var.size]
 }
+
+# The administrator's URL for the bootstrap Job (the first-run contract's OPS_DATABASE_ADMIN_URL): every character
+# of the login that is not unreserved in RFC 3986 is percent-encoded, a space as %20 (never +), so no password Civo
+# generates can break the URL.
+run "builds_the_admin_url_with_an_encoded_password" {
+  command = plan
+
+  override_resource {
+    target          = civo_database.this
+    override_during = plan
+    values = {
+      username     = "civo admin"
+      password     = "p@ss:w/rd?#%+ ä&="
+      private_ipv4 = "10.10.0.7"
+      port         = 5432
+    }
+  }
+
+  assert {
+    condition     = output.admin_url == "postgres://civo%20admin:p%40ss%3Aw%2Frd%3F%23%25%2B%20%C3%A4%26%3D@10.10.0.7:5432/postgres?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem"
+    error_message = "The admin URL must be postgres://<user>:<password>@<private address>:<port>/postgres with verify-full against the mounted CA, the login percent-encoded."
+  }
+}
+
+run "names_the_admin_database_it_is_given" {
+  command = plan
+
+  variables {
+    admin_database = "defaultdb"
+  }
+
+  override_resource {
+    target          = civo_database.this
+    override_during = plan
+    values = {
+      username     = "civo"
+      password     = "plain"
+      private_ipv4 = "10.10.0.7"
+      port         = 5432
+    }
+  }
+
+  assert {
+    condition     = output.admin_url == "postgres://civo:plain@10.10.0.7:5432/defaultdb?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem"
+    error_message = "The admin URL must name the administrator's database the first real bootstrap confirms."
+  }
+}
+
+run "refuses_an_admin_database_name_that_needs_encoding" {
+  command = plan
+
+  variables {
+    admin_database = "post gres/x"
+  }
+
+  expect_failures = [var.admin_database]
+}

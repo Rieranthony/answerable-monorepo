@@ -22,10 +22,10 @@ The two roots share every `.tf` file byte for byte except `backend.tf`; their si
 | --- | --- | --- |
 | `network` | `civo_vpc_network` | A /16 to /28 inside 10.0.0.0/8, clear of the pod and service ranges |
 | `cluster` | `civo_vpc_firewall`, `civo_kubernetes_cluster` | API (6443) from `allowed_api_cidrs`, plus the whole internet only when `api_open_to_internet` is true, which production refuses; from the private network only the node ports, the kubelet and Cilium's tunnel and health checks, never 6443 and never every port ([the ports and their sources](modules/cluster/README.md)); k3s with Cilium; Civo's Traefik removed, and the apply fails if it is installed anyway; at least two nodes |
-| `database` | `civo_vpc_firewall`, `civo_database` | PostgreSQL 17; 5432 from the private network, not the nodes alone ([a known limit](#known-limits)); outbound to the private network only; 1, 3 or 5 nodes; `prevent_destroy` |
+| `database` | `civo_vpc_firewall`, `civo_database` | PostgreSQL 17; 5432 from the private network, not the nodes alone ([a known limit](#known-limits)); outbound to the private network only; 1, 3 or 5 nodes; `prevent_destroy`; the sensitive [administrator's URL](modules/database/README.md#the-administrators-url) with its login percent-encoded |
 | `ingress-firewall` | `civo_vpc_firewall`, `civo_vpc_reserved_ip` | 443 from exactly Cloudflare's IPv4 ranges; no port 80; outbound to the private network only |
 | `state` | `civo_object_store_credential`, `civo_object_store` | One 500 GB block, its own credential; `prevent_destroy` |
-| `platform` | the `answerable` and `platform` namespaces, `helm_release.platform` | The restricted Pod Security Standard enforced on `answerable`; Traefik's Service names the firewall and claims the reserved address; Traefik's websecure entry point trusts `X-Forwarded-For` only from the ranges given; the chart's `values-civo-<environment>.yaml` must exist ([values Terraform sets](modules/platform/README.md)) |
+| `platform` | the `answerable` and `platform` namespaces, `helm_release.platform` | The restricted Pod Security Standard enforced on `answerable`; Traefik's Service names the firewall and claims the reserved address; Traefik's websecure entry point trusts `X-Forwarded-For` only from the ranges given; the chart's `values-civo-<environment>.yaml` must exist; `originPull.caPem` from `edge-ca/ca.pem`, which the full apply requires and targeted applies do not ([values Terraform sets](modules/platform/README.md)) |
 | `deployer` | ServiceAccount `deployer`, its Roles and bindings, a token Secret | Manages only what `helm upgrade` of `charts/answerable` touches, in `answerable`, and reads no other namespace (`read_namespaces = []` in both roots; the variable stays for a future diagnostic and never grants Secrets); no wildcards, no `escalate`, `bind`, `impersonate` or `exec` |
 | `edge` | three `cloudflare_dns_record`s, zone settings, origin pulls, two `cloudflare_ruleset`s | Proxied A records for exactly the three hostnames, each one label under the zone; Full (strict), TLS 1.2 minimum, HSTS; no browser check, no challenge and no cache (except `/assets/`) on those hostnames; never `www` or the apex |
 
@@ -74,7 +74,7 @@ The zone's Cloudflare token needs these permissions, on that zone only:
 
 The last two are missing from B0's original list ([config rules](https://developers.cloudflare.com/rules/configuration-rules/create-api/), [cache rules](https://developers.cloudflare.com/cache/how-to/cache-rules/create-api/)). B0's Zone WAF Edit is not used by these roots.
 
-**The state is a secret in its own right.** The Civo provider stores the database administrator's username and password in state; Terraform cannot keep them out. With `write_kubeconfig = true`, which this root needs, it also stores the cluster's admin kubeconfig. The state further holds the deployer's token and the state credential's secret key. Anyone who reads the state bucket owns the cluster and the database, so the bucket and the credential that opens it (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) are guarded like `CIVO_TOKEN`: only the owner and the protected infra environment hold them, never the deploy workflow. No output prints the database password.
+**The state is a secret in its own right.** The Civo provider stores the database administrator's username and password in state; Terraform cannot keep them out. With `write_kubeconfig = true`, which this root needs, it also stores the cluster's admin kubeconfig. The state further holds the deployer's token and the state credential's secret key. Anyone who reads the state bucket owns the cluster and the database, so the bucket and the credential that opens it (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) are guarded like `CIVO_TOKEN`: only the owner and the protected infra environment hold them, never the deploy workflow. One output carries the database password: `database_admin_url`, sensitive, which `bun run setup init-secrets` copies into the encrypted `postgres-admin` Secret for the bootstrap Job.
 
 ## Who can reach the Kubernetes API
 
@@ -93,7 +93,10 @@ Civo clusters always have a public API endpoint (6443). The cluster firewall dec
 - Bot Fight Mode is off in the zone (Security settings in the dashboard). The token cannot change it.
 - The zone has no `http_config_settings` or `http_request_cache_settings` ruleset made by hand. Cloudflare allows one per zone and phase; import an existing one with `terraform import 'module.edge.cloudflare_ruleset.config' 'zones/<zone id>/<ruleset id>'`.
 - `charts/platform` exists on the branch, with its `values-civo-<environment>.yaml` overlay. The full apply installs it, and the plan fails, naming the path, if the overlay is missing.
-- The zone's origin-pull certificate is uploaded before traffic is expected ([D19](../../docs/goals/aws-deploy/decisions.md)). Until then Cloudflare presents its shared certificate, which Traefik refuses.
+- **The origin-pull CA.** Its public certificate is committed at `envs/<env>/edge-ca/ca.pem` and the zone's client certificate is uploaded to Cloudflare, both by `bun run setup origin-pull`, before the full apply (step 6) and before traffic is expected ([D19](../../docs/goals/aws-deploy/decisions.md)).
+  - Terraform passes the certificate to the platform chart as `originPull.caPem`, and the chart turns it into the Secret Traefik verifies Cloudflare against.
+  - The full plan stops, naming the file and the command, while the certificate is missing, and refuses a file that is not a PEM certificate or that holds a private key.
+  - Until the client certificate is uploaded, Cloudflare presents its shared one, which Traefik refuses.
 
 ## First apply
 
@@ -134,7 +137,7 @@ Per environment, from a trusted machine. Staging shown; production is the same i
    terraform apply -target=module.cluster -target=module.database -target=module.ingress_firewall
    ```
 
-6. Apply the rest: the namespaces, the platform chart, the deployer and the Cloudflare zone.
+6. Apply the rest: the namespaces, the platform chart, the deployer and the Cloudflare zone. This step needs `edge-ca/ca.pem` committed; until `bun run setup origin-pull --environment <env> --zone <zone>` has written it, the plan stops and names that command, while step 5 does not need it.
 
    ```sh
    terraform apply
@@ -167,8 +170,8 @@ Each of these could not be proved without a Civo account. Record the answer in [
 | Does Civo's Cilium tunnel over VXLAN (UDP 8472)? | `kubectl -n kube-system exec ds/cilium -- cilium status` | Admit Geneve (UDP 6081), or nothing for native routing |
 | What address does Traefik see? No PROXY protocol is configured, so it should be the load balancer's private address, which is why the private range is in Traefik's `trustedIPs` and in `trusted_proxy_cidrs` | Read `X-Forwarded-For` at ID through the audit API | Enable `kubernetes.civo.com/loadbalancer-enable-proxy-protocol` with Traefik's `ports.websecure.proxyProtocol.trustedIPs` |
 | Is the pod range k3s's default 10.42.0.0/16? | `kubectl get nodes -o jsonpath='{.items[*].spec.podCIDR}'` | Set `pod_cidr` |
-| Which certificate does the database present, and for which name? `verify-full` needs its CA and a matching host | `civo database show`; `openssl s_client -starttls postgres -connect <host>:5432` from a pod | Use `database_dns_endpoint` as the host, or ship the CA the dashboard offers |
-| The administrator's login and default database | `civo database credential answerable-staging-database` | Feed them to the `bootstrap` Job ([B3](../../docs/goals/aws-deploy/briefs/b3.md)) |
+| Which certificate does the database present, and does it name the private address that `database_admin_url` and the services use? `verify-full` needs its CA (`bun run setup database-ca`) and a matching host | `openssl s_client -starttls postgres -connect <host>:5432` from a pod; the first `bootstrap` Job connects with `verify-full` | Switch the host in `modules/database` (output `admin_url`) and the services to `database_dns_endpoint` |
+| Is Civo's default database `postgres`? The `database_admin_url` output assumes it (variable `database_admin_database`) | `civo database credential answerable-staging-database`; the first `bootstrap` Job ([B3](../../docs/goals/aws-deploy/briefs/b3.md)) connects with the URL | Set `database_admin_database` in `terraform.tfvars`, then rerun `bun run setup init-secrets --force` |
 | Do standbys and backups work with the database's outbound traffic limited to the private network? | The restore drill ([B7](../../docs/goals/aws-deploy/briefs/b7.md)) | Widen the database firewall's egress |
 | Does the platform chart accept the values Terraform sets (`traefik.service.annotations`, `traefik.ports.websecure.forwardedHeaders.trustedIPs`)? | `helm get values platform -n platform`; `kubectl -n platform get svc` shows the reserved address | Match the keys in `modules/platform/main.tf` to the chart |
 

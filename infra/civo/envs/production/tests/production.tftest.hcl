@@ -26,6 +26,8 @@ variables {
   # charts/platform is not on every branch these tests run on; the platform module checks the overlay exists at plan
   # time, and the run below checks terraform.tfvars names it.
   platform_values_files = []
+  # edge-ca/ca.pem is written by `bun run setup origin-pull` once the cluster exists; the module's fixture stands in.
+  origin_pull_ca_file = "../../modules/platform/tests/fixtures/edge-ca.pem"
 }
 
 run "names_the_platform_charts_production_overlay" {
@@ -119,5 +121,45 @@ run "lets_the_deployer_read_nothing_outside_answerable" {
   assert {
     condition     = length(module.deployer.read_namespaces) == 0
     error_message = "The pipeline reads nothing outside answerable, so the deployer may not either."
+  }
+}
+
+# The bootstrap Job's OPS_DATABASE_ADMIN_URL (the first-run contract): Civo's administrator login, percent-encoded,
+# on the private address, verify-full against the CA the answerable chart mounts.
+run "outputs_the_database_admin_url" {
+  command = plan
+
+  override_resource {
+    target          = module.database.civo_database.this
+    override_during = plan
+    values = {
+      username     = "civo"
+      password     = "a/b c+d@e"
+      private_ipv4 = "10.0.0.5"
+      port         = 5432
+    }
+  }
+
+  assert {
+    condition     = output.database_admin_url == "postgres://civo:a%2Fb%20c%2Bd%40e@10.0.0.5:5432/postgres?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem"
+    error_message = "database_admin_url must be postgres://<user>:<encoded password>@<private address>:<port>/postgres?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem."
+  }
+}
+
+# The first apply creates the cluster, the database and the firewalls before the origin-pull CA exists.
+run "plans_the_targeted_first_apply_without_the_origin_pull_ca" {
+  command = plan
+
+  variables {
+    origin_pull_ca_file = "edge-ca/not-written-yet.pem"
+  }
+
+  plan_options {
+    target = [module.cluster, module.database, module.ingress_firewall]
+  }
+
+  assert {
+    condition     = module.cluster.name == "answerable-production-cluster"
+    error_message = "A plan targeting the cluster, the database and the firewalls must not need the origin-pull CA."
   }
 }

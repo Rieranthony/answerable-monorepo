@@ -42,3 +42,14 @@ variable "nodes" {
     error_message = "The database runs 1, 3 or 5 nodes."
   }
 }
+
+variable "admin_database" {
+  description = "The database the administrator's URL names. Civo does not document its default; the first real bootstrap confirms it (`civo database credential`)."
+  type        = string
+  default     = "postgres"
+
+  validation {
+    condition     = can(regex("^[A-Za-z_][A-Za-z0-9_]{0,62}$", var.admin_database))
+    error_message = "The administrator's database must be a plain PostgreSQL name (letters, digits, underscores), so that the URL needs no encoding."
+  }
+}

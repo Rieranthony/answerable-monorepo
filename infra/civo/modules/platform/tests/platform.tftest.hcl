@@ -1,6 +1,6 @@
 # The cluster's platform layer: the two namespaces, and the platform chart (Traefik, cert-manager, the Grafana agent;
-# D31) installed with the values only Terraform knows: the load balancer's firewall and reserved address, and the
-# ranges Traefik trusts for X-Forwarded-For on the websecure entry point.
+# D31) installed with the values only Terraform knows: the load balancer's firewall and reserved address, the ranges
+# Traefik trusts for X-Forwarded-For on the websecure entry point, and the origin-pull CA certificate.
 mock_provider "kubernetes" {}
 mock_provider "helm" {}
 
@@ -9,6 +9,9 @@ variables {
   load_balancer_firewall_id = "44444444-4444-4444-8444-444444444444"
   load_balancer_ip          = "192.0.2.10"
   trusted_proxy_cidrs       = ["173.245.48.0/20", "2400:cb00::/32", "10.10.0.0/24"]
+  environment               = "staging"
+  zone_name                 = "answerable-staging.uk"
+  origin_pull_ca_file       = "tests/fixtures/edge-ca.pem"
 }
 
 run "creates_the_namespaces_with_pod_security" {
@@ -69,11 +72,12 @@ run "installs_the_platform_chart_with_the_load_balancer_wiring" {
 
   assert {
     condition = (
-      keys(yamldecode(helm_release.platform.values[length(helm_release.platform.values) - 1])) == ["traefik"]
+      keys(yamldecode(helm_release.platform.values[length(helm_release.platform.values) - 1])) == ["originPull", "traefik"]
+      && keys(yamldecode(helm_release.platform.values[length(helm_release.platform.values) - 1])["originPull"]) == ["caPem"]
       && keys(yamldecode(helm_release.platform.values[length(helm_release.platform.values) - 1])["traefik"]) == ["ports", "service"]
       && keys(yamldecode(helm_release.platform.values[length(helm_release.platform.values) - 1])["traefik"]["ports"]) == ["websecure"]
     )
-    error_message = "Terraform owns the Traefik Service annotations and websecure's trusted ranges, nothing else; no ingress-nginx key survives (D31)."
+    error_message = "Terraform owns the origin-pull CA, the Traefik Service annotations and websecure's trusted ranges, nothing else; no ingress-nginx key survives (D31)."
   }
 }
 
@@ -118,4 +122,48 @@ run "refuses_trusting_everyone" {
   }
 
   expect_failures = [var.trusted_proxy_cidrs]
+}
+
+run "passes_the_origin_pull_ca_to_the_chart" {
+  command = plan
+
+  assert {
+    condition = (
+      yamldecode(helm_release.platform.values[length(helm_release.platform.values) - 1])["originPull"]["caPem"]
+      == file("tests/fixtures/edge-ca.pem")
+    )
+    error_message = "The chart must receive the committed origin-pull CA certificate as originPull.caPem, byte for byte."
+  }
+}
+
+# The full apply needs edge-ca/ca.pem, which `bun run setup origin-pull` writes after the cluster exists; the error
+# names the file and that command.
+run "fails_at_plan_without_the_origin_pull_ca" {
+  command = plan
+
+  variables {
+    origin_pull_ca_file = "tests/fixtures/missing-ca.pem"
+  }
+
+  expect_failures = [helm_release.platform]
+}
+
+run "refuses_a_file_that_is_not_a_certificate" {
+  command = plan
+
+  variables {
+    origin_pull_ca_file = "tests/fixtures/values-civo-test.yaml"
+  }
+
+  expect_failures = [helm_release.platform]
+}
+
+run "refuses_a_file_that_holds_a_private_key" {
+  command = plan
+
+  variables {
+    origin_pull_ca_file = "tests/fixtures/edge-ca-with-key-marker.pem"
+  }
+
+  expect_failures = [helm_release.platform]
 }
