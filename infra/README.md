@@ -144,7 +144,7 @@ git push origin main
 gh run watch
 ```
 
-The push runs CI, applies staging's Terraform (nothing to change), builds and signs the four images, deploys and smoke-tests ([how a deploy runs](pipeline/README.md#how-a-deploy-runs)).
+The push runs CI, applies staging's Terraform (nothing to change), builds and signs the four images, deploys and smoke-tests ([how a deploy runs](pipeline/README.md#how-a-deploy-runs)). In the deploy, `ops-bootstrap` creates the three databases, their six logins and their URL Secrets with Civo's administrator login, then the migrations run and ID starts ([`infra/ops`](ops/README.md#bootstrap)).
 
 **Nobody registers the MCPs by hand on the first run.** This first deploy finds that `toolbox-id-client` and `admin-id-client` do not exist, so it runs `ops-register` in the same upgrade, with the root secret, before anyone is a platform administrator: the Toolbox and the admin MCP are registered in ID and start by themselves. [Register again](#register-again), with a staff token, is only for later, after root has locked.
 
