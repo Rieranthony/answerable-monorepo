@@ -163,7 +163,8 @@ describe("init-secrets --rotate", () => {
     await initSecrets({ environment: "staging", paths, rotate: "ROOT_ADMIN_SECRET" }, context)
     const data = await written(paths)
     expect(data["id-env"].ROOT_ADMIN_SECRET).not.toBe("root")
-    expect({ ...data, "id-env": { ...data["id-env"], ROOT_ADMIN_SECRET: "root" } }).toEqual(sample())
+    const restored: SecretsData = { ...data, "id-env": { ...data["id-env"], ROOT_ADMIN_SECRET: "root" } }
+    expect(restored).toEqual(sample())
     expect(output()).toContain("Replaced ROOT_ADMIN_SECRET in infra/civo/envs/staging/secrets.enc.yaml")
   })
 

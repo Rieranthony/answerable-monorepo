@@ -24,13 +24,17 @@ export type DatabaseCaOptions = {
   timeoutMs?: number
 }
 
+/** What the pod runs: install openssl, then print the chain the database presents. */
+export function fetchScript(host: string, port: string): string {
+  return `apk add --no-cache --quiet openssl >/dev/null && openssl s_client -starttls postgres -connect ${host}:${port} -showcerts </dev/null`
+}
+
 /** The command an operator runs to fetch the chain from inside the cluster, piped into `--from-stdin`. */
 export function podCommand(environment: EnvironmentName, host: string, port: string): string {
-  const fetch = `apk add --no-cache --quiet openssl >/dev/null && openssl s_client -starttls postgres -connect ${host}:${port} -showcerts </dev/null`
   return [
     `kubectl --kubeconfig admin.kubeconfig run database-ca --namespace default --rm -i --restart=Never --quiet \\`,
     `    --image=${FETCH_IMAGE} -- \\`,
-    `    sh -c '${fetch}' \\`,
+    `    sh -c '${fetchScript(host, port)}' \\`,
     `    | bun run setup database-ca --environment ${environment} --from-stdin`,
   ].join("\n")
 }
