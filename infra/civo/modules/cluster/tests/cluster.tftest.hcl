@@ -329,3 +329,27 @@ run "accepts_a_cluster_without_traefik" {
     error_message = "A cluster with metrics-server alone must be accepted."
   }
 }
+
+# The admin kubeconfig leaves the module only as a sensitive value: the providers of the root read it, and the root's
+# admin_kubeconfig output hands it to an operator for break-glass and diagnostics.
+run "hands_out_the_admin_kubeconfig_only_as_a_sensitive_value" {
+  command = plan
+
+  override_resource {
+    target          = civo_kubernetes_cluster.this
+    override_during = plan
+    values = {
+      kubeconfig = "apiVersion: v1\nkind: Config\n"
+    }
+  }
+
+  assert {
+    condition     = issensitive(output.kubeconfig)
+    error_message = "The cluster's admin kubeconfig must be a sensitive output."
+  }
+
+  assert {
+    condition     = nonsensitive(output.kubeconfig) == "apiVersion: v1\nkind: Config\n"
+    error_message = "The kubeconfig output must be the cluster's own kubeconfig attribute."
+  }
+}

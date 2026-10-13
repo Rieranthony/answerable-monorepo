@@ -33,6 +33,12 @@ output "cluster_name" {
   value       = module.cluster.name
 }
 
+output "admin_kubeconfig" {
+  description = "The cluster's admin kubeconfig: cluster-admin, held in state like the rest, for break-glass and diagnostics only (`bun run setup database-ca` reads the database's certificate through it). The deploy never uses it; it holds the deployer's token."
+  value       = module.cluster.kubeconfig
+  sensitive   = true
+}
+
 output "kube_server" {
   description = "The Kubernetes API's URL: the deploy environment's KUBE_SERVER secret."
   value       = module.cluster.api_endpoint
