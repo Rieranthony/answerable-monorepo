@@ -6,6 +6,7 @@ import {
   NAMESPACE,
   REGISTRY,
   RELEASE,
+  defaultDatabaseCaFile,
   defaultSecretsFile,
   defaultValuesFile,
   type EnvironmentName,
@@ -191,6 +192,17 @@ async function requireFiles(root: string, files: string[]): Promise<void> {
 const APPLIED = /^[a-z][\w.-]*\/[\w.-]+ (created|configured|unchanged|serverside-applied)$/
 
 // Nothing of kubectl's own output is shown when the apply fails: an API error can quote a value, in any encoding.
+// Set the database's CA file or stop before the cluster is touched, naming the command that writes it.
+async function requireDatabaseCa(root: string, environment: EnvironmentName): Promise<string> {
+  const file = defaultDatabaseCaFile(environment)
+  try {
+    await access(resolve(root, file))
+  } catch {
+    throw new UsageError(`${file} does not exist; write it with: bun run setup database-ca --environment ${environment}`)
+  }
+  return file
+}
+
 async function applySecrets(session: Session, secretsFile: string): Promise<void> {
   const decrypted = await session.quiet(["sops", "--decrypt", secretsFile])
   if (decrypted.exitCode !== 0)
@@ -202,6 +214,18 @@ async function applySecrets(session: Session, secretsFile: string): Promise<void
     )
   for (const line of applied.stdout.split("\n"))
     if (APPLIED.test(line.trim())) session.deps.log(`${line.trim()}\n`)
+}
+
+// The client Secrets that only `register` writes. The chart keeps the Toolbox and the admin MCP at zero replicas until
+// they exist.
+const CLIENT_SECRETS = ["toolbox-id-client", "admin-id-client"]
+
+async function missingClientSecrets(session: Session): Promise<string[]> {
+  const result = await session.quiet(["kubectl", "get", "secret", ...CLIENT_SECRETS, "-n", NAMESPACE, "-o", "name", "--ignore-not-found"])
+  if (result.exitCode !== 0)
+    throw new PipelineError(`kubectl get secret failed with exit code ${result.exitCode}: ${result.stderr.trim()}`)
+  const found = result.stdout.split("\n").map((line) => line.trim().replace(/^secret\//, ""))
+  return CLIENT_SECRETS.filter((name) => !found.includes(name))
 }
 
 async function printJobDiagnostics(session: Session): Promise<void> {
@@ -222,6 +246,8 @@ type Upgrade = {
   imageTag: string
   digests: Digests
   valuesFile: string
+  /** The database's CA file, relative to the repository root; the chart renders it into the `postgres-ca` ConfigMap. */
+  databaseCaFile: string
   timeout: string
   jobs: readonly OpsJob[]
 }
@@ -243,6 +269,8 @@ async function upgrade(session: Session, plan: Upgrade): Promise<void> {
     plan.timeout,
     "-f",
     plan.valuesFile,
+    "--set-file",
+    `database.caPem=${plan.databaseCaFile}`,
     "--set",
     `image.tag=${plan.imageTag}`,
     ...IMAGE_NAMES.flatMap((name) => ["--set", `images.${name}.digest=${plan.digests[name]}`]),
@@ -311,25 +339,38 @@ export type DeployOptions = {
 
 /**
  * Deploy an image tag to an environment: pin the four images by digest, log in with the deployer token, apply the
- * decrypted secrets, then `helm upgrade --install --rollback-on-failure`. When the upgrade fails the migration and
- * ops Jobs' logs are printed.
+ * decrypted secrets, then `helm upgrade --install --rollback-on-failure` with the database's CA file. The upgrade also
+ * runs `register` when the Toolbox's or the admin MCP's client Secret does not exist yet, which is the first install.
+ * When the upgrade fails the migration and ops Jobs' logs are printed.
  */
 export async function deploy(options: DeployOptions, deps: Deps): Promise<void> {
   assertImageTag(options.imageTag)
   const valuesFile = options.valuesFile ?? defaultValuesFile(options.environment)
   const secretsFile = options.secretsFile ?? defaultSecretsFile(options.environment)
   await requireFiles(deps.root, [valuesFile, secretsFile])
+  const databaseCaFile = await requireDatabaseCa(deps.root, options.environment)
   const cluster = readCluster(deps.env)
   const digests = options.digests ?? (await resolveDigests(options.imageTag, deps))
   await withSession(deps, cluster, async (session) => {
     await applySecrets(session, secretsFile)
+    // The first install has no client Secrets, so the servers would wait at zero replicas for ever: register them in this
+    // upgrade. Not otherwise: once a person holds platform:write, ID refuses the root secret that register would use.
+    const missing = await missingClientSecrets(session)
+    const jobs: OpsJob[] = options.bootstrap ? ["bootstrap"] : []
+    if (missing.length > 0) {
+      deps.log(
+        `\n${missing.join(" and ")} ${missing.length === 1 ? "does" : "do"} not exist in ${NAMESPACE} yet, so this upgrade also runs register, which creates ${missing.length === 1 ? "it" : "them"} and starts the Toolbox and the admin MCP.\n`,
+      )
+      jobs.push("register")
+    }
     await upgrade(session, {
       install: true,
       imageTag: options.imageTag,
       digests,
       valuesFile,
+      databaseCaFile,
       timeout: options.timeout ?? "10m",
-      jobs: options.bootstrap ? ["bootstrap"] : [],
+      jobs,
     })
     deps.log(`\nDeployed ${options.imageTag} to ${options.environment}.\n`)
   })
@@ -358,6 +399,7 @@ export async function runJob(options: RunJobOptions, deps: Deps): Promise<void> 
   if (options.digests && options.imageTag === undefined) throw new UsageError("digests belong to a tag: give the image tag with them")
   const valuesFile = options.valuesFile ?? defaultValuesFile(options.environment)
   await requireFiles(deps.root, [valuesFile])
+  const databaseCaFile = await requireDatabaseCa(deps.root, options.environment)
   const cluster = readCluster(deps.env)
   const timeout = options.timeout ?? "10m"
   await withSession(deps, cluster, async (session) => {
@@ -369,7 +411,7 @@ export async function runJob(options: RunJobOptions, deps: Deps): Promise<void> 
       digests = release.digests
     }
     digests ??= await resolveDigests(imageTag, deps)
-    await upgrade(session, { install: false, imageTag, digests, valuesFile, timeout, jobs: [options.job] })
+    await upgrade(session, { install: false, imageTag, digests, valuesFile, databaseCaFile, timeout, jobs: [options.job] })
     if (options.job === "register") await restartServers(session, timeout)
     deps.log(`\nRan ${options.job} in ${options.environment} on ${imageTag}.\n`)
   })

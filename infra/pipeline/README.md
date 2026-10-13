@@ -6,9 +6,9 @@ How a push becomes a deployment, and how to run the pieces by hand. The workspac
 
 | Workflow | Starts | What it does |
 | --- | --- | --- |
-| `deploy-staging.yml` | A push to `main`; or by hand with `image_tag` | Runs `ci.yml`, applies `infra/civo/envs/staging` (a no-op when nothing changed), builds the four images (`id`, `toolbox`, `admin-mcp`, `ops`) for amd64 and arm64, joins each pair into one tagged manifest list and signs it, upgrades the staging release with the images pinned by digest, smoke-tests staging. By hand it skips all of that but the upgrade and the smoke test: it redeploys an image that exists |
+| `deploy-staging.yml` | A push to `main`; or by hand with `image_tag` | Runs `ci.yml`. When the repository variable `DEPLOY_STAGING` is `true` it also applies `infra/civo/envs/staging` (a no-op when nothing changed), builds the four images (`id`, `toolbox`, `admin-mcp`, `ops`) for amd64 and arm64, joins each pair into one tagged manifest list and signs it, upgrades the staging release with the images pinned by digest (registering the MCP servers in the same upgrade on the first install), smoke-tests staging. By hand it skips all of that but the upgrade and the smoke test: it redeploys an image that exists. Without `DEPLOY_STAGING` a push runs CI alone |
 | `promote-production.yml` | By hand (`image_tag`, default `staging`; `apply_infra`, default on) | Reads the tag staging runs, checks the images' signatures on the digests their tags point to, waits for the reviewer's approval, applies `infra/civo/envs/production`, upgrades the production release with the tag and exactly the digests it verified, smoke-tests production |
-| `ops.yml` | By hand (`environment`, `command`) | Runs a one-off ops Job (`register`) in an environment, restarts the Toolbox and the admin MCP, smoke-tests |
+| `ops.yml` | By hand (`environment`, `command`) | Registers the MCP servers again (`register`), for after root has locked and a staff token is needed (see "Register again"); restarts the Toolbox and the admin MCP, smoke-tests. The first install does not need it |
 | `infra.yml` | A pull request that changes `infra/**` or `charts/**` | `bun run infra:check` and a Terraform plan of staging as a sticky comment. It applies nothing: staging applies in `deploy-staging.yml`, production in `promote-production.yml` |
 | `ci.yml` | A pull request or a push to any branch but `main`; called by `deploy-staging.yml` | The existing checks. A push to `main` gets its checks from `deploy-staging.yml`, so a push has one set of results and only a commit that passed them is built |
 
@@ -32,11 +32,17 @@ Each environment is one Civo account's credentials. The deploy workflows never h
 - **`STATE_ACCESS_KEY_ID`**, **`STATE_SECRET_ACCESS_KEY`**: the Terraform state bucket's credential (the `state_access_key_id` and `state_secret_access_key` outputs of the root's `state` module), handed to the S3 backend as `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`. Each environment has its own bucket and its own pair.
 - **`ALLOWED_API_CIDRS`**: a JSON list of CIDRs, such as `["198.51.100.7/32"]`, handed to Terraform as `TF_VAR_allowed_api_cidrs`. In production these addresses are the only way to the Kubernetes API, and the job stops with a message when the secret is not set. Staging's API is open by its own switch (`infra/civo/README.md`, "Who can reach the Kubernetes API"), so `[]` is right there and an unset secret is read as `[]`. Terraform marks the variable sensitive, so the plan comment does not print it.
 
-There are no variables: the hostnames follow from the environment name (`staging` is `answerable-staging.uk`, `production` is `answerable.org`).
+The one repository variable is `DEPLOY_STAGING`, set under Settings, Secrets and variables, Actions, Variables:
+
+| Variable | Value | Effect |
+| --- | --- | --- |
+| `DEPLOY_STAGING` | `true` | Turns on every job of `deploy-staging.yml` after CI: the staging apply, the image builds, the deploy and the smoke test. Unset, or any other value, a push to `main` runs CI alone, so the workflow can land before the staging environment exists. Set it when the staging environment is ready |
+
+The hostnames follow from the environment name (`staging` is `answerable-staging.uk`, `production` is `answerable.org`).
 
 ### One-time setup the owner does in GitHub
 
-1. Create the three environments with the settings above and add their secrets.
+1. Create the three environments with the settings above and add their secrets. Set the repository variable `DEPLOY_STAGING` to `true` last, when staging is ready to be built and deployed.
 2. After the first push has built the images, set each of the four packages (`answerable/id`, `toolbox`, `admin-mcp`, `ops`) to **public** in the package settings (GitHub has no API for it). The cluster pulls them without a pull secret.
 3. Branch protection on `main`: require the jobs of `ci.yml` that run on every pull request: `validate`, `infra-check` and, once it exists, `containers`. Do not require anything from `infra.yml`: it runs only on pull requests that change `infra/**` or `charts/**`, and a required check that never starts blocks the others.
 4. Turn Bot Fight Mode off in both Cloudflare zones, as `docs/goals/aws-deploy/task_plan.md` says.
@@ -46,10 +52,22 @@ There are no variables: the hostnames follow from the environment name (`staging
 1. **Infrastructure.** On staging, `terraform apply -auto-approve` of `infra/civo/envs/staging` must succeed before anything is deployed (a no-op when nothing changed). Production applies in the same job as its deploy, after the reviewer approves.
 2. **Images.** Each of the four images is built twice, by `docker/build-push-action` on a native runner per architecture (`ubuntu-24.04` for amd64, `ubuntu-24.04-arm` for arm64, no emulation), with provenance (`mode=max`) and an SBOM, and pushed by digest with no tag; the digest travels to the next job as an artifact. One `manifest` job per image then runs `docker buildx imagetools create` over the two digests to make `ghcr.io/rieranthony/answerable/<image>:sha-<commit>`, checks that it serves exactly amd64 and arm64, and `cosign sign` signs the manifest list's digest keylessly with the workflow's identity.
 3. **Secrets.** `sops --decrypt <environment>/secrets.enc.yaml` is piped straight to `kubectl apply -n answerable -f -`. The decrypted text lives in memory only: it is never written to disk and never logged. Of kubectl's own output only the lines that name an applied object (`secret/id-env configured`) are shown, and when the apply fails nothing of it is: the error is the exit code and a sentence telling you to run the apply by hand, because an API error can quote a value in any encoding.
-4. **Release.** The four manifest-list digests of the tag are looked up (`docker buildx imagetools inspect <registry>/<image>:<tag> --format '{{.Manifest.Digest}}'`) unless they are given, then `helm upgrade --install answerable charts/answerable --namespace answerable --rollback-on-failure --wait --timeout 10m -f <values> --set image.tag=<tag> --set images.<image>.digest=<digest>` for each image. The release runs the digests; the tag is for people to read, so a rerun that moves a tag changes nothing. The chart's hook Jobs run first: the optional `ops-bootstrap`, then the migrations, each with the owner login that the services never receive. `--rollback-on-failure` rolls the release back when a Job fails or the pods never become ready, and the script then prints the logs of every Job whose name contains `migrate`, `bootstrap` or `register`.
+4. **Release.** The four manifest-list digests of the tag are looked up (`docker buildx imagetools inspect <registry>/<image>:<tag> --format '{{.Manifest.Digest}}'`) unless they are given, then `helm upgrade --install answerable charts/answerable --namespace answerable --rollback-on-failure --wait --timeout 10m -f <values> --set-file database.caPem=infra/civo/envs/<environment>/database-ca.pem --set image.tag=<tag> --set images.<image>.digest=<digest>` for each image. The deploy stops before it touches the cluster, naming the file and `bun run setup database-ca --environment <environment>`, when the database's CA file is missing. The release runs the digests; the tag is for people to read, so a rerun that moves a tag changes nothing. The chart's hook Jobs run first: the optional `ops-bootstrap`, then the migrations, each with the owner login that the services never receive. `--rollback-on-failure` rolls the release back when a Job fails or the pods never become ready, and the script then prints the logs of every Job whose name contains `migrate`, `bootstrap` or `register`.
 5. **Smoke test.** From the public internet, through Cloudflare: ID's `/healthz`, `/readyz`, discovery (the `issuer` must be the ID hostname), its signing keys, the Toolbox's and the admin MCP's `/health`, and both protected-resource metadata documents naming the issuer. It retries for up to five minutes, because a first certificate and the edge take a while.
 
+**The first deploy registers by itself.** The chart keeps the Toolbox and the admin MCP at zero replicas until their client Secrets, `toolbox-id-client` and `admin-id-client`, exist, and only `register` creates them. So before the upgrade the deploy asks the cluster, with the deployer's token, whether both Secrets exist, and when either is missing it switches `ops.register` on for that upgrade and says why in the log. The register Job runs after ID is up, writes the Secrets and starts the two servers. Once both exist the deploy does not switch it on again: after a person holds `platform:write`, ID refuses the root secret that `register` uses, and the upgrade would fail.
+
 `helm history answerable -n answerable` is the deploy log.
+
+## Register again
+
+`register` also has to run again to rotate the Toolbox's or the admin MCP's client secret, or to register a changed definition. Root is locked by then, so `register` needs a staff token: put it in the Secret the Job reads, with your own kubeconfig,
+
+```bash
+kubectl -n answerable create secret generic ops-staff-token --from-literal=OPS_ID_TOKEN=<staff token>
+```
+
+then run `ops.yml` (`environment`, `command: register`), or `run-job register` by hand. `run-job register`, which `ops.yml` runs, restarts the two servers afterwards so that they read the new client secrets. Delete the Secret when you are done.
 
 ## Roll back
 
@@ -68,7 +86,7 @@ export KUBE_SERVER=https://… KUBE_CA=… KUBE_TOKEN=…   # the deployer Servi
 export SOPS_AGE_KEY=AGE-SECRET-KEY-…                  # deploy only
 
 bun infra/pipeline/src/cli.ts deploy --environment staging --image-tag sha-<40 hex> --bootstrap   # needs Docker for the digests
-bun infra/pipeline/src/cli.ts run-job register --environment staging
+bun infra/pipeline/src/cli.ts run-job register --environment staging   # after root locked: see "Register again"
 bun infra/pipeline/src/cli.ts current-tag             # prints the tag the release runs
 bun infra/pipeline/src/cli.ts smoke --environment staging --wait 60
 ```
@@ -93,7 +111,8 @@ The unit tests use a fake runner. `bun run --filter @answerable/infra-pipeline r
 
 - Release `answerable` of `charts/answerable` in namespace `answerable`, which Terraform creates (the deployer cannot create namespaces). Values overlays at `charts/answerable/values-civo-<environment>.yaml`.
 - The release pins each image by digest. For every image `id`, `toolbox`, `admin-mcp` and `ops` the value `images.<image>.digest` is `sha256:` and 64 hex characters, and the chart renders the image as `<repository>@<digest>` when it is set (the repositories are `ghcr.io/rieranthony/answerable/<image>`). The key of the admin MCP is `admin-mcp`, so a template reads it with `index .Values.images "admin-mcp"`. `image.tag` is the same commit as a label for people and for `current-tag`, and is not what the pods pull.
-- `ops.bootstrap` and `ops.register` switch the two ops Jobs on; `bootstrap` must run before the migrations.
+- `database.caPem` is the PEM of the database's CA chain, given with `--set-file` from `infra/civo/envs/<environment>/database-ca.pem`, and the chart renders it into the ConfigMap `postgres-ca`.
+- `ops.bootstrap` and `ops.register` switch the two ops Jobs on; `bootstrap` must run before the migrations. The Secrets `toolbox-id-client` and `admin-id-client` are what `register` creates, and the deploy reads their existence to decide whether to switch `register` on.
 - The Jobs' names contain `migrate`, `bootstrap` or `register`; the Deployments' names end in `toolbox` and `admin-mcp`.
 - The secrets file is YAML that `sops` can encrypt, so a mapping at the top level: several documents separated by `---`, or one `kind: List`. A bare YAML list is refused by `sops`.
 

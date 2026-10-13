@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { UsageError } from "./errors"
-import { ENVIRONMENTS, defaultSecretsFile, defaultValuesFile, hostsFor, parseEnvironment } from "./environments"
+import {
+  ENVIRONMENTS,
+  defaultDatabaseCaFile,
+  defaultSecretsFile,
+  defaultValuesFile,
+  hostsFor,
+  parseEnvironment,
+} from "./environments"
 
 describe("environments", () => {
   test("accepts exactly the two GitHub environments", () => {
@@ -30,5 +37,6 @@ describe("environments", () => {
   test("names the values overlay and the encrypted secrets by convention", () => {
     expect(defaultValuesFile("staging")).toBe("charts/answerable/values-civo-staging.yaml")
     expect(defaultSecretsFile("production")).toBe("infra/civo/envs/production/secrets.enc.yaml")
+    expect(defaultDatabaseCaFile("staging")).toBe("infra/civo/envs/staging/database-ca.pem")
   })
 })
