@@ -103,7 +103,7 @@ a { color: var(--accent); }
   <p>Three programs of ours run in the cloud: <b>Answerable ID</b> (sign-in and permissions), the <b>Toolbox</b> (the MCP server that gives AI tools their capabilities) and the <b>admin MCP</b> (our staff's management tools). Each runs as copies of a container inside a Kubernetes cluster on Civo, in London. In front of them sit two doors: Cloudflare on the internet, then our own entry point inside the cluster. Behind them, one managed PostgreSQL database holds all the data. GitHub builds and ships new versions. The website stays on Vercel, untouched.</p>
   <figure>
     <div class="d">
-      <svg viewBox="0 0 860 300" role="img" aria-label="Browsers and AI tools reach Cloudflare, then the Civo load balancer, then ingress-nginx inside the Kubernetes cluster, then the three services and the database; GitHub ships images to GHCR and runs helm upgrade; the website is served by Vercel.">
+      <svg viewBox="0 0 860 300" role="img" aria-label="Browsers and AI tools reach Cloudflare, then the Civo load balancer, then Traefik inside the Kubernetes cluster, then the three services and the database; GitHub ships images to GHCR and runs helm upgrade; the website is served by Vercel.">
         <defs><marker id="ar1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
         <rect class="n" x="20" y="40" width="150" height="48" rx="6"/><text class="t b" x="32" y="60">People's browsers</text><text class="t s" x="32" y="76">sign-in pages, consent</text>
         <rect class="n" x="20" y="120" width="150" height="48" rx="6"/><text class="t b" x="32" y="140">AI tools</text><text class="t s" x="32" y="156">Claude Code, OmniChat, hosts</text>
@@ -115,7 +115,7 @@ a { color: var(--accent); }
         <rect class="n aws" x="448" y="78" width="112" height="52" rx="6"/><text class="t b" x="460" y="99">Load balancer</text><text class="t s" x="460" y="115">Cloudflare only</text>
         <rect class="zone" x="580" y="46" width="250" height="134" rx="6"/><text class="t m" x="590" y="62">Kubernetes cluster</text>
         <path class="a" d="M560 104 H590" marker-end="url(#ar1)"/>
-        <rect class="n aws" x="592" y="80" width="106" height="48" rx="6"/><text class="t b" x="602" y="100">ingress-nginx</text><text class="t s" x="602" y="116">TLS, routing</text>
+        <rect class="n aws" x="592" y="80" width="106" height="48" rx="6"/><text class="t b" x="602" y="100">Traefik</text><text class="t s" x="602" y="116">TLS, routing</text>
         <path class="a" d="M698 100 H706 V69 H710" marker-end="url(#ar1)"/><path class="a" d="M698 104 H710" marker-end="url(#ar1)"/><path class="a" d="M698 108 H706 V139 H710" marker-end="url(#ar1)"/>
         <rect class="n aws" x="712" y="54" width="104" height="30" rx="6"/><text class="t b" x="724" y="74">ID</text>
         <rect class="n aws" x="712" y="88" width="104" height="30" rx="6"/><text class="t b" x="724" y="108">Toolbox</text>
@@ -175,7 +175,7 @@ a { color: var(--accent); }
   <p>Cloudflare already holds our domain names. We keep it in front: every request from the internet goes to Cloudflare first, and Cloudflare forwards it to Civo. That gives us protection against floods of traffic, a basic web application firewall, and TLS (the padlock) at the edge, for free. Two details matter for a sign-in service, and both are solved.</p>
   <figure>
     <div class="d">
-      <svg viewBox="0 0 860 250" role="img" aria-label="A visitor reaches Cloudflare, which forwards to the Civo load balancer with a client certificate; ingress-nginx checks the certificate and forwards to ID; the visitor's address is appended at each hop and ID reads it from the right, skipping Cloudflare's addresses.">
+      <svg viewBox="0 0 860 250" role="img" aria-label="A visitor reaches Cloudflare, which forwards to the Civo load balancer with a client certificate; Traefik checks the certificate and forwards to ID; the visitor's address is appended at each hop and ID reads it from the right, skipping Cloudflare's addresses.">
         <defs><marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
         <rect class="n" x="20" y="60" width="110" height="56" rx="6"/><text class="t b" x="32" y="83">Visitor</text><text class="t s" x="32" y="100">203.0.113.9</text>
         <path class="a" d="M130 88 H168" marker-end="url(#ar3)"/>
@@ -183,12 +183,12 @@ a { color: var(--accent); }
         <path class="a cf" d="M300 88 H348" marker-end="url(#ar3)"/>
         <rect class="n aws" x="350" y="60" width="150" height="56" rx="6"/><text class="t b" x="362" y="83">Civo load balancer</text><text class="t s" x="362" y="100">firewall: Cloudflare only</text>
         <path class="a" d="M500 88 H548" marker-end="url(#ar3)"/>
-        <rect class="n aws" x="550" y="60" width="140" height="56" rx="6"/><text class="t b" x="562" y="83">ingress-nginx</text><text class="t s" x="562" y="100">checks the certificate</text>
+        <rect class="n aws" x="550" y="60" width="140" height="56" rx="6"/><text class="t b" x="562" y="83">Traefik</text><text class="t s" x="562" y="100">checks the certificate</text>
         <path class="a" d="M690 88 H738" marker-end="url(#ar3)"/>
         <rect class="n aws" x="740" y="60" width="100" height="56" rx="6"/><text class="t b" x="752" y="83">ID</text><text class="t s" x="752" y="100">real address</text>
         <text class="t m" x="170" y="150">X-Forwarded-For: 203.0.113.9</text>
         <text class="t m" x="550" y="150">X-Forwarded-For: 203.0.113.9, &lt;cloudflare&gt;</text>
-        <text class="t s" x="20" y="190">Cloudflare shows a certificate we issued when it knocks; ingress-nginx refuses any connection without it.</text>
+        <text class="t s" x="20" y="190">Cloudflare shows a certificate we issued when it knocks; Traefik refuses any connection without it.</text>
         <text class="t s" x="20" y="208">The load balancer's firewall admits only Cloudflare's 22 published address ranges on port 443.</text>
         <text class="t s" x="20" y="226">ID reads the address list from the right, skips every Cloudflare address, and lands on the visitor. A forged header cannot fool it.</text>
       </svg>
@@ -198,7 +198,7 @@ a { color: var(--accent); }
   <div class="grid">
     <div><h3>DNS</h3><p>The phone book: <code>id.answerable.org</code> → our load balancer. Records are "proxied", which means visitors see Cloudflare's address, not ours.</p></div>
     <div><h3>TLS, twice</h3><p>Cloudflare's certificate faces the visitor; a second certificate, issued automatically by Let's Encrypt inside our cluster, faces Cloudflare, so the hop between them is encrypted too ("Full strict"). Both are free and renew themselves.</p></div>
-    <div><h3>Authenticated origin pulls</h3><p>Cloudflare presents a certificate we issued when it connects, and ingress-nginx checks it. Without it, anyone could bypass Cloudflare by calling our address directly, or send traffic through another Cloudflare customer's zone. Free.</p></div>
+    <div><h3>Authenticated origin pulls</h3><p>Cloudflare presents a certificate we issued when it connects, and Traefik checks it. Without it, anyone could bypass Cloudflare by calling our address directly, or send traffic through another Cloudflare customer's zone. Free.</p></div>
     <div><h3>What Cloudflare must not do here</h3><p>No caching of sign-in or MCP responses, and no "are you a robot?" challenges on the API hostnames: AI tools and our own services are not browsers and would be blocked. Those are switched off by configuration rules.</p></div>
   </div>
 </section>
@@ -217,7 +217,7 @@ a { color: var(--accent); }
         <rect class="n aws" x="60" y="76" width="210" height="56" rx="6"/><text class="t b" x="72" y="98">Load balancer</text><text class="t s" x="72" y="114">public IP · 443 from Cloudflare only</text>
         <path class="a" d="M165 132 V160" marker-end="url(#ar4)"/>
         <rect class="zone" x="60" y="162" width="500" height="130" rx="6"/><text class="t m" x="70" y="180">Kubernetes cluster · control plane 6443 from our addresses only</text>
-        <rect class="n aws" x="80" y="192" width="220" height="84" rx="6"/><text class="t b" x="92" y="212">Node 1</text><text class="t s" x="92" y="229">ingress-nginx · id · toolbox</text><text class="t s" x="92" y="244">cert-manager · Grafana agent</text><text class="t s" x="92" y="259">the one-off Jobs</text>
+        <rect class="n aws" x="80" y="192" width="220" height="84" rx="6"/><text class="t b" x="92" y="212">Node 1</text><text class="t s" x="92" y="229">Traefik · id · toolbox</text><text class="t s" x="92" y="244">cert-manager · Grafana agent</text><text class="t s" x="92" y="259">the one-off Jobs</text>
         <rect class="n aws" x="320" y="192" width="220" height="84" rx="6"/><text class="t b" x="332" y="212">Node 2 (and 3 in production)</text><text class="t s" x="332" y="229">admin-mcp · id · toolbox</text><text class="t s" x="332" y="244">second copies, so a node</text><text class="t s" x="332" y="259">can fail or be upgraded</text>
         <path class="a db" d="M560 230 H598" marker-end="url(#ar4)"/>
         <rect class="n db" x="600" y="176" width="220" height="108" rx="6"/><text class="t b" x="612" y="198">Civo Database</text><text class="t s" x="612" y="216">PostgreSQL 17 · TLS only</text><text class="t s" x="612" y="232">5432 from the cluster's nodes only</text><text class="t s" x="612" y="248">production: additional database</text><text class="t s" x="612" y="264">nodes for fault tolerance</text>
@@ -229,8 +229,8 @@ a { color: var(--accent); }
 
 <section id="ingress">
   <div class="eyebrow">5 · The front door</div>
-  <h2>The Civo load balancer and ingress-nginx, the receptionist</h2>
-  <p>The Civo <b>load balancer</b> is created for us the moment the cluster asks for one; it has the public address and the Cloudflare-only firewall, and it passes connections through untouched. <b>ingress-nginx</b>, a program running inside the cluster, is the real receptionist: it unwraps TLS, checks Cloudflare's certificate, reads the hostname the visitor asked for and hands the request to a healthy copy of the right service. <b>cert-manager</b> beside it obtains and renews the TLS certificates from Let's Encrypt, proving ownership through our Cloudflare DNS.</p>
+  <h2>The Civo load balancer and Traefik, the receptionist</h2>
+  <p>The Civo <b>load balancer</b> is created for us the moment the cluster asks for one; it has the public address and the Cloudflare-only firewall, and it passes connections through untouched. <b>Traefik</b>, a program running inside the cluster, is the real receptionist: it unwraps TLS, checks Cloudflare's certificate, reads the hostname the visitor asked for and hands the request to a healthy copy of the right service. <b>cert-manager</b> beside it obtains and renews the TLS certificates from Let's Encrypt, proving ownership through our Cloudflare DNS.</p>
   <div class="facts"><span class="chip">cost <b>$10.86 a month</b> for the load balancer</span><span class="chip">health: ID <b>/readyz</b> · MCPs <b>/health</b></span><span class="chip">one per environment</span></div>
   <div class="wrap"><table>
     <tr><th>Visitor asks for</th><th>Goes to</th><th>Why</th></tr>
@@ -239,7 +239,7 @@ a { color: var(--accent); }
     <tr><td>admin-mcp.answerable.org</td><td>an admin MCP copy</td><td>Staff tools</td></tr>
     <tr><td>anything else</td><td>a "404"</td><td>No guessing, no leaking</td></tr>
   </table></div>
-  <p>Why ingress-nginx and not the cloud's own routing: it is the same program with the same configuration on Civo, AWS and Google, and its certificate checks and forwarded-address handling are documented. Civo installs Traefik by default; we remove it so one receptionist serves everywhere.</p>
+  <p>Why Traefik: it is the same program with the same configuration on Civo, AWS and Google, it checks client certificates and forwarded addresses the way we need, and it is what Civo installs by default (we pin our own copy so the version is ours to choose). The usual alternative, ingress-nginx, was retired by the Kubernetes project in March 2026 with no further security fixes, which rules it out for an identity provider's front door.</p>
 </section>
 
 <section id="compute">
@@ -271,7 +271,7 @@ a { color: var(--accent); }
   <div class="grid">
     <div><h3>The Helm chart</h3><p>One folder, <code>charts/answerable</code>, describing the three Deployments, their health checks, resource limits, hardening (non-root, read-only, no extra privileges), the entry rules, the network rules, the migration Jobs and the secrets. A small values file per environment sets the sizes and hostnames. The same chart installs on Civo, AWS and Google.</p></div>
     <div><h3>Autoscaling and resilience</h3><p>A rule starts another copy when the existing ones are busy and stops it when quiet; production floors at two copies, spread across nodes, and a budget rule keeps at least one up during node maintenance.</p></div>
-    <div><h3>Network rules inside the cluster</h3><p>Each service accepts connections only from ingress-nginx and opens connections only to the database, DNS, ID and the identity providers. A compromised pod cannot wander.</p></div>
+    <div><h3>Network rules inside the cluster</h3><p>Each service accepts connections only from Traefik and opens connections only to the database, DNS, ID and the identity providers. A compromised pod cannot wander.</p></div>
     <div><h3>Sizes and cost</h3><p>Staging: two Medium nodes (2 vCPU, 4 GB each), $43.46 a month, running one copy of everything. Production: three Medium nodes, $65.19, running two copies of each service. The control plane is free.</p></div>
     <div><h3>Why Kubernetes</h3><p>It is the one compute layer Civo, AWS and Google all sell, and the only thing Civo sells. The earlier Fargate design was cheaper and simpler on AWS alone, but would have needed a rewrite to move. The chart moves as a file.</p></div>
   </div>
@@ -389,7 +389,7 @@ a { color: var(--accent); }
   <h2>Everything above, as code</h2>
   <p><b>Terraform</b> reads files that describe the cloud layer (this network, these firewalls, this cluster, this database, these DNS records) and makes Civo and Cloudflare match them. Run it twice and it changes nothing; change a file and it shows exactly what will change before doing it. The <b>Helm chart</b> does the same job for everything inside the cluster. Both live in the repository, reviewed like any code, so there is no clicking around a console that nobody can reproduce later.</p>
   <div class="grid">
-    <div><h3>Layout</h3><p><code>infra/civo/envs/staging</code> and <code>envs/production</code>, one root per Civo account; <code>infra/aws</code> and <code>infra/google</code> written and validated but not applied; <code>charts/answerable</code> for our services and <code>charts/platform</code> for ingress-nginx, cert-manager, External Secrets and the Grafana agent.</p></div>
+    <div><h3>Layout</h3><p><code>infra/civo/envs/staging</code> and <code>envs/production</code>, one root per Civo account; <code>infra/aws</code> and <code>infra/google</code> written and validated but not applied; <code>charts/answerable</code> for our services and <code>charts/platform</code> for Traefik, cert-manager, External Secrets and the Grafana agent.</p></div>
     <div><h3>State</h3><p>Terraform remembers what it created in a "state" file, kept in each account's Civo object store. It holds no secret values, by design.</p></div>
     <div><h3>Checks without the cloud</h3><p><code>bun run infra:check</code> lints the chart, validates and policy-scans the Terraform and the workflows on every push, with no cloud access.</p></div>
     <div><h3>Why Terraform</h3><p>It is already installed here, every resource is readable in the repository, and Civo, AWS, Google and Cloudflare all have providers for it, so one tool covers the whole plan.</p></div>
@@ -399,7 +399,7 @@ a { color: var(--accent); }
 <section id="local">
   <div class="eyebrow">13 · The dress rehearsal</div>
   <h2>A cluster on the laptop, with the real chart</h2>
-  <p>Before anything touches Civo, the same images and the same chart run on a laptop in a throwaway Kubernetes cluster (<code>kind</code>): ingress-nginx, a self-signed certificate authority standing in for Let's Encrypt and for Cloudflare's certificate, a TLS-only PostgreSQL 17 with the two-login scheme, and <code>NODE_ENV=production</code>. A test builds the images, installs the chart, runs the migrations and the one-off Jobs, signs a staff member in through the cluster and calls a tool on the admin MCP. If that passes, the images and the chart are known good; the Civo layer is proved by Terraform's own checks and the staging deploy.</p>
+  <p>Before anything touches Civo, the same images and the same chart run on a laptop in a throwaway Kubernetes cluster (<code>kind</code>): Traefik, a self-signed certificate authority standing in for Let's Encrypt and for Cloudflare's certificate, a TLS-only PostgreSQL 17 with the two-login scheme, and <code>NODE_ENV=production</code>. A test builds the images, installs the chart, runs the migrations and the one-off Jobs, signs a staff member in through the cluster and calls a tool on the admin MCP. If that passes, the images and the chart are known good; the Civo layer is proved by Terraform's own checks and the staging deploy.</p>
   <div class="grid">
     <div><h3>bootstrap</h3><p>A one-off Job that turns an empty database server into the three databases and six logins, writing the passwords it generates into Kubernetes Secrets. Safe to run again; it changes nothing the second time, and recreates what a rebuilt cluster lost.</p></div>
     <div><h3>migrate</h3><p>Each service's own migration script, run from its image with the owner login, before new pods start.</p></div>
@@ -444,13 +444,13 @@ a { color: var(--accent); }
     <tr><td>GHCR</td><td>GitHub Container Registry. The shelf where our images are stored.</td></tr>
     <tr><td>Health check</td><td>A small request ("are you well?") the receptionist sends every few seconds to each copy.</td></tr>
     <tr><td>HPA</td><td>Horizontal Pod Autoscaler. The rule that adds copies when busy and removes them when quiet.</td></tr>
-    <tr><td>Ingress</td><td>A rule inside the cluster: this hostname goes to that service. ingress-nginx is the program that enforces the rules.</td></tr>
+    <tr><td>Ingress</td><td>A rule inside the cluster: this hostname goes to that service. Traefik is the program that enforces the rules; a request without Cloudflare's certificate is refused before any rule is consulted.</td></tr>
     <tr><td>Job</td><td>A pod that runs once and finishes: our migrations, the database bootstrap, the registration.</td></tr>
     <tr><td>kind</td><td>"Kubernetes in Docker": a throwaway cluster on a laptop, used for the dress rehearsal.</td></tr>
     <tr><td>Kubernetes</td><td>The manager that keeps containers running across a set of machines and routes traffic to them.</td></tr>
     <tr><td>Load balancer (Civo)</td><td>The public address with the Cloudflare-only firewall, created for us when the cluster asks.</td></tr>
     <tr><td>Migration</td><td>A scripted change to the database's tables, applied once and recorded, run before new code starts.</td></tr>
-    <tr><td>mTLS</td><td>Mutual TLS: both sides show a certificate. Cloudflare shows ours to ingress-nginx, so only Cloudflare gets in.</td></tr>
+    <tr><td>mTLS</td><td>Mutual TLS: both sides show a certificate. Cloudflare shows ours to Traefik, so only Cloudflare gets in.</td></tr>
     <tr><td>Namespace</td><td>A labelled area inside a cluster; our services live in one, and the deploy token can touch only it.</td></tr>
     <tr><td>NetworkPolicy</td><td>The rule inside the cluster saying which pods may talk to which.</td></tr>
     <tr><td>Node</td><td>One machine in the cluster. Civo bills per node; the control plane is free.</td></tr>
