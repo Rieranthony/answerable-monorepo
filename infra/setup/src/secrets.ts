@@ -26,13 +26,7 @@ const PAIRS = [
 ] as const
 
 /** Keys `--rotate` can replace, and where each new value comes from. */
-const ROTATABLE = [
-  "ROOT_ADMIN_SECRET",
-  "UPSTREAM_TOKEN_SECRETS",
-  "OPS_DATABASE_ADMIN_URL",
-  "api-token",
-  ...PAIRS.flat(),
-] as const
+const ROTATABLE = ["ROOT_ADMIN_SECRET", "UPSTREAM_TOKEN_SECRETS", "OPS_DATABASE_ADMIN_URL", "api-token", ...PAIRS.flat()] as const
 
 function random(bytes: number): Buffer {
   return Buffer.from(crypto.getRandomValues(new Uint8Array(bytes)))
@@ -65,7 +59,9 @@ export function formatSecrets(data: SecretsData): string {
       "stringData:",
       ...Object.entries(data[name]).map(([field, value]) => `  ${key(field)}: ${JSON.stringify(value)}`),
     ].join("\n"),
-  ).join("\n---\n").concat("\n")
+  )
+    .join("\n---\n")
+    .concat("\n")
 }
 
 /**
@@ -83,7 +79,12 @@ export function parseSecrets(text: string, label: string): SecretsData {
   const problems: string[] = []
   const data: Partial<SecretsData> = {}
   for (const document of documents) {
-    const manifest = document as { kind?: unknown; type?: unknown; metadata?: { name?: unknown; namespace?: unknown }; stringData?: unknown }
+    const manifest = document as {
+      kind?: unknown
+      type?: unknown
+      metadata?: { name?: unknown; namespace?: unknown }
+      stringData?: unknown
+    }
     const name = SECRET_NAMES.find((candidate) => candidate === manifest?.metadata?.name)
     if (manifest?.kind !== "Secret" || !name) {
       problems.push(`an unexpected document (${String(manifest?.kind)} ${String(manifest?.metadata?.name)})`)
@@ -109,7 +110,8 @@ export function parseSecrets(text: string, label: string): SecretsData {
     for (const field of REQUIRED[name]) if (!(field in fields)) problems.push(`${name}.${field} missing`)
   }
   for (const pair of PAIRS)
-    if (data["id-env"] && pair.filter((field) => field in data["id-env"]!).length === 1) problems.push(`id-env has half of ${pair.join(" and ")}`)
+    if (data["id-env"] && pair.filter((field) => field in data["id-env"]!).length === 1)
+      problems.push(`id-env has half of ${pair.join(" and ")}`)
   if (problems.length > 0) throw new SetupError(`${label} does not hold the three Secrets: ${problems.join("; ")}`)
   return data as SecretsData
 }
@@ -123,7 +125,11 @@ function pairFrom(env: Context["env"], [id, secret]: readonly [string, string]):
 }
 
 function certManagerToken(env: Context["env"]): string {
-  const token = requireVariable(env, "CERT_MANAGER_CLOUDFLARE_TOKEN", "cert-manager's Cloudflare token, with Zone > DNS > Edit on the zone only")
+  const token = requireVariable(
+    env,
+    "CERT_MANAGER_CLOUDFLARE_TOKEN",
+    "cert-manager's Cloudflare token, with Zone > DNS > Edit on the zone only",
+  )
   if (token === env.CLOUDFLARE_API_TOKEN?.trim())
     throw new UsageError("CERT_MANAGER_CLOUDFLARE_TOKEN is Terraform's token: cert-manager gets its own, with Zone > DNS > Edit only")
   return token
@@ -164,8 +170,7 @@ async function rotate(options: InitSecretsOptions, context: Context, field: stri
       "BETTER_AUTH_SECRET encrypts ID's stored signing keys: replacing it makes them unreadable. Rotate it through " +
         "BETTER_AUTH_SECRETS, the versioned ring (apps/id/README.md)",
     )
-  if (!ROTATABLE.some((name) => name === field))
-    throw new UsageError(`--rotate takes one of ${ROTATABLE.join(", ")}`)
+  if (!ROTATABLE.some((name) => name === field)) throw new UsageError(`--rotate takes one of ${ROTATABLE.join(", ")}`)
   const label = shown(paths, paths.secretsFile)
   if (!(await exists(paths.secretsFile))) throw new SetupError(`${label} does not exist: run init-secrets without --rotate first`)
   const data = parseSecrets(await decrypt(context, paths), label)
@@ -204,7 +209,9 @@ export async function initSecrets(options: InitSecretsOptions, context: Context)
   const { paths } = options
   const label = shown(paths, paths.secretsFile)
   if ((await exists(paths.secretsFile)) && !options.force)
-    throw new SetupError(`${label} exists. --rotate <key> replaces one value; --force replaces them all`)
+    throw new SetupError(
+      `${label} exists. --rotate <key> replaces one value; --force replaces them all, which once deployed leaves ID unable to read its stored keys`,
+    )
   const idEnv = {
     BETTER_AUTH_SECRET: secret48(),
     UPSTREAM_TOKEN_SECRETS: JSON.stringify([upstreamKey(1)]),

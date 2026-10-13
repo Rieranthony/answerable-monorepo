@@ -75,10 +75,14 @@ describe("origin-pull", () => {
     const commands = runner.commands()
     expect(commands[0]).toBe("openssl version")
     expect(commands[1]).toBe("openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out ca.key")
-    expect(commands[2]).toContain("req -x509 -new -key ca.key -sha256 -days 3650 -subj /CN=Answerable origin-pull CA (answerable-staging.uk)")
+    expect(commands[2]).toContain(
+      "req -x509 -new -key ca.key -sha256 -days 3650 -subj /CN=Answerable origin-pull CA (answerable-staging.uk)",
+    )
     expect(commands[2]).toContain("-addext basicConstraints=critical,CA:TRUE,pathlen:0")
     expect(commands[4]).toContain("-subj /CN=cloudflare-origin-pull.answerable-staging.uk")
-    expect(commands[5]).toMatch(/^openssl x509 -req -in client.csr -CA ca.pem -CAkey ca.key -set_serial 0x[0-7][0-9a-f]{31} -days 1825 -sha256/)
+    expect(commands[5]).toMatch(
+      /^openssl x509 -req -in client.csr -CA ca.pem -CAkey ca.key -set_serial 0x[0-7][0-9a-f]{31} -days 1825 -sha256/,
+    )
     expect(commands[6]).toBe("openssl verify -CAfile ca.pem client.pem")
 
     const directory = runner.calls[1]!.options.cwd!
@@ -114,7 +118,9 @@ describe("origin-pull", () => {
     expect(questions).toEqual(["Press Enter once the apply has finished (or type no to stop): "])
     expect(await readFile(paths.edgeCa, "utf8")).toBe(ROOT)
     expect(output()).toContain("now holds the new CA and the old one")
-    expect(output()).toContain(`curl -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" ${BASE}/cert-old   # active, expires 2031-01-01T00:00:00Z`)
+    expect(output()).toContain(
+      `curl -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" ${BASE}/cert-old   # active, expires 2031-01-01T00:00:00Z`,
+    )
     expect(output()).toContain("so that Traefik stops trusting the old CA")
   })
 
@@ -141,22 +147,28 @@ describe("origin-pull", () => {
   test("refuses the wrong zone, a missing token, an existing CA file and LibreSSL", async () => {
     const paths = await fixture({ "infra/civo/envs/staging/edge-ca/ca.pem": ROOT })
     const run = fakeOpenssl().run
-    await expect(originPull({ environment: "staging", paths, zone: "answerable.org" }, createContext({ run, env: ENV }).context)).rejects.toThrow(
-      "--zone for staging is answerable-staging.uk, not answerable.org",
-    )
-    await expect(originPull({ environment: "staging", paths, zone: "answerable-staging.uk" }, createContext({ run }).context)).rejects.toThrow(
-      "CLOUDFLARE_API_TOKEN is not set",
-    )
-    await expect(originPull({ environment: "staging", paths, zone: "answerable-staging.uk" }, createContext({ run, env: ENV }).context)).rejects.toThrow(
-      "edge-ca/ca.pem exists. Run again with --force",
-    )
+    await expect(
+      originPull({ environment: "staging", paths, zone: "answerable.org" }, createContext({ run, env: ENV }).context),
+    ).rejects.toThrow("--zone for staging is answerable-staging.uk, not answerable.org")
+    await expect(
+      originPull({ environment: "staging", paths, zone: "answerable-staging.uk" }, createContext({ run }).context),
+    ).rejects.toThrow("CLOUDFLARE_API_TOKEN is not set")
+    await expect(
+      originPull({ environment: "staging", paths, zone: "answerable-staging.uk" }, createContext({ run, env: ENV }).context),
+    ).rejects.toThrow("edge-ca/ca.pem exists. Run again with --force")
     const libre = fakeOpenssl(() => ({ stdout: "LibreSSL 3.3.6\n" }))
     await expect(
-      originPull({ environment: "staging", paths, zone: "answerable-staging.uk", force: true }, createContext({ run: libre.run, env: ENV }).context),
+      originPull(
+        { environment: "staging", paths, zone: "answerable-staging.uk", force: true },
+        createContext({ run: libre.run, env: ENV }).context,
+      ),
     ).rejects.toThrow('`openssl version` answered "LibreSSL 3.3.6"')
     const missing = fakeOpenssl(() => ({ exitCode: 127, stderr: "openssl: not found" }))
     await expect(
-      originPull({ environment: "staging", paths, zone: "answerable-staging.uk", force: true }, createContext({ run: missing.run, env: ENV }).context),
+      originPull(
+        { environment: "staging", paths, zone: "answerable-staging.uk", force: true },
+        createContext({ run: missing.run, env: ENV }).context,
+      ),
     ).rejects.toThrow('answered "openssl: not found"')
   })
 
@@ -171,12 +183,18 @@ describe("origin-pull", () => {
 
     const broken = createFakeFetch(() => new Response("<html>bad gateway</html>", { status: 502 }))
     await expect(
-      originPull({ environment: "staging", paths, zone: "answerable-staging.uk" }, createContext({ run: fakeOpenssl().run, fetch: broken.fetch, env: ENV }).context),
+      originPull(
+        { environment: "staging", paths, zone: "answerable-staging.uk" },
+        createContext({ run: fakeOpenssl().run, fetch: broken.fetch, env: ENV }).context,
+      ),
     ).rejects.toThrow("Cloudflare answered 502 to GET /zones?name=answerable-staging.uk")
 
     const invisible = fakeCloudflare({ zones: [] })
     await expect(
-      originPull({ environment: "staging", paths, zone: "answerable-staging.uk" }, createContext({ run: fakeOpenssl().run, fetch: invisible.fetch, env: ENV }).context),
+      originPull(
+        { environment: "staging", paths, zone: "answerable-staging.uk" },
+        createContext({ run: fakeOpenssl().run, fetch: invisible.fetch, env: ENV }).context,
+      ),
     ).rejects.toThrow("CLOUDFLARE_API_TOKEN cannot see the zone answerable-staging.uk")
   })
 
@@ -194,7 +212,10 @@ describe("origin-pull", () => {
     const paths = await fixture()
     const failed = fakeCloudflare({ statuses: ["pending_deployment", "deployment_timed_out"] })
     await expect(
-      originPull({ environment: "staging", paths, zone: "answerable-staging.uk" }, createContext({ run: fakeOpenssl().run, fetch: failed.fetch, env: ENV }).context),
+      originPull(
+        { environment: "staging", paths, zone: "answerable-staging.uk" },
+        createContext({ run: fakeOpenssl().run, fetch: failed.fetch, env: ENV }).context,
+      ),
     ).rejects.toThrow("Cloudflare reports the certificate deployment_timed_out")
 
     const slow = fakeCloudflare({ statuses: Array(10).fill("pending_deployment") })
@@ -206,7 +227,9 @@ describe("origin-pull", () => {
     expect(output()).toContain("Certificate status: pending_deployment")
 
     const silent = createFakeFetch(async (request) =>
-      request.method === "POST" ? json({ success: true, result: { id: "cert-new" } }) : fakeCloudflare({ statuses: ["active"] }).fetch(request.url, { method: request.method }),
+      request.method === "POST"
+        ? json({ success: true, result: { id: "cert-new" } })
+        : fakeCloudflare({ statuses: ["active"] }).fetch(request.url, { method: request.method }),
     )
     const quiet = createContext({ run: fakeOpenssl().run, fetch: silent.fetch, env: ENV })
     await originPull({ environment: "staging", paths: await fixture(), zone: "answerable-staging.uk" }, quiet.context)
@@ -217,13 +240,19 @@ describe("origin-pull", () => {
     const paths = await fixture()
     const failing = fakeOpenssl((call) => (call.argv[1] === "genpkey" ? { exitCode: 1, stderr: "bad curve" } : undefined))
     await expect(
-      originPull({ environment: "staging", paths, zone: "answerable-staging.uk" }, createContext({ run: failing.run, fetch: fakeCloudflare().fetch, env: ENV }).context),
+      originPull(
+        { environment: "staging", paths, zone: "answerable-staging.uk" },
+        createContext({ run: failing.run, fetch: fakeCloudflare().fetch, env: ENV }).context,
+      ),
     ).rejects.toThrow("openssl could not make the CA's key (exit 1): bad curve")
     expect(await exists(failing.calls[1]!.options.cwd!)).toBe(false)
 
     const unverified = fakeOpenssl((call) => (call.argv[1] === "verify" ? { stdout: "client.pem: verification failed\n" } : undefined))
     await expect(
-      originPull({ environment: "staging", paths, zone: "answerable-staging.uk" }, createContext({ run: unverified.run, fetch: fakeCloudflare().fetch, env: ENV }).context),
+      originPull(
+        { environment: "staging", paths, zone: "answerable-staging.uk" },
+        createContext({ run: unverified.run, fetch: fakeCloudflare().fetch, env: ENV }).context,
+      ),
     ).rejects.toThrow("openssl verify did not accept the client's certificate")
   })
 })

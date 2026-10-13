@@ -43,7 +43,9 @@ export function allowedApiCidrs(env: Readonly<Record<string, string | undefined>
   const text = env.ALLOWED_API_CIDRS?.trim() || env.TF_VAR_allowed_api_cidrs?.trim()
   if (!text) {
     if (environment === "production")
-      throw new UsageError('ALLOWED_API_CIDRS is not set: production\'s Kubernetes API admits only these addresses, e.g. \'["198.51.100.7/32"]\'')
+      throw new UsageError(
+        "ALLOWED_API_CIDRS is not set: production's Kubernetes API admits only these addresses, e.g. '[\"198.51.100.7/32\"]'",
+      )
     return undefined
   }
   let list: unknown
@@ -54,7 +56,7 @@ export function allowedApiCidrs(env: Readonly<Record<string, string | undefined>
   }
   const cidr = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$|^[0-9a-fA-F:]+\/\d{1,3}$/
   if (!Array.isArray(list) || !list.every((item) => typeof item === "string" && cidr.test(item)))
-    throw new UsageError('ALLOWED_API_CIDRS must be a JSON list of CIDRs, such as \'["198.51.100.7/32"]\'')
+    throw new UsageError("ALLOWED_API_CIDRS must be a JSON list of CIDRs, such as '[\"198.51.100.7/32\"]'")
   if (environment === "production" && list.length === 0)
     throw new UsageError("ALLOWED_API_CIDRS is empty: production's Kubernetes API admits only these addresses")
   return JSON.stringify(list)

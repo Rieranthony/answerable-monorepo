@@ -55,8 +55,7 @@ function covers(certificate: X509Certificate, host: string): boolean {
 export async function databaseCa(options: DatabaseCaOptions, context: Context): Promise<void> {
   const { paths, environment } = options
   const caShown = shown(paths, paths.databaseCa)
-  if ((await exists(paths.databaseCa)) && !options.force)
-    throw new SetupError(`${caShown} exists. Run again with --force to replace it`)
+  if ((await exists(paths.databaseCa)) && !options.force) throw new SetupError(`${caShown} exists. Run again with --force to replace it`)
 
   let text: string
   let host: string | undefined
@@ -87,7 +86,8 @@ ${podCommand(environment, host, port)}
   }
 
   const blocks = pemBlocks(text)
-  if (blocks.length === 0) throw new SetupError("standard input holds no PEM certificate: pipe in the output of openssl s_client -showcerts")
+  if (blocks.length === 0)
+    throw new SetupError("standard input holds no PEM certificate: pipe in the output of openssl s_client -showcerts")
   let chain: X509Certificate[]
   try {
     chain = blocks.map((block) => new X509Certificate(block))
@@ -102,7 +102,10 @@ ${podCommand(environment, host, port)}
   const leaf = chain[0]!
   const lines = [
     `The database presented ${chain.length} certificate${chain.length === 1 ? "" : "s"}:`,
-    ...chain.map((certificate, at) => `  ${at + 1}. ${certificate.subject.split("\n").join(", ")}, issued by ${certificate.issuer.split("\n").join(", ")}`),
+    ...chain.map(
+      (certificate, at) =>
+        `  ${at + 1}. ${certificate.subject.split("\n").join(", ")}, issued by ${certificate.issuer.split("\n").join(", ")}`,
+    ),
     `Wrote ${caShown}: ${rootIndex >= 0 ? "the self-signed root" : "the topmost certificate, since no self-signed root was presented"}.`,
     formatFacts(kept).trimEnd(),
   ]

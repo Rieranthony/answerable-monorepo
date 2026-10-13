@@ -66,7 +66,11 @@ describe("init-secrets", () => {
     expect(runner.calls[2]!.options.env).toEqual({ SOPS_AGE_KEY_FILE: keyed.keyFile })
     const data = await written(paths)
     expect(Object.keys(data["id-env"])).toEqual([
-      "BETTER_AUTH_SECRET", "UPSTREAM_TOKEN_SECRETS", "ROOT_ADMIN_SECRET", "MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET",
+      "BETTER_AUTH_SECRET",
+      "UPSTREAM_TOKEN_SECRETS",
+      "ROOT_ADMIN_SECRET",
+      "MICROSOFT_CLIENT_ID",
+      "MICROSOFT_CLIENT_SECRET",
     ])
     expect(Buffer.from(data["id-env"].BETTER_AUTH_SECRET!, "base64")).toHaveLength(48)
     expect(Buffer.from(data["id-env"].ROOT_ADMIN_SECRET!, "base64")).toHaveLength(48)
@@ -80,8 +84,12 @@ describe("init-secrets", () => {
     const plain = runner.calls[1]!.options.input!
     expect(plain).toContain("---\napiVersion: v1\nkind: Secret\nmetadata:\n  name: postgres-admin\n  namespace: answerable\ntype: Opaque\n")
     for (const value of [...Object.values(data["id-env"]), ADMIN_URL, "cert-manager-token"]) expect(output()).not.toContain(value)
-    expect(output()).toContain("  id-env: BETTER_AUTH_SECRET, UPSTREAM_TOKEN_SECRETS, ROOT_ADMIN_SECRET, MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET\n")
-    expect(output()).toContain("No GOOGLE_CLIENT_ID yet: set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, then run init-secrets --rotate GOOGLE_CLIENT_SECRET")
+    expect(output()).toContain(
+      "  id-env: BETTER_AUTH_SECRET, UPSTREAM_TOKEN_SECRETS, ROOT_ADMIN_SECRET, MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET\n",
+    )
+    expect(output()).toContain(
+      "No GOOGLE_CLIENT_ID yet: set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, then run init-secrets --rotate GOOGLE_CLIENT_SECRET",
+    )
     expect(output()).not.toContain("No MICROSOFT_CLIENT_ID")
   })
 
@@ -99,14 +107,17 @@ describe("init-secrets", () => {
   test("refuses half a pair, a missing or reused cert-manager token, and a URL without verify-full", async () => {
     const paths = await fixture()
     const run = fakeTools().run
-    await expect(initSecrets({ environment: "staging", paths }, createContext({ run, env: { ...ENV, GOOGLE_CLIENT_ID: "g" } }).context)).rejects.toThrow(
-      "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET go together",
-    )
+    await expect(
+      initSecrets({ environment: "staging", paths }, createContext({ run, env: { ...ENV, GOOGLE_CLIENT_ID: "g" } }).context),
+    ).rejects.toThrow("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET go together")
     await expect(
       initSecrets({ environment: "staging", paths }, createContext({ run, env: { ...ENV, CERT_MANAGER_CLOUDFLARE_TOKEN: "" } }).context),
     ).rejects.toThrow("CERT_MANAGER_CLOUDFLARE_TOKEN is not set")
     await expect(
-      initSecrets({ environment: "staging", paths }, createContext({ run, env: { ...ENV, CERT_MANAGER_CLOUDFLARE_TOKEN: "terraform-token" } }).context),
+      initSecrets(
+        { environment: "staging", paths },
+        createContext({ run, env: { ...ENV, CERT_MANAGER_CLOUDFLARE_TOKEN: "terraform-token" } }).context,
+      ),
     ).rejects.toThrow("CERT_MANAGER_CLOUDFLARE_TOKEN is Terraform's token")
     const plain = fakeTools((call) => (call.argv[0] === "terraform" ? { stdout: "postgres://dbadmin:pw@host/postgres" } : undefined))
     const failure = initSecrets({ environment: "staging", paths }, createContext({ run: plain.run, env: ENV }).context)
@@ -122,10 +133,12 @@ describe("init-secrets", () => {
       ".sops.yaml does not exist: run age-init first",
     )
     const configured = await fixture()
-    const refusing = fakeTools((call) => (call.argv[3] === "encrypt" ? { exitCode: 128, stderr: "no matching creation rules found" } : undefined))
-    await expect(initSecrets({ environment: "staging", paths: configured }, createContext({ run: refusing.run, env: ENV }).context)).rejects.toThrow(
-      "sops could not encrypt (exit 128): no matching creation rules found",
+    const refusing = fakeTools((call) =>
+      call.argv[3] === "encrypt" ? { exitCode: 128, stderr: "no matching creation rules found" } : undefined,
     )
+    await expect(
+      initSecrets({ environment: "staging", paths: configured }, createContext({ run: refusing.run, env: ENV }).context),
+    ).rejects.toThrow("sops could not encrypt (exit 128): no matching creation rules found")
     const changed = fakeTools((call) => {
       if (call.argv[3] !== "decrypt") return undefined
       const data = parseSecrets(Buffer.from(call.options.input ?? "", "base64").toString() || formatSecrets(sample()), "x")
@@ -170,7 +183,10 @@ describe("init-secrets --rotate", () => {
 
   test("puts a new upstream key first and keeps the previous ones for reading", async () => {
     const paths = await seeded()
-    await initSecrets({ environment: "staging", paths, rotate: "UPSTREAM_TOKEN_SECRETS" }, createContext({ run: fakeTools().run, env: ENV }).context)
+    await initSecrets(
+      { environment: "staging", paths, rotate: "UPSTREAM_TOKEN_SECRETS" },
+      createContext({ run: fakeTools().run, env: ENV }).context,
+    )
     const ring = JSON.parse((await written(paths))["id-env"].UPSTREAM_TOKEN_SECRETS!)
     expect(ring).toHaveLength(2)
     expect(ring[0].version).toBe(2)
@@ -191,25 +207,28 @@ describe("init-secrets --rotate", () => {
   test("refuses BETTER_AUTH_SECRET, unknown keys, an unset pair, a missing file and a broken key ring", async () => {
     const paths = await seeded()
     const run = fakeTools().run
-    await expect(initSecrets({ environment: "staging", paths, rotate: "BETTER_AUTH_SECRET" }, createContext({ run, env: ENV }).context)).rejects.toThrow(
-      "Rotate it through BETTER_AUTH_SECRETS",
-    )
-    await expect(initSecrets({ environment: "staging", paths, rotate: "PASSWORD" }, createContext({ run, env: ENV }).context)).rejects.toThrow(
-      "--rotate takes one of ROOT_ADMIN_SECRET, UPSTREAM_TOKEN_SECRETS",
-    )
+    await expect(
+      initSecrets({ environment: "staging", paths, rotate: "BETTER_AUTH_SECRET" }, createContext({ run, env: ENV }).context),
+    ).rejects.toThrow("Rotate it through BETTER_AUTH_SECRETS")
+    await expect(
+      initSecrets({ environment: "staging", paths, rotate: "PASSWORD" }, createContext({ run, env: ENV }).context),
+    ).rejects.toThrow("--rotate takes one of ROOT_ADMIN_SECRET, UPSTREAM_TOKEN_SECRETS")
     await expect(
       initSecrets({ environment: "staging", paths, rotate: "MICROSOFT_CLIENT_SECRET" }, createContext({ run, env: ENV }).context),
     ).rejects.toThrow("MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET are not set")
     const empty = await fixture()
-    await expect(initSecrets({ environment: "staging", paths: empty, rotate: "ROOT_ADMIN_SECRET" }, createContext({ run, env: ENV }).context)).rejects.toThrow(
-      "does not exist: run init-secrets without --rotate first",
-    )
+    await expect(
+      initSecrets({ environment: "staging", paths: empty, rotate: "ROOT_ADMIN_SECRET" }, createContext({ run, env: ENV }).context),
+    ).rejects.toThrow("does not exist: run init-secrets without --rotate first")
     for (const ring of ["not json", '[{"value":"x"}]', '{"version":1}']) {
       const broken = sample()
       broken["id-env"].UPSTREAM_TOKEN_SECRETS = ring
       const brokenPaths = await seeded(broken)
       await expect(
-        initSecrets({ environment: "staging", paths: brokenPaths, rotate: "UPSTREAM_TOKEN_SECRETS" }, createContext({ run, env: ENV }).context),
+        initSecrets(
+          { environment: "staging", paths: brokenPaths, rotate: "UPSTREAM_TOKEN_SECRETS" },
+          createContext({ run, env: ENV }).context,
+        ),
       ).rejects.toThrow("is not a list of versioned keys")
     }
   })

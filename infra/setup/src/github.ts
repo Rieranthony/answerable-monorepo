@@ -41,11 +41,21 @@ async function ensureEnvironment(context: Context, target: Target): Promise<stri
   const mainOnly = { protected_branches: false, custom_branch_policies: true }
   let body: Record<string, unknown>
   if (target.settings === "reviewed") {
-    const owner = await ghJson<{ id: number; type: string }>(context, ["api", `repos/${REPOSITORY}`, "--jq", ".owner"], "read the repository's owner")
-    body = { wait_timer: 0, prevent_self_review: false, reviewers: [{ type: owner.type, id: owner.id }], deployment_branch_policy: mainOnly }
+    const owner = await ghJson<{ id: number; type: string }>(
+      context,
+      ["api", `repos/${REPOSITORY}`, "--jq", ".owner"],
+      "read the repository's owner",
+    )
+    body = {
+      wait_timer: 0,
+      prevent_self_review: false,
+      reviewers: [{ type: owner.type, id: owner.id }],
+      deployment_branch_policy: mainOnly,
+    }
   } else body = { deployment_branch_policy: target.settings === "main-only" ? mainOnly : null }
   const created = await gh(context, ["api", "--method", "PUT", path, "--input", "-"], JSON.stringify(body))
-  if (created.exitCode !== 0) throw new SetupError(`gh could not create the environment ${target.name} (exit ${created.exitCode}): ${created.stderr.trim()}`)
+  if (created.exitCode !== 0)
+    throw new SetupError(`gh could not create the environment ${target.name} (exit ${created.exitCode}): ${created.stderr.trim()}`)
   if (target.settings === "all-branches") return "created; deployments from every branch, so that pull requests can plan"
   const policy = await gh(
     context,
@@ -108,11 +118,13 @@ export async function publishEnv(options: PublishEnvOptions, context: Context): 
   for (const target of targets) {
     report.push(`${target.name}: ${await ensureEnvironment(context, target)}`)
     const existing = new Set(
-      (await ghJson<{ name: string }[]>(
-        context,
-        ["secret", "list", "--env", target.name, "--repo", REPOSITORY, "--json", "name"],
-        `list the secrets of ${target.name}`,
-      )).map((secret) => secret.name),
+      (
+        await ghJson<{ name: string }[]>(
+          context,
+          ["secret", "list", "--env", target.name, "--repo", REPOSITORY, "--json", "name"],
+          `list the secrets of ${target.name}`,
+        )
+      ).map((secret) => secret.name),
     )
     const set: string[] = []
     const kept: string[] = []
@@ -122,7 +134,8 @@ export async function publishEnv(options: PublishEnvOptions, context: Context): 
         continue
       }
       const result = await gh(context, ["secret", "set", name, "--env", target.name, "--repo", REPOSITORY], value)
-      if (result.exitCode !== 0) throw new SetupError(`gh could not set ${name} on ${target.name} (exit ${result.exitCode}): ${result.stderr.trim()}`)
+      if (result.exitCode !== 0)
+        throw new SetupError(`gh could not set ${name} on ${target.name} (exit ${result.exitCode}): ${result.stderr.trim()}`)
       set.push(name)
     }
     report.push(`  set: ${set.join(", ") || "nothing"}`)
@@ -138,5 +151,7 @@ export async function publishEnv(options: PublishEnvOptions, context: Context): 
   context.out(`\nPublished to ${REPOSITORY}:\n${report.join("\n")}\n`)
   if (options.environment === "staging" && !options.enable)
     context.out("Staging's deploys stay off until publish-env --enable sets DEPLOY_STAGING=true.\n")
-  context.out(`Next: push to main${options.environment === "production" ? ", then run Promote production" : ""}; after the first deploy, id-first-run.\n`)
+  context.out(
+    `Next: push to main${options.environment === "production" ? ", then run Promote production" : ""}; after the first deploy, id-first-run.\n`,
+  )
 }

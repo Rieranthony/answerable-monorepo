@@ -15,7 +15,11 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup()
 })
 
-async function fixture(files: Record<string, string> = {}, host = "10.10.0.5", reply: (call: RecordedCall) => Partial<RunResult> | undefined = () => undefined) {
+async function fixture(
+  files: Record<string, string> = {},
+  host = "10.10.0.5",
+  reply: (call: RecordedCall) => Partial<RunResult> | undefined = () => undefined,
+) {
   const root = await createRoot({ "infra/civo/envs/staging/.terraform/terraform.tfstate": "{}", ...files })
   cleanups.push(root.remove)
   const paths = pathsFor("staging", { root: root.path, home: root.path })
@@ -105,17 +109,26 @@ describe("database-ca", () => {
 
   test("refuses to replace the file unless forced, and refuses input without a certificate", async () => {
     const { paths } = await fixture({ "infra/civo/envs/staging/database-ca.pem": INTERMEDIATE })
-    await expect(databaseCa({ environment: "staging", paths, fromStdin: true }, createContext({ readStdin: async () => ROOT }).context)).rejects.toThrow(
-      "database-ca.pem exists. Run again with --force",
+    await expect(
+      databaseCa({ environment: "staging", paths, fromStdin: true }, createContext({ readStdin: async () => ROOT }).context),
+    ).rejects.toThrow("database-ca.pem exists. Run again with --force")
+    await databaseCa(
+      { environment: "staging", paths, fromStdin: true, force: true },
+      createContext({ readStdin: async () => ROOT }).context,
     )
-    await databaseCa({ environment: "staging", paths, fromStdin: true, force: true }, createContext({ readStdin: async () => ROOT }).context)
     expect(await readFile(paths.databaseCa, "utf8")).toBe(ROOT)
     await expect(
-      databaseCa({ environment: "staging", paths, fromStdin: true, force: true }, createContext({ readStdin: async () => "nothing" }).context),
+      databaseCa(
+        { environment: "staging", paths, fromStdin: true, force: true },
+        createContext({ readStdin: async () => "nothing" }).context,
+      ),
     ).rejects.toThrow("standard input holds no PEM certificate")
     const garbage = "-----BEGIN CERTIFICATE-----\nbm90IGEgY2VydGlmaWNhdGU=\n-----END CERTIFICATE-----\n"
     await expect(
-      databaseCa({ environment: "staging", paths, fromStdin: true, force: true }, createContext({ readStdin: async () => garbage }).context),
+      databaseCa(
+        { environment: "staging", paths, fromStdin: true, force: true },
+        createContext({ readStdin: async () => garbage }).context,
+      ),
     ).rejects.toThrow("a presented certificate cannot be read")
   })
 

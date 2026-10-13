@@ -15,7 +15,10 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup()
 })
 
-async function fixture(files: Record<string, string> = {}, reply: (call: RecordedCall) => Partial<RunResult> | undefined = () => undefined) {
+async function fixture(
+  files: Record<string, string> = {},
+  reply: (call: RecordedCall) => Partial<RunResult> | undefined = () => undefined,
+) {
   const root = await createRoot({ "infra/civo/envs/staging/main.tf": "", "infra/civo/envs/production/main.tf": "", ...files })
   cleanups.push(root.remove)
   const paths = pathsFor("staging", { root: root.path, home: root.path })
@@ -33,7 +36,8 @@ async function fixture(files: Record<string, string> = {}, reply: (call: Recorde
     }
     if (line === "terraform output -raw state_access_key_id") return { stdout: STATE.AWS_ACCESS_KEY_ID }
     if (line === "terraform output -raw state_secret_access_key") return { stdout: STATE.AWS_SECRET_ACCESS_KEY }
-    if (line === "terraform state list") return { stdout: "module.state.civo_object_store.this\nmodule.state.civo_object_store_credential.this\n" }
+    if (line === "terraform state list")
+      return { stdout: "module.state.civo_object_store.this\nmodule.state.civo_object_store_credential.this\n" }
     return undefined
   })
   return { paths, runner, seen }
@@ -105,7 +109,10 @@ describe("first-apply", () => {
     ])
     expect(output()).toContain("bun run setup publish-env --environment production\n")
     await expect(
-      firstApply({ environment: "production", paths: production, resume: true }, createContext({ run: runner.run, env: { ...TOKENS, ALLOWED_API_CIDRS: '["198.51.100.7/32"]' } }).context),
+      firstApply(
+        { environment: "production", paths: production, resume: true },
+        createContext({ run: runner.run, env: { ...TOKENS, ALLOWED_API_CIDRS: '["198.51.100.7/32"]' } }).context,
+      ),
     ).rejects.toThrow("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY")
   })
 
@@ -127,9 +134,9 @@ describe("first-apply", () => {
 
   test("needs both tokens, and production needs the operators' addresses", async () => {
     const { paths, runner } = await fixture()
-    await expect(firstApply({ environment: "staging", paths }, createContext({ run: runner.run, env: { CIVO_TOKEN: "x" } }).context)).rejects.toThrow(
-      "CLOUDFLARE_API_TOKEN is not set",
-    )
+    await expect(
+      firstApply({ environment: "staging", paths }, createContext({ run: runner.run, env: { CIVO_TOKEN: "x" } }).context),
+    ).rejects.toThrow("CLOUDFLARE_API_TOKEN is not set")
     await expect(firstApply({ environment: "staging", paths }, createContext({ run: runner.run, env: {} }).context)).rejects.toThrow(
       "CIVO_TOKEN is not set",
     )
@@ -165,9 +172,9 @@ describe("first-apply", () => {
       "terraform output state_access_key_id failed (exit 1): Output not found",
     )
     const empty = await fixture({}, (call) => (call.argv[1] === "output" ? { stdout: "" } : undefined))
-    await expect(firstApply({ environment: "staging", paths: empty.paths }, createContext({ run: empty.runner.run, env: TOKENS }).context)).rejects.toThrow(
-      "failed (exit 0): empty",
-    )
+    await expect(
+      firstApply({ environment: "staging", paths: empty.paths }, createContext({ run: empty.runner.run, env: TOKENS }).context),
+    ).rejects.toThrow("failed (exit 0): empty")
   })
 
   test("says which single CA file is missing", async () => {

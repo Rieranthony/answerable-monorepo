@@ -121,8 +121,7 @@ export async function firstApply(options: FirstApplyOptions, context: Context): 
   const env = { ...tokens, ...state }
   const approve = options.yes ? ["-auto-approve"] : []
 
-  if (options.resume)
-    await terraform(context, paths, { argv: ["terraform", "init", "-input=false"], env, what: "terraform init" })
+  if (options.resume) await terraform(context, paths, { argv: ["terraform", "init", "-input=false"], env, what: "terraform init" })
   context.out("\nStep 5: the cluster, the database and the firewalls, before anything that runs inside the cluster.\n")
   await terraform(context, paths, {
     argv: ["terraform", "apply", "-target=module.cluster", "-target=module.database", "-target=module.ingress_firewall", ...approve],

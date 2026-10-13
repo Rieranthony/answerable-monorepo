@@ -71,7 +71,10 @@ describe("main", () => {
   test("hands each command its options, with --sops-config and --key-dir moving those files", async () => {
     const f = await fixture((call) => (call.argv[1] === "-y" ? { stdout: `age1${"q".repeat(58)}\n` } : undefined))
     await Bun.write(join(f.root, "k/answerable-staging.txt"), "AGE-SECRET-KEY-1X\n")
-    const code = await main(["age-init", "--environment", "staging", "--sops-config", join(f.root, "s.yaml"), "--key-dir", join(f.root, "k")], f.deps)
+    const code = await main(
+      ["age-init", "--environment", "staging", "--sops-config", join(f.root, "s.yaml"), "--key-dir", join(f.root, "k")],
+      f.deps,
+    )
     expect(code).toBe(0)
     expect(f.runner.commands()[0]).toBe(`age-keygen -y ${join(f.root, "k/answerable-staging.txt")}`)
     expect(await Bun.file(join(f.root, "s.yaml")).text()).toContain("creation_rules:")

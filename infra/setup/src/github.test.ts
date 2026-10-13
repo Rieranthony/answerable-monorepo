@@ -42,7 +42,8 @@ function fakeTools(world: World, override: (call: RecordedCall) => Partial<RunRe
     }
     if (first === "api" && rest[0] === `${REPO}`) return { stdout: '{"id":4242,"type":"User"}\n' }
     if (first === "api" && rest[0] === "--method" && rest[1] === "PUT") world.environments.add(rest[2]!.split("/").at(-1)!)
-    if (first === "secret" && rest[0] === "list") return { stdout: JSON.stringify((world.secrets[rest[2]!] ?? []).map((name) => ({ name }))) }
+    if (first === "secret" && rest[0] === "list")
+      return { stdout: JSON.stringify((world.secrets[rest[2]!] ?? []).map((name) => ({ name }))) }
     return undefined
   })
 }
@@ -111,7 +112,10 @@ describe("publish-env", () => {
 
   test("keeps existing secrets and environments unless forced, and says the deploys are still off", async () => {
     const { staging } = await fixture()
-    const world: World = { environments: new Set(["staging", "infra-staging"]), secrets: { staging: ["KUBE_TOKEN"], "infra-staging": ["CIVO_TOKEN"] } }
+    const world: World = {
+      environments: new Set(["staging", "infra-staging"]),
+      secrets: { staging: ["KUBE_TOKEN"], "infra-staging": ["CIVO_TOKEN"] },
+    }
     const runner = fakeTools(world)
     const { context, output } = createContext({ run: runner.run, env: ENV })
     await publishEnv({ environment: "staging", paths: staging }, context)
@@ -124,7 +128,10 @@ describe("publish-env", () => {
     await publishEnv({ environment: "staging", paths: staging, force: true }, createContext({ run: forced.run, env: ENV }).context)
     expect(secretsSet(forced.calls)).toHaveLength(9)
 
-    const everything = fakeTools({ environments: world.environments, secrets: { staging: ["KUBE_SERVER", "KUBE_CA", "KUBE_TOKEN", "SOPS_AGE_KEY"] } })
+    const everything = fakeTools({
+      environments: world.environments,
+      secrets: { staging: ["KUBE_SERVER", "KUBE_CA", "KUBE_TOKEN", "SOPS_AGE_KEY"] },
+    })
     const quiet = createContext({ run: everything.run, env: ENV })
     await publishEnv({ environment: "staging", paths: staging }, quiet.context)
     expect(quiet.output()).toContain("staging: exists; its settings are left as they are\n  set: nothing\n")
@@ -146,8 +153,15 @@ describe("publish-env", () => {
     const set = secretsSet(runner.calls)
     expect(set.every((secret) => secret.env === "production")).toBe(true)
     expect(set.map((secret) => secret.name)).toEqual([
-      "KUBE_SERVER", "KUBE_CA", "KUBE_TOKEN", "SOPS_AGE_KEY", "CIVO_TOKEN", "CLOUDFLARE_API_TOKEN", "STATE_ACCESS_KEY_ID",
-      "STATE_SECRET_ACCESS_KEY", "ALLOWED_API_CIDRS",
+      "KUBE_SERVER",
+      "KUBE_CA",
+      "KUBE_TOKEN",
+      "SOPS_AGE_KEY",
+      "CIVO_TOKEN",
+      "CLOUDFLARE_API_TOKEN",
+      "STATE_ACCESS_KEY_ID",
+      "STATE_SECRET_ACCESS_KEY",
+      "ALLOWED_API_CIDRS",
     ])
     expect(set.at(-1)!.value).toBe('["198.51.100.7/32"]')
     expect(output()).toContain("production: created; the repository's owner must approve each run, from main only")
@@ -160,22 +174,29 @@ describe("publish-env", () => {
     await expect(
       publishEnv({ environment: "production", paths: production, enable: true }, createContext({ run: runner.run, env: ENV }).context),
     ).rejects.toThrow("--enable switches on staging's deploys")
-    await expect(publishEnv({ environment: "production", paths: production }, createContext({ run: runner.run, env: ENV }).context)).rejects.toThrow(
-      "ALLOWED_API_CIDRS is not set",
-    )
-    await expect(publishEnv({ environment: "staging", paths: staging }, createContext({ run: runner.run, env: { ...ENV, CIVO_TOKEN: "" } }).context)).rejects.toThrow(
-      "CIVO_TOKEN is not set",
-    )
     await expect(
-      publishEnv({ environment: "staging", paths: { ...staging, keyFile: "/nowhere/key.txt" } }, createContext({ run: runner.run, env: ENV }).context),
+      publishEnv({ environment: "production", paths: production }, createContext({ run: runner.run, env: ENV }).context),
+    ).rejects.toThrow("ALLOWED_API_CIDRS is not set")
+    await expect(
+      publishEnv({ environment: "staging", paths: staging }, createContext({ run: runner.run, env: { ...ENV, CIVO_TOKEN: "" } }).context),
+    ).rejects.toThrow("CIVO_TOKEN is not set")
+    await expect(
+      publishEnv(
+        { environment: "staging", paths: { ...staging, keyFile: "/nowhere/key.txt" } },
+        createContext({ run: runner.run, env: ENV }).context,
+      ),
     ).rejects.toThrow("run age-init first")
     expect(runner.calls.filter((call) => call.argv[0] === "gh")).toEqual([])
     for (const [output, message] of [
       ["kube_server", "Terraform's kube_server is not an https:// URL"],
       ["kube_ca", "Terraform's kube_ca is not a PEM certificate"],
     ]) {
-      const wrong = fakeTools({ environments: new Set(), secrets: {} }, (call) => (call.argv[3] === output ? { stdout: "nonsense" } : undefined))
-      await expect(publishEnv({ environment: "staging", paths: staging }, createContext({ run: wrong.run, env: ENV }).context)).rejects.toThrow(message!)
+      const wrong = fakeTools({ environments: new Set(), secrets: {} }, (call) =>
+        call.argv[3] === output ? { stdout: "nonsense" } : undefined,
+      )
+      await expect(
+        publishEnv({ environment: "staging", paths: staging }, createContext({ run: wrong.run, env: ENV }).context),
+      ).rejects.toThrow(message!)
     }
   })
 
@@ -192,9 +213,13 @@ describe("publish-env", () => {
       [(call) => call.argv[2] === REPO, "gh could not read the repository's owner (exit 1): boom", true],
     ]
     for (const [fails, message, onProduction] of cases) {
-      const runner = fakeTools({ environments: new Set(), secrets: {} }, (call) => (fails(call) ? { exitCode: 1, stderr: "boom\n" } : undefined))
+      const runner = fakeTools({ environments: new Set(), secrets: {} }, (call) =>
+        fails(call) ? { exitCode: 1, stderr: "boom\n" } : undefined,
+      )
       const env = { ...ENV, ALLOWED_API_CIDRS: '["198.51.100.7/32"]' }
-      const options = onProduction ? { environment: "production" as const, paths: production } : { environment: "staging" as const, paths: staging, enable: true }
+      const options = onProduction
+        ? { environment: "production" as const, paths: production }
+        : { environment: "staging" as const, paths: staging, enable: true }
       await expect(publishEnv(options, createContext({ run: runner.run, env }).context)).rejects.toThrow(message)
     }
   })

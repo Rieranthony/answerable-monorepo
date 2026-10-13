@@ -86,11 +86,22 @@ async function generate(context: Context, directory: string, zone: string): Prom
     context,
     directory,
     [
-      "req", "-x509", "-new", "-key", "ca.key", "-sha256", "-days", "3650",
-      "-subj", `/CN=Answerable origin-pull CA (${zone})`,
-      "-addext", "basicConstraints=critical,CA:TRUE,pathlen:0",
-      "-addext", "keyUsage=critical,keyCertSign,cRLSign",
-      "-out", "ca.pem",
+      "req",
+      "-x509",
+      "-new",
+      "-key",
+      "ca.key",
+      "-sha256",
+      "-days",
+      "3650",
+      "-subj",
+      `/CN=Answerable origin-pull CA (${zone})`,
+      "-addext",
+      "basicConstraints=critical,CA:TRUE,pathlen:0",
+      "-addext",
+      "keyUsage=critical,keyCertSign,cRLSign",
+      "-out",
+      "ca.pem",
     ],
     "make the CA's certificate",
   )
@@ -109,13 +120,29 @@ async function generate(context: Context, directory: string, zone: string): Prom
     context,
     directory,
     [
-      "x509", "-req", "-in", "client.csr", "-CA", "ca.pem", "-CAkey", "ca.key", "-set_serial", serial(),
-      "-days", "1825", "-sha256", "-extfile", "client.ext", "-out", "client.pem",
+      "x509",
+      "-req",
+      "-in",
+      "client.csr",
+      "-CA",
+      "ca.pem",
+      "-CAkey",
+      "ca.key",
+      "-set_serial",
+      serial(),
+      "-days",
+      "1825",
+      "-sha256",
+      "-extfile",
+      "client.ext",
+      "-out",
+      "client.pem",
     ],
     "sign the client's certificate",
   )
   const verified = await openssl(context, directory, ["verify", "-CAfile", "ca.pem", "client.pem"], "verify the client's certificate")
-  if (!verified.includes("client.pem: OK")) throw new SetupError(`openssl verify did not accept the client's certificate: ${verified.trim()}`)
+  if (!verified.includes("client.pem: OK"))
+    throw new SetupError(`openssl verify did not accept the client's certificate: ${verified.trim()}`)
   const read = (name: string) => readFile(join(directory, name), "utf8")
   return { ca: await read("ca.pem"), certificate: await read("client.pem"), privateKey: await read("client.key") }
 }
@@ -150,8 +177,7 @@ async function waitUntilActive(
  */
 export async function originPull(options: OriginPullOptions, context: Context): Promise<void> {
   const { paths, environment, zone } = options
-  if (zone !== zoneFor(environment))
-    throw new UsageError(`--zone for ${environment} is ${zoneFor(environment)}, not ${zone}`)
+  if (zone !== zoneFor(environment)) throw new UsageError(`--zone for ${environment} is ${zoneFor(environment)}, not ${zone}`)
   const token = requireVariable(context.env, "CLOUDFLARE_API_TOKEN", `a token with SSL and Certificates Edit on ${zone}`)
   const caShown = shown(paths, paths.edgeCa)
   const previous = (await exists(paths.edgeCa)) ? await readFile(paths.edgeCa, "utf8") : undefined

@@ -15,8 +15,7 @@ async function keyEnv(paths: Paths): Promise<Record<string, string>> {
 
 /** Encrypt a YAML document under the creation rule of the environment's Secrets file. Answers the encrypted text. */
 export async function encrypt(context: Context, paths: Paths, plaintext: string): Promise<string> {
-  if (!(await exists(paths.sopsConfig)))
-    throw new SetupError(`${shown(paths, paths.sopsConfig)} does not exist: run age-init first`)
+  if (!(await exists(paths.sopsConfig))) throw new SetupError(`${shown(paths, paths.sopsConfig)} does not exist: run age-init first`)
   const argv = sops(paths, "encrypt", "--filename-override", paths.secretsFile)
   context.out(`$ ${commandLine(argv)} < (the Secrets, from memory)\n`)
   const result = await context.run(argv, { input: plaintext })

@@ -114,7 +114,8 @@ async function runCommand(command: string, args: readonly string[], deps: CliDep
   if (!options) throw new UsageError(`unknown command "${command}"`)
   let values: Record<string, string | boolean | undefined>
   try {
-    values = parseArgs({ args: [...args], options: { ...COMMON, ...options }, allowPositionals: false, strict: true }).values as typeof values
+    values = parseArgs({ args: [...args], options: { ...COMMON, ...options }, allowPositionals: false, strict: true })
+      .values as typeof values
   } catch (error) {
     throw new UsageError(error instanceof Error ? error.message : String(error))
   }

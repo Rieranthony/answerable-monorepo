@@ -83,29 +83,47 @@ async function proveAgeAndSecrets(root: string) {
   const made = await setup(root, ["init-secrets", "--environment", "staging", ...moved], { env, run })
   const paths = pathsFor("staging", { root, home: root, sopsConfig: config, keyDir: keys })
   const encrypted = await readFile(paths.secretsFile, "utf8")
-  check("init-secrets writes and verifies the file", made.code === 0 && made.output.includes("Verified"), made.code ? made.output.trim().split("\n").at(-1) : "")
+  check(
+    "init-secrets writes and verifies the file",
+    made.code === 0 && made.output.includes("Verified"),
+    made.code ? made.output.trim().split("\n").at(-1) : "",
+  )
   check(
     "the file holds no value in plain text",
-    !["proof-cert-manager-token", "proof-microsoft-secret", "proof-password"].some((value) => encrypted.includes(value)) && encrypted.includes("ENC["),
+    !["proof-cert-manager-token", "proof-microsoft-secret", "proof-password"].some((value) => encrypted.includes(value)) &&
+      encrypted.includes("ENC["),
   )
   check(
     "init-secrets prints no value",
-    !["proof-cert-manager-token", "proof-microsoft-secret", "proof-password", "proof-state-secret"].some((value) => made.output.includes(value)),
+    !["proof-cert-manager-token", "proof-microsoft-secret", "proof-password", "proof-state-secret"].some((value) =>
+      made.output.includes(value),
+    ),
   )
   const decrypted = await must(["sops", "--config", config, "decrypt", paths.secretsFile], { env: { SOPS_AGE_KEY_FILE: key } })
   const data = parseSecrets(decrypted, "secrets.enc.yaml")
   check("sops decrypts it to the three Secrets", decrypted.split("\n---\n").length === 3, Object.keys(data).join(", "))
   check("the admin URL is Terraform's", data["postgres-admin"].OPS_DATABASE_ADMIN_URL === ADMIN_URL)
-  check("the upstream key is 32 bytes, base64url", /^\[\{"version":1,"value":"[A-Za-z0-9_-]{43}"\}\]$/.test(data["id-env"].UPSTREAM_TOKEN_SECRETS!))
+  check(
+    "the upstream key is 32 bytes, base64url",
+    /^\[\{"version":1,"value":"[A-Za-z0-9_-]{43}"\}\]$/.test(data["id-env"].UPSTREAM_TOKEN_SECRETS!),
+  )
   check("the root secret is 48 bytes", Buffer.from(data["id-env"].ROOT_ADMIN_SECRET!, "base64").length === 48)
   const refused = await setup(root, ["init-secrets", "--environment", "staging", ...moved], { env, run })
   check("init-secrets refuses to overwrite", refused.code === 1 && refused.output.includes("exists"))
-  const rotated = await setup(root, ["init-secrets", "--environment", "staging", "--rotate", "UPSTREAM_TOKEN_SECRETS", ...moved], { env, run })
-  const after = parseSecrets(await must(["sops", "--config", config, "decrypt", paths.secretsFile], { env: { SOPS_AGE_KEY_FILE: key } }), "x")
+  const rotated = await setup(root, ["init-secrets", "--environment", "staging", "--rotate", "UPSTREAM_TOKEN_SECRETS", ...moved], {
+    env,
+    run,
+  })
+  const after = parseSecrets(
+    await must(["sops", "--config", config, "decrypt", paths.secretsFile], { env: { SOPS_AGE_KEY_FILE: key } }),
+    "x",
+  )
   const ring = JSON.parse(after["id-env"].UPSTREAM_TOKEN_SECRETS!) as { version: number }[]
   check(
     "--rotate puts a new upstream key first and changes nothing else",
-    rotated.code === 0 && ring.map((entry) => entry.version).join() === "2,1" && after["id-env"].ROOT_ADMIN_SECRET === data["id-env"].ROOT_ADMIN_SECRET,
+    rotated.code === 0 &&
+      ring.map((entry) => entry.version).join() === "2,1" &&
+      after["id-env"].ROOT_ADMIN_SECRET === data["id-env"].ROOT_ADMIN_SECRET,
   )
 }
 
@@ -129,23 +147,46 @@ async function proveOriginPull(root: string) {
     return systemRunner(argv, options)
   }
   const env = { ...process.env, CLOUDFLARE_API_TOKEN: "proof-token" }
-  const first = await setup(root, ["origin-pull", "--environment", "staging", "--zone", "answerable-staging.uk"], { fetch, run, env, sleep: async () => {} })
+  const first = await setup(root, ["origin-pull", "--environment", "staging", "--zone", "answerable-staging.uk"], {
+    fetch,
+    run,
+    env,
+    sleep: async () => {},
+  })
   const paths = pathsFor("staging", { root, home: root })
-  check("origin-pull uploads one certificate and writes ca.pem", first.code === 0 && uploads.length === 1 && polls === 1, first.code ? first.output.slice(-300) : "")
+  check(
+    "origin-pull uploads one certificate and writes ca.pem",
+    first.code === 0 && uploads.length === 1 && polls === 1,
+    first.code ? first.output.slice(-300) : "",
+  )
   const ca = new X509Certificate(await readFile(paths.edgeCa, "utf8"))
   const client = new X509Certificate(uploads[0]!.certificate)
   const key = createPrivateKey(uploads[0]!.private_key)
-  const days = (certificate: X509Certificate) => Math.round((Date.parse(certificate.validTo) - Date.parse(certificate.validFrom)) / 86_400_000)
-  check("the CA is a P-256 CA for ten years", ca.ca && ca.publicKey.asymmetricKeyDetails?.namedCurve === "prime256v1" && days(ca) === 3650, `${days(ca)} days`)
+  const days = (certificate: X509Certificate) =>
+    Math.round((Date.parse(certificate.validTo) - Date.parse(certificate.validFrom)) / 86_400_000)
+  check(
+    "the CA is a P-256 CA for ten years",
+    ca.ca && ca.publicKey.asymmetricKeyDetails?.namedCurve === "prime256v1" && days(ca) === 3650,
+    `${days(ca)} days`,
+  )
   check("ca.pem holds the public certificate only", !(await readFile(paths.edgeCa, "utf8")).includes("PRIVATE"))
-  check("the client is signed by the CA, P-256, five years", client.verify(ca.publicKey) && !client.ca && days(client) === 1825, `${days(client)} days`)
+  check(
+    "the client is signed by the CA, P-256, five years",
+    client.verify(ca.publicKey) && !client.ca && days(client) === 1825,
+    `${days(client)} days`,
+  )
   check("the client's CN names the zone", client.subject === "CN=cloudflare-origin-pull.answerable-staging.uk")
   check(
     "the uploaded key is the client's",
     key.asymmetricKeyDetails?.namedCurve === "prime256v1" &&
-      createPublicKey(key).export({ type: "spki", format: "der" }).equals(client.publicKey.export({ type: "spki", format: "der" })),
+      createPublicKey(key)
+        .export({ type: "spki", format: "der" })
+        .equals(client.publicKey.export({ type: "spki", format: "der" })),
   )
-  check("the temporary directory is gone", temporary.length > 0 && !(await Promise.all(temporary.map((path) => Bun.file(join(path, "ca.key")).exists()))).some(Boolean))
+  check(
+    "the temporary directory is gone",
+    temporary.length > 0 && !(await Promise.all(temporary.map((path) => Bun.file(join(path, "ca.key")).exists()))).some(Boolean),
+  )
   check("no private key was printed", !first.output.includes("PRIVATE KEY"))
 
   let during = ""
@@ -162,7 +203,9 @@ async function proveOriginPull(root: string) {
   const final = await readFile(paths.edgeCa, "utf8")
   check(
     "--force trusts both CAs during the apply, then keeps the new one",
-    rotation.code === 0 && (during.match(/BEGIN CERTIFICATE/g) ?? []).length === 2 && new X509Certificate(final).fingerprint256 !== ca.fingerprint256,
+    rotation.code === 0 &&
+      (during.match(/BEGIN CERTIFICATE/g) ?? []).length === 2 &&
+      new X509Certificate(final).fingerprint256 !== ca.fingerprint256,
   )
   check("--force prints how to delete the old certificate", rotation.output.includes("origin_tls_client_auth/cert-1"))
 }
@@ -172,12 +215,34 @@ async function proveDatabaseCa(root: string) {
   await must(["mkdir", "-p", certs])
   const ec = ["-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256"]
   await must(["openssl", "genpkey", ...ec, "-out", "ca.key"], { cwd: certs })
-  await must(["openssl", "req", "-x509", "-new", "-key", "ca.key", "-sha256", "-days", "30", "-subj", "/CN=Proof database CA", "-out", "ca.pem"], { cwd: certs })
+  await must(
+    ["openssl", "req", "-x509", "-new", "-key", "ca.key", "-sha256", "-days", "30", "-subj", "/CN=Proof database CA", "-out", "ca.pem"],
+    { cwd: certs },
+  )
   await must(["openssl", "genpkey", ...ec, "-out", "server.key"], { cwd: certs })
   await must(["openssl", "req", "-new", "-key", "server.key", "-subj", "/CN=pg", "-out", "server.csr"], { cwd: certs })
   await Bun.write(join(certs, "server.ext"), "subjectAltName=DNS:pg,DNS:localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n")
   await must(
-    ["openssl", "x509", "-req", "-in", "server.csr", "-CA", "ca.pem", "-CAkey", "ca.key", "-set_serial", "7", "-days", "30", "-sha256", "-extfile", "server.ext", "-out", "server.pem"],
+    [
+      "openssl",
+      "x509",
+      "-req",
+      "-in",
+      "server.csr",
+      "-CA",
+      "ca.pem",
+      "-CAkey",
+      "ca.key",
+      "-set_serial",
+      "7",
+      "-days",
+      "30",
+      "-sha256",
+      "-extfile",
+      "server.ext",
+      "-out",
+      "server.pem",
+    ],
     { cwd: certs },
   )
   const caPem = await readFile(join(certs, "ca.pem"), "utf8")
@@ -194,9 +259,28 @@ async function proveDatabaseCa(root: string) {
       "exec docker-entrypoint.sh postgres -c ssl=on -c ssl_cert_file=/tmp/server.crt -c ssl_key_file=/tmp/server.key",
     ].join(" && ")
     await must([
-      "docker", "run", "-d", "--name", container, "--network", network, "--network-alias", "pg", "-p", "127.0.0.1::5432",
-      "-e", "POSTGRES_PASSWORD=proof", "-e", `TLS_CHAIN=${chain}`, "-e", `TLS_KEY=${await readFile(join(certs, "server.key"), "utf8")}`,
-      "--entrypoint", "sh", POSTGRES, "-c", start,
+      "docker",
+      "run",
+      "-d",
+      "--name",
+      container,
+      "--network",
+      network,
+      "--network-alias",
+      "pg",
+      "-p",
+      "127.0.0.1::5432",
+      "-e",
+      "POSTGRES_PASSWORD=proof",
+      "-e",
+      `TLS_CHAIN=${chain}`,
+      "-e",
+      `TLS_KEY=${await readFile(join(certs, "server.key"), "utf8")}`,
+      "--entrypoint",
+      "sh",
+      POSTGRES,
+      "-c",
+      start,
     ])
     const port = (await must(["docker", "port", container, "5432/tcp"])).trim().split(":").at(-1)!
     let ready = false
@@ -213,19 +297,31 @@ async function proveDatabaseCa(root: string) {
       run: withTerraform({ database_host: "127.0.0.1", database_port: port }),
     })
     const kept = await readFile(paths.databaseCa, "utf8").catch(() => "")
-    check("database-ca keeps the root of the presented chain", direct.code === 0 && kept === caPem, direct.code ? direct.output.slice(-400) : "")
-    check("it prints the fingerprint and says trust on first use", direct.output.includes(new X509Certificate(caPem).fingerprint256) && direct.output.includes("trust on first use"))
+    check(
+      "database-ca keeps the root of the presented chain",
+      direct.code === 0 && kept === caPem,
+      direct.code ? direct.output.slice(-400) : "",
+    )
+    check(
+      "it prints the fingerprint and says trust on first use",
+      direct.output.includes(new X509Certificate(caPem).fingerprint256) && direct.output.includes("trust on first use"),
+    )
     check("it checks the host against the server's names", direct.output.includes("It covers 127.0.0.1"))
 
     const closed = await setup(root, ["database-ca", "--environment", "staging", "--force"], {
       env,
       run: withTerraform({ database_host: "127.0.0.1", database_port: "1" }),
     })
-    check("an unreachable database prints the pod command", closed.code === 1 && closed.output.includes("kubectl --kubeconfig admin.kubeconfig run database-ca"))
+    check(
+      "an unreachable database prints the pod command",
+      closed.code === 1 && closed.output.includes("kubectl --kubeconfig admin.kubeconfig run database-ca"),
+    )
 
     // The pod command's own script, in the same image, on the database's network: what an operator pipes in.
     const fetched = await must(["docker", "run", "--rm", "--network", network, FETCH_IMAGE, "sh", "-c", fetchScript("pg", "5432")])
-    const piped = await setup(root, ["database-ca", "--environment", "staging", "--from-stdin", "--force"], { readStdin: async () => fetched })
+    const piped = await setup(root, ["database-ca", "--environment", "staging", "--from-stdin", "--force"], {
+      readStdin: async () => fetched,
+    })
     check(
       "the pod command's script fetches the chain for --from-stdin",
       piped.code === 0 && (await readFile(paths.databaseCa, "utf8")) === caPem,
