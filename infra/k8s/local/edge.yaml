@@ -2,8 +2,8 @@
 # platform-edge.yaml puts the nginx beside Traefik.
 #
 # - origin-pull-ca: the certificate authority whose ca.crt Traefik verifies client certificates against (the TLSOptions
-#   of charts/platform), as the one Answerable uploads to Cloudflare does (D19). The test copies it to
-#   answerable/cloudflare-origin-pull-ca.
+#   of charts/platform), as the one Answerable uploads to Cloudflare does (D19). The test passes its certificate to
+#   charts/platform as originPull.caPem, which renders answerable/cloudflare-origin-pull-ca, as Terraform does on Civo.
 # - edge-origin-pull: the client certificate the edge presents, as Cloudflare does; the test presents it too.
 # - edge-tls: the edge's server certificate for the public names, from the stack's CA (charts/platform's local issuer).
 # - edge: a Service at a fixed address, which the pods' /etc/hosts gives for the public names (values-local.yaml).

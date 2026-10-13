@@ -13,8 +13,11 @@ hostnames:
 publicPort: "48443"
 
 ingress:
-  # The stack's own certificate authority (charts/platform, values-local.yaml).
-  clusterIssuer: local
+  # The stack's own certificate authority, cluster-wide (charts/platform, values-local.yaml). The stack passes its
+  # database's CA as database.caPem (infra/k8s/local/stack.ts).
+  issuer:
+    kind: ClusterIssuer
+    name: local
 
 # Cloudflare's stand-in: an nginx beside Traefik in its pod (infra/k8s/local/edge.yaml), which presents the origin-pull
 # certificate for pods that call the public hostnames and reaches Traefik from 127.0.0.1. The test itself plays a visitor

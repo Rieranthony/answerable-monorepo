@@ -151,6 +151,8 @@ export function startBrowserEdge({ stackCa, originPullCert, serverCert }: { stac
 export async function startStack() {
   const workdir = mkdtempSync(join(tmpdir(), "answerable-stack-"))
   const kubeconfig = join(workdir, "kubeconfig")
+  const originPullCaFile = join(workdir, "origin-pull-ca.pem")
+  const databaseCaFile = join(workdir, "database-ca.pem")
   const env = { ...helmEnv, KUBECONFIG: kubeconfig }
   const kubectl = (args: string[], options: { stdin?: string; allowFailure?: boolean } = {}) => exec(["kubectl", ...args], { env, ...options })
   const helm = (args: string[]) => exec(["helm", ...args], { env })
@@ -199,7 +201,9 @@ export async function startStack() {
       await kubectl(["apply", "-f", join(here, "database.yaml"), "-f", join(here, "edge.yaml")])
       await kubectl(["wait", "-n", "platform", "certificate/edge-tls", "certificate/edge-origin-pull", "--for=condition=Ready", "--timeout=180s"])
       await kubectl(["wait", "-n", "database", "certificate/postgres-tls", "--for=condition=Ready", "--timeout=180s"])
-      await helm(["upgrade", "platform", join(charts, "platform"), "--namespace", "platform", "--values", join(charts, "platform/values-local.yaml"), "--values", join(here, "platform-edge.yaml"), "--wait", "--timeout", "10m"])
+      // The stand-in's origin-pull CA reaches the chart as Terraform passes Cloudflare's: originPull.caPem, from a file.
+      await Bun.write(originPullCaFile, (await readSecret("platform", "origin-pull-ca"))["ca.crt"]!)
+      await helm(["upgrade", "platform", join(charts, "platform"), "--namespace", "platform", "--values", join(charts, "platform/values-local.yaml"), "--values", join(here, "platform-edge.yaml"), "--set-file", `originPull.caPem=${originPullCaFile}`, "--wait", "--timeout", "10m"])
       await kubectl(["rollout", "status", "-n", "database", "statefulset/postgres", "--timeout=300s"])
     })
     await step("load the images into the cluster", async () => {
@@ -207,8 +211,9 @@ export async function startStack() {
       for (const { name } of images) await exec(["kind", "load", "docker-image", image(name), "--name", cluster])
     })
     const stackCa = (await readSecret("platform", "local-ca"))["ca.crt"]
-    const databaseCa = (await readSecret("database", "database-ca"))["ca.crt"]
-    const originPullCa = (await readSecret("platform", "origin-pull-ca"))["ca.crt"]
+    const databaseCa = (await readSecret("database", "database-ca"))["ca.crt"]!
+    // The database's CA reaches the chart as the deploy passes Civo's: database.caPem, from a file.
+    await Bun.write(databaseCaFile, databaseCa)
 
     // ID trusts the directory's two origins and may reach it on this host: what an operator configures for a company directory on a private network.
     const localValues = Bun.YAML.parse(readFileSync(join(charts, "answerable/values-local.yaml"), "utf8")) as { id: { trustedOrigins: string[] } }
@@ -217,17 +222,17 @@ export async function startStack() {
     /** `helm upgrade --install` of charts/answerable as the pipeline runs it, with the local values, the directory's settings and `sets`. */
     const release = (sets: string[]) => helm([
       "upgrade", "--install", "answerable", join(charts, "answerable"), "--namespace", "answerable", "--values", join(charts, "answerable/values-local.yaml"),
+      "--set-file", `database.caPem=${databaseCaFile}`,
       "--set-json", `id.trustedOrigins=${JSON.stringify(trustedOrigins)}`, "--set-json", `id.extraEgress=${JSON.stringify(extraEgress)}`,
       ...sets.flatMap(set => ["--set", set]), "--wait", "--wait-for-jobs", "--timeout", "10m",
     ])
     await step("install charts/answerable with the ops bootstrap", async () => {
       const opaque = (name: string, data: Record<string, string>) => ({ apiVersion: "v1", kind: "Secret", metadata: { name }, type: "Opaque", stringData: data })
-      // What the deploy applies from the sops file in a cloud; here, throwaway values. The ops Jobs write the rest.
+      // What the deploy applies from the sops file in a cloud; here, throwaway values. The ops Jobs write the rest, and the
+      // charts render the two certificate authorities (database.caPem, originPull.caPem). local-ca is the stack's alone.
       await apply("answerable", [
         opaque("id-env", { BETTER_AUTH_SECRET: secrets.betterAuthSecret, ROOT_ADMIN_SECRET: secrets.rootAdminSecret, UPSTREAM_TOKEN_SECRETS: JSON.stringify([{ version: 1, value: secrets.upstreamKey }]) }),
         opaque("postgres-admin", { OPS_DATABASE_ADMIN_URL: `postgres://${databaseAdmin}:${secrets.admin}@${database}/postgres?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem` }),
-        opaque("cloudflare-origin-pull-ca", { "ca.crt": originPullCa }),
-        { apiVersion: "v1", kind: "ConfigMap", metadata: { name: "postgres-ca" }, data: { "ca.pem": databaseCa } },
         { apiVersion: "v1", kind: "ConfigMap", metadata: { name: "local-ca" }, data: { "ca.pem": stackCa } },
       ])
       await release(["ops.bootstrap=true"])

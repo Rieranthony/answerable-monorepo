@@ -1,7 +1,7 @@
 # Defaults: production-shaped and cloud-neutral. Each environment's overlay (values-<cloud>-<environment>.yaml) sets its
-# hostnames, trusted proxies, network and sizes; the pipeline sets image.tag. The chart creates no namespace, no Secret and
-# no database certificate: Terraform creates the namespace, the deploy applies the human-provided Secrets from the sops
-# file and the postgres-ca ConfigMap, and the ops Jobs write the generated Secrets.
+# hostnames, trusted proxies, network and sizes; the pipeline sets image.tag and database.caPem. The chart creates no
+# namespace and no Secret: Terraform creates the namespace, the deploy applies the human-provided Secrets from the sops
+# file, and the ops Jobs write the generated Secrets. It renders the postgres-ca ConfigMap from database.caPem.
 
 image:
   # sha-<40 hex> from the pipeline, local on a laptop: every image's tag unless it has a digest, and the release's version
@@ -36,15 +36,21 @@ publicPort: ""
 ingress:
   # Traefik's IngressClass (charts/platform, D31).
   className: traefik
-  # The cert-manager ClusterIssuer that issues each hostname's certificate (charts/platform).
-  clusterIssuer: letsencrypt
+  # The cert-manager issuer of each hostname's certificate: the namespaced Issuer letsencrypt that charts/platform renders
+  # in this namespace, beside the Cloudflare token it reads. kind is Issuer or ClusterIssuer (the kind stack's local).
+  issuer:
+    kind: Issuer
+    name: letsencrypt
   # The Traefik TLSOption, in this namespace, that requires Cloudflare's origin-pull client certificate (D19); charts/platform
   # renders it beside the Secret cloudflare-origin-pull-ca.
   tlsOption: origin-pull
 
 database:
-  # The ConfigMap, applied by the deploy, whose ca.pem verifies the database's certificate: /etc/ssl/db/ca.pem, the
-  # sslrootcert of every database URL.
+  # The database's certificate authority (PEM), which the chart renders as the ConfigMap caConfigMap (key ca.pem), mounted
+  # at /etc/ssl/db/ca.pem: the sslrootcert of every database URL. The deploy passes it with
+  # --set-file database.caPem=infra/civo/envs/<environment>/database-ca.pem; the kind stack passes its database's CA.
+  # Empty fails the render.
+  caPem: ""
   caConfigMap: postgres-ca
   # The host and port the services reach the database at, which the ops bootstrap writes into their URLs. Empty: those of
   # the administrative URL in the postgres-admin Secret.

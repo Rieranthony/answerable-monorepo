@@ -8,12 +8,17 @@ helm.sh/hook: post-install,post-upgrade
 helm.sh/hook-weight: {{ . | quote }}
 helm.sh/hook-delete-policy: before-hook-creation
 {{- end -}}
+{{- /*
+Let's Encrypt is a namespaced Issuer beside the Ingresses, not a ClusterIssuer: an Issuer reads its Secrets from its own
+namespace, and the deploy, which writes only to that namespace, applies the Cloudflare token there from the sops file.
+*/ -}}
 {{- with .Values.issuers.letsencrypt }}
 {{- if .enabled }}
 apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
+kind: Issuer
 metadata:
   name: letsencrypt
+  namespace: {{ .namespace }}
   annotations:
     {{- include "platform.hook" 10 | nindent 4 }}
 spec:

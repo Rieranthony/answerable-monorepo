@@ -1,5 +1,7 @@
 # Production on Civo, in the answerable-production account (D28), behind Cloudflare on answerable.org (D12). The pipeline
-# sets image.tag to the one staging runs; everything else about the environment is here.
+# sets image.tag to the one staging runs, and database.caPem with --set-file database.caPem=infra/civo/envs/production/
+# database-ca.pem (bun run setup database-ca --environment production); everything else about the environment is here.
+# The Ingresses' certificates come from the Issuer letsencrypt that charts/platform renders in this namespace.
 
 hostnames:
   id: id.answerable.org

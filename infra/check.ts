@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  writeFileSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, relative } from "node:path"
@@ -117,6 +118,21 @@ function chartDirectories() {
     .sort()
 }
 
+// The certificates Terraform and the deploy pass to each chart (`--set-file`), without which the chart refuses to render:
+// the real ones are per environment under infra/civo/envs, so a placeholder PEM stands in for them here.
+const suppliedCertificates: Record<string, string> = {
+  answerable: "database.caPem",
+  platform: "originPull.caPem",
+}
+const placeholderPem = join(
+  mkdtempSync(join(tmpdir(), "answerable-infra-check-ca-")),
+  "placeholder-ca.pem",
+)
+writeFileSync(
+  placeholderPem,
+  "-----BEGIN CERTIFICATE-----\nbm90IGEgY2VydGlmaWNhdGU=\n-----END CERTIFICATE-----\n",
+)
+
 // The values files a chart is rendered with: the defaults alone, then each overlay on top of them.
 function valuesOverlays(chart: string) {
   return readdirSync(chart)
@@ -156,9 +172,15 @@ async function helmSteps() {
           )
       await run(["helm", "dependency", "build", show(chart)], repo, helmEnv)
     }
-    await run(["helm", "lint", "--strict", show(chart)])
+    const supplied = suppliedCertificates[name]
+      ? ["--set-file", `${suppliedCertificates[name]}=${placeholderPem}`]
+      : []
+    await run(["helm", "lint", "--strict", show(chart), ...supplied])
     for (const overlay of [undefined, ...valuesOverlays(chart)]) {
-      const values = overlay ? ["--values", join(show(chart), overlay)] : []
+      const values = [
+        ...(overlay ? ["--values", join(show(chart), overlay)] : []),
+        ...supplied,
+      ]
       if (overlay)
         await run(["helm", "lint", "--strict", show(chart), ...values])
       await pipe(

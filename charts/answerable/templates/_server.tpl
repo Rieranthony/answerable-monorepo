@@ -11,6 +11,10 @@ writes the Secret and scales it up (infra/ops/README.md), and the next upgrade, 
 {{- $root := .root -}}
 {{- $values := .values -}}
 {{- $scope := dict "root" $root "component" .component -}}
+{{- $issuer := $root.Values.ingress.issuer -}}
+{{- if not (has $issuer.kind (list "Issuer" "ClusterIssuer")) -}}
+{{- fail (printf "ingress.issuer.kind must be Issuer or ClusterIssuer, not %v" $issuer.kind) -}}
+{{- end -}}
 {{- $waiting := and .clientSecret (not (lookup "v1" "Secret" $root.Release.Namespace .clientSecret)) -}}
 apiVersion: v1
 kind: ServiceAccount
@@ -128,7 +132,7 @@ metadata:
   labels:
     {{- include "answerable.labels" $scope | nindent 4 }}
   annotations:
-    cert-manager.io/cluster-issuer: {{ $root.Values.ingress.clusterIssuer }}
+    cert-manager.io/{{ ternary "cluster-issuer" "issuer" (eq $issuer.kind "ClusterIssuer") }}: {{ $issuer.name }}
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
     # Only Cloudflare holds a client certificate the origin-pull CA signed (Authenticated Origin Pulls, D19).
