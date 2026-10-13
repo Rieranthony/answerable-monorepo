@@ -6,7 +6,7 @@ No command prints a secret. Values travel from your environment variables, Terra
 
 ## Before you start
 
-**Tools.** Terraform 1.16.5, `sops` 3.13, `age-keygen`, **OpenSSL 3** (macOS's `/usr/bin/openssl` is LibreSSL: `brew install openssl@3` and put it first on `PATH`), `gh` signed in (`gh auth login`), and `kubectl` if the database must be read from a pod.
+**Tools.** Terraform 1.16.5, `sops` 3.13, `age-keygen`, **OpenSSL 3** (macOS's `/usr/bin/openssl` is LibreSSL: `brew install openssl@3` and put it first on `PATH`), `gh` signed in (`gh auth login`), and `kubectl` (`database-ca` reads the database's certificate from a pod).
 
 **From the owner** ([B0](../../docs/goals/aws-deploy/briefs/b0.md), [B7](../../docs/goals/aws-deploy/briefs/b7.md)). Keep each where you keep your own secrets and export it in the shell that runs the commands.
 
@@ -28,10 +28,10 @@ Staging shown; production is the same with `--environment production` and its ow
 
 | # | Command | Needs | Writes | Undo |
 | --- | --- | --- | --- | --- |
-| 1 | `age-init` | `age-keygen` | `~/.config/sops/age/answerable-staging.txt` (mode 600) when absent; the staging rule in `.sops.yaml` | Remove the rule. Keep the key while any file encrypted to it exists |
+| 1 | `age-init` | `age-keygen` | `~/.config/sops/age/answerable-staging.txt` (mode 600) when absent; the staging rule in `.sops.yaml`, encrypting `data` and `stringData` only | Remove the rule. Keep the key while any file encrypted to it exists |
 | 2 | `first-apply` | `CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN` | The state bucket, the state moved into it, the network, cluster, database and firewalls. Stops before the full apply | `terraform destroy` in the root, after a reviewed change removes `prevent_destroy` from the bucket and the database |
 | 3 | `origin-pull --zone answerable-staging.uk` | `CLOUDFLARE_API_TOKEN`, OpenSSL 3 | `infra/civo/envs/staging/edge-ca/ca.pem`; a client certificate on the zone | Delete the certificate (the command prints its ID and the `curl`), delete `ca.pem` |
-| 4 | `database-ca` | `AWS_*`, OpenSSL 3 | `infra/civo/envs/staging/database-ca.pem` | Delete the file |
+| 4 | `database-ca` | `AWS_*`, OpenSSL 3, `kubectl` | `infra/civo/envs/staging/database-ca.pem` | Delete the file |
 | 5 | `first-apply --resume` | as 2, plus `AWS_*` | The namespaces, the platform chart, the deployer, the Cloudflare zone's records and rules | As 2 |
 | 6 | `init-secrets` | `AWS_*`, `CERT_MANAGER_CLOUDFLARE_TOKEN`, the Microsoft pair | `infra/civo/envs/staging/secrets.enc.yaml` | Delete the file before it is deployed; afterwards, rotate instead |
 | 7 | `publish-env --enable` | `CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN`, `AWS_*`, the age key | GitHub environments `staging` and `infra-staging` with their secrets; the repository variable `DEPLOY_STAGING=true` | `gh secret delete <name> --env <environment>`; `gh variable delete DEPLOY_STAGING` turns the deploys off |
@@ -47,7 +47,18 @@ Production differs in three places: `ALLOWED_API_CIDRS` is required and must inc
 
 ### `age-init`
 
-Creates the environment's `age` key with `age-keygen` when its file is absent, reads its public recipient, and writes or updates the environment's creation rule in `.sops.yaml` (`path_regex: infra/civo/envs/<env>/secrets\.enc\.yaml$`), keeping every other rule. It never reads the private key into memory or prints it. When the rule names another recipient it stops: `--force` switches the rule to this key, after which re-encrypt the file with `sops updatekeys`. Commit `.sops.yaml`.
+Creates the environment's `age` key with `age-keygen` when its file is absent, reads its public recipient, and writes or updates the environment's creation rule in `.sops.yaml`, keeping every other rule:
+
+```yaml
+creation_rules:
+  - path_regex: infra/civo/envs/staging/secrets\.enc\.yaml$
+    age: age1…
+    encrypted_regex: "^(data|stringData)$"
+```
+
+**`encrypted_regex`** makes `sops` encrypt only the values under `data` and `stringData`. Each Secret's `metadata.name` and its keys stay readable, so a reviewer sees which Secret and which key a commit changed, never a value. They are not editable unnoticed: `sops`' MAC covers the values it leaves in the clear, and a renamed Secret fails to decrypt. A rule without `encrypted_regex`, or with another one, is updated. The Secrets file keeps the form it was encrypted in until it is encrypted again: `init-secrets --rotate <key>` re-encrypts it under the rule.
+
+It never reads the private key into memory or prints it. When the rule names another recipient it stops: `--force` switches the rule to this key, after which re-encrypt the file with `sops updatekeys`. Commit `.sops.yaml`.
 
 ### `first-apply`
 
@@ -73,7 +84,17 @@ Reads `database_host` and `database_port` from Terraform, connects with `openssl
 
 **This is trust on first use.** The file holds whatever answered that connection. Compare the fingerprint with what Civo shows for the database where it shows one, and record it with the date.
 
-The database sits on the private network, so from your machine the connection usually fails. The command then prints the exact `kubectl run` that fetches the chain from a pod with the cluster's admin kubeconfig (`civo kubernetes config answerable-<env>-cluster > admin.kubeconfig`, or the dashboard's download) and pipes it into `database-ca --from-stdin`. The pod runs Alpine pinned by digest, installs `openssl`, and is deleted when it ends.
+The database sits on the private network, so from your machine the connection usually fails. The command then reads the chain from a pod: it reads Terraform's sensitive `admin_kubeconfig` output (the cluster-admin credential, [`infra/civo/README.md`](../civo/README.md#credentials)) into a 0600 file in a temporary directory, runs `kubectl run --rm --attach` in the `default` namespace with `KUBECONFIG` pointing there, and deletes the directory whatever happens. The pod runs Alpine pinned by digest, installs `openssl`, prints the chain and deletes itself. In production this machine must be in `ALLOWED_API_CIDRS` to reach the Kubernetes API.
+
+To run the pod yourself instead, pipe it into `--from-stdin`. When the pod fails, the command prints exactly this:
+
+```sh
+(umask 077 && cd infra/civo/envs/staging && terraform output -raw admin_kubeconfig) > admin.kubeconfig
+kubectl --kubeconfig admin.kubeconfig run database-ca --namespace default --rm -i --restart=Never --quiet \
+    --image=<the pinned Alpine> --command -- sh -c '<install openssl; openssl s_client -starttls postgres …>' \
+    | bun run setup database-ca --environment staging --from-stdin
+rm admin.kubeconfig
+```
 
 ### `init-secrets`
 
@@ -128,7 +149,7 @@ With the root secret, finds the platform member with that email (sign in once fi
 | `these commands need OpenSSL 3` | `openssl` on `PATH` is LibreSSL or missing | Install OpenSSL 3 and put it first on `PATH` |
 | `… exists. Run again with --force …` | The file would be overwritten | Keep it, or pass `--force` knowing what that replaces |
 | `already keeps its state in the bucket` | `first-apply` without `--resume` after the migration | `first-apply --resume` |
-| `no certificate from <host>:<port>` | The database is not reachable from this machine | Run the printed `kubectl run … \| … --from-stdin` |
+| `no certificate from <host>:<port>, from this machine or from a pod` | Neither this machine nor a pod reached the database (or `kubectl` is missing, or the API refused this machine) | Read the printed reason; run the printed `kubectl run … \| … --from-stdin` yourself |
 | `sops could not encrypt … no matching creation rules found` | `.sops.yaml` has no rule for the environment | `age-init` |
 | `sops could not decrypt …` | The key is not in `--key-dir` or `SOPS_AGE_KEY` | Point `--key-dir` at the key, or export `SOPS_AGE_KEY` |
 | `gh is not signed in to github.com` | `gh` has no session | `gh auth login` |
@@ -143,7 +164,7 @@ With the root secret, finds the platform member with that email (sign in once fi
 bun run --filter @answerable/infra-setup prove
 ```
 
-Runs the real-tool paths that need no account, in a temporary directory it deletes: `age-init` with the real `age-keygen` against a throwaway `.sops.yaml` and key directory (`--sops-config`, `--key-dir`); `init-secrets` encrypting and decrypting with the real `sops` and that key, with Terraform's output faked; `origin-pull` with the real `openssl` and a fake Cloudflare, checking the curve, the lifetimes, the signature and that the uploaded key is the client's, and a rotation; `database-ca` against PostgreSQL 17 with TLS in Docker, from this machine and through the printed pod command's script in the same Alpine image. It needs `age-keygen`, `sops`, OpenSSL 3 and Docker, takes a few seconds once the two images are pulled (6 s measured), and removes its container and network.
+Runs the real-tool paths that need no account, in a temporary directory it deletes: `age-init` with the real `age-keygen` against a throwaway `.sops.yaml` and key directory (`--sops-config`, `--key-dir`); `init-secrets` encrypting and decrypting with the real `sops` and that key, with Terraform's output faked: names and keys readable, values encrypted, a renamed Secret refused by the MAC, and the file applied as the deploy applies it (`sops --decrypt` with `SOPS_AGE_KEY`, into `kubectl apply -n answerable -f -`) to a throwaway kind cluster; `origin-pull` with the real `openssl` and a fake Cloudflare, checking the curve, the lifetimes, the signature and that the uploaded key is the client's, and a rotation; `database-ca` against PostgreSQL 17 with TLS in Docker, from this machine, from a pod in the kind cluster with its kubeconfig standing in for `admin_kubeconfig` while the database sits on the cluster's Docker network out of this machine's reach, and through the printed command's script in the same Alpine image. It needs `age-keygen`, `sops`, OpenSSL 3, Docker, `kind` and `kubectl`, took 86 s with the images pulled (two of those waits are the 15 s timeout of the unreachable direct connection), and deletes its cluster, container and network.
 
 ## Develop
 
