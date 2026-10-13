@@ -52,11 +52,12 @@ module "cluster" {
 module "database" {
   source = "../../modules/database"
 
-  environment  = var.environment
-  network_id   = module.network.id
-  network_cidr = module.network.cidr_v4
-  size         = var.database_size
-  nodes        = var.database_nodes
+  environment    = var.environment
+  network_id     = module.network.id
+  network_cidr   = module.network.cidr_v4
+  size           = var.database_size
+  nodes          = var.database_nodes
+  admin_database = var.database_admin_database
 }
 
 module "ingress_firewall" {
@@ -76,6 +77,9 @@ module "platform" {
   load_balancer_firewall_id = module.ingress_firewall.firewall_id
   load_balancer_ip          = module.ingress_firewall.ip
   trusted_proxy_cidrs       = concat(local.cloudflare_cidrs, [module.network.cidr_v4])
+  environment               = var.environment
+  zone_name                 = var.zone_name
+  origin_pull_ca_file       = "${path.module}/${var.origin_pull_ca_file}"
 }
 
 module "deployer" {

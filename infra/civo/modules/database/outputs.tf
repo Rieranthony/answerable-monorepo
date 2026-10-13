@@ -37,3 +37,9 @@ output "firewall_name" {
   description = "The name of the database's firewall."
   value       = civo_vpc_firewall.this.name
 }
+
+output "admin_url" {
+  description = "The administrator's URL for the bootstrap Job (OPS_DATABASE_ADMIN_URL in the postgres-admin Secret): the private address, verify-full against the CA the answerable chart mounts at /etc/ssl/db/ca.pem."
+  value       = "postgres://${local.admin_login}@${civo_database.this.private_ipv4}:${civo_database.this.port}/${var.admin_database}?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem"
+  sensitive   = true
+}

@@ -79,6 +79,18 @@ variable "database_nodes" {
   type        = number
 }
 
+variable "database_admin_database" {
+  description = "The database named in the database_admin_url output. Civo does not document its default; postgres is the assumption until the first real bootstrap confirms Civo's default database name."
+  type        = string
+  default     = "postgres"
+}
+
+variable "origin_pull_ca_file" {
+  description = "The origin-pull CA's public certificate, relative to this directory. `bun run setup origin-pull --environment <env> --zone <zone>` writes it once the cluster exists; the full apply fails without it, targeted applies of the cluster, the database and the firewalls do not need it."
+  type        = string
+  default     = "edge-ca/ca.pem"
+}
+
 variable "zone_name" {
   description = "The environment's Cloudflare zone (D12)."
   type        = string

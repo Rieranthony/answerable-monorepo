@@ -19,6 +19,26 @@ variable "values_files" {
   }
 }
 
+variable "environment" {
+  description = "The environment, `staging` or `production`, named in the command an error message gives."
+  type        = string
+
+  validation {
+    condition     = contains(["staging", "production"], var.environment)
+    error_message = "The environment must be staging or production."
+  }
+}
+
+variable "zone_name" {
+  description = "The environment's Cloudflare zone, named in the command that writes the origin-pull CA."
+  type        = string
+}
+
+variable "origin_pull_ca_file" {
+  description = "The origin-pull CA's public certificate (PEM), as a path Terraform can open from the root module's directory: infra/civo/envs/<environment>/edge-ca/ca.pem, written by `bun run setup origin-pull`. Read only when the platform release is planned."
+  type        = string
+}
+
 variable "load_balancer_firewall_id" {
   description = "The ID of the load balancer's firewall, which Traefik's Service names so that Civo attaches it."
   type        = string

@@ -38,7 +38,8 @@ resource "civo_vpc_firewall" "this" {
 
 # Civo's managed PostgreSQL, version 17 only and in beta (portability.md § Civo). It holds answerable_id,
 # answerable_toolbox and answerable_admin, each with an owner and a runtime login that the `bootstrap` Job creates
-# (B3). The provider keeps the administrator's username and password in state; nothing here outputs them.
+# (B3). The provider keeps the administrator's username and password in state; the sensitive output admin_url carries
+# them to the bootstrap Job's postgres-admin Secret, and nothing else outputs them.
 resource "civo_database" "this" {
   name        = local.name
   engine      = "postgresql"
@@ -51,4 +52,12 @@ resource "civo_database" "this" {
   lifecycle {
     prevent_destroy = true
   }
+}
+
+locals {
+  # RFC 3986 userinfo. urlencode leaves only the unreserved characters as they are and writes a space as "+", which a
+  # URL's userinfo reads as a literal plus, so each "+" becomes %20 (a literal plus is already %2B by then).
+  admin_login = join(":", [
+    for part in [civo_database.this.username, civo_database.this.password] : replace(urlencode(part), "+", "%20")
+  ])
 }
