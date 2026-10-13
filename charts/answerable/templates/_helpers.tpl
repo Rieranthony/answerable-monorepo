@@ -114,6 +114,8 @@ capabilities:
 
 {{/* The parts of a pod spec every workload shares. */}}
 {{- define "answerable.podCommon" -}}
+# Kubernetes would otherwise set <SERVICE>_PORT=tcp://… for every Service in the namespace: TOOLBOX_PORT among them.
+enableServiceLinks: false
 securityContext:
   {{- include "answerable.podSecurityContext" . | nindent 2 }}
 {{- with .Values.hostAliases }}

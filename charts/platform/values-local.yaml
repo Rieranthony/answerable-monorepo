@@ -6,6 +6,9 @@
 ingress-nginx:
   controller:
     replicaCount: 1
+    # One node and fixed host ports: a new pod cannot start beside the old one, so the old one goes first.
+    updateStrategy:
+      type: Recreate
     hostPort:
       enabled: true
       ports:

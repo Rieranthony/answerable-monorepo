@@ -58,6 +58,8 @@ describe("charts/answerable", () => {
         for (const workload of workloads(manifests)) {
           const spec = podSpec(workload)
           expect(spec.securityContext, workload.metadata.name).toMatchObject({ runAsNonRoot: true, seccompProfile: { type: "RuntimeDefault" } })
+          // A Service named toolbox would otherwise set TOOLBOX_PORT=tcp://… in every pod, over the image's TOOLBOX_PORT.
+          expect(spec.enableServiceLinks, workload.metadata.name).toBe(false)
           expect(spec.hostNetwork ?? false).toBe(false)
           expect(spec.hostPID ?? false).toBe(false)
           expect(spec.hostIPC ?? false).toBe(false)

@@ -1,0 +1,36 @@
+# Applied on top of charts/platform/values-local.yaml once edge.yaml's certificates exist: Cloudflare's stand-in for
+# calls made inside the cluster. An nginx beside ingress-nginx's controller, in its pod, listens on 48444 with a
+# certificate for the public names, presents the origin-pull client certificate, appends the caller's address to
+# X-Forwarded-For and connects to the controller on 127.0.0.1, the one address ID trusts in the stack.
+ingress-nginx:
+  controller:
+    extraContainers:
+      - name: edge
+        image: nginx:1.30.5-alpine@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94
+        command: [nginx, -c, /edge/conf/nginx.conf, -g, "daemon off;"]
+        ports:
+          - name: edge
+            containerPort: 48444
+        resources:
+          requests: { cpu: 10m, memory: 16Mi }
+          limits: { memory: 64Mi }
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 101
+          runAsGroup: 101
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+          seccompProfile:
+            type: RuntimeDefault
+        volumeMounts:
+          - { name: edge-conf, mountPath: /edge/conf, readOnly: true }
+          - { name: edge-tls, mountPath: /edge/tls, readOnly: true }
+          - { name: edge-client, mountPath: /edge/client, readOnly: true }
+          - { name: edge-tmp, mountPath: /tmp }
+    extraVolumes:
+      - { name: edge-conf, configMap: { name: edge } }
+      - { name: edge-tls, secret: { secretName: edge-tls } }
+      - { name: edge-client, secret: { secretName: edge-origin-pull } }
+      - { name: edge-tmp, emptyDir: {} }

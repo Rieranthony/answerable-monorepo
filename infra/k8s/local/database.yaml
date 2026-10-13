@@ -1,0 +1,194 @@
+# The kind stack's PostgreSQL 17, standing in for the managed database: TLS only (plain connections are refused by
+# pg_hba), a server certificate from a certificate authority of its own (database-ca, which the services trust through
+# the postgres-ca ConfigMap and nothing else), and per database an owner login and a restricted runtime login, as the
+# ops bootstrap creates them in a cloud. The test creates the Secret postgres-bootstrap with throwaway passwords first.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: database-root
+  namespace: database
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: database-ca
+  namespace: database
+spec:
+  isCA: true
+  commonName: Answerable local database CA
+  secretName: database-ca
+  duration: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    kind: Issuer
+    name: database-root
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: database-ca
+  namespace: database
+spec:
+  ca:
+    secretName: database-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: postgres-tls
+  namespace: database
+spec:
+  secretName: postgres-tls
+  commonName: postgres.database.svc.cluster.local
+  dnsNames:
+    - postgres.database.svc.cluster.local
+    - postgres.database.svc
+    - postgres.database
+  usages: [server auth, digital signature, key encipherment]
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    kind: Issuer
+    name: database-ca
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres
+  namespace: database
+data:
+  pg_hba.conf: |
+    # The init scripts connect over the socket; everything else must use TLS.
+    local     all  all                trust
+    hostssl   all  all  0.0.0.0/0     scram-sha-256
+    hostssl   all  all  ::/0          scram-sha-256
+    hostnossl all  all  0.0.0.0/0     reject
+    hostnossl all  all  ::/0          reject
+  logins.sh: |
+    #!/bin/sh
+    # Runs once, when the data directory is created: the three databases, each owned by its own login, and the runtime
+    # logins the services use. Runtime logins get their privileges from the migrations (configureRuntimeRole).
+    set -eu
+    psql -v ON_ERROR_STOP=1 --username postgres --dbname postgres \
+      -v id_owner="$ID_OWNER_PASSWORD" -v id_runtime="$ID_RUNTIME_PASSWORD" \
+      -v toolbox_owner="$TOOLBOX_OWNER_PASSWORD" -v toolbox_runtime="$TOOLBOX_RUNTIME_PASSWORD" \
+      -v admin_owner="$ADMIN_OWNER_PASSWORD" -v admin_runtime="$ADMIN_RUNTIME_PASSWORD" <<'SQL'
+    CREATE ROLE answerable_id_owner LOGIN PASSWORD :'id_owner';
+    CREATE ROLE answerable_toolbox_owner LOGIN PASSWORD :'toolbox_owner';
+    CREATE ROLE answerable_admin_owner LOGIN PASSWORD :'admin_owner';
+    CREATE ROLE answerable_id_runtime LOGIN PASSWORD :'id_runtime' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+    CREATE ROLE answerable_toolbox_runtime LOGIN PASSWORD :'toolbox_runtime' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+    CREATE ROLE answerable_admin_runtime LOGIN PASSWORD :'admin_runtime' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+    CREATE DATABASE answerable_id OWNER answerable_id_owner;
+    CREATE DATABASE answerable_toolbox OWNER answerable_toolbox_owner;
+    CREATE DATABASE answerable_admin OWNER answerable_admin_owner;
+    SQL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: database
+spec:
+  selector:
+    app.kubernetes.io/name: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: database
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:17.11-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+          args:
+            - -c
+            - ssl=on
+            - -c
+            - ssl_cert_file=/tls/tls.crt
+            - -c
+            - ssl_key_file=/tls/tls.key
+            - -c
+            - ssl_min_protocol_version=TLSv1.2
+            - -c
+            - hba_file=/config/pg_hba.conf
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-bootstrap
+                  key: SUPERUSER_PASSWORD
+          envFrom:
+            - secretRef:
+                name: postgres-bootstrap
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, postgres, -d, postgres]
+            periodSeconds: 2
+            failureThreshold: 30
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 1Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+            - { name: run, mountPath: /var/run/postgresql }
+            - { name: tls, mountPath: /tls, readOnly: true }
+            - { name: config, mountPath: /config, readOnly: true }
+            - { name: init, mountPath: /docker-entrypoint-initdb.d, readOnly: true }
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
+        # Postgres accepts a key owned by root only when no more than its group can read it: 0440, the group being fsGroup 70.
+        - name: tls
+          secret:
+            secretName: postgres-tls
+            defaultMode: 0440
+        - name: config
+          configMap:
+            name: postgres
+            items:
+              - { key: pg_hba.conf, path: pg_hba.conf }
+        - name: init
+          configMap:
+            name: postgres
+            defaultMode: 0555
+            items:
+              - { key: logins.sh, path: logins.sh }
