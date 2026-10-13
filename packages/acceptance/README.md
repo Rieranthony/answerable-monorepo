@@ -8,18 +8,18 @@ bun install
 bun run mcp:test:e2e
 ```
 
-Requires Bun 1.3.1 and Docker Compose. It starts PostgreSQL in a Compose project on port `47532` and ID on `47600`, runs every `*.journeys.test.ts` in `src/journeys` one after another, and removes both afterwards, including after Ctrl-C. The kit's own unit tests (`cleanup.test.ts`, `id.test.ts`) run in the same command. The kit is test support: no coverage gate.
+Requires Bun 1.3.1 and Docker Compose. It starts PostgreSQL 17 in a Compose project on port `47532` and ID on `47600`, runs every `*.journeys.test.ts` in `src/journeys` one after another, and removes both afterwards, including after Ctrl-C. The kit's own unit tests (`cleanup.test.ts`, `id.test.ts`) run in the same command. The kit is test support: no coverage gate.
 
 | File | Job |
 | --- | --- |
-| `src/id.ts` | `startId`: Compose, the ID fixture (`apps/id/scripts/mcp-e2e-fixture.ts`), which starts the company directories of the plan (`tenants`, `platform`, `spares`); the tenants' organisations and every organisation's domain and single sign-on; the manifest, `stop` |
+| `src/id.ts` | `startId`: Compose, the ID fixture (`apps/id/scripts/mcp-e2e-fixture.ts`), which starts the company directories of the plan (`tenants`, `platform`, `spares`); the tenants' organisations and every organisation's domain and single sign-on; the manifest, `stop`. `createDatabase(name)`: a database and its runtime login `<name>_runtime` with a generated password, as `{ owner, runtime, role }` |
 | `src/admin.ts` | `createAdmin` and the provisioning functions over ID's admin API, including `registerMachine`, `addDomain` and `setSsoProvider` |
 | `src/oauth.ts` | The SDK's OAuth client provider in memory, which `signIn` fills, and `refreshRefused` |
 | `src/browser.ts` | `launchBrowser`, `signIn`, `signInRefused` and `verifySignIn`: the SDK challenge and ID's pages in Chromium |
 | `src/mcp.ts` | `serve`, `serveCallback`, `connect`, `tool`, `refusal` and the journeys' `intentSchema` |
 | `src/cleanup.ts` | What `stop` and Ctrl-C run, and a collection of garbage after them |
-| `src/toolbox.ts` | `startToolboxStack`: the Toolbox registered in ID with its host clients, its machine client and a staff client, its database and its poller; the Toolbox journeys and the host lane start from it |
-| `src/admin-mcp.ts` | `startAdminStack`: the admin MCP and the Toolbox registered in ID as the admin MCP's setup page shows, with a database each and the Toolbox's poller; the admin journeys and the admin lane start from it |
+| `src/toolbox.ts` | `startToolboxStack`: the Toolbox registered in ID with its host clients, its machine client and a staff client, its database (migrated as the owner, served as the runtime login) and its poller; the Toolbox journeys and the host lane start from it |
+| `src/admin-mcp.ts` | `startAdminStack`: the admin MCP and the Toolbox registered in ID as the admin MCP's setup page shows, with a database each (migrated as the owner, served as the runtime login) and the Toolbox's poller; the admin journeys and the admin lane start from it |
 | `src/journeys/e2e.journeys.test.ts` | The e2e MCP: sign-in, tokens, J4 agent-class mutation, isolation, refresh, revocation |
 | `src/journeys/admin.journeys.test.ts` | The admin MCP on port `47606` and the Toolbox: A1 roles without re-authorisation (`staff_grant` and `staff_revoke` against real ID), A2 onboarding through the tools, A3 the Toolbox outcome, A8 tool-level access (a grant string naming one capability, to a group and to a member), A4 refusals, A5 idempotency, A6 freshness (Verify sign-in) and A7 evidence |
 | `src/journeys/toolbox.journeys.test.ts` | The Toolbox on port `47604`: J1 direct list, J2 partial and denied, J6 human class, J7 meta projection, J3 grant change and `tools/list_changed`, J10 evidence, and the admin API (enabling organisations, the catalogue) |

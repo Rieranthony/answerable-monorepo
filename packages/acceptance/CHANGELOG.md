@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0
+
+The Toolbox and the admin MCP serve as restricted runtime logins in the journeys and the lanes, as they do from their entry points. Breaking: `createDatabase` returns connections and a role name instead of one connection.
+
+- `createDatabase(name)` also creates the login `<name>_runtime`, with a password generated at run time and no privileges, and returns `{ owner, runtime, role }`: a connection as the schema owner, one as the login, and the login's name.
+- `startToolboxStack` and `startAdminStack` migrate each database as the owner, provision its login with the server's runtime grants (`configureRuntimeRole`), refuse it unless `assertRuntimeRole` passes, and start the server on it. The databases they return (`db`, `database`, `toolboxDatabase`) are the owner's connections, for a journey to read what a server wrote.
+- The Compose PostgreSQL is `postgres:17-alpine`.
+
 ## 0.5.2
 
 - The admin journeys prove tool-level access against real ID (A8, after A3): `access_grant` of a grant string that names one capability, `e2e/records.list`, to a group the person joins with `groups_addmember`; `e2e/records.create` to the member alone; then `groups_dropmember`. The person's same Toolbox token lists each change within the cache window, and a call to a tool outside the grant is the unknown-tool error with a denial in the Toolbox's evidence. A3's `access_enable` and `organisations_disable` moved to the end of A8: a narrower grant shows only while the organisation-wide one is disabled.

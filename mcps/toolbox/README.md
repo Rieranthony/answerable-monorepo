@@ -7,14 +7,16 @@ bun run --filter @answerable/mcp-toolbox test
 bun run mcp:check @answerable/mcp-toolbox
 ```
 
-The suite needs the development PostgreSQL on port 47432 (`bun run env:up`); `test` resets `answerable_toolbox_test` and applies the migrations first. `bunfig.toml` gates 100% line and function coverage over `src`.
+The suite needs the development PostgreSQL 17 on port 47432 (`bun run env:up`); `test` resets `answerable_toolbox_test`, applies the migrations and provisions the runtime role first. The tests that serve go through a fresh login with the Toolbox's runtime grants (`serving()` in `src/test/database.ts`), so the suite proves those grants are enough. `bunfig.toml` gates 100% line and function coverage over `src`.
 
 ## Run it
 
 ```sh
-bun --env-file=.env run --filter @answerable/mcp-toolbox db:migrate   # TOOLBOX_DATABASE_URL from the root .env
-bun run toolbox:dev                                    # builds the e2e view, serves http://localhost:47400/mcp
+bun --env-file=.env run --filter @answerable/mcp-toolbox db:migrate   # as the owner, TOOLBOX_DATABASE_MIGRATION_URL; provisions the runtime role
+bun run toolbox:dev                                    # as the runtime login, TOOLBOX_DATABASE_URL; serves http://localhost:47400/mcp
 ```
+
+The Toolbox serves as a restricted login and refuses to start as the owner, or as any login that could change the evidence; `db:migrate` grants `TOOLBOX_DATABASE_RUNTIME_ROLE` (`answerable_toolbox_runtime`) exactly `runtimeGrants` from `src/db/migrate.ts`. A new table needs its grant there. The local login comes from `infra/postgres/init/005-create-mcp-runtime-roles.sql`: [Database roles](../../apps/web/content/docs/toolbox/index.mdx#database-roles).
 
 Register the Toolbox in ID, then enable an organisation with one call to the admin API: [Administer the Toolbox](../../apps/web/content/docs/toolbox/admin.mdx). To mount another provider: [Add tools to the Toolbox](../../apps/web/content/docs/toolbox/add-tools.mdx). The variables are listed in `default.env`. Changes: [CHANGELOG](CHANGELOG.md).
 
@@ -34,7 +36,8 @@ It builds on two shared packages: `@answerable/id-admin` (`createIdAdmin`, the T
 | `src/search.ts` | Postgres full-text ranking over `capabilities.search` |
 | `src/spans.ts` | One server span per call; OTLP/HTTP export when `OTEL_EXPORTER_OTLP_ENDPOINT` is set |
 | `src/environment.ts` | `readToolboxEnvironment` |
-| `src/db/migrate.ts`, `migrations/` | `0001_initial.sql`, the catalogue and the host clients; `migrate(db)` applies the migrations of `@answerable/mcp-postgres` first, then the Toolbox's, recorded as `mcp-postgres/<file>` and `toolbox/<file>` |
-| `src/server.ts` | The entry point; `src/server.test.ts` starts it against the test database |
+| `src/db/migrate.ts`, `migrations/` | `0001_initial.sql`, the catalogue and the host clients; `migrate(db)` applies the migrations of `@answerable/mcp-postgres` first, then the Toolbox's, recorded as `mcp-postgres/<file>` and `toolbox/<file>`; `runtimeGrants`, the runtime role's grants on every table |
+| `scripts/migrate.ts` | `db:migrate` and `db:test:migrate`: the migrations, then `configureRuntimeRole` with `runtimeGrants` |
+| `src/server.ts` | The entry point: `assertRuntimeRole` before the boot's ingest; `src/server.test.ts` starts it against the test database, as a runtime login and as the owner, which it refuses |
 
 `manifest.json` is the `toolbox` provider's contract; `UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-toolbox test` rewrites it. The journeys against real ID are `packages/acceptance/src/journeys/toolbox.journeys.test.ts`, run by `bun run mcp:test:e2e`. The acceptance imports this package through its `exports` (`./admin`, `./grants`, `./migrate`, `./poller`, `./spans`, `./toolbox`).

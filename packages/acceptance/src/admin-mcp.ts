@@ -5,9 +5,9 @@ import { createAdminMcp } from "@answerable/mcp-admin/admin"
 import { readPlatform } from "@answerable/mcp-admin/platform"
 import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
 import { createRecordStore } from "@answerable/mcp-e2e/records"
-import { migrate, migrations } from "@answerable/mcp-postgres"
+import { assertRuntimeRole, configureRuntimeRole, migrate, migrations, runtimeGrants } from "@answerable/mcp-postgres"
 import { toolboxAdminResource } from "@answerable/mcp-toolbox/admin"
-import { migrate as migrateToolbox } from "@answerable/mcp-toolbox/migrate"
+import { migrate as migrateToolbox, runtimeGrants as toolboxGrants } from "@answerable/mcp-toolbox/migrate"
 import { startGrantsPoller } from "@answerable/mcp-toolbox/poller"
 import { createMemoryTracer } from "@answerable/mcp-toolbox/spans"
 import { createToolbox } from "@answerable/mcp-toolbox/toolbox"
@@ -27,7 +27,8 @@ const staffRoles = ["team", "admin", "owner"] as const
 /**
  * Register the admin MCP and the Toolbox in a started ID, in the order the setup page shows them, and start both servers' machinery: the
  * admin MCP and the Toolbox each get a database on the acceptance's PostgreSQL (`answerable_admin_acceptance`, `answerable_toolbox_acceptance`),
- * and the Toolbox gets its grants poller. The caller serves the two handlers on ports 47606 and 47604.
+ * migrated as the owner, and each serves as its runtime login, as `db:migrate` and the entry points do; the Toolbox gets its grants poller.
+ * The caller serves the two handlers on ports 47606 and 47604.
  *
  * Registered in ID: the Toolbox's resource and its admin resource, `toolboxHost` as its host client and the Toolbox's machine client; the admin MCP's
  * resource (900-second tokens, allowing `admin` and the three role strings), `adminHost` as its host client, the platform organisation's capabilities and
@@ -67,26 +68,30 @@ export async function startAdminStack(id: Id, { adminHost, toolboxHost, fetch }:
   const ids = createIdAdmin({ issuer: manifest.idOrigin, adminResource: manifest.adminResource, ...machine, fetch })
   const learned = await readPlatform(ids)
   const adminDb = await createDatabase("answerable_admin_acceptance")
-  await migrate(adminDb, [migrations])
+  await migrate(adminDb.owner, [migrations])
+  await configureRuntimeRole(adminDb.owner, adminDb.role, runtimeGrants)
+  await assertRuntimeRole(adminDb.runtime)
 
   step("Starting the Toolbox with the e2e provider")
   const toolboxDb = await createDatabase("answerable_toolbox_acceptance")
-  await migrateToolbox(toolboxDb)
+  await migrateToolbox(toolboxDb.owner)
+  await configureRuntimeRole(toolboxDb.owner, toolboxDb.role, toolboxGrants)
+  await assertRuntimeRole(toolboxDb.runtime)
   const hubIds = createIdAdmin({ issuer: manifest.idOrigin, adminResource: manifest.adminResource, ...hub })
   const providers = [createE2eProvider({ records: createRecordStore(), viewHtml: "<!doctype html><title>Records</title>" })]
-  const toolbox = await createToolbox({ providers, auth: { issuer: manifest.idOrigin, resource: toolboxResource }, db: toolboxDb, id: hubIds, spans: createMemoryTracer().tracer })
+  const toolbox = await createToolbox({ providers, auth: { issuer: manifest.idOrigin, resource: toolboxResource }, db: toolboxDb.runtime, id: hubIds, spans: createMemoryTracer().tracer })
   const poller = startGrantsPoller({ id: hubIds, grants: toolbox.grants })
   onCleanup(() => poller.stop())
 
   return {
     /** The admin MCP, for a critical operation to need a company sign-in at most `freshSeconds` old (by default 1,800). Each call makes a server on the same database and the same machine client. */
-    adminMcp: (freshSeconds?: number) => createAdminMcp({ auth: { issuer: manifest.idOrigin, resource: adminResource }, db: adminDb, id: ids, platform: learned, freshSeconds, toolbox: { resource: toolboxAdmin } }),
+    adminMcp: (freshSeconds?: number) => createAdminMcp({ auth: { issuer: manifest.idOrigin, resource: adminResource }, db: adminDb.runtime, id: ids, platform: learned, freshSeconds, toolbox: { resource: toolboxAdmin } }),
     toolbox,
     /** Each role's group in the platform organisation. */
     groups,
-    /** The admin MCP's database: its intents and its evidence. */
-    database: adminDb,
-    /** The Toolbox's database: its catalogue, intents and evidence. */
-    toolboxDatabase: toolboxDb,
+    /** The admin MCP's database as its owner, to read the intents and evidence the server wrote as its runtime login. */
+    database: adminDb.owner,
+    /** The Toolbox's database as its owner, to read the catalogue, intents and evidence the Toolbox wrote as its runtime login. */
+    toolboxDatabase: toolboxDb.owner,
   }
 }

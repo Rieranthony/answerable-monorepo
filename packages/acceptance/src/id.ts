@@ -112,13 +112,26 @@ export async function startId({
  */
 export type Id = Awaited<ReturnType<typeof startId>>
 
-/** Create the database `name` on the PostgreSQL `startId` started (port 47532), and connect to it; the connection closes when the kit stops. */
+/**
+ * Create the database `name` on the PostgreSQL `startId` started (port 47532), and its runtime login `<name>_runtime`, with a password generated
+ * here and no privileges: as deployment tooling makes one, for the server's migration to grant. Returns `owner`, a connection as the schema owner, for
+ * the migration and for a journey to read what a server wrote; `runtime`, a connection as the login, for the server; and `role`, the login's name.
+ * Both connections close when the kit stops.
+ */
 export async function createDatabase(name: string) {
   const postgres = "postgres://answerable:answerable@127.0.0.1:47532"
+  const role = `${name}_runtime`
+  const password = crypto.randomUUID().replaceAll("-", "")
   const server = new SQL({ url: `${postgres}/answerable_id_test`, max: 1 })
-  await server.unsafe(`create database ${name}`)
-  await server.close()
-  const db = new SQL({ url: `${postgres}/${name}`, max: 4 })
-  onCleanup(() => db.close())
-  return db
+  try {
+    await server.unsafe(`create database ${name}`)
+    // CREATE ROLE takes no parameters; the name is the caller's and the password is generated here.
+    await server.unsafe(`create role ${role} login password '${password}' nosuperuser nocreatedb nocreaterole noinherit noreplication nobypassrls`)
+  } finally {
+    await server.close()
+  }
+  const owner = new SQL({ url: `${postgres}/${name}`, max: 4 })
+  const runtime = new SQL({ url: `postgres://${role}:${password}@127.0.0.1:47532/${name}`, max: 4 })
+  onCleanup(() => Promise.all([owner.close(), runtime.close()]))
+  return { owner, runtime, role }
 }

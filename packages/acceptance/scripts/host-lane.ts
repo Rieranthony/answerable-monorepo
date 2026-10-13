@@ -1,5 +1,6 @@
 // The host lane: real Answerable ID and the Toolbox, kept up for two real hosts, LibreChat in a container and Claude Code.
 // Not a test and not part of `mcp:test:e2e`. Run it from the repository root: `bun packages/acceptance/scripts/host-lane.ts`.
+// startToolboxStack migrates the Toolbox's database as the owner and serves the Toolbox as its runtime login, as the journeys do.
 import { z } from "zod"
 import { cleanup, onCleanup } from "../src/cleanup"
 import { serve, startId, step } from "../src/index"

@@ -101,7 +101,7 @@ Domain-specific codes are allowed as `<PROVIDER>_<CODE>` with a retry policy. A 
 
 - **R34** Every call produces one span and, for reads, one evidence row (`capability.completed` or `capability.denied`); every mutation transition produces an evidence row; refusals by limits are evidence. Inputs and results are not recorded by default; secrets never. [hub]
 - **R35** Every execution has an execution id that reaches upstream systems as a correlation header where they accept one; every intent id survives into the receipt. [SDK: `executionId`, the envelope's `request_id` and the receipt's `intent_id`; the correlation header to upstreams: **Not yet**]
-- **R36** Evidence is append-only, chained per organisation and verifiable; logs are not evidence. [hub]
+- **R36** Evidence is append-only, chained per organisation and verifiable; logs are not evidence. A server with a database migrates as the schema owner and serves as a restricted runtime login that cannot alter the evidence triggers, and refuses to start as anything more. [hub; `@answerable/mcp-postgres`: `configureRuntimeRole` after every migration, `assertRuntimeRole` before listening]
 
 ## 7. Versioning and deprecation
 

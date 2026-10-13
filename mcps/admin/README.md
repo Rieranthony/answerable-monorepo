@@ -7,16 +7,16 @@ bun run --filter @answerable/mcp-admin test
 bun run mcp:check @answerable/mcp-admin
 ```
 
-The suite needs the development PostgreSQL on port 47432; `test` resets `answerable_admin_test` and applies the migrations first. `bunfig.toml` gates 100% line and function coverage over `src`.
+The suite needs the development PostgreSQL 17 on port 47432; `test` resets `answerable_admin_test`, applies the migrations and provisions the runtime role first. The tests that serve go through a fresh login with the runtime grants (`serving()` in `src/test/database.ts`), so the suite proves those grants are enough. `bunfig.toml` gates 100% line and function coverage over `src`.
 
 ## Run it
 
 ```sh
-bun --env-file=.env run --filter @answerable/mcp-admin db:migrate   # ADMIN_DATABASE_URL from the root .env
-bun run admin:dev                                                   # serves http://localhost:47520/mcp
+bun --env-file=.env run --filter @answerable/mcp-admin db:migrate   # as the owner, ADMIN_DATABASE_MIGRATION_URL; provisions the runtime role
+bun run admin:dev                                                   # as the runtime login, ADMIN_DATABASE_URL; serves http://localhost:47520/mcp
 ```
 
-It needs its registrations in ID and the `ADMIN_*` variables, which `default.env` lists: [Run it locally](../../apps/web/content/docs/admin/index.mdx#run-it-locally).
+It needs its registrations in ID and the `ADMIN_*` variables, which `default.env` lists: [Run it locally](../../apps/web/content/docs/admin/index.mdx#run-it-locally). It serves as a restricted login and refuses to start as the owner, or as any login that could change the evidence; `db:migrate` grants `ADMIN_DATABASE_RUNTIME_ROLE` (`answerable_admin_runtime`) `@answerable/mcp-postgres`'s `runtimeGrants`. The local login comes from `infra/postgres/init/005-create-mcp-runtime-roles.sql`: [Database roles](../../apps/web/content/docs/admin/index.mdx#database-roles).
 
 | File | Job |
 | --- | --- |
@@ -32,8 +32,8 @@ It needs its registrations in ID and the `ADMIN_*` variables, which `default.env
 | `src/fresh.ts` | `requireFresh`: the critical operations' rule on the token's `upstream_auth_time`, and `ADMIN_REAUTHENTICATION_REQUIRED` |
 | `src/platform.ts` | `readPlatform`: the platform organisation's id from ID's `GET /me`, refusing a machine client of any other organisation |
 | `src/environment.ts` | `readAdminEnvironment` |
-| `src/server.ts` | The entry point; `src/server.test.ts` starts it against a fake ID over HTTP |
-| `scripts/migrate.ts` | `db:migrate` and `db:test:migrate`: the migrations of `@answerable/mcp-postgres`, its only tables |
+| `src/server.ts` | The entry point: `assertRuntimeRole` before it listens; `src/server.test.ts` starts it against a fake ID over HTTP, as a runtime login and as the owner, which it refuses |
+| `scripts/migrate.ts` | `db:migrate` and `db:test:migrate`: the migrations of `@answerable/mcp-postgres`, its only tables, then `configureRuntimeRole` with the package's `runtimeGrants` |
 
 The package exports `./admin` (`createAdminMcp`) and `./platform` (`readPlatform`): the acceptance runs the server in its journeys and its lane, as [Set up the admin MCP](../../apps/web/content/docs/admin/setup.mdx) shows.
 
