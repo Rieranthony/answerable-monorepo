@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test"
+import { afterAll, afterEach, expect, spyOn, test } from "bun:test"
 import { SQL } from "bun"
 import { createIdAdmin } from "@answerable/id-admin"
 import { createFakeId } from "@answerable/id-admin/testing"
@@ -7,16 +7,15 @@ import { errorOf } from "@answerable/mcp/testing"
 import { createEvidence } from "@answerable/mcp-postgres"
 import { z } from "zod"
 import { writeCatalogue } from "./catalogue"
-import { migrate } from "./db/migrate"
 import { createMemoryTracer } from "./spans"
-import { database } from "./test/database"
+import { serving } from "./test/database"
 import { createHub, e2e, names, resource, view, type Hub } from "./test/hub"
 import { createToolbox } from "./toolbox"
 
-const db = database.connect()
+const login = await serving()
+const { db } = login
 const evidence = createEvidence(db)
-beforeAll(() => migrate(db))
-afterAll(() => db.close())
+afterAll(() => login.drop())
 const hubs: Hub[] = []
 afterEach(async () => { await Promise.all(hubs.splice(0).map(hub => hub.mcp.close())) })
 
@@ -213,7 +212,7 @@ test("when ID cannot say what a member may use, a call answers UPSTREAM_UNAVAILA
 })
 
 test("health answers ok only while the database answers", async () => {
-  const own = new SQL({ url: database.url, max: 1 })
+  const own = new SQL({ url: login.url, max: 1 })
   const toolbox = await createToolbox({ providers: [], auth: { issuer: "https://id.test", resource }, db: own, id: createIdAdmin(createFakeId().config), spans: createMemoryTracer().tracer })
   expect(await (await toolbox.fetch(new Request("https://mcp.test/health"))).json()).toEqual({ status: "ok" })
   await own.close()

@@ -2,11 +2,11 @@ import { afterAll, beforeAll, expect, test } from "bun:test"
 import { defineProvider, defineTool } from "@answerable/mcp"
 import { z } from "zod"
 import { ingest } from "./catalogue"
-import { migrate } from "./db/migrate"
 import { search } from "./search"
-import { database } from "./test/database"
+import { serving } from "./test/database"
 
-const db = database.connect()
+const login = await serving()
+const { db } = login
 const id = `s${crypto.randomUUID().slice(0, 8)}`
 const tool = (name: string, description: string, fields: { title?: string; input?: z.ZodObject } = {}) => defineTool({
   name, description, title: fields.title, input: fields.input ?? z.object({}), output: z.object({}), async execute() { return {} },
@@ -21,11 +21,8 @@ const provider = (version: string) => defineProvider({ id, version, tools: [
 const served = provider("2026-09-29")
 const everything = served.tools.map(({ identity, version }) => ({ identity, version }))
 const find = (query: string, allowed = everything, page = { limit: 10, offset: 0 }) => search(db, query, allowed, page)
-beforeAll(async () => {
-  await migrate(db)
-  await ingest(db, [provider("2026-09-01"), served])
-})
-afterAll(() => db.close())
+beforeAll(() => ingest(db, [provider("2026-09-01"), served]))
+afterAll(() => login.drop())
 
 test("a word in an identity ranks above the same word in a description", async () => {
   expect(await find("invoices")).toEqual([`${id}/invoices.list`, `${id}/payments.list`])

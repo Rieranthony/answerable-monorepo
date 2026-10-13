@@ -1,14 +1,13 @@
-import { afterAll, beforeAll, expect, spyOn, test } from "bun:test"
+import { afterAll, expect, spyOn, test } from "bun:test"
 import { SQL } from "bun"
 import { createEvidence } from "@answerable/mcp-postgres"
 import { toolboxAdminResource } from "./admin"
-import { migrate } from "./db/migrate"
-import { database } from "./test/database"
+import { serving } from "./test/database"
 import { adminResource, createHub, providerId, records, resource } from "./test/hub"
 
-const db = database.connect()
-beforeAll(() => migrate(db))
-afterAll(() => db.close())
+const login = await serving()
+const { db } = login
+afterAll(() => login.drop())
 
 test("the admin resource is the Toolbox's origin and /admin", () => {
   expect(toolboxAdminResource(resource)).toBe(adminResource)
@@ -136,7 +135,7 @@ test("GET evidence/verify runs the organisation's chain check", async () => {
 })
 
 test("a failure the admin API did not expect answers 500 without its cause, and is logged", async () => {
-  const own = new SQL({ url: database.url, max: 1 })
+  const own = new SQL({ url: login.url, max: 1 })
   const { admin: call } = await createHub(own, [records(providerId())])
   await own.close()
   const log = spyOn(console, "error").mockImplementation(() => {})
