@@ -1,0 +1,107 @@
+# The cluster's platform layer: the two namespaces, and the platform chart (ingress-nginx, cert-manager, the Grafana
+# agent) installed with the values only Terraform knows: the load balancer's firewall, its reserved address and the
+# ranges ingress-nginx trusts for X-Forwarded-For.
+mock_provider "kubernetes" {}
+mock_provider "helm" {}
+
+variables {
+  chart_path                = "../../../../charts/platform"
+  load_balancer_firewall_id = "44444444-4444-4444-8444-444444444444"
+  load_balancer_ip          = "192.0.2.10"
+  proxy_real_ip_cidrs       = ["173.245.48.0/20", "2400:cb00::/32", "10.10.0.0/24"]
+}
+
+run "creates_the_namespaces_with_pod_security" {
+  command = plan
+
+  assert {
+    condition     = kubernetes_namespace_v1.answerable.metadata[0].name == "answerable" && kubernetes_namespace_v1.platform.metadata[0].name == "platform"
+    error_message = "The namespaces must be answerable (the application) and platform (the shared controllers)."
+  }
+
+  assert {
+    condition     = kubernetes_namespace_v1.answerable.metadata[0].labels["pod-security.kubernetes.io/enforce"] == "restricted"
+    error_message = "The application namespace must enforce the restricted Pod Security Standard."
+  }
+
+  assert {
+    condition     = kubernetes_namespace_v1.platform.metadata[0].labels["pod-security.kubernetes.io/warn"] == "restricted"
+    error_message = "The platform namespace must at least warn on pods that fall short of the restricted standard."
+  }
+}
+
+run "installs_the_platform_chart_with_the_load_balancer_wiring" {
+  command = plan
+
+  assert {
+    condition     = helm_release.platform.name == "platform" && helm_release.platform.namespace == "platform"
+    error_message = "The platform chart must be the release platform in the namespace platform."
+  }
+
+  assert {
+    condition     = helm_release.platform.chart == "../../../../charts/platform"
+    error_message = "The release must install the repository's own platform chart."
+  }
+
+  assert {
+    condition     = helm_release.platform.atomic && helm_release.platform.dependency_update
+    error_message = "The release must roll back a failed upgrade and fetch the chart's pinned dependencies."
+  }
+
+  assert {
+    condition = (
+      yamldecode(helm_release.platform.values[length(helm_release.platform.values) - 1])["ingress-nginx"]["controller"]["service"]["annotations"]["kubernetes.civo.com/firewall-id"]
+      == "44444444-4444-4444-8444-444444444444"
+    )
+    error_message = "The ingress Service must name the load balancer firewall, or Civo gives the load balancer an open default one."
+  }
+
+  assert {
+    condition = (
+      yamldecode(helm_release.platform.values[length(helm_release.platform.values) - 1])["ingress-nginx"]["controller"]["service"]["annotations"]["kubernetes.civo.com/ipv4-address"]
+      == "192.0.2.10"
+    )
+    error_message = "The ingress Service must claim the reserved address that the DNS records point at."
+  }
+
+  assert {
+    condition = (
+      yamldecode(helm_release.platform.values[length(helm_release.platform.values) - 1])["ingress-nginx"]["controller"]["config"]["proxy-real-ip-cidr"]
+      == "173.245.48.0/20,2400:cb00::/32,10.10.0.0/24"
+    )
+    error_message = "ingress-nginx must trust X-Forwarded-For only from the ranges it was given."
+  }
+}
+
+run "puts_terraform_values_after_the_files" {
+  command = plan
+
+  variables {
+    values = ["ingress-nginx:\n  controller:\n    replicaCount: 2\n"]
+  }
+
+  assert {
+    condition     = length(helm_release.platform.values) == 2 && helm_release.platform.values[0] == "ingress-nginx:\n  controller:\n    replicaCount: 2\n"
+    error_message = "Values given to the module come first, so the values Terraform owns override them."
+  }
+}
+
+run "refuses_a_load_balancer_address_that_is_not_ipv4" {
+  command = plan
+
+  variables {
+    load_balancer_ip = "lb.example"
+  }
+
+  expect_failures = [var.load_balancer_ip]
+}
+
+run "refuses_trusting_everyone" {
+  command = plan
+
+  variables {
+    proxy_real_ip_cidrs = ["0.0.0.0/0"]
+  }
+
+  expect_failures = [var.proxy_real_ip_cidrs]
+}
