@@ -15,6 +15,9 @@ export const RELEASE = "answerable"
 /** The application chart, relative to the repository root. */
 export const CHART = "charts/answerable"
 
+/** Where the four images live; each is `<registry>/<image>:sha-<commit>`, a manifest list for amd64 and arm64. */
+export const REGISTRY = "ghcr.io/rieranthony/answerable"
+
 /** The three public hostnames of one environment. */
 export type Hosts = { id: string; toolbox: string; admin: string }
 

@@ -8,6 +8,8 @@ import { createFakeRunner, createRoot, type RecordedCall } from "./testing"
 import type { RunResult } from "./run"
 
 const TAG = `sha-${"a".repeat(40)}`
+const DIGEST = `sha256:${"1".repeat(64)}`
+const PAIRS = ["id", "toolbox", "admin-mcp", "ops"].flatMap((name) => ["--image-digest", `${name}=${DIGEST}`])
 const CERTIFICATE = "-----BEGIN CERTIFICATE-----\nMIIBdemo\n-----END CERTIFICATE-----"
 const CLUSTER_ENV = {
   KUBE_SERVER: "https://cluster.example:6443",
@@ -29,7 +31,8 @@ async function fixture(
     "infra/civo/envs/staging/secrets.enc.yaml": "sops: {}\n",
   })
   cleanups.push(root.remove)
-  const runner = createFakeRunner(reply)
+  // The registry answers the same digest for every image.
+  const runner = createFakeRunner((call) => (call.argv[0] === "docker" ? { stdout: `${DIGEST}\n` } : reply(call)))
   const out: string[] = []
   const err: string[] = []
   const deps: CliDeps = {
@@ -51,7 +54,8 @@ describe("deploy", () => {
     const f = await fixture((call) => (call.argv[0] === "sops" ? { stdout: "kind: Secret\n" } : undefined))
     const code = await main(["deploy", "--environment", "staging", "--image-tag", TAG], f.deps)
     expect(code).toBe(0)
-    expect(f.runner.commands()).toHaveLength(3)
+    expect(f.runner.commands().filter((command) => command.startsWith("docker buildx imagetools inspect"))).toHaveLength(4)
+    expect(f.runner.commands()).toHaveLength(7)
     expect(f.err()).toContain(`Deployed ${TAG} to staging.`)
     expect(f.out()).toBe("")
   })
@@ -60,7 +64,7 @@ describe("deploy", () => {
     const f = await fixture()
     const code = await main(
       [
-        "deploy", "--environment", "staging", "--image-tag", TAG, "--bootstrap", "--timeout", "15m",
+        "deploy", "--environment", "staging", "--image-tag", TAG, ...PAIRS, "--bootstrap", "--timeout", "15m",
         "--values", "infra/civo/envs/staging/secrets.enc.yaml", "--secrets", "charts/answerable/values-civo-staging.yaml",
       ],
       f.deps,
@@ -69,6 +73,8 @@ describe("deploy", () => {
     expect(f.runner.commands()[0]).toBe("sops --decrypt charts/answerable/values-civo-staging.yaml")
     expect(f.runner.commands()[2]).toContain("--wait-for-jobs --timeout 15m -f infra/civo/envs/staging/secrets.enc.yaml")
     expect(f.runner.commands()[2]).toEndWith("--set ops.bootstrap=true")
+    expect(f.runner.commands()[2]).toContain(`--set images.admin-mcp.digest=${DIGEST}`)
+    expect(f.runner.commands()).toHaveLength(3)
   })
 
   test("exits 1 and names the failing step", async () => {
@@ -86,6 +92,8 @@ describe("deploy", () => {
       ["deploy", "--environment", "staging", "--image-tag", "latest"],
       ["deploy", "--environment", "staging", "--image-tag", TAG, "--force"],
       ["deploy", "extra", "--environment", "staging", "--image-tag", TAG],
+      ["deploy", "--environment", "staging", "--image-tag", TAG, "--image-digest", `id=${DIGEST}`],
+      ["deploy", "--environment", "staging", "--image-tag", TAG, "--image-digest", "id=sha256:abc"],
     ]) {
       const f = await fixture()
       expect(await main(args, f.deps)).toBe(2)
@@ -107,8 +115,23 @@ describe("run-job", () => {
     const f = await fixture()
     const code = await main(["run-job", "bootstrap", "--environment", "staging", "--image-tag", TAG], f.deps)
     expect(code).toBe(0)
-    expect(f.runner.commands()).toHaveLength(1)
-    expect(f.runner.commands()[0]).toContain("--set ops.bootstrap=true")
+    expect(f.runner.commands()).toHaveLength(5)
+    expect(f.runner.commands()[4]).toContain("--set ops.bootstrap=true")
+  })
+
+  test("pins the digests it is given for the tag it is given", async () => {
+    const f = await fixture()
+    const code = await main(["run-job", "bootstrap", "--environment", "staging", "--image-tag", TAG, ...PAIRS], f.deps)
+    expect(code).toBe(0)
+    expect(f.runner.commands()[0]).toContain(`--set image.tag=${TAG} --set images.id.digest=${DIGEST}`)
+    expect(f.runner.commands().some((command) => command.startsWith("docker "))).toBe(false)
+  })
+
+  test("refuses digests without a tag", async () => {
+    const f = await fixture()
+    expect(await main(["run-job", "register", "--environment", "staging", ...PAIRS], f.deps)).toBe(2)
+    expect(f.err()).toContain("digests belong to a tag")
+    expect(f.runner.calls).toEqual([])
   })
 
   test("takes the release's tag when none is given, and passes --values and --timeout", async () => {
@@ -120,7 +143,7 @@ describe("run-job", () => {
       f.deps,
     )
     expect(code).toBe(0)
-    expect(f.runner.commands()[1]).toContain(`--timeout 3m -f charts/answerable/values-civo-staging.yaml --set image.tag=${TAG}`)
+    expect(f.runner.commands()[5]).toContain(`--timeout 3m -f charts/answerable/values-civo-staging.yaml --set image.tag=${TAG}`)
   })
 
   test("exits 2 without exactly one known job", async () => {
