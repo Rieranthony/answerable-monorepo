@@ -52,7 +52,8 @@ function createContext(options: SmokeOptions): Context {
         signal: AbortSignal.timeout(options.requestTimeoutMs ?? 10_000),
       })
     } catch (error) {
-      throw new Error(`no answer: ${messageOf(error)}`)
+      const code = (error as { code?: unknown } | null)?.code
+      throw new Error(`no answer: ${messageOf(error)}${typeof code === "string" ? ` (${code})` : ""}`)
     }
     if (response.status !== 200) {
       const location = response.headers.get("location")

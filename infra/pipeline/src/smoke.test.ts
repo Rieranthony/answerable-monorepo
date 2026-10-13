@@ -142,6 +142,14 @@ describe("runSmoke", () => {
     expect(problems).toEqual(["id /healthz: no answer: connect ECONNREFUSED", "id /readyz: no answer: reset by peer"])
   })
 
+  test("adds the error code to a network failure when there is one", async () => {
+    const problems = await failures({
+      ...healthy(),
+      [url(hosts.id, "/healthz")]: Object.assign(new Error("certificate has expired"), { code: "CERT_HAS_EXPIRED" }),
+    })
+    expect(problems).toEqual(["id /healthz: no answer: certificate has expired (CERT_HAS_EXPIRED)"])
+  })
+
   test("fails a check on a body that is not a JSON object", async () => {
     const problems = await failures({
       ...healthy(),

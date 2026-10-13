@@ -25,7 +25,7 @@ export type Deps = {
 }
 
 /** The `ops` Jobs the chart can run on request. */
-export const OPS_JOBS = ["bootstrap", "register"] as const
+const OPS_JOBS = ["bootstrap", "register"] as const
 
 /** One of {@link OPS_JOBS}. */
 export type OpsJob = (typeof OPS_JOBS)[number]
@@ -38,7 +38,7 @@ export function parseJob(value: string | undefined): OpsJob {
 }
 
 /** An image tag the pipeline accepts: the full commit SHA, never a branch or `latest`. */
-export const IMAGE_TAG = /^sha-[0-9a-f]{40}$/
+const IMAGE_TAG = /^sha-[0-9a-f]{40}$/
 
 /** The Deployments whose pods read the machine-client secrets that `register` writes. */
 const REGISTERED_SERVERS = ["toolbox", "admin-mcp"]
