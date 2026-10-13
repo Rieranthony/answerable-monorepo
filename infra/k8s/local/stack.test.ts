@@ -237,6 +237,15 @@ describe("inside the cluster", () => {
     expect(next.stdout).toContain("platform organisation answerable: verified")
   }, 240_000)
 
+  test("the two certificate authorities come from the charts' values, as on Civo: originPull.caPem and database.caPem", async () => {
+    const pull = JSON.parse((await stack!.kubectl(["get", "secret", "-n", "answerable", "cloudflare-origin-pull-ca", "-o", "json"])).stdout)
+    expect(pull.metadata.annotations?.["meta.helm.sh/release-name"]).toBe("platform")
+    expect(Buffer.from(pull.data["ca.crt"], "base64").toString()).toBe((await stack!.readSecret("platform", "origin-pull-ca"))["ca.crt"])
+    const database = JSON.parse((await stack!.kubectl(["get", "configmap", "-n", "answerable", "postgres-ca", "-o", "json"])).stdout)
+    expect(database.metadata.annotations?.["helm.sh/hook"]).toBe("pre-install,pre-upgrade")
+    expect(database.data["ca.pem"]).toBe(stack!.databaseCa)
+  })
+
   test("the migrations and the two ops Jobs ran to completion as the release's hooks", async () => {
     const { stdout } = await stack!.kubectl(["get", "jobs", "-n", "answerable", "-o", "json"])
     const jobs = (JSON.parse(stdout) as { items: { metadata: { name: string }; status: { succeeded?: number } }[] }).items

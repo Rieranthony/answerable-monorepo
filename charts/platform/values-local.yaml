@@ -26,6 +26,8 @@ traefik:
         trustedIPs:
           - 127.0.0.1/32
 
+# The stack's own certificate authority. Its stand-in for Cloudflare's origin-pull CA comes after the first install, as
+# originPull.caPem on the upgrade that adds the edge (infra/k8s/local/stack.ts): empty until then.
 issuers:
   local:
     enabled: true

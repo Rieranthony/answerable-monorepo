@@ -40,18 +40,19 @@ export function overlays(chart: string) {
   return readdirSync(join(charts, chart)).filter(name => /^values-.+\.ya?ml$/.test(name)).sort()
 }
 
-/** The `helm template` arguments for a chart with its defaults, then each values file, then each `--set`. */
-export function templateArguments(chart: string, values: string[] = [], set: Record<string, string> = {}) {
+/** The `helm template` arguments for a chart with its defaults, then each values file, then each `--set`, then each `--set-file` (value from a file's contents). */
+export function templateArguments(chart: string, values: string[] = [], set: Record<string, string> = {}, files: Record<string, string> = {}) {
   return [
     "helm", "template", chart, join(charts, chart), "--namespace", chart,
     ...values.flatMap(file => ["--values", join(charts, chart, file)]),
     ...Object.entries(set).flatMap(([key, value]) => ["--set", `${key}=${value}`]),
+    ...Object.entries(files).flatMap(([key, path]) => ["--set-file", `${key}=${path}`]),
   ]
 }
 
 /** Render a chart and parse every object it produces. */
-export function render(chart: string, values: string[] = [], set: Record<string, string> = {}): Manifest[] {
-  const documents = Bun.YAML.parse(check(templateArguments(chart, values, set))) as unknown
+export function render(chart: string, values: string[] = [], set: Record<string, string> = {}, files: Record<string, string> = {}): Manifest[] {
+  const documents = Bun.YAML.parse(check(templateArguments(chart, values, set, files))) as unknown
   return (Array.isArray(documents) ? documents : [documents]).filter((document): document is Manifest => document !== null && typeof document === "object")
 }
 

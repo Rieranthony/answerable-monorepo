@@ -1,0 +1,27 @@
+{{- /*
+Cloudflare's origin-pull CA, which the TLS options verify every client certificate against (tls-options.yaml), as the
+Secret they name, in their namespace. Its certificate is public: it comes from originPull.caPem, which Terraform passes
+from infra/civo/envs/<environment>/edge-ca/ca.pem, so nothing else creates the Secret. Without it Traefik refuses every
+connection; the Civo overlays make an empty value fail the render instead.
+*/ -}}
+{{- with .Values.originPull }}
+{{- if .caPem }}
+{{- if not (and (contains "-----BEGIN CERTIFICATE-----" .caPem) (contains "-----END CERTIFICATE-----" .caPem)) }}
+{{- fail "originPull.caPem must be a PEM certificate (-----BEGIN CERTIFICATE----- … -----END CERTIFICATE-----): the origin-pull CA from infra/civo/envs/<environment>/edge-ca/ca.pem" }}
+{{- end }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .caSecret }}
+  namespace: {{ .namespace }}
+  labels:
+    app.kubernetes.io/name: platform
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+type: Opaque
+data:
+  ca.crt: {{ .caPem | b64enc }}
+{{- else if .caRequired }}
+{{- fail "originPull.caPem is empty: Traefik would refuse every connection without Cloudflare's origin-pull CA. Pass the PEM from infra/civo/envs/<environment>/edge-ca/ca.pem (bun run setup origin-pull writes it; Terraform's platform module passes it)" }}
+{{- end }}
+{{- end }}

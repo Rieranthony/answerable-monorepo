@@ -1,5 +1,7 @@
 # Staging on Civo, in the answerable-staging account (D28), behind Cloudflare on answerable-staging.uk (D12). The pipeline
-# sets image.tag; everything else about the environment is here.
+# sets image.tag, and database.caPem with --set-file database.caPem=infra/civo/envs/staging/database-ca.pem (bun run setup
+# database-ca --environment staging); everything else about the environment is here. The Ingresses' certificates come from
+# the Issuer letsencrypt that charts/platform renders in this namespace.
 
 hostnames:
   id: id.answerable-staging.uk

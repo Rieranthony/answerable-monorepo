@@ -1,4 +1,6 @@
-import { beforeAll, describe, expect, test } from "bun:test"
+import { afterAll, beforeAll, describe, expect, test } from "bun:test"
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { buildDependencies, charts, check, crdSchemas, kubernetesVersion, type Manifest, overlays, render, run, templateArguments } from "./helm"
 
@@ -16,6 +18,19 @@ const environments = {
   "values-civo-staging.yaml": { id: "id.answerable-staging.uk", toolbox: "toolbox.answerable-staging.uk", adminMcp: "admin-mcp.answerable-staging.uk", network: "10.10.0.0/24" },
   "values-civo-production.yaml": { id: "id.answerable.org", toolbox: "toolbox.answerable.org", adminMcp: "admin-mcp.answerable.org", network: "10.20.0.0/24" },
 } as const
+
+// The certificates Terraform and the deploy pass with --set-file, which the charts refuse to render without: a stand-in
+// PEM here (each chart checks only that it is PEM), and one that is not PEM.
+const certificates = mkdtempSync(join(tmpdir(), "answerable-charts-ca-"))
+afterAll(() => rmSync(certificates, { recursive: true, force: true }))
+const caPem = "-----BEGIN CERTIFICATE-----\nY2hhcnQgdGVzdCBDQQ==\n-----END CERTIFICATE-----\n"
+const caFile = join(certificates, "ca.pem")
+writeFileSync(caFile, caPem)
+const notPem = join(certificates, "not.pem")
+writeFileSync(notPem, "ca.crt\n")
+const supplied: Record<string, Record<string, string>> = { answerable: { "database.caPem": caFile }, platform: { "originPull.caPem": caFile } }
+/** Render a chart with the certificates the deploy supplies. */
+const renderSupplied = (chart: string, values: string[] = [], set: Record<string, string> = {}) => render(chart, values, set, supplied[chart])
 
 const podSpec = (manifest: Manifest) => manifest.spec?.template?.spec ?? manifest.spec?.jobTemplate?.spec?.template?.spec
 const workloads = (manifests: Manifest[]) => manifests.filter(manifest => podSpec(manifest) !== undefined)
@@ -46,11 +61,17 @@ describe("charts/answerable", () => {
 
   for (const [name, values] of cases) {
     describe(name, () => {
-      const manifests = render("answerable", values, { "image.tag": tag, "ops.bootstrap": "true", "ops.register": "true" })
+      const manifests = renderSupplied("answerable", values, { "image.tag": tag, "ops.bootstrap": "true", "ops.register": "true" })
 
-      test("renders no namespace, Secret or database certificate: Terraform, the deploy and the Jobs own those", () => {
+      test("renders no namespace or Secret: Terraform, the deploy and the Jobs own those", () => {
         expect(manifests.filter(manifest => ["Namespace", "Secret"].includes(manifest.kind))).toEqual([])
-        expect(named(manifests, "ConfigMap", "postgres-ca")).toBeUndefined()
+      })
+
+      test("renders the database's certificate authority from database.caPem, as a hook before the bootstrap and the migrations that mount it", () => {
+        const configMap = named(manifests, "ConfigMap", "postgres-ca")!
+        expect(configMap.data).toEqual({ "ca.pem": caPem })
+        expect(configMap.metadata.annotations?.["helm.sh/hook"]).toBe("pre-install,pre-upgrade")
+        for (const job of manifests.filter(manifest => manifest.kind === "Job")) expect(weight(configMap), job.metadata.name).toBeLessThan(weight(job))
       })
 
       test("every pod meets the restricted Pod Security Standard and runs read-only, with requests and a memory limit", () => {
@@ -143,8 +164,11 @@ describe("charts/answerable", () => {
             "traefik.ingress.kubernetes.io/router.tls": "true",
             // The TLSOption charts/platform renders in this namespace: Cloudflare's origin-pull certificate required.
             "traefik.ingress.kubernetes.io/router.tls.options": "answerable-origin-pull@kubernetescrd",
-            "cert-manager.io/cluster-issuer": expect.any(String),
           })
+          // The namespaced Issuer charts/platform renders beside them; the kind stack's own CA is cluster-wide.
+          if (name === "values-local.yaml") expect(ingress.metadata.annotations).toMatchObject({ "cert-manager.io/cluster-issuer": "local" })
+          else expect(ingress.metadata.annotations).toMatchObject({ "cert-manager.io/issuer": "letsencrypt" })
+          expect(Object.keys(ingress.metadata.annotations ?? {}).filter(key => key.startsWith("cert-manager.io/"))).toHaveLength(1)
           expect(ingress.spec.rules.length).toBe(1)
           expect(ingress.spec.tls).toEqual([{ hosts: [ingress.spec.rules[0].host], secretName: `${ingress.metadata.name}-tls` }])
         }
@@ -184,13 +208,13 @@ describe("charts/answerable", () => {
         ])
         expect(named(manifests, "ServiceAccount", "ops")!.automountServiceAccountToken).toBe(false)
         expect(named(manifests, "RoleBinding", "ops")).toMatchObject({ roleRef: { kind: "Role", name: "ops" }, subjects: [{ kind: "ServiceAccount", name: "ops" }] })
-        const bootstrapOnly = render("answerable", values, { "image.tag": tag, "ops.bootstrap": "true" })
+        const bootstrapOnly = renderSupplied("answerable", values, { "image.tag": tag, "ops.bootstrap": "true" })
         expect(named(bootstrapOnly, "Role", "ops")!.rules).toEqual([
           { apiGroups: [""], resources: ["secrets"], resourceNames: ["id-database-owner", "id-database", "toolbox-database-owner", "toolbox-database", "admin-database-owner", "admin-database"], verbs: ["get", "patch"] },
           { apiGroups: [""], resources: ["secrets"], verbs: ["create"] },
         ])
         expect(named(bootstrapOnly, "Role", "ops")!.metadata.annotations?.["helm.sh/hook"]).toBe("pre-install,pre-upgrade")
-        const registerOnly = render("answerable", values, { "image.tag": tag, "ops.register": "true" })
+        const registerOnly = renderSupplied("answerable", values, { "image.tag": tag, "ops.register": "true" })
         expect(named(registerOnly, "Role", "ops")!.rules[0].resourceNames).toEqual(["toolbox-id-client", "admin-id-client"])
         expect(named(registerOnly, "Role", "ops")!.metadata.annotations?.["helm.sh/hook"]).toBe("post-install,post-upgrade")
       })
@@ -226,7 +250,7 @@ describe("charts/answerable", () => {
 
   for (const [file, expected] of Object.entries(environments)) {
     test(`${file} names the environment's hostnames, issuer and resources, and trusts Cloudflare, the private network and the pod range`, () => {
-      const manifests = render("answerable", [file], { "image.tag": tag })
+      const manifests = renderSupplied("answerable", [file], { "image.tag": tag })
       const id = named(manifests, "Deployment", "id")!
       const toolbox = named(manifests, "Deployment", "toolbox")!
       const admin = named(manifests, "Deployment", "admin-mcp")!
@@ -257,14 +281,14 @@ describe("charts/answerable", () => {
   test("the ops Jobs and their account render only when switched on and an ops image is named; their NetworkPolicy whenever the image is named", () => {
     const ops = (manifests: Manifest[]) => manifests.filter(manifest => manifest.metadata.name === "ops" || manifest.metadata.name.startsWith("ops-")).map(manifest => `${manifest.kind}/${manifest.metadata.name}`).sort()
     // The Jobs are hooks, which run before the release's own resources: the policy must already be there from the release before.
-    expect(ops(render("answerable", [], { "image.tag": tag }))).toEqual(["NetworkPolicy/ops"])
-    expect(ops(render("answerable", [], { "image.tag": tag, "ops.bootstrap": "true", "ops.register": "true", "images.ops.repository": "" }))).toEqual([])
-    expect(ops(render("answerable", [], { "image.tag": tag, "ops.register": "true" }))).toEqual(["Job/ops-register", "NetworkPolicy/ops", "Role/ops", "RoleBinding/ops", "ServiceAccount/ops"])
+    expect(ops(renderSupplied("answerable", [], { "image.tag": tag }))).toEqual(["NetworkPolicy/ops"])
+    expect(ops(renderSupplied("answerable", [], { "image.tag": tag, "ops.bootstrap": "true", "ops.register": "true", "images.ops.repository": "" }))).toEqual([])
+    expect(ops(renderSupplied("answerable", [], { "image.tag": tag, "ops.register": "true" }))).toEqual(["Job/ops-register", "NetworkPolicy/ops", "Role/ops", "RoleBinding/ops", "ServiceAccount/ops"])
   })
 
   for (const file of overlays("answerable")) {
     test(`${file}: the ops Jobs reach the Kubernetes API, the database and HTTPS, and nothing else`, () => {
-      const policy = named(render("answerable", [file], { "image.tag": tag }), "NetworkPolicy", "ops")!
+      const policy = named(renderSupplied("answerable", [file], { "image.tag": tag }), "NetworkPolicy", "ops")!
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ports = policy.spec.egress.map((rule: any) => rule.ports.map((port: any) => port.port).sort((a: number, b: number) => a - b))
       expect(ports).toContainEqual([53, 53])
@@ -276,7 +300,7 @@ describe("charts/answerable", () => {
 
   test("id.extraEgress adds to ID's policy alone", () => {
     const extra = { to: [{ ipBlock: { cidr: "192.0.2.10/32" } }], ports: [{ port: 47710, protocol: "TCP" }] }
-    const manifests = render("answerable", ["values-local.yaml"], { "image.tag": tag, "id.extraEgress[0].to[0].ipBlock.cidr": "192.0.2.10/32", "id.extraEgress[0].ports[0].port": "47710", "id.extraEgress[0].ports[0].protocol": "TCP" })
+    const manifests = renderSupplied("answerable", ["values-local.yaml"], { "image.tag": tag, "id.extraEgress[0].to[0].ipBlock.cidr": "192.0.2.10/32", "id.extraEgress[0].ports[0].port": "47710", "id.extraEgress[0].ports[0].protocol": "TCP" })
     for (const policy of manifests.filter(manifest => manifest.kind === "NetworkPolicy")) {
       expect(policy.spec.egress?.some((rule: unknown) => Bun.deepEquals(rule, extra)) ?? false, policy.metadata.name).toBe(policy.metadata.name === "id")
     }
@@ -285,26 +309,42 @@ describe("charts/answerable", () => {
   test("an image with a digest runs by digest, the exact bytes verified; one without runs by the shared tag", () => {
     const digests = { id: "a".repeat(64), toolbox: "b".repeat(64), "admin-mcp": "c".repeat(64), ops: "d".repeat(64) }
     const set = Object.fromEntries([["image.tag", tag], ["ops.bootstrap", "true"], ["ops.register", "true"], ...Object.entries(digests).map(([image, hex]) => [`images.${image}.digest`, `sha256:${hex}`])])
-    const pinned = render("answerable", ["values-civo-production.yaml"], set)
+    const pinned = renderSupplied("answerable", ["values-civo-production.yaml"], set)
     const images = new Set(workloads(pinned).flatMap(workload => containersOf(workload).map((container: { image: string }) => container.image)))
     expect(images).toEqual(new Set(Object.entries(digests).map(([image, hex]) => `ghcr.io/rieranthony/answerable/${image}@sha256:${hex}`)))
     // Only the Toolbox pinned: the others keep the tag.
-    const mixed = render("answerable", ["values-civo-production.yaml"], { "image.tag": tag, "images.toolbox.digest": `sha256:${digests.toolbox}` })
+    const mixed = renderSupplied("answerable", ["values-civo-production.yaml"], { "image.tag": tag, "images.toolbox.digest": `sha256:${digests.toolbox}` })
     expect(containersOf(named(mixed, "Deployment", "toolbox")!)[0].image).toBe(`ghcr.io/rieranthony/answerable/toolbox@sha256:${digests.toolbox}`)
     expect(containersOf(named(mixed, "Deployment", "id")!)[0].image).toBe(`ghcr.io/rieranthony/answerable/id:${tag}`)
     expect(containersOf(named(mixed, "Job", "toolbox-migrate")!)[0].image).toBe(`ghcr.io/rieranthony/answerable/toolbox@sha256:${digests.toolbox}`)
     // A digest that is not sha256 and 64 hex digits is refused, rather than deployed as something else.
-    const bad = run(templateArguments("answerable", [], { "image.tag": tag, "images.id.digest": "sha256:abc" }))
+    const bad = run(templateArguments("answerable", [], { "image.tag": tag, "images.id.digest": "sha256:abc" }, supplied.answerable))
     expect(bad.exitCode).not.toBe(0)
     expect(bad.stderr).toContain("images.id.digest")
   })
 
+  test("without database.caPem, or with one that is not PEM, the chart refuses to render and names the value", () => {
+    const missing = run(templateArguments("answerable", ["values-civo-staging.yaml"], { "image.tag": tag }))
+    expect(missing.exitCode).not.toBe(0)
+    expect(missing.stderr).toContain("database.caPem is empty")
+    expect(missing.stderr).toContain("--set-file database.caPem=infra/civo/envs/<environment>/database-ca.pem")
+    const wrong = run(templateArguments("answerable", [], { "image.tag": tag }, { "database.caPem": notPem }))
+    expect(wrong.exitCode).not.toBe(0)
+    expect(wrong.stderr).toContain("database.caPem must be a PEM certificate chain")
+  })
+
+  test("an issuer kind other than Issuer or ClusterIssuer is refused", () => {
+    const bad = run(templateArguments("answerable", [], { "image.tag": tag, "ingress.issuer.kind": "Certificate" }, supplied.answerable))
+    expect(bad.exitCode).not.toBe(0)
+    expect(bad.stderr).toContain("ingress.issuer.kind must be Issuer or ClusterIssuer, not Certificate")
+  })
+
   test("without an image tag the images say so, rather than falling back to a mutable tag", () => {
-    for (const workload of workloads(render("answerable"))) for (const container of containersOf(workload)) expect(container.image).toEndWith(":unset")
+    for (const workload of workloads(renderSupplied("answerable"))) for (const container of containersOf(workload)) expect(container.image).toEndWith(":unset")
   })
 
   test("the servers connect as their runtime logins and the migrations as the owners, with the role to provision", () => {
-    const manifests = render("answerable", [], { "image.tag": tag })
+    const manifests = renderSupplied("answerable", [], { "image.tag": tag })
     for (const [deployment, variable, secret] of [["id", "DATABASE_URL", "id-database"], ["toolbox", "TOOLBOX_DATABASE_URL", "toolbox-database"], ["admin-mcp", "ADMIN_DATABASE_URL", "admin-database"]]) {
       expect(env(named(manifests, "Deployment", deployment!)!, variable!).valueFrom.secretKeyRef).toEqual({ name: secret, key: variable })
     }
@@ -325,7 +365,7 @@ describe("charts/platform", () => {
 
   for (const [name, values] of [["the defaults", []], ...overlays("platform").map(file => [file, [file]])] as [string, string[]][]) {
     test(`${name}: Traefik keeps forwarded headers only from Terraform's trusted addresses and appends its peer, refuses conflicting TLS options, and listens on 443 only`, () => {
-      const manifests = render("platform", values, { "traefik.ports.websecure.forwardedHeaders.trustedIPs": "{203.0.113.0/24,10.10.0.0/24}", "traefik.service.annotations.kubernetes\\.civo\\.com/firewall-id": "fw" })
+      const manifests = renderSupplied("platform", values, { "traefik.ports.websecure.forwardedHeaders.trustedIPs": "{203.0.113.0/24,10.10.0.0/24}", "traefik.service.annotations.kubernetes\\.civo\\.com/firewall-id": "fw" })
       const deployment = manifests.find(manifest => manifest.kind === "Deployment" && manifest.metadata.name === "platform-traefik")!
       const args: string[] = deployment.spec.template.spec.containers.find((container: { name: string }) => container.name === "platform-traefik").args
       expect(args).toContain("--entryPoints.websecure.forwardedHeaders.trustedIPs=203.0.113.0/24,10.10.0.0/24")
@@ -342,7 +382,7 @@ describe("charts/platform", () => {
   }
 
   test("every TLS connection must present Cloudflare's origin-pull certificate: the Ingresses' option and Traefik's default", () => {
-    const options = render("platform").filter(manifest => manifest.kind === "TLSOption")
+    const options = renderSupplied("platform").filter(manifest => manifest.kind === "TLSOption")
     expect(options.map(option => `${option.metadata.namespace}/${option.metadata.name}`).sort()).toEqual(["answerable/default", "answerable/origin-pull"])
     for (const option of options) {
       expect(option.spec).toEqual({
@@ -353,15 +393,39 @@ describe("charts/platform", () => {
     }
   })
 
-  test("the Civo overlays issue certificates from Let's Encrypt through Cloudflare, and the kind stack from its own CA", () => {
+  test("the Civo overlays issue certificates from Let's Encrypt through Cloudflare with a namespaced Issuer in answerable, and the kind stack from its own CA", () => {
     for (const file of ["values-civo-staging.yaml", "values-civo-production.yaml"]) {
-      const issuer = render("platform", [file]).find(manifest => manifest.kind === "ClusterIssuer" && manifest.metadata.name === "letsencrypt")!
+      const manifests = renderSupplied("platform", [file])
+      const issuer = manifests.find(manifest => manifest.kind === "Issuer" && manifest.metadata.name === "letsencrypt")!
+      // Beside the Ingresses and the token the deploy applies there: an Issuer reads Secrets from its own namespace.
+      expect(issuer.metadata.namespace).toBe("answerable")
+      expect(issuer.metadata.annotations?.["helm.sh/hook"]).toBe("post-install,post-upgrade")
       expect(issuer.spec.acme.server).toBe("https://acme-v02.api.letsencrypt.org/directory")
       expect(issuer.spec.acme.solvers[0].dns01.cloudflare.apiTokenSecretRef).toEqual({ name: "cloudflare-api-token", key: "api-token" })
+      expect(manifests.filter(manifest => manifest.kind === "ClusterIssuer")).toEqual([])
     }
-    const local = render("platform", ["values-local.yaml"])
+    const local = renderSupplied("platform", ["values-local.yaml"])
     expect(local.find(manifest => manifest.kind === "ClusterIssuer" && manifest.metadata.name === "local")?.spec).toEqual({ ca: { secretName: "local-ca" } })
-    expect(local.find(manifest => manifest.kind === "ClusterIssuer" && manifest.metadata.name === "letsencrypt")).toBeUndefined()
+    expect(local.filter(manifest => manifest.metadata.name === "letsencrypt")).toEqual([])
+  })
+
+  test("originPull.caPem renders the Secret the TLS options name, in their namespace", () => {
+    const secret = renderSupplied("platform", ["values-civo-production.yaml"]).find(manifest => manifest.kind === "Secret")!
+    expect(secret.metadata).toMatchObject({ name: "cloudflare-origin-pull-ca", namespace: "answerable" })
+    expect(Buffer.from(secret.data["ca.crt"], "base64").toString()).toBe(caPem)
+  })
+
+  test("an empty originPull.caPem fails the Civo overlays' render, naming the value; the kind stack's first install renders without it", () => {
+    for (const file of ["values-civo-staging.yaml", "values-civo-production.yaml"]) {
+      const missing = run(templateArguments("platform", [file]))
+      expect(missing.exitCode, file).not.toBe(0)
+      expect(missing.stderr).toContain("originPull.caPem is empty")
+      expect(missing.stderr).toContain("infra/civo/envs/<environment>/edge-ca/ca.pem")
+    }
+    expect(render("platform", ["values-local.yaml"]).filter(manifest => manifest.kind === "Secret")).toEqual([])
+    const wrong = run(templateArguments("platform", [], {}, { "originPull.caPem": notPem }))
+    expect(wrong.exitCode).not.toBe(0)
+    expect(wrong.stderr).toContain("originPull.caPem must be a PEM certificate")
   })
 })
 
@@ -369,9 +433,9 @@ describe("lint and schemas", () => {
   for (const chart of ["answerable", "platform"]) {
     for (const values of [[], ...overlays(chart).map(file => [file])]) {
       test(`${chart} ${values[0] ?? "defaults"}: helm lint --strict and kubeconform -strict against Kubernetes ${kubernetesVersion}`, () => {
-        const files = values.flatMap(file => ["--values", join(charts, chart, file)])
+        const files = [...values.flatMap(file => ["--values", join(charts, chart, file)]), ...Object.entries(supplied[chart]!).flatMap(([key, path]) => ["--set-file", `${key}=${path}`])]
         check(["helm", "lint", "--strict", join(charts, chart), ...files])
-        const rendered = check(templateArguments(chart, values, chart === "answerable" ? { "image.tag": tag, "ops.bootstrap": "true", "ops.register": "true" } : {}))
+        const rendered = check(templateArguments(chart, values, chart === "answerable" ? { "image.tag": tag, "ops.bootstrap": "true", "ops.register": "true" } : {}, supplied[chart]))
         const result = run(["kubeconform", "-strict", "-summary", "-ignore-missing-schemas", "-kubernetes-version", kubernetesVersion, "-schema-location", "default", "-schema-location", crdSchemas, "-"], { stdin: rendered })
         expect(result.exitCode, result.stdout + result.stderr).toBe(0)
         expect(result.stdout).toContain("Invalid: 0, Errors: 0")

@@ -59,11 +59,17 @@ traefik:
     requests: { cpu: 100m, memory: 128Mi }
     limits: { memory: 512Mi }
 
-# Where the origin-pull TLS options live: beside the Secret holding Cloudflare's origin-pull CA (ca.crt), which the
-# deploy applies from the sops file.
+# Where the origin-pull TLS options live, beside the Secret caSecret (key ca.crt) that holds Cloudflare's origin-pull CA
+# and that this release renders from caPem (templates/origin-pull-ca.yaml).
 originPull:
   namespace: answerable
   caSecret: cloudflare-origin-pull-ca
+  # The origin-pull CA's certificate, PEM. Terraform passes infra/civo/envs/<environment>/edge-ca/ca.pem (written by
+  # bun run setup origin-pull); the kind stack passes its stand-in's. Empty renders no Secret, so Traefik refuses every
+  # client certificate.
+  caPem: ""
+  # Whether an empty caPem fails the render. The Civo overlays turn it on.
+  caRequired: false
 
 cert-manager:
   crds:
@@ -76,16 +82,19 @@ cert-manager:
   prometheus:
     enabled: false
 
-# The ClusterIssuers the answerable chart's Ingresses name (ingress.clusterIssuer there).
+# The issuers the answerable chart's Ingresses name (ingress.issuer there).
 issuers:
-  # Let's Encrypt through a DNS-01 challenge in the environment's Cloudflare zone. The token is the Secret
-  # cloudflare-api-token (key api-token) in this namespace, applied by the deploy from the sops file.
+  # Let's Encrypt through a DNS-01 challenge in the environment's Cloudflare zone: the Issuer letsencrypt in namespace,
+  # beside the Ingresses. The token is the Secret cloudflare-api-token (key api-token) in that namespace, applied by the
+  # deploy from the sops file; it needs Zone > DNS > Edit on that one zone only.
   letsencrypt:
     enabled: false
+    namespace: answerable
     # Optional ACME account address; Let's Encrypt no longer mails expiry notices, so none is needed.
     email: ""
     server: https://acme-v02.api.letsencrypt.org/directory
-  # A self-signed certificate authority for the kind stack: its certificate is the Secret local-ca in this namespace.
+  # A self-signed certificate authority for the kind stack, cluster-wide (the ClusterIssuer local): its certificate is the
+  # Secret local-ca in this release's namespace.
   local:
     enabled: false
 
