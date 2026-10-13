@@ -4,7 +4,7 @@ How to set up, deploy, promote, roll back, scale, rotate, restore and destroy An
 
 **Status.** Built and proved locally; not yet applied to a Civo account. The first staging deployment is brief [B7a](../docs/goals/aws-deploy/briefs/b7.md), which runs this page for the first time and corrects it.
 
-**Conventions.** Run every command from the repository root on a trusted machine (your own, with disk encryption), unless a step says otherwise. Staging is shown; production is the same with `production` and the zone `answerable.org`, except where a step says otherwise. `<…>` is a value you fill in. No command here prints a secret: values travel through environment variables, files that Git ignores, or standard input.
+**Conventions.** Run every command from the repository root on a trusted machine (your own, with disk encryption), unless a step says otherwise. Staging is shown; production is the same with `production` and the zone `answerable.org`, except where a step says otherwise. `<…>` is a value you fill in. No command here prints a secret, except the one step that says so: values travel through environment variables, files that Git ignores, or standard input.
 
 ## Where the details live
 
@@ -89,12 +89,13 @@ Back up `~/.config/sops/age/answerable-staging.txt` now.
 bun run setup first-apply --environment staging
 ```
 
-**3. The state credential.** From here on every command that reads Terraform's state needs the bucket's credential. `first-apply` printed its key ID; read its secret with the Civo CLI (or the dashboard, Object stores > Credentials) and load both:
+**3. The state credential.** From here on every command that reads Terraform's state needs the bucket's credential. `first-apply` printed its key ID. The Civo CLI prints its secret key (the dashboard shows it too, under Object stores > Credentials): this is the one step that shows a secret on screen. Paste it into the prompt, keep it with your other secrets, and clear the terminal:
 
 ```sh
 export AWS_ACCESS_KEY_ID=<the key ID first-apply printed>
 civo objectstore credential secret --access-key "$AWS_ACCESS_KEY_ID"
 printf 'State secret key: '; read -rs AWS_SECRET_ACCESS_KEY; echo; export AWS_SECRET_ACCESS_KEY
+clear
 ```
 
 If a step failed writing `staging.tfstate.tflock`, Civo's object store refuses Terraform's lock file: follow [step 4 of the first apply](civo/README.md#first-apply) (`use_lockfile = false`, one operator at a time).
@@ -189,7 +190,7 @@ claude mcp add --transport http answerable-admin https://admin-mcp.answerable-st
 claude mcp add --transport http answerable-toolbox https://toolbox.answerable-staging.uk/mcp --client-id claude-code-toolbox --callback-port 47700
 ```
 
-In Claude Code, `/mcp` signs you in; `admin_whoami` then shows the owner role. These are the commands `ops-register` prints in its log.
+In Claude Code, run `/mcp`, choose `answerable-admin`, **Authenticate** and sign in with your work account; ask Claude to call `admin_whoami`, which answers `owner`. These are the commands `ops-register` prints in its log.
 
 **Production differs in four places.** `ALLOWED_API_CIDRS` is required and must include this machine. `publish-env` runs without `--enable` and creates one environment, `production`, which holds every secret and needs your approval. Production's first deploy is `promote-production.yml`, which GitHub cannot run until D30's follow-up opens a path to production's API ([Known limits](#known-limits)); it is the B7c rehearsal. And the Entra redirect URIs are production's.
 
@@ -205,7 +206,7 @@ gh run watch
 | Stage | What to look at |
 | --- | --- |
 | CI | The same checks as a pull request |
-| `Apply the staging infrastructure` | `terraform apply` of `infra/civo/envs/staging`; a no-op unless Terraform or a chart overlay changed |
+| `Apply the staging infrastructure` | `terraform apply` of `infra/civo/envs/staging`; a no-op unless Terraform or `charts/platform` changed |
 | `Build …`, `Publish …` | Eight builds (four images, two architectures), four signed manifest lists tagged `sha-<commit>` |
 | `Deploy to staging` | The Secrets applied, `helm upgrade` with every hook; on failure the release rolls back and the migration and ops Jobs' logs are printed |
 | `Smoke test staging` | A table of every check, in the run's summary |
@@ -329,7 +330,7 @@ When nobody can administer ID ([`onboard.mdx`](../apps/web/content/docs/id/onboa
 
 ### A lost `age` key
 
-The secrets file cannot be decrypted, and neither can its history. GitHub keeps `SOPS_AGE_KEY` but never shows it. Generate a new key (`age-init --force`), and a new file with `init-secrets --force` only if ID has no data yet: a new `BETTER_AUTH_SECRET` makes the stored signing keys unreadable. With data, recover the values from the running cluster (`kubectl -n answerable get secret id-env -o yaml` with a kubeconfig) before replacing anything.
+The secrets file cannot be decrypted, and neither can its history. GitHub keeps `SOPS_AGE_KEY` but never shows it. Generate a new key (`age-init --force`), and a new file with `init-secrets --force` only if ID has no data yet: a new `BETTER_AUTH_SECRET` makes the stored signing keys unreadable. With data, the running cluster still holds `id-env`, `postgres-admin` and `cloudflare-api-token`: with a [kubeconfig](#get-a-kubeconfig), rebuild the file from their values, encrypted to the new key (`sops encrypt`), before anything replaces them.
 
 ## Destroy an environment
 
