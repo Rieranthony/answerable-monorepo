@@ -23,7 +23,7 @@ export function stateEnv(env: Context["env"]): StateEnv {
 }
 
 /** Initialise the Terraform root on this machine when it has not been: the outputs are read through its backend. */
-export async function ensureInitialised(context: Context, envDir: string, state: StateEnv): Promise<void> {
+async function ensureInitialised(context: Context, envDir: string, state: StateEnv): Promise<void> {
   if (await exists(join(envDir, ".terraform/terraform.tfstate"))) return
   const argv = ["terraform", "init", "-input=false"]
   context.out(`$ ${commandLine(argv)}\n`)

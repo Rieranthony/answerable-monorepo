@@ -2,7 +2,7 @@ import { join, relative } from "node:path"
 import { UsageError } from "./errors"
 
 /** The two environments, each in its own Civo account (D28). */
-export const ENVIRONMENTS = ["staging", "production"] as const
+const ENVIRONMENTS = ["staging", "production"] as const
 
 /** One of {@link ENVIRONMENTS}. */
 export type EnvironmentName = (typeof ENVIRONMENTS)[number]

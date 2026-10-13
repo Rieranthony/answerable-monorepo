@@ -8,7 +8,7 @@ import { shown, zoneFor, type EnvironmentName, type Paths } from "./environments
 import { SetupError, UsageError } from "./errors"
 
 /** Cloudflare's API. */
-export const CLOUDFLARE_API = "https://api.cloudflare.com/client/v4"
+const CLOUDFLARE_API = "https://api.cloudflare.com/client/v4"
 
 /** What `origin-pull` does. */
 export type OriginPullOptions = {
