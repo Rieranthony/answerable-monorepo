@@ -1,15 +1,14 @@
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test"
+import { afterAll, afterEach, expect, test } from "bun:test"
 import { defineProvider, defineTool, manifest, type Provider } from "@answerable/mcp"
 import { errorOf } from "@answerable/mcp/testing"
 import { z } from "zod"
 import { writeCatalogue, writeHostClient } from "./catalogue"
-import { migrate } from "./db/migrate"
-import { database } from "./test/database"
+import { serving } from "./test/database"
 import { createHub, e2e, names, type Client, type Hub } from "./test/hub"
 
-const db = database.connect()
-beforeAll(() => migrate(db))
-afterAll(() => db.close())
+const login = await serving()
+const { db } = login
+afterAll(() => login.drop())
 const hubs: Hub[] = []
 afterEach(async () => { await Promise.all(hubs.splice(0).map(hub => hub.mcp.close())) })
 async function hub(providers?: Provider[]) {

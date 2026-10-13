@@ -3,10 +3,10 @@
   "private": true,
   "workspaces": [
     "apps/*",
+    "infra/*",
     "mcps/*",
     "packages/*",
-    "scripts",
-    "infra/*"
+    "scripts"
   ],
   "scripts": {
     "dev": "bun run env:up && turbo run dev --filter='./apps/*'",
@@ -14,7 +14,7 @@
     "toolbox:dev": "bun --env-file=.env run --filter @answerable/mcp-toolbox dev",
     "admin:dev": "bun --env-file=.env run --filter @answerable/mcp-admin dev",
     "mcp:new": "bun scripts/mcp-new.ts",
-    "mcp:test": "bun run --filter @answerable/auth --filter @answerable/id-admin --filter '@answerable/mcp*' --filter @answerable/scripts test",
+    "mcp:test": "bun run --filter @answerable/auth --filter @answerable/id-admin --filter @answerable/infra-pipeline --filter '@answerable/mcp*' --filter @answerable/scripts test",
     "mcp:check": "turbo run typecheck lint test --filter",
     "env:up": "docker compose up -d --wait",
     "env:down": "docker compose down",
@@ -24,7 +24,8 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "mcp:test:e2e": "bun run --filter @answerable/acceptance test",
-    "infra:test": "bun run --filter @answerable/infra-k8s test"
+    "infra:test": "bun run --filter @answerable/infra-k8s test",
+    "infra:check": "bun infra/check.ts"
   },
   "packageManager": "bun@1.3.1",
   "devDependencies": {

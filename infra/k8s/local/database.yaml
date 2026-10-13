@@ -1,7 +1,8 @@
 # The kind stack's PostgreSQL 17, standing in for the managed database: TLS only (plain connections are refused by
 # pg_hba), a server certificate from a certificate authority of its own (database-ca, which the services trust through
 # the postgres-ca ConfigMap and nothing else), and per database an owner login and a restricted runtime login, as the
-# ops bootstrap creates them in a cloud. The test creates the Secret postgres-bootstrap with throwaway passwords first.
+# ops bootstrap creates them in a cloud. The test creates the Secret postgres-bootstrap first: the superuser's password and
+# logins.sql, which runs once when the data directory is created (infra/k8s/local/stack.ts writes it with throwaway passwords).
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
@@ -63,31 +64,12 @@ metadata:
   namespace: database
 data:
   pg_hba.conf: |
-    # The init scripts connect over the socket; everything else must use TLS.
+    # The init script connects over the socket; everything else must use TLS.
     local     all  all                trust
     hostssl   all  all  0.0.0.0/0     scram-sha-256
     hostssl   all  all  ::/0          scram-sha-256
     hostnossl all  all  0.0.0.0/0     reject
     hostnossl all  all  ::/0          reject
-  logins.sh: |
-    #!/bin/sh
-    # Runs once, when the data directory is created: the three databases, each owned by its own login, and the runtime
-    # logins the services use. Runtime logins get their privileges from the migrations (configureRuntimeRole).
-    set -eu
-    psql -v ON_ERROR_STOP=1 --username postgres --dbname postgres \
-      -v id_owner="$ID_OWNER_PASSWORD" -v id_runtime="$ID_RUNTIME_PASSWORD" \
-      -v toolbox_owner="$TOOLBOX_OWNER_PASSWORD" -v toolbox_runtime="$TOOLBOX_RUNTIME_PASSWORD" \
-      -v admin_owner="$ADMIN_OWNER_PASSWORD" -v admin_runtime="$ADMIN_RUNTIME_PASSWORD" <<'SQL'
-    CREATE ROLE answerable_id_owner LOGIN PASSWORD :'id_owner';
-    CREATE ROLE answerable_toolbox_owner LOGIN PASSWORD :'toolbox_owner';
-    CREATE ROLE answerable_admin_owner LOGIN PASSWORD :'admin_owner';
-    CREATE ROLE answerable_id_runtime LOGIN PASSWORD :'id_runtime' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
-    CREATE ROLE answerable_toolbox_runtime LOGIN PASSWORD :'toolbox_runtime' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
-    CREATE ROLE answerable_admin_runtime LOGIN PASSWORD :'admin_runtime' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
-    CREATE DATABASE answerable_id OWNER answerable_id_owner;
-    CREATE DATABASE answerable_toolbox OWNER answerable_toolbox_owner;
-    CREATE DATABASE answerable_admin OWNER answerable_admin_owner;
-    SQL
 ---
 apiVersion: v1
 kind: Service
@@ -147,9 +129,6 @@ spec:
                 secretKeyRef:
                   name: postgres-bootstrap
                   key: SUPERUSER_PASSWORD
-          envFrom:
-            - secretRef:
-                name: postgres-bootstrap
           ports:
             - name: postgres
               containerPort: 5432
@@ -163,11 +142,13 @@ spec:
             limits: { memory: 1Gi }
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
           volumeMounts:
             - { name: data, mountPath: /var/lib/postgresql/data }
             - { name: run, mountPath: /var/run/postgresql }
+            - { name: tmp, mountPath: /tmp }
             - { name: tls, mountPath: /tls, readOnly: true }
             - { name: config, mountPath: /config, readOnly: true }
             - { name: init, mountPath: /docker-entrypoint-initdb.d, readOnly: true }
@@ -175,6 +156,8 @@ spec:
         - name: data
           emptyDir: {}
         - name: run
+          emptyDir: {}
+        - name: tmp
           emptyDir: {}
         # Postgres accepts a key owned by root only when no more than its group can read it: 0440, the group being fsGroup 70.
         - name: tls
@@ -187,8 +170,8 @@ spec:
             items:
               - { key: pg_hba.conf, path: pg_hba.conf }
         - name: init
-          configMap:
-            name: postgres
-            defaultMode: 0555
+          secret:
+            secretName: postgres-bootstrap
+            defaultMode: 0440
             items:
-              - { key: logins.sh, path: logins.sh }
+              - { key: logins.sql, path: logins.sql }

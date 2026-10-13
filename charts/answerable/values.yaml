@@ -44,9 +44,6 @@ database:
   # The ConfigMap, applied by the deploy, whose ca.pem verifies the database's certificate: /etc/ssl/db/ca.pem, the
   # sslrootcert of every database URL.
   caConfigMap: postgres-ca
-  # Until the MCP runtime roles land (brief B1), the Toolbox and the admin MCP connect with their owner login, read from
-  # the *-database-owner Secrets. Only the kind stack sets this; never an environment.
-  mcpOwnerLogins: false
 
 # ID's TRUSTED_PROXY_CIDRS: the hops whose X-Forwarded-For entries ID skips (Cloudflare's ranges, the load balancer's
 # network, the pod range). Required in production; ID refuses to start without it.

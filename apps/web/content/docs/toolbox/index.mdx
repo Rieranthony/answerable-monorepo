@@ -211,7 +211,7 @@ Intent events carry the intent's organisation, person, host client, capability a
 
 **What a row holds.** The organisation, actor, host client, capability identity and version, execution id, JSON-RPC id, trace and span ids, outcome and bounded `data` (at most 4 KiB). Inputs, results and secrets are never recorded.
 
-**The chain.** A database trigger takes a per-organisation lock, sets `seq` to the organisation's next number and `row_hash` to SHA-256 over the previous row's hash and every field, each written as its byte length, a colon and its text. The migration `packages/mcp-postgres/migrations/0001_evidence.sql` spells the layout out. Another trigger refuses `UPDATE`, `DELETE` and `TRUNCATE`.
+**The chain.** A database trigger takes a per-organisation lock, sets `seq` to the organisation's next number and `row_hash` to SHA-256 over the previous row's hash and every field, each written as its byte length, a colon and its text. The migration `packages/mcp-postgres/migrations/0001_evidence.sql` spells the layout out. Another trigger refuses `UPDATE`, `DELETE` and `TRUNCATE`. The Toolbox serves as a [runtime login](#database-roles) that holds no `UPDATE`, `DELETE` or `TRUNCATE` on events and cannot drop or disable either trigger: only the schema owner can, and the Toolbox refuses to start as the owner.
 
 ```ts
 import { SQL } from "bun"
@@ -263,7 +263,21 @@ bun --env-file=.env run --filter @answerable/mcp-toolbox db:migrate
 bun run toolbox:dev
 ```
 
-Then [enable your organisation](/docs/toolbox/admin#enable-an-organisation), [entitle its members](/docs/toolbox/admin#grant-strings-for-people) and connect Claude Code with the line at the top of this page.
+`db:migrate` prints `Migrated answerable_toolbox: <files>; provisioned answerable_toolbox_runtime`. Then [enable your organisation](/docs/toolbox/admin#enable-an-organisation), [entitle its members](/docs/toolbox/admin#grant-strings-for-people) and connect Claude Code with the line at the top of this page.
+
+### Database roles
+
+The Toolbox migrates as the schema owner and serves as a restricted login, as [Answerable ID](/docs/id/onboard#first-run) and [the admin MCP](/docs/admin#database-roles) do.
+
+- **`db:migrate`** connects with `TOOLBOX_DATABASE_MIGRATION_URL`, applies the migrations, then grants `TOOLBOX_DATABASE_RUNTIME_ROLE` exactly what the Toolbox needs and takes back anything else. It runs again safely.
+- **The Toolbox** connects with `TOOLBOX_DATABASE_URL`, the runtime login, and refuses to listen when that login is a superuser, owns anything, or could change the evidence.
+- **The runtime role** reads and adds evidence, erases payload bodies, moves and sweeps intents, writes the catalogue and the host clients, and nothing else: no `CREATE`, no temporary tables, nothing on `schema_migrations`.
+
+The local logins come from `infra/postgres/init/005-create-mcp-runtime-roles.sql` when the Postgres volume is created. On a volume made before it, run the file once:
+
+```bash
+docker exec -i answerable-postgres-1 psql -U answerable -d postgres < infra/postgres/init/005-create-mcp-runtime-roles.sql
+```
 
 ## Environment
 
@@ -271,7 +285,9 @@ Read from the root `.env` by `bun run toolbox:dev`; every variable is listed in 
 
 | Variable | Meaning | Local value |
 | --- | --- | --- |
-| `TOOLBOX_DATABASE_URL` | The Toolbox's Postgres | `postgres://answerable:answerable@localhost:47432/answerable_toolbox` |
+| `TOOLBOX_DATABASE_URL` | The Toolbox's Postgres as its runtime login; the owner is refused at start | `postgres://answerable_toolbox_runtime:answerable@localhost:47432/answerable_toolbox` |
+| `TOOLBOX_DATABASE_MIGRATION_URL` | The same database as its schema owner, for `db:migrate` only | `postgres://answerable:answerable@localhost:47432/answerable_toolbox` |
+| `TOOLBOX_DATABASE_RUNTIME_ROLE` | The role `db:migrate` provisions: the user of `TOOLBOX_DATABASE_URL` | `answerable_toolbox_runtime` (the default) |
 | `TOOLBOX_TEST_DATABASE_URL` | The test database, reset by `db:test:migrate` | `postgres://answerable:answerable@localhost:47432/answerable_toolbox_test` (the default) |
 | `TOOLBOX_ID_ISSUER` | Answerable ID's origin | `http://localhost:47300` |
 | `TOOLBOX_RESOURCE_URL` | The Toolbox's URL as registered in ID; its path is the endpoint | `http://localhost:47400/mcp` |
@@ -321,6 +337,11 @@ The admin API's audience is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`, s
 | `Invalid Toolbox configuration: <VARIABLE>: …` at start | A variable is missing or invalid | Set it as in [Environment](#environment) |
 | `Capability <identity> version <date> changed its input without a new version…` at start | A provider changed a contract without a new version | Give the tool a new version in its definition or its provider |
 | `Missing the e2e records view…` at start | The view is not built | Run `bun run --filter @answerable/mcp-e2e build` |
+| `The Toolbox cannot start: Database role <role> is not a restricted runtime role: …` | `TOOLBOX_DATABASE_URL` is the owner, a superuser, or a login with more than the Toolbox needs; the message names each problem | Point `TOOLBOX_DATABASE_URL` at the runtime login, then run `db:migrate`, which takes back extra privileges |
+| `password authentication failed for user "answerable_toolbox_runtime"` | The runtime login does not exist, or has another password: `db:migrate` creates a missing role without a login or password | Run `005-create-mcp-runtime-roles.sql` once, as in [Database roles](#database-roles) |
+| Log `permission denied for table <table>` | The runtime role lacks a grant: the database was migrated by an older version | Run `db:migrate` |
+| `Refusing to provision <role> as a runtime role: …` from `db:migrate` | `TOOLBOX_DATABASE_RUNTIME_ROLE` names a role with an attribute beyond login, a membership or an ownership | Name an unprivileged role |
+| `Set TOOLBOX_DATABASE_MIGRATION_URL…` from `db:migrate` | The owner's URL is not set | Set it as in [Environment](#environment) |
 | `503 {"status":"unavailable"}` from `/health` | The database does not answer | Check `TOOLBOX_DATABASE_URL` and Postgres |
 | Log `relation "host_clients" does not exist`, or `"intents"`, and every list or call fails | The database lacks this version's migrations | Run `bun --env-file=.env run --filter @answerable/mcp-toolbox db:migrate` |
 | `db:migrate` fails with `Migration <directory>/<file> changed after it was applied…` | A migration file was edited after it was applied | Restore the file and put the change in a new file |

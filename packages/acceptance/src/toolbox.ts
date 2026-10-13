@@ -2,8 +2,9 @@
 import { createIdAdmin, type IdConfig } from "@answerable/id-admin"
 import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
 import { createRecordStore } from "@answerable/mcp-e2e/records"
+import { assertRuntimeRole, configureRuntimeRole } from "@answerable/mcp-postgres"
 import { toolboxAdminResource } from "@answerable/mcp-toolbox/admin"
-import { migrate } from "@answerable/mcp-toolbox/migrate"
+import { migrate, runtimeGrants } from "@answerable/mcp-toolbox/migrate"
 import { startGrantsPoller } from "@answerable/mcp-toolbox/poller"
 import { createMemoryTracer } from "@answerable/mcp-toolbox/spans"
 import { createToolbox } from "@answerable/mcp-toolbox/toolbox"
@@ -24,8 +25,8 @@ export type HostClient = { clientId: string; redirectUri: string }
  * Register the Toolbox in a started ID and start it with the e2e provider. Registered in ID: the Toolbox's resource (60-second tokens, allowing only
  * `toolbox` and `offline_access` until an enable call widens it) and its admin resource, each of `hosts` as a public host client, and in the platform
  * organisation the Toolbox's machine client `toolbox-hub` and a staff client `toolbox-staff` with `toolbox:admin`. The Toolbox gets the database
- * `database` on the acceptance's PostgreSQL and its grants poller; `fetch` is the HTTP client of its machine client. No organisation is enabled yet.
- * The caller serves `toolbox.fetch` on port 47604.
+ * `database` on the acceptance's PostgreSQL, migrated as the owner, and serves as its runtime login, as `db:migrate` and the entry point do; it gets
+ * its grants poller too. `fetch` is the HTTP client of its machine client. No organisation is enabled yet. The caller serves `toolbox.fetch` on port 47604.
  */
 export async function startToolboxStack(id: Id, { hosts, database, fetch }: { hosts: readonly HostClient[]; database: string; fetch?: IdConfig["fetch"] }) {
   const { admin, manifest } = id
@@ -44,13 +45,15 @@ export async function startToolboxStack(id: Id, { hosts, database, fetch }: { ho
   // first, kept for the admin calls; nothing is sent with it yet.
   await staff.withToken(toolboxAdmin, "toolbox:admin", async () => new Response())
 
-  step(`Creating and migrating ${database}, and starting the Toolbox with the e2e provider`)
-  const db = await createDatabase(database)
-  await migrate(db)
+  step(`Creating and migrating ${database}, and starting the Toolbox with the e2e provider as its runtime login`)
+  const { owner, runtime, role } = await createDatabase(database)
+  await migrate(owner)
+  await configureRuntimeRole(owner, role, runtimeGrants)
+  await assertRuntimeRole(runtime)
   const providers = [createE2eProvider({ records: createRecordStore(), viewHtml: "<!doctype html><title>Records</title>" })]
   const { tracer, spans } = createMemoryTracer()
   const machine = createIdAdmin({ issuer: manifest.idOrigin, adminResource: manifest.adminResource, ...hub, fetch })
-  const toolbox = await createToolbox({ providers, auth: { issuer: manifest.idOrigin, resource: toolboxResource }, db, id: machine, spans: tracer })
+  const toolbox = await createToolbox({ providers, auth: { issuer: manifest.idOrigin, resource: toolboxResource }, db: runtime, id: machine, spans: tracer })
   const poller = startGrantsPoller({ id: machine, grants: toolbox.grants })
   onCleanup(() => poller.stop())
 
@@ -58,8 +61,8 @@ export async function startToolboxStack(id: Id, { hosts, database, fetch }: { ho
     toolbox,
     /** The providers the Toolbox mounts: the e2e provider. */
     providers,
-    /** The Toolbox's database: its catalogue, intents and evidence. */
-    db,
+    /** The Toolbox's database as its owner, to read the catalogue, intents and evidence the Toolbox wrote as its runtime login. */
+    db: owner,
     /** The Toolbox's spans, in memory. */
     spans,
     /** The Toolbox's admin API as the staff client: the status and the JSON body. */

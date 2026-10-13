@@ -156,7 +156,7 @@ describe("inside the cluster", () => {
       import { SQL } from "bun"
       const url = process.env.TOOLBOX_DATABASE_URL
       const probe = async db => {
-        try { const [row] = await db\`select ssl from pg_stat_ssl where pid = pg_backend_pid()\`; return "ssl=" + row.ssl }
+        try { const [row] = await db\`select ssl, current_user as login from pg_stat_ssl where pid = pg_backend_pid()\`; return "ssl=" + row.ssl + " as " + row.login }
         catch (error) { return "refused: " + error.message.split("\\n")[0] }
         finally { await Promise.race([db.close({ timeout: 0 }).catch(() => {}), Bun.sleep(500)]) }
       }
@@ -168,7 +168,8 @@ describe("inside the cluster", () => {
         bunAlone: await probe(new SQL({ url, max: 1 })),
       }))
       process.exit(0)`)
-    expect(result.verified).toBe("ssl=true")
+    // The Toolbox serves as its restricted runtime login, which its migration provisioned.
+    expect(result.verified).toBe("ssl=true as answerable_toolbox_runtime")
     expect(result.plaintext).toContain("no encryption")
     expect(result.wrongAuthority).toContain("unable to verify")
     expect(result.bunAlone).toStartWith("refused")
@@ -180,7 +181,7 @@ describe("inside the cluster", () => {
       const url = process.env.DATABASE_URL
       const probe = async connectionString => {
         const client = new pg.Client({ connectionString, connectionTimeoutMillis: 5000 })
-        try { await client.connect(); const { rows } = await client.query("select ssl from pg_stat_ssl where pid = pg_backend_pid()"); return "ssl=" + rows[0].ssl }
+        try { await client.connect(); const { rows } = await client.query("select ssl, current_user as login from pg_stat_ssl where pid = pg_backend_pid()"); return "ssl=" + rows[0].ssl + " as " + rows[0].login }
         catch (error) { return "refused: " + error.message.split("\\n")[0] }
         finally { await client.end().catch(() => {}) }
       }
@@ -190,7 +191,7 @@ describe("inside the cluster", () => {
         plaintext: await probe(variant(params => { params.set("sslmode", "disable"); params.delete("sslrootcert") })),
         wrongAuthority: await probe(variant(params => params.set("sslrootcert", "/etc/ssl/extra/ca.pem"))),
       }))`)
-    expect(result.verified).toBe("ssl=true")
+    expect(result.verified).toBe("ssl=true as answerable_id_runtime")
     expect(result.plaintext).toContain("no encryption")
     expect(result.wrongAuthority).toMatch(/self-signed|unable to (verify|get)/)
   })

@@ -16,11 +16,6 @@ ingress:
   # The stack's own certificate authority (charts/platform, values-local.yaml).
   clusterIssuer: local
 
-database:
-  # Until brief B1 lands the MCP runtime roles, the Toolbox and the admin MCP run on their owner logins. Set to false then:
-  # the stack already creates answerable_toolbox_runtime and answerable_admin_runtime and their Secrets.
-  mcpOwnerLogins: true
-
 # Cloudflare's stand-in: an nginx beside ingress-nginx in its pod (infra/k8s/local/edge.yaml), which presents the
 # origin-pull certificate for pods that call the public hostnames and reaches ingress-nginx from 127.0.0.1. The test
 # itself plays a visitor and connects straight to ingress-nginx from the Docker network's gateway, which is not trusted.

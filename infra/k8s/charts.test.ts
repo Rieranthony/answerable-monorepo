@@ -114,7 +114,7 @@ describe("charts/answerable", () => {
 
       test("the services never receive an owner login, and mount the database's certificate authority", () => {
         for (const deployment of manifests.filter(manifest => manifest.kind === "Deployment")) {
-          if (name !== "values-local.yaml") expect(secretReferences(deployment).filter(secret => secret.endsWith("-owner")), deployment.metadata.name).toEqual([])
+          expect(secretReferences(deployment).filter(secret => secret.endsWith("-owner")), deployment.metadata.name).toEqual([])
           expect(podSpec(deployment).automountServiceAccountToken).toBe(false)
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           expect(podSpec(deployment).volumes.find((volume: any) => volume.configMap?.name === "postgres-ca")).toBeDefined()
@@ -229,12 +229,16 @@ describe("charts/answerable", () => {
     for (const workload of workloads(render("answerable"))) for (const container of containersOf(workload)) expect(container.image).toEndWith(":unset")
   })
 
-  test("the kind stack's overlay keeps the MCPs on their owner logins until the runtime roles land, as one switch", () => {
-    const local = render("answerable", ["values-local.yaml"])
-    expect(env(named(local, "Deployment", "toolbox")!, "TOOLBOX_DATABASE_URL").valueFrom.secretKeyRef).toEqual({ name: "toolbox-database-owner", key: "TOOLBOX_DATABASE_MIGRATION_URL" })
-    const runtime = render("answerable", ["values-local.yaml"], { "database.mcpOwnerLogins": "false" })
-    expect(env(named(runtime, "Deployment", "toolbox")!, "TOOLBOX_DATABASE_URL").valueFrom.secretKeyRef).toEqual({ name: "toolbox-database", key: "TOOLBOX_DATABASE_URL" })
-    expect(env(named(runtime, "Job", "toolbox-migrate")!, "TOOLBOX_DATABASE_URL")).toBeUndefined()
+  test("the servers connect as their runtime logins and the migrations as the owners, with the role to provision", () => {
+    const manifests = render("answerable", [], { "image.tag": tag })
+    for (const [deployment, variable, secret] of [["id", "DATABASE_URL", "id-database"], ["toolbox", "TOOLBOX_DATABASE_URL", "toolbox-database"], ["admin-mcp", "ADMIN_DATABASE_URL", "admin-database"]]) {
+      expect(env(named(manifests, "Deployment", deployment!)!, variable!).valueFrom.secretKeyRef).toEqual({ name: secret, key: variable })
+    }
+    for (const [job, prefix, role] of [["id-migrate", "", "answerable_id_runtime"], ["toolbox-migrate", "TOOLBOX_", "answerable_toolbox_runtime"], ["admin-migrate", "ADMIN_", "answerable_admin_runtime"]]) {
+      const migration = named(manifests, "Job", job!)!
+      expect(env(migration, `${prefix}DATABASE_MIGRATION_URL`).valueFrom.secretKeyRef.key).toBe(`${prefix}DATABASE_MIGRATION_URL`)
+      expect(env(migration, `${prefix}DATABASE_RUNTIME_ROLE`).value).toBe(role)
+    }
   })
 })
 

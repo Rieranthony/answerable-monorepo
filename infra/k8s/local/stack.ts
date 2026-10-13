@@ -54,6 +54,27 @@ function generateSecrets() {
   }
 }
 
+/**
+ * What the database runs once, when its data directory is created: the three databases, each owned by its own login, and
+ * the restricted runtime logins the services use, as the ops bootstrap creates them in a cloud. The runtime logins get
+ * their privileges from the migrate Jobs (configureRuntimeRole). The passwords are hex, so they need no quoting.
+ */
+function loginsSql({ passwords }: ReturnType<typeof generateSecrets>) {
+  const restricted = "NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS"
+  return [
+    `CREATE ROLE answerable_id_owner LOGIN PASSWORD '${passwords.idOwner}';`,
+    `CREATE ROLE answerable_toolbox_owner LOGIN PASSWORD '${passwords.toolboxOwner}';`,
+    `CREATE ROLE answerable_admin_owner LOGIN PASSWORD '${passwords.adminOwner}';`,
+    `CREATE ROLE answerable_id_runtime LOGIN PASSWORD '${passwords.idRuntime}' ${restricted};`,
+    `CREATE ROLE answerable_toolbox_runtime LOGIN PASSWORD '${passwords.toolboxRuntime}' ${restricted};`,
+    `CREATE ROLE answerable_admin_runtime LOGIN PASSWORD '${passwords.adminRuntime}' ${restricted};`,
+    "CREATE DATABASE answerable_id OWNER answerable_id_owner;",
+    "CREATE DATABASE answerable_toolbox OWNER answerable_toolbox_owner;",
+    "CREATE DATABASE answerable_admin OWNER answerable_admin_owner;",
+    "",
+  ].join("\n")
+}
+
 const databaseUrl = (login: string, password: string, database: string) =>
   `postgres://${login}:${password}@postgres.database.svc.cluster.local:5432/${database}?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem`
 
@@ -98,11 +119,7 @@ export async function startStack() {
       await helm(["upgrade", "--install", "platform", join(charts, "platform"), "--namespace", "platform", "--values", join(charts, "platform/values-local.yaml"), "--wait", "--timeout", "10m"])
     })
     await step("start the database and the edge", async () => {
-      const { passwords } = secrets
-      await apply("database", [{ apiVersion: "v1", kind: "Secret", metadata: { name: "postgres-bootstrap" }, stringData: {
-        SUPERUSER_PASSWORD: secrets.superuser, ID_OWNER_PASSWORD: passwords.idOwner, ID_RUNTIME_PASSWORD: passwords.idRuntime, TOOLBOX_OWNER_PASSWORD: passwords.toolboxOwner,
-        TOOLBOX_RUNTIME_PASSWORD: passwords.toolboxRuntime, ADMIN_OWNER_PASSWORD: passwords.adminOwner, ADMIN_RUNTIME_PASSWORD: passwords.adminRuntime,
-      } }])
+      await apply("database", [{ apiVersion: "v1", kind: "Secret", metadata: { name: "postgres-bootstrap" }, stringData: { SUPERUSER_PASSWORD: secrets.superuser, "logins.sql": loginsSql(secrets) } }])
       await kubectl(["apply", "-f", join(here, "database.yaml"), "-f", join(here, "edge.yaml")])
       await kubectl(["wait", "-n", "platform", "certificate/edge-tls", "certificate/edge-origin-pull", "--for=condition=Ready", "--timeout=180s"])
       await kubectl(["wait", "-n", "database", "certificate/postgres-tls", "--for=condition=Ready", "--timeout=180s"])

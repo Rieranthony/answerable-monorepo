@@ -1,0 +1,199 @@
+name: Promote production
+
+# One click to production: choose the image staging runs (the default) or an earlier sha- tag to roll back to, and
+# approve the run on the production environment. Production gets the bytes staging proved and is never rebuilt.
+# What this does and which secrets it needs: infra/pipeline/README.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "The image tag to deploy: staging for the tag staging runs now, or sha- and a commit SHA to roll back to"
+        required: true
+        default: staging
+        type: string
+      apply_infra:
+        description: Apply infra/civo/envs/production with Terraform before the deploy. A no-op when nothing changed.
+        required: true
+        default: true
+        type: boolean
+
+# One run at a time and never cancelled halfway: a cancelled Terraform apply or Helm upgrade leaves a lock behind.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  REGISTRY: ghcr.io/rieranthony/answerable
+
+jobs:
+  resolve:
+    name: Resolve the image tag
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # Only to read the tag staging runs, with staging's deployer token. This creates no deployment record.
+    environment:
+      name: staging
+      deployment: false
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      digests: ${{ steps.verify.outputs.digests }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.1
+
+      - uses: ./.github/actions/setup-tools
+        with:
+          tools: helm
+
+      - name: Read the tag staging runs
+        id: staging
+        if: inputs.image_tag == 'staging'
+        env:
+          KUBE_SERVER: ${{ secrets.KUBE_SERVER }}
+          KUBE_CA: ${{ secrets.KUBE_CA }}
+          KUBE_TOKEN: ${{ secrets.KUBE_TOKEN }}
+        run: |
+          tag=$(bun infra/pipeline/src/cli.ts current-tag)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Choose the tag
+        id: tag
+        env:
+          STAGING_TAG: ${{ steps.staging.outputs.tag }}
+          GIVEN_TAG: ${{ inputs.image_tag }}
+        run: |
+          tag="${STAGING_TAG:-$GIVEN_TAG}"
+          if ! [[ "$tag" =~ ^sha-[0-9a-f]{40}$ ]]; then
+            echo "::error::'$tag' is not an image tag: expected staging, or sha- and a 40-character commit SHA"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Production will run \`$tag\`." >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      # Each tag is a manifest list (amd64 and arm64), and deploy-staging.yml signs the list's digest. The digest the
+      # tag points to is read once, that digest is verified, and the production job deploys exactly those digests,
+      # so a rerun that moves a tag afterwards changes nothing. Only deploy-staging.yml on main signs images, and it
+      # signs them only after CI passed, so a tag that verifies was built from a commit that passed CI. A tag typed
+      # by hand cannot name anything else.
+      - name: Verify the image signatures
+        id: verify
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          identity="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/.github/workflows/deploy-staging.yml@refs/heads/main"
+          digests=()
+          for image in id toolbox admin-mcp ops; do
+            digest=$(docker buildx imagetools inspect "$REGISTRY/$image:$TAG" --format '{{.Manifest.Digest}}')
+            cosign verify "$REGISTRY/$image@$digest" \
+              --certificate-identity "$identity" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
+            echo "verified $image:$TAG is $digest"
+            digests+=("$image=$digest")
+          done
+          echo "digests=${digests[*]}" >> "$GITHUB_OUTPUT"
+
+  # One job, so that the environment's reviewer approves once for the whole promotion. The Civo and Cloudflare tokens
+  # reach the Terraform step only; the deploy step holds the namespace-scoped deployer token and nothing else.
+  production:
+    name: Apply and deploy to production
+    needs: resolve
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: production
+    permissions:
+      contents: read
+    env:
+      IMAGE_TAG: ${{ needs.resolve.outputs.tag }}
+      IMAGE_DIGESTS: ${{ needs.resolve.outputs.digests }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.1
+
+      - uses: ./.github/actions/setup-tools
+        with:
+          tools: sops helm kubectl terraform
+
+      - name: Apply the production infrastructure
+        if: inputs.apply_infra
+        working-directory: infra/civo/envs/production
+        env:
+          TF_IN_AUTOMATION: "1"
+          CIVO_TOKEN: ${{ secrets.CIVO_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.STATE_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.STATE_SECRET_ACCESS_KEY }}
+          # Production's Kubernetes API admits the operators' addresses and nothing else.
+          TF_VAR_allowed_api_cidrs: ${{ secrets.ALLOWED_API_CIDRS }}
+        run: |
+          if [ -z "$TF_VAR_allowed_api_cidrs" ]; then
+            echo "::error::ALLOWED_API_CIDRS is not set on the production environment: a JSON list of the operators' addresses, such as [\"198.51.100.7/32\"]"
+            exit 1
+          fi
+          terraform init -input=false
+          terraform apply -input=false -auto-approve
+
+      - name: Deploy
+        env:
+          KUBE_SERVER: ${{ secrets.KUBE_SERVER }}
+          KUBE_CA: ${{ secrets.KUBE_CA }}
+          KUBE_TOKEN: ${{ secrets.KUBE_TOKEN }}
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+        run: |
+          # The digests verified in the resolve job: <image>=sha256:<hex>, space-separated.
+          read -ra pairs <<< "$IMAGE_DIGESTS"
+          pins=()
+          for pair in "${pairs[@]}"; do pins+=(--image-digest "$pair"); done
+          if [ "${#pins[@]}" -ne 8 ]; then
+            echo "::error::expected the verified digest of all four images, got '$IMAGE_DIGESTS'"
+            exit 1
+          fi
+          bun infra/pipeline/src/cli.ts deploy --environment production --image-tag "$IMAGE_TAG" "${pins[@]}" --bootstrap
+
+      - name: Summarise
+        run: echo "Production runs \`$IMAGE_TAG\`." >> "$GITHUB_STEP_SUMMARY"
+
+  smoke:
+    name: Smoke test production
+    needs: production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.1
+
+      - name: Smoke test
+        run: |
+          status=0
+          bun infra/pipeline/src/cli.ts smoke --environment production --wait 300 | tee smoke.txt || status=$?
+          { echo '```text'; cat smoke.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

@@ -2,8 +2,10 @@
 
 ## 0.3.6
 
-No tool changes. The Toolbox can run in a container.
+No tool changes. The Toolbox serves as a restricted runtime login, and can run in a container. Breaking for an existing setup: `TOOLBOX_DATABASE_URL` must name the runtime login, and `db:migrate` reads the owner's URL from `TOOLBOX_DATABASE_MIGRATION_URL`.
 
+- The server refuses to start, before anything is written, when `TOOLBOX_DATABASE_URL` is the schema owner, a superuser, or any login that could change the evidence (`@answerable/mcp-postgres`'s `assertRuntimeRole`); the message names each problem.
+- `scripts/migrate.ts` migrates with `TOOLBOX_DATABASE_MIGRATION_URL`, then provisions `TOOLBOX_DATABASE_RUNTIME_ROLE` (`answerable_toolbox_runtime` by default) with exactly the grants the Toolbox's tables need.
 - `TOOLBOX_HOST` is the address the server listens on, `127.0.0.1` by default; the image sets `0.0.0.0`. It was always `127.0.0.1`.
 - The server and `scripts/migrate.ts` open the database with `@answerable/mcp-postgres` 0.5.0's `connect`, so `TOOLBOX_DATABASE_URL` can end in `?sslmode=verify-full&sslrootcert=<file>` and the server is verified against that certificate authority.
 

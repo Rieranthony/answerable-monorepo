@@ -11,11 +11,7 @@
 - name: ADMIN_ID_CLIENT_ID
   value: {{ .Values.adminMcp.clientId | quote }}
 {{ include "answerable.secretEnv" (dict "name" "ADMIN_ID_CLIENT_SECRET" "secret" "admin-id-client" "key" "ADMIN_ID_CLIENT_SECRET") }}
-{{- if .Values.database.mcpOwnerLogins }}
-{{ include "answerable.secretEnv" (dict "name" "ADMIN_DATABASE_URL" "secret" "admin-database-owner" "key" "ADMIN_DATABASE_MIGRATION_URL") }}
-{{- else }}
 {{ include "answerable.secretEnv" (dict "name" "ADMIN_DATABASE_URL" "secret" "admin-database" "key" "ADMIN_DATABASE_URL") }}
-{{- end }}
 {{- end -}}
 {{- if .Values.adminMcp.enabled }}
 {{ include "answerable.server" (dict

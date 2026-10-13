@@ -6,10 +6,11 @@ import { errorOf, type TestMcp } from "@answerable/mcp/testing"
 import { createEvidence } from "@answerable/mcp-postgres"
 import { createAdminMcp } from "./admin"
 import { createAdmin, resource, seed, type FakeId } from "./test/admin"
-import { database } from "./test/database"
+import { serving } from "./test/database"
 
-const db = database.connect()
-afterAll(() => db.close())
+const login = await serving()
+const { db } = login
+afterAll(() => login.drop())
 const admins: Awaited<ReturnType<typeof createAdmin>>[] = []
 afterEach(async () => {
   setSystemTime()
@@ -157,7 +158,7 @@ test("every call leaves one evidence row on the platform organisation's chain, a
 })
 
 test("health answers ok only while the database answers", async () => {
-  const own = new SQL({ url: database.url, max: 1 })
+  const own = new SQL({ url: login.url, max: 1 })
   const id = createFakeId({ clientId: "admin-mcp" })
   const server = createAdminMcp({ auth: { issuer: "https://id.test", resource }, db: own, id: createIdAdmin(id.config), platform: id.organizationId })
   const health = async () => {

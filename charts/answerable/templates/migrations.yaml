@@ -63,23 +63,15 @@ automountServiceAccountToken: false
   "command" (list "bun" "apps/id/scripts/migrate.ts")
   "env" (printf "%s\n- name: DATABASE_RUNTIME_ROLE\n  value: %s" (include "answerable.secretEnv" (dict "name" "DATABASE_MIGRATION_URL" "secret" "id-database-owner" "key" "DATABASE_MIGRATION_URL")) (.Values.id.runtimeRole | quote))) }}
 ---
-{{- $toolboxEnv := printf "%s\n- name: TOOLBOX_DATABASE_RUNTIME_ROLE\n  value: %s" (include "answerable.secretEnv" (dict "name" "TOOLBOX_DATABASE_MIGRATION_URL" "secret" "toolbox-database-owner" "key" "TOOLBOX_DATABASE_MIGRATION_URL")) (.Values.toolbox.runtimeRole | quote) }}
-{{- if .Values.database.mcpOwnerLogins }}
-{{- /* Until brief B1, the migrate script reads the owner URL as TOOLBOX_DATABASE_URL. */ -}}
-{{- $toolboxEnv = printf "%s\n%s" $toolboxEnv (include "answerable.secretEnv" (dict "name" "TOOLBOX_DATABASE_URL" "secret" "toolbox-database-owner" "key" "TOOLBOX_DATABASE_MIGRATION_URL")) }}
-{{- end }}
 {{ include "answerable.migration" (dict
   "root" .
   "name" "toolbox-migrate"
   "image" "toolbox"
   "weight" -9
   "command" (list "bun" "mcps/toolbox/scripts/migrate.ts")
-  "env" $toolboxEnv) }}
+  "env" (printf "%s\n- name: TOOLBOX_DATABASE_RUNTIME_ROLE\n  value: %s" (include "answerable.secretEnv" (dict "name" "TOOLBOX_DATABASE_MIGRATION_URL" "secret" "toolbox-database-owner" "key" "TOOLBOX_DATABASE_MIGRATION_URL")) (.Values.toolbox.runtimeRole | quote))) }}
 ---
 {{- $adminEnv := printf "%s\n- name: ADMIN_DATABASE_RUNTIME_ROLE\n  value: %s" (include "answerable.secretEnv" (dict "name" "ADMIN_DATABASE_MIGRATION_URL" "secret" "admin-database-owner" "key" "ADMIN_DATABASE_MIGRATION_URL")) (.Values.adminMcp.runtimeRole | quote) }}
-{{- if .Values.database.mcpOwnerLogins }}
-{{- $adminEnv = printf "%s\n%s" $adminEnv (include "answerable.secretEnv" (dict "name" "ADMIN_DATABASE_URL" "secret" "admin-database-owner" "key" "ADMIN_DATABASE_MIGRATION_URL")) }}
-{{- end }}
 {{ include "answerable.migration" (dict
   "root" .
   "name" "admin-migrate"
