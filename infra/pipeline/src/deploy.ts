@@ -196,7 +196,8 @@ async function upgrade(session: Session, plan: Upgrade): Promise<void> {
     CHART,
     "--namespace",
     NAMESPACE,
-    "--atomic",
+    // Helm 4 deprecated --atomic for --rollback-on-failure; setup-tools pins Helm 4.
+    "--rollback-on-failure",
     "--wait",
     ...(plan.jobs.length ? ["--wait-for-jobs"] : []),
     "--timeout",
@@ -262,7 +263,7 @@ export type DeployOptions = {
 
 /**
  * Deploy an image tag to an environment: log in with the deployer token, apply the decrypted secrets, then
- * `helm upgrade --install --atomic`. When the upgrade fails the migration and ops Jobs' logs are printed.
+ * `helm upgrade --install --rollback-on-failure`. When the upgrade fails the migration and ops Jobs' logs are printed.
  */
 export async function deploy(options: DeployOptions, deps: Deps): Promise<void> {
   assertImageTag(options.imageTag)

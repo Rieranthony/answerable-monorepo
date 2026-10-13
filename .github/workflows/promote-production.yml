@@ -87,18 +87,21 @@ jobs:
 
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
-      # Only deploy-staging.yml on main signs images, and it signs them only after CI passed, so a tag that verifies
-      # was built from a commit that passed CI. A tag typed by hand cannot name anything else.
+      # Each tag is a manifest list (amd64 and arm64), and deploy-staging.yml signs the list's digest. The digest the
+      # tag points to is read once and that digest is verified. Only deploy-staging.yml on main signs images, and it
+      # signs them only after CI passed, so a tag that verifies was built from a commit that passed CI. A tag typed by
+      # hand cannot name anything else.
       - name: Verify the image signatures
         env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           identity="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/.github/workflows/deploy-staging.yml@refs/heads/main"
           for image in id toolbox admin-mcp ops; do
-            cosign verify "$REGISTRY/$image:$TAG" \
+            digest=$(docker buildx imagetools inspect "$REGISTRY/$image:$TAG" --format '{{.Manifest.Digest}}')
+            cosign verify "$REGISTRY/$image@$digest" \
               --certificate-identity "$identity" \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
-            echo "verified $image:$TAG"
+            echo "verified $image:$TAG is $digest"
           done
 
   # One job, so that the environment's reviewer approves once for the whole promotion. The Civo and Cloudflare tokens
