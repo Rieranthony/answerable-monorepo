@@ -75,8 +75,6 @@ module "platform" {
   load_balancer_firewall_id = module.ingress_firewall.firewall_id
   load_balancer_ip          = module.ingress_firewall.ip
   proxy_real_ip_cidrs       = concat(local.cloudflare_cidrs, [module.network.cidr_v4])
-
-  depends_on = [module.cluster]
 }
 
 module "deployer" {
