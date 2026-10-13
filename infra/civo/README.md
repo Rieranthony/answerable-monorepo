@@ -155,6 +155,14 @@ Per environment, from a trusted machine. Staging shown; production is the same i
 
 A cluster that is ever replaced needs step 5 again: the providers cannot be configured from a cluster that is being recreated in the same plan.
 
+**With the setup commands.** `bun run setup` runs these steps for you without printing a secret; the whole first run, in order, is in [`infra/setup/README.md`](../setup/README.md).
+
+| Step | Command |
+| --- | --- |
+| 2, 3, 5 and 6 | `first-apply --environment <env>`, which prints step 4 as a check, stops before step 6 until both CA files exist, and continues with `--resume` |
+| Before 6 | `origin-pull --environment <env> --zone <zone>` writes `envs/<env>/edge-ca/ca.pem` and uploads the zone's origin-pull certificate; `database-ca --environment <env>` writes `envs/<env>/database-ca.pem` |
+| 7 | `publish-env --environment <env>` |
+
 ## What the first apply must confirm
 
 Each of these could not be proved without a Civo account. Record the answer in [`progress.md`](../../docs/goals/aws-deploy/progress.md) and fix the code where it differs.

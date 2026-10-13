@@ -75,6 +75,17 @@
         "*.ts"
       ]
     },
+    "infra/setup": {
+      "entry": [
+        "src/cli.ts",
+        "src/**/*.test.ts",
+        "proof/*.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "proof/**/*.ts"
+      ]
+    },
     "infra/k8s": {
       "entry": [
         "*.test.ts",
