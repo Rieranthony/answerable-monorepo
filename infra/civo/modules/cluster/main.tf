@@ -6,11 +6,15 @@ locals {
   # the platform chart is the one controller (D22), so Traefik goes. metrics-server, also a default, stays: the
   # HorizontalPodAutoscalers read it. Civo cannot change applications after creation.
   applications = "-Traefik-v2-nodeport"
+
+  # Who may reach the Kubernetes API: the operators' addresses, plus the whole internet while api_open_to_internet
+  # is true (staging's stopgap for GitHub-hosted runners; see the variable).
+  api_sources = var.api_open_to_internet ? distinct(concat(var.allowed_api_cidrs, ["0.0.0.0/0"])) : var.allowed_api_cidrs
 }
 
 # Civo clusters always have a public address. This firewall keeps everything outside the private network away from it
-# except the Kubernetes API, and the API only from the listed addresses. The private network's own range is admitted
-# so that the load balancer reaches the ingress controller's node ports and the nodes reach one another.
+# except the Kubernetes API, and the API only from local.api_sources. The private network's own range is admitted so
+# that the load balancer reaches the ingress controller's node ports and the nodes reach one another.
 resource "civo_vpc_firewall" "this" {
   name                 = local.name
   network_id           = var.network_id
@@ -20,7 +24,7 @@ resource "civo_vpc_firewall" "this" {
     label      = "kubernetes-api"
     protocol   = "tcp"
     port_range = "6443"
-    cidr       = var.allowed_api_cidrs
+    cidr       = local.api_sources
     action     = "allow"
   }
 

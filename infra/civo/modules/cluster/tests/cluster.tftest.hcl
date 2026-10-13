@@ -138,6 +138,87 @@ run "refuses_no_api_addresses" {
   expect_failures = [var.allowed_api_cidrs]
 }
 
+run "reports_a_closed_api_by_default" {
+  command = plan
+
+  assert {
+    condition     = output.api_open_to_internet == false
+    error_message = "By default the Kubernetes API admits the listed addresses only."
+  }
+}
+
+# The staging stopgap: GitHub-hosted runners have no fixed address, so staging's API admits the internet and the
+# cluster's own authentication is the barrier, until GitOps or a Cloudflare tunnel closes it again.
+run "opens_the_api_when_asked_and_nothing_else" {
+  command = plan
+
+  variables {
+    api_open_to_internet = true
+  }
+
+  assert {
+    condition = alltrue([
+      for rule in civo_vpc_firewall.this.ingress_rule :
+      rule.cidr == toset(["198.51.100.7/32", "203.0.113.0/28", "0.0.0.0/0"]) if rule.port_range == "6443"
+    ]) && length([for rule in civo_vpc_firewall.this.ingress_rule : rule if rule.port_range == "6443"]) == 1
+    error_message = "An open API admits the internet on 6443 and keeps the operators' addresses."
+  }
+
+  assert {
+    condition = alltrue([
+      for rule in civo_vpc_firewall.this.ingress_rule :
+      !contains(rule.cidr, "0.0.0.0/0") && !contains(rule.cidr, "::/0") if rule.port_range != "6443"
+    ]) && length(civo_vpc_firewall.this.ingress_rule) == 3
+    error_message = "Opening the API must open nothing but 6443."
+  }
+
+  assert {
+    condition     = output.api_open_to_internet
+    error_message = "The module must report an open API."
+  }
+}
+
+run "accepts_the_whole_internet_in_the_list_when_open" {
+  command = plan
+
+  variables {
+    api_open_to_internet = true
+    allowed_api_cidrs    = ["0.0.0.0/0"]
+  }
+
+  assert {
+    condition = alltrue([
+      for rule in civo_vpc_firewall.this.ingress_rule : rule.cidr == toset(["0.0.0.0/0"]) if rule.port_range == "6443"
+    ])
+    error_message = "The internet listed once is admitted once."
+  }
+}
+
+run "accepts_no_operator_addresses_when_open" {
+  command = plan
+
+  variables {
+    api_open_to_internet = true
+    allowed_api_cidrs    = []
+  }
+
+  assert {
+    condition     = output.api_open_to_internet
+    error_message = "An open API needs no operator address to be reachable."
+  }
+}
+
+run "refuses_an_open_api_in_production" {
+  command = plan
+
+  variables {
+    environment          = "production"
+    api_open_to_internet = true
+  }
+
+  expect_failures = [var.api_open_to_internet]
+}
+
 run "refuses_a_malformed_api_address" {
   command = plan
 

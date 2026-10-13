@@ -4,6 +4,10 @@
 environment  = "production"
 network_cidr = "10.20.0.0/24"
 
+# The Kubernetes API admits TF_VAR_allowed_api_cidrs only. The cluster module refuses true here: production waits for
+# the GitOps or tunnel follow-up rather than opening its API to the internet as staging does.
+api_open_to_internet = false
+
 # Three Medium nodes (2 vCPU, 4 GB each, $21.73 a month): two replicas per service on different nodes, with room to
 # drain one node for maintenance.
 node_size  = "g4s.kube.medium"

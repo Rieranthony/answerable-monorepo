@@ -39,13 +39,14 @@ module "network" {
 module "cluster" {
   source = "../../modules/cluster"
 
-  environment        = var.environment
-  network_id         = module.network.id
-  network_cidr       = module.network.cidr_v4
-  allowed_api_cidrs  = var.allowed_api_cidrs
-  node_size          = var.node_size
-  node_count         = var.node_count
-  kubernetes_version = var.kubernetes_version
+  environment          = var.environment
+  network_id           = module.network.id
+  network_cidr         = module.network.cidr_v4
+  allowed_api_cidrs    = var.allowed_api_cidrs
+  api_open_to_internet = var.api_open_to_internet
+  node_size            = var.node_size
+  node_count           = var.node_count
+  kubernetes_version   = var.kubernetes_version
 }
 
 module "database" {

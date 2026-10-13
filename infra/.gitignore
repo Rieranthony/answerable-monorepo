@@ -1,0 +1,2 @@
+# `bun run infra:check` keeps its Terraform plugin cache in infra/.terraform/plugin-cache.
+.terraform/
