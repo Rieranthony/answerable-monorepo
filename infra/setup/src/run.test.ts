@@ -10,7 +10,11 @@ describe("systemRunner", () => {
       onOutput: (text) => seen.push(text),
     })
     expect(result).toEqual({ exitCode: 0, stdout: "in yes", stderr: "oops" })
-    expect(seen.join("")).toContain("in yes")
+    // Both streams reach onOutput, and the order in which their chunks interleave is the operating system's: on Linux
+    // stderr's "oops" can arrive between stdout's "in" and " yes". So check each stream's text, not one ordering.
+    const heard = seen.join("")
+    expect(heard).toContain("oops")
+    expect(heard.replace("oops", "")).toBe("in yes")
   })
 
   test("closes standard input when there is none, and runs in the given directory", async () => {
