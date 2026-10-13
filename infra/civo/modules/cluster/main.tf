@@ -1,10 +1,11 @@
 locals {
   name = "answerable-${var.environment}-cluster"
 
-  # Marketplace applications, comma-separated, a leading "-" removing a default one. Civo installs Traefik by default
-  # (marketplace name `traefik2-nodeport`); ingress-nginx from the platform chart is the one controller (D22), so
-  # Traefik goes. metrics-server, also a default, stays: the HorizontalPodAutoscalers read it.
-  applications = "-traefik2-nodeport"
+  # Marketplace applications, comma-separated, a leading "-" removing a default one. Civo installs Traefik by default,
+  # named Traefik-v2-nodeport in `civo kubernetes show` and in the Civo CLI's own removal example; ingress-nginx from
+  # the platform chart is the one controller (D22), so Traefik goes. metrics-server, also a default, stays: the
+  # HorizontalPodAutoscalers read it. Civo cannot change applications after creation.
+  applications = "-Traefik-v2-nodeport"
 }
 
 # Civo clusters always have a public address. This firewall keeps everything outside the private network away from it
@@ -80,5 +81,12 @@ resource "civo_kubernetes_cluster" "this" {
     label      = "answerable-${var.environment}-nodes"
     size       = var.node_size
     node_count = var.node_count
+  }
+
+  lifecycle {
+    postcondition {
+      condition     = !anytrue([for app in self.installed_applications : strcontains(lower(app.application), "traefik")])
+      error_message = "Civo installed Traefik despite the removal in `applications`; correct the application's name in modules/cluster/main.tf and recreate the cluster, or remove it with `civo kubernetes applications remove`."
+    }
   }
 }

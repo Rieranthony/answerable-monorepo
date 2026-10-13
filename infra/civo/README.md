@@ -21,7 +21,7 @@ The two roots share every `.tf` file byte for byte except `backend.tf`; their si
 | Module | What it creates | What its tests hold it to |
 | --- | --- | --- |
 | `network` | `civo_vpc_network` | A /16 to /28 inside 10.0.0.0/8, clear of the pod and service ranges |
-| `cluster` | `civo_vpc_firewall`, `civo_kubernetes_cluster` | API (6443) from `allowed_api_cidrs` only, never `0.0.0.0/0`; the private network's own range; nothing else inbound; k3s with Cilium; Civo's Traefik removed; at least two nodes |
+| `cluster` | `civo_vpc_firewall`, `civo_kubernetes_cluster` | API (6443) from `allowed_api_cidrs` only, never `0.0.0.0/0`; the private network's own range; nothing else inbound; k3s with Cilium; Civo's Traefik removed, and the apply fails if it is installed anyway; at least two nodes |
 | `database` | `civo_vpc_firewall`, `civo_database` | PostgreSQL 17; 5432 from the private network only; outbound to the private network only; 1, 3 or 5 nodes; `prevent_destroy` |
 | `ingress-firewall` | `civo_vpc_firewall`, `civo_vpc_reserved_ip` | 443 from exactly Cloudflare's IPv4 ranges; no port 80; outbound to the private network only |
 | `state` | `civo_object_store_credential`, `civo_object_store` | One 500 GB block, its own credential; `prevent_destroy` |
@@ -133,7 +133,7 @@ Each of these could not be proved without a Civo account. Record the answer in [
 | Question | How to check | If it differs |
 | --- | --- | --- |
 | Does Civo's object store honour `use_lockfile`? | Step 4 | `use_lockfile = false`, one operator at a time |
-| Is Traefik absent? The marketplace name is `traefik2-nodeport` | `kubectl get pods -A`; `civo kubernetes show` lists the installed applications | Correct the name in `modules/cluster/main.tf` |
+| Is Traefik absent? The root removes `Traefik-v2-nodeport`, the name Civo's CLI documentation uses | Automatic: a postcondition fails the apply when the cluster reports a Traefik application | Correct the name in `modules/cluster/main.tf` and recreate the cluster, or `civo kubernetes applications remove` |
 | Does the load balancer reach the ingress node ports through the cluster firewall? The firewall admits the private network's range for this | `curl` through Cloudflare once the records are live | Admit the node port range from the load balancer's private address |
 | Does the load balancer work with outbound limited to the private network? | As above | Widen its egress rule |
 | What address does ingress-nginx see? No PROXY protocol is configured, so it should be the load balancer's private address, which is why the private range is in `trusted_proxy_cidrs` | Read `X-Forwarded-For` at ID through the audit API | Enable `kubernetes.civo.com/loadbalancer-enable-proxy-protocol` with ingress-nginx's `use-proxy-protocol` |
@@ -152,6 +152,6 @@ Each of these could not be proved without a Civo account. Record the answer in [
 
 ## Not yet
 
-- **Deploys from GitHub-hosted runners.** The Kubernetes API admits `allowed_api_cidrs` only, and GitHub's hosted runners publish 5,508 IPv4 ranges (`https://api.github.com/meta`, `actions`, 13 October 2026), too many for a firewall. The deploy workflow needs a fixed egress address (a self-hosted runner or a tunnel) or a decision to open the API; the module refuses `0.0.0.0/0`.
+- **Reaching the cluster from GitHub-hosted runners.** The Kubernetes API admits `allowed_api_cidrs` only, and GitHub's hosted runners publish 5,508 IPv4 ranges (`https://api.github.com/meta`, `actions`, 13 October 2026), too many for a firewall. Both the deploy workflow and a CI `terraform apply` of these roots (whose kubernetes and helm providers talk to the API) need a fixed egress address, such as a self-hosted runner or a tunnel, or a decision to open the API; the module refuses `0.0.0.0/0`.
 - **Bot Fight Mode as code.** `cloudflare_bot_management` can turn it off, but the token would need Bot Management Edit; it stays a dashboard toggle.
 - **The AWS and Google roots.** Written in a later brief.

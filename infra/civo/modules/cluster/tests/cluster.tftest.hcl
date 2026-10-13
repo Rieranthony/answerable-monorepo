@@ -43,7 +43,7 @@ run "builds_the_cluster_on_the_private_network" {
   }
 
   assert {
-    condition     = contains(split(",", civo_kubernetes_cluster.this.applications), "-traefik2-nodeport")
+    condition     = contains(split(",", civo_kubernetes_cluster.this.applications), "-Traefik-v2-nodeport")
     error_message = "The cluster must remove Civo's default Traefik so that ingress-nginx is the only ingress controller."
   }
 
@@ -166,4 +166,42 @@ run "refuses_a_single_node" {
   }
 
   expect_failures = [var.node_count]
+}
+
+# The removal above names Traefik as Civo's CLI documentation does; if Civo installs it all the same, the apply fails
+# rather than leaving a second ingress controller in the cluster.
+run "fails_when_civo_installs_traefik_anyway" {
+  command = plan
+
+  override_resource {
+    target          = civo_kubernetes_cluster.this
+    override_during = plan
+    values = {
+      installed_applications = [
+        { application = "Traefik-v2-nodeport", category = "architecture", installed = true, version = "2.9.4" },
+        { application = "metrics-server", category = "architecture", installed = true, version = "(default)" },
+      ]
+    }
+  }
+
+  expect_failures = [civo_kubernetes_cluster.this]
+}
+
+run "accepts_a_cluster_without_traefik" {
+  command = plan
+
+  override_resource {
+    target          = civo_kubernetes_cluster.this
+    override_during = plan
+    values = {
+      installed_applications = [
+        { application = "metrics-server", category = "architecture", installed = true, version = "(default)" },
+      ]
+    }
+  }
+
+  assert {
+    condition     = length(civo_kubernetes_cluster.this.installed_applications) == 1
+    error_message = "A cluster with metrics-server alone must be accepted."
+  }
 }
