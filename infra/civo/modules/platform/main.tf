@@ -25,25 +25,30 @@ resource "kubernetes_namespace_v1" "platform" {
 
 locals {
   # The values only Terraform knows, applied after every values file so that they win. The keys are the upstream
-  # ingress-nginx chart's, under the dependency's name in charts/platform.
+  # Traefik chart's (traefik/traefik-helm-chart, values.yaml at v41.7.1), under the dependency's name in
+  # charts/platform: the Service's annotations, and the websecure entry point's trusted ranges for X-Forwarded-*.
+  # Traefik keeps a trusted peer's X-Forwarded-For and appends the peer's address, so ID's right-to-left walk is
+  # unchanged (D22, D31); an untrusted peer's X-Forwarded-* headers are deleted (README.md).
   cloud_values = yamlencode({
-    "ingress-nginx" = {
-      controller = {
-        service = {
-          annotations = {
-            "kubernetes.civo.com/firewall-id"  = var.load_balancer_firewall_id
-            "kubernetes.civo.com/ipv4-address" = var.load_balancer_ip
-          }
+    traefik = {
+      service = {
+        annotations = {
+          "kubernetes.civo.com/firewall-id"  = var.load_balancer_firewall_id
+          "kubernetes.civo.com/ipv4-address" = var.load_balancer_ip
         }
-        config = {
-          "proxy-real-ip-cidr" = join(",", var.proxy_real_ip_cidrs)
+      }
+      ports = {
+        websecure = {
+          forwardedHeaders = {
+            trustedIPs = var.trusted_proxy_cidrs
+          }
         }
       }
     }
   })
 }
 
-# charts/platform: ingress-nginx, cert-manager and the Grafana agent, pinned as chart dependencies. Terraform installs
+# charts/platform: Traefik (D31), cert-manager and the Grafana agent, pinned as chart dependencies. Terraform installs
 # it with the cluster's admin credential because it carries cluster-wide objects (CRDs, ClusterRoles, the
 # ClusterIssuer) that the namespace-scoped deployer may not touch; the deploy workflow upgrades only charts/answerable.
 resource "helm_release" "platform" {
@@ -56,5 +61,5 @@ resource "helm_release" "platform" {
   wait              = true
   timeout           = 900
   max_history       = 10
-  values            = concat(var.values, [local.cloud_values])
+  values            = concat([for path in var.values_files : file(path)], [local.cloud_values])
 }

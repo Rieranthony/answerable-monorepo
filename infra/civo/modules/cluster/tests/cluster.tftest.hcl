@@ -1,5 +1,6 @@
 # The cluster and its firewall: the Kubernetes API answers only the listed addresses, nothing else outside the private
-# network gets in, Cilium is the CNI and Traefik is never installed, because ingress-nginx is the one ingress (D22).
+# network gets in, Cilium is the CNI and Civo's marketplace Traefik is never installed: the one ingress controller is
+# the Traefik charts/platform pins (D31).
 mock_provider "civo" {
   override_during = plan
 
@@ -44,7 +45,7 @@ run "builds_the_cluster_on_the_private_network" {
 
   assert {
     condition     = contains(split(",", civo_kubernetes_cluster.this.applications), "-Traefik-v2-nodeport")
-    error_message = "The cluster must remove Civo's default Traefik so that ingress-nginx is the only ingress controller."
+    error_message = "The cluster must remove Civo's marketplace Traefik so that charts/platform's Traefik is the only ingress controller."
   }
 
   assert {
@@ -117,7 +118,7 @@ run "admits_only_named_ports_from_the_private_network" {
       for rule in civo_vpc_firewall.this.ingress_rule : "${rule.protocol}/${coalesce(rule.port_range, "-")}"
       if rule.cidr == toset(["10.10.0.0/24"])
       ]) == toset([
-      "tcp/30000-32767", # node ports: the load balancer to ingress-nginx
+      "tcp/30000-32767", # node ports: the load balancer to Traefik
       "tcp/10250",       # kubelet: metrics-server and the API server's logs and exec
       "udp/8472",        # Cilium's VXLAN tunnel
       "tcp/4240",        # cilium-health

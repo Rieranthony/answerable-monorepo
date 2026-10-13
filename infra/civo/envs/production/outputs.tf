@@ -19,7 +19,7 @@ output "cloudflare_ranges_etag" {
 }
 
 output "trusted_proxy_cidrs" {
-  description = "TRUSTED_PROXY_CIDRS for ID, comma-separated: Cloudflare's ranges, the private network (the load balancer) and the pod range (ingress-nginx)."
+  description = "TRUSTED_PROXY_CIDRS for ID, comma-separated: Cloudflare's ranges, the private network (the load balancer) and the pod range (Traefik)."
   value       = join(",", local.trusted_proxy_cidrs)
 }
 

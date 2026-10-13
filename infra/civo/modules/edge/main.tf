@@ -61,7 +61,7 @@ resource "cloudflare_zone_setting" "security_header" {
 }
 
 # Zone-level authenticated origin pulls: Cloudflare presents the zone's own client certificate to the origin, which
-# ingress-nginx verifies (auth-tls-*). The certificate is uploaded once from a trusted machine and never passes through
+# Traefik verifies (a TLSOption with clientAuth, D31). The certificate is uploaded once from a trusted machine and never passes through
 # Terraform (D19); until it is uploaded Cloudflare presents its shared one, which the origin refuses.
 resource "cloudflare_authenticated_origin_pulls_settings" "this" {
   zone_id = var.zone_id
