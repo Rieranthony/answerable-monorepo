@@ -3,17 +3,17 @@
 The intent store, the hash-chained evidence and the migrator that an MCP server with a Postgres database shares. Used by the Toolbox; the admin MCP is its second consumer. Private to the monorepo; no npm release.
 
 ```ts
-import { SQL } from "bun"
-import { assertRuntimeRole, configureRuntimeRole, createEvidence, createPostgresIntentStore, migrate, migrations, runtimeGrants } from "@answerable/mcp-postgres"
+import { assertRuntimeRole, configureRuntimeRole, connect, createEvidence, createPostgresIntentStore, migrate, migrations, runtimeGrants } from "@answerable/mcp-postgres"
 import { createMcpServer } from "@answerable/mcp"
 
 // The migrate script, as the schema owner: this package's tables (evidence_events, evidence_payloads, intents), then the runtime role's grants.
-const owner = new SQL(process.env.MY_SERVER_DATABASE_MIGRATION_URL!)
+// In a deployment each URL ends in ?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem, which connect honours.
+const owner = connect(process.env.MY_SERVER_DATABASE_MIGRATION_URL!, { max: 1 })
 await migrate(owner, [migrations])
 await configureRuntimeRole(owner, "my_server_runtime", runtimeGrants)
 
 // The server, as the runtime login: it refuses to listen as anything more.
-const db = new SQL(process.env.MY_SERVER_DATABASE_URL!)
+const db = connect(process.env.MY_SERVER_DATABASE_URL!)
 await assertRuntimeRole(db)
 const evidence = createEvidence(db)
 const intents = createPostgresIntentStore(db, evidence) // every intent transition becomes evidence
@@ -22,6 +22,7 @@ const server = createMcpServer({ provider, auth, intents })
 console.log(await evidence.verify(organisationId)) // { ok: true, length }, or { ok: false, length, broken_at }
 ```
 
+- **`connect(url, options?)`.** A `Bun.SQL` pool on the URL, which reads `sslrootcert` as libpq and `pg` do. Bun 1.3.1 honours `sslmode` but ignores `sslrootcert`, and sends any parameter it does not know to Postgres, which refuses it; `connect` removes the parameter and gives the file to Bun as the certificate authority to verify the server against. A URL with `sslrootcert` must say `sslmode=verify-full` (or `verify-ca`), or `connect` throws. `options` are `Bun.SQL`'s, such as `max`.
 - **`createEvidence(db)`.** `record` appends an event to an organisation's chain (a trigger assigns `seq` and the hashes), `verify` recomputes the chain and checks each unerased payload's body against its hash, `erase` removes an erasable payload's body and leaves its hash. A trigger refuses any other change to a payload.
 - **`createPostgresIntentStore(db, evidence, { now? })`.** An `IntentStore` on the `intents` table; every status change is one compare-and-set. It records `intent.prepared`, `intent.approval_requested`, `intent.committed`, `receipt.issued`, `intent.stale` and `intent.expired` in `evidence` as the intent moves; each call expires an intent at most once, and records the expiry it made. Like the memory store, an insert, at most once a minute, deletes the intents that can no longer be committed and committed ones a day after their commit.
 - **`migrate(db, directories)`.** Applies the `.sql` files of the directories that `schema_migrations` does not list: the directories in the order given, each one's files in the order of their names, each file in its own transaction under an advisory lock. A directory is `{ name, url }`, with a URL that ends in `/`; a file is recorded as `<name>/<file>` with the SHA-256 of its text. A server that has tables of its own passes this package's directory first: `migrate(db, [migrations, { name: "my-server", url: new URL("../migrations/", import.meta.url) }])`, and numbers its own files from `0001`.

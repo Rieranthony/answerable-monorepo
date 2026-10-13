@@ -24,6 +24,7 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "mcp:test:e2e": "bun run --filter @answerable/acceptance test",
+    "infra:test": "bun run --filter @answerable/infra-k8s test",
     "infra:check": "bun infra/check.ts"
   },
   "packageManager": "bun@1.3.1",

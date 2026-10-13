@@ -1,0 +1,116 @@
+{{- /*
+Nothing moves in this namespace unless a policy below allows it. The servers take connections only from Traefik;
+every pod may resolve names; the servers and the Jobs reach the database; the servers and the ops Jobs reach HTTPS
+outside the private ranges (ID through Cloudflare, the identity providers); the ops Jobs reach the Kubernetes API.
+*/ -}}
+{{- $np := .Values.networkPolicy -}}
+{{- define "answerable.egressDns" -}}
+- to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+  ports:
+    - { port: 53, protocol: UDP }
+    - { port: 53, protocol: TCP }
+{{- end -}}
+{{- define "answerable.egressDatabase" -}}
+{{- with .Values.networkPolicy.database }}
+- to:
+    {{- toYaml . | nindent 4 }}
+  ports:
+    - { port: {{ $.Values.networkPolicy.databasePort }}, protocol: TCP }
+{{- end }}
+{{- end -}}
+{{- define "answerable.egressHttps" -}}
+{{- with .Values.networkPolicy.https }}
+- to:
+    {{- toYaml . | nindent 4 }}
+  ports:
+    {{- range $.Values.networkPolicy.httpsPorts }}
+    - { port: {{ . }}, protocol: TCP }
+    {{- end }}
+{{- end }}
+{{- end -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  labels:
+    {{- include "answerable.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+{{- range $server := list (dict "component" "id" "port" 47300 "enabled" true) (dict "component" "toolbox" "port" 47400 "enabled" $.Values.toolbox.enabled) (dict "component" "admin-mcp" "port" 47520 "enabled" $.Values.adminMcp.enabled) }}
+{{- if $server.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $server.component }}
+  labels:
+    {{- include "answerable.labels" (dict "root" $ "component" $server.component) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "answerable.selectorLabels" (dict "root" $ "component" $server.component) | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.ingressController.namespace }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $np.ingressController.podLabels | nindent 14 }}
+      ports:
+        - { port: {{ $server.port }}, protocol: TCP }
+  egress:
+    {{- include "answerable.egressDns" $ | nindent 4 }}
+    {{- include "answerable.egressDatabase" $ | nindent 4 }}
+    {{- include "answerable.egressHttps" $ | nindent 4 }}
+{{- end }}
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: migrate
+  labels:
+    {{- include "answerable.labels" (dict "root" . "component" "migrate") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "answerable.selectorLabels" (dict "root" . "component" "migrate") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  egress:
+    {{- include "answerable.egressDns" . | nindent 4 }}
+    {{- include "answerable.egressDatabase" . | nindent 4 }}
+{{- if and .Values.images.ops.repository (or .Values.ops.bootstrap .Values.ops.register) }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ops
+  labels:
+    {{- include "answerable.labels" (dict "root" . "component" "ops") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "answerable.selectorLabels" (dict "root" . "component" "ops") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  egress:
+    {{- include "answerable.egressDns" . | nindent 4 }}
+    {{- include "answerable.egressDatabase" . | nindent 4 }}
+    {{- include "answerable.egressHttps" . | nindent 4 }}
+    {{- with $np.kubernetesApi }}
+    - to:
+        {{- toYaml . | nindent 8 }}
+      ports:
+        {{- range $np.kubernetesApiPorts }}
+        - { port: {{ . }}, protocol: TCP }
+        {{- end }}
+    {{- end }}
+{{- end }}

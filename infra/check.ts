@@ -1,6 +1,13 @@
 // `bun run infra:check`: every infrastructure gate that needs no cloud account, no credential and no Docker.
 // The steps run in order; the first failure stops the run and names its step. CI runs the same script.
-import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs"
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+} from "node:fs"
+import { tmpdir } from "node:os"
 import { join, relative } from "node:path"
 
 const repo = Bun.fileURLToPath(new URL("../", import.meta.url))
@@ -25,6 +32,14 @@ const terraformEnv = {
   ...process.env,
   TF_IN_AUTOMATION: "1",
   TF_PLUGIN_CACHE_DIR: pluginCache,
+}
+
+// Helm's repository list and cache for the dependency builds, in a directory of this run's own.
+const helmHome = mkdtempSync(join(tmpdir(), "answerable-infra-check-helm-"))
+const helmEnv = {
+  ...process.env,
+  HELM_REPOSITORY_CONFIG: join(helmHome, "repositories.yaml"),
+  HELM_REPOSITORY_CACHE: join(helmHome, "repository"),
 }
 
 const show = (path: string) => relative(repo, path) || "."
@@ -119,8 +134,28 @@ async function helmSteps() {
   }
   for (const chart of found) {
     const name = chart.split("/").at(-1)!
-    if (/^dependencies:/m.test(readFileSync(join(chart, "Chart.yaml"), "utf8")))
-      await run(["helm", "dependency", "build", show(chart)])
+    const declared = Bun.YAML.parse(
+      readFileSync(join(chart, "Chart.yaml"), "utf8"),
+    ) as { dependencies?: { name: string; repository: string }[] }
+    if (declared.dependencies?.length) {
+      // `helm dependency build` resolves an HTTPS repository only once it is added; an OCI one needs nothing. Today every
+      // dependency is OCI; an HTTPS one would be added to a repository list of this run's own, never the user's.
+      for (const dependency of declared.dependencies)
+        if (dependency.repository.startsWith("https://"))
+          await run(
+            [
+              "helm",
+              "repo",
+              "add",
+              dependency.name,
+              dependency.repository,
+              "--force-update",
+            ],
+            repo,
+            helmEnv,
+          )
+      await run(["helm", "dependency", "build", show(chart)], repo, helmEnv)
+    }
     await run(["helm", "lint", "--strict", show(chart)])
     for (const overlay of [undefined, ...valuesOverlays(chart)]) {
       const values = overlay ? ["--values", join(show(chart), overlay)] : []
@@ -230,6 +265,11 @@ const steps: { name: string; run: () => Promise<void> | void }[] = [
           join(infra, ".trivyignore"),
           "--skip-dirs",
           "**/.terraform",
+          // The dependency archives `helm dependency build` downloads are upstream charts (Traefik, cert-manager,
+          // the Grafana agent), not ours: managing Secrets and webhooks is their job, and their findings are not
+          // ours to fix. Our own templates are scanned, and rendered and validated by the Helm step.
+          "--skip-dirs",
+          "charts/*/charts",
           show(target),
         ])
       }

@@ -1,0 +1,177 @@
+# The kind stack's PostgreSQL 17, standing in for the managed database: TLS only (plain connections are refused by
+# pg_hba), a server certificate from a certificate authority of its own (database-ca, which the services trust through
+# the postgres-ca ConfigMap and nothing else), and per database an owner login and a restricted runtime login, as the
+# ops bootstrap creates them in a cloud. The test creates the Secret postgres-bootstrap first: the superuser's password and
+# logins.sql, which runs once when the data directory is created (infra/k8s/local/stack.ts writes it with throwaway passwords).
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: database-root
+  namespace: database
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: database-ca
+  namespace: database
+spec:
+  isCA: true
+  commonName: Answerable local database CA
+  secretName: database-ca
+  duration: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    kind: Issuer
+    name: database-root
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: database-ca
+  namespace: database
+spec:
+  ca:
+    secretName: database-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: postgres-tls
+  namespace: database
+spec:
+  secretName: postgres-tls
+  commonName: postgres.database.svc.cluster.local
+  dnsNames:
+    - postgres.database.svc.cluster.local
+    - postgres.database.svc
+    - postgres.database
+  usages: [server auth, digital signature, key encipherment]
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    kind: Issuer
+    name: database-ca
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres
+  namespace: database
+data:
+  pg_hba.conf: |
+    # The init script connects over the socket; everything else must use TLS.
+    local     all  all                trust
+    hostssl   all  all  0.0.0.0/0     scram-sha-256
+    hostssl   all  all  ::/0          scram-sha-256
+    hostnossl all  all  0.0.0.0/0     reject
+    hostnossl all  all  ::/0          reject
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: database
+spec:
+  selector:
+    app.kubernetes.io/name: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: database
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:17.11-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+          args:
+            - -c
+            - ssl=on
+            - -c
+            - ssl_cert_file=/tls/tls.crt
+            - -c
+            - ssl_key_file=/tls/tls.key
+            - -c
+            - ssl_min_protocol_version=TLSv1.2
+            - -c
+            - hba_file=/config/pg_hba.conf
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-bootstrap
+                  key: SUPERUSER_PASSWORD
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, postgres, -d, postgres]
+            periodSeconds: 2
+            failureThreshold: 30
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 1Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+            - { name: run, mountPath: /var/run/postgresql }
+            - { name: tmp, mountPath: /tmp }
+            - { name: tls, mountPath: /tls, readOnly: true }
+            - { name: config, mountPath: /config, readOnly: true }
+            - { name: init, mountPath: /docker-entrypoint-initdb.d, readOnly: true }
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        # Postgres accepts a key owned by root only when no more than its group can read it: 0440, the group being fsGroup 70.
+        - name: tls
+          secret:
+            secretName: postgres-tls
+            defaultMode: 0440
+        - name: config
+          configMap:
+            name: postgres
+            items:
+              - { key: pg_hba.conf, path: pg_hba.conf }
+        - name: init
+          secret:
+            secretName: postgres-bootstrap
+            defaultMode: 0440
+            items:
+              - { key: logins.sql, path: logins.sql }

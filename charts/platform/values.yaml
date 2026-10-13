@@ -1,0 +1,129 @@
+# Defaults for every cluster. The overlays (values-civo-<environment>.yaml, values-local.yaml) add what differs, and
+# Terraform adds, last, what only it knows: the load balancer's firewall and address, and the addresses Traefik trusts
+# for forwarded headers (infra/civo/modules/platform). The chart creates no namespace: Terraform does.
+
+# The edge in the cluster (D31): Traefik terminates TLS with cert-manager's certificates, requires Cloudflare's
+# origin-pull client certificate on every host (templates/tls-options.yaml), and passes X-Forwarded-For on.
+traefik:
+  deployment:
+    replicas: 2
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
+  ingressClass:
+    enabled: true
+    isDefaultClass: false
+    name: traefik
+  # Refuse a router whose TLS options conflict, rather than fall back to the default ones (GHSA-g55h-rg46-x9c5).
+  core:
+    strictTLSOptions: true
+  global:
+    checkNewVersion: false
+    sendAnonymousUsage: false
+  providers:
+    kubernetesCRD:
+      enabled: true
+      allowCrossNamespace: false
+      # Only the answerable namespace may define the cluster-wide default TLS option, and it does.
+      defaultTLSResourcesNamespace: answerable
+    kubernetesIngress:
+      enabled: true
+      # The Ingresses there name the TLSOption origin-pull, a CRD: a reference only these namespaces may make.
+      crossProviderNamespaces: [answerable]
+  ports:
+    # Plain HTTP is Cloudflare's to redirect (D18): the load balancer gets no port 80, and anything that reaches the
+    # entry point inside the cluster is redirected.
+    web:
+      expose:
+        default: false
+      http:
+        redirections:
+          entryPoint:
+            to: websecure
+            scheme: https
+            permanent: true
+    websecure:
+      # Terraform sets trustedIPs: the addresses that may connect to Traefik with X-Forwarded-* headers it keeps
+      # (Cloudflare's ranges and the load balancer's private network). From any other peer Traefik deletes them. Either
+      # way it appends the peer's address, which ID's walk against TRUSTED_PROXY_CIDRS needs: never set
+      # notAppendXForwardedFor to true.
+      forwardedHeaders:
+        trustedIPs: []
+        insecure: false
+        notAppendXForwardedFor: false
+  service:
+    annotations: {}
+    spec:
+      type: LoadBalancer
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 512Mi }
+
+# Where the origin-pull TLS options live: beside the Secret holding Cloudflare's origin-pull CA (ca.crt), which the
+# deploy applies from the sops file.
+originPull:
+  namespace: answerable
+  caSecret: cloudflare-origin-pull-ca
+
+cert-manager:
+  crds:
+    enabled: true
+    # Uninstalling the release must not delete every Certificate in the cluster with the definitions.
+    keep: true
+  global:
+    leaderElection:
+      namespace: platform
+  prometheus:
+    enabled: false
+
+# The ClusterIssuers the answerable chart's Ingresses name (ingress.clusterIssuer there).
+issuers:
+  # Let's Encrypt through a DNS-01 challenge in the environment's Cloudflare zone. The token is the Secret
+  # cloudflare-api-token (key api-token) in this namespace, applied by the deploy from the sops file.
+  letsencrypt:
+    enabled: false
+    # Optional ACME account address; Let's Encrypt no longer mails expiry notices, so none is needed.
+    email: ""
+    server: https://acme-v02.api.letsencrypt.org/directory
+  # A self-signed certificate authority for the kind stack: its certificate is the Secret local-ca in this namespace.
+  local:
+    enabled: false
+
+# The Grafana agent (k8s-monitoring): off until the Grafana Cloud workspace exists. Its endpoints' credentials are the
+# Secret grafana-cloud in this namespace (keys metrics-username, logs-username and token), applied by the deploy.
+monitoring:
+  enabled: false
+
+k8s-monitoring:
+  cluster:
+    name: answerable
+  destinations:
+    grafana-cloud-metrics:
+      type: prometheus
+      url: ""
+      auth:
+        type: basic
+        usernameKey: metrics-username
+        passwordKey: token
+      secret:
+        create: false
+        name: grafana-cloud
+        namespace: platform
+    grafana-cloud-logs:
+      type: loki
+      url: ""
+      auth:
+        type: basic
+        usernameKey: logs-username
+        passwordKey: token
+      secret:
+        create: false
+        name: grafana-cloud
+        namespace: platform
+  clusterMetrics:
+    enabled: true
+  clusterEvents:
+    enabled: true
+  # Pod logs through the Kubernetes API, which needs no hostPath on the nodes.
+  podLogsViaKubernetesApi:
+    enabled: true

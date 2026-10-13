@@ -1,0 +1,75 @@
+# The kind stack (infra/k8s/local, bun run infra:test): the images built on this machine, production mode, behind
+# Traefik on https://<name>.127-0-0-1.sslip.io:48443. Public DNS resolves those names to 127.0.0.1 on the host, where
+# kind publishes Traefik's port; inside the cluster /etc/hosts sends them to the stand-in edge (hostAliases below).
+
+image:
+  tag: local
+  pullPolicy: Never
+
+hostnames:
+  id: id.127-0-0-1.sslip.io
+  toolbox: toolbox.127-0-0-1.sslip.io
+  adminMcp: admin-mcp.127-0-0-1.sslip.io
+publicPort: "48443"
+
+ingress:
+  # The stack's own certificate authority (charts/platform, values-local.yaml).
+  clusterIssuer: local
+
+# Cloudflare's stand-in: an nginx beside Traefik in its pod (infra/k8s/local/edge.yaml), which presents the origin-pull
+# certificate for pods that call the public hostnames and reaches Traefik from 127.0.0.1. The test itself plays a visitor
+# and connects straight to Traefik from the Docker network's gateway, which is not trusted.
+trustedProxyCidrs:
+  - 127.0.0.1/32
+
+# The edge's certificate comes from the stack's CA, which the services must trust to call the issuer.
+extraCaConfigMap: local-ca
+
+# The edge's Service, at a fixed address in kind's service range (infra/k8s/local/edge.yaml).
+hostAliases:
+  - ip: 10.96.48.43
+    hostnames:
+      - id.127-0-0-1.sslip.io
+      - toolbox.127-0-0-1.sslip.io
+      - admin-mcp.127-0-0-1.sslip.io
+
+id:
+  replicas: 1
+  autoscaling: { enabled: false }
+  trustedOrigins:
+    - https://login.microsoftonline.com
+    - https://graph.microsoft.com
+
+toolbox:
+  replicas: 1
+  autoscaling: { enabled: false }
+
+# The admin MCP exits at start until ID knows its machine client, which the ops register Job creates (brief B3). Its
+# migration still runs.
+adminMcp:
+  enabled: false
+  replicas: 1
+  autoscaling: { enabled: false }
+
+# No ops image yet (brief B3), so no ops Job. The images run by the local tag, never by digest.
+images:
+  ops:
+    repository: ""
+
+networkPolicy:
+  database:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: database
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: postgres
+  # HTTPS to the public hostnames goes to the stand-in edge in Traefik's pod.
+  https:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: platform
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: traefik
+  httpsPorts: [48444]

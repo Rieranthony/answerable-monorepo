@@ -4,6 +4,7 @@ import { z } from "zod"
 const schema = z.object({
   ADMIN_ID_ISSUER: z.url(),
   ADMIN_RESOURCE_URL: z.url(),
+  ADMIN_HOST: z.union([z.ipv4(), z.ipv6()]).default("127.0.0.1"),
   ADMIN_PORT: z.coerce.number().int().min(1).max(65535).default(47520),
   ADMIN_DATABASE_URL: z.url(),
   ADMIN_ID_CLIENT_ID: z.string().min(1),
@@ -18,6 +19,8 @@ export function readAdminEnvironment(env: Record<string, string | undefined>) {
   const { data, auth } = parseEnvironment("admin MCP", schema, env, { issuer: "ADMIN_ID_ISSUER", resource: "ADMIN_RESOURCE_URL" })
   return {
     auth,
+    /** The address to listen on: loopback unless a container or a proxy in front needs another. */
+    hostname: data.ADMIN_HOST,
     port: data.ADMIN_PORT,
     databaseUrl: data.ADMIN_DATABASE_URL,
     id: { issuer: data.ADMIN_ID_ISSUER, adminResource: data.ADMIN_ID_ADMIN_RESOURCE, clientId: data.ADMIN_ID_CLIENT_ID, clientSecret: data.ADMIN_ID_CLIENT_SECRET },

@@ -1,0 +1,12 @@
+dependencies:
+- name: traefik
+  repository: oci://ghcr.io/traefik/helm
+  version: 41.7.1
+- name: cert-manager
+  repository: oci://quay.io/jetstack/charts
+  version: v1.21.2
+- name: k8s-monitoring
+  repository: oci://ghcr.io/grafana/helm-charts
+  version: 4.5.3
+digest: sha256:c9ac569d05d899ebf4727634f5f7cb392ceb94532650d07c12bcc3338a930dfb
+generated: "2026-10-13T13:33:55.537184+02:00"

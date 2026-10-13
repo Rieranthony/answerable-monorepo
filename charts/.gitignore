@@ -1,0 +1,2 @@
+# Dependency archives that `helm dependency build` downloads from each Chart.lock.
+*/charts/

@@ -1,0 +1,9 @@
+apiVersion: v2
+name: answerable
+description: "Answerable ID, the Toolbox and the admin MCP, with their migrations and the ops Jobs. Values per environment in values-<cloud>-<environment>.yaml."
+type: application
+version: 0.1.0
+kubeVersion: ">=1.29.0-0"
+home: https://github.com/Rieranthony/answerable-monorepo
+sources:
+  - https://github.com/Rieranthony/answerable-monorepo

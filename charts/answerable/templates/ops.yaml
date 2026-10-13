@@ -1,0 +1,81 @@
+{{- /*
+The ops image's Jobs (brief B3), each switched on for one upgrade by the pipeline: bootstrap before the migrations (it
+creates the logins the migrations use and writes their Secrets), register after the release (it needs ID up). Their
+ServiceAccount may write Secrets in this namespace and nothing else. Rendered only when an ops image is named.
+*/ -}}
+{{- if and .Values.images.ops.repository (or .Values.ops.bootstrap .Values.ops.register) }}
+{{- $scope := dict "root" . "component" "ops" }}
+{{- $hook := ternary "pre-install,pre-upgrade" "post-install,post-upgrade" .Values.ops.bootstrap }}
+{{- if and .Values.ops.bootstrap .Values.ops.register }}
+{{- $hook = "pre-install,pre-upgrade,post-install,post-upgrade" }}
+{{- end }}
+{{- range $kind := list "ServiceAccount" "Role" "RoleBinding" }}
+---
+apiVersion: {{ if eq $kind "ServiceAccount" }}v1{{ else }}rbac.authorization.k8s.io/v1{{ end }}
+kind: {{ $kind }}
+metadata:
+  name: ops
+  labels:
+    {{- include "answerable.labels" $scope | nindent 4 }}
+  annotations:
+    helm.sh/hook: {{ $hook }}
+    helm.sh/hook-weight: "-30"
+    helm.sh/hook-delete-policy: before-hook-creation
+{{- if eq $kind "Role" }}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, list, create, update, patch]
+{{- else if eq $kind "RoleBinding" }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ops
+subjects:
+  - kind: ServiceAccount
+    name: ops
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
+{{- end }}
+{{- range $job := list "bootstrap" "register" }}
+{{- if index $.Values.ops $job }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ops-{{ $job }}
+  labels:
+    {{- include "answerable.labels" $scope | nindent 4 }}
+  annotations:
+    helm.sh/hook: {{ ternary "pre-install,pre-upgrade" "post-install,post-upgrade" (eq $job "bootstrap") }}
+    helm.sh/hook-weight: {{ ternary "-20" "10" (eq $job "bootstrap") | quote }}
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        {{- include "answerable.labels" $scope | nindent 8 }}
+    spec:
+      serviceAccountName: ops
+      restartPolicy: Never
+      {{- include "answerable.podCommon" $ | nindent 6 }}
+      containers:
+        - name: ops
+          image: {{ include "answerable.image" (dict "root" $ "name" "ops") }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          args: [{{ $job }}]
+          env:
+            - name: ID_ISSUER
+              value: {{ include "answerable.idUrl" $ | quote }}
+            {{- include "answerable.commonEnv" $ | nindent 12 }}
+          resources:
+            {{- toYaml $.Values.ops.resources | nindent 12 }}
+          securityContext:
+            {{- include "answerable.containerSecurityContext" $ | nindent 12 }}
+          volumeMounts:
+            {{- include "answerable.volumeMounts" $ | nindent 12 }}
+{{- end }}
+{{- end }}
+{{- end }}

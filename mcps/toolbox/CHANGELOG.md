@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.6
+
+No tool changes. The Toolbox serves as a restricted runtime login, and can run in a container. Breaking for an existing setup: `TOOLBOX_DATABASE_URL` must name the runtime login, and `db:migrate` reads the owner's URL from `TOOLBOX_DATABASE_MIGRATION_URL`.
+
+- The server refuses to start, before anything is written, when `TOOLBOX_DATABASE_URL` is the schema owner, a superuser, or any login that could change the evidence (`@answerable/mcp-postgres`'s `assertRuntimeRole`); the message names each problem.
+- `scripts/migrate.ts` migrates with `TOOLBOX_DATABASE_MIGRATION_URL`, then provisions `TOOLBOX_DATABASE_RUNTIME_ROLE` (`answerable_toolbox_runtime` by default) with exactly the grants the Toolbox's tables need.
+- `TOOLBOX_HOST` is the address the server listens on, `127.0.0.1` by default; the image sets `0.0.0.0`. It was always `127.0.0.1`.
+- The server and `scripts/migrate.ts` open the database with `@answerable/mcp-postgres` 0.5.0's `connect`, so `TOOLBOX_DATABASE_URL` can end in `?sslmode=verify-full&sslrootcert=<file>` and the server is verified against that certificate authority.
+
 ## 0.3.5
 
 A grant string on an entitlement limited to one host client (`kind: "client_resource"` in ID's member access view) counts only through that client. The Toolbox used to count it for every host the person signed in through, though ID reaches a pair's resource through its own client only and the admin MCP's `access_grant` promises "only through this OAuth client". The grant cache now holds the member's Toolbox targets for 60 seconds, as before, and each request takes the grant strings of its own client from them. Grants on the Toolbox resource itself, which the enable operation and the journeys use, are unchanged.

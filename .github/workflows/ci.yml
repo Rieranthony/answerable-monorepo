@@ -119,3 +119,44 @@ jobs:
 
       - name: Check infrastructure code
         run: bun run infra:check
+
+  # The three images built and run in a kind cluster with both charts, as a cloud runs them (bun run infra:test).
+  # arm64, like the laptops the stack also runs on; only after validate, so a red suite never builds images.
+  containers:
+    needs: validate
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.1
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Each binary pinned by version and by the SHA-256 its release publishes.
+      - name: Install kind, kubectl, Helm and kubeconform
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/bin"
+          mkdir -p "$bin"
+          cd "$RUNNER_TEMP"
+          fetch() { curl -fsSL --retry 3 -o "$2" "$1" && echo "$3  $2" | sha256sum -c -; }
+          fetch https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-arm64 kind 20022bee6cfcd5086cb7234d218e3454e6090022f2a8f55d1fa7fcf42c3867a2
+          install -m 0755 kind "$bin/kind"
+          fetch https://dl.k8s.io/release/v1.37.0/bin/linux/arm64/kubectl kubectl 922df28df248cc00a9e025f947704f1d1482de64ece54cfe57e61f19eaf1eef3
+          install -m 0755 kubectl "$bin/kubectl"
+          fetch https://get.helm.sh/helm-v4.3.0-linux-arm64.tar.gz helm.tar.gz 31c5794dd55c66a51e6b7d2e2ac7a114ae8b1de41ff1d9ba51748ac973b06a08
+          tar -xzf helm.tar.gz linux-arm64/helm
+          install -m 0755 linux-arm64/helm "$bin/helm"
+          fetch https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-arm64.tar.gz kubeconform.tar.gz 1f53fc8e81258197a35e8603054162a5af1de8c5af13746c71ab680d9534ed87
+          tar -xzf kubeconform.tar.gz kubeconform
+          install -m 0755 kubeconform "$bin/kubeconform"
+          echo "$bin" >> "$GITHUB_PATH"
+
+      - name: Prove the images and the charts in a kind cluster
+        run: bun run infra:test

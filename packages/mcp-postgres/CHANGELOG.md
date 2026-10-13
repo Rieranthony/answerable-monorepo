@@ -2,12 +2,13 @@
 
 ## 0.5.0
 
-A server runs as a restricted runtime login and migrates as the owner, as Answerable ID does, so that the evidence triggers hold against the credential the server holds. Nothing breaks: `migrate` is unchanged.
+A server runs as a restricted runtime login and migrates as the owner, as Answerable ID does, so that the evidence triggers hold against the credential the server holds; and it can verify its database against a private certificate authority. Nothing breaks: `migrate` is unchanged.
 
 - `configureRuntimeRole(db, role, grants)` provisions a server's runtime role after `migrate`: created without login when it does not exist, refused when privileged, a member of another role or an owner, then given exactly `grants` and nothing by default privileges. Idempotent.
 - `runtimeGrants` holds this package's tables' grants: events are appended and read, payloads also erased, intents moved and swept; nothing on `schema_migrations`. `Grant` and `Privilege` are the types a server's own grants use.
 - `assertRuntimeRole(db)` refuses to serve as a login with an attribute beyond login, a membership, an ownership, or a privilege that could change the evidence, and names each one.
 - `testDatabase(...).runtimeLogin(grants)` in `@answerable/mcp-postgres/testing` makes a provisioned login with a generated name and password, for a suite to serve through.
+- `connect(url, options?)` opens a `Bun.SQL` pool that verifies the server against the URL's `sslrootcert`. Bun 1.3.1 reads `sslmode` from a URL but not `sslrootcert`, so `?sslmode=verify-full&sslrootcert=<file>` failed every handshake against a private certificate authority, and Postgres refused the parameter as a startup setting. A URL that names `sslrootcert` without `sslmode=verify-full` or `verify-ca` is refused.
 
 ## 0.4.0
 

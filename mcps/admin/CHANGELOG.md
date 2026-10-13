@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.7
+
+No tool changes. The admin MCP serves as a restricted runtime login, and can run in a container. Breaking for an existing setup: `ADMIN_DATABASE_URL` must name the runtime login, and `db:migrate` reads the owner's URL from `ADMIN_DATABASE_MIGRATION_URL`.
+
+- The server refuses to start when `ADMIN_DATABASE_URL` is the schema owner, a superuser, or any login that could change the evidence (`@answerable/mcp-postgres`'s `assertRuntimeRole`); the message names each problem.
+- `scripts/migrate.ts` migrates with `ADMIN_DATABASE_MIGRATION_URL`, then provisions `ADMIN_DATABASE_RUNTIME_ROLE` (`answerable_admin_runtime` by default) with the grants of `@answerable/mcp-postgres`'s tables.
+- `ADMIN_HOST` is the address the server listens on, `127.0.0.1` by default; the image sets `0.0.0.0`. It was always `127.0.0.1`.
+- The server and `scripts/migrate.ts` open the database with `@answerable/mcp-postgres` 0.5.0's `connect`, so `ADMIN_DATABASE_URL` can end in `?sslmode=verify-full&sslrootcert=<file>` and the server is verified against that certificate authority.
+
 ## 0.2.6
 
 No tool changes. `readAdminEnvironment` is built on `@answerable/mcp`'s `parseEnvironment`, with the same messages, the error code that evidence records comes from its `errorCodeOf`, and the workspace no longer depends on `@answerable/auth`. Intents use `@answerable/mcp-postgres` 0.4.0's `createPostgresIntentStore(db, evidence)`, with the same evidence.

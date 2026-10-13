@@ -74,6 +74,16 @@
       "project": [
         "*.ts"
       ]
+    },
+    "infra/k8s": {
+      "entry": [
+        "*.test.ts",
+        "local/*.test.ts"
+      ],
+      "project": [
+        "*.ts",
+        "local/*.ts"
+      ]
     }
   }
 }

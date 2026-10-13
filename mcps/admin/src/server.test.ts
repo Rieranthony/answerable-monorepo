@@ -46,3 +46,28 @@ test("the entry point refuses the owner's login before it listens, naming what m
     stop()
   }
 }, 30_000)
+
+test("the entry point listens on ADMIN_HOST", async () => {
+  const login = await database.runtimeLogin(runtimeGrants)
+  const fake = createFakeId({ clientId: "admin-mcp" })
+  const id = Bun.serve({ port: 0, fetch: request => fake.config.fetch(request) })
+  const probe = Bun.serve({ hostname: "::1", port: 0, fetch: () => new Response() })
+  const { port } = probe
+  probe.stop(true)
+  const env = {
+    ...process.env, ADMIN_DATABASE_URL: login.url, ADMIN_ID_ISSUER: `http://127.0.0.1:${id.port}`, ADMIN_RESOURCE_URL: `http://[::1]:${port}/mcp`, ADMIN_PORT: String(port),
+    ADMIN_HOST: "::1", ADMIN_ID_CLIENT_ID: "admin-mcp", ADMIN_ID_CLIENT_SECRET: fake.config.clientSecret, ADMIN_ID_ADMIN_RESOURCE: fake.config.adminResource,
+  }
+  const server = Bun.spawn([process.execPath, "src/server.ts"], { cwd: directory, env, stdout: "pipe", stderr: "pipe" })
+  try {
+    expect(new TextDecoder().decode((await server.stdout.getReader().read()).value)).toContain("Admin MCP serving")
+    expect(await (await fetch(`http://[::1]:${port}/health`)).json()).toEqual({ status: "ok" })
+    // Bound to the IPv6 loopback only, so nothing listens on the IPv4 loopback's port.
+    await expect(fetch(`http://127.0.0.1:${port}/health`)).rejects.toThrow()
+  } finally {
+    server.kill()
+    await server.exited
+    id.stop(true)
+    await login.drop()
+  }
+}, 30_000)

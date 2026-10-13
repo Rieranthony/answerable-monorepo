@@ -1,0 +1,25 @@
+{{- /* The Toolbox. Configuration: apps/web/content/docs/toolbox/index.mdx. It reaches ID at its public issuer. */ -}}
+{{- define "answerable.toolboxEnv" -}}
+- name: TOOLBOX_ID_ISSUER
+  value: {{ include "answerable.idUrl" . | quote }}
+- name: TOOLBOX_RESOURCE_URL
+  value: {{ printf "%s/mcp" (include "answerable.toolboxUrl" .) | quote }}
+- name: TOOLBOX_ID_ADMIN_RESOURCE
+  value: {{ printf "%s/api/admin" (include "answerable.idUrl" .) | quote }}
+- name: TOOLBOX_ID_CLIENT_ID
+  value: {{ .Values.toolbox.clientId | quote }}
+{{ include "answerable.secretEnv" (dict "name" "TOOLBOX_ID_CLIENT_SECRET" "secret" "toolbox-id-client" "key" "TOOLBOX_ID_CLIENT_SECRET") }}
+{{ include "answerable.secretEnv" (dict "name" "TOOLBOX_DATABASE_URL" "secret" "toolbox-database" "key" "TOOLBOX_DATABASE_URL") }}
+{{- end -}}
+{{- if .Values.toolbox.enabled }}
+{{ include "answerable.server" (dict
+  "root" .
+  "component" "toolbox"
+  "image" "toolbox"
+  "port" 47400
+  "values" .Values.toolbox
+  "host" .Values.hostnames.toolbox
+  "env" (include "answerable.toolboxEnv" .)
+  "readiness" "/health"
+  "liveness" "") }}
+{{- end }}

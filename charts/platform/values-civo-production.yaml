@@ -1,0 +1,17 @@
+# Production on Civo. Terraform applies this file (platform_values_files in infra/civo/envs/production/terraform.tfvars:
+# "../../../../charts/platform/values-civo-production.yaml") and then its own values: the load balancer's firewall and
+# address, and proxy-real-ip-cidr.
+
+issuers:
+  letsencrypt:
+    enabled: true
+
+cert-manager:
+  # Check the challenge records against public resolvers, not the cluster's.
+  extraArgs:
+    - --dns01-recursive-nameservers-only
+    - --dns01-recursive-nameservers=1.1.1.1:53,1.0.0.1:53
+
+k8s-monitoring:
+  cluster:
+    name: answerable-production

@@ -1,0 +1,31 @@
+# The kind stack (infra/k8s/local). kind publishes Traefik's websecure host port on the laptop's 127.0.0.1:48443; there
+# is no cloud load balancer and no Cloudflare. The stack adds Cloudflare's stand-in for calls made inside the cluster, an
+# nginx beside Traefik in its pod, once cert-manager has issued its certificates (infra/k8s/local/platform-edge.yaml).
+
+traefik:
+  deployment:
+    replicas: 1
+  podDisruptionBudget:
+    enabled: false
+  # One node and a fixed host port: a new pod cannot start beside the old one, so the old one goes first.
+  updateStrategy:
+    type: Recreate
+  nodeSelector:
+    ingress-ready: "true"
+    kubernetes.io/os: linux
+  service:
+    spec:
+      type: ClusterIP
+  ports:
+    websecure:
+      hostPort: 48443
+      # The stand-in reaches Traefik from 127.0.0.1, so its X-Forwarded-For is kept, as Cloudflare's would be. The
+      # laptop's requests arrive from the Docker network's gateway, untrusted, as a visitor's would: Traefik drops
+      # their X-Forwarded-For and appends the gateway's address.
+      forwardedHeaders:
+        trustedIPs:
+          - 127.0.0.1/32
+
+issuers:
+  local:
+    enabled: true
