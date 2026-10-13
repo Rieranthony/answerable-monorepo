@@ -30,6 +30,12 @@ variable "allowed_api_cidrs" {
   sensitive   = true
 }
 
+variable "api_open_to_internet" {
+  description = "Whether the Kubernetes API admits the whole internet, authenticated by the cluster alone (module cluster explains the risk). True in staging only, until GitOps or a Cloudflare tunnel replaces it; the module refuses it in production."
+  type        = bool
+  default     = false
+}
+
 variable "node_size" {
   description = "The Civo size of every Kubernetes node."
   type        = string

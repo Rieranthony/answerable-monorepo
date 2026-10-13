@@ -54,6 +54,15 @@ run "sizes_staging_small" {
   }
 }
 
+run "opens_staging_api_for_hosted_runners" {
+  command = plan
+
+  assert {
+    condition     = var.api_open_to_internet && module.cluster.api_open_to_internet
+    error_message = "Staging's Kubernetes API admits the internet until GitOps or a tunnel replaces it (the coordinator's decision)."
+  }
+}
+
 run "admits_and_trusts_cloudflare" {
   command = plan
 

@@ -59,6 +59,15 @@ run "sizes_production_for_two_replicas_and_a_standby" {
   }
 }
 
+run "keeps_production_api_closed" {
+  command = plan
+
+  assert {
+    condition     = !var.api_open_to_internet && !module.cluster.api_open_to_internet
+    error_message = "Production's Kubernetes API admits the listed addresses only."
+  }
+}
+
 run "serves_answerable_org_without_touching_www" {
   command = plan
 

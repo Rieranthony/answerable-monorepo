@@ -24,13 +24,13 @@ variable "network_cidr" {
 }
 
 variable "allowed_api_cidrs" {
-  description = "The addresses allowed to reach the Kubernetes API on 6443, as CIDRs: the operators' and the deploy runners' egress. Never the whole internet. Sensitive so that plans posted on a public repository do not print an operator's address."
+  description = "The addresses allowed to reach the Kubernetes API on 6443, as CIDRs: the operators' own, for kubectl. The whole internet only when api_open_to_internet is true. Sensitive so that plans posted on a public repository do not print an operator's address."
   type        = list(string)
   sensitive   = true
 
   validation {
-    condition     = length(var.allowed_api_cidrs) > 0
-    error_message = "List at least one address for the Kubernetes API, or nobody can deploy."
+    condition     = length(var.allowed_api_cidrs) > 0 || var.api_open_to_internet
+    error_message = "List at least one address for the Kubernetes API, or nobody can reach it."
   }
 
   validation {
@@ -39,8 +39,26 @@ variable "allowed_api_cidrs" {
   }
 
   validation {
-    condition     = alltrue([for cidr in var.allowed_api_cidrs : try(tonumber(split("/", cidr)[1]) > 0, true)])
-    error_message = "The Kubernetes API must not be open to the whole internet (0.0.0.0/0 or ::/0)."
+    condition     = var.api_open_to_internet || alltrue([for cidr in var.allowed_api_cidrs : try(tonumber(split("/", cidr)[1]) > 0, true)])
+    error_message = "The Kubernetes API must not be open to the whole internet (0.0.0.0/0 or ::/0) unless api_open_to_internet is true."
+  }
+}
+
+variable "api_open_to_internet" {
+  description = <<-EOT
+    Whether the Kubernetes API on 6443 admits the whole internet. When true, the firewall stops nobody and the
+    cluster's own authentication is the only barrier: TLS to the public endpoint, then a credential (the
+    namespace-scoped deployer token or the admin client certificate). A leaked deployer token is then usable from
+    anywhere, and every Kubernetes API vulnerability is exposed to the internet. A stopgap for staging only, because
+    GitHub-hosted runners publish thousands of address ranges and cannot be listed; a later brief closes it with a
+    GitOps controller that pulls from inside the cluster or a Cloudflare tunnel to the API. Refused in production.
+  EOT
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !(var.api_open_to_internet && var.environment == "production")
+    error_message = "Production's Kubernetes API stays closed to the internet; reach it from the listed addresses or through the follow-up's tunnel."
   }
 }
 

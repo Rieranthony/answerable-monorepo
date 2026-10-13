@@ -19,6 +19,11 @@ output "kubeconfig" {
   sensitive   = true
 }
 
+output "api_open_to_internet" {
+  description = "Whether the Kubernetes API's firewall admits the whole internet; the addresses themselves stay sensitive."
+  value       = nonsensitive(contains(local.api_sources, "0.0.0.0/0"))
+}
+
 output "firewall_id" {
   description = "The ID of the cluster's firewall."
   value       = civo_vpc_firewall.this.id
