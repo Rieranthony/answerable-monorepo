@@ -1,6 +1,6 @@
 # Ops
 
-The ops image: two one-off commands that a deployment runs as Kubernetes Jobs (`charts/answerable/templates/ops.yaml`). Decisions: D4, D5, D23 and B3 in `docs/goals/aws-deploy`.
+The ops image: two one-off commands that a deployment runs as Kubernetes Jobs (`charts/answerable/templates/ops.yaml`). Decisions: D4, D5, D23 and B3 in `docs/goals/civo-deploy`.
 
 | Command | When | What it does |
 | --- | --- | --- |

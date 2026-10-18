@@ -1,6 +1,6 @@
 # Setup
 
-The commands a person runs once per environment to take an empty Civo account to a running Answerable, without typing or pasting a secret. Every command is `bun run setup <command> --environment staging|production`, from the repository root, on a trusted machine. Decisions: D19, D23, D25, D28 and D30 in [`docs/goals/aws-deploy/decisions.md`](../../docs/goals/aws-deploy/decisions.md).
+The commands a person runs once per environment to take an empty Civo account to a running Answerable, without typing or pasting a secret. Every command is `bun run setup <command> --environment staging|production`, from the repository root, on a trusted machine. Decisions: D19, D23, D25, D28 and D30 in [`docs/goals/civo-deploy/decisions.md`](../../docs/goals/civo-deploy/decisions.md).
 
 No command prints a secret. Values travel from your environment variables, Terraform's outputs and the `sops` file into memory, and from there into a child process's standard input, an encrypted file or an HTTPS request. Nothing overwrites a file or a GitHub secret that exists unless you pass `--force`. Exit codes: `0` done, `1` a step failed (the message says which), `2` wrong usage. `--help` lists every option.
 
@@ -8,7 +8,7 @@ No command prints a secret. Values travel from your environment variables, Terra
 
 **Tools.** Terraform 1.16.5, `sops` 3.13, `age-keygen`, **OpenSSL 3** (macOS's `/usr/bin/openssl` is LibreSSL: `brew install openssl@3` and put it first on `PATH`), `gh` signed in (`gh auth login`), and `kubectl` (`database-ca` reads the database's certificate from a pod).
 
-**From the owner** ([B0](../../docs/goals/aws-deploy/briefs/b0.md), [B7](../../docs/goals/aws-deploy/briefs/b7.md)). Keep each where you keep your own secrets and export it in the shell that runs the commands.
+**From the owner** ([B0](../../docs/goals/civo-deploy/briefs/b0.md), [B7](../../docs/goals/civo-deploy/briefs/b7.md)). Keep each where you keep your own secrets and export it in the shell that runs the commands.
 
 | Variable | What | Used by |
 | --- | --- | --- |
@@ -18,7 +18,7 @@ No command prints a secret. Values travel from your environment variables, Terra
 | `ALLOWED_API_CIDRS` | The operators' addresses for the Kubernetes API, a JSON list such as `'["198.51.100.7/32"]'`. Staging: optional (`[]`). Production: required, and this machine must be in it | `first-apply`, `publish-env` |
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | The environment's Entra app registration ([`docs/06`](../../docs/06-deploying-answerable-id.md), Platform applications). Optional, as a pair | `init-secrets` |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | A Google client, if any. Optional, as a pair | `init-secrets` |
-| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | The Terraform state bucket's credential. It exists once `first-apply` has made the bucket, and every later command that reads Terraform's state needs it: `first-apply` prints the key ID, and `civo objectstore credential secret -a <key id>` (or the Civo dashboard, Object stores > Credentials) shows the secret | `first-apply --resume`, `database-ca`, `init-secrets`, `publish-env` |
+| `STATE_ACCESS_KEY_ID`, `STATE_SECRET_ACCESS_KEY` | The Terraform state bucket's credential. It exists once `first-apply` has made the bucket, and every later command that reads Terraform's state needs it: `first-apply` prints the key ID, and `civo objectstore credential secret -a <key id>` (or the Civo dashboard, Object stores > Credentials) shows the secret | `first-apply --resume`, `database-ca`, `init-secrets`, `publish-env` |
 
 Also before the first apply: Bot Fight Mode off in the zone, and the other items under "Before the first apply" in [`infra/civo/README.md`](../civo/README.md#before-the-first-apply).
 
@@ -29,12 +29,12 @@ Staging shown; production is the same with `--environment production` and its ow
 | # | Command | Needs | Writes | Undo |
 | --- | --- | --- | --- | --- |
 | 1 | `age-init` | `age-keygen` | `~/.config/sops/age/answerable-staging.txt` (mode 600) when absent; the staging rule in `.sops.yaml`, encrypting `data` and `stringData` only | Remove the rule. Keep the key while any file encrypted to it exists |
-| 2 | `first-apply` | `CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN` | The state bucket, the state moved into it, the network, cluster, database and firewalls. Stops before the full apply | `terraform destroy` in the root, after a reviewed change removes `prevent_destroy` from the bucket and the database |
+| 2 | `first-apply` | `CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN` | The state bucket, the state moved into it, the network, cluster, database and firewalls. Stops before the full apply | `infra/civo/terraform.sh destroy` in the root, after a reviewed change removes `prevent_destroy` from the bucket and the database |
 | 3 | `origin-pull --zone answerable-staging.uk` | `CLOUDFLARE_API_TOKEN`, OpenSSL 3 | `infra/civo/envs/staging/edge-ca/ca.pem`; a client certificate on the zone | Delete the certificate (the command prints its ID and the `curl`), delete `ca.pem` |
-| 4 | `database-ca` | `AWS_*`, OpenSSL 3, `kubectl` | `infra/civo/envs/staging/database-ca.pem` | Delete the file |
-| 5 | `first-apply --resume` | as 2, plus `AWS_*` | The namespaces, the platform chart, the deployer, the Cloudflare zone's records and rules | As 2 |
-| 6 | `init-secrets` | `AWS_*`, `CERT_MANAGER_CLOUDFLARE_TOKEN`, the Microsoft pair | `infra/civo/envs/staging/secrets.enc.yaml` | Delete the file before it is deployed; afterwards, rotate instead |
-| 7 | `publish-env --enable` | `CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN`, `AWS_*`, the age key | GitHub environments `staging` and `infra-staging` with their secrets; the repository variable `DEPLOY_STAGING=true` | `gh secret delete <name> --env <environment>`; `gh variable delete DEPLOY_STAGING` turns the deploys off |
+| 4 | `database-ca` | `STATE_*`, OpenSSL 3, `kubectl` | `infra/civo/envs/staging/database-ca.pem` | Delete the file |
+| 5 | `first-apply --resume` | as 2, plus `STATE_*` | The namespaces, the platform chart, the deployer, the Cloudflare zone's records and rules | As 2 |
+| 6 | `init-secrets` | `STATE_*`, `CERT_MANAGER_CLOUDFLARE_TOKEN`, the Microsoft pair | `infra/civo/envs/staging/secrets.enc.yaml` | Delete the file before it is deployed; afterwards, rotate instead |
+| 7 | `publish-env --enable` | `CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN`, `STATE_*`, the age key | GitHub environments `staging` and `infra-staging` with their secrets; the repository variable `DEPLOY_STAGING=true` | `gh secret delete <name> --env <environment>`; `gh variable delete DEPLOY_STAGING` turns the deploys off |
 | 8 | Commit `.sops.yaml` and the three files, push to `main` | | The first deploy: `ops-bootstrap`, the migrations, the release, the smoke test ([`infra/pipeline/README.md`](../pipeline/README.md)) | `helm rollback` or a redeploy of an earlier tag |
 | 9 | `id-first-run --domain answerable.org --entra-tenant <tenant id>` | the age key | In ID: the staff domain and the Entra SSO provider of the platform organisation | `DELETE` them with the root secret, as [`onboard.mdx`](../../apps/web/content/docs/id/onboard.mdx) describes |
 | 10 | Sign in once at `https://id.answerable-staging.uk/login` | your work account | Your user and platform membership | |
@@ -90,7 +90,7 @@ The database sits on the private network, so from your machine the connection us
 To run the pod yourself instead, pipe it into `--from-stdin`. When the pod fails, the command prints exactly this:
 
 ```sh
-(umask 077 && cd infra/civo/envs/staging && terraform output -raw admin_kubeconfig) > admin.kubeconfig
+(umask 077 && infra/civo/terraform.sh -chdir=infra/civo/envs/staging output -raw admin_kubeconfig) > admin.kubeconfig
 kubectl --kubeconfig admin.kubeconfig run database-ca --namespace default --rm -i --restart=Never --quiet \
     --image=<the pinned Alpine> --command -- sh -c '<install openssl; openssl s_client -starttls postgres …>' \
     | bun run setup database-ca --environment staging --from-stdin
@@ -146,7 +146,7 @@ With the root secret, finds the platform member with that email (sign in once fi
 | Message | Meaning | What to do |
 | --- | --- | --- |
 | `… is not set: …` | A variable the command needs is missing | Export it; the message says which and what it is |
-| `AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must hold …` | The state is in the bucket and the command reads it | Export the state credential (see the table above) |
+| `STATE_ACCESS_KEY_ID and STATE_SECRET_ACCESS_KEY must hold …` | The state is in the bucket and the command reads it | Export the state credential (see the table above) |
 | `these commands need OpenSSL 3` | `openssl` on `PATH` is LibreSSL or missing | Install OpenSSL 3 and put it first on `PATH` |
 | `… exists. Run again with --force …` | The file would be overwritten | Keep it, or pass `--force` knowing what that replaces |
 | `already keeps its state in the bucket` | `first-apply` without `--resume` after the migration | `first-apply --resume` |

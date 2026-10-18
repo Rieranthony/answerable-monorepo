@@ -19,12 +19,12 @@ output "credential_name" {
 }
 
 output "access_key_id" {
-  description = "The state credential's access key, the backend's AWS_ACCESS_KEY_ID."
+  description = "The state credential's access key, STATE_ACCESS_KEY_ID."
   value       = civo_object_store_credential.this.access_key_id
 }
 
 output "secret_access_key" {
-  description = "The state credential's secret key, the backend's AWS_SECRET_ACCESS_KEY."
+  description = "The state credential's secret key, STATE_SECRET_ACCESS_KEY."
   value       = civo_object_store_credential.this.secret_access_key
   sensitive   = true
 }

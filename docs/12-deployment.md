@@ -3,9 +3,9 @@
 > **TL;DR**
 > - **Decides:** where Answerable ID, the Toolbox and the admin MCP run outside a laptop, and why: Civo London, one Civo account per environment, one Helm chart on Civo Kubernetes, Civo Database PostgreSQL 17, Cloudflare in front, secrets encrypted in the repository, a push to `main` deploying staging and one approved click deploying production.
 > - **Rule:** only Cloudflare reaches the services, and only with the origin-pull certificate; no service holds a database owner login; the cluster runs images by digest, built from a commit that passed CI; no secret sits in plain text in git, in a Terraform variable or in a log.
-> - **Not here:** how to do each step ([`infra/README.md`](../infra/README.md), the runbook), what ID itself needs from any deployment ([`06-deploying-answerable-id.md`](06-deploying-answerable-id.md)), the decisions with the alternatives they rejected ([`goals/aws-deploy/decisions.md`](goals/aws-deploy/decisions.md), D-numbers below), the measured evidence from the first staging deployment (`reports/staging-evidence.md`, written by brief B7a: Not yet).
+> - **Not here:** how to do each step ([`infra/README.md`](../infra/README.md), the runbook), what ID itself needs from any deployment ([`06-deploying-answerable-id.md`](06-deploying-answerable-id.md)), the decisions with the alternatives they rejected ([`goals/civo-deploy/decisions.md`](goals/civo-deploy/decisions.md), D-numbers below), the measured evidence from the first staging deployment (`reports/staging-evidence.md`, written by brief B7a: Not yet).
 
-**Status.** Everything below is code in this repository, proved locally (§ [Testing](#testing)). Nothing is applied to Civo yet: the first staging deployment is brief [B7a](goals/aws-deploy/briefs/b7.md), and production waits for it, for OpenBao ([B7b](goals/aws-deploy/briefs/b7b.md)) and for the rehearsal ([B7c](goals/aws-deploy/briefs/b7c.md)). The web app stays on Vercel.
+**Status.** Everything below is code in this repository, proved locally (§ [Testing](#testing)). Nothing is applied to Civo yet: the first staging deployment is brief [B7a](goals/civo-deploy/briefs/b7.md), and production waits for it, for OpenBao ([B7b](goals/civo-deploy/briefs/b7b.md)) and for the rehearsal ([B7c](goals/civo-deploy/briefs/b7c.md)). The web app stays on Vercel.
 
 ## What runs where
 
@@ -28,7 +28,7 @@
 | The Toolbox | `toolbox.answerable-staging.uk` (resource `/mcp`, admin API `/admin`) | `toolbox.answerable.org` |
 | The admin MCP | `admin-mcp.answerable-staging.uk` (resource `/mcp`) | `admin-mcp.answerable.org` |
 
-Every name is first-level in its zone, so Cloudflare's Universal SSL covers it without an add-on ([D12](goals/aws-deploy/decisions.md)). Production's records sit beside Vercel's DNS-only `www`, which Terraform never touches.
+Every name is first-level in its zone, so Cloudflare's Universal SSL covers it without an add-on ([D12](goals/civo-deploy/decisions.md)). Production's records sit beside Vercel's DNS-only `www`, which Terraform never touches.
 
 ```mermaid
 flowchart TB
@@ -78,10 +78,10 @@ The Toolbox and the admin MCP call ID at its public issuer, through Cloudflare, 
 | **`production` GitHub environment** | All nine of the above for production, behind the owner's approval | Production's Terraform and its `answerable` namespace |
 | **The `deployer` ServiceAccount** | A token Terraform creates | Only what `helm upgrade` of `charts/answerable` touches in `answerable`: no other namespace, no wildcard, no `escalate`, `bind`, `impersonate` or `exec` |
 
-- **One Civo account per environment** under one Civo organisation ([D28](goals/aws-deploy/decisions.md)): a staging credential, bug or Terraform mistake cannot touch production. It is the strongest boundary Civo offers.
-- **Teams** live in Civo's dashboard, not in Terraform ([B0](goals/aws-deploy/briefs/b0.md)): the owner in each account's Owners team with MFA on the login, colleagues and agents in a Technical Administrator team.
-- **No long-lived cloud key in the deploy.** Civo has no federation and no scoped API keys: a key is per account, unscoped, with no documented expiry. The key therefore lives only with the owner and in the infra environments; the deploy jobs hold the namespace-scoped `deployer` token instead ([D25](goals/aws-deploy/decisions.md)).
-- **The owner's personal 1Password is not used** by any automation ([D23](goals/aws-deploy/decisions.md)).
+- **One Civo account per environment** under one Civo organisation ([D28](goals/civo-deploy/decisions.md)): a staging credential, bug or Terraform mistake cannot touch production. It is the strongest boundary Civo offers.
+- **Teams** live in Civo's dashboard, not in Terraform ([B0](goals/civo-deploy/briefs/b0.md)): the owner in each account's Owners team with MFA on the login, colleagues and agents in a Technical Administrator team.
+- **No long-lived cloud key in the deploy.** Civo has no federation and no scoped API keys: a key is per account, unscoped, with no documented expiry. The key therefore lives only with the owner and in the infra environments; the deploy jobs hold the namespace-scoped `deployer` token instead ([D25](goals/civo-deploy/decisions.md)).
+- **The owner's personal 1Password is not used** by any automation ([D23](goals/civo-deploy/decisions.md)).
 - **Break-glass access** to a cluster is its admin kubeconfig, the sensitive Terraform output `admin_kubeconfig`, for diagnostics and recovery only ([runbook](../infra/README.md#break-glass)).
 - **The state is a secret.** Civo's provider keeps the database administrator's password and the admin kubeconfig in Terraform state, which also holds the deployer's token. The state bucket's credential is therefore guarded like `CIVO_TOKEN`.
 
@@ -91,21 +91,21 @@ A request travels Cloudflare → the Civo load balancer → Traefik → a servic
 
 | Layer | What it enforces |
 | --- | --- |
-| **Cloudflare** ([D18](goals/aws-deploy/decisions.md), [D19](goals/aws-deploy/decisions.md)) | Proxied A records for the three hostnames; SSL Full (strict); Always Use HTTPS; TLS 1.2 minimum, TLS 1.3 on; HSTS for a year (no subdomains, no preload); zone-level Authenticated Origin Pulls with Answerable's own client certificate; on the three hostnames no Browser Integrity Check, Security Level essentially off, and no cache except `/assets/`. Bot Fight Mode is off by hand: the token cannot change it. All of it is Terraform, in the root's `edge` module, except Bot Fight Mode |
+| **Cloudflare** ([D18](goals/civo-deploy/decisions.md), [D19](goals/civo-deploy/decisions.md)) | Proxied A records for the three hostnames; SSL Full (strict); Always Use HTTPS; TLS 1.2 minimum, TLS 1.3 on; HSTS for a year (no subdomains, no preload); zone-level Authenticated Origin Pulls with Answerable's own client certificate; on the three hostnames no Browser Integrity Check, Security Level essentially off, and no cache except `/assets/`. Bot Fight Mode is off by hand: the token cannot change it. All of it is Terraform, in the root's `edge` module, except Bot Fight Mode |
 | **Load balancer firewall** | TCP 443 from Cloudflare's published IPv4 ranges only, read by Terraform at apply time; no port 80 |
-| **Traefik** ([D31](goals/aws-deploy/decisions.md)) | TLS with cert-manager's Let's Encrypt certificates (DNS-01 in the environment's zone); every TLS connection must present a client certificate signed by the environment's origin-pull CA, through the TLSOptions `origin-pull` and `default`, either of which alone keeps a host closed; strict SNI; `X-Forwarded-For` kept only from Cloudflare's ranges and the private network, and the connecting address appended |
+| **Traefik** ([D31](goals/civo-deploy/decisions.md)) | TLS with cert-manager's Let's Encrypt certificates (DNS-01 in the environment's zone); every TLS connection must present a client certificate signed by the environment's origin-pull CA, through the TLSOptions `origin-pull` and `default`, either of which alone keeps a host closed; strict SNI; `X-Forwarded-For` kept only from Cloudflare's ranges and the private network, and the connecting address appended |
 | **NetworkPolicy** | Default deny in `answerable`; each service admits only Traefik's pods; egress to DNS, the database's network and HTTPS outside the private ranges; the migrations reach DNS and the database only |
 | **ID** | `TRUSTED_PROXY_CIDRS` is Cloudflare's 22 ranges, the private network and the pod range `10.42.0.0/16`; a production request to `/auth/*` or `/api/admin/*` with no untrusted address left is refused `403 untrusted_ingress` |
 
 - **Private network.** Each environment has its own Civo network (`10.10.0.0/24` staging, `10.20.0.0/24` production) holding the nodes, the load balancer and the database, and nothing else.
 - **Three firewalls.** The **cluster's**: 6443 (the Kubernetes API) as below, and from the private network only the node ports, the kubelet and Cilium's tunnel and health checks. The **load balancer's**: 443 from Cloudflare. The **database's**: 5432 from the private network.
 - **Why the private network is trusted for forwarded headers.** No PROXY protocol is configured, so Traefik's peer is the load balancer's private address; trusting that range is what keeps Cloudflare's `X-Forwarded-For`. Whether that holds on Civo is a first-apply question ([`infra/civo/README.md`](../infra/civo/README.md#what-the-first-apply-must-confirm)).
-- **The Kubernetes API is public on Civo** (Civo clusters always have a public address). **Production** admits only the operators' addresses in `ALLOWED_API_CIDRS`. **Staging** admits the whole internet on 6443, authenticated by the cluster alone, because GitHub's hosted runners publish more than 5,000 IPv4 ranges, too many for a firewall ([D30](goals/aws-deploy/decisions.md)). The consequence for production: GitHub's runners cannot reach its API, so `promote-production.yml` cannot deploy production until the follow-up lands. The follow-up, for the owner to pick: a GitOps controller pulling from inside the cluster, or a Cloudflare tunnel in front of the API. Not yet.
+- **The Kubernetes API is public on Civo** (Civo clusters always have a public address). **Production** admits only the operators' addresses in `ALLOWED_API_CIDRS`. **Staging** admits the whole internet on 6443, authenticated by the cluster alone, because GitHub's hosted runners publish more than 5,000 IPv4 ranges, too many for a firewall ([D30](goals/civo-deploy/decisions.md)). The consequence for production: GitHub's runners cannot reach its API, so `promote-production.yml` cannot deploy production until the follow-up lands. The follow-up, for the owner to pick: a GitOps controller pulling from inside the cluster, or a Cloudflare tunnel in front of the API. Not yet.
 
 ## Compute
 
-- **Kubernetes, because it is the only compute layer Civo, AWS and Google all sell** ([D20](goals/aws-deploy/decisions.md)). Civo Kubernetes is k3s with Cilium; Civo's own Traefik is removed and ours is installed by the platform chart, so the version is pinned in the repository.
-- **One chart, `charts/answerable`** ([D21](goals/aws-deploy/decisions.md)): per server a ServiceAccount, Deployment, Service, Ingress, HorizontalPodAutoscaler and PodDisruptionBudget, plus the migration and ops Jobs. Per environment a values overlay: `values-civo-staging.yaml`, `values-civo-production.yaml` (and `values-local.yaml` for the kind stack).
+- **Kubernetes, because every cloud we might move to sells it** ([D20](goals/civo-deploy/decisions.md)). Civo Kubernetes is k3s with Cilium; Civo's own Traefik is removed and ours is installed by the platform chart, so the version is pinned in the repository.
+- **One chart, `charts/answerable`** ([D21](goals/civo-deploy/decisions.md)): per server a ServiceAccount, Deployment, Service, Ingress, HorizontalPodAutoscaler and PodDisruptionBudget, plus the migration and ops Jobs. Per environment a values overlay: `values-civo-staging.yaml`, `values-civo-production.yaml` (and `values-local.yaml` for the kind stack).
 - **Scaling.** HorizontalPodAutoscalers on CPU (60% of requests): ID 2 to 4 in staging and 2 to 6 in production, the MCPs 2 to 3 and 2 to 4. Replicas spread over nodes; production refuses to place two replicas on one node (`DoNotSchedule`). Each PodDisruptionBudget allows one pod down at a time.
 - **Rolling deploys.** `maxUnavailable: 0`, `maxSurge: 1`; readiness on `/readyz` (ID) and `/health` (the MCPs); a startup probe; liveness on `/healthz` for ID and a TCP check for the MCPs, so that a database outage does not restart every MCP pod. `helm upgrade --rollback-on-failure --wait` rolls the release back when a Job fails or the pods never become ready.
 - **Restricted Pod Security** is enforced on `answerable`: every container runs as uid 1000, with a read-only root filesystem, no privilege escalation, every capability dropped and seccomp `RuntimeDefault`; no pod mounts a ServiceAccount token except the ops Jobs.
@@ -122,16 +122,16 @@ A request travels Cloudflare → the Civo load balancer → Traefik → a servic
 | **Nodes** | 1 | 3 (Civo's "additional nodes" for fault tolerance) |
 | **Reach** | 5432 from the private network only | the same |
 
-- **Two logins per database** ([D5](goals/aws-deploy/decisions.md), [B1](goals/aws-deploy/briefs/b1.md)): an owner (`answerable_<name>_owner`) that only the migration Jobs receive, and a runtime login (`answerable_<name>_runtime`) the service runs as. All three services refuse to start as an owner or a privileged role. The `ops-bootstrap` Job creates the databases, the six logins and their URL Secrets with Civo's administrator login, which no service receives.
+- **Two logins per database** ([D5](goals/civo-deploy/decisions.md), [B1](goals/civo-deploy/briefs/b1.md)): an owner (`answerable_<name>_owner`) that only the migration Jobs receive, and a runtime login (`answerable_<name>_runtime`) the service runs as. All three services refuse to start as an owner or a privileged role. The `ops-bootstrap` Job creates the databases, the six logins and their URL Secrets with Civo's administrator login, which no service receives.
 - **Verified TLS.** Every URL ends `?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem`; the chart mounts the ConfigMap `postgres-ca` there, rendered from `infra/civo/envs/<environment>/database-ca.pem`. Civo's Terraform resource exposes no CA certificate, so that file is **trust on first use**: `bun run setup database-ca` keeps the root of the chain the database presented and prints its fingerprint for the owner to record. Which certificate Civo presents, and whether it names the private address the services use, is recorded by B7a. Not yet.
 - **Additional nodes.** Production runs three; how Civo fails over between them is undocumented and B7c checks it.
-- **Backups.** Civo's page says "automatic backups" and documents no schedule, retention or restore. The `civo` CLI offers `database backup` and `database restore`. A restore drill on Civo precedes any production data ([D26](goals/aws-deploy/decisions.md)); its RTO and RPO are B7a's measurements. A restored database is unreadable without the keys that were active when its rows were written, and git keeps every version of the encrypted secrets file ([runbook](../infra/README.md#restore)).
+- **Backups.** Civo's page says "automatic backups" and documents no schedule, retention or restore. The `civo` CLI offers `database backup` and `database restore`. A restore drill on Civo precedes any production data ([D26](goals/civo-deploy/decisions.md)); its RTO and RPO are B7a's measurements. A restored database is unreadable without the keys that were active when its rows were written, and git keeps every version of the encrypted secrets file ([runbook](../infra/README.md#restore)).
 - **Connections.** At the autoscalers' ceilings the services open up to 140 connections in staging (ID 4 × 20, the MCPs 3 × 10 each) and 200 in production (6 × 20, 4 × 10, 4 × 10), plus the Jobs. Civo's `max_connections` per size is measured in B7a. Not yet.
-- **Growth.** ID's `audit_events` and `admin_operations`, and the MCPs' evidence, are kept forever. At the [cost simulation](goals/aws-deploy/cost-simulation.md)'s 100 organisations of 1,000 users that is about 26 GB a month: production's 80 GB fills in about three months, and Civo bundles storage with the size. Deciding retention ([`Q-EVIDENCE-RETENTION`](02-plan.md#open-register)) is a prerequisite for production data on Civo.
+- **Growth.** ID's `audit_events` and `admin_operations`, and the MCPs' evidence, are kept forever. At the [cost simulation](goals/civo-deploy/cost-simulation.md)'s 100 organisations of 1,000 users that is about 26 GB a month: production's 80 GB fills in about three months, and Civo bundles storage with the size. Deciding retention ([`Q-EVIDENCE-RETENTION`](02-plan.md#open-register)) is a prerequisite for production data on Civo.
 
 ## Secrets
 
-**As built: `sops` and `age`, no secret store** ([D23](goals/aws-deploy/decisions.md)). OpenBao replaces it in brief [B7b](goals/aws-deploy/briefs/b7b.md) ([D29](goals/aws-deploy/decisions.md)): Not yet.
+**As built: `sops` and `age`, no secret store** ([D23](goals/civo-deploy/decisions.md)). OpenBao replaces it in brief [B7b](goals/civo-deploy/briefs/b7b.md) ([D29](goals/civo-deploy/decisions.md)): Not yet.
 
 - **Human-provided secrets** live encrypted in the repository, one file per environment, `infra/civo/envs/<environment>/secrets.enc.yaml`: several YAML documents, each a Kubernetes `Secret` in `answerable`. `.sops.yaml` at the root names each environment's `age` recipient with `encrypted_regex: ^(data|stringData)$`, so the Secrets' names and keys stay readable in a review and only the values are ciphertext. `bun run setup init-secrets` generates the file; the deploy pipes `sops --decrypt` into `kubectl apply` and never writes or prints the plaintext.
 - **Generated secrets never leave the cluster.** `ops-bootstrap` writes the six database URLs and `ops-register` the two machine-client secrets straight into Kubernetes Secrets. A rebuilt cluster re-runs both: bootstrap sets a new password for a login whose Secret is gone, register rotates a client secret it cannot find.
@@ -155,7 +155,7 @@ Public, committed, per environment: `.sops.yaml`, `infra/civo/envs/<environment>
 
 ## Images and deploys
 
-- **Registry: GHCR**, public, one place for every cloud ([D24](goals/aws-deploy/decisions.md)). Tag `sha-<40-character commit SHA>`, never a mutable name.
+- **Registry: GHCR**, public, one place for every cloud ([D24](goals/civo-deploy/decisions.md)). Tag `sha-<40-character commit SHA>`, never a mutable name.
 - **Built once per commit**, for `linux/amd64` and `linux/arm64` on native runners (Civo does not document its nodes' architecture), with provenance and an SBOM, then joined into one manifest list per image and **signed with cosign**, keyless, by `deploy-staging.yml` on `main`.
 - **Deployed by digest.** The deploy resolves each tag to its manifest-list digest and the chart runs `<repository>@sha256:…`, so a moved tag changes nothing.
 
@@ -167,10 +167,10 @@ Public, committed, per environment: `.sops.yaml`, `infra/civo/envs/<environment>
 4. Deploy: apply the decrypted Secrets, then `helm upgrade --install` with `--rollback-on-failure`. The hooks run in order: the `postgres-ca` ConfigMap, `ops-bootstrap` (every deploy; it changes nothing when nothing is missing), `id-migrate`, `toolbox-migrate`, `admin-migrate`, then the release, then `ops-register` when either client Secret is missing (the first install).
 5. Smoke test through Cloudflare: ID's health, readiness, discovery and keys, the MCPs' health and metadata, retried for five minutes.
 
-**The production click** ([`promote-production.yml`](../.github/workflows/promote-production.yml), [D8](goals/aws-deploy/decisions.md)): read the tag staging runs (or take an earlier one), verify the four signatures against `deploy-staging.yml@refs/heads/main`, wait for the owner's approval, apply `infra/civo/envs/production`, deploy exactly the verified digests, smoke-test. Production is never rebuilt. Until D30's follow-up, GitHub cannot reach production's API, so this workflow cannot complete (above).
+**The production click** ([`promote-production.yml`](../.github/workflows/promote-production.yml), [D8](goals/civo-deploy/decisions.md)): read the tag staging runs (or take an earlier one), verify the four signatures against `deploy-staging.yml@refs/heads/main`, wait for the owner's approval, apply `infra/civo/envs/production`, deploy exactly the verified digests, smoke-test. Production is never rebuilt. Until D30's follow-up, GitHub cannot reach production's API, so this workflow cannot complete (above).
 
 - **Roll back** by redeploying an earlier tag (`Deploy staging` or `Promote production` by hand), or `helm rollback` with a kubeconfig.
-- **Migrations are expand, then contract** ([D10](goals/aws-deploy/decisions.md)): a migration never breaks the image before it, because that image keeps serving during the rollout and after a rollback. A change that cannot be written that way needs a restore, not a rollback.
+- **Migrations are expand, then contract** ([D10](goals/civo-deploy/decisions.md)): a migration never breaks the image before it, because that image keeps serving during the rollout and after a rollback. A change that cannot be written that way needs a restore, not a rollback.
 - **Registering again** (a rotated client secret, a changed registration) is `ops.yml`; once a person holds `platform:write` it needs a staff token in `ops-staff-token`.
 
 ## Observability
@@ -189,7 +189,7 @@ Public, committed, per environment: `.sops.yaml`, `infra/civo/envs/<environment>
 
 ## Cost
 
-Civo's list prices, measured on 10 October 2026 from its pricing page; USD a month, before VAT ([portability](goals/aws-deploy/portability.md#cost-three-ways)).
+Civo's list prices, measured on 10 October 2026 from its pricing page; USD a month, before VAT ([portability](goals/civo-deploy/portability.md#cost-three-ways)).
 
 | Line | Staging | Production |
 | --- | --- | --- |
@@ -221,13 +221,13 @@ Civo's list prices, measured on 10 October 2026 from its pricing page; USD a mon
 ## Not yet
 
 - **D30's follow-up**: a Kubernetes API that GitHub can reach without being open to the internet, through a GitOps controller pulling from inside the cluster or a Cloudflare tunnel. Until then staging's API is open (authenticated) and production cannot be deployed from GitHub.
-- **OpenBao** as the secret store, with per-service identities, a read audit and snapshots: [B7b](goals/aws-deploy/briefs/b7b.md) ([D29](goals/aws-deploy/decisions.md)).
-- **The first staging deployment and its evidence** (`reports/staging-evidence.md`), and the production rehearsal: [B7a](goals/aws-deploy/briefs/b7.md), [B7c](goals/aws-deploy/briefs/b7c.md).
+- **OpenBao** as the secret store, with per-service identities, a read audit and snapshots: [B7b](goals/civo-deploy/briefs/b7b.md) ([D29](goals/civo-deploy/decisions.md)).
+- **The first staging deployment and its evidence** (`reports/staging-evidence.md`), and the production rehearsal: [B7a](goals/civo-deploy/briefs/b7.md), [B7c](goals/civo-deploy/briefs/b7c.md).
 - **The Grafana Cloud agent and alerts.**
 - **Image signature enforcement in the cluster** (an admission policy); today the signatures are checked by `promote-production.yml` only.
 - **GitOps** as the deploy model.
-- **The AWS and Google roots.** The images, charts, secrets scheme and pipeline are cloud-neutral; each cloud needs its own thin Terraform root ([portability](goals/aws-deploy/portability.md)).
+- **Roots for other clouds.** The images, charts, secrets scheme and pipeline are cloud-neutral; another cloud needs only its own thin Terraform root ([portability](goals/civo-deploy/portability.md)).
 - **From D15:** a second region, Redis, an email provider, KMS-backed token signing ([`Q-AID-KMS`](02-plan.md#open-register)), scheduled scale-to-zero for staging, Cloudflare Access in front of the admin MCP.
 - **Bot Fight Mode as code** (the token would need Bot Management Edit).
-- **Cloudflare's managed WAF rules as code.** [D18](goals/aws-deploy/decisions.md) names the free managed ruleset; the `edge` module does not set it, so the zone keeps whatever Cloudflare enables by default.
+- **Cloudflare's managed WAF rules as code.** [D18](goals/civo-deploy/decisions.md) names the free managed ruleset; the `edge` module does not set it, so the zone keeps whatever Cloudflare enables by default.
 - **A retention decision** for audit and evidence rows ([`Q-EVIDENCE-RETENTION`](02-plan.md#open-register)).

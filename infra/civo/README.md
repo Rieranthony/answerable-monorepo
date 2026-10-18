@@ -1,6 +1,6 @@
 # Civo infrastructure
 
-Terraform for Answerable's two environments on Civo, each in its own Civo account in LON1 ([D28](../../docs/goals/aws-deploy/decisions.md)). One root per environment builds the network, the cluster, PostgreSQL 17, the load balancer's firewall and address, the state bucket, the platform chart, the deploy identity and the Cloudflare zone. The application itself is deployed by `helm upgrade` from GitHub Actions, not by Terraform.
+Terraform for Answerable's two environments on Civo, each in its own Civo account in LON1 ([D28](../../docs/goals/civo-deploy/decisions.md)). One root per environment builds the network, the cluster, PostgreSQL 17, the load balancer's firewall and address, the state bucket, the platform chart, the deploy identity and the Cloudflare zone. The application itself is deployed by `helm upgrade` from GitHub Actions, not by Terraform.
 
 ## Layout
 
@@ -53,13 +53,13 @@ cd infra/civo/modules/cluster && terraform init -backend=false && terraform test
 
 ## Credentials
 
-Nothing secret is committed. Terraform reads these from the environment:
+Nothing secret is committed. Terraform reads these from the environment. Run it as `infra/civo/terraform.sh`, which hands the state credential to the S3 backend under the names that backend reads; plain `terraform` is enough for what never touches the state (`fmt`, `validate`, `test`):
 
 | Variable | What | Where it is kept |
 | --- | --- | --- |
-| `CIVO_TOKEN` | The environment's Civo account API key | The owner, and the protected infra GitHub environment; never the deploy workflow ([D25](../../docs/goals/aws-deploy/decisions.md)) |
+| `CIVO_TOKEN` | The environment's Civo account API key | The owner, and the protected infra GitHub environment; never the deploy workflow ([D25](../../docs/goals/civo-deploy/decisions.md)) |
 | `CLOUDFLARE_API_TOKEN` | A token scoped to the environment's zone only, with the permissions listed below | As `CIVO_TOKEN` |
-| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | The state bucket's credential (outputs `state_access_key_id`, `state_secret_access_key`) | As `CIVO_TOKEN` |
+| `STATE_ACCESS_KEY_ID`, `STATE_SECRET_ACCESS_KEY` | The state bucket's credential (outputs `state_access_key_id`, `state_secret_access_key`) | As `CIVO_TOKEN` |
 | `TF_VAR_allowed_api_cidrs` | The operators' own addresses for `kubectl`, for example `'["198.51.100.7/32"]'`. In production they are the only way in to the Kubernetes API. Empty by default, so automated runs with `-input=false` never stop to ask; staging plans without it, and production's plan fails until it is set | Not committed: an operator's address is personal data in a public repository |
 
 The zone's Cloudflare token needs these permissions, on that zone only:
@@ -75,7 +75,7 @@ The zone's Cloudflare token needs these permissions, on that zone only:
 
 The last two are missing from B0's original list ([config rules](https://developers.cloudflare.com/rules/configuration-rules/create-api/), [cache rules](https://developers.cloudflare.com/cache/how-to/cache-rules/create-api/)). B0's Zone WAF Edit is not used by these roots.
 
-**The state is a secret in its own right.** The Civo provider stores the database administrator's username and password in state; Terraform cannot keep them out. With `write_kubeconfig = true`, which this root needs, it also stores the cluster's admin kubeconfig. The state further holds the deployer's token and the state credential's secret key. Anyone who reads the state bucket owns the cluster and the database, so the bucket and the credential that opens it (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) are guarded like `CIVO_TOKEN`: only the owner and the protected infra environment hold them, never the deploy workflow. One output carries the database password: `database_admin_url`, sensitive, which `bun run setup init-secrets` copies into the encrypted `postgres-admin` Secret for the bootstrap Job. Another carries the cluster: `admin_kubeconfig`, sensitive, is the cluster-admin credential, held in state like the rest, for break-glass and diagnostics only (`bun run setup database-ca` reads the database's certificate through it from a pod). The deploy never uses it.
+**The state is a secret in its own right.** The Civo provider stores the database administrator's username and password in state; Terraform cannot keep them out. With `write_kubeconfig = true`, which this root needs, it also stores the cluster's admin kubeconfig. The state further holds the deployer's token and the state credential's secret key. Anyone who reads the state bucket owns the cluster and the database, so the bucket and the credential that opens it (`STATE_ACCESS_KEY_ID`, `STATE_SECRET_ACCESS_KEY`) are guarded like `CIVO_TOKEN`: only the owner and the protected infra environment hold them, never the deploy workflow. One output carries the database password: `database_admin_url`, sensitive, which `bun run setup init-secrets` copies into the encrypted `postgres-admin` Secret for the bootstrap Job. Another carries the cluster: `admin_kubeconfig`, sensitive, is the cluster-admin credential, held in state like the rest, for break-glass and diagnostics only (`bun run setup database-ca` reads the database's certificate through it from a pod). The deploy never uses it.
 
 ## Who can reach the Kubernetes API
 
@@ -89,12 +89,12 @@ Civo clusters always have a public API endpoint (6443). The cluster firewall dec
 
 ## Before the first apply
 
-- The Civo account for the environment exists and `CIVO_TOKEN` is its API key ([B0](../../docs/goals/aws-deploy/briefs/b0.md)).
+- The Civo account for the environment exists and `CIVO_TOKEN` is its API key ([B0](../../docs/goals/civo-deploy/briefs/b0.md)).
 - The zone's Cloudflare token has the six permissions above, Zone Read, Config Rules Edit and Cache Rules Edit included.
 - Bot Fight Mode is off in the zone (Security settings in the dashboard). The token cannot change it.
 - The zone has no `http_config_settings` or `http_request_cache_settings` ruleset made by hand. Cloudflare allows one per zone and phase; import an existing one with `terraform import 'module.edge.cloudflare_ruleset.config' 'zones/<zone id>/<ruleset id>'`.
 - `charts/platform` exists on the branch, with its `values-civo-<environment>.yaml` overlay. The full apply installs it, and the plan fails, naming the path, if the overlay is missing.
-- **The origin-pull CA.** Its public certificate is committed at `envs/<env>/edge-ca/ca.pem` and the zone's client certificate is uploaded to Cloudflare, both by `bun run setup origin-pull`, before the full apply (step 6) and before traffic is expected ([D19](../../docs/goals/aws-deploy/decisions.md)).
+- **The origin-pull CA.** Its public certificate is committed at `envs/<env>/edge-ca/ca.pem` and the zone's client certificate is uploaded to Cloudflare, both by `bun run setup origin-pull`, before the full apply (step 6) and before traffic is expected ([D19](../../docs/goals/civo-deploy/decisions.md)).
   - Terraform passes the certificate to the platform chart as `originPull.caPem`, and the chart turns it into the Secret Traefik verifies Cloudflare against.
   - The full plan stops, naming the file and the command, while the certificate is missing, and refuses a file that is not a PEM certificate or that holds a private key.
   - Until the client certificate is uploaded, Cloudflare presents its shared one, which Traefik refuses.
@@ -122,34 +122,34 @@ Per environment, from a trusted machine. Staging shown; production is the same i
 3. Move the state into the bucket.
 
    ```sh
-   export AWS_ACCESS_KEY_ID="$(terraform output -raw state_access_key_id)"
-   export AWS_SECRET_ACCESS_KEY="$(terraform output -raw state_secret_access_key)"
+   export STATE_ACCESS_KEY_ID="$(terraform output -raw state_access_key_id)"
+   export STATE_SECRET_ACCESS_KEY="$(terraform output -raw state_secret_access_key)"
    rm backend_override.tf
-   terraform init -migrate-state
-   terraform state list   # now read from the bucket
+   ../../terraform.sh init -migrate-state
+   ../../terraform.sh state list   # now read from the bucket
    rm terraform.tfstate terraform.tfstate.backup
    ```
 
-4. Prove the state lock. Start `terraform plan` in two shells at once; the second must stop with `Error acquiring the state lock`. If instead the first plan fails writing `staging.tfstate.tflock` (Civo rejecting S3 conditional writes), set `use_lockfile = false` in both `backend.tf` files, record it in [`progress.md`](../../docs/goals/aws-deploy/progress.md), and keep to one operator at a time, CI included.
+4. Prove the state lock. Start `../../terraform.sh plan` in two shells at once; the second must stop with `Error acquiring the state lock`. If instead the first plan fails writing `staging.tfstate.tflock` (Civo rejecting S3 conditional writes), set `use_lockfile = false` in both `backend.tf` files, record it in [`progress.md`](../../docs/goals/civo-deploy/progress.md), and keep to one operator at a time, CI included.
 
 5. Create the cluster before anything that runs inside it. The kubernetes and helm providers are configured from the cluster's kubeconfig, which does not exist until the cluster does.
 
    ```sh
-   terraform apply -target=module.cluster -target=module.database -target=module.ingress_firewall
+   ../../terraform.sh apply -target=module.cluster -target=module.database -target=module.ingress_firewall
    ```
 
 6. Apply the rest: the namespaces, the platform chart, the deployer and the Cloudflare zone. This step needs `edge-ca/ca.pem` committed; until `bun run setup origin-pull --environment <env> --zone <zone>` has written it, the plan stops and names that command, while step 5 does not need it.
 
    ```sh
-   terraform apply
+   ../../terraform.sh apply
    ```
 
 7. Hand over the deploy credentials. On the environment's GitHub environment, set `KUBE_SERVER`, `KUBE_CA` and `KUBE_TOKEN`, and on the infra environment the state credential:
 
    ```sh
-   terraform output -raw kube_server
-   terraform output -raw kube_ca
-   terraform output -raw kube_token
+   ../../terraform.sh output -raw kube_server
+   ../../terraform.sh output -raw kube_ca
+   ../../terraform.sh output -raw kube_token
    ```
 
 8. Pin the cluster version: read it with `civo kubernetes show answerable-staging-cluster` and set `kubernetes_version` in `terraform.tfvars`.
@@ -166,7 +166,7 @@ A cluster that is ever replaced needs step 5 again: the providers cannot be conf
 
 ## What the first apply must confirm
 
-Each of these could not be proved without a Civo account. Record the answer in [`progress.md`](../../docs/goals/aws-deploy/progress.md) and fix the code where it differs.
+Each of these could not be proved without a Civo account. Record the answer in [`progress.md`](../../docs/goals/civo-deploy/progress.md) and fix the code where it differs.
 
 | Question | How to check | If it differs |
 | --- | --- | --- |
@@ -180,14 +180,14 @@ Each of these could not be proved without a Civo account. Record the answer in [
 | What address does Traefik see? No PROXY protocol is configured, so it should be the load balancer's private address, which is why the private range is in Traefik's `trustedIPs` and in `trusted_proxy_cidrs` | Read `X-Forwarded-For` at ID through the audit API | Enable `kubernetes.civo.com/loadbalancer-enable-proxy-protocol` with Traefik's `ports.websecure.proxyProtocol.trustedIPs` |
 | Is the pod range k3s's default 10.42.0.0/16? | `kubectl get nodes -o jsonpath='{.items[*].spec.podCIDR}'` | Set `pod_cidr` |
 | Which certificate does the database present, and does it name the private address that `database_admin_url` and the services use? `verify-full` needs its CA (`bun run setup database-ca`) and a matching host | `openssl s_client -starttls postgres -connect <host>:5432` from a pod; the first `bootstrap` Job connects with `verify-full` | Switch the host in `modules/database` (output `admin_url`) and the services to `database_dns_endpoint` |
-| Is Civo's default database `postgres`? The `database_admin_url` output assumes it (variable `database_admin_database`) | `civo database credential answerable-staging-database`; the first `bootstrap` Job ([B3](../../docs/goals/aws-deploy/briefs/b3.md)) connects with the URL | Set `database_admin_database` in `terraform.tfvars`, then rerun `bun run setup init-secrets --force` |
-| Do standbys and backups work with the database's outbound traffic limited to the private network? | The restore drill ([B7](../../docs/goals/aws-deploy/briefs/b7.md)) | Widen the database firewall's egress |
+| Is Civo's default database `postgres`? The `database_admin_url` output assumes it (variable `database_admin_database`) | `civo database credential answerable-staging-database`; the first `bootstrap` Job ([B3](../../docs/goals/civo-deploy/briefs/b3.md)) connects with the URL | Set `database_admin_database` in `terraform.tfvars`, then rerun `bun run setup init-secrets --force` |
+| Do standbys and backups work with the database's outbound traffic limited to the private network? | The restore drill ([B7](../../docs/goals/civo-deploy/briefs/b7.md)) | Widen the database firewall's egress |
 | Does the platform chart accept the values Terraform sets (`traefik.service.annotations`, `traefik.ports.websecure.forwardedHeaders.trustedIPs`)? | `helm get values platform -n platform`; `kubectl -n platform get svc` shows the reserved address | Match the keys in `modules/platform/main.tf` to the chart |
 
 ## Day two
 
-- **Plan and apply**: `terraform plan` and `terraform apply` in the environment's root with the credentials above. A change in Cloudflare's published ranges shows as a plan diff (output `cloudflare_ranges_etag`).
-- **Rotate the deployer token**: `terraform apply -replace=module.deployer.kubernetes_secret_v1.token`, then update `KUBE_TOKEN`. Deleting the Secret revokes the old token.
+- **Plan and apply**: `../../terraform.sh plan` and `../../terraform.sh apply` in the environment's root with the credentials above. A change in Cloudflare's published ranges shows as a plan diff (output `cloudflare_ranges_etag`).
+- **Rotate the deployer token**: `../../terraform.sh apply -replace=module.deployer.kubernetes_secret_v1.token`, then update `KUBE_TOKEN`. Deleting the Secret revokes the old token.
 - **Change who reaches the API**: change `TF_VAR_allowed_api_cidrs` (or, in staging, `api_open_to_internet`) and apply.
 - **Destroy**: the database and the state bucket carry `prevent_destroy`; removing it is a reviewed change.
 
@@ -199,4 +199,4 @@ Each of these could not be proved without a Civo account. Record the answer in [
 
 - **A closed Kubernetes API that CI can still reach.** Staging opens its API to the internet in the meantime (see "Who can reach the Kubernetes API"). Production's API admits the listed addresses only. GitHub-hosted runners can therefore neither deploy production nor run a CI `terraform apply` of its root, because the kubernetes and helm providers talk to the API. Both wait for the GitOps or tunnel follow-up.
 - **Bot Fight Mode as code.** `cloudflare_bot_management` can turn it off, but the token would need Bot Management Edit; it stays a dashboard toggle.
-- **The AWS and Google roots.** Written in a later brief.
+- **Roots for other clouds.** Written in a later brief.

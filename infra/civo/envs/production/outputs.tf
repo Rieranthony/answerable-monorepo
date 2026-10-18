@@ -98,12 +98,12 @@ output "state_endpoint" {
 }
 
 output "state_access_key_id" {
-  description = "The state credential's access key: AWS_ACCESS_KEY_ID for the backend."
+  description = "The state credential's access key: STATE_ACCESS_KEY_ID."
   value       = module.state.access_key_id
 }
 
 output "state_secret_access_key" {
-  description = "The state credential's secret key: AWS_SECRET_ACCESS_KEY for the backend."
+  description = "The state credential's secret key: STATE_SECRET_ACCESS_KEY."
   value       = module.state.secret_access_key
   sensitive   = true
 }

@@ -7,7 +7,7 @@ import { INTERMEDIATE, LEAF, ROOT } from "./test-certificates"
 import { createContext, createFakeRunner, createRoot, type RecordedCall } from "./testing"
 import type { RunResult } from "./run"
 
-const STATE = { AWS_ACCESS_KEY_ID: "key-id", AWS_SECRET_ACCESS_KEY: "state-secret" }
+const STATE = { STATE_ACCESS_KEY_ID: "key-id", STATE_SECRET_ACCESS_KEY: "state-secret" }
 const S_CLIENT = (chain: string[]) =>
   `CONNECTED(00000003)\n---\nCertificate chain\n${chain.map((pem, at) => ` ${at} s:CN=x\n${pem}`).join("")}---\nServer certificate\n`
 
@@ -137,7 +137,7 @@ describe("database-ca", () => {
     expect(runner.calls.find((call) => call.argv[0] === "kubectl")!.options.timeoutMs).toBe(180_000)
     expect(output()).toContain("(exit 143).")
     expect(output()).toContain("The pod did not fetch a certificate either (exit 1: error: timed out waiting for the condition)")
-    expect(output()).toContain("(umask 077 && cd infra/civo/envs/staging && terraform output -raw admin_kubeconfig) > admin.kubeconfig")
+    expect(output()).toContain("(umask 077 && infra/civo/terraform.sh -chdir=infra/civo/envs/staging output -raw admin_kubeconfig) > admin.kubeconfig")
     expect(output()).toContain(podCommand("staging", "10.10.0.5", "5432"))
 
     const missing = await fixture({}, "10.10.0.5", (call) => {
@@ -200,7 +200,7 @@ describe("database-ca", () => {
   test("needs the state credential to read the database's address", async () => {
     const { paths, runner } = await fixture()
     await expect(databaseCa({ environment: "staging", paths }, createContext({ run: runner.run }).context)).rejects.toThrow(
-      "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY",
+      "STATE_ACCESS_KEY_ID and STATE_SECRET_ACCESS_KEY",
     )
   })
 

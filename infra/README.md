@@ -2,7 +2,7 @@
 
 How to set up, deploy, promote, roll back, scale, rotate, restore and destroy Answerable's environments on Civo. Why each piece exists, and what runs where: [`docs/12-deployment.md`](../docs/12-deployment.md).
 
-**Status.** Built and proved locally; not yet applied to a Civo account. The first staging deployment is brief [B7a](../docs/goals/aws-deploy/briefs/b7.md), which runs this page for the first time and corrects it.
+**Status.** Built and proved locally; not yet applied to a Civo account. The first staging deployment is brief [B7a](../docs/goals/civo-deploy/briefs/b7.md), which runs this page for the first time and corrects it.
 
 **Conventions.** Run every command from the repository root on a trusted machine (your own, with disk encryption), unless a step says otherwise. Staging is shown; production is the same with `production` and the zone `answerable.org`, except where a step says otherwise. `<…>` is a value you fill in. No command here prints a secret, except the one step that says so: values travel through environment variables, files that Git ignores, or standard input.
 
@@ -40,7 +40,7 @@ For the checks: `tflint` 0.64.0, `trivy` 0.75.0, `actionlint` 1.7.12 and `kubeco
 
 ### Accounts, once per environment
 
-1. **Civo** ([B0](../docs/goals/aws-deploy/briefs/b0.md)). One Civo organisation with two accounts, `answerable-staging` and `answerable-production`, region LON1. You are in each account's Owners team with MFA on your login. Each account's API key ([Civo's page](https://www.civo.com/docs/account/api-keys)) is that environment's `CIVO_TOKEN`. Save it in the CLI too, interactively so that it stays out of your shell history:
+1. **Civo** ([B0](../docs/goals/civo-deploy/briefs/b0.md)). One Civo organisation with two accounts, `answerable-staging` and `answerable-production`, region LON1. You are in each account's Owners team with MFA on your login. Each account's API key ([Civo's page](https://www.civo.com/docs/account/api-keys)) is that environment's `CIVO_TOKEN`. Save it in the CLI too, interactively so that it stays out of your shell history:
 
    ```sh
    civo apikey save            # name it answerable-staging, paste the key when asked
@@ -92,9 +92,9 @@ bun run setup first-apply --environment staging
 **3. The state credential.** From here on every command that reads Terraform's state needs the bucket's credential. `first-apply` printed its key ID. The Civo CLI prints its secret key (the dashboard shows it too, under Object stores > Credentials): this is the one step that shows a secret on screen. Paste it into the prompt, keep it with your other secrets, and clear the terminal:
 
 ```sh
-export AWS_ACCESS_KEY_ID=<the key ID first-apply printed>
-civo objectstore credential secret --access-key "$AWS_ACCESS_KEY_ID"
-printf 'State secret key: '; read -rs AWS_SECRET_ACCESS_KEY; echo; export AWS_SECRET_ACCESS_KEY
+export STATE_ACCESS_KEY_ID=<the key ID first-apply printed>
+civo objectstore credential secret --access-key "$STATE_ACCESS_KEY_ID"
+printf 'State secret key: '; read -rs STATE_SECRET_ACCESS_KEY; echo; export STATE_SECRET_ACCESS_KEY
 clear
 ```
 
@@ -120,7 +120,7 @@ Record the SHA-256 fingerprint it prints, with the date, where you keep evidence
 bun run setup first-apply --environment staging --resume
 ```
 
-Then **prove the state lock**: run `terraform -chdir=infra/civo/envs/staging plan` in two shells at once. The second must stop with `Error acquiring the state lock`.
+Then **prove the state lock**: run `infra/civo/terraform.sh -chdir=infra/civo/envs/staging plan` in two shells at once. The second must stop with `Error acquiring the state lock`.
 
 **7. The secrets file.** Generates ID's secrets, copies Terraform's database administrator URL and the cert-manager token, encrypts them to `infra/civo/envs/staging/secrets.enc.yaml` and checks the round trip.
 
@@ -252,7 +252,7 @@ After any change to `secrets.enc.yaml`: commit and push. The deploy applies the 
 | A database login (six) | Empty its key, for example `kubectl -n answerable patch secret id-database --type merge -p '{"stringData":{"DATABASE_URL":""}}'`; redeploy the current tag (`ops-bootstrap` gives the login a new password and writes its URL); restart the service ([`infra/ops`](ops/README.md#bootstrap)) |
 | A machine client (`toolbox-id-client`, `admin-id-client`) | Empty its key the same way, then [register again](#register-again); `register` rotates the secret in ID and restarts the two servers |
 | The origin-pull certificate | `bun run setup origin-pull --environment staging --zone answerable-staging.uk --force`, which walks you through trusting both CAs, applying, uploading and deleting the old certificate ([details](setup/README.md#origin-pull---zone-zone)) |
-| The deployer token | `terraform -chdir=infra/civo/envs/staging apply -replace=module.deployer.kubernetes_secret_v1.token`, then `terraform -chdir=infra/civo/envs/staging output -raw kube_token \| gh secret set KUBE_TOKEN --env staging` |
+| The deployer token | `infra/civo/terraform.sh -chdir=infra/civo/envs/staging apply -replace=module.deployer.kubernetes_secret_v1.token`, then `infra/civo/terraform.sh -chdir=infra/civo/envs/staging output -raw kube_token \| gh secret set KUBE_TOKEN --env staging` |
 | `CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN` | Regenerate in Civo's or Cloudflare's dashboard (for Civo, regeneration is the only control), then `gh secret set CIVO_TOKEN --env infra-staging` (it asks for the value); production's live on `production` |
 | The `age` key | Move the old key file aside, `bun run setup age-init --environment staging --force` (a new key and rule), re-encrypt with the old key: `SOPS_AGE_KEY_FILE=<old key file> sops updatekeys infra/civo/envs/staging/secrets.enc.yaml`, push, then `grep '^AGE-SECRET-KEY' ~/.config/sops/age/answerable-staging.txt \| gh secret set SOPS_AGE_KEY --env staging`. Keep the old key while any backup needs the older files |
 
@@ -290,7 +290,7 @@ A restored database needs the keys that were active when its rows were written. 
 
 ### OpenBao
 
-Not yet: it arrives with B7b ([D29](../docs/goals/aws-deploy/decisions.md)).
+Not yet: it arrives with B7b ([D29](../docs/goals/civo-deploy/decisions.md)).
 
 ## Break glass
 
@@ -299,9 +299,9 @@ Not yet: it arrives with B7b ([D29](../docs/goals/aws-deploy/decisions.md)).
 The cluster's admin kubeconfig is the sensitive Terraform output `admin_kubeconfig`. Use it for diagnostics and recovery only, keep it out of the repository, and delete it afterwards:
 
 ```sh
-terraform -chdir=infra/civo/envs/staging init -input=false     # once per machine, with AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY set
+infra/civo/terraform.sh -chdir=infra/civo/envs/staging init -input=false     # once per machine, with STATE_ACCESS_KEY_ID and STATE_SECRET_ACCESS_KEY set
 mkdir -p ~/.kube
-(umask 077; terraform -chdir=infra/civo/envs/staging output -raw admin_kubeconfig > ~/.kube/answerable-staging-admin)
+(umask 077; infra/civo/terraform.sh -chdir=infra/civo/envs/staging output -raw admin_kubeconfig > ~/.kube/answerable-staging-admin)
 export KUBECONFIG=~/.kube/answerable-staging-admin
 kubectl -n answerable get pods
 ```
@@ -333,8 +333,8 @@ Not rehearsed yet; B7c destroys a production rehearsal and corrects this section
    ```sh
    cd infra/civo/envs/staging
    printf 'terraform {\n  backend "local" {}\n}\n' > backend_override.tf
-   terraform init -migrate-state
-   terraform destroy
+   ../../terraform.sh init -migrate-state
+   ../../terraform.sh destroy
    rm backend_override.tf terraform.tfstate terraform.tfstate.backup
    cd -
    ```

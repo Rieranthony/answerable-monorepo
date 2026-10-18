@@ -15,8 +15,8 @@ const OUTPUTS: Record<string, string> = {
 const ENV = {
   CIVO_TOKEN: "civo-token-value",
   CLOUDFLARE_API_TOKEN: "cloudflare-token-value",
-  AWS_ACCESS_KEY_ID: "STATEKEYID",
-  AWS_SECRET_ACCESS_KEY: "state-secret-value",
+  STATE_ACCESS_KEY_ID: "STATEKEYID",
+  STATE_SECRET_ACCESS_KEY: "state-secret-value",
 }
 const AGE_KEY = "AGE-SECRET-KEY-1SECRETVALUE"
 const REPO = "repos/Rieranthony/answerable-monorepo"

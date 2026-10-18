@@ -53,7 +53,7 @@ const USAGE = `Usage: bun run setup <command> --environment <staging|production>
 Once per environment, in this order (infra/setup/README.md):
   age-init                      the environment's age key (~/.config/sops/age/answerable-<env>.txt) and its .sops.yaml rule
   first-apply [--yes]           infra/civo/README.md's first apply: state bucket, state migration, cluster, then the rest
-              [--resume]        continue at the cluster step once the CA files exist (needs AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+              [--resume]        continue at the cluster step once the CA files exist (needs STATE_ACCESS_KEY_ID, STATE_SECRET_ACCESS_KEY)
   origin-pull --zone <zone>     the origin-pull CA and client certificate; uploads the client pair, writes edge-ca/ca.pem
               [--force]         rotate: trust both CAs while you apply, upload, keep the new CA
               [--wait <s>]      how long to wait for Cloudflare to deploy it (default 300)
@@ -72,7 +72,7 @@ Once per environment, in this order (infra/setup/README.md):
 
 Every command also takes --sops-config <file> (default .sops.yaml) and --key-dir <dir> (default ~/.config/sops/age).
 Variables: CIVO_TOKEN and CLOUDFLARE_API_TOKEN (first-apply, publish-env; origin-pull needs the second),
-AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (the state bucket's credential, once first-apply has moved the state),
+STATE_ACCESS_KEY_ID and STATE_SECRET_ACCESS_KEY (the state bucket's credential, once first-apply has moved the state),
 ALLOWED_API_CIDRS (production), CERT_MANAGER_CLOUDFLARE_TOKEN (init-secrets), MICROSOFT_CLIENT_ID and
 MICROSOFT_CLIENT_SECRET, GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (init-secrets, optional, in pairs).
 No command prints a secret. Exit codes: 0 done, 1 a step failed, 2 wrong usage.

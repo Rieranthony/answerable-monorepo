@@ -3,23 +3,32 @@ import { exists, type Context } from "./context"
 import { SetupError, UsageError } from "./errors"
 import { commandLine } from "./run"
 
-/** The state bucket's credential as the S3 backend reads it, for Terraform's environment only. */
-export type StateEnv = { AWS_ACCESS_KEY_ID: string; AWS_SECRET_ACCESS_KEY: string }
+/** The state bucket's credential, under the names the operator exports and the GitHub environments hold. */
+export type StateEnv = { STATE_ACCESS_KEY_ID: string; STATE_SECRET_ACCESS_KEY: string }
 
 /**
  * The state bucket's credential from the operator's environment. Once `first-apply` has moved the state into the
  * bucket, every command that reads Terraform's outputs needs it.
  */
 export function stateEnv(env: Context["env"]): StateEnv {
-  const id = env.AWS_ACCESS_KEY_ID?.trim()
-  const secret = env.AWS_SECRET_ACCESS_KEY?.trim()
+  const id = env.STATE_ACCESS_KEY_ID?.trim()
+  const secret = env.STATE_SECRET_ACCESS_KEY?.trim()
   if (!id || !secret)
     throw new UsageError(
-      "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must hold the Terraform state bucket's credential: first-apply printed " +
-        "the key ID, and `civo objectstore credential secret -a <key id>` (or the Civo dashboard, Object stores > " +
+      "STATE_ACCESS_KEY_ID and STATE_SECRET_ACCESS_KEY must hold the Terraform state bucket's credential: first-apply " +
+        "printed the key ID, and `civo objectstore credential secret -a <key id>` (or the Civo dashboard, Object stores > " +
         "Credentials) shows the secret. Keep both where you keep CIVO_TOKEN",
     )
-  return { AWS_ACCESS_KEY_ID: id, AWS_SECRET_ACCESS_KEY: secret }
+  return { STATE_ACCESS_KEY_ID: id, STATE_SECRET_ACCESS_KEY: secret }
+}
+
+/**
+ * The credential as Terraform's S3 backend reads it, for Terraform's own environment and nothing else. The backend
+ * takes a credential from these two fixed names or from `-backend-config`, which would write it into `.terraform/`
+ * and into plan files. `infra/civo/terraform.sh` does the same for the workflows and for Terraform run by hand.
+ */
+export function backendEnv(state: StateEnv): Record<string, string> {
+  return { AWS_ACCESS_KEY_ID: state.STATE_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY: state.STATE_SECRET_ACCESS_KEY }
 }
 
 /** Initialise the Terraform root on this machine when it has not been: the outputs are read through its backend. */
@@ -27,7 +36,7 @@ async function ensureInitialised(context: Context, envDir: string, state: StateE
   if (await exists(join(envDir, ".terraform/terraform.tfstate"))) return
   const argv = ["terraform", "init", "-input=false"]
   context.out(`$ ${commandLine(argv)}\n`)
-  const result = await context.run(argv, { cwd: envDir, env: state, onOutput: context.out })
+  const result = await context.run(argv, { cwd: envDir, env: backendEnv(state), onOutput: context.out })
   if (result.exitCode !== 0) throw new SetupError(`terraform init failed with exit code ${result.exitCode}`)
 }
 
@@ -39,7 +48,7 @@ export async function readOutput(context: Context, envDir: string, name: string,
   await ensureInitialised(context, envDir, state)
   const argv = ["terraform", "output", "-raw", name]
   context.out(`$ ${commandLine(argv)}\n`)
-  const result = await context.run(argv, { cwd: envDir, env: state })
+  const result = await context.run(argv, { cwd: envDir, env: backendEnv(state) })
   if (result.exitCode !== 0)
     throw new SetupError(`terraform output ${name} failed with exit code ${result.exitCode}: ${result.stderr.trim()}`)
   if (!result.stdout.trim()) throw new SetupError(`terraform output ${name} is empty: has the environment been applied?`)

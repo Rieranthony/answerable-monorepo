@@ -1,6 +1,6 @@
 # Pipeline
 
-How a push becomes a deployment, and how to run the pieces by hand. The workspace `@answerable/infra-pipeline` holds the scripts the workflows call; the workflows are in `.github/workflows`. Decisions: D8, D10, D16, D24, D25 and D28 in `docs/goals/aws-deploy/decisions.md`.
+How a push becomes a deployment, and how to run the pieces by hand. The workspace `@answerable/infra-pipeline` holds the scripts the workflows call; the workflows are in `.github/workflows`. Decisions: D8, D10, D16, D24, D25 and D28 in `docs/goals/civo-deploy/decisions.md`.
 
 ## The workflows
 
@@ -29,7 +29,7 @@ Each environment is one Civo account's credentials. The deploy workflows never h
 - **`KUBE_TOKEN`**: the `deployer` ServiceAccount token that Terraform creates.
 - **`SOPS_AGE_KEY`**: the environment's `age` private key (`AGE-SECRET-KEY-…`).
 - **`CIVO_TOKEN`**, **`CLOUDFLARE_API_TOKEN`**: read by the Civo and Cloudflare providers. The Cloudflare token is scoped to that environment's zone.
-- **`STATE_ACCESS_KEY_ID`**, **`STATE_SECRET_ACCESS_KEY`**: the Terraform state bucket's credential (the `state_access_key_id` and `state_secret_access_key` outputs of the root's `state` module), handed to the S3 backend as `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`. Each environment has its own bucket and its own pair.
+- **`STATE_ACCESS_KEY_ID`**, **`STATE_SECRET_ACCESS_KEY`**: the Terraform state bucket's credential (the `state_access_key_id` and `state_secret_access_key` outputs of the root's `state` module), which the workflows pass to Terraform through `infra/civo/terraform.sh`. Each environment has its own bucket and its own pair.
 - **`ALLOWED_API_CIDRS`**: a JSON list of CIDRs, such as `["198.51.100.7/32"]`, handed to Terraform as `TF_VAR_allowed_api_cidrs`. In production these addresses are the only way to the Kubernetes API, and the job stops with a message when the secret is not set. Staging's API is open by its own switch (`infra/civo/README.md`, "Who can reach the Kubernetes API"), so `[]` is right there and an unset secret is read as `[]`. Terraform marks the variable sensitive, so the plan comment does not print it.
 
 The one repository variable is `DEPLOY_STAGING`, set under Settings, Secrets and variables, Actions, Variables:
@@ -45,7 +45,7 @@ The hostnames follow from the environment name (`staging` is `answerable-staging
 1. Create the three environments with the settings above and add their secrets. Set the repository variable `DEPLOY_STAGING` to `true` last, when staging is ready to be built and deployed.
 2. After the first push has built the images, set each of the four packages (`answerable/id`, `toolbox`, `admin-mcp`, `ops`) to **public** in the package settings (GitHub has no API for it). The cluster pulls them without a pull secret.
 3. Branch protection on `main`: require the jobs of `ci.yml` that run on every pull request: `validate`, `infra-check` and, once it exists, `containers`. Do not require anything from `infra.yml`: it runs only on pull requests that change `infra/**` or `charts/**`, and a required check that never starts blocks the others.
-4. Turn Bot Fight Mode off in both Cloudflare zones, as `docs/goals/aws-deploy/task_plan.md` says.
+4. Turn Bot Fight Mode off in both Cloudflare zones, as `docs/goals/civo-deploy/task_plan.md` says.
 
 ## How a deploy runs
 

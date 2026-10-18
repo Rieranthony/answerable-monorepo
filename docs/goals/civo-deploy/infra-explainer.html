@@ -58,7 +58,7 @@ td:first-child { font: 500 13px var(--sans); white-space: nowrap; width: 30%; }
 .wrap { overflow-x: auto; }
 .note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 10px 14px; border-radius: 0 6px 6px 0; max-width: 72ch; }
 .n { fill: var(--panel-2); stroke: var(--line-strong); stroke-width: 1.2; }
-.n.aws { stroke: var(--accent); } .n.cf { stroke: var(--cf); } .n.gh { stroke: var(--gh); } .n.db { stroke: var(--db); } .n.ok { stroke: var(--ok); }
+.n.svc { stroke: var(--accent); } .n.cf { stroke: var(--cf); } .n.gh { stroke: var(--gh); } .n.db { stroke: var(--db); } .n.ok { stroke: var(--ok); }
 .zone { fill: none; stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 4 4; }
 .t { font: 12px var(--sans); fill: var(--fg); }
 .t.b { font-weight: 600; }
@@ -77,7 +77,7 @@ a { color: var(--accent); }
 <header>
   <div class="eyebrow">Answerable · staging and production on Civo, behind Cloudflare</div>
   <h1>Answerable Infrastructure Tour</h1>
-  <p class="lede">Every piece of the planned hosting, what it does for us, why we chose it, and what it costs. Written for someone who has never run a cloud deployment. Nothing here is built yet; this is the plan in <code>docs/goals/aws-deploy</code>, revised on 12 October 2026 for Civo with the same design able to run on AWS and Google.</p>
+  <p class="lede">Every piece of the planned hosting, what it does for us, why we chose it, and what it costs. Written for someone who has never run a cloud deployment. Built and on <code>main</code> since 14 October 2026; the first staging deployment is next. The plan is in <code>docs/goals/civo-deploy</code>, and nothing in the design depends on Civo beyond its Terraform.</p>
   <nav class="toc" aria-label="Sections">
     <a href="#picture"><span>1</span>The big picture</a>
     <a href="#accounts"><span>2</span>Accounts and guard rails</a>
@@ -112,14 +112,14 @@ a { color: var(--accent); }
         <rect class="n cf" x="232" y="76" width="140" height="56" rx="6"/><text class="t b" x="244" y="98">Cloudflare</text><text class="t s" x="244" y="114">DNS · TLS · shield</text>
         <rect class="zone" x="420" y="22" width="420" height="258" rx="8"/><text class="t m" x="432" y="40">Civo account · London (LON1)</text>
         <path class="a cf" d="M372 104 H446" marker-end="url(#ar1)"/>
-        <rect class="n aws" x="448" y="78" width="112" height="52" rx="6"/><text class="t b" x="460" y="99">Load balancer</text><text class="t s" x="460" y="115">Cloudflare only</text>
+        <rect class="n svc" x="448" y="78" width="112" height="52" rx="6"/><text class="t b" x="460" y="99">Load balancer</text><text class="t s" x="460" y="115">Cloudflare only</text>
         <rect class="zone" x="580" y="46" width="250" height="134" rx="6"/><text class="t m" x="590" y="62">Kubernetes cluster</text>
         <path class="a" d="M560 104 H590" marker-end="url(#ar1)"/>
-        <rect class="n aws" x="592" y="80" width="106" height="48" rx="6"/><text class="t b" x="602" y="100">Traefik</text><text class="t s" x="602" y="116">TLS, routing</text>
+        <rect class="n svc" x="592" y="80" width="106" height="48" rx="6"/><text class="t b" x="602" y="100">Traefik</text><text class="t s" x="602" y="116">TLS, routing</text>
         <path class="a" d="M698 100 H706 V69 H710" marker-end="url(#ar1)"/><path class="a" d="M698 104 H710" marker-end="url(#ar1)"/><path class="a" d="M698 108 H706 V139 H710" marker-end="url(#ar1)"/>
-        <rect class="n aws" x="712" y="54" width="104" height="30" rx="6"/><text class="t b" x="724" y="74">ID</text>
-        <rect class="n aws" x="712" y="88" width="104" height="30" rx="6"/><text class="t b" x="724" y="108">Toolbox</text>
-        <rect class="n aws" x="712" y="122" width="104" height="30" rx="6"/><text class="t b" x="724" y="142">Admin MCP</text>
+        <rect class="n svc" x="712" y="54" width="104" height="30" rx="6"/><text class="t b" x="724" y="74">ID</text>
+        <rect class="n svc" x="712" y="88" width="104" height="30" rx="6"/><text class="t b" x="724" y="108">Toolbox</text>
+        <rect class="n svc" x="712" y="122" width="104" height="30" rx="6"/><text class="t b" x="724" y="142">Admin MCP</text>
         <path class="a db" d="M764 152 V204" marker-end="url(#ar1)"/>
         <rect class="n db" x="600" y="206" width="230" height="46" rx="6"/><text class="t b" x="612" y="226">Civo Database</text><text class="t s" x="612" y="242">PostgreSQL 17 · private network</text>
         <rect class="n gh" x="232" y="214" width="140" height="56" rx="6"/><text class="t b" x="244" y="236">GitHub Actions</text><text class="t s" x="244" y="252">tests, builds, deploys</text>
@@ -141,17 +141,17 @@ a { color: var(--accent); }
     <div class="d">
       <svg viewBox="0 0 860 250" role="img" aria-label="A Civo organisation above two accounts, staging and production, each with its own teams, API key, cluster, database, object store, Cloudflare zone and 1Password vault.">
         <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
-        <rect class="n aws" x="270" y="18" width="320" height="56" rx="6"/>
+        <rect class="n svc" x="270" y="18" width="320" height="56" rx="6"/>
         <text class="t b" x="286" y="40">Civo organisation</text>
         <text class="t s" x="286" y="58">Groups the accounts; roles defined once and applied to both</text>
         <path class="a" d="M400 74 V110 H230 V128" marker-end="url(#ar2)"/><path class="a" d="M460 74 V110 H630 V128" marker-end="url(#ar2)"/>
-        <rect class="n aws" x="80" y="130" width="300" height="100" rx="6"/>
+        <rect class="n svc" x="80" y="130" width="300" height="100" rx="6"/>
         <text class="t b" x="96" y="152">Staging account</text>
         <text class="t s" x="96" y="170">Owners team (you, with MFA) · Technical Administrator team</text>
         <text class="t s" x="96" y="186">One API key, held by you · cluster · database · object store</text>
         <text class="t s" x="96" y="202">Cloudflare zone answerable-staging.uk</text>
         <text class="t s" x="96" y="218">Its own age key for the encrypted secrets file</text>
-        <rect class="n aws" x="480" y="130" width="300" height="100" rx="6"/>
+        <rect class="n svc" x="480" y="130" width="300" height="100" rx="6"/>
         <text class="t b" x="496" y="152">Production account</text>
         <text class="t s" x="496" y="170">The same shape, bigger sizes, more copies</text>
         <text class="t s" x="496" y="186">Its own API key, only on the protected GitHub environment</text>
@@ -181,11 +181,11 @@ a { color: var(--accent); }
         <path class="a" d="M130 88 H168" marker-end="url(#ar3)"/>
         <rect class="n cf" x="170" y="60" width="130" height="56" rx="6"/><text class="t b" x="182" y="83">Cloudflare</text><text class="t s" x="182" y="100">TLS · WAF · shield</text>
         <path class="a cf" d="M300 88 H348" marker-end="url(#ar3)"/>
-        <rect class="n aws" x="350" y="60" width="150" height="56" rx="6"/><text class="t b" x="362" y="83">Civo load balancer</text><text class="t s" x="362" y="100">firewall: Cloudflare only</text>
+        <rect class="n svc" x="350" y="60" width="150" height="56" rx="6"/><text class="t b" x="362" y="83">Civo load balancer</text><text class="t s" x="362" y="100">firewall: Cloudflare only</text>
         <path class="a" d="M500 88 H548" marker-end="url(#ar3)"/>
-        <rect class="n aws" x="550" y="60" width="140" height="56" rx="6"/><text class="t b" x="562" y="83">Traefik</text><text class="t s" x="562" y="100">checks the certificate</text>
+        <rect class="n svc" x="550" y="60" width="140" height="56" rx="6"/><text class="t b" x="562" y="83">Traefik</text><text class="t s" x="562" y="100">checks the certificate</text>
         <path class="a" d="M690 88 H738" marker-end="url(#ar3)"/>
-        <rect class="n aws" x="740" y="60" width="100" height="56" rx="6"/><text class="t b" x="752" y="83">ID</text><text class="t s" x="752" y="100">real address</text>
+        <rect class="n svc" x="740" y="60" width="100" height="56" rx="6"/><text class="t b" x="752" y="83">ID</text><text class="t s" x="752" y="100">real address</text>
         <text class="t m" x="170" y="150">X-Forwarded-For: 203.0.113.9</text>
         <text class="t m" x="550" y="150">X-Forwarded-For: 203.0.113.9, &lt;cloudflare&gt;</text>
         <text class="t s" x="20" y="190">Cloudflare shows a certificate we issued when it knocks; Traefik refuses any connection without it.</text>
@@ -214,11 +214,11 @@ a { color: var(--accent); }
         <text class="t s c" x="160" y="16">internet (Cloudflare)</text>
         <path class="a" d="M160 20 V44" marker-end="url(#ar4)"/>
         <rect class="zone" x="20" y="46" width="820" height="262" rx="8"/><text class="t m" x="32" y="64">Civo account · LON1 · private network</text>
-        <rect class="n aws" x="60" y="76" width="210" height="56" rx="6"/><text class="t b" x="72" y="98">Load balancer</text><text class="t s" x="72" y="114">public IP · 443 from Cloudflare only</text>
+        <rect class="n svc" x="60" y="76" width="210" height="56" rx="6"/><text class="t b" x="72" y="98">Load balancer</text><text class="t s" x="72" y="114">public IP · 443 from Cloudflare only</text>
         <path class="a" d="M165 132 V160" marker-end="url(#ar4)"/>
         <rect class="zone" x="60" y="162" width="500" height="130" rx="6"/><text class="t m" x="70" y="180">Kubernetes cluster · control plane 6443 from our addresses only</text>
-        <rect class="n aws" x="80" y="192" width="220" height="84" rx="6"/><text class="t b" x="92" y="212">Node 1</text><text class="t s" x="92" y="229">Traefik · id · toolbox</text><text class="t s" x="92" y="244">cert-manager · Grafana agent</text><text class="t s" x="92" y="259">the one-off Jobs</text>
-        <rect class="n aws" x="320" y="192" width="220" height="84" rx="6"/><text class="t b" x="332" y="212">Node 2 (and 3 in production)</text><text class="t s" x="332" y="229">admin-mcp · id · toolbox</text><text class="t s" x="332" y="244">second copies, so a node</text><text class="t s" x="332" y="259">can fail or be upgraded</text>
+        <rect class="n svc" x="80" y="192" width="220" height="84" rx="6"/><text class="t b" x="92" y="212">Node 1</text><text class="t s" x="92" y="229">Traefik · id · toolbox</text><text class="t s" x="92" y="244">cert-manager · Grafana agent</text><text class="t s" x="92" y="259">the one-off Jobs</text>
+        <rect class="n svc" x="320" y="192" width="220" height="84" rx="6"/><text class="t b" x="332" y="212">Node 2 (and 3 in production)</text><text class="t s" x="332" y="229">admin-mcp · id · toolbox</text><text class="t s" x="332" y="244">second copies, so a node</text><text class="t s" x="332" y="259">can fail or be upgraded</text>
         <path class="a db" d="M560 230 H598" marker-end="url(#ar4)"/>
         <rect class="n db" x="600" y="176" width="220" height="108" rx="6"/><text class="t b" x="612" y="198">Civo Database</text><text class="t s" x="612" y="216">PostgreSQL 17 · TLS only</text><text class="t s" x="612" y="232">5432 from the cluster's nodes only</text><text class="t s" x="612" y="248">production: additional database</text><text class="t s" x="612" y="264">nodes for fault tolerance</text>
       </svg>
@@ -239,7 +239,7 @@ a { color: var(--accent); }
     <tr><td>admin-mcp.answerable.org</td><td>an admin MCP copy</td><td>Staff tools</td></tr>
     <tr><td>anything else</td><td>a "404"</td><td>No guessing, no leaking</td></tr>
   </table></div>
-  <p>Why Traefik: it is the same program with the same configuration on Civo, AWS and Google, it checks client certificates and forwarded addresses the way we need, and it is what Civo installs by default (we pin our own copy so the version is ours to choose). The usual alternative, ingress-nginx, was retired by the Kubernetes project in March 2026 with no further security fixes, which rules it out for an identity provider's front door.</p>
+  <p>Why Traefik: it is the same program with the same configuration on any Kubernetes cluster, it checks client certificates and forwarded addresses the way we need, and it is what Civo installs by default (we pin our own copy so the version is ours to choose). The usual alternative, ingress-nginx, was retired by the Kubernetes project in March 2026 with no further security fixes, which rules it out for an identity provider's front door.</p>
 </section>
 
 <section id="compute">
@@ -251,11 +251,11 @@ a { color: var(--accent); }
       <svg viewBox="0 0 860 190" role="img" aria-label="A rolling deployment: two version 1 pods, then two version 2 pods start beside them and must pass health checks, then the version 1 ones stop.">
         <defs><marker id="ar5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
         <text class="t b" x="20" y="30">Before</text><text class="t b" x="300" y="30">During a deploy</text><text class="t b" x="640" y="30">After</text>
-        <rect class="n aws" x="20" y="46" width="90" height="40" rx="6"/><text class="t c" x="65" y="71">v1</text>
-        <rect class="n aws" x="120" y="46" width="90" height="40" rx="6"/><text class="t c" x="165" y="71">v1</text>
+        <rect class="n svc" x="20" y="46" width="90" height="40" rx="6"/><text class="t c" x="65" y="71">v1</text>
+        <rect class="n svc" x="120" y="46" width="90" height="40" rx="6"/><text class="t c" x="165" y="71">v1</text>
         <path class="a" d="M220 66 H290" marker-end="url(#ar5)"/>
-        <rect class="n aws" x="300" y="46" width="70" height="40" rx="6"/><text class="t c" x="335" y="71">v1</text>
-        <rect class="n aws" x="378" y="46" width="70" height="40" rx="6"/><text class="t c" x="413" y="71">v1</text>
+        <rect class="n svc" x="300" y="46" width="70" height="40" rx="6"/><text class="t c" x="335" y="71">v1</text>
+        <rect class="n svc" x="378" y="46" width="70" height="40" rx="6"/><text class="t c" x="413" y="71">v1</text>
         <rect class="n ok" x="456" y="46" width="70" height="40" rx="6"/><text class="t c" x="491" y="71">v2</text>
         <rect class="n ok" x="534" y="46" width="70" height="40" rx="6"/><text class="t c" x="569" y="71">v2</text>
         <path class="a" d="M612 66 H630" marker-end="url(#ar5)"/>
@@ -269,11 +269,11 @@ a { color: var(--accent); }
     <figcaption>A bad build cannot take the service down: it never gets traffic, and the previous version comes back on its own.</figcaption>
   </figure>
   <div class="grid">
-    <div><h3>The Helm chart</h3><p>One folder, <code>charts/answerable</code>, describing the three Deployments, their health checks, resource limits, hardening (non-root, read-only, no extra privileges), the entry rules, the network rules, the migration Jobs and the secrets. A small values file per environment sets the sizes and hostnames. The same chart installs on Civo, AWS and Google.</p></div>
+    <div><h3>The Helm chart</h3><p>One folder, <code>charts/answerable</code>, describing the three Deployments, their health checks, resource limits, hardening (non-root, read-only, no extra privileges), the entry rules, the network rules, the migration Jobs and the secrets. A small values file per environment sets the sizes and hostnames. The same chart installs on any Kubernetes cluster.</p></div>
     <div><h3>Autoscaling and resilience</h3><p>A rule starts another copy when the existing ones are busy and stops it when quiet; production floors at two copies, spread across nodes, and a budget rule keeps at least one up during node maintenance.</p></div>
     <div><h3>Network rules inside the cluster</h3><p>Each service accepts connections only from Traefik and opens connections only to the database, DNS, ID and the identity providers. A compromised pod cannot wander.</p></div>
     <div><h3>Sizes and cost</h3><p>Staging: two Medium nodes (2 vCPU, 4 GB each), $43.46 a month, running one copy of everything. Production: three Medium nodes, $65.19, running two copies of each service. The control plane is free.</p></div>
-    <div><h3>Why Kubernetes</h3><p>It is the one compute layer Civo, AWS and Google all sell, and the only thing Civo sells. The earlier Fargate design was cheaper and simpler on AWS alone, but would have needed a rewrite to move. The chart moves as a file.</p></div>
+    <div><h3>Why Kubernetes</h3><p>It runs every service the same way, with scaling, rollouts and network rules built in, and every major cloud sells it. The chart moves as a file.</p></div>
   </div>
 </section>
 
@@ -299,7 +299,7 @@ a { color: var(--accent); }
         <rect class="n" x="36" y="140" width="370" height="34" rx="6"/><text class="t s" x="48" y="162">Production: extra database nodes · automatic backups (we drill a restore first)</text>
         <rect class="n" x="36" y="184" width="370" height="34" rx="6"/><text class="t s" x="48" y="206">Storage grows for ever today: audit and evidence rows are never deleted</text>
         <rect class="n gh" x="480" y="40" width="340" height="70" rx="6"/><text class="t b" x="494" y="62">Owner login · used only by the migration Job</text><text class="t s" x="494" y="80">May change tables. Its password is a secret the running</text><text class="t s" x="494" y="96">services never receive.</text>
-        <rect class="n aws" x="480" y="130" width="340" height="86" rx="6"/><text class="t b" x="494" y="152">Runtime login · used by the running service</text><text class="t s" x="494" y="170">May read and write rows. May not change tables, drop the</text><text class="t s" x="494" y="186">append-only triggers, or delete audit and evidence rows.</text><text class="t s" x="494" y="202">A hacked service cannot rewrite history.</text>
+        <rect class="n svc" x="480" y="130" width="340" height="86" rx="6"/><text class="t b" x="494" y="152">Runtime login · used by the running service</text><text class="t s" x="494" y="170">May read and write rows. May not change tables, drop the</text><text class="t s" x="494" y="186">append-only triggers, or delete audit and evidence rows.</text><text class="t s" x="494" y="202">A hacked service cannot rewrite history.</text>
         <path class="a gh" d="M480 75 H430" marker-end="url(#ar6)"/><path class="a" d="M480 173 H430" marker-end="url(#ar6)"/>
       </svg>
     </div>
@@ -325,10 +325,10 @@ a { color: var(--accent); }
         <path class="a gh" d="M210 58 H268" marker-end="url(#ar7)"/>
         <rect class="n gh" x="270" y="30" width="200" height="56" rx="6"/><text class="t b" x="284" y="52">Deploy workflow</text><text class="t s" x="284" y="70">decrypts with the age key, in memory</text>
         <path class="a" d="M470 58 H528" marker-end="url(#ar7)"/>
-        <rect class="n aws" x="530" y="30" width="160" height="56" rx="6"/><text class="t b" x="544" y="52">Kubernetes Secrets</text><text class="t s" x="544" y="70">inside the cluster</text>
+        <rect class="n svc" x="530" y="30" width="160" height="56" rx="6"/><text class="t b" x="544" y="52">Kubernetes Secrets</text><text class="t s" x="544" y="70">inside the cluster</text>
         <path class="a" d="M690 58 H748" marker-end="url(#ar7)"/>
         <rect class="n ok" x="750" y="30" width="90" height="56" rx="6"/><text class="t b" x="764" y="52">The pod</text><text class="t s" x="764" y="70">in memory</text>
-        <rect class="n aws" x="270" y="110" width="200" height="56" rx="6"/><text class="t b" x="284" y="132">bootstrap and register Jobs</text><text class="t s" x="284" y="150">generate passwords and client secrets</text>
+        <rect class="n svc" x="270" y="110" width="200" height="56" rx="6"/><text class="t b" x="284" y="132">bootstrap and register Jobs</text><text class="t s" x="284" y="150">generate passwords and client secrets</text>
         <path class="a" d="M470 138 H610 V88" marker-end="url(#ar7)"/>
         <text class="t s" x="20" y="190">Terraform and the chart hold only the names of secrets. The age private key is the one thing to guard: the owner keeps it, and the protected GitHub environment holds a copy.</text>
       </svg>
@@ -366,7 +366,7 @@ a { color: var(--accent); }
         <path class="a gh" d="M280 54 H298" marker-end="url(#ar8)"/>
         <rect class="n gh" x="300" y="30" width="140" height="48" rx="6"/><text class="t b" x="312" y="50">Build 3 images</text><text class="t s" x="312" y="66">to GHCR, named by commit</text>
         <path class="a gh" d="M440 54 H458" marker-end="url(#ar8)"/>
-        <rect class="n aws" x="460" y="30" width="170" height="48" rx="6"/><text class="t b" x="472" y="50">helm upgrade --atomic</text><text class="t s" x="472" y="66">migration Jobs run first</text>
+        <rect class="n svc" x="460" y="30" width="170" height="48" rx="6"/><text class="t b" x="472" y="50">helm upgrade --atomic</text><text class="t s" x="472" y="66">migration Jobs run first</text>
         <path class="a" d="M630 54 H648" marker-end="url(#ar8)"/>
         <rect class="n ok" x="650" y="30" width="190" height="48" rx="6"/><text class="t b" x="662" y="50">Smoke test</text><text class="t s" x="662" y="66">through Cloudflare, every hostname</text>
         <text class="t s" x="20" y="108">Staging: every push to main, automatically.</text>
@@ -374,9 +374,9 @@ a { color: var(--accent); }
         <path class="a gh" d="M170 154 H188" marker-end="url(#ar8)"/>
         <rect class="n gh" x="190" y="130" width="150" height="48" rx="6"/><text class="t b" x="202" y="150">A reviewer approves</text><text class="t s" x="202" y="166">GitHub environment rule</text>
         <path class="a gh" d="M340 154 H358" marker-end="url(#ar8)"/>
-        <rect class="n aws" x="360" y="130" width="210" height="48" rx="6"/><text class="t b" x="372" y="150">Terraform apply (production)</text><text class="t s" x="372" y="166">creates it the first time, no-op after</text>
+        <rect class="n svc" x="360" y="130" width="210" height="48" rx="6"/><text class="t b" x="372" y="150">Terraform apply (production)</text><text class="t s" x="372" y="166">creates it the first time, no-op after</text>
         <path class="a" d="M570 154 H588" marker-end="url(#ar8)"/>
-        <rect class="n aws" x="590" y="130" width="250" height="48" rx="6"/><text class="t b" x="602" y="150">helm upgrade, same image</text><text class="t s" x="602" y="166">the bytes staging proved, not a rebuild</text>
+        <rect class="n svc" x="590" y="130" width="250" height="48" rx="6"/><text class="t b" x="602" y="150">helm upgrade, same image</text><text class="t s" x="602" y="166">the bytes staging proved, not a rebuild</text>
         <text class="t s" x="20" y="210">Rolling back is deploying the previous image's tag. Migrations only add, never break the previous version, so old and new run side by side.</text>
       </svg>
     </div>
@@ -389,10 +389,10 @@ a { color: var(--accent); }
   <h2>Everything above, as code</h2>
   <p><b>Terraform</b> reads files that describe the cloud layer (this network, these firewalls, this cluster, this database, these DNS records) and makes Civo and Cloudflare match them. Run it twice and it changes nothing; change a file and it shows exactly what will change before doing it. The <b>Helm chart</b> does the same job for everything inside the cluster. Both live in the repository, reviewed like any code, so there is no clicking around a console that nobody can reproduce later.</p>
   <div class="grid">
-    <div><h3>Layout</h3><p><code>infra/civo/envs/staging</code> and <code>envs/production</code>, one root per Civo account; <code>infra/aws</code> and <code>infra/google</code> written and validated but not applied; <code>charts/answerable</code> for our services and <code>charts/platform</code> for Traefik, cert-manager, External Secrets and the Grafana agent.</p></div>
+    <div><h3>Layout</h3><p><code>infra/civo/envs/staging</code> and <code>envs/production</code>, one root per Civo account; <code>charts/answerable</code> for our services and <code>charts/platform</code> for Traefik, cert-manager and the Grafana agent.</p></div>
     <div><h3>State</h3><p>Terraform remembers what it created in a "state" file, kept in each account's Civo object store. It holds no secret values, by design.</p></div>
     <div><h3>Checks without the cloud</h3><p><code>bun run infra:check</code> lints the chart, validates and policy-scans the Terraform and the workflows on every push, with no cloud access.</p></div>
-    <div><h3>Why Terraform</h3><p>It is already installed here, every resource is readable in the repository, and Civo, AWS, Google and Cloudflare all have providers for it, so one tool covers the whole plan.</p></div>
+    <div><h3>Why Terraform</h3><p>It is already installed here, every resource is readable in the repository, and Civo, Cloudflare and every major cloud have providers for it, so one tool covers the whole plan.</p></div>
   </div>
 </section>
 
@@ -411,8 +411,7 @@ a { color: var(--accent); }
   <div class="eyebrow">14 · What is deliberately missing</div>
   <h2>Named as "not yet", with the reason</h2>
   <ul>
-    <li><b>AWS and Google, applied.</b> Their Terraform is written and validated so the chart can move; nobody pays for them until asked.</li>
-    <li><b>Fargate.</b> The first plan's compute layer, withdrawn because it exists only on AWS.</li>
+    <li><b>Another cloud.</b> The images, the charts and the pipeline would move as they are; only a Terraform root for that cloud is missing, and it is written when a move is planned.</li>
     <li><b>Caching or challenges at Cloudflare for sign-in and MCP traffic.</b> Caching would serve one person's response to another; challenges would block AI tools.</li>
     <li><b>A GitOps controller in the cluster.</b> The pull model would remove even the namespace-limited deploy token from GitHub; it is the next step if that token ever worries us.</li>
     <li><b>Image signature enforcement in the cluster.</b> Images are signed today; a policy that refuses unsigned ones comes later.</li>
@@ -470,5 +469,5 @@ a { color: var(--accent); }
   </table></div>
 </section>
 
-<footer>Civo prices are from its pricing page, AWS prices from AWS's pricing API, both read on 10 and 12 October 2026. The full plan, decisions, portability design and cost simulation are in <code>docs/goals/aws-deploy/</code>.</footer>
+<footer>Civo prices are from its pricing page, read on 10 October 2026. The full plan, decisions, portability design and cost simulation are in <code>docs/goals/civo-deploy/</code>.</footer>
 </main>

@@ -1,5 +1,5 @@
 # Production in the answerable-production Civo account. No secret and no personal address here: CIVO_TOKEN,
-# CLOUDFLARE_API_TOKEN, the backend's AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, and TF_VAR_allowed_api_cidrs come
+# CLOUDFLARE_API_TOKEN, the backend's STATE_ACCESS_KEY_ID and STATE_SECRET_ACCESS_KEY, and TF_VAR_allowed_api_cidrs come
 # from the environment (README, "Credentials").
 environment  = "production"
 network_cidr = "10.20.0.0/24"

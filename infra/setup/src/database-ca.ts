@@ -78,7 +78,7 @@ async function fetchFromPod(options: DatabaseCaOptions, context: Context, state:
     context.out(`
 The pod did not fetch a certificate either (exit ${result.exitCode}${lastLine(result.stderr)}). To run it yourself, put the
 cluster's admin kubeconfig in admin.kubeconfig, readable by you alone, and delete it afterwards:
-  (umask 077 && cd ${shown(options.paths, options.paths.envDir)} && terraform output -raw admin_kubeconfig) > admin.kubeconfig
+  (umask 077 && infra/civo/terraform.sh -chdir=${shown(options.paths, options.paths.envDir)} output -raw admin_kubeconfig) > admin.kubeconfig
 then, from the repository root:
 
 ${podCommand(options.environment, host, port)}

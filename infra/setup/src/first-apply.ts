@@ -4,7 +4,7 @@ import { exists, requireVariable, type Context } from "./context"
 import { allowedApiCidrs, shown, zoneFor, type EnvironmentName, type Paths } from "./environments"
 import { SetupError } from "./errors"
 import { commandLine } from "./run"
-import { stateEnv, type StateEnv } from "./terraform"
+import { backendEnv, stateEnv, type StateEnv } from "./terraform"
 
 /** What `first-apply` does. */
 export type FirstApplyOptions = {
@@ -54,7 +54,7 @@ async function createStateBucket(options: FirstApplyOptions, context: Context, t
   if ((await initialisedBackend(paths)) === "s3")
     throw new SetupError(
       `${shown(paths, paths.envDir)} already keeps its state in the bucket: the first apply has run. ` +
-        "Finish it with --resume (export AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY first). If it has not run, this " +
+        "Finish it with --resume (export STATE_ACCESS_KEY_ID and STATE_SECRET_ACCESS_KEY first). If it has not run, this " +
         "machine initialised the root by hand: delete its .terraform directory and run first-apply again",
     )
 
@@ -70,17 +70,17 @@ async function createStateBucket(options: FirstApplyOptions, context: Context, t
 
   context.out("\nStep 3: move the state into the bucket.\n")
   const state = {
-    AWS_ACCESS_KEY_ID: await quietOutput(context, paths, "state_access_key_id"),
-    AWS_SECRET_ACCESS_KEY: await quietOutput(context, paths, "state_secret_access_key"),
+    STATE_ACCESS_KEY_ID: await quietOutput(context, paths, "state_access_key_id"),
+    STATE_SECRET_ACCESS_KEY: await quietOutput(context, paths, "state_secret_access_key"),
   }
   await rm(override)
   await terraform(context, paths, {
     // Terraform asks before it copies the state, unless -force-copy answers for it; -input=false would make it fail instead.
     argv: ["terraform", "init", "-migrate-state", ...(options.yes ? ["-force-copy", "-input=false"] : [])],
-    env: { ...tokens, ...state },
+    env: { ...tokens, ...backendEnv(state) },
     what: "Step 3 (the state migration)",
   })
-  const listed = await context.run(["terraform", "state", "list"], { cwd: paths.envDir, env: { ...tokens, ...state } })
+  const listed = await context.run(["terraform", "state", "list"], { cwd: paths.envDir, env: { ...tokens, ...backendEnv(state) } })
   if (listed.exitCode !== 0 || !listed.stdout.includes("module.state."))
     throw new SetupError(
       `terraform state list did not read the state from the bucket (exit ${listed.exitCode}): ${listed.stderr.trim()}. ` +
@@ -93,14 +93,15 @@ async function createStateBucket(options: FirstApplyOptions, context: Context, t
 The state lives in the bucket answerable-${options.environment}-tfstate now. From here on Terraform, first-apply --resume,
 database-ca, init-secrets and publish-env read it with the bucket's credential, which this command has kept in memory
 only. Keep it where you keep CIVO_TOKEN and export it before those commands:
-  AWS_ACCESS_KEY_ID=${state.AWS_ACCESS_KEY_ID}
-  AWS_SECRET_ACCESS_KEY: civo objectstore credential secret -a ${state.AWS_ACCESS_KEY_ID}
+  STATE_ACCESS_KEY_ID=${state.STATE_ACCESS_KEY_ID}
+  STATE_SECRET_ACCESS_KEY: civo objectstore credential secret -a ${state.STATE_ACCESS_KEY_ID}
     (or the Civo dashboard: Object stores > Credentials > answerable-${options.environment}-tfstate)
 
-Check by hand (infra/civo/README.md, First apply, step 4): the state lock. In ${shown(paths, paths.envDir)}, with the
-credential exported, start \`terraform plan\` in two shells at once: the second must stop with "Error acquiring the
-state lock". If the first fails writing ${options.environment}.tfstate.tflock instead, set use_lockfile = false in both
-backend.tf files and keep to one operator at a time.
+Check by hand (infra/civo/README.md, First apply, step 4): the state lock. With the credential exported, run
+  infra/civo/terraform.sh -chdir=${shown(paths, paths.envDir)} plan
+from the repository root in two shells at once: the second must stop with "Error acquiring the state lock". If the
+first fails writing ${options.environment}.tfstate.tflock instead, set use_lockfile = false in both backend.tf files
+and keep to one operator at a time.
 `)
   return state
 }
@@ -120,7 +121,7 @@ export async function firstApply(options: FirstApplyOptions, context: Context): 
   const cidrs = allowedApiCidrs(context.env, environment)
   if (cidrs) tokens.TF_VAR_allowed_api_cidrs = cidrs
   const state = options.resume ? stateEnv(context.env) : await createStateBucket(options, context, tokens)
-  const env = { ...tokens, ...state }
+  const env = { ...tokens, ...backendEnv(state) }
   const approve = options.yes ? ["-auto-approve"] : []
 
   if (options.resume) await terraform(context, paths, { argv: ["terraform", "init", "-input=false"], env, what: "terraform init" })

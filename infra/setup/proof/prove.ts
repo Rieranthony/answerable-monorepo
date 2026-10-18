@@ -89,8 +89,8 @@ async function proveAgeAndSecrets(root: string, kind: Kind) {
 
   const env = {
     ...process.env,
-    AWS_ACCESS_KEY_ID: "proof-key-id",
-    AWS_SECRET_ACCESS_KEY: "proof-state-secret",
+    STATE_ACCESS_KEY_ID: "proof-key-id",
+    STATE_SECRET_ACCESS_KEY: "proof-state-secret",
     CERT_MANAGER_CLOUDFLARE_TOKEN: "proof-cert-manager-token",
     CLOUDFLARE_API_TOKEN: "proof-terraform-token",
     MICROSOFT_CLIENT_ID: "proof-microsoft-id",
@@ -329,7 +329,7 @@ async function proveDatabaseCa(root: string, kind: Kind) {
     }
     check("TLS PostgreSQL 17 is up", ready, `127.0.0.1:${port}`)
 
-    const env = { ...process.env, AWS_ACCESS_KEY_ID: "proof-key-id", AWS_SECRET_ACCESS_KEY: "proof-state-secret" }
+    const env = { ...process.env, STATE_ACCESS_KEY_ID: "proof-key-id", STATE_SECRET_ACCESS_KEY: "proof-state-secret" }
     const paths = pathsFor("staging", { root, home: root })
     const direct = await setup(root, ["database-ca", "--environment", "staging"], {
       env,

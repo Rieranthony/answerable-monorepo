@@ -1,14 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { readFile, writeFile } from "node:fs/promises"
 import { pathsFor, type Paths } from "./environments"
+import { backendEnv } from "./terraform"
 import { formatSecrets, initSecrets, parseSecrets, readAgeKey, readRootSecret, type SecretsData } from "./secrets"
 import { createContext, createFakeRunner, createRoot, type RecordedCall } from "./testing"
 import type { RunResult } from "./run"
 
 const ADMIN_URL = "postgres://dbadmin:p%40ss@10.10.0.5:5432/postgres?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem"
 const ENV = {
-  AWS_ACCESS_KEY_ID: "key-id",
-  AWS_SECRET_ACCESS_KEY: "state-secret",
+  STATE_ACCESS_KEY_ID: "key-id",
+  STATE_SECRET_ACCESS_KEY: "state-secret",
   CERT_MANAGER_CLOUDFLARE_TOKEN: "cert-manager-token",
   CLOUDFLARE_API_TOKEN: "terraform-token",
 }
@@ -62,7 +63,7 @@ describe("init-secrets", () => {
       `sops --config ${paths.sopsConfig} encrypt --filename-override ${paths.secretsFile}`,
       `sops --config ${paths.sopsConfig} decrypt ${paths.secretsFile}`,
     ])
-    expect(runner.calls[0]!.options.env).toEqual({ AWS_ACCESS_KEY_ID: "key-id", AWS_SECRET_ACCESS_KEY: "state-secret" })
+    expect(runner.calls[0]!.options.env).toEqual(backendEnv({ STATE_ACCESS_KEY_ID: "key-id", STATE_SECRET_ACCESS_KEY: "state-secret" }))
     expect(runner.calls[2]!.options.env).toEqual({ SOPS_AGE_KEY_FILE: keyed.keyFile })
     const data = await written(paths)
     expect(Object.keys(data["id-env"])).toEqual([

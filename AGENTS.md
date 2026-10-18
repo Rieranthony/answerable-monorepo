@@ -71,7 +71,7 @@ Read `docs/07-mcp-platform-draft.md` (the foundation decisions that still hold) 
 
 ## Deployment
 
-Read `docs/12-deployment.md` (what runs where and why) and `infra/README.md` (the runbook) before changing `infra/*`, `charts/*` or `.github/workflows`. The decisions are D1 to D31 in `docs/goals/aws-deploy/decisions.md`.
+Read `docs/12-deployment.md` (what runs where and why) and `infra/README.md` (the runbook) before changing `infra/*`, `charts/*` or `.github/workflows`. The decisions are D1 to D31 in `docs/goals/civo-deploy/decisions.md`.
 
 - **Never apply Terraform against production yourself.** No `terraform apply`, `destroy` or `-replace` in `infra/civo/envs/production`, and no `helm upgrade` against its cluster. Production changes go through `promote-production.yml`, behind the owner's approval; until GitHub can reach production's API (D30), only the owner applies it, from a trusted machine. Staging applies on every push to `main`, so a Terraform change is reviewed by its plan comment before it lands.
 - **The owner's credentials never reach a service or a workflow they do not belong to.** The Civo API keys, the Cloudflare tokens, the state credential and the `age` keys live with the owner and in the GitHub environments `publish-env` writes; the deploy jobs hold only the namespace-scoped `deployer` token.

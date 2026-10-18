@@ -51,7 +51,7 @@ A token carrying a user's identity is only ever issued when that user's own auth
 | Cache | **Redis** as a read cache for sessions — later, not used by v1 code |
 | Testing | Test-driven; CI enforces full coverage of our own code (`bun test --coverage`) |
 | Edge | **Cloudflare** in front of ID, the Toolbox and the admin MCP: TLS at the edge and again at Traefik in the cluster, origin pulls verified with Answerable's own certificate, no challenges on the API hostnames, no caching except static `/assets/` ([`12-deployment.md`](12-deployment.md#network-and-ingress)) |
-| Hosting | **Civo London (LON1)**: one Civo account per environment, Civo Kubernetes, Civo Database PostgreSQL 17, Cloudflare in front ([`12-deployment.md`](12-deployment.md)). The images, the chart and the pipeline are cloud-neutral, so AWS or Google needs only its own Terraform root: Not yet. The web app stays on Vercel |
+| Hosting | **Civo London (LON1)**: one Civo account per environment, Civo Kubernetes, Civo Database PostgreSQL 17, Cloudflare in front ([`12-deployment.md`](12-deployment.md)). The images, the chart and the pipeline are cloud-neutral, so another cloud needs only its own Terraform root: Not yet. The web app stays on Vercel |
 | Shared packages | Built: `ui` (`@answerable/ui`, shadcn/Base UI components and the Tailwind theme, source-only), `countries` (`@answerable/countries`, ISO data). Planned: `auth` (JWT verification middleware + client helpers for every consumer), `utils` (logging/redaction, env, crypto, backoff) |
 
 ## How the next app or MCP server plugs in

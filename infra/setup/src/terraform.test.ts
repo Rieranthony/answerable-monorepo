@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { join } from "node:path"
-import { readOutput, stateEnv } from "./terraform"
+import { backendEnv, readOutput, stateEnv } from "./terraform"
 import { createContext, createFakeRunner, createRoot } from "./testing"
 
-const STATE = { AWS_ACCESS_KEY_ID: "key-id", AWS_SECRET_ACCESS_KEY: "state-secret" }
+const STATE = { STATE_ACCESS_KEY_ID: "key-id", STATE_SECRET_ACCESS_KEY: "state-secret" }
 
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -12,9 +12,15 @@ afterEach(async () => {
 
 describe("stateEnv", () => {
   test("reads the state bucket's credential, or says where to find it", () => {
-    expect(stateEnv({ AWS_ACCESS_KEY_ID: " key-id ", AWS_SECRET_ACCESS_KEY: "state-secret\n" })).toEqual(STATE)
-    expect(() => stateEnv({ AWS_ACCESS_KEY_ID: "key-id" })).toThrow("civo objectstore credential secret -a <key id>")
-    expect(() => stateEnv({})).toThrow("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY")
+    expect(stateEnv({ STATE_ACCESS_KEY_ID: " key-id ", STATE_SECRET_ACCESS_KEY: "state-secret\n" })).toEqual(STATE)
+    expect(() => stateEnv({ STATE_ACCESS_KEY_ID: "key-id" })).toThrow("civo objectstore credential secret -a <key id>")
+    expect(() => stateEnv({})).toThrow("STATE_ACCESS_KEY_ID and STATE_SECRET_ACCESS_KEY")
+  })
+})
+
+describe("backendEnv", () => {
+  test("hands the credential to Terraform under the only two names its S3 backend reads", () => {
+    expect(backendEnv(STATE)).toEqual({ AWS_ACCESS_KEY_ID: "key-id", AWS_SECRET_ACCESS_KEY: "state-secret" })
   })
 })
 
@@ -38,7 +44,8 @@ describe("readOutput", () => {
       "terraform output -raw database_admin_url",
       "terraform output -raw database_port",
     ])
-    expect(runner.calls.every((call) => call.options.cwd === envDir && call.options.env === STATE)).toBe(true)
+    expect(runner.calls.every((call) => call.options.cwd === envDir)).toBe(true)
+    for (const call of runner.calls) expect(call.options.env).toEqual(backendEnv(STATE))
     expect(runner.calls[1]!.options.onOutput).toBeUndefined()
     expect(output()).toContain("successfully initialized")
     expect(output()).not.toContain("secret@")

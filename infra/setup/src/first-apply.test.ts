@@ -3,11 +3,12 @@ import { join } from "node:path"
 import { exists } from "./context"
 import { pathsFor } from "./environments"
 import { firstApply } from "./first-apply"
+import { backendEnv } from "./terraform"
 import { createContext, createFakeRunner, createRoot, type RecordedCall } from "./testing"
 import type { RunResult } from "./run"
 
 const TOKENS = { CIVO_TOKEN: "civo-token", CLOUDFLARE_API_TOKEN: "cloudflare-token" }
-const STATE = { AWS_ACCESS_KEY_ID: "STATEKEYID", AWS_SECRET_ACCESS_KEY: "state-secret-value" }
+const STATE = { STATE_ACCESS_KEY_ID: "STATEKEYID", STATE_SECRET_ACCESS_KEY: "state-secret-value" }
 const CA = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
 
 const cleanups: Array<() => Promise<void>> = []
@@ -34,8 +35,8 @@ async function fixture(
       await Bun.write(join(call.options.cwd!, "terraform.tfstate"), "{}")
       await Bun.write(join(call.options.cwd!, "terraform.tfstate.backup"), "{}")
     }
-    if (line === "terraform output -raw state_access_key_id") return { stdout: STATE.AWS_ACCESS_KEY_ID }
-    if (line === "terraform output -raw state_secret_access_key") return { stdout: STATE.AWS_SECRET_ACCESS_KEY }
+    if (line === "terraform output -raw state_access_key_id") return { stdout: STATE.STATE_ACCESS_KEY_ID }
+    if (line === "terraform output -raw state_secret_access_key") return { stdout: STATE.STATE_SECRET_ACCESS_KEY }
     if (line === "terraform state list")
       return { stdout: "module.state.civo_object_store.this\nmodule.state.civo_object_store_credential.this\n" }
     return undefined
@@ -65,14 +66,14 @@ describe("first-apply", () => {
     const [init, apply, , , migrate, list, cluster] = runner.calls
     expect(apply!.options).toMatchObject({ interactive: true, env: TOKENS })
     expect(init!.options.env).toEqual(TOKENS)
-    expect(migrate!.options.env).toEqual({ ...TOKENS, ...STATE })
-    expect(list!.options.env).toEqual({ ...TOKENS, ...STATE })
-    expect(cluster!.options.env).toEqual({ ...TOKENS, ...STATE })
+    expect(migrate!.options.env).toEqual({ ...TOKENS, ...backendEnv(STATE) })
+    expect(list!.options.env).toEqual({ ...TOKENS, ...backendEnv(STATE) })
+    expect(cluster!.options.env).toEqual({ ...TOKENS, ...backendEnv(STATE) })
     expect(runner.calls[2]!.options.onOutput).toBeUndefined()
-    expect(output()).not.toContain(STATE.AWS_SECRET_ACCESS_KEY)
-    expect(output()).toContain("AWS_ACCESS_KEY_ID=STATEKEYID")
+    expect(output()).not.toContain(STATE.STATE_SECRET_ACCESS_KEY)
+    expect(output()).toContain("STATE_ACCESS_KEY_ID=STATEKEYID")
     expect(output()).toContain("civo objectstore credential secret -a STATEKEYID")
-    expect(output()).toContain('"Error acquiring the\nstate lock"')
+    expect(output()).toContain('"Error acquiring the state lock"')
     expect(output()).toContain("infra/civo/envs/staging/edge-ca/ca.pem and infra/civo/envs/staging/database-ca.pem are missing")
     expect(output()).toContain("bun run setup origin-pull --environment staging --zone answerable-staging.uk")
     expect(output()).toContain("bun run setup first-apply --environment staging --resume")
@@ -88,7 +89,7 @@ describe("first-apply", () => {
     expect(runner.commands()).toContain("terraform apply -target=module.state -auto-approve")
     expect(runner.commands()).toContain("terraform init -migrate-state -force-copy -input=false")
     expect(runner.commands().at(-1)).toBe("terraform apply -auto-approve")
-    expect(runner.calls.at(-1)!.options.env).toEqual({ ...TOKENS, TF_VAR_allowed_api_cidrs: '["198.51.100.7/32"]', ...STATE })
+    expect(runner.calls.at(-1)!.options.env).toEqual({ ...TOKENS, TF_VAR_allowed_api_cidrs: '["198.51.100.7/32"]', ...backendEnv(STATE) })
     expect(output()).toContain("Applied staging. Next:")
     expect(output()).toContain("bun run setup publish-env --environment staging --enable")
   })
@@ -113,7 +114,7 @@ describe("first-apply", () => {
         { environment: "production", paths: production, resume: true },
         createContext({ run: runner.run, env: { ...TOKENS, ALLOWED_API_CIDRS: '["198.51.100.7/32"]' } }).context,
       ),
-    ).rejects.toThrow("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY")
+    ).rejects.toThrow("STATE_ACCESS_KEY_ID and STATE_SECRET_ACCESS_KEY")
   })
 
   test("refuses a fresh run where the state already lives in the bucket", async () => {

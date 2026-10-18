@@ -1,7 +1,8 @@
 # State lives in this account's own Civo object store (D27), created by module.state in this root; the README's first
-# apply creates it with local state and then migrates. Credentials come from AWS_ACCESS_KEY_ID and
-# AWS_SECRET_ACCESS_KEY (the `state_access_key_id` and `state_secret_access_key` outputs). Civo's S3 compatibility is
-# not AWS: no account ID, no metadata API, no checksum headers, path-style addressing. Whether it honours the
+# apply creates it with local state and then migrates. The credential is STATE_ACCESS_KEY_ID and
+# STATE_SECRET_ACCESS_KEY (the `state_access_key_id` and `state_secret_access_key` outputs), which ../../terraform.sh
+# hands to this backend. Civo's object store speaks S3 with path-style addressing and without the account, metadata
+# and checksum calls the backend makes by default, so those are switched off below. Whether it honours the
 # conditional writes `use_lockfile` relies on is confirmed on the first apply; the fallback is in the README.
 terraform {
   backend "s3" {

@@ -307,18 +307,17 @@ civo kubernetes ls</pre></div>
     <div class="title"><input type="checkbox" id="s6.2" aria-label="Done"><h3><span class="num">6.2</span>Create the network, cluster and database</h3><span class="time">15–25 min</span></div>
     <div class="cmd"><pre>bun run setup first-apply --environment staging</pre></div>
     <p>Type <code>yes</code> each time Terraform asks. First it makes the bucket that will hold Terraform's records, moves its records there (answer <code>yes</code> to copying the state), then creates the cluster, the database and the firewalls. Creating the cluster and the database takes most of the time.</p>
-    <div class="expect"><b>You should see</b> it stop on purpose, saying two certificate files are missing and naming <code>origin-pull</code> and <code>database-ca</code>. Just before that, it prints a line <code>AWS_ACCESS_KEY_ID=…</code>: the bucket's key ID. Keep it on screen for the next step.</div>
+    <div class="expect"><b>You should see</b> it stop on purpose, saying two certificate files are missing and naming <code>origin-pull</code> and <code>database-ca</code>. Just before that, it prints a line <code>STATE_ACCESS_KEY_ID=…</code>: the bucket's key ID. Keep it on screen for the next step.</div>
   </div>
 
   <div class="step" data-step="6.3">
     <div class="title"><input type="checkbox" id="s6.3" aria-label="Done"><h3><span class="num">6.3</span>Load the bucket's key</h3><span class="time">2 min</span></div>
-    <p>Every later step reads Terraform's records from the bucket, so this terminal needs its key. Replace the placeholder with the value after <code>AWS_ACCESS_KEY_ID=</code> in 6.2's output:</p>
-    <div class="note"><b>No AWS account involved.</b> The bucket is Civo's Object Store, at <code>objectstore.lon1.civo.com</code>. It speaks Amazon S3's protocol, and every S3 tool, Terraform included, reads its key from variables named <code>AWS_…</code>, whoever runs the storage.</div>
-    <div class="cmd"><pre>export AWS_ACCESS_KEY_ID=&lt;the access key ID from 6.2&gt;</pre></div>
+    <p>Every later step reads Terraform's records from the bucket, so this terminal needs its key. Replace the placeholder with the value after <code>STATE_ACCESS_KEY_ID=</code> in 6.2's output:</p>
+    <div class="cmd"><pre>export STATE_ACCESS_KEY_ID=&lt;the access key ID from 6.2&gt;</pre></div>
     <p>This prints the matching secret key. It is the one time a secret appears on screen:</p>
-    <div class="cmd"><pre>civo objectstore credential secret --access-key "$AWS_ACCESS_KEY_ID"</pre></div>
+    <div class="cmd"><pre>civo objectstore credential secret --access-key "$STATE_ACCESS_KEY_ID"</pre></div>
     <p>Copy it into your password manager as <i>Civo · answerable-staging · state secret key</i>, then load it and clear the screen:</p>
-    <div class="cmd"><pre>printf 'State secret key: '; read -rs AWS_SECRET_ACCESS_KEY; echo; export AWS_SECRET_ACCESS_KEY</pre></div>
+    <div class="cmd"><pre>printf 'State secret key: '; read -rs STATE_SECRET_ACCESS_KEY; echo; export STATE_SECRET_ACCESS_KEY</pre></div>
     <div class="cmd"><pre>clear</pre></div>
   </div>
 
@@ -490,7 +489,7 @@ bun --env-file=.env run --filter @answerable/mcp-admin db:migrate</pre></div>
       <tr><td>Terraform: a quota error from Civo</td><td>Raise the quota as in step 2.1, then rerun. If 6.2 had already moved the state, use <code>first-apply --resume</code> with the step 6.3 lines loaded.</td></tr>
       <tr><td><code>already keeps its state in the bucket</code></td><td>The first part of 6.2 is done: load 6.3, then run <code>first-apply --environment staging --resume</code>.</td></tr>
       <tr><td>A failure writing <code>staging.tfstate.tflock</code></td><td>Civo's storage refused Terraform's lock file. Set <code>use_lockfile = false</code> in <code>infra/civo/envs/staging/backend.tf</code> and rerun; it means only one person applies at a time.</td></tr>
-      <tr><td><code>AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must hold …</code></td><td>The terminal lost the bucket's key: redo step 6.3.</td></tr>
+      <tr><td><code>STATE_ACCESS_KEY_ID and STATE_SECRET_ACCESS_KEY must hold …</code></td><td>The terminal lost the bucket's key: redo step 6.3.</td></tr>
       <tr><td><code>these commands need OpenSSL 3</code></td><td><code>brew install openssl@3</code>, then <code>export PATH="$(brew --prefix openssl@3)/bin:$PATH"</code>.</td></tr>
       <tr><td><code>database-ca</code>: no certificate from the database</td><td>It prints the exact commands to run by hand; run them as shown.</td></tr>
       <tr><td>Deploy: <code>ImagePullBackOff</code> or <code>ErrImagePull</code></td><td>The images are still private: step 8.3.</td></tr>
@@ -518,7 +517,7 @@ bun --env-file=.env run --filter @answerable/mcp-admin db:migrate</pre></div>
   </div>
 </section>
 
-<footer>Written for the repository at commit 0804efb on 18 October 2026. If a screen in Civo, Cloudflare, Entra or GitHub looks different from these descriptions, the setting names stay the same: search for them in that page's settings.</footer>
+<footer>Written for the repository on 18 October 2026. If a screen in Civo, Cloudflare, Entra or GitHub looks different from these descriptions, the setting names stay the same: search for them in that page's settings.</footer>
 </main>
 </div>
 

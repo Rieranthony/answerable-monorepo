@@ -143,8 +143,8 @@ jobs:
           TF_IN_AUTOMATION: "1"
           CIVO_TOKEN: ${{ secrets.CIVO_TOKEN }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.STATE_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.STATE_SECRET_ACCESS_KEY }}
+          STATE_ACCESS_KEY_ID: ${{ secrets.STATE_ACCESS_KEY_ID }}
+          STATE_SECRET_ACCESS_KEY: ${{ secrets.STATE_SECRET_ACCESS_KEY }}
           # Production's Kubernetes API admits the operators' addresses and nothing else.
           TF_VAR_allowed_api_cidrs: ${{ secrets.ALLOWED_API_CIDRS }}
         run: |
@@ -152,8 +152,8 @@ jobs:
             echo "::error::ALLOWED_API_CIDRS is not set on the production environment: a JSON list of the operators' addresses, such as [\"198.51.100.7/32\"]"
             exit 1
           fi
-          terraform init -input=false
-          terraform apply -input=false -auto-approve
+          ../../terraform.sh init -input=false
+          ../../terraform.sh apply -input=false -auto-approve
 
       - name: Deploy
         env:

@@ -2,9 +2,9 @@ locals {
   name = "answerable-${var.environment}-tfstate"
 }
 
-# The credential the S3 backend uses (AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY when Terraform runs). Civo generates
-# the secret; it lives in this state, in the bucket it unlocks, and in the protected GitHub environment of the infra
-# workflow. Civo credentials are scoped to a region, not to a bucket.
+# The credential the S3 backend uses (STATE_ACCESS_KEY_ID and STATE_SECRET_ACCESS_KEY when Terraform runs). Civo
+# generates the secret; it lives in this state, in the bucket it unlocks, and in the protected GitHub environment of
+# the infra workflow. Civo credentials are scoped to a region, not to a bucket.
 resource "civo_object_store_credential" "this" {
   name   = local.name
   region = var.region
