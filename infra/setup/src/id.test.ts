@@ -9,6 +9,7 @@ const TENANT = "0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0"
 const ORG = "11111111-1111-4111-8111-111111111111"
 const GROUP = "22222222-2222-4222-8222-222222222222"
 const MEMBER = "33333333-3333-4333-8333-333333333333"
+const OWNERS = "44444444-4444-4444-8444-444444444444"
 const ADMIN = "https://id.answerable-staging.uk/api/admin/v1"
 const ISSUER = `https://login.microsoftonline.com/${TENANT}/v2.0`
 
@@ -69,6 +70,11 @@ function fakeId(overrides: Overrides = {}) {
       return json({ items: [{ id: MEMBER, email: "You@answerable.org" }], nextCursor: null })
     if (request.method === "GET" && path === `/organizations/${ORG}/groups?q=platform-admins&limit=100`)
       return json({ items: [{ id: GROUP, slug: "platform-admins" }], nextCursor: null })
+    // register (infra/ops) creates the admin MCP's role groups; answerable-owners shows the search is by prefix.
+    if (request.method === "GET" && path === `/organizations/${ORG}/groups?q=answerable-owner&limit=100`)
+      return json({ items: [{ id: "other", slug: "answerable-owners" }, { id: OWNERS, slug: "answerable-owner" }], nextCursor: null })
+    if (request.method === "PUT" && path === `/organizations/${ORG}/groups/${OWNERS}/members/${MEMBER}`)
+      return json({ groupId: OWNERS, memberId: MEMBER }, 201)
     if (request.method === "PUT" && path === `/organizations/${ORG}/groups/${GROUP}/members/${MEMBER}`) {
       locked = true
       return json({ groupId: GROUP, memberId: MEMBER }, 201)
@@ -227,18 +233,26 @@ describe("id-first-run", () => {
 })
 
 describe("id-make-admin", () => {
-  test("puts the member in platform-admins with the fixed key and confirms root is locked", async () => {
+  test("gives the member the admin MCP's owner role, then puts them in platform-admins, with fixed keys, and confirms root is locked", async () => {
     const { paths, runner } = await fixture()
     const id = fakeId()
     const { context, output } = createContext({ run: runner.run, fetch: id.fetch })
     await idMakeAdmin({ environment: "staging", paths, email: "you@answerable.org" }, context)
-    const put = id.requests.find((request) => request.method === "PUT")!
-    expect(put).toMatchObject({
+    // The owner role first: once the member is in platform-admins, ID refuses the root secret.
+    const puts = id.requests.filter((request) => request.method === "PUT")
+    expect(puts).toHaveLength(2)
+    expect(puts[0]).toMatchObject({
+      url: `${ADMIN}/organizations/${ORG}/groups/${OWNERS}/members/${MEMBER}`,
+      body: {},
+      headers: { "idempotency-key": "admin-first-owner-v1", "if-none-match": "*" },
+    })
+    expect(puts[1]).toMatchObject({
       url: `${ADMIN}/organizations/${ORG}/groups/${GROUP}/members/${MEMBER}`,
       body: {},
       headers: { "idempotency-key": "platform-admin-membership-setup", "if-none-match": "*" },
     })
     expect(id.requests.at(-1)!.url).toBe(`${ADMIN}/organizations?limit=1`)
+    expect(output()).toContain(`you@answerable.org (member ${MEMBER}): added to answerable-owner, the admin MCP's owner role`)
     expect(output()).toContain(`you@answerable.org (member ${MEMBER}): added to platform-admins`)
     expect(output()).toContain("Root is locked now")
     expect(output()).toContain("Secret ops-staff-token (key OPS_ID_TOKEN)")
@@ -249,11 +263,25 @@ describe("id-make-admin", () => {
     const { paths, runner } = await fixture()
     const open = fakeId({
       [`PUT /organizations/${ORG}/groups/${GROUP}/members/${MEMBER}`]: () => json({}, 412),
+      [`PUT /organizations/${ORG}/groups/${OWNERS}/members/${MEMBER}`]: () => json({}, 412),
     })
     const { context, output } = createContext({ run: runner.run, fetch: open.fetch })
     await idMakeAdmin({ environment: "staging", paths, email: "you@answerable.org" }, context)
+    expect(output()).toContain("already in answerable-owner")
     expect(output()).toContain("already in platform-admins")
     expect(output()).toContain("Warning: ID still accepts the root secret")
+  })
+
+  test("without the owner group, which the first deploy's register creates, says how to give the role later and still makes the administrator", async () => {
+    const { paths, runner } = await fixture()
+    const id = fakeId({
+      [`GET /organizations/${ORG}/groups`]: (request) => (request.url.includes("q=answerable-owner") ? json({ items: [], nextCursor: null }) : undefined),
+    })
+    const { context, output } = createContext({ run: runner.run, fetch: id.fetch })
+    await idMakeAdmin({ environment: "staging", paths, email: "you@answerable.org" }, context)
+    expect(id.requests.filter((request) => request.method === "PUT")).toHaveLength(1)
+    expect(output()).toContain("no answerable-owner group yet")
+    expect(output()).toContain("added to platform-admins")
   })
 
   test("needs a signed-in member and the platform-admins group", async () => {
@@ -266,6 +294,11 @@ describe("id-make-admin", () => {
       [{ [`GET /organizations/${ORG}/members`]: () => json({}, 400) }, "answered 400"],
       [{ [`GET /organizations/${ORG}/groups`]: () => json({ items: [] }) }, "no platform-admins group"],
       [{ [`GET /organizations/${ORG}/groups`]: () => json({}, 500) }, "answered 500"],
+      [
+        { [`GET /organizations/${ORG}/groups`]: (request) => (request.url.includes("q=platform-admins") ? json({}, 503) : undefined) },
+        "answered 503",
+      ],
+      [{ [`PUT /organizations/${ORG}/groups/${OWNERS}/members/${MEMBER}`]: () => json({ code: "forbidden" }, 403) }, "answered 403 forbidden"],
       [
         { [`PUT /organizations/${ORG}/groups/${GROUP}/members/${MEMBER}`]: () => json({ code: "not_found" }, 404) },
         "answered 404 not_found",

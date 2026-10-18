@@ -13,7 +13,7 @@ No command prints a secret. Values travel from your environment variables, Terra
 | Variable | What | Used by |
 | --- | --- | --- |
 | `CIVO_TOKEN` | The environment's Civo account API key | `first-apply`, `publish-env` |
-| `CLOUDFLARE_API_TOKEN` | Terraform's token for the zone, with the five permissions in [`infra/civo/README.md`](../civo/README.md#credentials) | `first-apply`, `origin-pull`, `publish-env` |
+| `CLOUDFLARE_API_TOKEN` | Terraform's token for the zone, with the six permissions in [`infra/civo/README.md`](../civo/README.md#credentials) | `first-apply`, `origin-pull`, `publish-env` |
 | `CERT_MANAGER_CLOUDFLARE_TOKEN` | A **second** token for the zone with Zone > DNS > Edit and Zone > Zone > Read only, for cert-manager's DNS-01 challenge ([cert-manager's Cloudflare guide](https://cert-manager.io/docs/configuration/acme/dns01/cloudflare/) lists both). It must differ from the first | `init-secrets` |
 | `ALLOWED_API_CIDRS` | The operators' addresses for the Kubernetes API, a JSON list such as `'["198.51.100.7/32"]'`. Staging: optional (`[]`). Production: required, and this machine must be in it | `first-apply`, `publish-env` |
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | The environment's Entra app registration ([`docs/06`](../../docs/06-deploying-answerable-id.md), Platform applications). Optional, as a pair | `init-secrets` |
@@ -38,7 +38,7 @@ Staging shown; production is the same with `--environment production` and its ow
 | 8 | Commit `.sops.yaml` and the three files, push to `main` | | The first deploy: `ops-bootstrap`, the migrations, the release, the smoke test ([`infra/pipeline/README.md`](../pipeline/README.md)) | `helm rollback` or a redeploy of an earlier tag |
 | 9 | `id-first-run --domain answerable.org --entra-tenant <tenant id>` | the age key | In ID: the staff domain and the Entra SSO provider of the platform organisation | `DELETE` them with the root secret, as [`onboard.mdx`](../../apps/web/content/docs/id/onboard.mdx) describes |
 | 10 | Sign in once at `https://id.answerable-staging.uk/login` | your work account | Your user and platform membership | |
-| 11 | `id-make-admin --email you@answerable.org` | the age key | Your membership of `platform-admins`. **Root locks itself** | The break-glass procedure in `onboard.mdx` |
+| 11 | `id-make-admin --email you@answerable.org` | the age key | Your membership of `answerable-owner` (the admin MCP's owner role), then of `platform-admins`. **Root locks itself** | The break-glass procedure in `onboard.mdx` |
 
 Nobody registers the Toolbox and the admin MCP by hand on the first run: the first deploy (row 8) finds their client Secrets missing and runs `register` with the root secret in the same upgrade, before anyone holds `platform:write`. Registering again after row 11, when root is locked, needs a staff token in the Secret `ops-staff-token` (key `OPS_ID_TOKEN`) and then the `ops` workflow's `register` ([`infra/ops/README.md`](../ops/README.md), [`infra/README.md`](../README.md)).
 
@@ -139,7 +139,7 @@ Decrypts `ROOT_ADMIN_SECRET` from the `sops` file into memory and makes [`onboar
 
 ### `id-make-admin --email <address>`
 
-With the root secret, finds the platform member with that email (sign in once first), adds them to `platform-admins` (`platform-admin-membership-setup`, `If-None-Match: *`), and confirms that ID now refuses the root secret (`403 root_locked`). From then on `register` and every other admin call need a staff token: put one in the Secret `ops-staff-token` (key `OPS_ID_TOKEN`) in namespace `answerable`. `ROOT_ADMIN_SECRET` stays in the `sops` file as the break-glass, with `ROOT_ADMIN_BREAK_GLASS=false`.
+With the root secret, finds the platform member with that email (sign in once first), adds them to `answerable-owner`, the admin MCP's owner role, when `register` has created that group (`admin-first-owner-v1`, `If-None-Match: *`; the command says so when it has not), then to `platform-admins` (`platform-admin-membership-setup`, `If-None-Match: *`), and confirms that ID now refuses the root secret (`403 root_locked`). From then on `register` and every other admin call need a staff token: put one in the Secret `ops-staff-token` (key `OPS_ID_TOKEN`) in namespace `answerable`. `ROOT_ADMIN_SECRET` stays in the `sops` file as the break-glass, with `ROOT_ADMIN_BREAK_GLASS=false`.
 
 ## Errors
 

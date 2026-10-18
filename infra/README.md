@@ -49,7 +49,7 @@ For the checks: `tflint` 0.64.0, `trivy` 0.75.0, `actionlint` 1.7.12 and `kubeco
    ```
 
 2. **Cloudflare.** The zone (`answerable-staging.uk` for staging, `answerable.org` for production) and **two API tokens scoped to that zone only**:
-   - **Terraform's**, `CLOUDFLARE_API_TOKEN`: Zone > DNS > Edit, Zone > SSL and Certificates > Edit, Zone > Zone Settings > Edit, Zone > Config Rules > Edit, Zone > Cache Rules > Edit ([the list and why](civo/README.md#credentials)).
+   - **Terraform's**, `CLOUDFLARE_API_TOKEN`: Zone > Zone > Read, Zone > DNS > Edit, Zone > SSL and Certificates > Edit, Zone > Zone Settings > Edit, Zone > Config Rules > Edit, Zone > Cache Rules > Edit ([the list and why](civo/README.md#credentials)).
    - **cert-manager's**, `CERT_MANAGER_CLOUDFLARE_TOKEN`: Zone > DNS > Edit and Zone > Zone > Read on the zone, for the Let's Encrypt DNS-01 challenge ([cert-manager's Cloudflare guide](https://cert-manager.io/docs/configuration/acme/dns01/cloudflare/) lists both; without Zone Read the certificate stays pending). It must differ from the first.
    - **Bot Fight Mode off** in the zone's Security settings. No token can change it, and it would challenge every MCP host.
 3. **Microsoft Entra.** The environment's app registration, with the redirect URIs `https://id.answerable-staging.uk/auth/sso/callback` and `https://id.answerable-staging.uk/login` for staging, or production's in [`docs/06`](../docs/06-deploying-answerable-id.md#platform-applications-microsoft-entra-and-google). Its client ID and secret are `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET`. You also need the **tenant ID of Answerable's own staff directory** for ID's first run. A Google client is optional (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`).
@@ -165,25 +165,15 @@ bun run setup id-first-run --environment staging --domain answerable.org --entra
 
 **13. Sign in once** at `https://id.answerable-staging.uk/login` with your work account. That creates your user and your platform membership.
 
-**14. Make yourself a platform administrator.** Root locks itself; the command confirms ID now refuses it (`403 root_locked`).
+**14. Make yourself a platform administrator and the admin MCP's owner.** With the root secret, the command puts you in `answerable-owner`, the admin MCP's owner role that `ops-register` created, then in `platform-admins`. That second step locks root, which is why the owner role comes first; the command confirms ID now refuses the root secret (`403 root_locked`).
 
 ```sh
 bun run setup id-make-admin --environment staging --email <you>@answerable.org
 ```
 
-**15. Make yourself an owner on the admin MCP.** Get a staff token as [Get a staff token](../apps/web/content/docs/id/onboard.mdx#get-a-staff-token) describes, with `id.answerable-staging.uk` in place of `id.answerable.org`, and set `TOKEN` to it. Then put your membership in the group `answerable-owner` that `ops-register` created:
+If it says there is no `answerable-owner` group yet, the first deploy's `register` has not run: give yourself the role later with a staff token, using the `curl` that `ops-register` prints in its log.
 
-```sh
-ID=https://id.answerable-staging.uk
-ORG=$(curl -s "$ID/api/admin/v1/organizations?q=answerable&limit=100" -H "Authorization: Bearer $TOKEN" | jq -r '.items[] | select(.slug=="answerable") | .id')
-GROUP=$(curl -s "$ID/api/admin/v1/organizations/$ORG/groups?q=answerable-owner&limit=100" -H "Authorization: Bearer $TOKEN" | jq -r '.items[] | select(.slug=="answerable-owner") | .id')
-MEMBER=$(curl -s --get "$ID/api/admin/v1/organizations/$ORG/members" -H "Authorization: Bearer $TOKEN" --data-urlencode "email=<you>@answerable.org" | jq -r '.items[0].id')
-curl -X PUT "$ID/api/admin/v1/organizations/$ORG/groups/$GROUP/members/$MEMBER" \
-  -H "Idempotency-Key: admin-first-owner-v1" -H "If-None-Match: *" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{}'
-```
-
-**16. Connect Claude Code** ([the admin MCP's setup](../apps/web/content/docs/admin/setup.mdx#connect-claude-code)):
+**15. Connect Claude Code** ([the admin MCP's setup](../apps/web/content/docs/admin/setup.mdx#connect-claude-code)):
 
 ```sh
 claude mcp add --transport http answerable-admin https://admin-mcp.answerable-staging.uk/mcp --client-id claude-code-admin --callback-port 47700

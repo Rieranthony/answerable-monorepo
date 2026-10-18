@@ -66,6 +66,7 @@ The zone's Cloudflare token needs these permissions, on that zone only:
 
 | Permission | Used by |
 | --- | --- |
+| **Zone > Zone > Read** | Looking the zone up by name: Terraform's `cloudflare_zone` data source and `bun run setup origin-pull` both call `GET /zones?name=…`, which accepts only Zone Read ([List Zones](https://developers.cloudflare.com/api/resources/zones/methods/list/)) |
 | Zone > DNS > Edit | The three service records |
 | Zone > SSL and Certificates > Edit | Authenticated origin pulls |
 | Zone > Zone Settings > Edit | SSL mode, HTTPS redirect, TLS versions, HSTS |
@@ -89,7 +90,7 @@ Civo clusters always have a public API endpoint (6443). The cluster firewall dec
 ## Before the first apply
 
 - The Civo account for the environment exists and `CIVO_TOKEN` is its API key ([B0](../../docs/goals/aws-deploy/briefs/b0.md)).
-- The zone's Cloudflare token has the five permissions above, Config Rules Edit and Cache Rules Edit included.
+- The zone's Cloudflare token has the six permissions above, Zone Read, Config Rules Edit and Cache Rules Edit included.
 - Bot Fight Mode is off in the zone (Security settings in the dashboard). The token cannot change it.
 - The zone has no `http_config_settings` or `http_request_cache_settings` ruleset made by hand. Cloudflare allows one per zone and phase; import an existing one with `terraform import 'module.edge.cloudflare_ruleset.config' 'zones/<zone id>/<ruleset id>'`.
 - `charts/platform` exists on the branch, with its `values-civo-<environment>.yaml` overlay. The full apply installs it, and the plan fails, naming the path, if the overlay is missing.

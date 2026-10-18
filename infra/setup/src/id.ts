@@ -9,7 +9,12 @@ export const KEYS = {
   domain: "platform-domain-setup",
   sso: "platform-sso-setup",
   admin: "platform-admin-membership-setup",
+  /** The key `register`'s printed command uses for the same membership (`infra/ops/src/register.ts`). */
+  owner: "admin-first-owner-v1",
 } as const
+
+/** The admin MCP's owner role: the group `register` creates in the platform organisation, with its entitlement. */
+const OWNER_GROUP = "answerable-owner"
 
 const DOMAIN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/
 const TENANT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
@@ -177,8 +182,10 @@ which creates your membership of the platform organisation. Then make yourself i
 export type IdMakeAdminOptions = { environment: EnvironmentName; paths: Paths; email: string }
 
 /**
- * Put the first staff member in `platform-admins` with the root secret (`onboard.mdx` § First run, step 5), which
- * locks the root secret: a person holds `platform:write` now. Confirms the lock with one more call.
+ * Give the first staff member the admin MCP's owner role (the group `answerable-owner`, when `register` has created it),
+ * then put them in `platform-admins` with the root secret (`onboard.mdx` § First run, step 5), which locks the root
+ * secret: a person holds `platform:write` now. The owner role comes first because nothing can use the root secret after.
+ * Confirms the lock with one more call.
  */
 export async function idMakeAdmin(options: IdMakeAdminOptions, context: Context): Promise<void> {
   const email = options.email.trim()
@@ -191,6 +198,23 @@ export async function idMakeAdmin(options: IdMakeAdminOptions, context: Context)
   if (listed.status !== 200) throw failure("GET", members, listed)
   const member = (listed.body.items as { id: string; email: string }[]).find((item) => item.email.toLowerCase() === email.toLowerCase())
   if (!member) throw new SetupError(`no member of the platform organisation has the email ${email}: sign in once at ${origin}/login first`)
+
+  const owners = `/organizations/${org}/groups?q=${OWNER_GROUP}&limit=100`
+  const ownersFound = await call("GET", owners)
+  if (ownersFound.status !== 200) throw failure("GET", owners, ownersFound)
+  const ownerGroup = (ownersFound.body.items as { id: string; slug: string }[]).find((item) => item.slug === OWNER_GROUP)
+  if (ownerGroup) {
+    const ownerPath = `/organizations/${org}/groups/${ownerGroup.id}/members/${member.id}`
+    const ownerPut = await call("PUT", ownerPath, { key: KEYS.owner, ifNoneMatch: true, body: {} })
+    if (ownerPut.status === 200 || ownerPut.status === 201)
+      context.out(`${email} (member ${member.id}): ${done(ownerPut, `added to ${OWNER_GROUP}, the admin MCP's owner role`)}\n`)
+    else if (ownerPut.status === 412) context.out(`${email} (member ${member.id}): already in ${OWNER_GROUP}\n`)
+    else throw failure("PUT", ownerPath, ownerPut)
+  } else
+    context.out(
+      `The platform organisation has no ${OWNER_GROUP} group yet: the first deploy's register creates it. Give yourself the\n` +
+        "admin MCP's owner role later with a staff token, as infra/README.md (First-time setup) shows.\n",
+    )
 
   const groups = `/organizations/${org}/groups?q=platform-admins&limit=100`
   const found = await call("GET", groups)
