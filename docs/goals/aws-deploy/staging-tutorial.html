@@ -1,0 +1,609 @@
+<title>Answerable Staging Setup</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a working checklist. A sticky part index on wide screens, one reading column of steps, commands with copy buttons. */
+:root {
+  --bg: #f5f7f8; --panel: #ffffff; --panel-2: #eef2f4; --code: #f0f3f5; --fg: #17212b; --muted: #5a6977;
+  --line: #d6dee4; --accent: #0e7490; --accent-soft: #dcf0f5; --done: #15803d; --done-soft: #e3f4e8;
+  --warn: #9a5b00; --warn-soft: #fbf0dc;
+  --sans: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1418; --panel: #161d23; --panel-2: #1c252d; --code: #121a20; --fg: #e5eaee; --muted: #98a6b2;
+    --line: #2a353f; --accent: #4cc3e8; --accent-soft: #10303a; --done: #5bd48a; --done-soft: #12301f;
+    --warn: #f0b75b; --warn-soft: #3a2a10; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1418; --panel: #161d23; --panel-2: #1c252d; --code: #121a20; --fg: #e5eaee; --muted: #98a6b2;
+  --line: #2a353f; --accent: #4cc3e8; --accent-soft: #10303a; --done: #5bd48a; --done-soft: #12301f;
+  --warn: #f0b75b; --warn-soft: #3a2a10; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 15px/1.6 var(--sans); margin: 0; padding-block: 28px 80px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.shell { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 40px; align-items: start; }
+@media (max-width: 860px) { .shell { grid-template-columns: minmax(0, 1fr); gap: 20px; } nav.index { position: static !important; } }
+h1, h2, h3 { margin: 0; text-wrap: balance; font-weight: 600; letter-spacing: -0.01em; }
+h1 { font-size: 27px; line-height: 1.2; }
+h2 { font-size: 20px; line-height: 1.3; }
+h3 { font-size: 15.5px; line-height: 1.4; }
+p { margin: 0; max-width: 70ch; }
+a { color: var(--accent); }
+code { font: 13px var(--mono); background: var(--panel-2); padding: 1px 5px; border-radius: 3px; overflow-wrap: anywhere; }
+.eyebrow { font: 500 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.muted { color: var(--muted); }
+
+nav.index { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 20px); display: grid; gap: 14px; font-size: 13.5px; }
+nav.index ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+nav.index a { display: flex; justify-content: space-between; gap: 8px; padding: 5px 8px; border-radius: 4px; color: var(--fg); text-decoration: none; }
+nav.index a:hover, nav.index a:focus-visible { background: var(--panel-2); outline: none; }
+nav.index a .count { font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+nav.index a.complete .count { color: var(--done); }
+.bar { height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; }
+.bar > span { display: block; height: 100%; width: 0; background: var(--done); transition: width .3s; }
+@media (prefers-reduced-motion: reduce) { .bar > span { transition: none; } }
+
+main { display: grid; gap: 34px; min-width: 0; }
+/* One column that never grows past its track: long commands scroll inside their box. */
+main, header, section.part, .step, .details { grid-template-columns: minmax(0, 1fr); }
+header { display: grid; gap: 14px; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.fact { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; display: grid; gap: 2px; }
+.fact b { font-weight: 600; }
+.fact span { font-size: 13px; color: var(--muted); }
+
+.details { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; display: grid; gap: 10px; }
+.details .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.details label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.details input { font: 14px var(--mono); padding: 7px 9px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg); min-width: 0; }
+.details input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+section.part { display: grid; gap: 14px; scroll-margin-top: 20px; }
+section.part > .head { display: grid; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.step { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; display: grid; gap: 10px; min-width: 0; }
+.step.done { border-color: var(--done); background: linear-gradient(var(--done-soft), var(--done-soft)) top / 100% 3px no-repeat, var(--panel); }
+.step > .title { display: flex; gap: 10px; align-items: flex-start; }
+.step input[type="checkbox"] { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--done); flex: none; cursor: pointer; }
+.step .num { font: 500 12px var(--mono); color: var(--muted); margin-right: 6px; }
+.step .time { margin-left: auto; font: 12px var(--mono); color: var(--muted); white-space: nowrap; padding-top: 2px; }
+.step ul, .step ol { margin: 0; padding-left: 20px; display: grid; gap: 4px; max-width: 70ch; }
+.cmd { position: relative; }
+.cmd pre { margin: 0; background: var(--code); border: 1px solid var(--line); border-radius: 5px; padding: 11px 74px 11px 12px; overflow-x: auto; font: 13px/1.55 var(--mono); white-space: pre; }
+.cmd.wrap pre { white-space: pre-wrap; }
+.cmd button { position: absolute; top: 7px; right: 7px; font: 500 12px var(--sans); padding: 4px 9px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--fg); cursor: pointer; }
+.cmd button:hover, .cmd button:focus-visible { border-color: var(--accent); outline: none; }
+.cmd button.ok { color: var(--done); border-color: var(--done); }
+.expect { border-left: 3px solid var(--done); background: var(--done-soft); padding: 8px 12px; border-radius: 0 5px 5px 0; font-size: 14px; }
+.warn { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: 8px 12px; border-radius: 0 5px 5px 0; font-size: 14px; }
+.note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 8px 12px; border-radius: 0 5px 5px 0; font-size: 14px; }
+.expect b, .warn b, .note b { font-weight: 600; }
+.perm { display: grid; grid-template-columns: repeat(3, auto); justify-content: start; gap: 2px 14px; font: 13px var(--mono); background: var(--code); border: 1px solid var(--line); border-radius: 5px; padding: 9px 12px; overflow-x: auto; }
+.perm span:nth-child(3n+1), .perm span:nth-child(3n+2) { color: var(--muted); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.tablewrap { overflow-x: auto; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px 8px 0; border-bottom: 1px solid var(--line); }
+th { font: 500 11px/1.4 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+td:first-child { width: 36%; }
+.reset { font: 500 12px var(--sans); background: none; border: 1px solid var(--line); border-radius: 4px; padding: 4px 9px; color: var(--muted); cursor: pointer; justify-self: start; }
+.reset:hover, .reset:focus-visible { border-color: var(--accent); color: var(--fg); outline: none; }
+footer { color: var(--muted); font-size: 13px; }
+</style>
+
+<div class="shell">
+<nav class="index" aria-label="Parts">
+  <div class="eyebrow">Your progress</div>
+  <div class="bar" aria-hidden="true"><span id="bar"></span></div>
+  <div class="muted" id="overall" style="font-size:13px">0 of 0 steps done</div>
+  <ol id="index">
+    <li><a href="#start"><span>Before you start</span></a></li>
+    <li><a href="#machine" data-part="machine"><span>1 · Your Mac</span><span class="count"></span></a></li>
+    <li><a href="#civo" data-part="civo"><span>2 · Civo</span><span class="count"></span></a></li>
+    <li><a href="#cloudflare" data-part="cloudflare"><span>3 · Cloudflare</span><span class="count"></span></a></li>
+    <li><a href="#entra" data-part="entra"><span>4 · Microsoft Entra</span><span class="count"></span></a></li>
+    <li><a href="#terminal" data-part="terminal"><span>5 · Load your keys</span><span class="count"></span></a></li>
+    <li><a href="#infra" data-part="infra"><span>6 · Build the servers</span><span class="count"></span></a></li>
+    <li><a href="#github" data-part="github"><span>7 · Secrets and GitHub</span><span class="count"></span></a></li>
+    <li><a href="#deploy" data-part="deploy"><span>8 · First deploy</span><span class="count"></span></a></li>
+    <li><a href="#id" data-part="id"><span>9 · Turn on sign-in</span><span class="count"></span></a></li>
+    <li><a href="#claude" data-part="claude"><span>10 · Claude Code</span><span class="count"></span></a></li>
+    <li><a href="#finish" data-part="finish"><span>11 · Finish</span><span class="count"></span></a></li>
+    <li><a href="#trouble"><span>If something goes wrong</span></a></li>
+    <li><a href="#after"><span>After today</span></a></li>
+  </ol>
+  <button class="reset" id="reset" type="button">Clear my ticks</button>
+</nav>
+
+<main>
+<header id="start">
+  <div class="eyebrow">Answerable · staging on Civo, behind Cloudflare</div>
+  <h1>Answerable Staging Setup</h1>
+  <p>From a new Civo account and a new domain to a running staging: Answerable ID at <code>id.answerable-staging.uk</code>, the Toolbox and the admin MCP, deployed on every push to <code>main</code>, with you signed in as owner from Claude Code. Every command below has been checked against the code in the repository. Tick each step as you finish it; your ticks stay in this browser.</p>
+  <div class="facts">
+    <div class="fact"><b>About 2 hours</b><span>Most of it waiting for Civo and GitHub</span></div>
+    <div class="fact"><b>About $103 a month</b><span>Civo starts billing in part 6</span></div>
+    <div class="fact"><b>One terminal</b><span>In the repository folder, kept open from part 5 to part 9</span></div>
+    <div class="fact"><b>Secrets stay hidden</b><span>Typed into hidden prompts, committed only encrypted</span></div>
+  </div>
+  <div class="details">
+    <div class="eyebrow">Your details, to fill in the commands</div>
+    <div class="row">
+      <label for="email">Your work email at answerable.org
+        <input id="email" type="email" autocomplete="off" spellcheck="false" placeholder="you@answerable.org">
+      </label>
+      <label for="tenant">Your staff directory's Entra tenant ID
+        <input id="tenant" type="text" autocomplete="off" spellcheck="false" value="999a3be8-1a6c-4f1f-beb1-d6f6c2114bc6">
+      </label>
+    </div>
+    <p class="muted" style="font-size:13px">The tenant ID is the one your local ID setup uses for <code>answerable.org</code> and <code>omniaccelerator.ai</code>; confirm it in step 4.2. Neither value is a secret. Never paste a key or token into this page: those go only into the terminal, in part 5.</p>
+  </div>
+  <div class="note"><b>Keep open in your browser:</b> this page, <a href="https://dashboard.civo.com" target="_blank" rel="noopener">dashboard.civo.com</a>, <a href="https://dash.cloudflare.com" target="_blank" rel="noopener">dash.cloudflare.com</a>, <a href="https://entra.microsoft.com" target="_blank" rel="noopener">entra.microsoft.com</a> and <a href="https://github.com/Rieranthony/answerable-monorepo" target="_blank" rel="noopener">the repository on GitHub</a>. Have your password manager ready to store four new secrets as you create them.</div>
+</header>
+
+<!-- ============ PART 1 ============ -->
+<section class="part" id="machine" data-part="machine">
+  <div class="head"><div class="eyebrow">Part 1</div><h2>Your Mac</h2><p>Every tool is already installed on this Mac. These steps bring the code up to date and confirm the versions.</p></div>
+
+  <div class="step" data-step="1.1">
+    <div class="title"><input type="checkbox" id="s1.1" aria-label="Done"><h3><span class="num">1.1</span>Get the latest code</h3><span class="time">2 min</span></div>
+    <p>Open Terminal in the repository folder and update <code>main</code>.</p>
+    <div class="cmd"><pre>cd ~/code/answerable
+git checkout main
+git pull
+bun install</pre></div>
+    <div class="expect"><b>You should see</b> <code>git pull</code> bring in the deployment work and <code>bun install</code> end without errors.</div>
+  </div>
+
+  <div class="step" data-step="1.2">
+    <div class="title"><input type="checkbox" id="s1.2" aria-label="Done"><h3><span class="num">1.2</span>Check your tools</h3><span class="time">1 min</span></div>
+    <div class="cmd"><pre>bun --version; terraform version | head -1; sops --version | head -1; age-keygen --version; openssl version; kubectl version --client | head -1; helm version --short; civo version | head -1; gh auth status</pre></div>
+    <div class="expect"><b>You should see</b> Bun <code>1.3.1</code>, Terraform <code>v1.16.5</code>, sops <code>3.13</code>, age <code>v1.3</code>, <code>OpenSSL 3</code>, Helm <code>v4.3.0</code>, Civo CLI <code>v1.5.5</code>, and gh logged in as <code>Rieranthony</code>.</div>
+    <div class="warn"><b>kubectl</b> on this Mac is 1.32; the cluster will be newer. Upgrade it now with <code>brew upgrade kubectl</code>. If Terraform says <code>v1.12</code>, open a new terminal: version 1.16.5 is in <code>~/.local/bin</code>, which comes first on your PATH.</div>
+  </div>
+</section>
+
+<!-- ============ PART 2 ============ -->
+<section class="part" id="civo" data-part="civo">
+  <div class="head"><div class="eyebrow">Part 2</div><h2>Civo</h2><p>The account you created is the staging account. Production gets its own account later.</p></div>
+
+  <div class="step" data-step="2.1">
+    <div class="title"><input type="checkbox" id="s2.1" aria-label="Done"><h3><span class="num">2.1</span>Check the account's quota</h3><span class="time">3 min</span></div>
+    <p>New Civo accounts start on a basic quota. Open <a href="https://dashboard.civo.com/quota" target="_blank" rel="noopener">dashboard.civo.com/quota</a>. Staging needs room for:</p>
+    <ul>
+      <li>a Kubernetes cluster of <b>2 Medium nodes</b> (2 CPU and 4 GB each, so 4 CPU and 8 GB in all);</li>
+      <li>a <b>Small PostgreSQL database</b>;</li>
+      <li><b>1 load balancer</b>, <b>1 reserved IP</b>, <b>1 object store</b>, <b>1 private network</b> and <b>3 firewalls</b>.</li>
+    </ul>
+    <p>If anything is short, press <b>Request quota increase</b> and paste:</p>
+    <div class="cmd wrap"><pre>Staging environment in LON1: a Kubernetes cluster with 2 Medium nodes, a Small PostgreSQL database, 1 load balancer, 1 reserved IP, 1 object store, 1 private network and 3 firewalls.</pre></div>
+    <div class="expect"><b>Done when</b> the quota covers the list, or Civo has approved your request.</div>
+  </div>
+
+  <div class="step" data-step="2.2">
+    <div class="title"><input type="checkbox" id="s2.2" aria-label="Done"><h3><span class="num">2.2</span>Copy the API key into your password manager</h3><span class="time">2 min</span></div>
+    <p>In the Civo dashboard, open your profile's <b>Security</b> section and copy the <b>API key</b>. If your account sits in an organisation, the page lists one key per account: take the staging account's. Save it in your password manager as <i>Civo · answerable-staging · API key</i>. This key can do anything in the account, so it never goes in a file or a chat.</p>
+  </div>
+
+  <div class="step" data-step="2.3">
+    <div class="title"><input type="checkbox" id="s2.3" aria-label="Done"><h3><span class="num">2.3</span>Give the key to the Civo CLI</h3><span class="time">2 min</span></div>
+    <p>Run this, type <code>answerable-staging</code> as the name, then paste the key when asked. It stays out of your shell history.</p>
+    <div class="cmd"><pre>civo apikey save</pre></div>
+    <p>Then select it and London:</p>
+    <div class="cmd"><pre>civo apikey use answerable-staging
+civo region use LON1
+civo kubernetes ls</pre></div>
+    <div class="expect"><b>You should see</b> an empty list of clusters and no error. That proves the key works.</div>
+  </div>
+</section>
+
+<!-- ============ PART 3 ============ -->
+<section class="part" id="cloudflare" data-part="cloudflare">
+  <div class="head"><div class="eyebrow">Part 3</div><h2>Cloudflare</h2><p>All of this happens on the zone <code>answerable-staging.uk</code>, the domain you bought. Terraform sets every other Cloudflare setting for you.</p></div>
+
+  <div class="step" data-step="3.1">
+    <div class="title"><input type="checkbox" id="s3.1" aria-label="Done"><h3><span class="num">3.1</span>Check the zone is active</h3><span class="time">1 min</span></div>
+    <p>On <a href="https://dash.cloudflare.com" target="_blank" rel="noopener">dash.cloudflare.com</a>, open <b>answerable-staging.uk</b>. The overview should say <b>Active</b>. A domain bought through Cloudflare is active straight away.</p>
+  </div>
+
+  <div class="step" data-step="3.2">
+    <div class="title"><input type="checkbox" id="s3.2" aria-label="Done"><h3><span class="num">3.2</span>Switch off Bot Fight Mode</h3><span class="time">1 min</span></div>
+    <p>In the zone, go to <b>Security</b> → <b>Bots</b> and turn <b>Bot Fight Mode</b> off. Left on, it shows a "are you human?" page to Claude Code and the MCP servers, which are not browsers. No token can change this setting, so it is the one manual switch.</p>
+  </div>
+
+  <div class="step" data-step="3.3">
+    <div class="title"><input type="checkbox" id="s3.3" aria-label="Done"><h3><span class="num">3.3</span>Create Terraform's token</h3><span class="time">4 min</span></div>
+    <ol>
+      <li>Top right: your profile → <b>My Profile</b> → <b>API Tokens</b> → <b>Create Token</b> → <b>Create Custom Token</b>.</li>
+      <li>Name it <code>answerable-staging terraform</code>.</li>
+      <li>Add these six permission rows:</li>
+    </ol>
+    <div class="perm" role="table" aria-label="Terraform token permissions">
+      <span>Zone</span><span>Zone</span><span>Read</span>
+      <span>Zone</span><span>DNS</span><span>Edit</span>
+      <span>Zone</span><span>SSL and Certificates</span><span>Edit</span>
+      <span>Zone</span><span>Zone Settings</span><span>Edit</span>
+      <span>Zone</span><span>Config Rules</span><span>Edit</span>
+      <span>Zone</span><span>Cache Rules</span><span>Edit</span>
+    </div>
+    <ol start="4">
+      <li>Under <b>Zone Resources</b>: Include → Specific zone → <b>answerable-staging.uk</b>.</li>
+      <li><b>Continue to summary</b> → <b>Create Token</b>. Copy the token into your password manager as <i>Cloudflare · answerable-staging · Terraform</i>. Cloudflare shows it only once.</li>
+    </ol>
+  </div>
+
+  <div class="step" data-step="3.4">
+    <div class="title"><input type="checkbox" id="s3.4" aria-label="Done"><h3><span class="num">3.4</span>Create cert-manager's token</h3><span class="time">3 min</span></div>
+    <p>A second, smaller token. It lives inside the cluster and lets it obtain the HTTPS certificates from Let's Encrypt. Same steps, named <code>answerable-staging cert-manager</code>, with only two rows:</p>
+    <div class="perm" role="table" aria-label="cert-manager token permissions">
+      <span>Zone</span><span>Zone</span><span>Read</span>
+      <span>Zone</span><span>DNS</span><span>Edit</span>
+    </div>
+    <p>Same zone resource: <b>answerable-staging.uk</b> only. Save it as <i>Cloudflare · answerable-staging · cert-manager</i>.</p>
+    <div class="warn"><b>Both rows matter.</b> Without Zone Read the certificate never issues and the site never answers. The two tokens must be different: the setup refuses Terraform's token here.</div>
+  </div>
+</section>
+
+<!-- ============ PART 4 ============ -->
+<section class="part" id="entra" data-part="entra">
+  <div class="head"><div class="eyebrow">Part 4</div><h2>Microsoft Entra</h2><p>Staff sign in to ID with their Microsoft work accounts. You reuse the app registration your local ID already uses, and add staging's addresses to it.</p></div>
+
+  <div class="step" data-step="4.1">
+    <div class="title"><input type="checkbox" id="s4.1" aria-label="Done"><h3><span class="num">4.1</span>Add staging's redirect addresses</h3><span class="time">3 min</span></div>
+    <ol>
+      <li>On <a href="https://entra.microsoft.com" target="_blank" rel="noopener">entra.microsoft.com</a>: <b>Applications</b> → <b>App registrations</b> → <b>All applications</b> → open the multi-tenant app your local ID uses.</li>
+      <li><b>Authentication</b> → under <b>Web</b> → <b>Add URI</b>, twice:</li>
+    </ol>
+    <div class="cmd"><pre>https://id.answerable-staging.uk/auth/sso/callback</pre></div>
+    <div class="cmd"><pre>https://id.answerable-staging.uk/login</pre></div>
+    <p><b>Save</b>. The existing localhost addresses stay.</p>
+  </div>
+
+  <div class="step" data-step="4.2">
+    <div class="title"><input type="checkbox" id="s4.2" aria-label="Done"><h3><span class="num">4.2</span>Note the client ID and the tenant ID</h3><span class="time">1 min</span></div>
+    <p>On the app's <b>Overview</b>: the <b>Application (client) ID</b> is needed in part 5. The <b>Directory (tenant) ID</b> is your staff directory's tenant; check it matches the field at the top of this page, and correct the field if not.</p>
+  </div>
+
+  <div class="step" data-step="4.3">
+    <div class="title"><input type="checkbox" id="s4.3" aria-label="Done"><h3><span class="num">4.3</span>Create a client secret for staging</h3><span class="time">2 min</span></div>
+    <p><b>Certificates &amp; secrets</b> → <b>Client secrets</b> → <b>New client secret</b>, description <code>staging</code>, expiry 12 months. Copy the <b>Value</b> (not the ID) into your password manager as <i>Entra · staging client secret</i>, and put the expiry date in your calendar. Entra shows it only once.</p>
+  </div>
+</section>
+
+<!-- ============ PART 5 ============ -->
+<section class="part" id="terminal" data-part="terminal">
+  <div class="head"><div class="eyebrow">Part 5</div><h2>Load your keys into one terminal</h2><p>From here to part 9, use one terminal window in the repository folder. Each line below asks for one value and hides what you paste. <b>Copy and run one line at a time</b>: pasting several at once would feed the next line in as your secret.</p></div>
+
+  <div class="step" data-step="5.1">
+    <div class="title"><input type="checkbox" id="s5.1" aria-label="Done"><h3><span class="num">5.1</span>Paste each value when asked</h3><span class="time">2 min</span></div>
+    <div class="cmd"><pre>printf 'Civo API key: '; read -rs CIVO_TOKEN; echo; export CIVO_TOKEN</pre></div>
+    <div class="cmd"><pre>printf 'Cloudflare token for Terraform: '; read -rs CLOUDFLARE_API_TOKEN; echo; export CLOUDFLARE_API_TOKEN</pre></div>
+    <div class="cmd"><pre>printf 'Cloudflare token for cert-manager: '; read -rs CERT_MANAGER_CLOUDFLARE_TOKEN; echo; export CERT_MANAGER_CLOUDFLARE_TOKEN</pre></div>
+    <div class="cmd"><pre>printf 'Entra client ID: '; read -r MICROSOFT_CLIENT_ID; export MICROSOFT_CLIENT_ID</pre></div>
+    <div class="cmd"><pre>printf 'Entra client secret: '; read -rs MICROSOFT_CLIENT_SECRET; echo; export MICROSOFT_CLIENT_SECRET</pre></div>
+    <div class="cmd"><pre>export ALLOWED_API_CIDRS='[]'</pre></div>
+    <p>Check each is set, without showing it:</p>
+    <div class="cmd"><pre>for v in CIVO_TOKEN CLOUDFLARE_API_TOKEN CERT_MANAGER_CLOUDFLARE_TOKEN MICROSOFT_CLIENT_ID MICROSOFT_CLIENT_SECRET; do [ -n "${(P)v}" ] && echo "$v set" || echo "$v MISSING"; done</pre></div>
+    <div class="expect"><b>You should see</b> five lines ending in <code>set</code>.</div>
+    <div class="note"><b>If you close this terminal</b> before part 9, open a new one and run part 5 again, and the two lines of step 6.3.</div>
+  </div>
+</section>
+
+<!-- ============ PART 6 ============ -->
+<section class="part" id="infra" data-part="infra">
+  <div class="head"><div class="eyebrow">Part 6</div><h2>Build the servers</h2><p>Terraform creates everything in your Civo account and on the Cloudflare zone. It shows what it will create and waits for you to type <code>yes</code> each time. Civo starts billing here.</p></div>
+
+  <div class="step" data-step="6.1">
+    <div class="title"><input type="checkbox" id="s6.1" aria-label="Done"><h3><span class="num">6.1</span>Create staging's encryption key</h3><span class="time">2 min</span></div>
+    <p>This key encrypts staging's secrets file. Its public half goes in the repository; the private half stays on this Mac.</p>
+    <div class="cmd"><pre>bun run setup age-init --environment staging</pre></div>
+    <p>Now back the private key up: drag this file into your password manager as a document, <i>age · answerable-staging</i>.</p>
+    <div class="cmd"><pre>open -R ~/.config/sops/age/answerable-staging.txt</pre></div>
+    <div class="warn"><b>Do not skip the backup.</b> Without this file, nobody can ever read staging's secrets again.</div>
+  </div>
+
+  <div class="step" data-step="6.2">
+    <div class="title"><input type="checkbox" id="s6.2" aria-label="Done"><h3><span class="num">6.2</span>Create the network, cluster and database</h3><span class="time">15–25 min</span></div>
+    <div class="cmd"><pre>bun run setup first-apply --environment staging</pre></div>
+    <p>Type <code>yes</code> each time Terraform asks. First it makes the bucket that will hold Terraform's records, moves its records there (answer <code>yes</code> to copying the state), then creates the cluster, the database and the firewalls. Creating the cluster and the database takes most of the time.</p>
+    <div class="expect"><b>You should see</b> it stop on purpose, saying two certificate files are missing and naming <code>origin-pull</code> and <code>database-ca</code>. Just before that, it prints a line <code>AWS_ACCESS_KEY_ID=…</code>: the bucket's key ID. Keep it on screen for the next step.</div>
+  </div>
+
+  <div class="step" data-step="6.3">
+    <div class="title"><input type="checkbox" id="s6.3" aria-label="Done"><h3><span class="num">6.3</span>Load the bucket's key</h3><span class="time">2 min</span></div>
+    <p>Every later step reads Terraform's records from the bucket, so this terminal needs its key. Replace the placeholder with the value after <code>AWS_ACCESS_KEY_ID=</code> in 6.2's output:</p>
+    <div class="cmd"><pre>export AWS_ACCESS_KEY_ID=&lt;the access key ID from 6.2&gt;</pre></div>
+    <p>This prints the matching secret key. It is the one time a secret appears on screen:</p>
+    <div class="cmd"><pre>civo objectstore credential secret --access-key "$AWS_ACCESS_KEY_ID"</pre></div>
+    <p>Copy it into your password manager as <i>Civo · answerable-staging · state secret key</i>, then load it and clear the screen:</p>
+    <div class="cmd"><pre>printf 'State secret key: '; read -rs AWS_SECRET_ACCESS_KEY; echo; export AWS_SECRET_ACCESS_KEY</pre></div>
+    <div class="cmd"><pre>clear</pre></div>
+  </div>
+
+  <div class="step" data-step="6.4">
+    <div class="title"><input type="checkbox" id="s6.4" aria-label="Done"><h3><span class="num">6.4</span>Create the certificate Cloudflare shows the servers</h3><span class="time">3 min</span></div>
+    <p>Cloudflare presents this certificate on every request it forwards, and the cluster refuses any request without it. That is how only Cloudflare can reach staging.</p>
+    <div class="cmd"><pre>bun run setup origin-pull --environment staging --zone answerable-staging.uk</pre></div>
+    <div class="expect"><b>You should see</b> it upload the certificate, wait until Cloudflare reports it active, and write <code>infra/civo/envs/staging/edge-ca/ca.pem</code>.</div>
+  </div>
+
+  <div class="step" data-step="6.5">
+    <div class="title"><input type="checkbox" id="s6.5" aria-label="Done"><h3><span class="num">6.5</span>Record the database's certificate</h3><span class="time">3 min</span></div>
+    <p>The servers check the database's identity on every connection. This reads its certificate from inside the cluster and saves it.</p>
+    <div class="cmd"><pre>bun run setup database-ca --environment staging</pre></div>
+    <div class="expect"><b>You should see</b> the certificate's subject, issuer, validity and a <b>SHA-256 fingerprint</b>. Copy the fingerprint and today's date into a note: this is the identity everything else trusts from now on.</div>
+    <div class="expect">It ends with <code>It covers …, the host in database_admin_url.</code></div>
+    <div class="warn"><b>If it says <code>Warning: it does not cover …</code></b> instead, stop here and send me its output. That is one of the facts only this first run can reveal, and the fix is a one-line change.</div>
+  </div>
+
+  <div class="step" data-step="6.6">
+    <div class="title"><input type="checkbox" id="s6.6" aria-label="Done"><h3><span class="num">6.6</span>Finish the infrastructure</h3><span class="time">5–10 min</span></div>
+    <p>The rest: Traefik and cert-manager inside the cluster, the deploy account GitHub will use, and the DNS records and settings on Cloudflare.</p>
+    <div class="cmd"><pre>bun run setup first-apply --environment staging --resume</pre></div>
+    <div class="expect"><b>You should see</b> <code>Apply complete!</code>, then <code>Applied staging.</code> In Cloudflare, the zone's DNS now has three proxied records: <code>id</code>, <code>toolbox</code> and <code>admin-mcp</code>.</div>
+  </div>
+</section>
+
+<!-- ============ PART 7 ============ -->
+<section class="part" id="github" data-part="github">
+  <div class="head"><div class="eyebrow">Part 7</div><h2>Secrets and GitHub</h2></div>
+
+  <div class="step" data-step="7.1">
+    <div class="title"><input type="checkbox" id="s7.1" aria-label="Done"><h3><span class="num">7.1</span>Generate staging's secrets file</h3><span class="time">1 min</span></div>
+    <p>Generates ID's signing secrets and root secret, adds the database administrator's address and the two tokens you loaded, and encrypts it all with the key from 6.1.</p>
+    <div class="cmd"><pre>bun run setup init-secrets --environment staging</pre></div>
+    <div class="expect"><b>You should see</b> <code>Verified: … decrypts to the three Secrets</code>, with each Secret's key names and never a value.</div>
+  </div>
+
+  <div class="step" data-step="7.2">
+    <div class="title"><input type="checkbox" id="s7.2" aria-label="Done"><h3><span class="num">7.2</span>Hand GitHub what it needs to deploy</h3><span class="time">2 min</span></div>
+    <p>Creates the GitHub environments <code>staging</code> and <code>infra-staging</code>, stores their secrets, and switches on deploys to staging.</p>
+    <div class="cmd"><pre>bun run setup publish-env --environment staging --enable</pre></div>
+    <div class="expect"><b>You should see</b> <code>Published to Rieranthony/answerable-monorepo</code>, the secret names it set, and <code>repository variable DEPLOY_STAGING: true</code>. In GitHub, <b>Settings → Environments</b> now shows both environments.</div>
+  </div>
+</section>
+
+<!-- ============ PART 8 ============ -->
+<section class="part" id="deploy" data-part="deploy">
+  <div class="head"><div class="eyebrow">Part 8</div><h2>The first deploy</h2></div>
+
+  <div class="step" data-step="8.1">
+    <div class="title"><input type="checkbox" id="s8.1" aria-label="Done"><h3><span class="num">8.1</span>Commit the four files and push</h3><span class="time">1 min</span></div>
+    <p>First a safety check that the secrets file is encrypted. The number must be above zero:</p>
+    <div class="cmd"><pre>grep -c 'ENC\[' infra/civo/envs/staging/secrets.enc.yaml</pre></div>
+    <div class="cmd"><pre>git add .sops.yaml infra/civo/envs/staging/edge-ca/ca.pem infra/civo/envs/staging/database-ca.pem infra/civo/envs/staging/secrets.enc.yaml
+git commit -m "Set up the staging environment"
+git push origin main</pre></div>
+  </div>
+
+  <div class="step" data-step="8.2">
+    <div class="title"><input type="checkbox" id="s8.2" aria-label="Done"><h3><span class="num">8.2</span>Watch the run</h3><span class="time">20–25 min</span></div>
+    <p>Open <a href="https://github.com/Rieranthony/answerable-monorepo/actions/workflows/deploy-staging.yml" target="_blank" rel="noopener">Actions → Deploy staging</a>. In order: <b>CI</b> runs every test (about 15 minutes), <b>Apply the staging infrastructure</b> finds nothing to change, eight <b>Build</b> jobs and four <b>Publish</b> jobs make the images, then <b>Deploy to staging</b> and <b>Smoke test staging</b>.</p>
+    <p>The deploy creates the three databases and their logins, runs the migrations, starts ID, and registers the Toolbox and the admin MCP with ID by itself.</p>
+  </div>
+
+  <div class="step" data-step="8.3">
+    <div class="title"><input type="checkbox" id="s8.3" aria-label="Done"><h3><span class="num">8.3</span>Make the four images public</h3><span class="time">5 min</span></div>
+    <p>GitHub makes new images private, and the cluster pulls them without a password. So the first <b>Deploy to staging</b> will fail with <code>ImagePullBackOff</code> or <code>ErrImagePull</code>. Once the four <b>Publish</b> jobs are green:</p>
+    <ol>
+      <li>Open <a href="https://github.com/Rieranthony?tab=packages" target="_blank" rel="noopener">your profile's Packages</a>.</li>
+      <li>For each of <code>answerable/id</code>, <code>answerable/toolbox</code>, <code>answerable/admin-mcp</code> and <code>answerable/ops</code>: <b>Package settings</b> → <b>Danger Zone</b> → <b>Change visibility</b> → <b>Public</b>, and type the name to confirm.</li>
+      <li>Rerun the failed jobs:</li>
+    </ol>
+    <div class="cmd"><pre>gh run list --workflow deploy-staging.yml --limit 1</pre></div>
+    <div class="cmd"><pre>gh run rerun &lt;the run's ID from the line above&gt; --failed</pre></div>
+    <div class="note">This is once only: later deploys reuse the same four packages.</div>
+  </div>
+
+  <div class="step" data-step="8.4">
+    <div class="title"><input type="checkbox" id="s8.4" aria-label="Done"><h3><span class="num">8.4</span>Check it's live</h3><span class="time">2 min</span></div>
+    <p>Run the same smoke test the pipeline runs, from your Mac:</p>
+    <div class="cmd"><pre>bun infra/pipeline/src/cli.ts smoke --environment staging --wait 120</pre></div>
+    <div class="expect"><b>You should see</b> a table of checks (ID's health, readiness, discovery and signing keys, the Toolbox's and the admin MCP's health and metadata) ending in <code>PASSED</code>. The first HTTPS certificate can take a few minutes; <code>--wait</code> retries for two.</div>
+  </div>
+</section>
+
+<!-- ============ PART 9 ============ -->
+<section class="part" id="id" data-part="id">
+  <div class="head"><div class="eyebrow">Part 9</div><h2>Turn on sign-in</h2><p>Same terminal as part 5.</p></div>
+
+  <div class="step" data-step="9.1">
+    <div class="title"><input type="checkbox" id="s9.1" aria-label="Done"><h3><span class="num">9.1</span>Connect ID to your Microsoft directory</h3><span class="time">1 min</span></div>
+    <p>Adds the staff domain and the Entra sign-in to Answerable's own organisation in ID, then tests the connection.</p>
+    <div class="cmd"><pre>bun run setup id-first-run --environment staging --domain answerable.org --entra-tenant <span class="v-tenant">999a3be8-1a6c-4f1f-beb1-d6f6c2114bc6</span></pre></div>
+    <div class="expect"><b>You should see</b> <code>Domain answerable.org: added</code>, <code>SSO provider …: connected</code>, a connectivity test ending <code>problems   none</code>, and the sign-in address.</div>
+  </div>
+
+  <div class="step" data-step="9.2">
+    <div class="title"><input type="checkbox" id="s9.2" aria-label="Done"><h3><span class="num">9.2</span>Sign in once</h3><span class="time">2 min</span></div>
+    <p>Open <a href="https://id.answerable-staging.uk/login" target="_blank" rel="noopener">id.answerable-staging.uk/login</a>, enter <code class="v-email">you@answerable.org</code>, and sign in with Microsoft. This creates your user in staging.</p>
+    <div class="note">If Microsoft asks for admin approval, approve it as the directory's administrator: it is the same app as local, now with staging's addresses.</div>
+  </div>
+
+  <div class="step" data-step="9.3">
+    <div class="title"><input type="checkbox" id="s9.3" aria-label="Done"><h3><span class="num">9.3</span>Make yourself administrator and owner</h3><span class="time">1 min</span></div>
+    <p>Gives you the admin MCP's owner role, then makes you a platform administrator. That second step locks the root secret, which is meant to happen: from now on, people sign in.</p>
+    <div class="cmd"><pre>bun run setup id-make-admin --environment staging --email <span class="v-email">you@answerable.org</span></pre></div>
+    <div class="expect"><b>You should see</b> <code>added to answerable-owner, the admin MCP's owner role</code>, then <code>added to platform-admins</code>, then <code>Root is locked now</code>. The note after it about a staff token is for later work; nothing to do today.</div>
+  </div>
+</section>
+
+<!-- ============ PART 10 ============ -->
+<section class="part" id="claude" data-part="claude">
+  <div class="head"><div class="eyebrow">Part 10</div><h2>Connect Claude Code</h2><p>Any terminal will do from here; the keys from part 5 are no longer needed.</p></div>
+
+  <div class="step" data-step="10.1">
+    <div class="title"><input type="checkbox" id="s10.1" aria-label="Done"><h3><span class="num">10.1</span>Add the two MCP servers</h3><span class="time">1 min</span></div>
+    <div class="cmd"><pre>claude mcp add --transport http answerable-admin https://admin-mcp.answerable-staging.uk/mcp --client-id claude-code-admin --callback-port 47700</pre></div>
+    <div class="cmd"><pre>claude mcp add --transport http answerable-toolbox https://toolbox.answerable-staging.uk/mcp --client-id claude-code-toolbox --callback-port 47700</pre></div>
+  </div>
+
+  <div class="step" data-step="10.2">
+    <div class="title"><input type="checkbox" id="s10.2" aria-label="Done"><h3><span class="num">10.2</span>Sign in from Claude Code</h3><span class="time">3 min</span></div>
+    <p>In Claude Code, type <code>/mcp</code>, choose <b>answerable-admin</b>, then <b>Authenticate</b>, and sign in with your work account in the browser that opens. Then ask:</p>
+    <div class="cmd"><pre>Call admin_whoami on answerable-admin.</pre></div>
+    <div class="expect"><b>You should see</b> your account with the role <code>owner</code>. Staging is fully working.</div>
+  </div>
+</section>
+
+<!-- ============ PART 11 ============ -->
+<section class="part" id="finish" data-part="finish">
+  <div class="head"><div class="eyebrow">Part 11</div><h2>Finish</h2></div>
+
+  <div class="step" data-step="11.1">
+    <div class="title"><input type="checkbox" id="s11.1" aria-label="Done"><h3><span class="num">11.1</span>Pin the cluster's version</h3><span class="time">3 min</span></div>
+    <p>Civo chose its latest Kubernetes version for the cluster. Writing it down stops a future apply from trying to change it.</p>
+    <div class="cmd"><pre>civo kubernetes show answerable-staging-cluster | grep -i version</pre></div>
+    <p>Add that version to <code>infra/civo/envs/staging/terraform.tfvars</code> as a new line, then commit and push:</p>
+    <div class="cmd"><pre>kubernetes_version = "&lt;the version shown above&gt;"</pre></div>
+    <div class="cmd"><pre>git add infra/civo/envs/staging/terraform.tfvars
+git commit -m "Pin the staging cluster's Kubernetes version"
+git push origin main</pre></div>
+  </div>
+
+  <div class="step" data-step="11.2">
+    <div class="title"><input type="checkbox" id="s11.2" aria-label="Done"><h3><span class="num">11.2</span>Close the terminal</h3><span class="time">1 min</span></div>
+    <p>Close the terminal from part 5 so the keys leave memory. Everything you need again is in your password manager: the Civo API key, two Cloudflare tokens, the Entra secret, the state secret key, and the age key file.</p>
+  </div>
+
+  <div class="step" data-step="11.3">
+    <div class="title"><input type="checkbox" id="s11.3" aria-label="Done"><h3><span class="num">11.3</span>Reset your local database</h3><span class="time">5 min</span></div>
+    <p>Separate from staging: your local development database moved to PostgreSQL 17, and the Toolbox and admin MCP now refuse the owner login. Once, knowing it deletes your local data:</p>
+    <div class="cmd"><pre>bun run env:reset
+bun run env:up
+bun --env-file=.env run --filter @answerable/id db:migrate</pre></div>
+    <p>Your <code>.env</code> has none of the MCPs' database lines yet. Copy the six lines starting <code>TOOLBOX_DATABASE_</code> and <code>ADMIN_DATABASE_</code> (not the <code>_TEST_</code> ones) from <code>.env.example</code> into it, then migrate the two MCPs:</p>
+    <div class="cmd"><pre>bun --env-file=.env run --filter @answerable/mcp-toolbox db:migrate
+bun --env-file=.env run --filter @answerable/mcp-admin db:migrate</pre></div>
+  </div>
+</section>
+
+<!-- ============ TROUBLE ============ -->
+<section class="part" id="trouble">
+  <div class="head"><div class="eyebrow">Reference</div><h2>If something goes wrong</h2><p>Every setup command says which step failed and why. The usual causes:</p></div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>What you see</th><th>What to do</th></tr></thead>
+    <tbody>
+      <tr><td>Terraform: an authentication or permission error from Cloudflare</td><td>A token is missing a row. Compare it with step 3.3 (six rows) or 3.4 (two rows), edit the token in Cloudflare, and rerun the same command.</td></tr>
+      <tr><td>Terraform: a quota error from Civo</td><td>Raise the quota as in step 2.1, then rerun. If 6.2 had already moved the state, use <code>first-apply --resume</code> with the step 6.3 lines loaded.</td></tr>
+      <tr><td><code>already keeps its state in the bucket</code></td><td>The first part of 6.2 is done: load 6.3, then run <code>first-apply --environment staging --resume</code>.</td></tr>
+      <tr><td>A failure writing <code>staging.tfstate.tflock</code></td><td>Civo's storage refused Terraform's lock file. Set <code>use_lockfile = false</code> in <code>infra/civo/envs/staging/backend.tf</code> and rerun; it means only one person applies at a time.</td></tr>
+      <tr><td><code>AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must hold …</code></td><td>The terminal lost the bucket's key: redo step 6.3.</td></tr>
+      <tr><td><code>these commands need OpenSSL 3</code></td><td><code>brew install openssl@3</code>, then <code>export PATH="$(brew --prefix openssl@3)/bin:$PATH"</code>.</td></tr>
+      <tr><td><code>database-ca</code>: no certificate from the database</td><td>It prints the exact commands to run by hand; run them as shown.</td></tr>
+      <tr><td>Deploy: <code>ImagePullBackOff</code> or <code>ErrImagePull</code></td><td>The images are still private: step 8.3.</td></tr>
+      <tr><td>Browser: Cloudflare error 526 or 525, or the smoke test times out on HTTPS</td><td>The first certificate is still being issued, which can take a few minutes. If it lasts over 15 minutes, the cert-manager token is probably missing Zone Read (step 3.4).</td></tr>
+      <tr><td>Claude Code gets an HTML page or a challenge</td><td>Bot Fight Mode is still on: step 3.2.</td></tr>
+      <tr><td><code>ID refused the root secret (401)</code></td><td>The cluster has older secrets than the file: push again so the deploy reapplies them.</td></tr>
+      <tr><td><code>ID refused the root secret (403 root_locked)</code></td><td>An administrator already exists: part 9 is done.</td></tr>
+      <tr><td>The connectivity test in 9.1 reports problems</td><td>Almost always the tenant ID: recheck step 4.2.</td></tr>
+      <tr><td>Anything else</td><td>Copy the command's last lines (they never contain a secret) and send them to me.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============ AFTER ============ -->
+<section class="part" id="after">
+  <div class="head"><div class="eyebrow">Reference</div><h2>After today</h2></div>
+  <div class="step">
+    <ul>
+      <li><b>Every push to <code>main</code> deploys staging.</b> CI runs first; a failing test stops the deploy. A deploy whose new version never becomes healthy rolls itself back.</li>
+      <li><b>To stop deploys</b> without deleting anything: <code>gh variable delete DEPLOY_STAGING</code>. Civo keeps billing; to stop the cost, follow "Destroy an environment" in <code>infra/README.md</code>.</li>
+      <li><b>Roll back</b> by running <a href="https://github.com/Rieranthony/answerable-monorepo/actions/workflows/deploy-staging.yml" target="_blank" rel="noopener">Deploy staging</a> by hand with an earlier <code>sha-…</code> tag.</li>
+      <li><b>Next on the plan:</b> OpenBao, the secrets server, lands on staging (brief B7b), then the production rehearsal (B7c). Production needs its own Civo account and a way for GitHub to reach it, which is the one open decision (D30).</li>
+      <li><b>The full runbook</b> for every day-two task (rotating a secret, restoring the database, scaling) is <code>infra/README.md</code>; the design is <code>docs/12-deployment.md</code>.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>Written for the repository at commit 0804efb on 18 October 2026. If a screen in Civo, Cloudflare, Entra or GitHub looks different from these descriptions, the setting names stay the same: search for them in that page's settings.</footer>
+</main>
+</div>
+
+<script>
+(function () {
+  var store = {
+    get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+    del: function (k) { try { localStorage.removeItem(k); } catch (e) {} }
+  };
+  var prefix = "answerable-staging-setup:";
+
+  // Personalise the commands from the two fields; neither is a secret.
+  var email = document.getElementById("email");
+  var tenant = document.getElementById("tenant");
+  var savedEmail = store.get(prefix + "email");
+  var savedTenant = store.get(prefix + "tenant");
+  if (savedEmail) email.value = savedEmail;
+  if (savedTenant) tenant.value = savedTenant;
+  function fill() {
+    var e = email.value.trim() || "you@answerable.org";
+    var t = tenant.value.trim() || "<staff directory tenant ID>";
+    document.querySelectorAll(".v-email").forEach(function (n) { n.textContent = e; });
+    document.querySelectorAll(".v-tenant").forEach(function (n) { n.textContent = t; });
+  }
+  email.addEventListener("input", function () { store.set(prefix + "email", email.value.trim()); fill(); });
+  tenant.addEventListener("input", function () { store.set(prefix + "tenant", tenant.value.trim()); fill(); });
+  fill();
+
+  // A copy button on every command.
+  document.querySelectorAll(".cmd").forEach(function (box) {
+    var pre = box.querySelector("pre");
+    var button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Copy";
+    button.setAttribute("aria-label", "Copy this command");
+    button.addEventListener("click", function () {
+      var text = pre.innerText.replace(/\n+$/, "");
+      function shown(ok) {
+        button.textContent = ok ? "Copied" : "Selected";
+        button.classList.toggle("ok", ok);
+        setTimeout(function () { button.textContent = "Copy"; button.classList.remove("ok"); }, 1600);
+      }
+      function select() {
+        var range = document.createRange(); range.selectNodeContents(pre);
+        var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range); shown(false);
+      }
+      try {
+        navigator.clipboard.writeText(text).then(function () { shown(true); }, select);
+      } catch (e) { select(); }
+    });
+    box.appendChild(button);
+  });
+
+  // Ticks, remembered in this browser only.
+  var boxes = Array.prototype.slice.call(document.querySelectorAll(".step input[type=checkbox]"));
+  function progress() {
+    var total = boxes.length, done = 0;
+    var parts = {};
+    boxes.forEach(function (b) {
+      var part = b.closest("section.part").getAttribute("data-part");
+      parts[part] = parts[part] || { total: 0, done: 0 };
+      parts[part].total++;
+      if (b.checked) { done++; parts[part].done++; }
+      b.closest(".step").classList.toggle("done", b.checked);
+    });
+    document.getElementById("overall").textContent = done + " of " + total + " steps done";
+    document.getElementById("bar").style.width = (total ? (100 * done / total) : 0) + "%";
+    document.querySelectorAll("nav.index a[data-part]").forEach(function (a) {
+      var p = parts[a.getAttribute("data-part")];
+      if (!p) return;
+      a.querySelector(".count").textContent = p.done + "/" + p.total;
+      a.classList.toggle("complete", p.done === p.total);
+    });
+  }
+  boxes.forEach(function (b) {
+    if (store.get(prefix + b.id) === "1") b.checked = true;
+    b.addEventListener("change", function () {
+      if (b.checked) store.set(prefix + b.id, "1"); else store.del(prefix + b.id);
+      progress();
+    });
+  });
+  document.getElementById("reset").addEventListener("click", function () {
+    boxes.forEach(function (b) { b.checked = false; store.del(prefix + b.id); });
+    progress();
+  });
+  progress();
+})();
+</script>
