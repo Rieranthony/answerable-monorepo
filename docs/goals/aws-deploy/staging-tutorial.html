@@ -313,6 +313,7 @@ civo kubernetes ls</pre></div>
   <div class="step" data-step="6.3">
     <div class="title"><input type="checkbox" id="s6.3" aria-label="Done"><h3><span class="num">6.3</span>Load the bucket's key</h3><span class="time">2 min</span></div>
     <p>Every later step reads Terraform's records from the bucket, so this terminal needs its key. Replace the placeholder with the value after <code>AWS_ACCESS_KEY_ID=</code> in 6.2's output:</p>
+    <div class="note"><b>No AWS account involved.</b> The bucket is Civo's Object Store, at <code>objectstore.lon1.civo.com</code>. It speaks Amazon S3's protocol, and every S3 tool, Terraform included, reads its key from variables named <code>AWS_…</code>, whoever runs the storage.</div>
     <div class="cmd"><pre>export AWS_ACCESS_KEY_ID=&lt;the access key ID from 6.2&gt;</pre></div>
     <p>This prints the matching secret key. It is the one time a secret appears on screen:</p>
     <div class="cmd"><pre>civo objectstore credential secret --access-key "$AWS_ACCESS_KEY_ID"</pre></div>
