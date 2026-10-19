@@ -105,6 +105,13 @@ spec:
             {{- end }}
             periodSeconds: 10
             failureThreshold: 3
+          # The servers stop within a second of SIGTERM, but Traefik keeps routing to a terminating pod for a few seconds
+          # (measured in the kind stack: 2.5 s), and a request that reaches a stopped pod hangs for 30 s. Waiting first
+          # lets Traefik deregister the pod while it still answers; the grace period above leaves 25 s for the stop.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
           resources:
             {{- toYaml $values.resources | nindent 12 }}
           securityContext:

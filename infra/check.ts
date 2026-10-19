@@ -152,10 +152,9 @@ function chartDirectories() {
     .sort()
 }
 
-// The certificates Terraform and the deploy pass to each chart (`--set-file`), without which the chart refuses to render:
-// the real ones are per environment under infra/civo/envs, so a placeholder PEM stands in for them here.
+// The certificate Terraform passes to the platform chart (the origin-pull CA, as `originPull.caPem`), without which the
+// Civo overlays refuse to render: a placeholder PEM stands in for it here.
 const suppliedCertificates: Record<string, string> = {
-  answerable: "database.caPem",
   platform: "originPull.caPem",
 }
 const placeholderPem = join(

@@ -140,11 +140,14 @@ describe("charts/answerable", () => {
         }
       })
 
-      test("each Deployment rolls with no unavailable pod, probes readiness, spreads over nodes and has a disruption budget", () => {
+      test("each Deployment rolls with no unavailable pod, waits for Traefik before it stops, probes readiness, spreads over nodes and has a disruption budget", () => {
         const deployments = manifests.filter(manifest => manifest.kind === "Deployment")
         expect(deployments.map(deployment => deployment.metadata.name).sort()).toEqual(["admin-mcp", "id", "toolbox"])
         for (const deployment of deployments) {
           expect(deployment.spec.strategy).toMatchObject({ type: "RollingUpdate", rollingUpdate: { maxUnavailable: 0 } })
+          // Traefik keeps routing to a terminating pod for a few seconds; the pod waits longer than that before it stops.
+          expect(containersOf(deployment)[0].lifecycle?.preStop?.exec?.command).toEqual(["sleep", "5"])
+          expect(podSpec(deployment).terminationGracePeriodSeconds).toBeGreaterThanOrEqual(30)
           expect(containersOf(deployment)[0].readinessProbe?.httpGet?.path).toBe(deployment.metadata.name === "id" ? "/readyz" : "/health")
           expect(containersOf(deployment)[0].livenessProbe).toBeDefined()
           expect(podSpec(deployment).topologySpreadConstraints?.[0]).toMatchObject({ topologyKey: "kubernetes.io/hostname", maxSkew: 1 })

@@ -44,7 +44,7 @@ gh workflow run bootstrap.yml --ref main -f environment=staging
 gh run watch
 ```
 
-**4. The first tag.** A tag `staging/<name>` on a commit of `main` ships it ([how a ship runs](pipeline/README.md#how-a-ship-runs)): CI, the staging infrastructure (the first apply creates the cluster, the database and the certificates, and writes the deploy credentials into the environment), the four images built and signed, the deploy, the smoke test.
+**4. The first tag.** A tag `staging/<name>` on a commit of `main` ships it ([how a deploy runs](pipeline/README.md#how-a-deploy-runs)): CI, the staging infrastructure (the first apply creates the cluster, the database and the certificates, and writes the deploy credentials into the environment), the four images built and signed, the deploy, the smoke test.
 
 ```sh
 git tag staging/first main
