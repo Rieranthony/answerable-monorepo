@@ -7,7 +7,7 @@ description: >-
 inputs:
   tools:
     description: >-
-      Space-separated tools to install: sops, helm, kubectl, terraform, tflint, trivy, kubeconform, actionlint.
+      Space-separated tools to install: helm, kubectl, kind, terraform, tflint, trivy, kubeconform, actionlint, civo.
     required: true
 
 runs:
@@ -43,11 +43,6 @@ runs:
 
         for tool in $TOOLS; do
           case "$tool" in
-            sops)
-              file=$(fetch https://github.com/getsops/sops/releases/download/v3.13.3/sops-v3.13.3.linux.amd64 \
-                e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b)
-              install -m 0755 "$file" "$bin/sops"
-              ;;
             helm)
               file=$(fetch https://get.helm.sh/helm-v4.3.0-linux-amd64.tar.gz \
                 86584a54def73570558f66f5111cc53dfed56689637ae32c1201205d494f54fb)
@@ -58,6 +53,11 @@ runs:
               file=$(fetch https://dl.k8s.io/release/v1.34.12/bin/linux/amd64/kubectl \
                 90b7b9058ffeb5c10710bb1c73f541eaf426fb1b4e87df435db669de9a2564a2)
               install -m 0755 "$file" "$bin/kubectl"
+              ;;
+            kind)
+              file=$(fetch https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64 \
+                aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d)
+              install -m 0755 "$file" "$bin/kind"
               ;;
             terraform)
               file=$(fetch https://releases.hashicorp.com/terraform/1.16.5/terraform_1.16.5_linux_amd64.zip \
@@ -84,6 +84,12 @@ runs:
                 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8)
               tar -xzf "$file" -C "$bin" actionlint
               ;;
+            civo)
+              file=$(fetch https://github.com/civo/cli/releases/download/v1.5.5/civo-1.5.5-linux-amd64.tar.gz \
+                f2ee1278f45f97d46b13cefcd629ec1d61c06adbf8557c1377614d2778c946c8)
+              tar -xzf "$file" -C "$downloads" civo
+              install -m 0755 "$downloads/civo" "$bin/civo"
+              ;;
             *)
               echo "::error::setup-tools does not know a tool called '$tool'"
               exit 1
@@ -95,13 +101,14 @@ runs:
         export PATH="$bin:$PATH"
         for tool in $TOOLS; do
           case "$tool" in
-            sops) sops --disable-version-check --version ;;
             helm) helm version --short ;;
             kubectl) kubectl version --client ;;
+            kind) kind version ;;
             terraform) terraform version ;;
             tflint) tflint --version ;;
             trivy) trivy --version ;;
             kubeconform) kubeconform -v ;;
             actionlint) actionlint -version ;;
+            civo) civo version ;;
           esac
         done

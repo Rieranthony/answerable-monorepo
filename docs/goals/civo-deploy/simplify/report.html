@@ -1,0 +1,163 @@
+<title>Simplify the deployment</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /* Layout: one quiet column of tables, a numbered decision list, small type, tight rows. */
+  :root {
+    --bg: #fbfbfa; --fg: #1d2129; --muted: #5d6675; --line: #e3e5e9; --soft: #f1f2f4;
+    --accent: #2f5d8a; --accent-soft: #e6eef6; --warn: #8a5a1f; --warn-soft: #f7efe2; --ok: #2e6b4a; --ok-soft: #e5f1ea;
+    --sans: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #15181d; --fg: #e4e6ea; --muted: #9aa3b1; --line: #2a2f37; --soft: #1c2026;
+    --accent: #8fb5dd; --accent-soft: #1f2a37; --warn: #d9a860; --warn-soft: #2b241a; --ok: #86c3a1; --ok-soft: #1a2a21; color-scheme: dark } }
+  :root[data-theme="dark"] {
+    --bg: #15181d; --fg: #e4e6ea; --muted: #9aa3b1; --line: #2a2f37; --soft: #1c2026;
+    --accent: #8fb5dd; --accent-soft: #1f2a37; --warn: #d9a860; --warn-soft: #2b241a; --ok: #86c3a1; --ok-soft: #1a2a21; color-scheme: dark }
+  body { background: var(--bg); color: var(--fg); font: 13.5px/1.5 var(--sans); padding-block: 32px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  main { max-width: 980px; margin: 0 auto; display: grid; gap: 28px; }
+  h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 4px; text-wrap: balance; }
+  h2 { font-size: 15px; font-weight: 600; margin: 0 0 8px; text-wrap: balance; }
+  h3 { font-size: 13.5px; font-weight: 600; margin: 14px 0 4px; }
+  p { margin: 0 0 8px; max-width: 72ch; }
+  .meta { color: var(--muted); font-size: 12.5px; }
+  .lead { font-size: 14.5px; max-width: 76ch; }
+  section { display: grid; gap: 6px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  .scroll { overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 6px 10px 6px 0; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 500; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+  td:first-child { white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
+  code { font: 12px var(--mono); background: var(--soft); padding: 1px 4px; border-radius: 3px; }
+  td code, li code { white-space: nowrap; }
+  .pill { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+  .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .pill.ok { background: var(--ok-soft); color: var(--ok); }
+  ol.decisions { padding-left: 0; margin: 0; list-style: none; display: grid; gap: 14px; }
+  ol.decisions > li { border-left: 3px solid var(--accent); padding-left: 14px; display: grid; gap: 4px; }
+  ol.decisions b { font-weight: 600; }
+  ul { margin: 0 0 6px; padding-left: 18px; }
+  li { margin: 2px 0; }
+  .numbers { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .numbers div { border-top: 2px solid var(--line); padding-top: 6px; }
+  .numbers strong { display: block; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .numbers span { color: var(--muted); font-size: 12px; }
+  footer { color: var(--muted); font-size: 12px; }
+  footer a, a { color: var(--accent); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+<main>
+  <header>
+    <h1>Simplify the deployment</h1>
+    <p class="meta">Audit of <code>infra/*</code>, <code>charts/*</code>, the workflows and the remaining briefs, 19 October 2026, before B7a. Every claim below was tested: a grep, a render, a provider schema, GitHub's run history, or the vendor's page. Planning files and probe results: <code>docs/goals/civo-deploy/simplify/</code>.</p>
+    <p class="meta"><span class="pill">Decided, later the same day</span> The owner asked for as much automation as possible, with every secret in a GitHub environment and nothing done from a laptop. Decision A below is therefore superseded: Terraform runs from GitHub for both environments and the state stays in Civo's object store, created by a bootstrap workflow. B, D and E stand as recommended; a tag <code>staging/&lt;name&gt;</code> or <code>production/&lt;name&gt;</code> ships. The shape as built is in <code>simplify/task_plan.md</code>.</p>
+  </header>
+
+  <section>
+    <h2>Verdict</h2>
+    <p class="lead">The deployment is sound where it matters: one Civo account per environment, Cloudflare as the only path, verified TLS, least-privilege logins, images by digest, a namespace-scoped deploy token, and a local proof that runs in CI. Around that core it carries pieces built for cases that no longer exist: pull requests, three clouds, a Grafana workspace, an unknown node architecture, a future diagnostic. Those go now. Four larger pieces rest on choices worth revisiting before the first apply, because each is simpler to change today than after staging exists. Those are the four decisions at the end.</p>
+    <div class="numbers">
+      <div><strong>180</strong><span>files under infra, charts and .github</span></div>
+      <div><strong>16,400</strong><span>lines, tests and READMEs included</span></div>
+      <div><strong>0</strong><span>runs ever of infra.yml, ops.yml and promote-production.yml</span></div>
+      <div><strong>1,076</strong><span>lines in whole files or jobs that go, before partial edits</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Delete now <span class="pill ok">no decision needed</span></h2>
+    <p>Each row names what the piece was for and what the probe found. None of these changes what the deployment promises.</p>
+    <div class="scroll"><table>
+      <tr><th></th><th>Piece</th><th>Built for</th><th>What the probe found</th></tr>
+      <tr><td>1</td><td><code>infra.yml</code> (152 lines): checks and a Terraform plan comment on pull requests</td><td>Reviewing Terraform in a pull request</td><td>No run, ever. The last pull request merged on 29 September; the rule since then is everything on <code>main</code></td></tr>
+      <tr><td>2</td><td>The <code>k8s-monitoring</code> dependency of <code>charts/platform</code>, its 38 lines of values, and the reason <code>platform</code> is not <code>restricted</code></td><td>The Grafana agent, once a Grafana Cloud workspace exists</td><td>Renders nothing (0 lines). Every Traefik and cert-manager pod already meets the restricted standard, so with the agent gone <code>platform</code> gets <code>enforce: restricted</code> on Civo</td></tr>
+      <tr><td>3</td><td>The arm64 builds, the <code>manifest</code> job (68 lines) and the digest artifacts of <code>deploy-staging.yml</code>; the <code>containers</code> CI job on arm64</td><td>"Civo does not document its nodes' architecture"</td><td>Civo's own guide: "Civo's nodes are amd64, so the image has to be built for linux/amd64". One build per image, signed in the build job; CI proves the images on the architecture Civo runs</td></tr>
+      <tr><td>4</td><td><code>ops.yml</code> (90 lines), <code>run-job</code>, <code>restartServers</code>, <code>readRelease</code> and their tests</td><td>Running <code>register</code> again from GitHub after root is locked</td><td>No run, ever. The person has <code>kubectl</code> in hand already (they created <code>ops-staff-token</code> with it); the runbook keeps the two commands</td></tr>
+      <tr><td>5</td><td>The <code>resolve</code> job of <code>promote-production.yml</code> (78 lines) and <code>current-tag</code></td><td>Defaulting production's tag to the one staging runs, read with staging's token</td><td>Staging deploys <code>main</code>; a dispatch on <code>main</code> carries <code>github.sha</code>, which is that commit. Default the input to it</td></tr>
+      <tr><td>6</td><td><code>rehearse.ts</code> (359 lines)</td><td>Running the deploy scripts against a stand-in chart</td><td>In no gate, so it rots; the unit tests cover the scripts, <code>infra:test</code> the chart, the setup proof the <code>sops</code> pipe</td></tr>
+      <tr><td>7</td><td><code>read_namespaces</code> in the deployer module: a variable, two resources, an output, a test</td><td>"A future diagnostic"</td><td>Empty in both roots</td></tr>
+      <tr><td>8</td><td>The <code>--bootstrap</code> flag of <code>deploy</code></td><td>Choosing whether the bootstrap Job runs</td><td>Both workflows always pass it; the Job is idempotent and documented as "every deploy"</td></tr>
+      <tr><td>9</td><td><code>database.host</code>, <code>database.port</code>, <code>OPS_DATABASE_HOST</code>, <code>OPS_DATABASE_PORT</code></td><td>A service address other than the admin URL's</td><td>Nothing sets them</td></tr>
+      <tr><td>10</td><td><code>OPS_STORE=file</code> and the file secret store</td><td>Running the ops commands outside a cluster</td><td>Only the README's example uses it</td></tr>
+      <tr><td>11</td><td><code>id.microsoftClientId</code>, <code>id.googleClientId</code></td><td>Client IDs as plain values</td><td><code>init-secrets</code> writes both ID and secret into <code>id-env</code>, which the chart loads whole</td></tr>
+      <tr><td>12</td><td>The <code>origin-pull</code> TLSOption, <code>ingress.tlsOption</code>, the router annotation, <code>crossProviderNamespaces</code></td><td>Naming the client-certificate option per Ingress</td><td>The kind stack proves "the default option alone refuses a host whose Ingress lost its reference". <code>default</code> stays; the named copy goes</td></tr>
+      <tr><td>13</td><td><code>database_admin_database</code> variable</td><td>"Civo does not document its default"</td><td>It does now: "The default database name will be postgres"</td></tr>
+      <tr><td>14</td><td>The inline tool installs of the <code>infra-check</code> job, with <code>setup-terraform</code> and <code>setup-helm</code></td><td>Pinning tools</td><td>Duplicates <code>.github/actions/setup-tools</code> pin for pin; the job uses the action</td></tr>
+      <tr><td>15</td><td><code>infra/.trivyignore</code>; 29 stale <code>coverage/*.tmp</code> files</td><td>Accepted findings; nothing</td><td>Empty; untracked leftovers</td></tr>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Simplify after the deletions</h2>
+    <div class="scroll"><table>
+      <tr><th></th><th>Today</th><th>Simpler</th></tr>
+      <tr><td>S1</td><td>Cloudflare's 22 ranges copied by hand into both <code>values-civo-*.yaml</code> and <code>charts.test.ts</code>, with a comment claiming the file and the Terraform apply change together (nothing links them); Terraform's <code>trusted_proxy_cidrs</code> output is read by nobody</td><td>Terraform, which already reads the live list and owns the namespace, writes the ConfigMap <code>trusted-proxies</code>; ID reads <code>TRUSTED_PROXY_CIDRS</code> from it. One source for Traefik and ID; the kind stack writes its own</td></tr>
+      <tr><td>S2</td><td>Two roots, byte for byte the same but for <code>backend.tf</code> and <code>terraform.tfvars</code>, held equal by a check in <code>check.ts</code></td><td>One root, two var files, two workspaces, a precondition that ties the workspace to <code>var.environment</code>. Practical only with decision A</td></tr>
+      <tr><td>S3</td><td>Eleven root outputs and five module outputs nobody reads; a deployer RBAC rule on <code>cert-manager.io</code> the deploy never uses</td><td>Keep what a command or a person reads</td></tr>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Decisions <span class="pill">recommended option first</span></h2>
+    <ol class="decisions">
+      <li>
+        <b>A. Terraform runs from your machine only, and its state lives encrypted in the repository.</b>
+        <p>Today staging's Terraform applies from CI on every push, so the unscoped, never-expiring Civo key, the Cloudflare token and the state credential sit in a GitHub environment with no reviewer, readable by any branch of the repository (the pipeline README says so). Production's Terraform cannot run from CI at all (D30), so the two environments already differ. State lives in a 500 GB object-store block per environment ($5.43 a month each) that holds a few kilobytes, created by a two-phase bootstrap with a lock question the first apply must answer.</p>
+        <p><b>Recommended:</b> both environments apply by hand from a trusted machine, the way production must; the state file is <code>sops</code>-encrypted with the environment's <code>age</code> key next to <code>secrets.enc.yaml</code> (it holds the same class of secret, and a lost key costs the same either way). A 30-line wrapper decrypts before Terraform and re-encrypts after. Deletes: <code>infra.yml</code>, the <code>infra</code> job, the <code>apply_infra</code> step, the <code>infra-staging</code> environment, the <code>state</code> module, both <code>backend.tf</code>, <code>terraform.sh</code>'s credential mapping, <code>STATE_*</code> everywhere, steps 2 to 4 of <code>first-apply</code>, and every Civo and Cloudflare credential from GitHub. Then S2 becomes a plain change. Cost: a Terraform change is applied by you, not by a push; one operator at a time (true today).</p>
+        <p><b>Alternative:</b> keep the CI apply and the bucket. Then only <code>infra.yml</code> goes.</p>
+      </li>
+      <li>
+        <b>B. Production's Kubernetes API is reachable from the internet, authenticated by the cluster, as staging's is.</b>
+        <p>Civo clusters always have a public API. Staging admits the internet on 6443 (D30); production admits only <code>ALLOWED_API_CIDRS</code>, which GitHub's runners are not in, so <code>promote-production.yml</code> cannot run, and nobody has scheduled the GitOps or tunnel follow-up. The closed API also raises two first-apply questions about nodes joining with 6443 shut to the private network.</p>
+        <p><b>Recommended:</b> the same posture in both environments, the one every default Civo, DigitalOcean and GKE cluster has: TLS, then a credential. The deploy holds a token that reaches one namespace; the admin credential exists only in state. Deletes <code>api_open_to_internet</code>, <code>allowed_api_cidrs</code>, their validations and tests, <code>ALLOWED_API_CIDRS</code> in the setup and the workflows, and the two questions; <code>promote-production.yml</code> works on day one. Recorded as D30 resolved, with GitOps named as the hardening if it is ever wanted.</p>
+        <p><b>Alternative:</b> keep production closed. Then production deploys by hand from your machine (<code>deploy --environment production</code>, which exists) and <code>promote-production.yml</code> is deleted rather than kept unusable.</p>
+      </li>
+      <li>
+        <b>D. Origin certificates from Cloudflare's Origin CA, issued by Terraform, instead of cert-manager with Let's Encrypt.</b>
+        <p>Only Cloudflare ever reaches the services, by design and by firewall. Yet the origin presents a public certificate from Let's Encrypt, obtained by cert-manager through a DNS-01 challenge with a second Cloudflare token kept in the <code>sops</code> file, renewed every two months, and "proved only by rendering" until the first apply. Cloudflare's Origin CA issues certificates that only Cloudflare trusts, for up to 15 years, through the token Terraform already holds (Zone, SSL and Certificates, Edit), and they are "compatible with Strict SSL mode".</p>
+        <p><b>Recommended:</b> Terraform makes the key, the request and the certificate (<code>cloudflare_origin_ca_certificate</code>, in the pinned provider) and writes the TLS Secret into <code>answerable</code>, which it already manages. Deletes cert-manager (a controller, CRDs, two webhooks, a startup Job, 80 lines of issuers), the second token, the <code>cloudflare-api-token</code> Secret and its rotation, the issuer annotation and values, and one first-apply unknown. Cost: the key sits in Terraform state (the same class as the admin kubeconfig already there), rotation is a <code>-replace</code> with the expiry date recorded, and the kind stack makes its three test authorities with <code>openssl</code> instead of seven cert-manager objects. This is the largest change of the set; the proof is <code>infra:test</code> and CI.</p>
+        <p><b>Alternative:</b> keep cert-manager and Let's Encrypt.</p>
+      </li>
+      <li>
+        <b>E. OpenBao (D29, brief B7b): not yet.</b>
+        <p>D29 promises OpenBao right after staging: three replicas in production, Raft, a seal key that lives in the same <code>sops</code> file, Kubernetes auth, policies, snapshots, alerts, a ceremony. The gains named were per-service identities, a read audit and revocation. No pod mounts an API token, so a pod can read only the Secrets mounted into it; revocation is a changed Secret; a read audit for three services and one operator has no reader. The cost is a stateful product to run.</p>
+        <p><b>Recommended:</b> record OpenBao as Not yet with a trigger (a second team, or a compliance need), keep <code>sops</code>, and remove the sentences that promise it. No code changes.</p>
+        <p><b>Alternative:</b> keep B7b as planned.</p>
+      </li>
+    </ol>
+    <h3>Applied unless you say otherwise</h3>
+    <ul>
+      <li><b>amd64 only</b> (row 3 above), on Civo's own word.</li>
+      <li><b>Production's database on one node</b>, not three. Civo says a multi-node database "can continue to operate even if one or more nodes fail", and nothing about how; the two extra nodes are about $173 a month for a database still in beta. Raise it after B7c measures a failover. One line in <code>terraform.tfvars</code> and the cost table.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Assumptions only the first apply can test <span class="pill warn">unchanged, flagged</span></h2>
+    <ul>
+      <li><b>Does Civo's database serve TLS at all?</b> New. Civo's connect page shows a plain connection string and says nothing about SSL, TLS or a certificate; its provider exposes no CA attribute. Every URL asks for <code>verify-full</code> and the ops image refuses less. If Civo serves no certificate, B7a stops at the bootstrap Job, and the fallback (plain connections on the private network) is a decision to take then, not now.</li>
+      <li>The load balancer's path through the node-port firewall and its private-network-only egress, what address Traefik sees without PROXY protocol, and whether Cilium tunnels over VXLAN: the questions already listed in <code>infra/civo/README.md</code>. Decision B removes the two about 6443.</li>
+      <li>Civo's backups: documented as "automatic", nothing more. The restore drill in B7a stays the first real test.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Kept, and why</h2>
+    <ul>
+      <li><b>Kubernetes.</b> D20 chose it for portability across three clouds; the owner has since chosen Civo alone. The reason is gone, but the charts, the kind stack and the ops Jobs are built and proved, Civo sells Kubernetes as its product, and VMs with Compose give up rolling deploys and scaling. Not a deletion that pays.</li>
+      <li><b>Cloudflare's ranges at the firewall plus Traefik's client-certificate check.</b> Two cheap layers for one invariant; each catches what the other misses.</li>
+      <li><b>The ops Jobs, the zero-replica wait, <code>register</code> in the first upgrade.</b> The only way one upgrade brings up ID and then registers the MCPs against it.</li>
+      <li><b><code>infra/setup</code>.</b> Large, but it is the first run you are about to do; it shrinks with A, B and D.</li>
+      <li><b>cosign signing and the verification before a production deploy.</b> One step each; the only check that production's bytes came from a commit that passed CI.</li>
+      <li><b>The kind stack and its CI job.</b> The local proof you asked for.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>After the decisions</h2>
+    <p>Order: the deletions and S3 first (small, independent, each gated by <code>infra:check</code> and the workspace's <code>mcp:check</code>); then A, B, D, E in that order, each re-proved by <code>infra:test</code>; then S1 and S2; then the docs: <code>docs/12</code>, the six READMEs, <code>decisions.md</code> (D32 to D36), the explainer page and, last, the staging tutorial regenerated, since it is the page you will follow. Everything lands on <code>main</code> with CI green. Measured line counts replace the estimates above in the progress log.</p>
+  </section>
+
+  <footer>
+    Sources: <a href="https://www.civo.com/learn/deploy-llama3-kubeflow-kubernetes-cpu-serverless">Civo, deploying Llama 3 on Civo Kubernetes</a> (amd64) · <a href="https://www.civo.com/docs/database/postgresql/connect">Civo, connecting to your PostgreSQL database</a> (default database, no TLS mentioned) · <a href="https://www.civo.com/docs/database/getting-started">Civo, getting started with Civo Database</a> (additional nodes) · <a href="https://developers.cloudflare.com/ssl/origin-configuration/origin-ca/">Cloudflare, Origin CA</a> (token permission, Strict mode) · the provider schemas of <code>civo/civo</code> 1.3.3 and <code>cloudflare/cloudflare</code> 5.27.0, read locally.
+  </footer>
+</main>

@@ -118,20 +118,9 @@
         "typescript-eslint": "8.48.1",
       },
     },
-    "infra/setup": {
-      "name": "@answerable/infra-setup",
-      "version": "0.0.0",
-      "devDependencies": {
-        "@eslint/js": "9.39.5",
-        "@types/bun": "1.3.1",
-        "eslint": "9.39.5",
-        "typescript": "5.9.3",
-        "typescript-eslint": "8.48.1",
-      },
-    },
     "mcps/admin": {
       "name": "@answerable/mcp-admin",
-      "version": "0.2.7",
+      "version": "0.2.8",
       "dependencies": {
         "@answerable/id-admin": "workspace:*",
         "@answerable/mcp": "workspace:*",
@@ -184,7 +173,7 @@
     },
     "mcps/toolbox": {
       "name": "@answerable/mcp-toolbox",
-      "version": "0.3.6",
+      "version": "0.3.7",
       "dependencies": {
         "@answerable/auth": "workspace:*",
         "@answerable/id-admin": "workspace:*",
@@ -257,7 +246,7 @@
     },
     "packages/id-admin": {
       "name": "@answerable/id-admin",
-      "version": "0.5.0",
+      "version": "0.5.1",
       "dependencies": {
         "zod": "4.6.5",
       },
@@ -289,7 +278,7 @@
     },
     "packages/mcp-postgres": {
       "name": "@answerable/mcp-postgres",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "dependencies": {
         "@answerable/mcp": "workspace:*",
       },
@@ -364,8 +353,6 @@
     "@answerable/infra-ops": ["@answerable/infra-ops@workspace:infra/ops"],
 
     "@answerable/infra-pipeline": ["@answerable/infra-pipeline@workspace:infra/pipeline"],
-
-    "@answerable/infra-setup": ["@answerable/infra-setup@workspace:infra/setup"],
 
     "@answerable/mcp": ["@answerable/mcp@workspace:packages/mcp"],
 

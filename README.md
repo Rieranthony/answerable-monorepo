@@ -21,13 +21,12 @@ The [enterprise foundation](docs/05-id-enterprise-foundation.md) implementation 
 | `mcps/admin` | The admin MCP: a staff-only server that reads and changes organisations, domains, SSO providers, groups, access and staff roles in ID, and enables the Toolbox, each tool behind a role read live from ID and each change a prepared intent the person confirms | Local acceptance passes |
 | `packages/acceptance` | The acceptance kit and journeys: real ID, the official MCP OAuth client, a browser and ID's pages | Locally tested |
 | `scripts` | Repository scripts: `bun run mcp:new <name>` scaffolds an MCP server | Locally tested |
-| `infra/civo` | Terraform for the two Civo environments: network, cluster, PostgreSQL 17, firewalls, state bucket, the platform chart, the deployer and the Cloudflare zone | Validated and tested with mocked providers; not applied |
+| `infra/civo` | Terraform for the two Civo environments, one root and a var file each: network, cluster, PostgreSQL 17, firewalls, the platform chart, the deployer, the Cloudflare zone with its certificates, and the GitHub environment's own settings and deploy secrets | Validated and tested with mocked providers; not applied |
 | `charts/answerable` | The Helm chart of ID, the Toolbox and the admin MCP, with their migrations and the ops Jobs | Proved in the kind stack |
-| `charts/platform` | The Helm chart of the cluster's shared pieces: Traefik with the origin-pull TLS options, cert-manager and its issuers, the Grafana agent (off) | Proved in the kind stack |
+| `charts/platform` | The Helm chart of the cluster's edge: Traefik with the TLS option that demands Cloudflare's origin-pull certificate | Proved in the kind stack |
 | `infra/k8s` | The kind stack (`infra/k8s/local`): both charts and the four images in a local cluster, `bun run infra:test`; and the chart tests | Locally tested |
-| `infra/ops` | The ops image: `bootstrap` (databases and logins) and `register` (the MCPs in ID), run as Kubernetes Jobs | Locally tested |
-| `infra/pipeline` | The scripts the deploy workflows call: `deploy`, `run-job`, `current-tag`, `smoke` | Locally tested |
-| `infra/setup` | The commands a person runs once per environment: `bun run setup <command>` | Locally tested |
+| `infra/ops` | The ops image: `bootstrap` (the database's certificate, databases and logins), `register` (the MCPs in ID, the staff domain and SSO provider) and `make-admin` (the first administrator), run as Kubernetes Jobs | Locally tested |
+| `infra/pipeline` | The scripts the workflows call: `deploy`, `run-job`, `smoke` | Locally tested |
 | `apps/community-mcp` | The tutor MCP (the Omni Accelerator community inside OmniChat)                                                                                                      | **Parked** until Answerable ID ships — its docs and Circle mocks stay in that folder, out of the plan                                                    |
 
 ## Reading order
@@ -99,7 +98,7 @@ Create an MCP with `mcp:new` and [Build your first MCP](apps/web/content/docs/mc
 
 ### Deploying
 
-[`docs/12-deployment.md`](docs/12-deployment.md) says what runs where and why: Civo London, one account per environment, one Helm chart on Civo Kubernetes, Civo Database PostgreSQL 17, Cloudflare in front, secrets encrypted with `sops`, a push to `main` deploying staging and one approved click deploying production. [`infra/README.md`](infra/README.md) is the runbook: first setup, every deploy, promotion, rollback, scaling, rotation, restore and break glass. Not yet: the first staging deployment. `bun run infra:check` (charts, Terraform, workflows; no cloud, no Docker) and `bun run infra:test` (the kind stack; Docker) are the local gates, and CI runs both.
+[`docs/12-deployment.md`](docs/12-deployment.md) says what runs where and why: Civo London, one account per environment, one Helm chart on Civo Kubernetes, Civo Database PostgreSQL 17, Cloudflare in front, every secret in a GitHub environment or generated where it is used, a tag `staging/<name>` shipping staging and a tag `production/<name>` shipping production behind the owner's approval, nothing done from a laptop. [`infra/README.md`](infra/README.md) is the runbook: the first run, every ship, rollback, scaling, rotation, restore and break glass. Not yet: the first staging run. `bun run infra:check` (charts, Terraform, workflows; no cloud, no Docker) and `bun run infra:test` (the kind stack; Docker) are the local gates, and CI runs both.
 
 ### Repository principles
 

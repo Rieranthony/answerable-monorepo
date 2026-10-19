@@ -1,32 +1,29 @@
 # B7c — The production rehearsal
 
-**Executor:** the owner, with an agent that has the Civo session and the browser. **Depends on:** B7a and B7b on `main` and proved on staging. **Decisions:** [D8](../decisions.md), [D28](../decisions.md), [D29](../decisions.md).
+**Executor:** the owner, with an agent that has the Civo session and the browser. **Depends on:** B7a on `main` and proved on staging. **Decisions:** [D8](../decisions.md), [D28](../decisions.md), [D32](../decisions.md), [D37](../decisions.md).
 
 ## Goal
 
-Production is proved one click away, with OpenBao in place from its first minute: the `answerable-production` Civo account is stood up by the promote workflow, initialised, smoke-tested through `id.answerable.org`, `toolbox.answerable.org` and `admin-mcp.answerable.org`, and then destroyed again or kept, the owner's call.
+Production is proved one tag away: the `answerable-production` Civo account is stood up by the promote workflow, initialised, smoke-tested through `id.answerable.org`, `toolbox.answerable.org` and `admin-mcp.answerable.org`, and then destroyed again or kept, the owner's call.
 
 ## Steps, in order
 
-1. **The edge for `answerable.org`**: B7a's step 0 repeated for the production zone (Bot Fight Mode off, the production origin-pull certificate generated, uploaded and its CA committed under `infra/civo/envs/production`), and `curl https://www.answerable.org` unchanged afterwards.
-2. **Production's `sops` file**: a fresh age key pair for production (B0), a fresh OpenBao seal key, and the production values of the human secrets that OpenBao will receive at migration; never a staging value. The production Entra app's redirect URIs are `docs/06`'s.
-3. **The click**: dispatch `promote-production` with the default tag; approve; the `infra` job applies `infra/civo/envs/production` (network, firewalls, three-node cluster, the Medium database with its additional nodes, the object store, the records) and installs the platform chart with OpenBao sealed; the `deploy` job runs `bootstrap`, the migrations and the services. Record the time from click to green smoke.
-4. **OpenBao ceremony for production**: B7b's rollout steps 2 to 5 on the production cluster; recovery shares and the root token stored offline, separately from staging's.
-5. **ID first run and registration** on production: B7a's steps 4 and 5 with production values; the forged-header address proof once more.
-6. **Lockdown and address proofs** against the production load balancer, as in B7a's step 1.
-7. **Restore drills**: the Civo Database restore (B7a's step 8) and the OpenBao snapshot restore (B7b's step 6) once each on production, timed.
-8. **Then**: unless the owner keeps production, `terraform destroy` through a dispatch with a `destroy` input behind the `production` environment; confirm the database's final backup exists, the OpenBao snapshot is in the object store, and the DNS records are gone. If it stays, the budget and alerts are live and the owner's first sign-in is the one on record.
-9. **Evidence**: `reports/staging-evidence.md` gains the production section with every number above.
+1. **The environment for `answerable.org`**: B7a's inputs repeated for production: the Civo account and key, the zone's token, Bot Fight Mode off, the production Entra redirect URIs (`docs/06`), the GitHub environment `production` with the five secrets and the owner as required reviewer (Terraform sets the reviewer too), `id.staffDomain` and `id.entraTenant` in `values-civo-production.yaml`. Run the **Bootstrap** workflow for `production`. `curl https://www.answerable.org` must be unchanged afterwards. Nothing from staging is reused: keys, tokens, certificates, passwords.
+2. **The tag**: `production/first` on a commit staging has shipped; approve the run; the `production` job applies `infra/civo` for production (network, firewalls, three-node cluster, the Medium database on one node, the records, the certificates) and deploys the verified digests. Record the time from tag to green smoke.
+3. **Sign in and `make-admin`** on production: B7a's step 4; the forged-header address proof once more.
+4. **Lockdown and address proofs** against the production load balancer, as in B7a's steps 2 and 3.
+5. **Restore drill**: the Civo Database restore (B7a's step 7) on production, timed. If the owner wants the database's additional nodes (D37), add them now and measure a failover.
+6. **Then**: unless the owner keeps production, destroy it: a reviewed change removes `prevent_destroy` from the database module, and a workflow dispatch with a `destroy` input behind the `production` environment runs `terraform.sh production destroy`; confirm the database's final backup exists and the DNS records are gone. If it stays, the owner's first sign-in is the one on record.
+7. **Evidence**: `reports/staging-evidence.md` gains the production section with every number above.
 
 ## Constraints
 
 - No secret value in any report, log excerpt or commit; redact before pasting.
 - Production is never deployed from a laptop; only the workflow.
-- Nothing from staging is reused in production: keys, seal, tokens, certificates, passwords.
 
 ## Acceptance
 
-The production click worked once end to end with OpenBao initialised and the smoke green; the restore drills are recorded; production is either destroyed with its backups confirmed or kept with its alerts live; the evidence report says which.
+The production tag worked once end to end with the smoke green; the restore drill is recorded; production is either destroyed with its backup confirmed or kept; the evidence report says which.
 
 ## Notes from the build
 

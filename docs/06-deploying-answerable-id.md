@@ -183,7 +183,7 @@ If you ever remove the last platform administrator, set `ROOT_ADMIN_BREAK_GLASS=
 
 ## Not ready yet
 
-These include release evidence and unbuilt capabilities. The release gate in `../reports/answerable-id-release-decision-plan.md` lists them as E1 to E8; the ones a deployment plan must schedule are below. The topology, the interim secret store (`sops` and `age`) and the backup system Answerable deploys with are in [`12-deployment.md`](12-deployment.md); what they prove waits for the first staging deployment's evidence.
+These include release evidence and unbuilt capabilities. The release gate in `../reports/answerable-id-release-decision-plan.md` lists them as E1 to E8; the ones a deployment plan must schedule are below. The topology, where each secret lives (GitHub environments, Terraform state and Kubernetes Secrets) and the backup system Answerable deploys with are in [`12-deployment.md`](12-deployment.md); what they prove waits for the first staging run's evidence.
 
 - Real tenant validation against an Entra tenant and a second provider (E1) and against the first consumer (E2, E3): Not yet. See the [release plan](02-plan.md#open-register).
 - Publisher verification and an Entra certificate credential: Not yet. Track [Q-PUBLISHER-VERIFICATION and Q-ENTRA-CERTIFICATE](02-plan.md#open-register); the certificate work gates E1.

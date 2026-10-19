@@ -1,26 +1,18 @@
 name: Deploy staging
 
-# A push to main runs CI, applies staging's infrastructure, builds the four images once for amd64 and arm64 and
-# signs them, upgrades the staging release and smoke-tests it through the public hostnames. A manual run redeploys an
-# image that already exists, which is how staging rolls back.
+# A tag staging/<name> on a commit of main ships that commit to staging: CI, the staging infrastructure applied by
+# Terraform, the four images built for amd64 (Civo's nodes), signed and tagged sha-<commit>, the release upgraded by
+# digest, and a smoke test through the public hostnames. To roll back, tag an earlier commit of main.
 #
-# Every job after CI runs only when the repository variable DEPLOY_STAGING is 'true', so that this can land on main
-# before the staging environment exists and a push then runs CI alone.
-#
-# What this does and which secrets it needs: infra/pipeline/README.md.
+# What this does and which secrets the staging environment holds: infra/pipeline/README.md.
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
-    inputs:
-      image_tag:
-        description: The image tag to redeploy, sha- and the commit SHA. Nothing is built.
-        required: true
-        type: string
+    tags:
+      - staging/*
 
-# One run at a time, in order, and never cancelled halfway: a cancelled Helm upgrade leaves the release locked.
-# A push that arrives meanwhile waits, and a newer one replaces it.
+# One run at a time, in order, and never cancelled halfway: a cancelled Terraform apply or Helm upgrade leaves a lock
+# behind. A tag that arrives meanwhile waits.
 concurrency:
   group: deploy-staging
   cancel-in-progress: false
@@ -34,30 +26,55 @@ defaults:
 
 env:
   REGISTRY: ghcr.io/rieranthony/answerable
+  IMAGE_TAG: sha-${{ github.sha }}
 
 jobs:
+  # A tag ships only a commit that is on main.
+  guard:
+    name: The tag names a commit of main
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Check
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME points at $GITHUB_SHA, which is not on main; tag a commit of main"
+            exit 1
+          fi
+          echo "$GITHUB_REF_NAME ships $GITHUB_SHA." >> "$GITHUB_STEP_SUMMARY"
+
   ci:
     name: CI
-    if: github.event_name == 'push'
+    needs: guard
     uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
 
-  # Staging's infrastructure is applied before every deploy, in this workflow, so a deploy never starts while an apply
-  # is running or after one has failed. With nothing to change it is a no-op. A manual run skips it.
+  # Staging's infrastructure, before every deploy, so that the code that ships is what runs. A no-op when nothing
+  # changed. The first apply creates the cluster and the database before anything that runs inside the cluster, then
+  # applies the rest; both steps are no-ops afterwards. Terraform also writes the deploy credentials into this
+  # environment (KUBE_SERVER, KUBE_CA, KUBE_TOKEN), which the deploy job reads when it starts.
   infra:
     name: Apply the staging infrastructure
     needs: ci
-    if: github.event_name == 'push' && vars.DEPLOY_STAGING == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    environment: infra-staging
+    timeout-minutes: 60
+    environment: staging
     permissions:
       contents: read
-    defaults:
-      run:
-        shell: bash
-        working-directory: infra/civo/envs/staging
+    env:
+      TF_IN_AUTOMATION: "1"
+      CIVO_TOKEN: ${{ secrets.CIVO_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      STATE_ACCESS_KEY_ID: ${{ secrets.STATE_ACCESS_KEY_ID }}
+      STATE_SECRET_ACCESS_KEY: ${{ secrets.STATE_SECRET_ACCESS_KEY }}
+      # The github provider: the environment's own policies and the three deploy secrets.
+      GITHUB_TOKEN: ${{ secrets.GH_SECRETS_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -68,42 +85,28 @@ jobs:
           tools: terraform
 
       - name: Terraform init
-        env:
-          TF_IN_AUTOMATION: "1"
-          CIVO_TOKEN: ${{ secrets.CIVO_TOKEN }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          STATE_ACCESS_KEY_ID: ${{ secrets.STATE_ACCESS_KEY_ID }}
-          STATE_SECRET_ACCESS_KEY: ${{ secrets.STATE_SECRET_ACCESS_KEY }}
-        run: ../../terraform.sh init -input=false
+        run: infra/civo/terraform.sh staging init -input=false
+
+      - name: Terraform apply, the cluster and the database first
+        run: infra/civo/terraform.sh staging apply -input=false -auto-approve -target=module.cluster -target=module.database -target=module.ingress_firewall
 
       - name: Terraform apply
-        env:
-          TF_IN_AUTOMATION: "1"
-          CIVO_TOKEN: ${{ secrets.CIVO_TOKEN }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          STATE_ACCESS_KEY_ID: ${{ secrets.STATE_ACCESS_KEY_ID }}
-          STATE_SECRET_ACCESS_KEY: ${{ secrets.STATE_SECRET_ACCESS_KEY }}
-          # Staging's API is open by its own switch, so an empty list is right when the secret is not set.
-          TF_VAR_allowed_api_cidrs: ${{ secrets.ALLOWED_API_CIDRS || '[]' }}
-        run: ../../terraform.sh apply -input=false -auto-approve
+        run: infra/civo/terraform.sh staging apply -input=false -auto-approve
 
-  # Each image is built twice, once per architecture, each on a runner of that architecture (no emulation), and
-  # pushed by digest only. Civo does not document its nodes' architecture and the local kind cluster is arm64, so
-  # the tag below is a manifest list that serves both.
+  # One build per image, for linux/amd64, pushed as sha-<commit> and signed keyless on its digest: the signature names
+  # this workflow on a staging tag, which promote-production.yml checks before it deploys.
   build:
-    name: Build ${{ matrix.image }} for ${{ matrix.arch }}
+    name: Build ${{ matrix.image }}
     needs: ci
-    if: github.event_name == 'push' && vars.DEPLOY_STAGING == 'true'
-    runs-on: ${{ matrix.runner }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: read
       packages: write
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
-        image: [id, toolbox, admin-mcp, ops]
-        arch: [amd64, arm64]
         include:
           - image: id
             dockerfile: apps/id/Dockerfile
@@ -113,10 +116,6 @@ jobs:
             dockerfile: mcps/admin/Dockerfile
           - image: ops
             dockerfile: infra/ops/Dockerfile
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -130,15 +129,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Pushed by digest, without a tag. Provenance and an SBOM make the result a small index of its own: the
-      # image and its attestations.
-      - name: Build and push by digest
+      - name: Build and push
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          platforms: linux/${{ matrix.arch }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ matrix.image }}:${{ env.IMAGE_TAG }}
           build-args: |
             REVISION=${{ github.sha }}
           labels: |
@@ -147,105 +146,24 @@ jobs:
             org.opencontainers.image.title=answerable-${{ matrix.image }}
           provenance: mode=max
           sbom: true
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
-
-      # The digest travels to the manifest job as the name of an empty file.
-      - name: Export the digest
-        env:
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/digests"
-          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
-
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: digest-${{ matrix.image }}-${{ matrix.arch }}
-          path: ${{ runner.temp }}/digests/*
-          if-no-files-found: error
-          retention-days: 1
-
-  manifest:
-    name: Publish ${{ matrix.image }}
-    needs: build
-    if: github.event_name == 'push' && vars.DEPLOY_STAGING == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-    strategy:
-      fail-fast: false
-      matrix:
-        image: [id, toolbox, admin-mcp, ops]
-    steps:
-      - name: Name the image and the tag
-        env:
-          NAME: ${{ matrix.image }}
-        run: |
-          echo "IMAGE=$REGISTRY/$NAME" >> "$GITHUB_ENV"
-          echo "TAG=sha-$GITHUB_SHA" >> "$GITHUB_ENV"
-
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          pattern: digest-${{ matrix.image }}-*
-          merge-multiple: true
-          path: ${{ runner.temp }}/digests
-
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # One tag over both architectures' builds. The tag is created only when both exist.
-      - name: Create the manifest list
-        working-directory: ${{ runner.temp }}/digests
-        run: |
-          sources=()
-          for digest in *; do sources+=("$IMAGE@sha256:$digest"); done
-          if [ "${#sources[@]}" -ne 2 ]; then
-            echo "::error::expected a digest for amd64 and for arm64, found ${#sources[@]}"
-            exit 1
-          fi
-          docker buildx imagetools create -t "$IMAGE:$TAG" "${sources[@]}"
-
-      - name: Check the platforms and read the digest
-        id: index
-        run: |
-          platforms=$(docker buildx imagetools inspect "$IMAGE:$TAG" --format '{{json .Manifest}}' \
-            | jq -r '[.manifests[].platform | select(.os == "linux") | .architecture] | sort | join(",")')
-          if [ "$platforms" != "amd64,arm64" ]; then
-            echo "::error::$IMAGE:$TAG serves '$platforms', expected amd64,arm64"
-            exit 1
-          fi
-          echo "digest=$(docker buildx imagetools inspect "$IMAGE:$TAG" --format '{{.Manifest.Digest}}')" >> "$GITHUB_OUTPUT"
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
-      # Keyless, on the manifest list's digest: the signature names this workflow on main, which
-      # promote-production.yml checks before it deploys.
-      - name: Sign the manifest list
+      - name: Sign the image
         env:
-          DIGEST: ${{ steps.index.outputs.digest }}
-        run: cosign sign --yes "$IMAGE@$DIGEST"
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "$REGISTRY/${{ matrix.image }}@$DIGEST"
 
   deploy:
     name: Deploy to staging
-    needs: [ci, infra, build, manifest]
-    # A manual run skips all four; a failure of any of them stops the deploy.
-    if: ${{ vars.DEPLOY_STAGING == 'true' && github.ref == 'refs/heads/main' && !cancelled() && !failure() }}
+    needs: [infra, build]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: staging
     permissions:
       contents: read
-    env:
-      IMAGE_TAG: ${{ inputs.image_tag || format('sha-{0}', github.sha) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -257,24 +175,30 @@ jobs:
 
       - uses: ./.github/actions/setup-tools
         with:
-          tools: sops helm kubectl
+          tools: helm kubectl
 
-      # No cloud key is in scope here: the deployer ServiceAccount's token only reaches the answerable namespace.
+      # No cloud key is in scope here: the deployer ServiceAccount's token reaches the answerable namespace only, and
+      # ID's secrets go from the environment into the Secret id-env on kubectl's standard input.
       - name: Deploy
         env:
           KUBE_SERVER: ${{ secrets.KUBE_SERVER }}
           KUBE_CA: ${{ secrets.KUBE_CA }}
           KUBE_TOKEN: ${{ secrets.KUBE_TOKEN }}
-          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
-        run: bun infra/pipeline/src/cli.ts deploy --environment staging --image-tag "$IMAGE_TAG" --bootstrap
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          UPSTREAM_TOKEN_SECRETS: ${{ secrets.UPSTREAM_TOKEN_SECRETS }}
+          ROOT_ADMIN_SECRET: ${{ secrets.ROOT_ADMIN_SECRET }}
+          MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}
+          MICROSOFT_CLIENT_SECRET: ${{ secrets.MICROSOFT_CLIENT_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+        run: bun infra/pipeline/src/cli.ts deploy --environment staging --image-tag "$IMAGE_TAG"
 
       - name: Summarise
-        run: echo "Staging runs \`$IMAGE_TAG\`." >> "$GITHUB_STEP_SUMMARY"
+        run: echo "Staging runs \`$IMAGE_TAG\` ($GITHUB_REF_NAME)." >> "$GITHUB_STEP_SUMMARY"
 
   smoke:
     name: Smoke test staging
     needs: deploy
-    if: vars.DEPLOY_STAGING == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -288,7 +212,7 @@ jobs:
         with:
           bun-version: 1.3.1
 
-      # Five minutes of retries cover the first certificate and the edge catching up after a rollout.
+      # Five minutes of retries cover the edge catching up after a rollout.
       - name: Smoke test
         run: |
           status=0

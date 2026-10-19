@@ -1,0 +1,155 @@
+name: Bootstrap an environment
+
+# Once per environment, before its first tag: creates the Terraform state bucket and its credential in the Civo
+# account, and writes into the GitHub environment what no person should ever see: the state credential and ID's three
+# random secrets. Each is written only when it is missing, so the run is safe to repeat. With `rotate`, one of ID's
+# secrets is replaced instead (the next tag applies it). Nothing here is printed.
+#
+# Before running it the owner creates the GitHub environment and pastes five secrets into it: CIVO_TOKEN,
+# CLOUDFLARE_API_TOKEN, MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET and GH_SECRETS_TOKEN (infra/README.md, First run).
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: The environment to bootstrap
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      rotate:
+        description: Replace one of ID's secrets instead of filling in what is missing
+        required: true
+        default: none
+        type: choice
+        options:
+          - none
+          - ROOT_ADMIN_SECRET
+          - UPSTREAM_TOKEN_SECRETS
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  bootstrap:
+    name: Bootstrap ${{ inputs.environment }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+    env:
+      ENVIRONMENT: ${{ inputs.environment }}
+      ROTATE: ${{ inputs.rotate }}
+      BUCKET: answerable-${{ inputs.environment }}-tfstate
+      CIVO_TOKEN: ${{ secrets.CIVO_TOKEN }}
+      CIVO_REGION: LON1
+      GH_TOKEN: ${{ secrets.GH_SECRETS_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-tools
+        with:
+          tools: civo
+
+      - name: Check the five pasted secrets are present
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}
+          MICROSOFT_CLIENT_SECRET: ${{ secrets.MICROSOFT_CLIENT_SECRET }}
+        run: |
+          for name in CIVO_TOKEN CLOUDFLARE_API_TOKEN MICROSOFT_CLIENT_ID MICROSOFT_CLIENT_SECRET GH_TOKEN; do
+            if [ -z "${!name}" ]; then
+              echo "::error::the environment $ENVIRONMENT has no secret ${name/GH_TOKEN/GH_SECRETS_TOKEN}; paste it first (infra/README.md, First run)"
+              exit 1
+            fi
+          done
+          gh secret list --env "$ENVIRONMENT" --repo "$GITHUB_REPOSITORY" --json name > /dev/null
+
+      # The credential first, so that the bucket is created with it as its owner. The Civo CLI reads CIVO_TOKEN and
+      # CIVO_REGION from the environment. Values go from one command's output straight into another's standard input.
+      - name: Create the state bucket and its credential, when missing
+        if: inputs.rotate == 'none'
+        run: |
+          existing=$(gh secret list --env "$ENVIRONMENT" --repo "$GITHUB_REPOSITORY" --json name --jq '.[].name')
+          if grep -qx STATE_ACCESS_KEY_ID <<< "$existing" && grep -qx STATE_SECRET_ACCESS_KEY <<< "$existing"; then
+            echo "The state credential is already in the environment; the bucket is left as it is."
+            exit 0
+          fi
+          if ! civo objectstore credential ls -o json | jq -e --arg name "$BUCKET" '.[] | select(.name == $name)' > /dev/null; then
+            civo objectstore credential create "$BUCKET" --wait > /dev/null
+            echo "Created the credential $BUCKET."
+          fi
+          access_key=$(civo objectstore credential ls -o json | jq -r --arg name "$BUCKET" '.[] | select(.name == $name) | .access_key')
+          if [ -z "$access_key" ] || [ "$access_key" = null ]; then
+            echo "::error::the credential $BUCKET has no access key; look at it in the Civo dashboard under Object stores > Credentials"
+            exit 1
+          fi
+          if ! civo objectstore show "$BUCKET" -o json > /dev/null 2>&1; then
+            civo objectstore create "$BUCKET" --size 500 --owner-name "$BUCKET" --wait > /dev/null
+            echo "Created the bucket $BUCKET (500 GB, the smallest Civo sells)."
+          fi
+          printf '%s' "$access_key" | gh secret set STATE_ACCESS_KEY_ID --env "$ENVIRONMENT" --repo "$GITHUB_REPOSITORY"
+          civo objectstore credential secret --access-key "$access_key" -o json | jq -r '.secret_access_key_id' \
+            | gh secret set STATE_SECRET_ACCESS_KEY --env "$ENVIRONMENT" --repo "$GITHUB_REPOSITORY"
+          echo "Wrote STATE_ACCESS_KEY_ID and STATE_SECRET_ACCESS_KEY to the environment $ENVIRONMENT."
+
+      # 48 random bytes for the two secrets docs/06 sizes that way; one 32-byte key as version 1 of the upstream ring.
+      - name: Generate ID's secrets, when missing
+        if: inputs.rotate == 'none'
+        run: |
+          existing=$(gh secret list --env "$ENVIRONMENT" --repo "$GITHUB_REPOSITORY" --json name --jq '.[].name')
+          write() {
+            if grep -qx "$1" <<< "$existing"; then
+              echo "$1 exists; kept."
+            else
+              gh secret set "$1" --env "$ENVIRONMENT" --repo "$GITHUB_REPOSITORY"
+              echo "$1 written."
+            fi
+          }
+          openssl rand -base64 48 | tr -d '\n' | write BETTER_AUTH_SECRET
+          openssl rand -base64 48 | tr -d '\n' | write ROOT_ADMIN_SECRET
+          key=$(openssl rand 32 | basenc --base64url | tr -d '=\n')
+          printf '[{"version":1,"value":"%s"}]' "$key" | write UPSTREAM_TOKEN_SECRETS
+
+      # ROOT_ADMIN_SECRET is replaced outright. UPSTREAM_TOKEN_SECRETS gets a new key first, with the next version;
+      # the previous keys stay so that tokens they encrypted remain readable. BETTER_AUTH_SECRET is never replaced
+      # here: it encrypts ID's stored signing keys (apps/id/README.md, Application secret rotation).
+      - name: Rotate ${{ inputs.rotate }}
+        if: inputs.rotate != 'none'
+        env:
+          UPSTREAM_TOKEN_SECRETS: ${{ secrets.UPSTREAM_TOKEN_SECRETS }}
+        run: |
+          case "$ROTATE" in
+            ROOT_ADMIN_SECRET)
+              openssl rand -base64 48 | tr -d '\n' | gh secret set ROOT_ADMIN_SECRET --env "$ENVIRONMENT" --repo "$GITHUB_REPOSITORY"
+              ;;
+            UPSTREAM_TOKEN_SECRETS)
+              if ! jq -e 'type == "array" and all(.version | type == "number")' <<< "$UPSTREAM_TOKEN_SECRETS" > /dev/null; then
+                echo "::error::UPSTREAM_TOKEN_SECRETS in the environment $ENVIRONMENT is not a list of versioned keys"
+                exit 1
+              fi
+              key=$(openssl rand 32 | basenc --base64url | tr -d '=\n')
+              jq -c --arg key "$key" '[{version: ((map(.version) | max) + 1), value: $key}] + .' <<< "$UPSTREAM_TOKEN_SECRETS" \
+                | gh secret set UPSTREAM_TOKEN_SECRETS --env "$ENVIRONMENT" --repo "$GITHUB_REPOSITORY"
+              ;;
+          esac
+          echo "$ROTATE replaced in the environment $ENVIRONMENT. The next tag applies it."
+
+      - name: Summarise
+        run: |
+          if [ "$ROTATE" = none ]; then
+            {
+              echo "Environment \`$ENVIRONMENT\` is bootstrapped: the state bucket \`$BUCKET\` exists and the environment holds its credential and ID's secrets."
+              echo "Next: push a tag \`$ENVIRONMENT/<name>\` on a commit of \`main\` (infra/README.md, First run)."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "\`$ROTATE\` replaced in \`$ENVIRONMENT\`. Push a tag \`$ENVIRONMENT/<name>\` to apply it." >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -77,7 +77,7 @@ a { color: var(--accent); }
 <header>
   <div class="eyebrow">Answerable · staging and production on Civo, behind Cloudflare</div>
   <h1>Answerable Infrastructure Tour</h1>
-  <p class="lede">Every piece of the planned hosting, what it does for us, why we chose it, and what it costs. Written for someone who has never run a cloud deployment. Built and on <code>main</code> since 14 October 2026; the first staging deployment is next. The plan is in <code>docs/goals/civo-deploy</code>, and nothing in the design depends on Civo beyond its Terraform.</p>
+  <p class="lede">Every piece of the hosting, what it does for us, why we chose it, and what it costs. Written for someone who has never run a cloud deployment. Built and on <code>main</code>; reshaped on 19 October 2026 so that nothing is done by hand from a laptop: a tag ships, and every secret lives in GitHub or is generated where it is used. The first staging run is next. The plan is in <code>docs/goals/civo-deploy</code>.</p>
   <nav class="toc" aria-label="Sections">
     <a href="#picture"><span>1</span>The big picture</a>
     <a href="#accounts"><span>2</span>Accounts and guard rails</a>
@@ -88,8 +88,8 @@ a { color: var(--accent); }
     <a href="#images"><span>7</span>Images and the registry</a>
     <a href="#database"><span>8</span>The database</a>
     <a href="#secrets"><span>9</span>Secrets</a>
-    <a href="#watch"><span>10</span>Logs and alarms</a>
-    <a href="#pipeline"><span>11</span>From a push to a deploy</a>
+    <a href="#watch"><span>10</span>Logs, for now</a>
+    <a href="#pipeline"><span>11</span>From a tag to a deploy</a>
     <a href="#terraform"><span>12</span>Terraform and the chart</a>
     <a href="#local"><span>13</span>The dress rehearsal</a>
     <a href="#not"><span>14</span>What is deliberately missing</a>
@@ -100,7 +100,7 @@ a { color: var(--accent); }
 <section id="picture">
   <div class="eyebrow">1 · The big picture</div>
   <h2>One request, start to finish</h2>
-  <p>Three programs of ours run in the cloud: <b>Answerable ID</b> (sign-in and permissions), the <b>Toolbox</b> (the MCP server that gives AI tools their capabilities) and the <b>admin MCP</b> (our staff's management tools). Each runs as copies of a container inside a Kubernetes cluster on Civo, in London. In front of them sit two doors: Cloudflare on the internet, then our own entry point inside the cluster. Behind them, one managed PostgreSQL database holds all the data. GitHub builds and ships new versions. The website stays on Vercel, untouched.</p>
+  <p>Three programs of ours run in the cloud: <b>Answerable ID</b> (sign-in and permissions), the <b>Toolbox</b> (the MCP server that gives AI tools their capabilities) and the <b>admin MCP</b> (our staff's management tools). Each runs as copies of a container inside a Kubernetes cluster on Civo, in London. In front of them sit two doors: Cloudflare on the internet, then our own entry point inside the cluster. Behind them, one managed PostgreSQL database holds all the data. GitHub builds and ships new versions when we push a tag. The website stays on Vercel, untouched.</p>
   <figure>
     <div class="d">
       <svg viewBox="0 0 860 300" role="img" aria-label="Browsers and AI tools reach Cloudflare, then the Civo load balancer, then Traefik inside the Kubernetes cluster, then the three services and the database; GitHub ships images to GHCR and runs helm upgrade; the website is served by Vercel.">
@@ -135,11 +135,11 @@ a { color: var(--accent); }
 
 <section id="accounts">
   <div class="eyebrow">2 · Accounts and guard rails</div>
-  <h2>A Civo organisation, two accounts, teams, 1Password</h2>
+  <h2>A Civo organisation, two accounts, two GitHub environments</h2>
   <p>A Civo <b>account</b> owns resources and a bill; nothing in one account can see or touch another. We use two, one for staging and one for production, grouped under one Civo <b>organisation</b> so roles are defined once. A mistake in staging, a leaked staging key or a bad Terraform run cannot reach production, because they live in different accounts. This is the pattern Civo's own documentation recommends for splitting environments.</p>
   <figure>
     <div class="d">
-      <svg viewBox="0 0 860 250" role="img" aria-label="A Civo organisation above two accounts, staging and production, each with its own teams, API key, cluster, database, object store, Cloudflare zone and 1Password vault.">
+      <svg viewBox="0 0 860 250" role="img" aria-label="A Civo organisation above two accounts, staging and production, each with its own teams, API key, cluster, database, object store, Cloudflare zone and GitHub environment.">
         <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
         <rect class="n svc" x="270" y="18" width="320" height="56" rx="6"/>
         <text class="t b" x="286" y="40">Civo organisation</text>
@@ -148,23 +148,23 @@ a { color: var(--accent); }
         <rect class="n svc" x="80" y="130" width="300" height="100" rx="6"/>
         <text class="t b" x="96" y="152">Staging account</text>
         <text class="t s" x="96" y="170">Owners team (you, with MFA) · Technical Administrator team</text>
-        <text class="t s" x="96" y="186">One API key, held by you · cluster · database · object store</text>
+        <text class="t s" x="96" y="186">One API key, in the staging GitHub environment · cluster · database · object store</text>
         <text class="t s" x="96" y="202">Cloudflare zone answerable-staging.uk</text>
-        <text class="t s" x="96" y="218">Its own age key for the encrypted secrets file</text>
+        <text class="t s" x="96" y="218">GitHub environment "staging": every secret, main and staging/* tags only</text>
         <rect class="n svc" x="480" y="130" width="300" height="100" rx="6"/>
         <text class="t b" x="496" y="152">Production account</text>
         <text class="t s" x="496" y="170">The same shape, bigger sizes, more copies</text>
-        <text class="t s" x="496" y="186">Its own API key, only on the protected GitHub environment</text>
+        <text class="t s" x="496" y="186">Its own API key, in the production GitHub environment</text>
         <text class="t s" x="496" y="202">Cloudflare zone answerable.org</text>
-        <text class="t s" x="496" y="218">Its own age key for the encrypted secrets file</text>
+        <text class="t s" x="496" y="218">GitHub environment "production": the same, and you approve each run</text>
       </svg>
     </div>
-    <figcaption>The two accounts are identical in shape. That is what makes "one click to production" believable: the production click runs the same code that staging already proved.</figcaption>
+    <figcaption>The two accounts are identical in shape. That is what makes "one tag to production" believable: the production tag runs the same code and the same images that staging already proved.</figcaption>
   </figure>
   <div class="grid">
     <div><h3>Teams and roles</h3><p>People join an account through a team with a role. "Owners" see billing and everything; "Technical Administrator" manages clusters and resources but not billing. Agents and colleagues get the second.</p></div>
-    <div><h3>The API key</h3><p>Civo gives each account one key that can do anything in that account, with no scoping and no expiry. So it is held by you and, for the Terraform workflow only, by the protected GitHub environment of that account. Day-to-day deploys never touch it: they use a token limited to one namespace in the cluster.</p></div>
-    <div><h3>Secrets, without a store</h3><p>There is no company secret store yet, and the owner's personal 1Password stays out of the automation. Human-provided secrets live encrypted in the repository, one key per environment; passwords the system generates live only inside the cluster and can be regenerated. Section 9 explains.</p></div>
+    <div><h3>The API key</h3><p>Civo gives each account one key that can do anything in that account, with no scoping and no expiry. So it is pasted once into that account's GitHub environment and lives nowhere else; only the Terraform step is handed it. The deploy step never sees it: it uses a token limited to one namespace in the cluster.</p></div>
+    <div><h3>Secrets, without a store</h3><p>There is no company secret store, and none is needed yet. Five values you paste live in the GitHub environment; everything else is generated by a workflow, by Terraform or inside the cluster, and no person ever sees it. Section 9 explains.</p></div>
     <div><h3>What Civo does not give us</h3><p>No diary of API calls, no threat detector, no encryption keys we control, and the cluster's control plane always has a public address. We compensate with the two-account split, firewalls, the namespace-limited deploy token, and ID's own audit log of everything that matters to the product. The gaps are written down, not hidden.</p></div>
   </div>
 </section>
@@ -197,8 +197,8 @@ a { color: var(--accent); }
   </figure>
   <div class="grid">
     <div><h3>DNS</h3><p>The phone book: <code>id.answerable.org</code> → our load balancer. Records are "proxied", which means visitors see Cloudflare's address, not ours.</p></div>
-    <div><h3>TLS, twice</h3><p>Cloudflare's certificate faces the visitor; a second certificate, issued automatically by Let's Encrypt inside our cluster, faces Cloudflare, so the hop between them is encrypted too ("Full strict"). Both are free and renew themselves.</p></div>
-    <div><h3>Authenticated origin pulls</h3><p>Cloudflare presents a certificate we issued when it connects, and Traefik checks it. Without it, anyone could bypass Cloudflare by calling our address directly, or send traffic through another Cloudflare customer's zone. Free.</p></div>
+    <div><h3>TLS, twice</h3><p>Cloudflare's certificate faces the visitor; a second certificate faces Cloudflare, so the hop between them is encrypted too ("Full strict"). That second one comes from Cloudflare's own Origin CA: Terraform asks for it, it lasts fifteen years, and only Cloudflare trusts it, which is exactly right, since only Cloudflare ever reaches us. Free, and nothing to renew.</p></div>
+    <div><h3>Authenticated origin pulls</h3><p>Cloudflare presents a certificate we issued when it connects, and Traefik checks it. Terraform makes that certificate and uploads it to the zone. Without it, anyone could bypass Cloudflare by calling our address directly, or send traffic through another Cloudflare customer's zone. Free.</p></div>
     <div><h3>What Cloudflare must not do here</h3><p>No caching of sign-in or MCP responses, and no "are you a robot?" challenges on the API hostnames: AI tools and our own services are not browsers and would be blocked. Those are switched off by configuration rules.</p></div>
   </div>
 </section>
@@ -206,7 +206,7 @@ a { color: var(--accent); }
 <section id="network">
   <div class="eyebrow">4 · The private network</div>
   <h2>A Civo private network and three firewalls</h2>
-  <p>A Civo <b>private network</b> is a fenced area in one region where our resources can talk to each other without crossing the internet. Inside it, <b>firewalls</b> are the door policies: short lists of who may connect to what, on which port. The load balancer admits Cloudflare only; the cluster's control plane admits our own addresses only; the database admits the cluster's nodes only. Civo has one London region, LON1, so resilience comes from several nodes and extra database nodes rather than from separate data centres.</p>
+  <p>A Civo <b>private network</b> is a fenced area in one region where our resources can talk to each other without crossing the internet. Inside it, <b>firewalls</b> are the door policies: short lists of who may connect to what, on which port. The load balancer admits Cloudflare only; the database admits the private network only; the cluster's control plane answers the internet but only to a valid credential, as every Civo cluster does, which is what lets GitHub deploy. Civo has one London region, LON1, so resilience comes from several nodes and extra database nodes rather than from separate data centres.</p>
   <figure>
     <div class="d">
       <svg viewBox="0 0 860 320" role="img" aria-label="Inside a Civo account's private network: a load balancer with a firewall for Cloudflare, a Kubernetes cluster of nodes with a firewall on the control plane, and a database with a firewall for the cluster's nodes.">
@@ -216,21 +216,21 @@ a { color: var(--accent); }
         <rect class="zone" x="20" y="46" width="820" height="262" rx="8"/><text class="t m" x="32" y="64">Civo account · LON1 · private network</text>
         <rect class="n svc" x="60" y="76" width="210" height="56" rx="6"/><text class="t b" x="72" y="98">Load balancer</text><text class="t s" x="72" y="114">public IP · 443 from Cloudflare only</text>
         <path class="a" d="M165 132 V160" marker-end="url(#ar4)"/>
-        <rect class="zone" x="60" y="162" width="500" height="130" rx="6"/><text class="t m" x="70" y="180">Kubernetes cluster · control plane 6443 from our addresses only</text>
-        <rect class="n svc" x="80" y="192" width="220" height="84" rx="6"/><text class="t b" x="92" y="212">Node 1</text><text class="t s" x="92" y="229">Traefik · id · toolbox</text><text class="t s" x="92" y="244">cert-manager · Grafana agent</text><text class="t s" x="92" y="259">the one-off Jobs</text>
+        <rect class="zone" x="60" y="162" width="500" height="130" rx="6"/><text class="t m" x="70" y="180">Kubernetes cluster · control plane 6443 public, credential required</text>
+        <rect class="n svc" x="80" y="192" width="220" height="84" rx="6"/><text class="t b" x="92" y="212">Node 1</text><text class="t s" x="92" y="229">Traefik · id · toolbox</text><text class="t s" x="92" y="244">the one-off Jobs</text><text class="t s" x="92" y="259">second copies on node 2</text>
         <rect class="n svc" x="320" y="192" width="220" height="84" rx="6"/><text class="t b" x="332" y="212">Node 2 (and 3 in production)</text><text class="t s" x="332" y="229">admin-mcp · id · toolbox</text><text class="t s" x="332" y="244">second copies, so a node</text><text class="t s" x="332" y="259">can fail or be upgraded</text>
         <path class="a db" d="M560 230 H598" marker-end="url(#ar4)"/>
-        <rect class="n db" x="600" y="176" width="220" height="108" rx="6"/><text class="t b" x="612" y="198">Civo Database</text><text class="t s" x="612" y="216">PostgreSQL 17 · TLS only</text><text class="t s" x="612" y="232">5432 from the cluster's nodes only</text><text class="t s" x="612" y="248">production: additional database</text><text class="t s" x="612" y="264">nodes for fault tolerance</text>
+        <rect class="n db" x="600" y="176" width="220" height="108" rx="6"/><text class="t b" x="612" y="198">Civo Database</text><text class="t s" x="612" y="216">PostgreSQL 17 · TLS only</text><text class="t s" x="612" y="232">5432 from the cluster's nodes only</text><text class="t s" x="612" y="248">one node; more once a failover</text><text class="t s" x="612" y="264">has been measured</text>
       </svg>
     </div>
-    <figcaption>Nothing but the load balancer has a reason to be reachable from the internet, and it only answers Cloudflare. The cluster's control plane does have a public address on Civo; its firewall is what keeps it to us.</figcaption>
+    <figcaption>Nothing but the load balancer has a reason to be reachable from the internet, and it only answers Cloudflare. The cluster's control plane has a public address on Civo and answers only to a credential: the deploy's token reaches one namespace, and the admin credential exists only in Terraform's state.</figcaption>
   </figure>
 </section>
 
 <section id="ingress">
   <div class="eyebrow">5 · The front door</div>
   <h2>The Civo load balancer and Traefik, the receptionist</h2>
-  <p>The Civo <b>load balancer</b> is created for us the moment the cluster asks for one; it has the public address and the Cloudflare-only firewall, and it passes connections through untouched. <b>Traefik</b>, a program running inside the cluster, is the real receptionist: it unwraps TLS, checks Cloudflare's certificate, reads the hostname the visitor asked for and hands the request to a healthy copy of the right service. <b>cert-manager</b> beside it obtains and renews the TLS certificates from Let's Encrypt, proving ownership through our Cloudflare DNS.</p>
+  <p>The Civo <b>load balancer</b> is created for us the moment the cluster asks for one; it has the public address and the Cloudflare-only firewall, and it passes connections through untouched. <b>Traefik</b>, a program running inside the cluster, is the real receptionist: it unwraps TLS, checks Cloudflare's certificate, reads the hostname the visitor asked for and hands the request to a healthy copy of the right service. The certificate it presents to Cloudflare is the Origin CA one Terraform requested; there is no renewal to run.</p>
   <div class="facts"><span class="chip">cost <b>$10.86 a month</b> for the load balancer</span><span class="chip">health: ID <b>/readyz</b> · MCPs <b>/health</b></span><span class="chip">one per environment</span></div>
   <div class="wrap"><table>
     <tr><th>Visitor asks for</th><th>Goes to</th><th>Why</th></tr>
@@ -263,7 +263,7 @@ a { color: var(--accent); }
         <rect class="n ok" x="740" y="46" width="90" height="40" rx="6"/><text class="t c" x="785" y="71">v2</text>
         <text class="t s" x="300" y="112">The new pods must answer the health check before they get traffic.</text>
         <text class="t s" x="300" y="128">Only then do the old ones stop. Visitors never see a gap.</text>
-        <text class="t s" x="300" y="156">If the new pods never become ready, the deploy is rolled back by itself (helm upgrade --atomic).</text>
+        <text class="t s" x="300" y="156">If the new pods never become ready, the deploy is rolled back by itself (helm upgrade --rollback-on-failure).</text>
       </svg>
     </div>
     <figcaption>A bad build cannot take the service down: it never gets traffic, and the previous version comes back on its own.</figcaption>
@@ -273,21 +273,21 @@ a { color: var(--accent); }
     <div><h3>Autoscaling and resilience</h3><p>A rule starts another copy when the existing ones are busy and stops it when quiet; production floors at two copies, spread across nodes, and a budget rule keeps at least one up during node maintenance.</p></div>
     <div><h3>Network rules inside the cluster</h3><p>Each service accepts connections only from Traefik and opens connections only to the database, DNS, ID and the identity providers. A compromised pod cannot wander.</p></div>
     <div><h3>Sizes and cost</h3><p>Staging: two Medium nodes (2 vCPU, 4 GB each), $43.46 a month, running one copy of everything. Production: three Medium nodes, $65.19, running two copies of each service. The control plane is free.</p></div>
-    <div><h3>Why Kubernetes</h3><p>It runs every service the same way, with scaling, rollouts and network rules built in, and every major cloud sells it. The chart moves as a file.</p></div>
+    <div><h3>Why Kubernetes</h3><p>It is what Civo sells, and it runs every service the same way, with scaling, rollouts and network rules built in.</p></div>
   </div>
 </section>
 
 <section id="images">
   <div class="eyebrow">7 · Images and the registry</div>
   <h2>Docker images on GHCR</h2>
-  <p>An <b>image</b> is the sealed box before it runs: our code, the Bun runtime and the database's certificate bundle, built once by GitHub from a <code>Dockerfile</code>. The images are stored on <b>GHCR</b>, GitHub's own registry, which every cloud can pull from, so there is no registry to run per cloud. Every image is named after the exact commit it came from, carries a record of how it was built and a signature, and is scanned for known vulnerabilities. Production never rebuilds: it runs the same image bytes that staging proved.</p>
+  <p>An <b>image</b> is the sealed box before it runs: our code and the Bun runtime, built once by GitHub from a <code>Dockerfile</code> for amd64, the architecture Civo's nodes run. The images are stored on <b>GHCR</b>, GitHub's own registry. Every image is named after the exact commit it came from, carries a record of how it was built and a signature. Production never rebuilds: it runs the same image bytes that staging proved, and refuses a commit staging never shipped.</p>
   <div class="facts"><span class="chip">cost <b>free</b> for a public repository</span><span class="chip">three images <b>id · toolbox · admin-mcp</b>, plus a small <b>ops</b> image</span><span class="chip">run as a non-root user, read-only file system</span></div>
 </section>
 
 <section id="database">
   <div class="eyebrow">8 · The database</div>
   <h2>Civo Database, PostgreSQL 17</h2>
-  <p>All state lives in one PostgreSQL 17 server per environment, run by Civo as a managed service: Civo patches it, keeps automatic backups, and in production can run extra nodes that take over if one fails. Inside the server are three separate databases, one per program, each with two logins. Two honest notes: Civo's PostgreSQL service is labelled beta, and its backup schedule and restore procedure are not documented, so the plan rehearses a restore before any production data exists.</p>
+  <p>All state lives in one PostgreSQL 17 server per environment, run by Civo as a managed service: Civo patches it and keeps automatic backups; extra nodes that take over if one fails are an option we take once a failover has been measured. Inside the server are three separate databases, one per program, each with two logins. Two honest notes: Civo's PostgreSQL service is labelled beta, and its backup schedule and restore procedure are not documented, so the plan rehearses a restore before any production data exists.</p>
   <figure>
     <div class="d">
       <svg viewBox="0 0 860 250" role="img" aria-label="One Civo Database server with three databases, each with an owner login used only by migrations and a runtime login used by the service, plus extra nodes and backups.">
@@ -296,7 +296,7 @@ a { color: var(--accent); }
         <rect class="n db" x="36" y="56" width="110" height="60" rx="6"/><text class="t b" x="48" y="78">answerable_id</text><text class="t s" x="48" y="96">users, tokens,</text><text class="t s" x="48" y="108">audit</text>
         <rect class="n db" x="156" y="56" width="120" height="60" rx="6"/><text class="t b" x="168" y="78">answerable_toolbox</text><text class="t s" x="168" y="96">catalogue, intents,</text><text class="t s" x="168" y="108">evidence</text>
         <rect class="n db" x="286" y="56" width="120" height="60" rx="6"/><text class="t b" x="298" y="78">answerable_admin</text><text class="t s" x="298" y="96">intents, evidence</text>
-        <rect class="n" x="36" y="140" width="370" height="34" rx="6"/><text class="t s" x="48" y="162">Production: extra database nodes · automatic backups (we drill a restore first)</text>
+        <rect class="n" x="36" y="140" width="370" height="34" rx="6"/><text class="t s" x="48" y="162">Automatic backups (we drill a restore first) · extra nodes once a failover is measured</text>
         <rect class="n" x="36" y="184" width="370" height="34" rx="6"/><text class="t s" x="48" y="206">Storage grows for ever today: audit and evidence rows are never deleted</text>
         <rect class="n gh" x="480" y="40" width="340" height="70" rx="6"/><text class="t b" x="494" y="62">Owner login · used only by the migration Job</text><text class="t s" x="494" y="80">May change tables. Its password is a secret the running</text><text class="t s" x="494" y="96">services never receive.</text>
         <rect class="n svc" x="480" y="130" width="340" height="86" rx="6"/><text class="t b" x="494" y="152">Runtime login · used by the running service</text><text class="t s" x="494" y="170">May read and write rows. May not change tables, drop the</text><text class="t s" x="494" y="186">append-only triggers, or delete audit and evidence rows.</text><text class="t s" x="494" y="202">A hacked service cannot rewrite history.</text>
@@ -306,81 +306,81 @@ a { color: var(--accent); }
     <figcaption>Two logins per database is the single most important security choice in the data layer. ID already works this way; the plan brings the Toolbox and the admin MCP to the same standard.</figcaption>
   </figure>
   <div class="grid">
-    <div><h3>Sizes and cost</h3><p>Staging: Small (2 vCPU, 4 GB, 40 GB), $43.45 a month. Production: Medium (4 vCPU, 8 GB, 80 GB), $86.91, plus extra nodes for fault tolerance whose price Civo lists separately.</p></div>
-    <div><h3>TLS "verify-full"</h3><p>Each service checks the database's certificate against Civo's bundle shipped in the image, so no one can sit between a pod and the database.</p></div>
-    <div><h3>The growing line</h3><p>At 30,000 daily users the audit and evidence tables grow about 26 GB a month because nothing is ever deleted. On Civo storage comes bundled with the size, so an 80 GB database fills in about three months. Deciding how long to keep them (the open question <code>Q-EVIDENCE-RETENTION</code>) is a prerequisite for production, not a later optimisation.</p></div>
+    <div><h3>Sizes and cost</h3><p>Staging: Small (2 vCPU, 4 GB, 40 GB), $43.45 a month. Production: Medium (4 vCPU, 8 GB, 80 GB), $86.91, on one node to begin with.</p></div>
+    <div><h3>TLS "verify-full"</h3><p>Civo documents nothing about its database's certificate, so on the first run the bootstrap Job records the one the database presents, inside the private network, and logs its fingerprint; from then on every service checks the database against it, so no one can sit between a pod and the database.</p></div>
+    <div><h3>The growing line</h3><p>At 30,000 daily users the audit and evidence tables grow about 15 GB a month because nothing is ever deleted. On Civo storage comes bundled with the size, so an 80 GB database fills in about five months. Deciding how long to keep them (the open question <code>Q-EVIDENCE-RETENTION</code>) is a prerequisite for production, not a later optimisation.</p></div>
     <div><h3>Why not run Postgres ourselves</h3><p>Running it in the cluster would hand us backups, failover and patching, exactly the work a managed service exists to take.</p></div>
   </div>
 </section>
 
 <section id="secrets">
   <div class="eyebrow">9 · Secrets</div>
-  <h2>Encrypted in the repository, generated in the cluster</h2>
-  <p>There are two kinds of secret, handled two ways. The ones a person provides (ID's signing keys, the root secret, the Microsoft secret, the Cloudflare token) are kept in the repository in a file that <b>sops</b> encrypts with an <b>age</b> key, one key per environment: the file is readable enough to review which secret changed, but never shows a value. The deploy workflow holds the key, decrypts the file in memory and places the values in the cluster as Kubernetes Secrets. The ones the system generates (the six database passwords, the two machine-client secrets) are written by the bootstrap and registration Jobs straight into the cluster and never leave it; rebuilding the cluster just regenerates them.</p>
+  <h2>Pasted once into GitHub, generated everywhere else</h2>
+  <p>Five values exist before anything is built, because they are born in someone else's console: the Civo key, the Cloudflare token, the Entra app's ID and secret, and a GitHub token that lets our workflows write secrets. You paste them into the environment once, in the browser; GitHub encrypts each before it even reaches GitHub, stores it write-only, hides it in logs and hands it only to the workflow steps that name it. Everything else is made where it is used and never seen by a person: a workflow generates ID's three random secrets into the environment; Terraform makes the certificates' keys and the deploy's credentials and puts the latter into the environment; the bootstrap and registration Jobs make the database passwords and the machine-client secrets straight into the cluster. Nothing is typed into a terminal.</p>
   <figure>
     <div class="d">
-      <svg viewBox="0 0 860 200" role="img" aria-label="A sops-encrypted file in the repository is decrypted by the deploy workflow with the environment's age key and applied as Kubernetes Secrets; the bootstrap and register Jobs write generated secrets directly; pods read them in memory.">
+      <svg viewBox="0 0 860 200" role="img" aria-label="Five pasted values and generated values live in the GitHub environment; Terraform writes certificates and credentials; the deploy applies ID's secrets as Kubernetes Secrets; the bootstrap and register Jobs write the rest; pods read them in memory.">
         <defs><marker id="ar7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
-        <rect class="n gh" x="20" y="30" width="190" height="56" rx="6"/><text class="t b" x="34" y="52">secrets.enc.yaml in git</text><text class="t s" x="34" y="70">values encrypted, names readable</text>
-        <path class="a gh" d="M210 58 H268" marker-end="url(#ar7)"/>
-        <rect class="n gh" x="270" y="30" width="200" height="56" rx="6"/><text class="t b" x="284" y="52">Deploy workflow</text><text class="t s" x="284" y="70">decrypts with the age key, in memory</text>
+        <rect class="n gh" x="20" y="30" width="200" height="56" rx="6"/><text class="t b" x="34" y="52">GitHub environment</text><text class="t s" x="34" y="70">5 pasted · 5 generated · 3 from Terraform</text>
+        <path class="a gh" d="M220 58 H268" marker-end="url(#ar7)"/>
+        <rect class="n gh" x="270" y="30" width="200" height="56" rx="6"/><text class="t b" x="284" y="52">The shipping workflow</text><text class="t s" x="284" y="70">each step gets only what it names</text>
         <path class="a" d="M470 58 H528" marker-end="url(#ar7)"/>
         <rect class="n svc" x="530" y="30" width="160" height="56" rx="6"/><text class="t b" x="544" y="52">Kubernetes Secrets</text><text class="t s" x="544" y="70">inside the cluster</text>
         <path class="a" d="M690 58 H748" marker-end="url(#ar7)"/>
         <rect class="n ok" x="750" y="30" width="90" height="56" rx="6"/><text class="t b" x="764" y="52">The pod</text><text class="t s" x="764" y="70">in memory</text>
         <rect class="n svc" x="270" y="110" width="200" height="56" rx="6"/><text class="t b" x="284" y="132">bootstrap and register Jobs</text><text class="t s" x="284" y="150">generate passwords and client secrets</text>
         <path class="a" d="M470 138 H610 V88" marker-end="url(#ar7)"/>
-        <text class="t s" x="20" y="190">Terraform and the chart hold only the names of secrets. The age private key is the one thing to guard: the owner keeps it, and the protected GitHub environment holds a copy.</text>
+        <text class="t s" x="20" y="190">Terraform makes the certificates and the deploy credentials; what it makes lives in its state, in the account's own object store.</text>
       </svg>
     </div>
-    <figcaption>No service to run or pay for, and the same procedure on every cloud. This is the interim: right after staging is up, OpenBao takes over (below), and the encrypted file keeps only the one key that unlocks OpenBao.</figcaption>
+    <figcaption>No service to run or pay for, and nothing on a laptop. The costs are named: no reviewable history of a secret change, and whoever can push to <code>main</code> can use the <code>main</code>-scoped environments' secrets, so only the owner pushes there and every action is pinned.</figcaption>
   </figure>
   <div class="grid">
-    <div><h3>OpenBao, right after staging is up</h3><p>An open-source secret server (the community fork of HashiCorp Vault) that we run inside each cluster. Each service proves who it is with its Kubernetes identity and receives only its own secrets; every read is logged; secrets are versioned and revocable. It unlocks itself at start with a key kept in the encrypted file, so nobody has to type anything after a restart.</p></div>
-    <div><h3>What it costs us</h3><p>A product to operate: three copies in production, a nightly snapshot to the object store, a rehearsed restore, careful custody of the recovery shares, and upgrades. A few days to set up well, a few hours a quarter after that. Planned as brief B7b; production launches with it in place.</p></div>
+    <div><h3>Rotation</h3><p>The root secret and the upstream keys: the bootstrap workflow's <code>rotate</code> input, then a tag; the next deploy rolls ID. A vendor token: paste the new one. A database password or a machine-client secret: empty its Secret and tag; the Jobs make a new one.</p></div>
+    <div><h3>What is deliberately not here</h3><p>A secret server with per-service identities and a read audit (OpenBao was planned and withdrawn). No pod holds an API token, so a pod can read only the Secrets mounted into it; for three services and one operator a read audit has no reader. It returns when a second team or a compliance need asks for it.</p></div>
   </div>
 </section>
 
 <section id="watch">
   <div class="eyebrow">10 · Logs and alarms</div>
-  <h2>Grafana Cloud</h2>
+  <h2>Logs, for now</h2>
   <div class="grid">
-    <div><h3>Logs and metrics</h3><p>A small agent in each cluster ships every printed line and the cluster's measurements to Grafana Cloud, whose free tier covers our volume. ID prints a summary of its traffic and database pool every 30 seconds; those lines are the health signal its operations manual describes.</p></div>
-    <div><h3>Alerts</h3><p>Rules in Grafana email you when errors rise at the receptionist, a copy stays unhealthy, fewer copies run than asked, or a node runs hot. Civo's dashboard shows the database's own metrics.</p></div>
-    <div><h3>Why not the cloud's own</h3><p>Civo has no logging or alerting service. Grafana Cloud is the same on every cloud, which is the point.</p></div>
-    <div><h3>Not yet</h3><p>Dashboards, tracing and the Toolbox's OpenTelemetry export are switched on only when a measurement says they pay for themselves.</p></div>
+    <div><h3>Logs</h3><p>Each pod's printed lines are read with <code>kubectl logs</code>; a failed deploy prints the migration and ops Jobs' logs in the workflow. ID prints a summary of its traffic and database pool every 30 seconds; those lines are the health signal its operations manual describes.</p></div>
+    <div><h3>The smoke test</h3><p>After every deploy, a check of every hostname through Cloudflare: health, readiness, discovery, signing keys, the MCPs' metadata. Civo's dashboard shows the database's own metrics.</p></div>
+    <div><h3>Not yet: an agent and alerts</h3><p>Civo has no logging or alerting service. A metrics and logs agent with alerts is switched on when a measurement says it pays; the chart carried one, switched off, and it was removed on 19 October.</p></div>
+    <div><h3>Not yet: tracing</h3><p>The Toolbox's OpenTelemetry export stays off until there is somewhere to send it.</p></div>
   </div>
 </section>
 
 <section id="pipeline">
   <div class="eyebrow">11 · From a push to a deploy</div>
-  <h2>GitHub Actions and the one click</h2>
-  <p>Nobody deploys from a laptop. A push to <code>main</code> starts a GitHub Actions run that tests, builds, migrates and deploys staging. Production is the same run, started by a click and approved by a reviewer. The deploy signs in to the cluster with a token that may touch one namespace and nothing else; the account's API key is never in that workflow.</p>
+  <h2>GitHub Actions and the tag</h2>
+  <p>Nobody deploys from a laptop. A tag <code>staging/&lt;name&gt;</code> on a commit of <code>main</code> starts a GitHub Actions run that tests, applies the infrastructure, builds, migrates and deploys staging. A tag <code>production/&lt;name&gt;</code> on a commit staging has shipped does the same for production, after you approve it. The deploy step signs in to the cluster with a token that may touch one namespace and nothing else; the account's API key is handed to the Terraform step only.</p>
   <figure>
     <div class="d">
-      <svg viewBox="0 0 860 230" role="img" aria-label="Push to main leads to tests, image build to GHCR, helm upgrade with migration Jobs first, smoke test. Promote to production runs terraform apply then the same helm upgrade with the same image after an approval.">
+      <svg viewBox="0 0 860 230" role="img" aria-label="A staging tag leads to tests, terraform apply, image build to GHCR, helm upgrade with migration Jobs first, smoke test. A production tag verifies the signatures, waits for an approval, runs terraform apply then the same helm upgrade with the same images.">
         <defs><marker id="ar8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
-        <rect class="n gh" x="20" y="30" width="120" height="48" rx="6"/><text class="t b" x="32" y="50">Push to main</text><text class="t s" x="32" y="66">a merged change</text>
+        <rect class="n gh" x="20" y="30" width="120" height="48" rx="6"/><text class="t b" x="32" y="50">Tag staging/…</text><text class="t s" x="32" y="66">on a commit of main</text>
         <path class="a gh" d="M140 54 H158" marker-end="url(#ar8)"/>
         <rect class="n gh" x="160" y="30" width="120" height="48" rx="6"/><text class="t b" x="172" y="50">All tests run</text><text class="t s" x="172" y="66">the existing CI</text>
         <path class="a gh" d="M280 54 H298" marker-end="url(#ar8)"/>
-        <rect class="n gh" x="300" y="30" width="140" height="48" rx="6"/><text class="t b" x="312" y="50">Build 3 images</text><text class="t s" x="312" y="66">to GHCR, named by commit</text>
+        <rect class="n gh" x="300" y="30" width="140" height="48" rx="6"/><text class="t b" x="312" y="50">Apply, build 4 images</text><text class="t s" x="312" y="66">Terraform, then GHCR by commit</text>
         <path class="a gh" d="M440 54 H458" marker-end="url(#ar8)"/>
-        <rect class="n svc" x="460" y="30" width="170" height="48" rx="6"/><text class="t b" x="472" y="50">helm upgrade --atomic</text><text class="t s" x="472" y="66">migration Jobs run first</text>
+        <rect class="n svc" x="460" y="30" width="170" height="48" rx="6"/><text class="t b" x="472" y="50">helm upgrade</text><text class="t s" x="472" y="66">bootstrap and migrations first</text>
         <path class="a" d="M630 54 H648" marker-end="url(#ar8)"/>
         <rect class="n ok" x="650" y="30" width="190" height="48" rx="6"/><text class="t b" x="662" y="50">Smoke test</text><text class="t s" x="662" y="66">through Cloudflare, every hostname</text>
-        <text class="t s" x="20" y="108">Staging: every push to main, automatically.</text>
-        <rect class="n gh" x="20" y="130" width="150" height="48" rx="6"/><text class="t b" x="32" y="150">Click "Promote"</text><text class="t s" x="32" y="166">pick the staging image</text>
+        <text class="t s" x="20" y="108">Staging: every staging tag. Production: every production tag, after an approval.</text>
+        <rect class="n gh" x="20" y="130" width="150" height="48" rx="6"/><text class="t b" x="32" y="150">Tag production/…</text><text class="t s" x="32" y="166">signatures verified</text>
         <path class="a gh" d="M170 154 H188" marker-end="url(#ar8)"/>
-        <rect class="n gh" x="190" y="130" width="150" height="48" rx="6"/><text class="t b" x="202" y="150">A reviewer approves</text><text class="t s" x="202" y="166">GitHub environment rule</text>
+        <rect class="n gh" x="190" y="130" width="150" height="48" rx="6"/><text class="t b" x="202" y="150">You approve</text><text class="t s" x="202" y="166">GitHub environment rule</text>
         <path class="a gh" d="M340 154 H358" marker-end="url(#ar8)"/>
         <rect class="n svc" x="360" y="130" width="210" height="48" rx="6"/><text class="t b" x="372" y="150">Terraform apply (production)</text><text class="t s" x="372" y="166">creates it the first time, no-op after</text>
         <path class="a" d="M570 154 H588" marker-end="url(#ar8)"/>
         <rect class="n svc" x="590" y="130" width="250" height="48" rx="6"/><text class="t b" x="602" y="150">helm upgrade, same image</text><text class="t s" x="602" y="166">the bytes staging proved, not a rebuild</text>
-        <text class="t s" x="20" y="210">Rolling back is deploying the previous image's tag. Migrations only add, never break the previous version, so old and new run side by side.</text>
+        <text class="t s" x="20" y="210">Rolling back is tagging the previous commit. Migrations only add, never break the previous version, so old and new run side by side.</text>
       </svg>
     </div>
-    <figcaption>Production costs nothing until the first click, because its Terraform is applied by that click.</figcaption>
+    <figcaption>Production costs nothing until the first production tag, because its Terraform is applied by that run. Before any tag, a bootstrap workflow creates the state bucket and generates ID's secrets, once per environment.</figcaption>
   </figure>
 </section>
 
@@ -389,21 +389,21 @@ a { color: var(--accent); }
   <h2>Everything above, as code</h2>
   <p><b>Terraform</b> reads files that describe the cloud layer (this network, these firewalls, this cluster, this database, these DNS records) and makes Civo and Cloudflare match them. Run it twice and it changes nothing; change a file and it shows exactly what will change before doing it. The <b>Helm chart</b> does the same job for everything inside the cluster. Both live in the repository, reviewed like any code, so there is no clicking around a console that nobody can reproduce later.</p>
   <div class="grid">
-    <div><h3>Layout</h3><p><code>infra/civo/envs/staging</code> and <code>envs/production</code>, one root per Civo account; <code>charts/answerable</code> for our services and <code>charts/platform</code> for Traefik, cert-manager and the Grafana agent.</p></div>
-    <div><h3>State</h3><p>Terraform remembers what it created in a "state" file, kept in each account's Civo object store. It holds no secret values, by design.</p></div>
+    <div><h3>Layout</h3><p><code>infra/civo</code>, one root with a values file per environment; <code>charts/answerable</code> for our services and <code>charts/platform</code> for Traefik. Terraform also owns the certificates and the GitHub environment's own rules and deploy credentials.</p></div>
+    <div><h3>State</h3><p>Terraform remembers what it created in a "state" file, kept in each account's Civo object store, which the bootstrap workflow creates. The state holds what Terraform's providers generate (the database password, the admin credential, the certificates' keys), so the bucket's credential is guarded like the account's key.</p></div>
     <div><h3>Checks without the cloud</h3><p><code>bun run infra:check</code> lints the chart, validates and policy-scans the Terraform and the workflows on every push, with no cloud access.</p></div>
-    <div><h3>Why Terraform</h3><p>It is already installed here, every resource is readable in the repository, and Civo, Cloudflare and every major cloud have providers for it, so one tool covers the whole plan.</p></div>
+    <div><h3>Why Terraform</h3><p>Every resource is readable in the repository, and Civo, Cloudflare and GitHub have providers for it, so one tool covers the whole plan, and it runs from GitHub before every deploy.</p></div>
   </div>
 </section>
 
 <section id="local">
   <div class="eyebrow">13 · The dress rehearsal</div>
   <h2>A cluster on the laptop, with the real chart</h2>
-  <p>Before anything touches Civo, the same images and the same chart run on a laptop in a throwaway Kubernetes cluster (<code>kind</code>): Traefik, a self-signed certificate authority standing in for Let's Encrypt and for Cloudflare's certificate, a TLS-only PostgreSQL 17 with the two-login scheme, and <code>NODE_ENV=production</code>. A test builds the images, installs the chart, runs the migrations and the one-off Jobs, signs a staff member in through the cluster and calls a tool on the admin MCP. If that passes, the images and the chart are known good; the Civo layer is proved by Terraform's own checks and the staging deploy.</p>
+  <p>Before anything touches Civo, the same images and the same chart run on a laptop in a throwaway Kubernetes cluster (<code>kind</code>): Traefik, self-signed certificates standing in for Cloudflare's, a TLS-only PostgreSQL 17 with the two-login scheme, and <code>NODE_ENV=production</code>. A test builds the images, installs the chart, runs the migrations and the one-off Jobs, signs a staff member in through the cluster and calls a tool on the admin MCP. If that passes, the images and the chart are known good; the Civo layer is proved by Terraform's own checks and the staging deploy.</p>
   <div class="grid">
-    <div><h3>bootstrap</h3><p>A one-off Job that turns an empty database server into the three databases and six logins, writing the passwords it generates into Kubernetes Secrets. Safe to run again; it changes nothing the second time, and recreates what a rebuilt cluster lost.</p></div>
+    <div><h3>bootstrap</h3><p>A one-off Job that records the database's certificate on the first run, then turns an empty database server into the three databases and six logins, writing the passwords it generates into Kubernetes Secrets. Safe to run again; it changes nothing the second time, and recreates what a rebuilt cluster lost.</p></div>
     <div><h3>migrate</h3><p>Each service's own migration script, run from its image with the owner login, before new pods start.</p></div>
-    <div><h3>register</h3><p>Tells ID about the Toolbox and the admin MCP (their addresses, their machine identities, which staff may use them), exactly as the public docs describe with cURL, and stores the generated client secrets in the cluster.</p></div>
+    <div><h3>register and make-admin</h3><p>Tells ID about the Toolbox and the admin MCP (their addresses, their machine identities, which staff may use them), exactly as the public docs describe with cURL, stores the generated client secrets in the cluster, and connects the staff directory. After your first sign-in, <code>make-admin</code> makes you the administrator and locks the root secret.</p></div>
   </div>
 </section>
 
@@ -411,16 +411,16 @@ a { color: var(--accent); }
   <div class="eyebrow">14 · What is deliberately missing</div>
   <h2>Named as "not yet", with the reason</h2>
   <ul>
-    <li><b>Another cloud.</b> The images, the charts and the pipeline would move as they are; only a Terraform root for that cloud is missing, and it is written when a move is planned.</li>
     <li><b>Caching or challenges at Cloudflare for sign-in and MCP traffic.</b> Caching would serve one person's response to another; challenges would block AI tools.</li>
-    <li><b>A GitOps controller in the cluster.</b> The pull model would remove even the namespace-limited deploy token from GitHub; it is the next step if that token ever worries us.</li>
+    <li><b>A GitOps controller in the cluster.</b> The pull model would remove even the namespace-limited deploy token from GitHub and let the control plane close to the internet; it is the next step if that token ever worries us.</li>
     <li><b>Image signature enforcement in the cluster.</b> Images are signed today; a policy that refuses unsigned ones comes later.</li>
-    <li><b>OpenBao before staging exists.</b> It is planned as the brief right after staging is up, so the first deployment is not blocked on it; production launches with it in place.</li>
+    <li><b>A secret server.</b> OpenBao was planned and withdrawn: pods hold no API token and read only their own Secrets, and a read audit for three services and one operator has no reader. It returns with a second team or a compliance need.</li>
+    <li><b>A metrics and logs agent, and alerts.</b> When a measurement says they pay.</li>
     <li><b>A second region.</b> Civo has one London region; a regional failure is a later decision with a real cost.</li>
     <li><b>Redis.</b> Nothing in the code reads it yet.</li>
-    <li><b>Keeping production warm from day one.</b> It costs nothing until the first click, and the click proves it works.</li>
+    <li><b>Keeping production warm from day one.</b> It costs nothing until the first production tag, and that run proves it works.</li>
   </ul>
-  <div class="note">The numbers to remember: staging about $103 a month; production about $170 with a single database node, about $340 with the extra nodes for fault tolerance; and the audit log grows every month until retention is decided.</div>
+  <div class="note">The numbers to remember: staging about $103 a month; production about $170 on a single database node; and the audit log grows every month until retention is decided.</div>
 </section>
 
 <section id="glossary">
@@ -428,9 +428,7 @@ a { color: var(--accent); }
   <h2>Glossary</h2>
   <div class="wrap"><table>
     <tr><th>Term</th><th>In plain words</th></tr>
-    <tr><td>age</td><td>A small, modern encryption tool. One key pair per environment; the public half encrypts the secrets file, the private half decrypts it.</td></tr>
-    <tr><td>API key (Civo)</td><td>The one credential that can do anything in a Civo account. Held by you; never in the deploy workflow.</td></tr>
-    <tr><td>cert-manager</td><td>The program in the cluster that obtains TLS certificates from Let's Encrypt and renews them.</td></tr>
+    <tr><td>API key (Civo)</td><td>The one credential that can do anything in a Civo account. Pasted once into the GitHub environment; handed to the Terraform step only.</td></tr>
     <tr><td>Chart (Helm)</td><td>The folder that describes everything our services need inside the cluster, installed with one command.</td></tr>
     <tr><td>CIDR</td><td>A way to write a range of IP addresses, such as <code>10.20.0.0/16</code>. Used in firewalls and for "trusted proxies".</td></tr>
     <tr><td>Civo Database</td><td>Civo running PostgreSQL for us: patching, backups, optional extra nodes.</td></tr>
@@ -438,7 +436,7 @@ a { color: var(--accent); }
     <tr><td>Container</td><td>A program running inside its sealed box, isolated from everything else on the machine.</td></tr>
     <tr><td>Deployment</td><td>Kubernetes' promise to keep a number of copies of an image running and replace the ones that die.</td></tr>
     <tr><td>Docker image</td><td>The sealed box before it runs: code, runtime and files, built from a Dockerfile.</td></tr>
-    <tr><td>External Secrets</td><td>An operator that copies values from a secret store into Kubernetes Secrets. Not used yet; the step up when a company store exists.</td></tr>
+    <tr><td>Environment (GitHub)</td><td>A named set of secrets and rules in the repository: which branches and tags may use it, and who must approve. One per target, <code>staging</code> and <code>production</code>.</td></tr>
     <tr><td>Firewall (Civo)</td><td>The door policy on a load balancer, a cluster or a database: who may connect, on which port.</td></tr>
     <tr><td>GHCR</td><td>GitHub Container Registry. The shelf where our images are stored.</td></tr>
     <tr><td>Health check</td><td>A small request ("are you well?") the receptionist sends every few seconds to each copy.</td></tr>
@@ -453,14 +451,14 @@ a { color: var(--accent); }
     <tr><td>Namespace</td><td>A labelled area inside a cluster; our services live in one, and the deploy token can touch only it.</td></tr>
     <tr><td>NetworkPolicy</td><td>The rule inside the cluster saying which pods may talk to which.</td></tr>
     <tr><td>Node</td><td>One machine in the cluster. Civo bills per node; the control plane is free.</td></tr>
-    <tr><td>OpenBao</td><td>The open-source secret server we run inside the cluster from brief B7b on: per-service identities, a read log, versions. It unlocks itself with a key from the encrypted file.</td></tr>
+    <tr><td>Origin CA</td><td>Cloudflare's own certificate authority for the certificate our edge shows to Cloudflare. Trusted by Cloudflare alone, valid fifteen years, requested by Terraform.</td></tr>
     <tr><td>Organisation (Civo)</td><td>The umbrella that groups our two Civo accounts and shares role definitions.</td></tr>
     <tr><td>Pod</td><td>A running container (or a small group) in Kubernetes.</td></tr>
     <tr><td>PostgreSQL</td><td>The database engine every one of our services stores its data in; version 17 everywhere.</td></tr>
     <tr><td>Private network (Civo)</td><td>The fenced area in one region where our resources talk without crossing the internet.</td></tr>
     <tr><td>Runtime login</td><td>The restricted database user a running service connects as: rows yes, tables no, history untouchable.</td></tr>
     <tr><td>ServiceAccount</td><td>An identity inside the cluster. The deploy uses one limited to our namespace.</td></tr>
-    <tr><td>sops</td><td>The tool that encrypts the values in a YAML file while leaving the names readable, so the secrets file can live in the repository and be reviewed.</td></tr>
+    <tr><td>Tag (git)</td><td>A name on one commit. <code>staging/&lt;name&gt;</code> ships that commit to staging; <code>production/&lt;name&gt;</code> ships it to production once staging has.</td></tr>
     <tr><td>Terraform</td><td>The tool that reads our blueprint files and makes the cloud match them.</td></tr>
     <tr><td>TLS</td><td>The padlock: encryption between two parties on the network, with a certificate proving who you are talking to.</td></tr>
     <tr><td>WAF</td><td>Web application firewall. Blocks requests that look like known attacks. Cloudflare's free tier provides ours.</td></tr>
@@ -469,5 +467,5 @@ a { color: var(--accent); }
   </table></div>
 </section>
 
-<footer>Civo prices are from its pricing page, read on 10 October 2026. The full plan, decisions, portability design and cost simulation are in <code>docs/goals/civo-deploy/</code>.</footer>
+<footer>Civo prices are from its pricing page, read on 10 October 2026. The full plan, decisions and findings are in <code>docs/goals/civo-deploy/</code>.</footer>
 </main>

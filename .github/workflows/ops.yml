@@ -1,8 +1,12 @@
 name: Ops
 
-# Run a one-off ops Job in an environment: today, registering the MCP servers with Answerable ID. The Job runs
-# through a Helm upgrade that keeps the image tag the release runs now; after register, the Toolbox and the admin MCP
-# restart to read the client secrets the Job wrote. What this does and which secrets it needs: infra/pipeline/README.md.
+# Run one ops Job in an environment, through a Helm upgrade that keeps the images the release runs:
+# - register: the MCP servers registered in Answerable ID again (a rotated client secret, a changed registration).
+#   After a person holds platform:write, ID refuses the root secret, so the Job needs a staff token in the Secret
+#   ops-staff-token first (infra/README.md, Register again).
+# - make-admin: the last step of the first run, after the owner has signed in once: the member with that email
+#   becomes the admin MCP's owner and a platform administrator, which locks the root secret.
+# What this does and which secrets it needs: infra/pipeline/README.md.
 
 on:
   workflow_dispatch:
@@ -20,6 +24,11 @@ on:
         type: choice
         options:
           - register
+          - make-admin
+      email:
+        description: For make-admin, the email of the member who signed in
+        required: false
+        type: string
 
 # The same lock as the deploys of that environment: two Helm upgrades at once make one of them fail.
 concurrency:
@@ -62,7 +71,17 @@ jobs:
           KUBE_TOKEN: ${{ secrets.KUBE_TOKEN }}
           COMMAND: ${{ inputs.command }}
           TARGET: ${{ inputs.environment }}
-        run: bun infra/pipeline/src/cli.ts run-job "$COMMAND" --environment "$TARGET"
+          EMAIL: ${{ inputs.email }}
+        run: |
+          if [ "$COMMAND" = make-admin ]; then
+            if [ -z "$EMAIL" ]; then
+              echo "::error::make-admin needs the email of the member who signed in"
+              exit 1
+            fi
+            bun infra/pipeline/src/cli.ts run-job make-admin --environment "$TARGET" --email "$EMAIL"
+          else
+            bun infra/pipeline/src/cli.ts run-job "$COMMAND" --environment "$TARGET"
+          fi
 
   smoke:
     name: Smoke test ${{ inputs.environment }}

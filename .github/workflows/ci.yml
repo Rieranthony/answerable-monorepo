@@ -1,12 +1,11 @@
 name: CI
 
+# Every push gets the same checks; the two shipping workflows call this one, so a tagged commit is built only once
+# these have passed. No secret reaches any job here.
 on:
-  # A push to main is checked by the CI job of deploy-staging.yml, which calls this workflow, so that a
-  # push has one set of checks and the images are built only from a commit these checks passed.
   push:
-    branches-ignore:
-      - main
-  pull_request:
+    branches:
+      - "**"
   workflow_call:
 
 permissions:
@@ -14,8 +13,8 @@ permissions:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     env:
       NODE_ENV: test
       TEST_DATABASE_URL: postgres://answerable:answerable@localhost:47432/answerable_id_test
@@ -84,48 +83,18 @@ jobs:
         with:
           bun-version: 1.3.1
 
-      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+      - uses: ./.github/actions/setup-tools
         with:
-          terraform_version: 1.16.5
-          terraform_wrapper: false
-
-      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
-        with:
-          version: v4.3.0
-
-      - name: Install tflint, trivy, actionlint and kubeconform
-        run: |
-          set -euo pipefail
-          bin="$RUNNER_TEMP/bin"
-          mkdir -p "$bin"
-          cd "$RUNNER_TEMP"
-          fetch() {
-            curl -fsSL --retry 3 -o "$2" "$1"
-            echo "$3  $2" | sha256sum --check --strict
-          }
-          fetch https://github.com/terraform-linters/tflint/releases/download/v0.64.0/tflint_linux_amd64.zip \
-            tflint.zip cca9d13e2e1d7a2c627af60ff899a3c9b74212899416aeb96ec764d2ef954537
-          unzip -q tflint.zip tflint -d "$bin"
-          fetch https://github.com/aquasecurity/trivy/releases/download/v0.75.0/trivy_0.75.0_Linux-64bit.tar.gz \
-            trivy.tar.gz c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f
-          tar -xzf trivy.tar.gz -C "$bin" trivy
-          fetch https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
-            actionlint.tar.gz 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
-          tar -xzf actionlint.tar.gz -C "$bin" actionlint
-          fetch https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz \
-            kubeconform.tar.gz 9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883
-          tar -xzf kubeconform.tar.gz -C "$bin" kubeconform
-          echo "$bin" >> "$GITHUB_PATH"
+          tools: terraform helm kubeconform tflint trivy actionlint
 
       - name: Check infrastructure code
         run: bun run infra:check
 
-  # The four images (id, toolbox, admin-mcp, ops) built and run in a kind cluster with both charts, as a cloud runs them,
-  # with the ops Jobs and a staff sign-in in Chromium (bun run infra:test, infra/k8s/local/README.md).
-  # arm64, like the laptops the stack also runs on; only after validate, so a red suite never builds images.
+  # The four images built and run in a kind cluster with both charts, as Civo runs them: amd64, Civo's architecture.
+  # Only after validate, so a red suite never builds images (bun run infra:test, infra/k8s/local/README.md).
   containers:
     needs: validate
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -139,25 +108,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # Each binary pinned by version and by the SHA-256 its release publishes.
-      - name: Install kind, kubectl, Helm and kubeconform
-        run: |
-          set -euo pipefail
-          bin="$RUNNER_TEMP/bin"
-          mkdir -p "$bin"
-          cd "$RUNNER_TEMP"
-          fetch() { curl -fsSL --retry 3 -o "$2" "$1" && echo "$3  $2" | sha256sum -c -; }
-          fetch https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-arm64 kind 20022bee6cfcd5086cb7234d218e3454e6090022f2a8f55d1fa7fcf42c3867a2
-          install -m 0755 kind "$bin/kind"
-          fetch https://dl.k8s.io/release/v1.37.0/bin/linux/arm64/kubectl kubectl 922df28df248cc00a9e025f947704f1d1482de64ece54cfe57e61f19eaf1eef3
-          install -m 0755 kubectl "$bin/kubectl"
-          fetch https://get.helm.sh/helm-v4.3.0-linux-arm64.tar.gz helm.tar.gz 31c5794dd55c66a51e6b7d2e2ac7a114ae8b1de41ff1d9ba51748ac973b06a08
-          tar -xzf helm.tar.gz linux-arm64/helm
-          install -m 0755 linux-arm64/helm "$bin/helm"
-          fetch https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-arm64.tar.gz kubeconform.tar.gz 1f53fc8e81258197a35e8603054162a5af1de8c5af13746c71ab680d9534ed87
-          tar -xzf kubeconform.tar.gz kubeconform
-          install -m 0755 kubeconform "$bin/kubeconform"
-          echo "$bin" >> "$GITHUB_PATH"
+      - uses: ./.github/actions/setup-tools
+        with:
+          tools: kind kubectl helm kubeconform
 
       # The staff sign-in drives ID's pages in Chromium, through the acceptance kit.
       - name: Install the browser for the staff sign-in

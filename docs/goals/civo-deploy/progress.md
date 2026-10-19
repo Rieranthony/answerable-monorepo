@@ -1,6 +1,6 @@
-# Progress: deploying Answerable on AWS
+# Progress: deploying Answerable on Civo
 
-Session log, newest last. Facts go in [`findings.md`](findings.md), choices in [`decisions.md`](decisions.md), the order in [`task_plan.md`](task_plan.md).
+Session log, newest last. Facts go in [`findings.md`](findings.md), choices in [`decisions.md`](decisions.md), the order in [`task_plan.md`](task_plan.md). The entries before 12 October 2026 describe the plan as it was then, on another cloud; the record was reduced to Civo on 19 October (the studies, the finished briefs and the decisions that named that cloud were removed), and the entries stand as written.
 
 ## 2026-10-08 — planning session (Claude Fable 5.1, coordinator)
 
