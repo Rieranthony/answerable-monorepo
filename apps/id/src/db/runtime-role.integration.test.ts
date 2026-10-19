@@ -617,6 +617,34 @@ test("runtime startup refuses disabled tenant or grant-context RLS", async () =>
   await assertRuntimeRole(runtime.db);
 });
 
+test("runtime cannot rewrite signing keys or replay markers, and startup refuses a role that can", async () => {
+  for (const command of [
+    "update jwks set created_at = created_at",
+    "delete from jwks",
+    "update oauth_client_assertions set expires_at = expires_at",
+  ])
+    await expect(
+      Promise.resolve(runtime.db.execute(sql.raw(command))),
+    ).rejects.toMatchObject({ cause: { code: "42501" } });
+  const role = sql.identifier(roleName);
+  for (const [privilege, table] of [
+    ["update", "jwks"],
+    ["delete", "jwks"],
+    ["update", "oauth_client_assertions"],
+  ] as const) {
+    const target = sql`${sql.raw(privilege)} on ${sql.identifier(table)}`;
+    await owner.db.execute(sql`grant ${target} to ${role}`);
+    try {
+      await expect(assertRuntimeRole(runtime.db)).rejects.toThrow(
+        "Unsafe database runtime role",
+      );
+    } finally {
+      await owner.db.execute(sql`revoke ${target} from ${role}`);
+    }
+  }
+  await assertRuntimeRole(runtime.db);
+});
+
 test("capability RLS permits tenant inspection but denies tenant ceiling writes", async () => {
   const {
     organizationCapabilities,

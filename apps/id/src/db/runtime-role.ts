@@ -101,6 +101,12 @@ export function configureRuntimeRole(db: Database, roleName: string) {
     await tx.execute(
       sql`revoke update, delete on system_bindings, admin_operations from ${role}`,
     );
+    // Better Auth only reads and creates signing keys; replay markers are only
+    // created, read and swept.
+    await tx.execute(sql`revoke update, delete on jwks from ${role}`);
+    await tx.execute(
+      sql`revoke update on oauth_client_assertions from ${role}`,
+    );
   });
 }
 
@@ -121,6 +127,7 @@ export async function assertRuntimeRole(db: Database) {
       or has_table_privilege(current_user, 'audit_event_users', 'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER')
       or has_table_privilege(current_user, 'system_bindings', 'UPDATE,DELETE,TRUNCATE,TRIGGER')
       or has_table_privilege(current_user, 'admin_operations', 'UPDATE,DELETE,TRUNCATE,TRIGGER')
+      or has_table_privilege(current_user, 'jwks', 'UPDATE,DELETE') or has_table_privilege(current_user, 'oauth_client_assertions', 'UPDATE')
       as unsafe
     from pg_roles r where rolname = current_user
   `);
