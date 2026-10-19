@@ -242,7 +242,6 @@ export function createUserOAuthFlow(
         flow.grantId = grant.id;
         flow.status = "consent";
       }
-      let grant: typeof grantContexts.$inferSelect | null = null;
       let acceptedDecision: UserResourceDecision | null = null;
       if (flow.grantId) {
         await lockResourceGrantPolicy(adapter, { id: flow.grantId, clientId });
@@ -264,7 +263,6 @@ export function createUserOAuthFlow(
           !(await currentGrantAuthentication(tx, decision.grant))
         )
           throw new APIError("FORBIDDEN", { error: "access_denied" });
-        grant = decision.grant;
         acceptedDecision = decision;
       } else if (action === "consent") throw invalid();
       if (action === "details") {
@@ -419,7 +417,12 @@ export function createUserOAuthFlow(
       if (destination.searchParams.has("code")) flow.status = "complete";
       if (action === "consent" && ctx.body.accept === false)
         flow.status = "denied";
-      if (grant && (flow.status === "complete" || flow.status === "denied"))
+      if (
+        acceptedDecision &&
+        (flow.status === "complete" || flow.status === "denied")
+      ) {
+        // The event targets the grant, so its payload does not copy the row.
+        const { grant, ...decision } = acceptedDecision;
         await recordUserOAuth(tx, {
           grant,
           clientId,
@@ -429,11 +432,9 @@ export function createUserOAuthFlow(
               ? "oauth.user.denied"
               : "oauth.user.authorized",
           requestId: ctx.headers?.get("x-request-id"),
-          data: {
-            scopes: granted,
-            decision: acceptedDecision,
-          },
+          data: { scopes: granted, decision },
         });
+      }
       await tx
         .update(verifications)
         .set({ value: JSON.stringify(flow) })

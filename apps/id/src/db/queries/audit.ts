@@ -75,7 +75,6 @@ export const auditActions = [
   "oauth.user.authorized",
   "oauth.user.denied",
   "oauth.user.issued",
-  "oauth.user.replayed",
   "oauth.user.revoked",
   "organization.created",
   "organization.disable_unchanged",

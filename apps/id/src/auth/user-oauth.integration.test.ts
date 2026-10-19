@@ -525,31 +525,6 @@ test("expired, unselected and caller-supplied flows cannot authorise", async () 
   expect(await fixture.db.$count(grantContexts)).toBe(0);
 });
 
-test("refresh audit failure rolls back rotation and leaves the original token usable", async () => {
-  const issued = await issue();
-  await fixture.db.execute(
-    sql`create function reject_refresh_audit() returns trigger language plpgsql as $$ begin if NEW.action = 'oauth.user.issued' then raise exception 'test audit storage failure'; end if; return NEW; end $$`,
-  );
-  await fixture.db.execute(
-    sql`create trigger reject_refresh_audit before insert on audit_events for each row execute function reject_refresh_audit()`,
-  );
-  const input = {
-    grant_type: "refresh_token",
-    refresh_token: issued.refresh_token,
-    resource,
-  };
-  try {
-    expect((await exchange(input)).status).toBe(503);
-    expect(await fixture.db.$count(oauthRefreshTokens)).toBe(1);
-  } finally {
-    await fixture.db.execute(
-      sql`drop trigger reject_refresh_audit on audit_events`,
-    );
-    await fixture.db.execute(sql`drop function reject_refresh_audit()`);
-  }
-  expect((await exchange(input)).status).toBe(200);
-});
-
 test("divergent native access and ID tokens preserve the code", async () => {
   const code = await authorize();
   const signer = auth.options.plugins.find(
@@ -659,6 +634,8 @@ test("consent narrowing is authorised and audited before native resource filteri
     scopes: ["mail:read"],
     decision: { requestedScopes: ["mail:read"], scopes: ["mail:read"] },
   });
+  // The event targets the grant; its payload does not copy the grant's row.
+  expect(event!.data).not.toHaveProperty("decision.grant");
   const issued = await exchange({
     grant_type: "authorization_code",
     code,
@@ -673,12 +650,15 @@ test("consent narrowing is authorised and audited before native resource filteri
     .from(auditEvents)
     .where(eq(auditEvents.action, "oauth.user.issued"));
   expect(outcome!.data).toMatchObject({
+    grantType: "authorization_code",
     scopes: ["mail:read"],
     decision: { requestedScopes: ["mail:read"] },
   });
+  expect(outcome!.targetId).toBe(event!.targetId);
+  expect(outcome!.data).not.toHaveProperty("decision.grant");
 });
 
-test("cached output and returned refresh rows are checked again without a success audit on divergence", async () => {
+test("cached output and returned refresh rows are checked again without an audit event", async () => {
   const provider = createAuth(runtime.db, {
     ...fixture.environment,
     oauthRefreshReuseIntervalSeconds: 60,
@@ -690,6 +670,7 @@ test("cached output and returned refresh rows are checked again without a succes
   });
   auth = { ...provider, handler: async (request) => app.fetch(request) };
   const issued = await issue();
+  const audited = await fixture.db.$count(auditEvents);
   const input = {
     grant_type: "refresh_token",
     refresh_token: issued.refresh_token,
@@ -738,12 +719,6 @@ test("cached output and returned refresh rows are checked again without a succes
       .where(eq(oauthRefreshTokens.id, original!.id));
     expect((await exchange(input)).status, fault).toBe(400);
     expect(await fixture.db.$count(oauthRefreshTokens)).toBe(2);
-    expect(
-      await fixture.db.$count(
-        auditEvents,
-        eq(auditEvents.action, "oauth.user.replayed"),
-      ),
-    ).toBe(0);
     await fixture.db
       .update(oauthRefreshTokens)
       .set({ scopes: replacement!.scopes })
@@ -760,12 +735,7 @@ test("cached output and returned refresh rows are checked again without a succes
     refresh_token: saved.refresh_token,
     scope: "mail:read",
   });
-  expect(
-    await fixture.db.$count(
-      auditEvents,
-      eq(auditEvents.action, "oauth.user.replayed"),
-    ),
-  ).toBe(1);
+  expect(await fixture.db.$count(auditEvents)).toBe(audited);
 });
 
 test("inconsistent or revoked authentication evidence cannot establish current authority", async () => {
@@ -905,13 +875,14 @@ test("production provider binds native tenant selection, consent and code to one
     .select()
     .from(auditEvents)
     .where(like(auditEvents.action, "oauth.user.%"));
+  // The code exchange is the grant's issuance evidence; a refresh writes none.
   expect(events.map((event) => event.action).sort()).toEqual([
     "oauth.user.authorized",
-    "oauth.user.issued",
     "oauth.user.issued",
   ]);
   for (const event of events) {
     expect(event.targetType).toBe("grant_context");
+    expect(event.targetId).toBe(grant!.id);
     expect(
       await fixture.db
         .select()
@@ -1249,7 +1220,7 @@ test("a consumer verifies production user tokens using public discovery and JWKS
     expect(next.payload[claim]).toBe(payload[claim]);
 });
 
-test("cached native refresh responses recheck policy and record replay separately", async () => {
+test("cached native refresh responses recheck policy and write no audit event", async () => {
   const provider = createAuth(runtime.db, {
     ...fixture.environment,
     oauthRefreshReuseIntervalSeconds: 60,
@@ -1261,6 +1232,7 @@ test("cached native refresh responses recheck policy and record replay separatel
   });
   auth = { ...provider, handler: async (request) => app.fetch(request) };
   const issued = await issue();
+  const audited = await fixture.db.$count(auditEvents);
   const input = {
     grant_type: "refresh_token",
     refresh_token: issued.refresh_token,
@@ -1272,12 +1244,7 @@ test("cached native refresh responses recheck policy and record replay separatel
   const replay = await exchange(input);
   expect(replay.status).toBe(200);
   expect(await replay.json()).toEqual(saved);
-  expect(
-    await fixture.db.$count(
-      auditEvents,
-      eq(auditEvents.action, "oauth.user.replayed"),
-    ),
-  ).toBe(1);
+  expect(await fixture.db.$count(auditEvents)).toBe(audited);
   await fixture.db
     .update(entitlements)
     .set({ status: "disabled" })
@@ -1324,7 +1291,7 @@ test("simultaneous consent and code submissions cannot create duplicate grants o
   expect((await refresh(issued.refresh_token)).status).toBe(400);
 });
 
-test("token audit failure preserves the code for a safe retry", async () => {
+test("code exchange audit failure rolls back issuance and preserves the code for a safe retry", async () => {
   const code = await authorize();
   await fixture.db.execute(
     sql`create function reject_token_audit() returns trigger language plpgsql as $$ begin if NEW.action = 'oauth.user.issued' then raise exception 'test audit storage failure'; end if; return NEW; end $$`,
@@ -1339,12 +1306,18 @@ test("token audit failure preserves the code for a safe retry", async () => {
     code_verifier: verifier,
     resource,
   };
-  expect((await exchange(input)).status).toBe(503);
-  expect(await fixture.db.$count(oauthRefreshTokens)).toBe(0);
-  await fixture.db.execute(
-    sql`drop trigger reject_token_audit on audit_events`,
-  );
-  await fixture.db.execute(sql`drop function reject_token_audit()`);
+  try {
+    expect((await exchange(input)).status).toBe(503);
+    expect(await fixture.db.$count(oauthRefreshTokens)).toBe(0);
+    expect(await fixture.db.$count(oauthAccessTokens)).toBe(0);
+    const [grant] = await fixture.db.select().from(grantContexts);
+    expect(grant!.authorizationCodeId).toBeNull();
+  } finally {
+    await fixture.db.execute(
+      sql`drop trigger reject_token_audit on audit_events`,
+    );
+    await fixture.db.execute(sql`drop function reject_token_audit()`);
+  }
   expect((await exchange(input)).status).toBe(200);
 });
 
@@ -2430,10 +2403,6 @@ for (const { change, apply, outsider, session } of authorityChanges)
       .from(grantContexts)
       .where(eq(grantContexts.organizationId, fixture.tenant.organizationId));
     const newSecret = await apply(grant!);
-    const issued = await fixture.db.$count(
-      auditEvents,
-      eq(auditEvents.action, "oauth.user.issued"),
-    );
     for (const token of [a.refresh_token, next.refresh_token]) {
       const denied = await refresh(token, newSecret || secret);
       expect(denied.status).toBe(400);
@@ -2442,12 +2411,6 @@ for (const { change, apply, outsider, session } of authorityChanges)
     expect((await refresh(b.refresh_token, newSecret || secret)).status).toBe(
       outsider === "kept" ? 200 : 400,
     );
-    expect(
-      await fixture.db.$count(
-        auditEvents,
-        eq(auditEvents.action, "oauth.user.issued"),
-      ),
-    ).toBe(issued + (outsider === "kept" ? 1 : 0));
     expect(
       await fixture.db.$count(
         sessions,
@@ -2932,8 +2895,10 @@ test("grant RLS scopes isolate tenants, clients and admission sessions and resto
 
 // Lock-order races on the production locks. One side is held inside its
 // transaction while the other waits for its row locks; the database, not a test
-// hook, decides the order. A token request pauses at its issuance audit and a
-// grant creation after its insert, both still holding every lock they took.
+// hook, decides the order. A token request pauses after inserting its refresh
+// token and a grant creation after its insert, both still holding every lock
+// they took.
+const pausedTables = ["oauth_refresh_tokens", "grant_contexts"];
 type PlatformContext = Parameters<Parameters<typeof inPlatformWrite>[1]>[0];
 type UsersContext = Parameters<Parameters<typeof inPlatformUsers>[1]>[0];
 type Writer = {
@@ -3004,9 +2969,9 @@ async function race<T>(
     }
     const key = sql.raw(String(pauseKey));
     await fixture.db.execute(
-      sql`create function pause_for_race() returns trigger language plpgsql as $$ begin if TG_TABLE_NAME = 'audit_events' then if NEW.action = 'oauth.user.issued' then perform pg_advisory_xact_lock(${key}); end if; else perform pg_advisory_xact_lock(${key}); end if; return NEW; end $$`,
+      sql`create function pause_for_race() returns trigger language plpgsql as $$ begin perform pg_advisory_xact_lock(${key}); return NEW; end $$`,
     );
-    for (const table of ["audit_events", "grant_contexts"])
+    for (const table of pausedTables)
       await fixture.db.execute(
         sql.raw(
           `create trigger pause_for_race after insert on ${table} for each row execute function pause_for_race()`,
@@ -3030,7 +2995,7 @@ async function race<T>(
   } finally {
     resume.resolve();
     if (first === "other") {
-      for (const table of ["audit_events", "grant_contexts"])
+      for (const table of pausedTables)
         await fixture.db.execute(
           sql.raw(`drop trigger if exists pause_for_race on ${table}`),
         );

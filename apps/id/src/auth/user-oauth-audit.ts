@@ -11,7 +11,6 @@ export async function recordUserOAuth(
       | "oauth.user.authorized"
       | "oauth.user.denied"
       | "oauth.user.issued"
-      | "oauth.user.replayed"
       | "oauth.user.revoked";
     grant: typeof grantContexts.$inferSelect;
     clientId: string;

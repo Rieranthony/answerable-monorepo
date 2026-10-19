@@ -109,7 +109,7 @@ Soft-deleted entitlements, group assignments and memberships have one evidence s
 | `oauth.token.issued` | `decision`, `issuedAt`, `expiresAt`. |
 | `oauth.token.rejected` | `grantType`, `stage`, `authenticatedClient` and `decision` (both null when client authentication failed). |
 | `oauth.user.authorized`, `oauth.user.denied` | `scopes`, `decision`. |
-| `oauth.user.issued`, `oauth.user.replayed` | `grantType`, `scopes`, `decision`. |
+| `oauth.user.issued` | Recorded for the code exchange only, not for a refresh. `grantType`, `scopes`, `decision`. |
 | `oauth.user.revoked` | `reason` (`authorization_code_replay`, `refresh_token_replay`, `revocation_request`), `effect` (`grant`, `refresh_family`, `access_token`). |
 | `organization.created`, `organization.updated`, `organization.update_unchanged`, `organization.enabled`, `organization.enable_unchanged` | `before` (null on creation), `after`. |
 | `organization.disabled`, `organization.disable_unchanged` | `before` and `after` (`status`, `authorizationVersion`), `effects` (`revokedMachineAccessTokenIds`, `revokedGrantContexts`). |
@@ -166,7 +166,7 @@ Browser sessions are global. Tenant APIs cannot enumerate/revoke them globally. 
 
 ## Authentication transaction boundary
 
-Verified SSO provenance enters the session through the native callback transaction. Production OAuth binds current policy, actual signed/opaque output, persistence and mandatory user OAuth audit before success. Client assertion replay protection stays consumed if later issuance rolls back.
+Verified SSO provenance enters the session through the native callback transaction. Production OAuth binds current policy, actual signed/opaque output and persistence before success, and mandatory user OAuth audit to each authorisation, code exchange and revocation; a successful refresh records no audit event. Client assertion replay protection stays consumed if later issuance rolls back.
 
 ## Resource link deletion boundary
 

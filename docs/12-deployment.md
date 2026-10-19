@@ -127,7 +127,7 @@ A request travels Cloudflare → the Civo load balancer → Traefik → a servic
 - **Additional nodes.** Production runs three; how Civo fails over between them is undocumented and B7c checks it.
 - **Backups.** Civo's page says "automatic backups" and documents no schedule, retention or restore. The `civo` CLI offers `database backup` and `database restore`. A restore drill on Civo precedes any production data ([D26](goals/civo-deploy/decisions.md)); its RTO and RPO are B7a's measurements. A restored database is unreadable without the keys that were active when its rows were written, and git keeps every version of the encrypted secrets file ([runbook](../infra/README.md#restore)).
 - **Connections.** At the autoscalers' ceilings the services open up to 140 connections in staging (ID 4 × 20, the MCPs 3 × 10 each) and 200 in production (6 × 20, 4 × 10, 4 × 10), plus the Jobs. Civo's `max_connections` per size is measured in B7a. Not yet.
-- **Growth.** ID's `audit_events` and `admin_operations`, and the MCPs' evidence, are kept forever. At the [cost simulation](goals/civo-deploy/cost-simulation.md)'s 100 organisations of 1,000 users that is about 26 GB a month: production's 80 GB fills in about three months, and Civo bundles storage with the size. Deciding retention ([`Q-EVIDENCE-RETENTION`](02-plan.md#open-register)) is a prerequisite for production data on Civo.
+- **Growth.** ID's `audit_events` and `admin_operations`, and the MCPs' evidence, are kept forever. ID records an audit event for each code exchange and none for a refresh. At the [cost simulation](goals/civo-deploy/cost-simulation.md)'s 100 organisations of 1,000 users that is about 15 GB a month: production's 80 GB fills in about five months, and Civo bundles storage with the size. Deciding retention ([`Q-EVIDENCE-RETENTION`](02-plan.md#open-register)) is a prerequisite for production data on Civo.
 
 ## Secrets
 
@@ -201,7 +201,7 @@ Civo's list prices, measured on 10 October 2026 from its pricing page; USD a mon
 | **Total** | **about $103** | **about $170 with one database node; about $340 with three, as configured** |
 
 - Two Small nodes instead of Medium bring staging to about $82, with less room for the platform pods.
-- **The audit-growth caveat.** Storage is bundled with the database size, so the only line that keeps growing is the database: at the cost simulation's activity, production's Medium database is full after about three months and the next size costs $86.90 more. Retention (`Q-EVIDENCE-RETENTION`) decides it.
+- **The audit-growth caveat.** Storage is bundled with the database size, so the only line that keeps growing is the database: at the cost simulation's activity, production's Medium database is full after about five months and the next size costs $86.90 more. Retention (`Q-EVIDENCE-RETENTION`) decides it.
 - Production costs nothing until its first apply.
 
 ## Testing

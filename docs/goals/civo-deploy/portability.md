@@ -111,7 +111,7 @@ Civo prices are from its pricing page; AWS from the pricing API ([cost simulatio
 | Production at the planned baseline (two replicas per service) | 3 × Medium nodes $65.19 + Postgres Medium $86.91 (+ 2 extra nodes for fault tolerance, price unlisted, assume ≈ ×3 ≈ $260) + LB $10.86 + object store $5.43 ≈ **$170 single-node database, ≈ $340 with the extra nodes** | $73.00 + 3 × `t4g.large` $164.69 + disks $5.57 + NLB $25 + 2 NAT $76 + RDS `db.t4g.medium` Multi-AZ $105.85 + 50 GB storage $13.30 + KMS, GuardDuty, logs, egress ≈ $31 = **about $495** | $73 + pods ≈ $80 + Cloud SQL HA (unmeasured, about $150 to $200) + load balancer ≈ **$330 to $380** |
 | Observability | Grafana Cloud free tier on every cloud | | |
 
-The audit-growth caveat from the cost simulation applies on every cloud, and bites hardest on Civo, where storage is bundled with the instance size: at 26 GB a month the Medium database's 80 GB fills in about three months, after which the next size costs $86.90 more. Deciding retention (`Q-EVIDENCE-RETENTION`) is a prerequisite for production on Civo, not an optimisation.
+The audit-growth caveat from the cost simulation applies on every cloud, and bites hardest on Civo, where storage is bundled with the instance size: at 15 GB a month (26 GB before ID stopped recording an audit event per refresh on 19 October 2026) the Medium database's 80 GB fills in about five months, after which the next size costs $86.90 more. Deciding retention (`Q-EVIDENCE-RETENTION`) is a prerequisite for production on Civo, not an optimisation.
 
 ## What changes in the briefs
 

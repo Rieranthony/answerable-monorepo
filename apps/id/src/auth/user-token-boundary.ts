@@ -382,14 +382,23 @@ export function createUserTokenBoundary() {
               replayed,
               startedAt,
             });
-            await recordUserOAuth(tx, {
-              grant: decision.grant,
-              clientId: authenticated.clientId,
-              actor: "client",
-              action: replayed ? "oauth.user.replayed" : "oauth.user.issued",
-              requestId: ctx.headers?.get("x-request-id"),
-              data: { grantType: kind, scopes: returnedScopes, decision },
-            });
+            // The code exchange is the grant's issuance evidence; a refresh
+            // writes none (docs/04, "Authentication transaction boundary").
+            if (kind === "authorization_code") {
+              const { grant, ...evidence } = decision;
+              await recordUserOAuth(tx, {
+                grant,
+                clientId: authenticated.clientId,
+                actor: "client",
+                action: "oauth.user.issued",
+                requestId: ctx.headers?.get("x-request-id"),
+                data: {
+                  grantType: kind,
+                  scopes: returnedScopes,
+                  decision: evidence,
+                },
+              });
+            }
             result.value.headers.forEach((value, name) =>
               ctx.setHeader(name, value),
             );

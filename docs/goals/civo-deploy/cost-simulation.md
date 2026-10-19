@@ -2,6 +2,8 @@
 
 **Revised context, 10 October 2026.** This page prices the AWS design as first planned (Fargate). The portability decision ([D20](decisions.md)) moves compute to Kubernetes, which on AWS adds EKS's $73-a-month cluster fee and node costs, and makes Civo the cheapest home: the three-cloud comparison is in [`portability.md`](portability.md#cost-three-ways). The activity model, the unit prices and the audit-growth conclusion below still hold on every cloud.
 
+**Revised storage, 19 October 2026.** ID no longer records an audit event per refresh (v0 schema audit, D6): of the 10 token issuances per active user a day, only the 2 code exchanges write one. The activity model's storage row and the yield below are recomputed; the month-12 storage figures in "The bill" and "What moves the number" were computed at the earlier 26.5 GB a month and are now upper bounds.
+
 An estimate, built from unit prices measured on AWS's pricing API for `EU (London)` on 8 and 10 October 2026 ([findings](findings.md#london-prices-measured)) and from the repository's own storage measurements. Everything else is an assumption, stated. A month is 730 hours; prices are USD, on demand, before VAT. Cloudflare is on the free plan ($0) and GitHub Actions is free for this public repository.
 
 ## Unit prices used
@@ -77,9 +79,9 @@ Two variants: EKS Auto Mode (AWS runs the nodes; burstable `t4g` is not offered 
 | Per active user per day, ID | 1 OIDC login to their OmniChat cell (~6 requests, 1 token issuance), 1 MCP connect (~4 requests, 1 issuance), 8 refreshes (15-minute tokens over ~2 hours of use, 8 issuances) | `docs/01`: tokens are audience-bound and live 5 to 15 minutes; the admin MCP's documented TTL is 900 s |
 | Per active user per day, Toolbox | 20 reads, 2 mutations (prepare + commit = 4 calls), ~4 list and metadata calls → 28 MCP calls | A moderate agent user |
 | Staff on the admin MCP | ~500 calls a day | Negligible |
-| Storage per event | ID: ~2.1 KB per token issuance in `audit_events`, kept forever; Toolbox: 568 B per read, ~3.4 KB per mutation, kept forever | Measured on 6 October 2026, `docs/02-plan.md` row `Q-EVIDENCE-RETENTION` |
+| Storage per event | ID: ~2.4 KB per code exchange in `audit_events` (with its indexes and `audit_event_users` row), none per refresh, kept forever; Toolbox: 568 B per read, ~3.4 KB per mutation, kept forever | Toolbox measured on 6 October 2026, ID on 19 October 2026, `docs/02-plan.md` row `Q-EVIDENCE-RETENTION` |
 
-What that yields per working day: 540,000 ID requests (16.7 a second on average in business hours, ~50 at peak) and 300,000 token issuances; 840,000 Toolbox calls (~26 a second, ~78 at peak); about 1.5 million inserted rows (~17 a second, ~50 at peak); and **about 1.2 GB of new audit and evidence rows**, 26.5 GB a month, about 320 GB a year, roughly 415 GB with indexes.
+What that yields per working day: 540,000 ID requests (16.7 a second on average in business hours, ~50 at peak) and 300,000 token issuances, 60,000 of them code exchanges that write an audit event; 840,000 Toolbox calls (~26 a second, ~78 at peak); about 1.5 million inserted rows before the revision, 240,000 fewer audit events after it; and **about 0.7 GB of new audit and evidence rows** (ID 0.14 GB, the Toolbox 0.54 GB), 15 GB a month, about 180 GB a year, roughly 240 GB with indexes. Before the revision: 1.2 GB a day, 26.5 GB a month, about 320 GB a year, roughly 415 GB with indexes.
 
 ### Sizing
 

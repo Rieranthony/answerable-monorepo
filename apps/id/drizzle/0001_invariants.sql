@@ -339,7 +339,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp 
 DECLARE g public.grant_contexts; public_client text;
 BEGIN
   IF NEW.action NOT IN (
-    'oauth.user.authorized', 'oauth.user.denied', 'oauth.user.issued', 'oauth.user.replayed', 'oauth.user.revoked'
+    'oauth.user.authorized', 'oauth.user.denied', 'oauth.user.issued', 'oauth.user.revoked'
   ) THEN RETURN NEW; END IF;
   SELECT * INTO g FROM public.grant_contexts WHERE id = public.try_uuid(NEW.target_id);
   SELECT client_id INTO public_client FROM public.oauth_clients WHERE id = g.client_instance_id;
