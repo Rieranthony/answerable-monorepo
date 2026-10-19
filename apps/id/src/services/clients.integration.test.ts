@@ -131,9 +131,12 @@ test("client lifecycle hides digests, returns secrets once, revokes tokens, chan
   );
   expect(hashClientSecret(rotated.clientSecret)).not.toBe(originalDigest);
   const userId = createId();
-  await db
-    .insert(users)
-    .values({ id: userId, name: "User", email: "user@example.com" });
+  await db.insert(users).values({
+    id: userId,
+    name: "User",
+    email: "user@example.com",
+    status: "active",
+  });
   const token = {
     id: createId(),
     token: createId(),

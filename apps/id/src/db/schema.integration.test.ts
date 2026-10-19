@@ -128,17 +128,27 @@ async function registerTutor() {
 }
 
 describe("integration: PostgreSQL schema", () => {
-  test("Better Auth creates core records with UUIDv7 and the inert default", async () => {
+  test("Better Auth creates core records with UUIDv7, and a user only with a status", async () => {
     const auth = createAuth(connection.db, environment);
     const context = await auth.$context;
     const adapter = context.internalAdapter;
+    await expect(
+      adapter.createUser(
+        { name: "No status", email: "no-status@example.com" },
+        { method: "admin" },
+      ),
+    ).rejects.toThrow();
     const user = await adapter.createUser(
-      { name: "Better Auth User", email: "better-auth@example.com" },
+      {
+        name: "Better Auth User",
+        email: "better-auth@example.com",
+        status: "active",
+      },
       { method: "admin" },
     );
 
     expect(isUuidV7(user.id)).toBe(true);
-    expect(user.status).toBe("inert");
+    expect(user.status).toBe("active");
     expect((await adapter.findUserById(user.id))?.email).toBe(user.email);
 
     const organization = await context.adapter.create<
@@ -178,7 +188,7 @@ describe("integration: PostgreSQL schema", () => {
     const adapter = (await createAuth(connection.db, environment).$context)
       .internalAdapter;
     const user = await adapter.createUser(
-      { name: "Linked User", email: "linked@example.com" },
+      { name: "Linked User", email: "linked@example.com", status: "active" },
       { method: "admin" },
     );
     await adapter.createAccount({

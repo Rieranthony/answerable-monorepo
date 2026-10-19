@@ -146,12 +146,11 @@ export function createAuth(db: Database, environment: Environment) {
           input: false,
           returned: false,
         },
-        // A user created without a status, such as an import placeholder,
-        // starts inert; federation creates its users active.
+        // No default: federation creates its users active, and an insert
+        // without a status fails rather than creating a user in no state.
         status: {
           type: "string",
           required: true,
-          defaultValue: "inert",
           input: false,
         },
         retiredEmail: {

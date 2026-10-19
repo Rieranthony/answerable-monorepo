@@ -44,7 +44,7 @@ export const users = pgTable(
     email: text("email").notNull().unique(),
     emailVerified: boolean("email_verified").default(false).notNull(),
     image: text("image"),
-    status: text("status", { enum: userStatuses }).default("inert").notNull(),
+    status: text("status", { enum: userStatuses }).notNull(),
     disabledAt: timestampColumn("disabled_at"),
     retiredEmail: text("retired_email"),
     ...timestamps(),

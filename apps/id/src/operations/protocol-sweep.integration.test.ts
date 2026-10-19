@@ -35,9 +35,12 @@ const none = {
 beforeAll(async () => {
   roles = await openRuntimeRole(testEnvironment());
   ({ owner, runtime } = roles);
-  await owner.db
-    .insert(users)
-    .values({ id: userId, name: "Sweep", email: `${userId}@example.com` });
+  await owner.db.insert(users).values({
+    id: userId,
+    name: "Sweep",
+    email: `${userId}@example.com`,
+    status: "active",
+  });
   await owner.db.insert(oauthClients).values({
     id: createId(),
     clientId,

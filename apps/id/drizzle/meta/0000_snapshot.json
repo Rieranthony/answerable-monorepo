@@ -1,5 +1,5 @@
 {
-  "id": "5433740b-a750-4bed-afed-5e2bac672c93",
+  "id": "7ec39fce-fc39-4ffe-98ec-c48ae98240e8",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -746,8 +746,7 @@
           "name": "status",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'inert'"
+          "notNull": true
         },
         "disabled_at": {
           "name": "disabled_at",
@@ -808,7 +807,7 @@
         },
         "users_status_check": {
           "name": "users_status_check",
-          "value": "\"users\".\"status\" in ('inert', 'active', 'disabled')"
+          "value": "\"users\".\"status\" in ('active', 'disabled')"
         },
         "users_email_normalized_check": {
           "name": "users_email_normalized_check",

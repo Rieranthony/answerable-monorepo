@@ -46,6 +46,7 @@ for (const parent of ["refresh", "session", "member"] as const) {
       id: userId,
       name: "Erased",
       email: `${userId}@cascade.example`,
+      status: "active",
     });
     const groupId = createId(),
       expiresAt = new Date(Date.now() + 60000);

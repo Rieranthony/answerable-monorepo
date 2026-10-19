@@ -17,6 +17,7 @@ beforeAll(async () => {
     id: userId,
     name: "Storage proof",
     email: `${userId}@example.com`,
+    status: "active",
   });
 });
 afterAll(async () => {

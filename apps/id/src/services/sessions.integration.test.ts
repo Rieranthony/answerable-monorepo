@@ -63,7 +63,7 @@ beforeEach(async () => {
 afterAll(async () => {
   await connection.close();
 });
-async function seed(status: "active" | "inert" = "active") {
+async function seed() {
   const db = connection.db;
   const userId = createId();
   const organizationId = createId();
@@ -72,7 +72,7 @@ async function seed(status: "active" | "inert" = "active") {
     id: userId,
     email: userId + "@example.com",
     name: "User",
-    status,
+    status: "active",
   });
   await db
     .insert(organizations)

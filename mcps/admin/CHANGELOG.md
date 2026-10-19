@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.8
+
+`members_list` and `members_get` answer a person's `status` as `active` or `disabled`: ID removed `inert`, which nothing wrote.
+
 ## 0.2.7
 
 No tool changes. The admin MCP serves as a restricted runtime login, and can run in a container. Breaking for an existing setup: `ADMIN_DATABASE_URL` must name the runtime login, and `db:migrate` reads the owner's URL from `ADMIN_DATABASE_MIGRATION_URL`.

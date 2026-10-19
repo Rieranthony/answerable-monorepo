@@ -479,21 +479,21 @@ const refusals: {
     refused: "identity_conflict",
   },
   {
-    name: "linking an identity reserved by an import",
+    name: "linking a directory identity another account holds",
     before: async () => {
-      const imported = createId();
+      const holder = createId();
       await fixture.db.insert(users).values({
-        id: imported,
-        name: "Imported",
-        email: "imported@outsider.example.com",
-        status: "inert",
+        id: holder,
+        name: "Holder",
+        email: "holder@outsider.example.com",
+        status: "active",
       });
       await fixture.db.insert(accounts).values({
         id: createId(),
-        userId: imported,
+        userId: holder,
         providerId: "outsider",
         issuer: fixture.issuer.origin,
-        accountId: "placeholder",
+        accountId: "holder-subject",
         directoryUserId: "refused-target",
       });
     },

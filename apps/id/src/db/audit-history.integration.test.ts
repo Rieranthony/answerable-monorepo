@@ -36,9 +36,12 @@ test("person and tenant audit history survive membership and identity erasure", 
   await db
     .insert(organizations)
     .values({ id: organizationId, slug: "history", name: "History" });
-  await db
-    .insert(users)
-    .values({ id: userId, name: "Person", email: "history@example.com" });
+  await db.insert(users).values({
+    id: userId,
+    name: "Person",
+    email: "history@example.com",
+    status: "active",
+  });
   await db.insert(members).values({ id: memberId, userId, organizationId });
   const event = await recordAuditEvent(db, {
     actorType: "system",

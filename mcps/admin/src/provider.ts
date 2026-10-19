@@ -24,7 +24,7 @@ const organisation = z.object({
 })
 const member = z.object({
   id: z.uuid().describe("The member id: the person's membership of this organisation"), userId: z.uuid(), email: z.string(), name: z.string(),
-  status: z.enum(["inert", "active", "disabled"]), membershipStatus: z.enum(["active", "revoked"]), effective: z.boolean().describe("Whether the membership is in force now"),
+  status: z.enum(["active", "disabled"]), membershipStatus: z.enum(["active", "revoked"]), effective: z.boolean().describe("Whether the membership is in force now"),
 })
 const via = z.object({ entitlementId: z.uuid(), principal: z.enum(["organization", "group", "member"]), groupId: z.uuid().nullable() })
 const target = z.object({

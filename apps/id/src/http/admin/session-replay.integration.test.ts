@@ -24,6 +24,7 @@ async function seed() {
     id: userId,
     email: `${userId}@session-replay.example.com`,
     name: "Session",
+    status: "active",
   });
   return { userId, sessionId: await addSession(userId) };
 }

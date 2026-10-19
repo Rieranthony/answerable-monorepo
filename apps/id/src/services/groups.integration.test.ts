@@ -45,6 +45,7 @@ async function seed() {
       id: userId,
       email: `person${index}@example.com`,
       name: `Person ${index}`,
+      status: "active",
     });
     await db.insert(members).values({ id, organizationId, userId });
     ids.push(id);

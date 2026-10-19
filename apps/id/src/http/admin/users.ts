@@ -118,7 +118,7 @@ export const routes = {
     operationId: "enableUser",
     summary: "Enable user",
     description:
-      "Enable a disabled user and return the updated user without restoring revoked sessions. Prefer getUser to inspect blockers; not_found, user_email_retired and user_inert identify missing users or states that cannot be enabled.",
+      "Enable a disabled user and return the updated user without restoring revoked sessions. Prefer getUser to inspect blockers; not_found and user_email_retired identify a missing user or a state that cannot be enabled.",
     tag: "Users",
     platformScope: "platform:users",
     kind: "write",

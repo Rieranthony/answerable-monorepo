@@ -46,9 +46,12 @@ test("restricted client erasure records exact cascades with private cross-client
   const userId = createId(),
     indirectUserId = createId();
   for (const id of [userId, indirectUserId])
-    await db
-      .insert(users)
-      .values({ id, name: "Private name", email: `${id}@private.example` });
+    await db.insert(users).values({
+      id,
+      name: "Private name",
+      email: `${id}@private.example`,
+      status: "active",
+    });
   await db.insert(oauthClients).values({
     id: clientInstanceId,
     clientId,
@@ -288,9 +291,12 @@ test("client erasure captures a cross-client token committed while waiting for i
     clientId = createId(),
     refreshId = createId(),
     lateId = createId();
-  await db
-    .insert(users)
-    .values({ id: userId, name: "User", email: `${userId}@race.example` });
+  await db.insert(users).values({
+    id: userId,
+    name: "User",
+    email: `${userId}@race.example`,
+    status: "active",
+  });
   await db.insert(oauthClients).values({
     id: createId(),
     clientId,

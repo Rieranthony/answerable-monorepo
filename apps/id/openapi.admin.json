@@ -2960,7 +2960,6 @@
                             "status": {
                               "type": "string",
                               "enum": [
-                                "inert",
                                 "active",
                                 "disabled"
                               ]
@@ -3622,7 +3621,6 @@
             "schema": {
               "type": "string",
               "enum": [
-                "inert",
                 "active",
                 "disabled"
               ]
@@ -3679,7 +3677,6 @@
                           "status": {
                             "type": "string",
                             "enum": [
-                              "inert",
                               "active",
                               "disabled"
                             ]
@@ -4019,7 +4016,6 @@
                     "status": {
                       "type": "string",
                       "enum": [
-                        "inert",
                         "active",
                         "disabled"
                       ]
@@ -4772,7 +4768,6 @@
                         "status": {
                           "type": "string",
                           "enum": [
-                            "inert",
                             "active",
                             "disabled"
                           ]
@@ -5171,7 +5166,7 @@
           }
         ],
         "summary": "Enable user",
-        "description": "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Enable a disabled user and return the updated user without restoring revoked sessions. Prefer getUser to inspect blockers; not_found, user_email_retired and user_inert identify missing users or states that cannot be enabled.",
+        "description": "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Enable a disabled user and return the updated user without restoring revoked sessions. Prefer getUser to inspect blockers; not_found and user_email_retired identify a missing user or a state that cannot be enabled.",
         "tags": [
           "Users"
         ],
@@ -5208,7 +5203,6 @@
                         "status": {
                           "type": "string",
                           "enum": [
-                            "inert",
                             "active",
                             "disabled"
                           ]
@@ -5644,7 +5638,6 @@
                         "status": {
                           "type": "string",
                           "enum": [
-                            "inert",
                             "active",
                             "disabled"
                           ]
@@ -18345,7 +18338,6 @@
                         "status": {
                           "type": "string",
                           "enum": [
-                            "inert",
                             "active",
                             "disabled"
                           ]
@@ -18905,7 +18897,6 @@
                           "status": {
                             "type": "string",
                             "enum": [
-                              "inert",
                               "active",
                               "disabled"
                             ]
@@ -19287,7 +19278,6 @@
                     "status": {
                       "type": "string",
                       "enum": [
-                        "inert",
                         "active",
                         "disabled"
                       ]
@@ -19762,7 +19752,6 @@
                         "status": {
                           "type": "string",
                           "enum": [
-                            "inert",
                             "active",
                             "disabled"
                           ]

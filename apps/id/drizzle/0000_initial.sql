@@ -94,7 +94,7 @@ CREATE TABLE "users" (
 	"email" text NOT NULL,
 	"email_verified" boolean DEFAULT false NOT NULL,
 	"image" text,
-	"status" text DEFAULT 'inert' NOT NULL,
+	"status" text NOT NULL,
 	"disabled_at" timestamp with time zone,
 	"retired_email" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -103,7 +103,7 @@ CREATE TABLE "users" (
 	CONSTRAINT "users_id_live_unique" UNIQUE("id","live"),
 	CONSTRAINT "users_live_check" CHECK ("users"."live" is not distinct from case when "users"."deleted_at" is null then true end),
 	CONSTRAINT "users_deleted_check" CHECK ("users"."deleted_at" is null or ("users"."status" = 'disabled')),
-	CONSTRAINT "users_status_check" CHECK ("users"."status" in ('inert', 'active', 'disabled')),
+	CONSTRAINT "users_status_check" CHECK ("users"."status" in ('active', 'disabled')),
 	CONSTRAINT "users_email_normalized_check" CHECK ("users"."email" = lower(btrim("users"."email"))),
 	CONSTRAINT "users_disabled_check" CHECK (("users"."status" = 'disabled') = ("users"."disabled_at" is not null)),
 	CONSTRAINT "users_retired_email_check" CHECK (("users"."retired_email" is null or "users"."status" = 'disabled') and (("users"."retired_email" is not null) = ("users"."email" = "users"."id"::text || '@retired.invalid')))

@@ -168,9 +168,12 @@ test("tenant kill switch revokes only machine rows and preserves global sessions
   });
   const userIds = [createId(), createId(), createId()];
   for (const id of userIds) {
-    await db
-      .insert(users)
-      .values({ id, name: "User", email: id + "@example.com" });
+    await db.insert(users).values({
+      id,
+      name: "User",
+      email: id + "@example.com",
+      status: "active",
+    });
     await db.insert(sessions).values({
       id: createId(),
       token: createId(),
@@ -269,9 +272,12 @@ test("erase rejects confirmation and clients, cascades members and domains and r
     service.eraseOrganization(db, actor, row.id, createId()),
   ).rejects.toMatchObject({ status: 400, code: "confirmation_mismatch" });
   const userId = createId();
-  await db
-    .insert(users)
-    .values({ id: userId, name: "User", email: "erase@example.com" });
+  await db.insert(users).values({
+    id: userId,
+    name: "User",
+    email: "erase@example.com",
+    status: "active",
+  });
   await db
     .insert(members)
     .values({ id: createId(), userId, organizationId: row.id });

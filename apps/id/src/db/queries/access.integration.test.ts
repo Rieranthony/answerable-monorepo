@@ -431,7 +431,7 @@ test("inactive global users disappear from every effective target projection", a
       ...target,
       scopes: ["read"],
     });
-  for (const status of ["active", "inert", "disabled", "active"] as const) {
+  for (const status of ["active", "disabled", "active"] as const) {
     await db
       .update(users)
       .set({ status, disabledAt: status === "disabled" ? new Date() : null })

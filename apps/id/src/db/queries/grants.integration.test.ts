@@ -456,7 +456,7 @@ test("effective grants and platform writer detection require an active global us
   await insertMember(organizationId, userId);
 
   await insertEntitlement(organizationId, { scopes: ["platform:write"] });
-  for (const status of ["active", "inert", "disabled", "active"] as const) {
+  for (const status of ["active", "disabled", "active"] as const) {
     await db
       .update(users)
       .set({ status, disabledAt: status === "disabled" ? new Date() : null })

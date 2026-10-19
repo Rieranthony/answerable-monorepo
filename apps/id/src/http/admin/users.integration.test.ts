@@ -386,13 +386,6 @@ test("user pagination, platform reader access, validation and lifecycle conflict
     audit("user.email_retirement_unchanged"),
   );
   expect(retire.status).toBe(200);
-  const inert = createId();
-  await fixture.db
-    .insert(users)
-    .values({ id: inert, name: "Inert", email: inert + "@example.com" });
-  const enable = await request("/users/" + inert + "/enable", "POST");
-  expect(enable.status).toBe(409);
-  expect(await enable.json()).toMatchObject({ code: "user_inert" });
   const seen: string[] = [];
   let cursor: string | null = null;
   do {

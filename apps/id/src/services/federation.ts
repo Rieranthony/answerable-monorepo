@@ -20,7 +20,7 @@ type OrganizationRow = {
 type UserRow = {
   id: string;
   email: string;
-  status: "inert" | "active" | "disabled";
+  status: "active" | "disabled";
   deletedAt?: Date | null;
 };
 
@@ -179,7 +179,6 @@ export async function resolveFederatedUser(
     if (linkUserId)
       return reject("identity_conflict", "Identity is already bound");
     const owner = exactAccount.user;
-    // Inert (imported) users activate here once import tooling exists: docs/02-plan.md.
     if (
       !owner ||
       exactAccount.deletedAt ||

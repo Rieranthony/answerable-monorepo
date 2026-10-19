@@ -7,6 +7,7 @@ import {
   tokenOnlyCodes,
 } from "../../services/diagnostics.ts";
 import type { AppEnvironment } from "../context.ts";
+import { userStatuses } from "../../db/schema/vocabulary.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
@@ -36,7 +37,7 @@ const signInDiagnosisSchema = z.object({
   user: z
     .object({
       id: z.uuid(),
-      status: z.enum(["inert", "active", "disabled"]),
+      status: z.enum(userStatuses),
     })
     .nullable(),
   membership: z

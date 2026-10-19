@@ -180,10 +180,7 @@ function errorCode(location: string | null): string | null {
   return location ? new URL(location).searchParams.get("error") : null;
 }
 
-async function insertUser(
-  email: string,
-  status: "inert" | "active" | "disabled",
-) {
+async function insertUser(email: string, status: "active" | "disabled") {
   const id = createId();
   const [user] = await connection.db
     .insert(users)
@@ -1110,18 +1107,15 @@ describe("integration: federated sign-in", () => {
     });
   });
 
-  test.each(["active", "inert"] as const)(
-    "rejects a recycled email held by an %s user without changing it",
-    async (status) => {
-      const holder = await insertUser("person@contoso.com", status);
-      await seedProvider();
-      issuer.enqueue(entraClaims());
+  test("rejects a recycled email held by an active user without changing it", async () => {
+    const holder = await insertUser("person@contoso.com", "active");
+    await seedProvider();
+    issuer.enqueue(entraClaims());
 
-      expect(errorCode((await signIn()).location)).toBe("email_conflict");
-      expect(await connection.db.select().from(users)).toEqual([holder]);
-      expect(await connection.db.select().from(accounts)).toHaveLength(0);
-    },
-  );
+    expect(errorCode((await signIn()).location)).toBe("email_conflict");
+    expect(await connection.db.select().from(users)).toEqual([holder]);
+    expect(await connection.db.select().from(accounts)).toHaveLength(0);
+  });
 
   test("rejects a disabled user already bound to the exact account", async () => {
     const user = await insertUser("person@contoso.com", "disabled");

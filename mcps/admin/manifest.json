@@ -1507,7 +1507,6 @@
           "status": {
             "type": "string",
             "enum": [
-              "inert",
               "active",
               "disabled"
             ]
@@ -1788,7 +1787,6 @@
                 "status": {
                   "type": "string",
                   "enum": [
-                    "inert",
                     "active",
                     "disabled"
                   ]

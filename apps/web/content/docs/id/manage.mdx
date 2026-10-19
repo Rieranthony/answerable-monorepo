@@ -309,7 +309,6 @@ curl -X DELETE "https://id.answerable.org/api/admin/v1/users/$USER_ID?confirm=$U
 | `resource_protected`        | The admin resource cannot be changed this way.                                      | Leave the protected resource in place.                                                        |
 | `resource_has_clients`      | Client links prevent resource erasure.                                              | Explicitly unlink every client, then retry the erase command.                                 |
 | `resource_has_entitlements` | Entitlements prevent resource erasure.                                              | Remove those entitlements first.                                                              |
-| `user_inert`                | The user is an import placeholder.                                                  | Not yet: imported users cannot sign in or be enabled until import tooling exists.             |
 | `user_not_disabled`         | Email retirement requires a disabled user.                                          | Disable the user first.                                                                       |
 | `user_email_retired`        | Email retirement is terminal.                                                       | Do not try to re-enable this account.                                                         |
 | `conflict`                  | A client or resource identifier was used before and remains reserved after erasure. | Create the replacement with a new identifier.                                                 |
@@ -668,7 +667,7 @@ An access query with only `clientId` selects client-only assignments; one with o
 
 These views describe effective assignment sources. [User OAuth](/docs/id/oauth) also checks tenant authentication, consent and stored grant state. Existing resource-only assignments outside the reserved admin surface must be converted to approved pairs before an application can obtain a service grant.
 
-**Active users and effective access.** Effective target views require an active global user and effective tenant membership. Inert and disabled users have no effective client, resource or pair targets, even when their assignments remain configured. They also do not count as platform writers for root lockout. When a previously disabled writer becomes active again and their grants remain effective, root locks again. Re-enabling a user does not recreate revoked sessions or tenant memberships.
+**Active users and effective access.** Effective target views require an active global user and effective tenant membership. Disabled users have no effective client, resource or pair targets, even when their assignments remain configured. They also do not count as platform writers for root lockout. When a previously disabled writer becomes active again and their grants remain effective, root locks again. Re-enabling a user does not recreate revoked sessions or tenant memberships.
 
 ### Approve a machine capability
 
