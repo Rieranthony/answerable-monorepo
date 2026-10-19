@@ -36,17 +36,22 @@ export function membershipPolicies(organizationId: PgColumn, userId: PgColumn) {
   ];
 }
 
-/** Sign-in routing is readable before authentication; writes still require authority. */
+/** Sign-in routing is readable before authentication, except that a tenant scope reads
+ * only its own organisation's rows; writes still require authority. */
 export function routingPolicies(
   organizationId: PgColumn,
   protocolWrite = false,
 ) {
   const mode = sql`current_setting('answerable.scope', true)`;
+  const tenant = sql`${organizationId} = nullif(current_setting('answerable.tenant', true), '')::uuid`;
   const protocol = protocolWrite ? sql` or ${mode} = 'protocol'` : sql``;
   const write = sql`(${mode} = 'platform-write'
-    or (${mode} = 'tenant-write' and ${organizationId} = nullif(current_setting('answerable.tenant', true), '')::uuid)${protocol})`;
+    or (${mode} = 'tenant-write' and ${tenant})${protocol})`;
   return [
-    pgPolicy("routing_read", { for: "select", using: sql`true` }),
+    pgPolicy("routing_read", {
+      for: "select",
+      using: sql`coalesce(${mode}, '') not in ('tenant-read', 'tenant-write') or ${tenant}`,
+    }),
     pgPolicy("routing_write", { for: "all", using: write, withCheck: write }),
   ];
 }

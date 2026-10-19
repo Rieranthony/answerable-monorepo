@@ -29,8 +29,8 @@ The query boundary does not cover every native adapter or broker query. See [ten
 | Grant contexts | Immutable authentication/user/member/tenant/client/resource binding, native code binding and retained revocation.        |
 
 | Members | Tenant-owned membership, terminal revocation/deletion and effective windows. |
-| Organisation domains | Unrestricted routing reads; scoped writes. |
-| SSO providers | Unrestricted routing reads; scoped writes, including protocol writes. |
+| Organisation domains | Routing reads without scope, bound to the selected tenant under tenant scopes; scoped writes. |
+| SSO providers | Routing reads without scope, bound to the selected tenant under tenant scopes; scoped writes, including protocol writes. |
 | Audit events | Unrestricted INSERT policy; administrative SELECT only, append-only runtime grants. |
 | Audit event users | Platform SELECT only; no INSERT policy, runtime INSERT is revoked and the triggers fill it as the owner. |
 
@@ -42,7 +42,7 @@ Every Better Auth adapter transaction starts in `protocol` scope; see [database-
 
 Membership writes allow `platform-write`, `protocol`, or `tenant-write` for the selected organisation. Their SELECT policies additionally allow `platform-read`, `platform-users`, selected `tenant-read` and `policy-root` for the bound platform organisation, and `policy-user` and `grant-admission` SELECT for the supplied subject. These membership predicates do not themselves filter status or deletion.
 
-Routing SELECT is unrestricted. Domain/provider writes require `platform-write` or selected `tenant-write`; SSO providers additionally permit `protocol` writes. Domain writes do not permit protocol scope. Audit SELECT allows `platform-read`, `platform-write`, `platform-users`, or matching-organisation `tenant-read`/`tenant-write`. The audit event INSERT policy has `WITH CHECK (true)`, independently of scope; runtime grants prohibit inserting audit users. Audit policies do not grant UPDATE or DELETE.
+Routing SELECT needs no scope, but `tenant-read` and `tenant-write` see only the selected organisation's domains and providers. Domain/provider writes require `platform-write` or selected `tenant-write`; SSO providers additionally permit `protocol` writes. Domain writes do not permit protocol scope. Audit SELECT allows `platform-read`, `platform-write`, `platform-users`, or matching-organisation `tenant-read`/`tenant-write`. The audit event INSERT policy has `WITH CHECK (true)`, independently of scope; runtime grants prohibit inserting audit users. Audit policies do not grant UPDATE or DELETE.
 
 `protect_grant_context` runs as `SECURITY DEFINER` with a fixed `pg_catalog, public` search path. It validates grant provenance and locks the member and session as the owner; direct execution is revoked from PUBLIC. It does not grant callers unrestricted access to those parents.
 

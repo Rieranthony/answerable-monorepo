@@ -600,11 +600,11 @@ CREATE POLICY "tenant_read" ON "groups" AS PERMISSIVE FOR SELECT TO public USING
       select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid and deleted_at is null and status = 'active' and (valid_from is null or valid_from <= statement_timestamp()) and (valid_until is null or valid_until > statement_timestamp())
     ))
     or (current_setting('answerable.scope', true) = 'policy-root' and "groups"."organization_id" in (select organization_id from system_bindings))));--> statement-breakpoint
-CREATE POLICY "routing_read" ON "organization_domains" AS PERMISSIVE FOR SELECT TO public USING (true);--> statement-breakpoint
+CREATE POLICY "routing_read" ON "organization_domains" AS PERMISSIVE FOR SELECT TO public USING (coalesce(current_setting('answerable.scope', true), '') not in ('tenant-read', 'tenant-write') or "organization_domains"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid);--> statement-breakpoint
 CREATE POLICY "routing_write" ON "organization_domains" AS PERMISSIVE FOR ALL TO public USING ((current_setting('answerable.scope', true) = 'platform-write'
     or (current_setting('answerable.scope', true) = 'tenant-write' and "organization_domains"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid))) WITH CHECK ((current_setting('answerable.scope', true) = 'platform-write'
     or (current_setting('answerable.scope', true) = 'tenant-write' and "organization_domains"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid)));--> statement-breakpoint
-CREATE POLICY "routing_read" ON "sso_providers" AS PERMISSIVE FOR SELECT TO public USING (true);--> statement-breakpoint
+CREATE POLICY "routing_read" ON "sso_providers" AS PERMISSIVE FOR SELECT TO public USING (coalesce(current_setting('answerable.scope', true), '') not in ('tenant-read', 'tenant-write') or "sso_providers"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid);--> statement-breakpoint
 CREATE POLICY "routing_write" ON "sso_providers" AS PERMISSIVE FOR ALL TO public USING ((current_setting('answerable.scope', true) = 'platform-write'
     or (current_setting('answerable.scope', true) = 'tenant-write' and "sso_providers"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid) or current_setting('answerable.scope', true) = 'protocol')) WITH CHECK ((current_setting('answerable.scope', true) = 'platform-write'
     or (current_setting('answerable.scope', true) = 'tenant-write' and "sso_providers"."organization_id" = nullif(current_setting('answerable.tenant', true), '')::uuid) or current_setting('answerable.scope', true) = 'protocol'));--> statement-breakpoint

@@ -323,7 +323,7 @@ test("restricted runtime evaluates exact user pairs through scoped policy reads"
   await assertRuntimeRole(runtime.db);
 });
 
-test("administrative RLS isolates rows while retaining routing and append-only broker access", async () => {
+test("administrative RLS isolates rows, binds tenant routing reads and keeps append-only broker access", async () => {
   const { createId } = await import("../lib/id.ts");
   const {
     members,
@@ -373,35 +373,32 @@ test("administrative RLS isolates rows while retaining routing and append-only b
       outcome: "success",
     });
   }
-  for (const organizationId of tenants) {
-    await withDatabaseScope(
-      runtime.db,
-      { kind: "tenant", access: "read", organizationId },
-      async (tx) => {
-        // Deliberately omit application tenant predicates.
-        // Audit users have no tenant branch: only platform scopes read them.
-        expect(await tx.select().from(auditEventUsers)).toEqual([]);
-        for (const table of [members, auditEvents]) {
-          const rows = await tx
-            .select({ organizationId: table.organizationId })
-            .from(table);
-          expect(rows.length).toBeGreaterThan(0);
-          expect(
-            rows.every((row) => row.organizationId === organizationId),
-          ).toBe(true);
-        }
-        // Routing is intentionally public to all database scopes.
-        for (const table of [organizationDomains, ssoProviders]) {
-          const rows = await tx
-            .select({ organizationId: table.organizationId })
-            .from(table);
-          expect(rows.map((row) => row.organizationId)).toEqual(
-            expect.arrayContaining(tenants),
-          );
-        }
-      },
-    );
-  }
+  for (const organizationId of tenants)
+    for (const access of ["read", "write"] as const)
+      await withDatabaseScope(
+        runtime.db,
+        { kind: "tenant", access, organizationId },
+        async (tx) => {
+          // Deliberately omit application tenant predicates.
+          // Audit users have no tenant branch: only platform scopes read them.
+          expect(await tx.select().from(auditEventUsers)).toEqual([]);
+          // Routing too: a tenant scope reads only its own domains and providers.
+          for (const table of [
+            members,
+            auditEvents,
+            organizationDomains,
+            ssoProviders,
+          ]) {
+            const rows = await tx
+              .select({ organizationId: table.organizationId })
+              .from(table);
+            expect(rows.length).toBeGreaterThan(0);
+            expect(
+              rows.every((row) => row.organizationId === organizationId),
+            ).toBe(true);
+          }
+        },
+      );
   const foreign = tenants[1]!;
   const inserts = [
     (tx: import("./client.ts").Executor) =>
@@ -436,14 +433,29 @@ test("administrative RLS isolates rows while retaining routing and append-only b
   expect(await runtime.db.select().from(members)).toEqual([]);
   expect(await runtime.db.select().from(auditEvents)).toEqual([]);
   expect(await runtime.db.select().from(auditEventUsers)).toEqual([]);
-  for (const table of [organizationDomains, ssoProviders])
-    expect(
-      (
-        await runtime.db
-          .select({ organizationId: table.organizationId })
-          .from(table)
-      ).map((row) => row.organizationId),
-    ).toEqual(expect.arrayContaining(tenants));
+  // Sign-in routing is read before a tenant is known: without a scope, in the
+  // broker's protocol scope and by platform readers.
+  const routing = (tx: import("./client.ts").Executor) =>
+    Promise.all(
+      [organizationDomains, ssoProviders].map(async (table) =>
+        (
+          await tx.select({ organizationId: table.organizationId }).from(table)
+        ).map((row) => row.organizationId),
+      ),
+    );
+  for (const rows of [
+    await routing(runtime.db),
+    await withDatabaseScope(runtime.db, { kind: "protocol" }, routing),
+    await withDatabaseScope(
+      runtime.db,
+      { kind: "platform", access: "read" },
+      routing,
+    ),
+  ])
+    expect(rows).toEqual([
+      expect.arrayContaining(tenants),
+      expect.arrayContaining(tenants),
+    ]);
   const event = await withDatabaseScope(
     runtime.db,
     { kind: "tenant", access: "write", organizationId: tenants[0]! },
