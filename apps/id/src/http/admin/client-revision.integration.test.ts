@@ -75,19 +75,13 @@ test("configuration patches reject stale revisions but replay an already committ
   );
   const operation = await status.json();
   expect(operation).toMatchObject({ outcome: "noop" });
-  const events = await fixture.db
-    .select()
-    .from(auditEvents)
-    .where(eq(auditEvents.operationId, operation.id));
-  expect(events).toHaveLength(1);
-  expect(events[0]).toMatchObject({
-    action: "client.update_unchanged",
-    organizationId: fixture.tenant.organizationId,
-    data: {
-      before: { revision: after.revision },
-      after: { revision: after.revision },
-    },
-  });
+  // The receipt is the no-op's record; it writes no audit event.
+  expect(
+    await fixture.db.$count(
+      auditEvents,
+      eq(auditEvents.operationId, operation.id),
+    ),
+  ).toBe(0);
 });
 
 test("weak, wildcard, malformed and unrelated tags do not update a client", async () => {

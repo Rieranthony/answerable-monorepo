@@ -1,4 +1,7 @@
-import { expectReceipt } from "../../__tests__/operation-receipt.ts";
+import {
+  expectNoop,
+  expectReceipt,
+} from "../../__tests__/operation-receipt.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import {
@@ -29,20 +32,18 @@ async function status(response: Response) {
   return result.json();
 }
 
-test("resource links, immutable owner verification and erasure replay without recreating erased state", async () => {
+test("resource links and erasure replay without recreating erased state", async () => {
   const resource = "https://lifecycle.example/mcp";
-  expect(
-    (
-      await request("/clients", "POST", "create-lifecycle", {
-        clientId: "lifecycle",
-        name: "Lifecycle",
-        organizationId: fixture.tenant.organizationId,
-        tokenEndpointAuthMethod: "client_secret_basic",
-        grantTypes: ["client_credentials"],
-        clientCredentialsScopes: ["tool:read"],
-      })
-    ).status,
-  ).toBe(201);
+  const created = await request("/clients", "POST", "create-lifecycle", {
+    clientId: "lifecycle",
+    name: "Lifecycle",
+    organizationId: fixture.tenant.organizationId,
+    tokenEndpointAuthMethod: "client_secret_basic",
+    grantTypes: ["client_credentials"],
+    clientCredentialsScopes: ["tool:read"],
+  });
+  expect(created.status).toBe(201);
+  const client = await created.json();
   expect(
     (
       await request("/resources", "POST", "resource", {
@@ -64,6 +65,7 @@ test("resource links, immutable owner verification and erasure replay without re
   expect(duplicate.status).toBe(200);
   expect(await duplicate.json()).toEqual({ created: false });
   expect(await status(duplicate)).toMatchObject({ outcome: "noop" });
+  await expectNoop(fixture.db, duplicate);
   const unlinked = await request(path, "DELETE", "unlink-once");
   expect(unlinked.status).toBe(204);
   expect(await unlinked.text()).toBe("");
@@ -71,20 +73,11 @@ test("resource links, immutable owner verification and erasure replay without re
   const absent = await request(path, "DELETE", "unlink-new-key");
   expect(absent.status).toBe(204);
   expect(await status(absent)).toMatchObject({ outcome: "noop" });
+  await expectNoop(fixture.db, absent);
   expect((await request(path, "PUT", "link-once")).status).toBe(201);
   expect(
     await (await request("/clients/lifecycle", "GET", "read")).json(),
   ).toMatchObject({ resources: [] });
-  const ownerInput = { organizationId: fixture.tenant.organizationId };
-  const owner = await request(
-    "/clients/lifecycle/owner",
-    "PUT",
-    "owner-once",
-    ownerInput,
-  );
-  expect(owner.status).toBe(200);
-  expect(await status(owner)).toMatchObject({ outcome: "noop" });
-  const ownerBody = await owner.json();
   const erased = await request(
     "/clients/lifecycle?confirm=lifecycle",
     "DELETE",
@@ -102,9 +95,10 @@ test("resource links, immutable owner verification and erasure replay without re
   expect(eraseReplay.headers.get("Idempotency-Replayed")).toBe("true");
   expect(await status(eraseReplay)).toEqual(erasedStatus);
   expect((await request(path, "DELETE", "unlink-once")).status).toBe(204);
+  // A no-op's receipt replays after erasure too.
   await expectReceipt(
     fixture.db,
-    await request("/clients/lifecycle/owner", "PUT", "owner-once", ownerInput),
+    await request(path, "DELETE", "unlink-new-key"),
   );
   const changedInput = await request(
     "/clients/lifecycle?confirm=different",
@@ -126,9 +120,9 @@ test("resource links, immutable owner verification and erasure replay without re
     organizationId: fixture.tenant.organizationId,
     schemaVersion: 1,
     data: {
-      before: { id: ownerBody.id },
+      before: { id: client.id },
       after: {
-        id: ownerBody.id,
+        id: client.id,
         deletedAt: expect.any(String),
         disabled: true,
         hasClientSecret: false,

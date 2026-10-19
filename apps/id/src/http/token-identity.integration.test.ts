@@ -29,7 +29,6 @@ const clients = {
   disableClient: platformWriteService(clientsImplementation.disableClient),
   enableClient: platformWriteService(clientsImplementation.enableClient),
   rotateSecret: platformWriteService(clientsImplementation.rotateSecret),
-  setOwner: platformWriteService(clientsImplementation.setOwner),
   linkResource: platformWriteService(clientsImplementation.linkResource),
   unlinkResource: platformWriteService(clientsImplementation.unlinkResource),
 };
@@ -135,18 +134,6 @@ test("an out-of-band ownership update is rejected and leaves the token in its or
   expect(await response.json()).toMatchObject({
     principal: { organizationId: orgId },
   });
-});
-test("administration cannot transfer or detach client ownership", async () => {
-  const token = await mint();
-  for (const owner of [otherOrgId, null]) {
-    await expect(
-      clients.setOwner(connection.db, actor, client.clientId, owner),
-    ).rejects.toMatchObject({ status: 409, code: "ownership_conflict" });
-  }
-  expect(
-    await clients.setOwner(connection.db, actor, client.clientId, orgId),
-  ).toMatchObject({ organizationId: orgId });
-  expect((await me(token)).status).toBe(200);
 });
 test("a deleted client identifier cannot be recreated and its old token is rejected", async () => {
   const token = await mint();

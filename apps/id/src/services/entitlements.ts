@@ -46,20 +46,18 @@ async function audit(
     | { before: null; after: Configuration; deletionMode?: "soft" },
 ) {
   const target = data.before ?? data.after;
-  // A change names the memberships it reaches; a no-op names none.
-  const audience = action.endsWith("_unchanged")
-    ? undefined
-    : await queries.readEntitlementAudience(
-        context,
-        target.organizationId,
-        target,
-      );
+  // A change names the memberships it reaches.
+  const audience = await queries.readEntitlementAudience(
+    context,
+    target.organizationId,
+    target,
+  );
   return recordCommandEvent(context, {
     organizationId: target.organizationId,
     targetId: target.id,
     targetType: "entitlement",
     action,
-    data: audience === undefined ? data : { ...data, audience },
+    data: { ...data, audience },
   });
 }
 async function lockedEntitlement(
@@ -160,11 +158,12 @@ export async function updateEntitlement(
         patch,
       ))!
     : existing;
-  await audit(
-    context,
-    changed ? "entitlement.updated" : "entitlement.update_unchanged",
-    { before: configuration(existing), after: configuration(row) },
-  );
+  // An unchanged command's receipt is its record; it writes no audit event.
+  if (changed)
+    await audit(context, "entitlement.updated", {
+      before: configuration(existing),
+      after: configuration(row),
+    });
   return { row, changed };
 }
 async function setStatus(
@@ -187,10 +186,11 @@ async function setStatus(
         status,
       ))!
     : existing;
-  await audit(context, statusAction("entitlement", status, changed), {
-    before: configuration(existing),
-    after: configuration(row),
-  });
+  if (changed)
+    await audit(context, statusAction("entitlement", status), {
+      before: configuration(existing),
+      after: configuration(row),
+    });
   return { row, changed };
 }
 export async function disableEntitlement(

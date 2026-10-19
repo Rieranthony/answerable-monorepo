@@ -86,6 +86,11 @@ test("resource lifecycle attributes exactly one audit per write and preserves up
   expect(
     await service.updateResource(db, actor, row.identifier, patch),
   ).toMatchObject(patch);
+  // Repeating the patch and enabling an enabled resource change nothing and
+  // record no event.
+  expect(
+    await service.updateResource(db, actor, row.identifier, patch),
+  ).toMatchObject(patch);
   expect(await service.enableResource(db, actor, row.identifier)).toMatchObject(
     { changed: false, row: { disabled: false } },
   );
@@ -103,9 +108,7 @@ test("resource lifecycle attributes exactly one audit per write and preserves up
   expect(events.map((e) => e.action)).toEqual([
     "resource.created",
     "resource.updated",
-    "resource.state_unchanged",
     "resource.disabled",
-    "resource.state_unchanged",
     "resource.enabled",
     "resource.erased",
   ]);

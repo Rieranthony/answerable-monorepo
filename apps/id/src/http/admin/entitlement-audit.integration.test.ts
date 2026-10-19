@@ -4,7 +4,10 @@ import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
-import { expectReceipt } from "../../__tests__/operation-receipt.ts";
+import {
+  expectNoop,
+  expectReceipt,
+} from "../../__tests__/operation-receipt.ts";
 import {
   auditEvents,
   entitlements,
@@ -85,18 +88,20 @@ test("member entitlement commands retain affected-user history through removal a
     eventIds.push(event!.id);
   }
   await remember(created);
-  for (const [suffix, method, body] of [
-    ["", "PATCH", { validUntil: "2100-01-01T00:00:00Z" }],
-    ["", "PATCH", { validUntil: "2100-01-01T00:00:00Z" }],
-    ["/disable", "POST", undefined],
-    ["/disable", "POST", undefined],
-    ["/enable", "POST", undefined],
-    ["/enable", "POST", undefined],
-    ["", "DELETE", undefined],
+  // Each repeat changes nothing: its receipt is the record, with no event.
+  for (const [suffix, method, body, applied] of [
+    ["", "PATCH", { validUntil: "2100-01-01T00:00:00Z" }, true],
+    ["", "PATCH", { validUntil: "2100-01-01T00:00:00Z" }, false],
+    ["/disable", "POST", undefined, true],
+    ["/disable", "POST", undefined, false],
+    ["/enable", "POST", undefined, true],
+    ["/enable", "POST", undefined, false],
+    ["", "DELETE", undefined, true],
   ] as const) {
     const response = await command(path + suffix, method, body);
     expect(response.status).toBe(method === "DELETE" ? 204 : 200);
-    await remember(response);
+    if (applied) await remember(response);
+    else await expectNoop(fixture.db, response);
   }
   async function history() {
     const response = await fixture.app.request(
@@ -249,14 +254,7 @@ for (const principal of ["group", "organisation"] as const) {
       if (method !== "DELETE") {
         const noop = await command(`${base}/${row.id}${suffix}`, method, body);
         expect(noop.status).toBe(200);
-        const [event] = await fixture.db
-          .select()
-          .from(auditEvents)
-          .where(
-            eq(auditEvents.operationId, noop.headers.get("Operation-Id")!),
-          );
-        expect(event!.schemaVersion).toBe(1);
-        expect(event!.data!.audience).toBeUndefined();
+        await expectNoop(fixture.db, noop);
       }
     }
     expect(

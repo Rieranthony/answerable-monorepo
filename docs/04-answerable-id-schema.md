@@ -70,7 +70,7 @@ Current deletion manifests describe product tombstones and actual credential cle
 
 ### Audit actions
 
-Every event has `schema_version` 1, and each action one `data` shape; the first payload change after launch adds version 2. `reason` holds a refusal or failure code. Optional keys are marked. A [test](../apps/id/src/db/queries/audit.test.ts) keeps this table equal to the actions ID writes.
+Every event has `schema_version` 1, and each action one `data` shape; the first payload change after launch adds version 2. `reason` holds a refusal or failure code. Optional keys are marked. A command that changes nothing records no event: its receipt, with outcome `noop`, is the record. A [test](../apps/id/src/db/queries/audit.test.ts) keeps this table equal to the actions ID writes.
 
 Soft-deleted entitlements, group assignments and memberships have one evidence shape wherever an erasure's `effects` lists them, ordered by `id`: the row's policy fields (identifiers, `revision`, scopes or status, validity window) and `deletedAt`. Assignments add the member's `userId`; memberships carry `userId`, `status` and `revokedAt`.
 
@@ -82,46 +82,44 @@ Soft-deleted entitlements, group assignments and memberships have one evidence s
 | `auth.signin.succeeded` | `userId`, `authenticationAccountId`, `authenticationProviderId`, `authenticationProviderRevision`, `upstreamAuthTime`. |
 | `auth.signin.rejected`, `auth.signout` | Null. |
 | `bootstrap.applied` | Recorded only when a start created or changed something. `created` (true on the first start, which provisioned the platform), `resource` (the admin resource's `name`, `accessTokenTtl` and `allowedScopes` `before`, null on creation, and `after`), `capability` (the platform ceiling the first start seeded, otherwise null). |
-| `capability.created`, `capability.updated`, `capability.update_unchanged` | `before` (null on creation), `after`. |
+| `capability.created`, `capability.updated` | `before` (null on creation), `after`. |
 | `capability.removed`, `domain.deleted`, `group_member.removed` | `before`, `after`, `deletionMode: "soft"`; `group_member.removed` adds `groupId`. |
 | `client.created`, `resource.created` | `before: null`, `after`. |
-| `client.updated`, `client.update_unchanged`, `resource.updated`, `resource.update_unchanged` | `requestedFields`, `before`, `after`. |
-| `client.enabled`, `client.disabled`, `client.state_unchanged` | `before`, `after`, `effects` (token counts), optional `grantEffectsEventId`. |
+| `client.updated`, `resource.updated` | `requestedFields`, `before`, `after`. |
+| `client.enabled`, `client.disabled` | `before`, `after`, `effects` (token counts), optional `grantEffectsEventId`. |
 | `client.secret_rotated` | `before` and `after` `authorizationVersion`, `effects` (`credentialChanged`, token counts), optional `grantEffectsEventId`. |
-| `client.owner_unchanged` | `before` and `after` `organizationId`, `changed: false`. |
-| `client.resource_linked`, `client.resource_unlinked`, `client.resource_unchanged` | `resource`, `relationship` (`id`, `deletedAt`; null without an effect), `resourceInstanceId`, `resourceClassification`, `resourceOrganizationId`, `before` and `after` `linked`. |
+| `client.resource_linked`, `client.resource_unlinked` | `resource`, `relationship` (`id`, `deletedAt`), `resourceInstanceId`, `resourceClassification`, `resourceOrganizationId`, `before` and `after` `linked`. |
 | `client.grants_revoked` | Platform only: `clientInstanceId`, `grantContexts`, `revokedTokens` (`access`, `refresh`: row and user IDs). |
 | `client.grants_erased` | Platform only: `clientInstanceId`, `grantContexts`, `effects` (deleted tokens, soft-deleted consents and links), `deletionMode`. |
 | `client.erased` | `before`, `after`, `deletionMode`, `effects` (counts), optional `grantEffectsEventId`. |
 | `domain.created` | `domain`, `before: null`, `after`. |
-| `domain.enabled`, `domain.disabled`, `domain.enable_unchanged`, `domain.disable_unchanged` | `status`, `before`, `after`. |
+| `domain.enabled`, `domain.disabled` | `status`, `before`, `after`. |
 | `entitlement.created`, `entitlement.updated`, `entitlement.enabled`, `entitlement.disabled` | `before` (null on creation), `after`, `audience`: the memberships the entitlement reaches (its member, its group's assignments, or every member). |
 | `entitlement.removed` | `before`, `after`, `deletionMode`, `audience`. |
-| `entitlement.update_unchanged`, `entitlement.enable_unchanged`, `entitlement.disable_unchanged` | `before`, `after`. |
-| `group.created`, `group.updated`, `group.update_unchanged`, `group.enable_unchanged`, `group.disable_unchanged` | `before` (null on creation), `after`. |
+| `group.created`, `group.updated` | `before` (null on creation), `after`. |
 | `group.enabled`, `group.disabled` | `before`, `after`, `policySources` (`assignments`, `entitlements`). |
 | `group.erased` | `before`, `after`, `deletionMode`, `effects` (`softDeletedAssignments`, `softDeletedEntitlements`). |
-| `group_member.added`, `group_member.updated`, `group_member.update_unchanged` | `groupId`, `before` (null when added), `after`. |
+| `group_member.added`, `group_member.updated` | `groupId`, `before` (null when added), `after`. |
 | `identity.linked` | `initiatingSessionId`, `initiatingAccountId`, `authenticationProviderId`, `authenticationProviderRevision`, `upstreamAuthTime`, `flowId`. |
 | `member.updated` | `changes`, `before`, `after`, each state with its `access`. |
-| `member.removed`, `member.removal_unchanged` | `userId`, `reason`, `before`, `after` (with `access`), `effects` (`removedGrants`, `softDeletedAssignments`, `revokedGrantContexts`). |
-| `member.reinstated`, `member.reinstatement_unchanged` | `userId`, `reason`, `before`, `after` (with `access`). |
+| `member.removed` | `userId`, `reason`, `before`, `after` (with `access`), `effects` (`removedGrants`, `softDeletedAssignments`, `revokedGrantContexts`). |
+| `member.reinstated` | `userId`, `reason`, `before`, `after` (with `access`). |
 | `oauth.token.issued` | `decision`, `issuedAt`, `expiresAt`. |
 | `oauth.token.rejected` | `grantType`, `stage`, `authenticatedClient` and `decision` (both null when client authentication failed). |
 | `oauth.user.authorized`, `oauth.user.denied` | `scopes`, `decision`. |
 | `oauth.user.issued` | Recorded for the code exchange only, not for a refresh. `grantType`, `scopes`, `decision`. |
 | `oauth.user.revoked` | `reason` (`authorization_code_replay`, `refresh_token_replay`, `revocation_request`), `effect` (`grant`, `refresh_family`, `access_token`). |
-| `organization.created`, `organization.updated`, `organization.update_unchanged`, `organization.enabled`, `organization.enable_unchanged` | `before` (null on creation), `after`. |
-| `organization.disabled`, `organization.disable_unchanged` | `before` and `after` (`status`, `authorizationVersion`), `effects` (`revokedMachineAccessTokenIds`, `revokedGrantContexts`). |
+| `organization.created`, `organization.updated`, `organization.enabled` | `before` (null on creation), `after`. |
+| `organization.disabled` | `before` and `after` (`status`, `authorizationVersion`), `effects` (`revokedMachineAccessTokenIds`, `revokedGrantContexts`). |
 | `organization.erased` | `before`, `after`, `deletionMode`, `revokedGrantContexts`, `effects` (the soft-deleted entitlements, assignments, members, groups, capabilities, domains and SSO providers). |
-| `resource.enabled`, `resource.disabled`, `resource.state_unchanged` | `before`, `after`, `effects.revokedGrantContexts`. |
+| `resource.enabled`, `resource.disabled` | `before`, `after`, `effects.revokedGrantContexts`. |
 | `resource.erased` | `before`, `after`, `deletionMode`, `revokedGrantContexts`. |
 | `session.revoked` | `userId`, `before`, `after: null`, `sessionIds`, `revokedGrantContexts`, token counts, `revokedTokens`. |
 | `session.revoked_all` | `userId`, `sessions`, `sessionIds`, `revokedGrantContexts`, token counts, `revokedTokens`. |
-| `sso_provider.created`, `sso_provider.updated`, `sso_provider.update_unchanged` | `before` (null on creation), `after`, `credentialsChanged`, `effects.revokedGrantContexts`. |
+| `sso_provider.created`, `sso_provider.updated` | `before` (null on creation), `after`, `credentialsChanged`, `effects.revokedGrantContexts`. |
 | `sso_provider.deleted` | `before`, `after` (with `credentialsCleared`), `deletionMode`, `effects.revokedGrantContexts`. |
-| `user.enabled`, `user.enable_unchanged`, `user.email_retired`, `user.email_retirement_unchanged` | `before`, `after`. |
-| `user.disabled`, `user.disable_unchanged` | `before`, `after`, `sessions`, `sessionIds`, `revokedGrantContexts`, token counts, `revokedTokens`. |
+| `user.enabled`, `user.email_retired` | `before`, `after`. |
+| `user.disabled` | `before`, `after`, `sessions`, `sessionIds`, `revokedGrantContexts`, token counts, `revokedTokens`. |
 | `user.erased` | `before`, `after`, `deletionMode`, `revokedGrantContexts`, `effects` (deleted tokens and sessions, soft-deleted consents, entitlements, assignments, members and accounts, cleared token sessions). |
 
 ## Runtime database permissions
@@ -132,7 +130,7 @@ RLS protects `groups`, `group_members`, `entitlements`, `organization_capabiliti
 
 ## Completed administrative operations
 
-All 49 mutations share the journal. Actor, tenant scope, operation kind, target and normalised input identify a reservation. Matching retries require current authority and return the receipt without repeating effects; mismatches conflict.
+All 48 mutations share the journal. Actor, tenant scope, operation kind, target and normalised input identify a reservation. Matching retries require current authority and return the receipt without repeating effects; mismatches conflict.
 
 Reservations are permanent. Replays return receipts at the original status code, with an empty body for 204. Response bodies are not stored.
 

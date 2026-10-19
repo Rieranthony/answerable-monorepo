@@ -43,25 +43,27 @@ export async function updateWindow(
     await queries.updateMemberWindow(context, memberId, patch),
     notFound,
   );
-  const accessAfter = await memberAccess(context, memberId);
-  await recordCommandEvent(context, {
-    organizationId,
-    targetType: "member",
-    targetId: memberId,
-    action: "member.updated",
-    data: {
-      changes: patch,
-      before: { ...before, access: accessBefore },
-      after: {
-        ...before,
-        revision: row.revision,
-        validFrom: row.validFrom,
-        validUntil: row.validUntil,
-        access: accessAfter,
+  const changed = row.revision !== before.revision;
+  // An unchanged command's receipt is its record; it writes no audit event.
+  if (changed)
+    await recordCommandEvent(context, {
+      organizationId,
+      targetType: "member",
+      targetId: memberId,
+      action: "member.updated",
+      data: {
+        changes: patch,
+        before: { ...before, access: accessBefore },
+        after: {
+          ...before,
+          revision: row.revision,
+          validFrom: row.validFrom,
+          validUntil: row.validUntil,
+          access: await memberAccess(context, memberId),
+        },
       },
-    },
-  });
-  return { row, changed: row.revision !== before.revision };
+    });
+  return { row, changed };
 }
 export async function remove(context: TenantMemberContext, memberId: string) {
   const { organizationId } = context;
@@ -74,17 +76,18 @@ export async function remove(context: TenantMemberContext, memberId: string) {
     context,
     memberId,
   );
-  const accessAfter = await memberAccess(context, memberId);
   const unchanged =
     revokedGrantContexts.length === 0 &&
     before.membershipStatus === "revoked" &&
     removedGrants.length === 0 &&
     softDeletedAssignments.length === 0;
+  if (unchanged) return "noop" as const;
+  const accessAfter = await memberAccess(context, memberId);
   await recordCommandEvent(context, {
     organizationId,
     targetType: "member",
     targetId: memberId,
-    action: unchanged ? "member.removal_unchanged" : "member.removed",
+    action: "member.removed",
     data: {
       userId: row.userId,
       reason: "administrative_removal",
@@ -101,7 +104,7 @@ export async function remove(context: TenantMemberContext, memberId: string) {
       effects: { removedGrants, softDeletedAssignments, revokedGrantContexts },
     },
   });
-  return unchanged ? ("noop" as const) : ("applied" as const);
+  return "applied" as const;
 }
 
 export async function reinstate(
@@ -112,28 +115,28 @@ export async function reinstate(
   const before = found(await queries.findMember(context, memberId), notFound);
   const accessBefore = await memberAccess(context, memberId);
   const row = found(await queries.reinstateMember(context, memberId), notFound);
-  const accessAfter = await memberAccess(context, memberId);
   const changed = before.membershipStatus !== "active";
-  await recordCommandEvent(context, {
-    organizationId,
-    targetType: "member",
-    targetId: memberId,
-    action: changed ? "member.reinstated" : "member.reinstatement_unchanged",
-    data: {
-      userId: row.userId,
-      reason: "administrative_reinstatement",
-      before: {
-        membershipStatus: before.membershipStatus,
-        revokedAt: before.revokedAt,
-        access: accessBefore,
+  if (changed)
+    await recordCommandEvent(context, {
+      organizationId,
+      targetType: "member",
+      targetId: memberId,
+      action: "member.reinstated",
+      data: {
+        userId: row.userId,
+        reason: "administrative_reinstatement",
+        before: {
+          membershipStatus: before.membershipStatus,
+          revokedAt: before.revokedAt,
+          access: accessBefore,
+        },
+        after: {
+          membershipStatus: row.status,
+          revokedAt: row.revokedAt,
+          access: await memberAccess(context, memberId),
+        },
       },
-      after: {
-        membershipStatus: row.status,
-        revokedAt: row.revokedAt,
-        access: accessAfter,
-      },
-    },
-  });
+    });
   return {
     row: found(await queries.findMember(context, memberId), notFound),
     changed,

@@ -151,6 +151,11 @@ test("member windows and removal audit, cascade grants and memberships, and reta
       validUntil: future,
     }),
   ).toMatchObject({ effective: true });
+  // The same window again changes nothing, so it records no event.
+  await service.updateWindow(db, actor, org.id, ids[0]!, {
+    validFrom: past,
+    validUntil: future,
+  });
   const group = await createGroup(db, {
     organizationId: org.id,
     slug: "team",
@@ -512,10 +517,7 @@ test("member removal irreversibly revokes its grant contexts and audits only new
     )[0]!.revokedAt,
   ).toBeNull();
   await service.remove(db, actor, org.id, ids[0]!);
+  const audited = await db.$count(auditEvents);
   expect(await service.remove(db, actor, org.id, ids[0]!)).toBe("noop");
-  const [noop] = await db
-    .select()
-    .from(auditEvents)
-    .where(eq(auditEvents.action, "member.removal_unchanged"));
-  expect(noop!.data).toMatchObject({ effects: { revokedGrantContexts: [] } });
+  expect(await db.$count(auditEvents)).toBe(audited);
 });

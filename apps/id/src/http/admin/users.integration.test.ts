@@ -30,13 +30,14 @@ async function request(
   method = "GET",
   body?: unknown,
   kind: Kind = "platformAdmin",
+  /** The expected audit event; null for a no-op, which records none. */
   audit?: {
     action: string;
     targetId: string;
     targetType: string;
     organizationId: string | null;
     data?: Record<string, unknown>;
-  },
+  } | null,
 ) {
   if (
     method === "DELETE" &&
@@ -66,7 +67,7 @@ async function request(
           eq(auditEvents.outcome, "success"),
         ),
       );
-    if (response.ok) {
+    if (response.ok && audit !== null) {
       expect(audit, "Every write asserts its audit").toBeDefined();
       expect(events).toHaveLength(1);
       expect(events[0]).toMatchObject({
@@ -364,7 +365,7 @@ test("user pagination, platform reader access, validation and lifecycle conflict
     "POST",
     undefined,
     "platformAdmin",
-    audit("user.disable_unchanged"),
+    null,
   );
   expect(repeat.status).toBe(200);
   expect(
@@ -383,7 +384,7 @@ test("user pagination, platform reader access, validation and lifecycle conflict
     "POST",
     undefined,
     "platformAdmin",
-    audit("user.email_retirement_unchanged"),
+    null,
   );
   expect(retire.status).toBe(200);
   const seen: string[] = [];

@@ -33,7 +33,6 @@ const service = {
   disableClient: platformWriteService(implementation.disableClient),
   enableClient: platformWriteService(implementation.enableClient),
   rotateSecret: platformWriteService(implementation.rotateSecret),
-  setOwner: platformWriteService(implementation.setOwner),
   linkResource: platformWriteService(implementation.linkResource),
   unlinkResource: platformWriteService(implementation.unlinkResource),
   eraseClient: platformWriteService(implementation.eraseClient),
@@ -92,7 +91,7 @@ afterAll(async () => {
   await connection.close();
 });
 
-test("client lifecycle hides digests, returns secrets once, revokes tokens, changes owners and audits every write", async () => {
+test("client lifecycle hides digests, returns secrets once, revokes tokens and audits every change", async () => {
   const db = connection.db;
   const input = machineInput();
   const created = await service.createClient(db, actor, input);
@@ -168,31 +167,17 @@ test("client lifecycle hides digests, returns secrets once, revokes tokens, chan
     await service.linkResource(db, actor, created.clientId, resource),
   ).toEqual({ created: false });
   await service.unlinkResource(db, actor, created.clientId, resource);
-  const otherId = createId();
-  await db
-    .insert(organizations)
-    .values({ id: otherId, name: "Other", slug: "other" });
-  for (const owner of [otherId, null])
-    await expect(
-      service.setOwner(db, actor, created.clientId, owner),
-    ).rejects.toMatchObject({ status: 409, code: "ownership_conflict" });
-  expect(
-    await service.setOwner(db, actor, created.clientId, organizationId),
-  ).toMatchObject({ organizationId });
+  // The unchanged enable, disable and link record no event.
   const events = await db.select().from(auditEvents).orderBy(auditEvents.id);
   expect(events.map((e) => e.action)).toEqual([
     "client.created",
     "client.updated",
     "client.secret_rotated",
-    "client.state_unchanged",
     "client.grants_revoked",
     "client.disabled",
-    "client.state_unchanged",
     "client.enabled",
     "client.resource_linked",
-    "client.resource_unchanged",
     "client.resource_unlinked",
-    "client.owner_unchanged",
   ]);
   for (const event of events)
     expect(event).toMatchObject({
@@ -209,13 +194,6 @@ test("client lifecycle hides digests, returns secrets once, revokes tokens, chan
   expect(
     events.find((event) => event.action === "client.disabled")?.data,
   ).toMatchObject({ effects: { accessTokens: 1, refreshTokens: 1 } });
-  expect(
-    events.find((event) => event.action === "client.owner_unchanged")?.data,
-  ).toEqual({
-    before: { organizationId },
-    after: { organizationId },
-    changed: false,
-  });
   const serialised = JSON.stringify(events);
   for (const secret of [
     created.clientSecret!,
@@ -350,12 +328,6 @@ test("updates recheck the stored configuration, including legacy invalid rows", 
     clientId: "empty",
     redirectUris: [],
   });
-  await expect(
-    service.setOwner(db, actor, empty.clientId, organizationId),
-  ).rejects.toMatchObject({ status: 409, code: "ownership_conflict" });
-  expect(await service.setOwner(db, actor, empty.clientId, null)).toMatchObject(
-    { organizationId: null },
-  );
   expect(
     await service.updateClient(db, actor, empty.clientId, { name: "Empty" }),
   ).toMatchObject({ name: "Empty" });
@@ -368,7 +340,6 @@ test("unknown clients, organisations and resources return 404 without successful
     () => service.disableClient(db, actor, "missing"),
     () => service.enableClient(db, actor, "missing"),
     () => service.rotateSecret(db, actor, "missing"),
-    () => service.setOwner(db, actor, "missing", null),
     () => service.linkResource(db, actor, "missing", resource),
     () => service.unlinkResource(db, actor, "missing", resource),
     () =>
@@ -384,15 +355,13 @@ test("unknown clients, organisations and resources return 404 without successful
   expect(await db.select().from(auditEvents)).toHaveLength(0);
   const client = await service.createClient(db, actor, machineInput());
   await expect(
-    service.setOwner(db, actor, client.clientId, createId()),
-  ).rejects.toMatchObject({ status: 409, code: "ownership_conflict" });
-  await expect(
     service.linkResource(db, actor, client.clientId, "https://missing.example"),
   ).rejects.toMatchObject({ status: 404, code: "not_found" });
   expect(
     await service.unlinkResource(db, actor, client.clientId, resource),
   ).toEqual({ removed: false });
-  expect(await db.select().from(auditEvents)).toHaveLength(2);
+  // Creation is the only change; the unlink of an absent link records nothing.
+  expect(await db.select().from(auditEvents)).toHaveLength(1);
 });
 
 test("erasure checks existence, confirmation and entitlements in order", async () => {

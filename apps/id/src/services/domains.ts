@@ -72,13 +72,15 @@ async function setStatus(
         status,
       )
     : existing;
-  await recordCommandEvent(context, {
-    organizationId,
-    targetType: "domain",
-    targetId: domainId,
-    action: statusAction("domain", status, changed),
-    data: { status, before: auditDomain(existing), after: auditDomain(row!) },
-  });
+  // An unchanged command's receipt is its record; it writes no audit event.
+  if (changed)
+    await recordCommandEvent(context, {
+      organizationId,
+      targetType: "domain",
+      targetId: domainId,
+      action: statusAction("domain", status),
+      data: { status, before: auditDomain(existing), after: auditDomain(row!) },
+    });
   return { row: row!, changed };
 }
 export async function disableDomain(

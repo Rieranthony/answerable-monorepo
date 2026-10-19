@@ -103,7 +103,7 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORGANIZATION_ID/memb
 
 **Unattributed machine attempts.** `oauth.token.rejected` records failed client authentication with system actor `oauth-client-authentication`, no tenant, and null `data.authenticatedClient` and `data.decision`. Invalid credentials produce a denial; authentication infrastructure errors produce a failure. These events are platform-only and omit supplied identity, credentials, scope/resource values and exception details. Audit-storage failure preserves rejection and emits the fixed operational signal `token_rejection_audit_unavailable`. Requests rejected by parsing, route filtering or provider rate limiting before this handler are outside this event contract.
 
-**Membership history.** `member.updated`, `member.reinstated`, `member.reinstatement_unchanged`, `member.removed` and `member.removal_unchanged` events retain this access projection under both `data.before.access` and `data.after.access`. `permission.scopes` is the approved intersection; top-level target scopes remain assignments. Removal records ineffective access after revocation even if organisation-wide assignments survive; its actual deletion/revocation effects remain separately recorded. Reinstatement can restore an organisation-wide permission without recreating removed direct assignments. An unchanged reinstatement means the membership was already active, not that every permission was unchanged.
+**Membership history.** `member.updated`, `member.reinstated` and `member.removed` events retain this access projection under both `data.before.access` and `data.after.access`. `permission.scopes` is the approved intersection; top-level target scopes remain assignments. Removal records ineffective access after revocation even if organisation-wide assignments survive; its actual deletion/revocation effects remain separately recorded. Reinstatement can restore an organisation-wide permission without recreating removed direct assignments. An unchanged reinstatement means the membership was already active, not that every permission was unchanged.
 
 **Observation limits.** These reads share the membership command transaction and tenant lock. Each is a separate database statement: elapsed validity windows and independently changed endpoint configuration can affect the result. Allowed decisions retain their evaluation time and source revisions. An empty snapshot has no allowed target decision; it does not carry a fabricated decision time. These observations are not an isolated causal delta, token issuance evidence or proof of remote session termination. Audit/subject failure rolls back the membership change and operation receipt; replay returns the receipt without another event. Version 1 history is not backfilled.
 
@@ -137,7 +137,7 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORGANIZATION_ID/audi
 
 **Current authority and retained history.** The organisation read transaction rechecks `org:read` or staff `platform:read`. Fleet-wide and user audit reads require current `platform:read` inside their own transaction. Responses use `Cache-Control: no-store`. Authorised staff can still read retained events after organisation erasure. An unknown organisation with no retained history returns 404; erasure does not bypass permission checks.
 
-**Client-resource links.** `client.resource_linked`, `client.resource_unlinked` and `client.resource_unchanged` events record `resourceInstanceId`, `resourceClassification` and `resourceOrganizationId` alongside the resource identifier and link before/after state, and the changed relationship UUID and `deletedAt` under `data.relationship`; an unchanged command has a null relationship effect. Links to shared resources or resources owned by the client's organisation appear in that organisation's history. A foreign private resource, an unknown target on unlink, or a client without an organisation produces a platform-only event.
+**Client-resource links.** `client.resource_linked` and `client.resource_unlinked` events record `resourceInstanceId`, `resourceClassification` and `resourceOrganizationId` alongside the resource identifier and link before/after state, and the changed relationship UUID and `deletedAt` under `data.relationship`. An unchanged command records no event. Links to shared resources or resources owned by the client's organisation appear in that organisation's history. A foreign private resource or a client without an organisation produces a platform-only event.
 
 ## Read machine issuance evidence
 
@@ -312,7 +312,6 @@ curl -X DELETE "https://id.answerable.org/api/admin/v1/users/$USER_ID?confirm=$U
 | `user_not_disabled`         | Email retirement requires a disabled user.                                          | Disable the user first.                                                                       |
 | `user_email_retired`        | Email retirement is terminal.                                                       | Do not try to re-enable this account.                                                         |
 | `conflict`                  | A client or resource identifier was used before and remains reserved after erasure. | Create the replacement with a new identifier.                                                 |
-| `ownership_conflict`        | A client owner cannot be changed, attached or removed after creation.               | Create a replacement client with the intended owner.                                          |
 | `confirmation_mismatch`     | Erasure confirmation does not match the target.                                     | Check the target and send its exact identifier.                                               |
 
 **Platform identity.** Grants returned by `/me` include `isPlatform`, derived from the persisted platform organisation ID. Organisation slugs are labels and do not confer platform authority.
@@ -378,13 +377,13 @@ curl -X PATCH "$ID_ORIGIN/api/admin/v1/clients/$CLIENT_ID" \
 | `invalid_revision`  | The tag is malformed, weak, a wildcard or a list (400).                | Supply one quoted ETag exactly as returned.                              |
 | `revision_mismatch` | A new command used an outdated revision or another client's tag (412). | Read current state, reconcile the patch and issue a new logical command. |
 
-**All other client mutations** require `Idempotency-Key` and return receipts: enable, disable, owner verification, resource link/unlink and erasure. Enable/disable and link/unlink return success with a `noop` operation when the requested state already holds. Ownership changes still return `ownership_conflict`.
+**All other client mutations** require `Idempotency-Key` and return receipts: enable, disable, resource link/unlink and erasure. Enable/disable and link/unlink return success with a `noop` operation, and record no audit event, when the requested state already holds. Ownership cannot be changed: create a replacement client under the new owner.
 
 **A retry preserves history.** Replaying a link after it was removed returns its receipt without restoring it. Replaying disable after enable does not disable the client again. Unlink and erasure replay their original bodyless `204`, even after client deletion. A new erasure key against a missing client returns `404`.
 
 **Resource mutations** also require `Idempotency-Key`, with receipt replay for creation, patches, enable/disable and erasure. Resource PATCH accepts the optional ETag from `GET /resources/{resource}` in If-Match. URL-encode the resource identifier in the path. The same precondition errors and historical replay rules apply. Resource enable/disable commands record noops when the state already holds; the admin resource remains protected from disable and erasure. Link changes and client erasure advance affected resource revisions.
 
-**Administrative mutations.** All 49 current administrative mutations require operation keys and return receipts on retry. Revision checks apply to client, resource, member, organisation, group and entitlement patches.
+**Administrative mutations.** All 48 current administrative mutations require operation keys and return receipts on retry. Revision checks apply to client, resource, member, organisation, group and entitlement patches.
 
 ## Revoke and reinstate membership
 
@@ -788,7 +787,7 @@ These events record exact changed token rows under `data.revokedTokens.access` a
 
 | Event                                     | Visibility                                  |
 | ----------------------------------------- | ------------------------------------------- |
-| `user.disabled`, `user.disable_unchanged` | Platform history                            |
+| `user.disabled`                           | Platform history                            |
 | `session.revoked`, `session.revoked_all`  | Platform history                            |
 | `client.grants_revoked`                   | Platform history, alongside `grantContexts` |
 

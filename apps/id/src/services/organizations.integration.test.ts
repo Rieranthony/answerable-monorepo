@@ -259,7 +259,8 @@ test("tenant kill switch revokes only machine rows and preserves global sessions
   expect(await service.getOrganization(db, row.id)).toMatchObject({
     authorizationVersion: 2,
   });
-  expect(await db.select().from(auditEvents)).toHaveLength(5);
+  // Creation, disable and enable; the unchanged enable and disable record none.
+  expect(await db.select().from(auditEvents)).toHaveLength(3);
 });
 
 test("erase rejects confirmation and clients, cascades members and domains and retains audit", async () => {

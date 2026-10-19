@@ -144,15 +144,15 @@ test("failed mutation or journal insertion rolls back its audit and releases the
       await recordAuditEvent(tx, {
         actorType: "system",
         actorId: "test",
-        action: "organization.update_unchanged",
+        action: "organization.updated",
         targetType: "operation",
         targetId: id,
         outcome: "success",
       });
-      return { ...result, outcome: "noop" };
+      return result;
     },
   );
-  expect(committed.operation.outcome).toBe("noop");
+  expect(committed.operation.outcome).toBe("applied");
   expect(await connection.db.select().from(auditEvents)).toHaveLength(1);
 });
 

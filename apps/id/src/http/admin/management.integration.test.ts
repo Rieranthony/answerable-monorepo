@@ -331,7 +331,8 @@ for (const machine of [false, true]) {
           kind,
           `/organizations/${person.organizationId}/members/${person.memberId}`,
           "PATCH",
-          { validUntil: null },
+          // A change: an unchanged window would record no event.
+          { validUntil: "2100-01-01T00:00:00.000Z" },
         )
       ).status,
     ).toBe(200);

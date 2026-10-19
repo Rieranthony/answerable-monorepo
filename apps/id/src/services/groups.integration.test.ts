@@ -184,9 +184,7 @@ test("group lifecycle and membership writes emit one attributed audit each and e
   expect(events.map((e) => e.action)).toEqual([
     "group.created",
     "group.updated",
-    "group.enable_unchanged",
     "group.disabled",
-    "group.disable_unchanged",
     "group.enabled",
     "group_member.added",
     "group_member.updated",

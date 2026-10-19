@@ -23,7 +23,8 @@ async function request(
   method = "GET",
   body?: unknown,
   kind: Kind = "platformAdmin",
-  action?: string,
+  /** The expected audit action; null for a no-op, which records none. */
+  action?: string | null,
   targetId?: string,
 ) {
   const headers = fixture.headers(kind);
@@ -58,7 +59,7 @@ async function request(
           eq(auditEvents.outcome, "success"),
         ),
       );
-    if (response.ok) {
+    if (response.ok && action !== null) {
       expect(
         action,
         "Every successful write must specify its expected audit action",
@@ -214,7 +215,7 @@ test("platform administrator and machine manage every principal with attributed 
         "POST",
         undefined,
         kind,
-        `entitlement.${operation}_unchanged`,
+        null,
         row.id,
       );
       expect(repeated.status).toBe(200);

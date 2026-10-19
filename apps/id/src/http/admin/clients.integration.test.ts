@@ -186,28 +186,6 @@ for (const machine of [false, true])
     expect((await unlinked.json()).error).toBeString();
     expect((await request(link, "PUT", undefined, kind)).status).toBe(201);
     expect((await mint(client.clientId, newSecret, resource)).status).toBe(200);
-    for (const organizationId of [fixture.platform.organizationId, null]) {
-      const response = await request(
-        path + "/owner",
-        "PUT",
-        { organizationId },
-        kind,
-      );
-      expect(response.status).toBe(409);
-      expect(await response.json()).toMatchObject({
-        code: "ownership_conflict",
-      });
-    }
-    const unchanged = await request(
-      path + "/owner",
-      "PUT",
-      { organizationId: fixture.tenant.organizationId },
-      kind,
-    );
-    expect(unchanged.status).toBe(200);
-    expect(await unchanged.json()).toMatchObject({
-      organizationId: fixture.tenant.organizationId,
-    });
     const events = await fixture.db
       .select()
       .from(auditEvents)
@@ -218,18 +196,17 @@ for (const machine of [false, true])
         ),
       )
       .orderBy(auditEvents.id);
+    // The repeated link changed nothing and records no event.
     expect(events.map((e) => e.action)).toEqual([
       "client.created",
       "client.updated",
       "client.resource_linked",
-      "client.resource_unchanged",
       "client.secret_rotated",
       "client.grants_revoked",
       "client.disabled",
       "client.enabled",
       "client.resource_unlinked",
       "client.resource_linked",
-      "client.owner_unchanged",
     ]);
     for (const event of events)
       expect(event).toMatchObject({
@@ -347,10 +324,6 @@ test("client cross-field failures include errors; the create example reaches an 
       errors: expect.any(Array),
     });
   }
-  expect(
-    (await request("/conflicts/owner", "PUT", { organizationId: createId() }))
-      .status,
-  ).toBe(409);
   expect(
     (
       await request(

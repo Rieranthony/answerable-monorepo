@@ -41,7 +41,8 @@ async function request(
   method = "GET",
   body?: unknown,
   kind: Kind = "platformAdmin",
-  action?: string,
+  /** The expected audit action; null for a no-op, which records none. */
+  action?: string | null,
   targetId?: string,
 ) {
   const headers = fixture.headers(kind);
@@ -74,7 +75,7 @@ async function request(
           eq(auditEvents.outcome, "success"),
         ),
       );
-    if (response.ok) {
+    if (response.ok && action !== null) {
       expect(
         action,
         "Every successful write must specify its expected audit action",
@@ -189,7 +190,8 @@ test("tenant administrator, users-only tenant, platform administrator and machin
           "PATCH",
           { validUntil: null },
           kind,
-          "member.updated",
+          // A fresh member has no end: an unchanged window records no event.
+          null,
           member.id,
         )
       ).status,
@@ -266,17 +268,8 @@ test("tenant administrator, users-only tenant, platform administrator and machin
       after: { membershipStatus: "revoked" },
     });
     expect(
-      (
-        await request(
-          id,
-          suffix,
-          "DELETE",
-          undefined,
-          kind,
-          "member.removal_unchanged",
-          member.id,
-        )
-      ).status,
+      (await request(id, suffix, "DELETE", undefined, kind, null, member.id))
+        .status,
     ).toBe(204);
     const reinstated = await request(
       id,

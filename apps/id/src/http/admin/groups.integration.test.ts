@@ -28,7 +28,8 @@ async function request(
   method = "GET",
   body?: unknown,
   kind: Kind = "platformAdmin",
-  action?: string,
+  /** The expected audit action; null for a no-op, which records none. */
+  action?: string | null,
   targetId?: string,
 ) {
   if (
@@ -76,7 +77,7 @@ async function request(
           eq(auditEvents.outcome, "success"),
         ),
       );
-    if (response.ok) {
+    if (response.ok && action !== null) {
       expect(
         action,
         "Every successful write must specify its expected audit action",
@@ -260,7 +261,7 @@ test("platform administrator and machine perform the complete group lifecycle wi
           "POST",
           undefined,
           kind,
-          "group.disable_unchanged",
+          null,
           row.id,
         )
       ).status,
@@ -286,7 +287,7 @@ test("platform administrator and machine perform the complete group lifecycle wi
           "POST",
           undefined,
           kind,
-          "group.enable_unchanged",
+          null,
           row.id,
         )
       ).status,

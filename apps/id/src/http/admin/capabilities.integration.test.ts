@@ -1,4 +1,7 @@
-import { expectReceipt } from "../../__tests__/operation-receipt.ts";
+import {
+  expectNoop,
+  expectReceipt,
+} from "../../__tests__/operation-receipt.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { and, eq, sql } from "drizzle-orm";
 import {
@@ -118,6 +121,7 @@ test("capability commands recover outcomes, preserve revisions on noops, audit t
   );
   expect(noop.status).toBe(200);
   expect(await noop.json()).toEqual(row);
+  await expectNoop(fixture.db, noop);
   const disableKey = createId();
   const disabled = await request(
     "PATCH",
@@ -164,10 +168,9 @@ test("capability commands recover outcomes, preserve revisions on noops, audit t
     .select()
     .from(auditEvents)
     .where(eq(auditEvents.targetId, row.id));
+  // The two unchanged patches record no event; their receipts say noop.
   expect(events.map((event) => event.action)).toEqual([
     "capability.created",
-    "capability.update_unchanged",
-    "capability.update_unchanged",
     "capability.updated",
   ]);
   expect(
@@ -178,7 +181,7 @@ test("capability commands recover outcomes, preserve revisions on noops, audit t
         event.operationId !== null,
     ),
   ).toBe(true);
-  expect(events[3]!.data).toMatchObject({
+  expect(events[1]!.data).toMatchObject({
     before: { status: "active", revision: 1 },
     after: { status: "disabled", revision: 2 },
   });
@@ -467,7 +470,9 @@ test("platform user approvals distinguish login, exact pair and renewal across t
         .select()
         .from(auditEvents)
         .where(eq(auditEvents.targetId, row.id));
-      expect(events).toHaveLength(3);
+      // Narrowing a one-scope approval to that scope changes nothing and
+      // records no event.
+      expect(events).toHaveLength(target.scopes.length > 1 ? 3 : 2);
       expect(
         events.every(
           (event) =>

@@ -4,6 +4,7 @@ import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
+import { expectNoop } from "../../__tests__/operation-receipt.ts";
 import {
   auditEvents,
   entitlements,
@@ -232,14 +233,7 @@ test("reinstatement observes surviving organisation permission without recreatin
     headers: fixture.headers("tenantUsersOnly"),
   });
   expect(noop.status).toBe(204);
-  expect(await eventFor(noop)).toMatchObject({
-    schemaVersion: 1,
-    action: "member.removal_unchanged",
-    data: {
-      before: { access: { effective: false, targets: [] } },
-      after: { access: { effective: false, targets: [] } },
-    },
-  });
+  await expectNoop(fixture.db, noop);
   const afterRemoval = await fixture.db
     .select()
     .from(entitlements)
@@ -291,12 +285,5 @@ test("reinstatement observes surviving organisation permission without recreatin
     "reinstate",
   );
   expect(unchanged.status).toBe(200);
-  expect(await eventFor(unchanged)).toMatchObject({
-    action: "member.reinstatement_unchanged",
-    schemaVersion: 1,
-    data: {
-      before: { access: approvedRead() },
-      after: { access: approvedRead() },
-    },
-  });
+  await expectNoop(fixture.db, unchanged);
 });

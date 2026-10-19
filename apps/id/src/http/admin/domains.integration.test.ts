@@ -134,11 +134,10 @@ test("platformAdmin creates, disables and enables; conflicts and validation are 
     .from(auditEvents)
     .where(eq(auditEvents.targetId, row.id))
     .orderBy(auditEvents.id);
+  // The repeated enable and disable changed nothing and record no event.
   expect(events.map((event) => event.action)).toEqual([
     "domain.created",
-    "domain.enable_unchanged",
     "domain.disabled",
-    "domain.disable_unchanged",
     "domain.enabled",
     "domain.deleted",
   ]);

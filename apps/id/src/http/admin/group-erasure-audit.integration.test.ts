@@ -4,7 +4,10 @@ import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
-import { expectReceipt } from "../../__tests__/operation-receipt.ts";
+import {
+  expectNoop,
+  expectReceipt,
+} from "../../__tests__/operation-receipt.ts";
 import {
   adminOperations,
   auditEvents,
@@ -361,12 +364,7 @@ test("group status changes retain their policy sources and affected users after 
     ).toHaveLength(1);
     const noop = await statusGroup(a.group, status);
     expect(noop.status).toBe(200);
-    const [unchanged] = await fixture.db
-      .select()
-      .from(auditEvents)
-      .where(eq(auditEvents.operationId, noop.headers.get("Operation-Id")!));
-    expect(unchanged!.schemaVersion).toBe(1);
-    expect(unchanged!.data!.policySources).toBeUndefined();
+    await expectNoop(fixture.db, noop);
     events.push(event!);
   }
   const after = await snapshot();

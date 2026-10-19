@@ -70,13 +70,13 @@ async function history(
   };
 }
 
-test("private foreign link evidence is platform-only for creation, no-op, unlink and replay", async () => {
+test("private foreign link evidence is platform-only for creation, unlink and replay; a no-op records none", async () => {
   const target = await resource("foreign");
-  for (const [method, expected] of [
-    ["PUT", 201],
-    ["PUT", 200],
-    ["DELETE", 204],
-    ["DELETE", 204],
+  for (const [method, expected, applied] of [
+    ["PUT", 201, true],
+    ["PUT", 200, false],
+    ["DELETE", 204, true],
+    ["DELETE", 204, false],
   ] as const) {
     const key = createId();
     const response = await command(target.identifier, method, key);
@@ -87,17 +87,19 @@ test("private foreign link evidence is platform-only for creation, no-op, unlink
     const staff = await history("platformReader");
     const event = staff.items.find(
       (row) => row.operationId === response.headers.get("Operation-Id"),
-    )!;
-    expect(event).toMatchObject({
-      schemaVersion: 1,
-      organizationId: null,
-      data: {
-        resource: target.identifier,
-        resourceInstanceId: target.id,
-        resourceClassification: "tenant_owned",
-        resourceOrganizationId: fixture.outsider.organizationId,
-      },
-    });
+    );
+    if (!applied) expect(event).toBeUndefined();
+    else
+      expect(event).toMatchObject({
+        schemaVersion: 1,
+        organizationId: null,
+        data: {
+          resource: target.identifier,
+          resourceInstanceId: target.id,
+          resourceClassification: "tenant_owned",
+          resourceOrganizationId: fixture.outsider.organizationId,
+        },
+      });
     const replay = await command(target.identifier, method, key);
     expect(replay.status).toBe(expected);
     expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
@@ -139,21 +141,9 @@ for (const kind of ["shared", "own"] as const) {
   });
 }
 
-test("unlink of an unclassified missing target stays platform-only", async () => {
+test("unlink of an unclassified missing target is a no-op without an audit event", async () => {
   const target = "https://missing.private-resource.example";
   expect((await command(target, "DELETE")).status).toBe(204);
   expect((await history("tenantReader")).items).toEqual([]);
-  expect((await history("platformReader")).items).toMatchObject([
-    {
-      schemaVersion: 1,
-      organizationId: null,
-      action: "client.resource_unchanged",
-      data: {
-        resource: target,
-        resourceInstanceId: null,
-        resourceClassification: null,
-        resourceOrganizationId: null,
-      },
-    },
-  ]);
+  expect((await history("platformReader")).items).toEqual([]);
 });

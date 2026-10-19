@@ -84,20 +84,22 @@ export async function disableUser(
     sessionIds.length > 0 ||
     tokens.refreshTokens > 0 ||
     tokens.accessTokens > 0;
-  await recordCommandEvent(context, {
-    organizationId: null,
-    targetType: "user",
-    targetId: userId,
-    action: changed ? "user.disabled" : "user.disable_unchanged",
-    data: {
-      before: state(existing),
-      after: state(row),
-      sessions: sessionIds.length,
-      sessionIds,
-      revokedGrantContexts,
-      ...tokens,
-    },
-  });
+  // An unchanged command's receipt is its record; it writes no audit event.
+  if (changed)
+    await recordCommandEvent(context, {
+      organizationId: null,
+      targetType: "user",
+      targetId: userId,
+      action: "user.disabled",
+      data: {
+        before: state(existing),
+        after: state(row),
+        sessions: sessionIds.length,
+        sessionIds,
+        revokedGrantContexts,
+        ...tokens,
+      },
+    });
   return { row, changed };
 }
 export async function enableUser(
@@ -115,13 +117,14 @@ export async function enableUser(
   const row = changed
     ? (await queries.setUserStatus(context, userId, "active"))!
     : existing;
-  await recordCommandEvent(context, {
-    organizationId: null,
-    targetType: "user",
-    targetId: userId,
-    action: changed ? "user.enabled" : "user.enable_unchanged",
-    data: { before: state(existing), after: state(row) },
-  });
+  if (changed)
+    await recordCommandEvent(context, {
+      organizationId: null,
+      targetType: "user",
+      targetId: userId,
+      action: "user.enabled",
+      data: { before: state(existing), after: state(row) },
+    });
   return { row, changed };
 }
 export async function retireUserEmail(
@@ -139,13 +142,14 @@ export async function retireUserEmail(
   const row = changed
     ? await queries.retireUserEmail(context, userId)
     : existing;
-  await recordCommandEvent(context, {
-    organizationId: null,
-    targetType: "user",
-    targetId: userId,
-    action: changed ? "user.email_retired" : "user.email_retirement_unchanged",
-    data: { before: state(existing), after: state(row) },
-  });
+  if (changed)
+    await recordCommandEvent(context, {
+      organizationId: null,
+      targetType: "user",
+      targetId: userId,
+      action: "user.email_retired",
+      data: { before: state(existing), after: state(row) },
+    });
   return { row, changed };
 }
 export async function eraseUser(

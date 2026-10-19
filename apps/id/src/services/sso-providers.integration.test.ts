@@ -294,6 +294,7 @@ for (const transition of [
     );
     const before = await lockSsoProvider(db, org.id);
     const changed = transition !== "platform-platform";
+    const audited = await db.$count(auditEvents);
     const result = await inPlatformWrite(
       db,
       (context) =>
@@ -333,14 +334,17 @@ for (const transition of [
       .from(auditEvents)
       .orderBy(sql`${auditEvents.id} desc`)
       .limit(1);
-    expect(event!.data).toMatchObject({
-      before: { oidc: { credentials: beforeInput.oidc.credentials ?? "own" } },
-      after: { oidc: JSON.parse(JSON.stringify(result.row.oidc)) },
-      credentialsChanged: changed,
-      effects: {
-        revokedGrantContexts: changed ? [{ id: contexts[0]!.id, userId }] : [],
-      },
-    });
+    // An unchanged provider records no event.
+    expect(await db.$count(auditEvents)).toBe(audited + (changed ? 1 : 0));
+    if (changed)
+      expect(event!.data).toMatchObject({
+        before: {
+          oidc: { credentials: beforeInput.oidc.credentials ?? "own" },
+        },
+        after: { oidc: JSON.parse(JSON.stringify(result.row.oidc)) },
+        credentialsChanged: true,
+        effects: { revokedGrantContexts: [{ id: contexts[0]!.id, userId }] },
+      });
     const serialized = JSON.stringify([result.row, event]);
     expect(serialized).not.toContain('"clientSecret"');
     expect(serialized.includes("private-secret")).toBe(false);

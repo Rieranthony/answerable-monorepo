@@ -91,11 +91,9 @@ test("administrative command contract gaps cannot grow unnoticed", async () => {
       for (const status of ["400", "409", "503"])
         expect(operation.responses, route.operationId).toHaveProperty(status);
     }
-    // These PUT commands verify immutable ownership or ensure one link exists;
-    // they do not replace mutable configuration read by another administrator.
-    const desiredStatePut = ["setClientOwner", "linkClientResource"].includes(
-      route.operationId,
-    );
+    // This PUT ensures one link exists; it does not replace mutable
+    // configuration read by another administrator.
+    const desiredStatePut = route.operationId === "linkClientResource";
     if (
       route.method === "patch" ||
       (route.method === "put" && !desiredStatePut)

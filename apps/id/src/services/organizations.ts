@@ -77,13 +77,15 @@ export async function updateOrganization(
   const row = changed
     ? (await queries.updateOrganization(context, id, patch))!
     : before;
-  await recordCommandEvent(context, {
-    organizationId: id,
-    targetType: "organization",
-    targetId: id,
-    action: changed ? "organization.updated" : "organization.update_unchanged",
-    data: { before: configuration(before), after: configuration(row) },
-  });
+  // An unchanged command's receipt is its record; it writes no audit event.
+  if (changed)
+    await recordCommandEvent(context, {
+      organizationId: id,
+      targetType: "organization",
+      targetId: id,
+      action: "organization.updated",
+      data: { before: configuration(before), after: configuration(row) },
+    });
   return { row, changed };
 }
 
@@ -104,16 +106,16 @@ export async function disableOrganization(
     id,
   );
   const changed = stateChanged || revokedGrantContexts.length > 0;
-  const revokedMachineAccessTokenIds = changed
-    ? await revokeOrganizationMachineTokens(context, id)
-    : [];
+  if (!changed) return { row, changed };
+  const revokedMachineAccessTokenIds = await revokeOrganizationMachineTokens(
+    context,
+    id,
+  );
   await recordCommandEvent(context, {
     organizationId: id,
     targetType: "organization",
     targetId: id,
-    action: changed
-      ? "organization.disabled"
-      : "organization.disable_unchanged",
+    action: "organization.disabled",
     data: {
       before: {
         status: existing.status,
@@ -141,16 +143,17 @@ export async function enableOrganization(
   const row = changed
     ? (await queries.setOrganizationStatus(context, id, "active"))!
     : existing;
-  await recordCommandEvent(context, {
-    organizationId: id,
-    targetType: "organization",
-    targetId: id,
-    action: changed ? "organization.enabled" : "organization.enable_unchanged",
-    data: {
-      before: configuration(existing),
-      after: configuration(row),
-    },
-  });
+  if (changed)
+    await recordCommandEvent(context, {
+      organizationId: id,
+      targetType: "organization",
+      targetId: id,
+      action: "organization.enabled",
+      data: {
+        before: configuration(existing),
+        after: configuration(row),
+      },
+    });
   return { row, changed };
 }
 

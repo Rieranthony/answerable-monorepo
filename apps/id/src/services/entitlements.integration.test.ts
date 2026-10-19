@@ -177,7 +177,8 @@ test("entitlement writes each audit once, keep immutable fields and preserve omi
     service.getEntitlement(db, org.id, grouped.id),
   ).rejects.toMatchObject({ status: 404 });
   const events = await db.select().from(auditEvents).orderBy(auditEvents.id);
-  expect(events).toHaveLength(12);
+  // The repeated disable and enable change nothing and record no event.
+  expect(events).toHaveLength(10);
   for (const event of events)
     expect(event).toMatchObject({
       ...actor,
@@ -194,9 +195,7 @@ test("entitlement writes each audit once, keep immutable fields and preserve omi
     "entitlement.updated",
     "entitlement.updated",
     "entitlement.disabled",
-    "entitlement.disable_unchanged",
     "entitlement.enabled",
-    "entitlement.enable_unchanged",
     "entitlement.removed",
   ]);
   for (const [index, created] of [row, grouped, personal, client].entries())
@@ -224,11 +223,11 @@ test("entitlement writes each audit once, keep immutable fields and preserve omi
     targetId: grouped.id,
     data: { after: { status: "disabled" } },
   });
-  expect(events[9]).toMatchObject({
+  expect(events[8]).toMatchObject({
     targetId: grouped.id,
     data: { after: { status: "active" } },
   });
-  expect(events[11]).toMatchObject({
+  expect(events[9]).toMatchObject({
     targetId: grouped.id,
     data: {
       before: { id: grouped.id },

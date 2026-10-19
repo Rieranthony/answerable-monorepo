@@ -63,8 +63,9 @@ function auditClient(row: ClientRow) {
     hasJwksUri: row.jwksUri !== null,
   };
 }
-/** Owning a client does not grant visibility into another tenant's private target. */
-function auditResourceLink(
+/** Owning a client does not grant visibility into another tenant's private target.
+ * An unchanged link records no event: its receipt is the record. */
+async function auditResourceLink(
   context: PlatformWriteContext,
   client: ClientRow,
   identifier: string,
@@ -73,20 +74,16 @@ function auditResourceLink(
   after: boolean,
   relationship: { id: string; deletedAt: Date | null } | null,
 ) {
+  if (before === after) return;
   const visible =
     resource?.classification === "platform_shared" ||
     resource?.organizationId === client.organizationId;
   const organizationId = visible ? client.organizationId : null;
-  return recordCommandEvent(context, {
+  await recordCommandEvent(context, {
     organizationId,
     targetType: "client",
     targetId: client.clientId,
-    action:
-      before === after
-        ? "client.resource_unchanged"
-        : after
-          ? "client.resource_linked"
-          : "client.resource_unlinked",
+    action: after ? "client.resource_linked" : "client.resource_unlinked",
     data: {
       resource: identifier,
       relationship,
@@ -286,17 +283,19 @@ export async function updateClient(
   const row = changed
     ? await queries.updateClient(context, clientId, patch)
     : existing;
-  await recordCommandEvent(context, {
-    organizationId: row!.organizationId,
-    targetType: "client",
-    targetId: clientId,
-    action: changed ? "client.updated" : "client.update_unchanged",
-    data: {
-      requestedFields: Object.keys(patch).sort(),
-      before: auditClient(existing),
-      after: auditClient(row!),
-    },
-  });
+  // An unchanged command's receipt is its record; it writes no audit event.
+  if (changed)
+    await recordCommandEvent(context, {
+      organizationId: row!.organizationId,
+      targetType: "client",
+      targetId: clientId,
+      action: "client.updated",
+      data: {
+        requestedFields: Object.keys(patch).sort(),
+        before: auditClient(existing),
+        after: auditClient(row!),
+      },
+    });
   return { row: publicClient(row!), changed };
 }
 async function setDisabled(
@@ -333,22 +332,19 @@ async function setDisabled(
     revokedGrantContexts,
     { action: "client.grants_revoked", revokedTokens },
   );
-  await recordCommandEvent(context, {
-    organizationId: row.organizationId,
-    targetType: "client",
-    targetId: clientId,
-    action: changed
-      ? disabled
-        ? "client.disabled"
-        : "client.enabled"
-      : "client.state_unchanged",
-    data: {
-      before: auditClient(existing),
-      after: auditClient(row),
-      effects,
-      ...(grantEffectsEventId ? { grantEffectsEventId } : {}),
-    },
-  });
+  if (changed)
+    await recordCommandEvent(context, {
+      organizationId: row.organizationId,
+      targetType: "client",
+      targetId: clientId,
+      action: disabled ? "client.disabled" : "client.enabled",
+      data: {
+        before: auditClient(existing),
+        after: auditClient(row),
+        effects,
+        ...(grantEffectsEventId ? { grantEffectsEventId } : {}),
+      },
+    });
   return { row: publicClient(row), changed };
 }
 export async function disableClient(
@@ -413,34 +409,6 @@ export async function rotateSecret(
     },
   });
   return { clientId, clientSecret };
-}
-export async function setOwner(
-  context: PlatformWriteContext,
-  clientId: string,
-  organizationId: string | null,
-) {
-  const existing = found(
-    await queries.lockClientForCommand(context, clientId),
-    notFound,
-  );
-  if (existing.organizationId !== organizationId)
-    throw new ProblemError(
-      409,
-      "ownership_conflict",
-      "Client ownership is immutable; create a replacement client under the new owner",
-    );
-  await recordCommandEvent(context, {
-    organizationId: existing.organizationId,
-    targetType: "client",
-    targetId: clientId,
-    action: "client.owner_unchanged",
-    data: {
-      before: { organizationId },
-      after: { organizationId },
-      changed: false,
-    },
-  });
-  return publicClient(existing);
 }
 export async function linkResource(
   context: PlatformWriteContext,

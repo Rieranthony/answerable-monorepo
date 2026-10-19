@@ -50,7 +50,7 @@ Actual signed/opaque token outputs and persisted token/grant state must agree be
 
 ## 4. Idempotency and concurrency contract
 
-All 49 mutations require idempotency keys and expose operation/replay headers. Seven PATCH routes accept If-Match; SSO and assignment replacement PUTs also accept optional revision preconditions. Without If-Match, commands use the current row. Keep actor, tenant, command, target and normalised input fixed when retrying.
+All 48 mutations require idempotency keys and expose operation/replay headers. Seven PATCH routes accept If-Match; SSO and assignment replacement PUTs also accept optional revision preconditions. Without If-Match, commands use the current row. Keep actor, tenant, command, target and normalised input fixed when retrying.
 
 - Before commit, interruption leaves no successful effect, fact or completed receipt.
 - After commit, the same key/input and current authority return a receipt with the original status code; 204 stays empty. Read the current representation through the result reference.
@@ -98,7 +98,7 @@ Removing the last platform administrator through membership, group or capability
 | F0  | Actual native production flows and meaningful regression/fault proofs               | T1/T2 reports and user OAuth suite; real provider/consumer journey outstanding.       |
 | F1  | Immutable identity, reservations, system binding and token versions                 | Schema/HTTP identity tests; actual consumer interpretation outstanding.               |
 | F2  | Durable UUID subjects, audit/effect/receipt atomicity, product tombstones           | T3 restricted lifecycle/fault tests; external key custody/recovery remains.           |
-| F3  | All 49 mutations, current-authority replay, revisions and crash proof               | Route inventory and command/process tests; intended-environment recovery remains.     |
+| F3  | All 48 mutations, current-authority replay, revisions and crash proof               | Route inventory and command/process tests; intended-environment recovery remains.     |
 | F4  | Own-tenant SSO, deliberate linking, tenant-local lifecycle and eleven-table RLS     | T1/T2/T3 restricted A/B tests; real multi-provider acceptance remains.                |
 | F5  | Shared exact-pair evaluator, scope narrowing and actual claim/audit binding         | Production code/refresh/machine and access tests; consumer denial matrix remains.     |
 | F6  | Fresh sensitive authority, local revocation, body limits, custody tooling | T1–T4 tests and measured limits; remote offboarding, capacity/ingress/custody remain. |

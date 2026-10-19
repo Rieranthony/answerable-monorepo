@@ -110,27 +110,25 @@ export async function putSsoProvider(
   const revokedGrantContexts = changed
     ? await revokeOrganizationGrantContexts(context, organizationId)
     : [];
-  await recordCommandEvent(context, {
-    organizationId,
-    targetType: "sso_provider",
-    targetId: row.id,
-    action: !changed
-      ? "sso_provider.update_unchanged"
-      : existing
-        ? "sso_provider.updated"
-        : "sso_provider.created",
-    data: {
-      before: existing ? configuration(existing, ids) : null,
-      after: configuration(row, ids),
-      credentialsChanged:
-        (stored.credentials ?? "own") !== (oidc.credentials ?? "own") ||
-        (stored.credentials === "platform"
-          ? undefined
-          : stored.clientSecret) !==
-          (oidc.credentials === "platform" ? undefined : oidc.clientSecret),
-      effects: { revokedGrantContexts },
-    },
-  });
+  // An unchanged command's receipt is its record; it writes no audit event.
+  if (changed)
+    await recordCommandEvent(context, {
+      organizationId,
+      targetType: "sso_provider",
+      targetId: row.id,
+      action: existing ? "sso_provider.updated" : "sso_provider.created",
+      data: {
+        before: existing ? configuration(existing, ids) : null,
+        after: configuration(row, ids),
+        credentialsChanged:
+          (stored.credentials ?? "own") !== (oidc.credentials ?? "own") ||
+          (stored.credentials === "platform"
+            ? undefined
+            : stored.clientSecret) !==
+            (oidc.credentials === "platform" ? undefined : oidc.clientSecret),
+        effects: { revokedGrantContexts },
+      },
+    });
   return {
     created: !existing,
     changed,

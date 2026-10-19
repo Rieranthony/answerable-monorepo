@@ -173,7 +173,7 @@ export const routes = {
     operationId: "reinstateMember",
     summary: "Reinstate an organisation member",
     description:
-      "Explicitly reactivate a revoked membership, preserving its UUID and validity window. Removed direct grants and group assignments are not restored. Already active memberships return unchanged state with an audit event. validation_failed rejects malformed IDs and not_found means the member is unavailable.",
+      "Explicitly reactivate a revoked membership, preserving its UUID and validity window. Removed direct grants and group assignments are not restored. Already active memberships return unchanged state and record a noop. validation_failed rejects malformed IDs and not_found means the member is unavailable.",
     tag: "Members",
     platformScope: "platform:users",
     orgScope: "org:users",
@@ -198,7 +198,7 @@ export const routes = {
     operationId: "removeMember",
     summary: "Remove an organisation member",
     description:
-      "Revoke an organisation membership and return no content. Retain its UUID and revoked state to prevent automatic SSO re-enrolment; remove its direct grants and group assignments. The global user and other memberships remain. Repeating removal records an unchanged event. Prefer updateMember to change its validity or scopes; validation_failed rejects malformed ids and not_found means the target is unavailable.",
+      "Revoke an organisation membership and return no content. Retain its UUID and revoked state to prevent automatic SSO re-enrolment; remove its direct grants and group assignments. The global user and other memberships remain. Repeating removal records a noop. Prefer updateMember to change its validity or scopes; validation_failed rejects malformed ids and not_found means the target is unavailable.",
     tag: "Members",
     platformScope: "platform:users",
     kind: "write",
@@ -334,7 +334,7 @@ export function register(app: Hono<AppEnvironment>) {
           const outcome = await service.remove(tenant, memberId);
           return {
             body: null,
-            outcome,
+            changed: outcome === "applied",
             resultReference: { type: "member", id: memberId },
           };
         },

@@ -8,20 +8,13 @@ import type { PageQuery } from "../http/pagination.ts";
 import { found } from "../http/problem.ts";
 import type { Actor } from "./actor.ts";
 
-/** A status command's audit action: the transition, or its no-op. */
+/** A status command's audit action. A command that changed nothing records
+ * none: its operation receipt (outcome noop) is the record. */
 export function statusAction(
   entity: "domain" | "entitlement" | "group",
   status: "active" | "disabled",
-  changed: boolean,
 ): queries.AuditAction {
-  const transition = changed
-    ? status === "active"
-      ? "enabled"
-      : "disabled"
-    : status === "active"
-      ? "enable_unchanged"
-      : "disable_unchanged";
-  return `${entity}.${transition}`;
+  return `${entity}.${status === "active" ? "enabled" : "disabled"}`;
 }
 
 /** Record a command's successful effect as the command's actor. */

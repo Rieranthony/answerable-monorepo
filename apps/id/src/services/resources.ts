@@ -103,16 +103,18 @@ export async function updateResource(
   const row = changed
     ? await queries.updateResource(context, identifier, patch)
     : existing;
-  await recordCommandEvent(context, {
-    targetType: "resource",
-    targetId: identifier,
-    action: changed ? "resource.updated" : "resource.update_unchanged",
-    data: {
-      requestedFields: Object.keys(patch).sort(),
-      before: auditResource(existing),
-      after: auditResource(row!),
-    },
-  });
+  // An unchanged command's receipt is its record; it writes no audit event.
+  if (changed)
+    await recordCommandEvent(context, {
+      targetType: "resource",
+      targetId: identifier,
+      action: "resource.updated",
+      data: {
+        requestedFields: Object.keys(patch).sort(),
+        before: auditResource(existing),
+        after: auditResource(row!),
+      },
+    });
   return { row: row!, changed };
 }
 export async function disableResource(
@@ -146,20 +148,17 @@ async function setDisabled(
     ? await revokeResourceGrantContexts(context, existing.id)
     : [];
   const changed = stateChanged || revokedGrantContexts.length > 0;
-  await recordCommandEvent(context, {
-    targetType: "resource",
-    targetId: identifier,
-    action: changed
-      ? disabled
-        ? "resource.disabled"
-        : "resource.enabled"
-      : "resource.state_unchanged",
-    data: {
-      before: auditResource(existing),
-      after: auditResource(row),
-      effects: { revokedGrantContexts },
-    },
-  });
+  if (changed)
+    await recordCommandEvent(context, {
+      targetType: "resource",
+      targetId: identifier,
+      action: disabled ? "resource.disabled" : "resource.enabled",
+      data: {
+        before: auditResource(existing),
+        after: auditResource(row),
+        effects: { revokedGrantContexts },
+      },
+    });
   return { row, changed };
 }
 export async function eraseResource(

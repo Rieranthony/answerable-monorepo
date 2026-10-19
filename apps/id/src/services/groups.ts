@@ -97,13 +97,15 @@ export async function updateGroup(
   const row = changed
     ? (await queries.updateGroup(context, organizationId, groupId, patch))!
     : before;
-  await recordCommandEvent(context, {
-    organizationId,
-    targetType: "group",
-    targetId: groupId,
-    action: changed ? "group.updated" : "group.update_unchanged",
-    data: { before: configuration(before), after: configuration(row) },
-  });
+  // An unchanged command's receipt is its record; it writes no audit event.
+  if (changed)
+    await recordCommandEvent(context, {
+      organizationId,
+      targetType: "group",
+      targetId: groupId,
+      action: "group.updated",
+      data: { before: configuration(before), after: configuration(row) },
+    });
   return { row, changed };
 }
 async function setStatus(
@@ -113,25 +115,30 @@ async function setStatus(
   status: "active" | "disabled",
 ) {
   const existing = await lockedGroup(context, organizationId, groupId);
-  const changed = existing.status !== status;
-  const policySources = changed
-    ? await queries.readGroupPolicyForCommand(context, organizationId, groupId)
-    : undefined;
-  const row = changed
-    ? (await queries.setGroupStatus(context, organizationId, groupId, status))!
-    : existing;
+  if (existing.status === status) return { row: existing, changed: false };
+  const policySources = await queries.readGroupPolicyForCommand(
+    context,
+    organizationId,
+    groupId,
+  );
+  const row = (await queries.setGroupStatus(
+    context,
+    organizationId,
+    groupId,
+    status,
+  ))!;
   await recordCommandEvent(context, {
     organizationId,
     targetType: "group",
     targetId: groupId,
-    action: statusAction("group", status, changed),
+    action: statusAction("group", status),
     data: {
       before: configuration(existing),
       after: configuration(row),
-      ...(changed ? { policySources } : {}),
+      policySources,
     },
   });
-  return { row, changed };
+  return { row, changed: true };
 }
 export async function disableGroup(
   context: PlatformWriteContext,
@@ -241,21 +248,18 @@ export async function putMember(
           memberId,
           ...window,
         });
-  await recordCommandEvent(context, {
-    organizationId,
-    targetType: "group_member",
-    targetId: memberId,
-    action: !changed
-      ? "group_member.update_unchanged"
-      : result.created
-        ? "group_member.added"
-        : "group_member.updated",
-    data: {
-      groupId,
-      before: before ? assignment(before) : null,
-      after: assignment(result.row),
-    },
-  });
+  if (changed)
+    await recordCommandEvent(context, {
+      organizationId,
+      targetType: "group_member",
+      targetId: memberId,
+      action: result.created ? "group_member.added" : "group_member.updated",
+      data: {
+        groupId,
+        before: before ? assignment(before) : null,
+        after: assignment(result.row),
+      },
+    });
   return { ...result, changed };
 }
 export async function removeMember(

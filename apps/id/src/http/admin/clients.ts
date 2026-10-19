@@ -86,7 +86,6 @@ const patchSchema = z
     (patch) => Object.keys(patch).length > 0,
     "At least one field is required",
   );
-const ownerSchema = z.object({ organizationId: z.uuid().nullable() });
 const querySchema = pageQuerySchema.extend({
   q: z.string().trim().min(1).max(100).optional(),
   organizationId: z.uuid().optional(),
@@ -272,30 +271,6 @@ export const routes = {
         content: commandJson(
           z.object({ clientId: z.string(), clientSecret: z.string() }),
         ),
-      },
-      ...problemResponses(404),
-    },
-  },
-  setClientOwner: {
-    method: "put",
-    path: "/clients/:clientId/owner",
-    operationId: "setClientOwner",
-    summary: "Verify unchanged client owner",
-    description:
-      "Client ownership is immutable. Supplying the current owner returns the registration without changing it; any different owner, including adding or removing one, returns ownership_conflict. Create a replacement client under the new owner and retire the old client. validation_failed rejects malformed ids; not_found means the client is missing.",
-    tag: "Clients",
-    platformScope: "platform:write",
-    kind: "write",
-    freshAuthentication: true,
-    parameters: parameters,
-    requestBody: body(ownerSchema),
-    example: {
-      body: { organizationId: "00000000-0000-7000-8000-000000000000" },
-    },
-    responses: {
-      200: {
-        description: "Client owner unchanged",
-        content: commandJson(clientSchema),
       },
       ...problemResponses(404),
     },
@@ -514,31 +489,6 @@ export function register(app: Hono<AppEnvironment>) {
         200,
         async (platform) => ({
           body: await service.rotateSecret(platform, clientId),
-          resultReference: { type: "client", id: clientId },
-        }),
-      );
-    },
-  );
-  registerRoute(
-    app,
-    routes.setClientOwner,
-    validate("param", paramSchema),
-    validate("json", ownerSchema),
-    async (context) => {
-      const input = ownerSchema.parse(await context.req.json());
-      const clientId = context.req.param("clientId")!;
-      return platformCommand(
-        context,
-        "write",
-        { clientId, ...input },
-        200,
-        async (platform) => ({
-          body: await service.setOwner(
-            platform,
-            clientId,
-            input.organizationId,
-          ),
-          changed: false,
           resultReference: { type: "client", id: clientId },
         }),
       );

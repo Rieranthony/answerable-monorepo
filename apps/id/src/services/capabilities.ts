@@ -157,22 +157,12 @@ async function validateTarget(
       "Capability scopes exceed the client/resource ceiling or mix login and resource scopes",
     );
 }
-function audit(
-  context: PlatformWriteContext,
-  row: Row,
-  before: Row | null,
-  changed: boolean,
-) {
+function audit(context: PlatformWriteContext, row: Row, before: Row | null) {
   return recordCommandEvent(context, {
     organizationId: row.organizationId,
     targetType: "capability",
     targetId: row.id,
-    action:
-      before === null
-        ? "capability.created"
-        : changed
-          ? "capability.updated"
-          : "capability.update_unchanged",
+    action: before === null ? "capability.created" : "capability.updated",
     data: { before, after: row },
   });
 }
@@ -192,7 +182,7 @@ export async function createCapability(
       id: createId(),
     })
     .returning();
-  await audit(context, row!, null, true);
+  await audit(context, row!, null);
   return row!;
 }
 export async function updateCapability(
@@ -239,7 +229,8 @@ export async function updateCapability(
           .returning()
       )[0]!
     : before;
-  await audit(context, row, before, changed);
+  // An unchanged command's receipt is its record; it writes no audit event.
+  if (changed) await audit(context, row, before);
   return { row, changed };
 }
 

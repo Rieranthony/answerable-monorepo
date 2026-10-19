@@ -1,5 +1,7 @@
 # Administrative mutation inventory
 
+> **Superseded in part on 2026-10-19** by the v0 schema audit (decision D7). `setClientOwner` is deleted: client ownership is immutable, so the route could never apply a change, and 48 mutations remain. A command that changes nothing writes no audit event; its receipt, with outcome `noop`, is the record, and the 25 `*_unchanged` actions are gone. [docs/04](../docs/04-answerable-id-schema.md#audit-actions) holds the current contract. The text below is the original inventory.
+
 This inventories the current [registered route tables](../apps/id/src/http/admin/index.ts), their declared API contracts and service implementations. All administrative mutation families use the existing journal wrappers. The [route contract test](../apps/id/src/http/admin/routes.test.ts) rejects missing replay headers and optional revision contracts; it does not substitute for runtime retry, failure or concurrency tests. The machine-readable [candidate inventory](id-release-contracts.json) is generated from current route tables.
 
 **Current totals:** 49 mutations; all 49 declare required idempotency keys and operation/replay response headers; no replay contracts remain missing. All seven PATCH operations accept optional If-Match. Group membership window PUT and SSO PUT accept optional revision preconditions; omitted headers use the current row. The test asserts optional revision contracts; immutable owner verification and link creation are explicitly distinguished from configuration replacement.
