@@ -1371,13 +1371,7 @@ for (const change of [
     if (change === "account")
       await fixture.db
         .update(accounts)
-        .set({
-          deletedAt: new Date(),
-          accessToken: null,
-          refreshToken: null,
-          idToken: null,
-          password: null,
-        })
+        .set({ deletedAt: new Date(), refreshToken: null })
         .where(eq(accounts.userId, fixture.principals.tenantAdmin.userId));
     if (change === "provider")
       await fixture.db

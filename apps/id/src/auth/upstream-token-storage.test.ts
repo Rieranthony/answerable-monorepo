@@ -11,7 +11,8 @@ const fields = (keys?: (typeof old)[]) =>
   upstreamTokenStorage(keys).schema.account.fields;
 const message = "Upstream token storage is unavailable";
 
-test("upstream storage protects all fields and preserves empty/null values", async () => {
+test("upstream storage protects the refresh token and preserves empty/null values", async () => {
+  expect(Object.keys(fields([old]))).toEqual(["refreshToken"]);
   for (const field of Object.values(fields([old]))) {
     expect(field.input).toBe(false);
     expect(field.returned).toBe(false);
@@ -27,34 +28,34 @@ test("upstream storage protects all fields and preserves empty/null values", asy
 });
 
 test("rotation uses the first version and retained keys only for decryption", async () => {
-  const initial = fields([old]).accessToken.transform;
-  const rotated = fields([active, old]).accessToken.transform;
+  const initial = fields([old]).refreshToken.transform;
+  const rotated = fields([active, old]).refreshToken.transform;
   const ciphertext = await initial.input("synthetic-old-token");
   expect(await rotated.output(ciphertext)).toBe("synthetic-old-token");
   const current = await rotated.input("synthetic-new-token");
   expect(current).toStartWith("$ba$2$");
   expect(
-    await fields([old, active]).accessToken.transform.output(current),
+    await fields([old, active]).refreshToken.transform.output(current),
   ).toBe("synthetic-new-token");
-  expect(await fields([active]).accessToken.transform.output(current)).toBe(
+  expect(await fields([active]).refreshToken.transform.output(current)).toBe(
     "synthetic-new-token",
   );
   await expect(
-    fields([active]).accessToken.transform.output(ciphertext),
+    fields([active]).refreshToken.transform.output(ciphertext),
   ).rejects.toThrow(message);
   await expect(
-    fields([{ ...old, value: active.value }]).accessToken.transform.output(
+    fields([{ ...old, value: active.value }]).refreshToken.transform.output(
       ciphertext,
     ),
   ).rejects.toThrow(message);
 });
 
 test("missing keys, corrupt ciphertext and all legacy formats fail safely", async () => {
-  const missing = fields().idToken.transform;
+  const missing = fields().refreshToken.transform;
   expect(await missing.input(null)).toBeNull();
   expect(await missing.output(undefined)).toBeUndefined();
   await expect(missing.input("synthetic-secret")).rejects.toThrow(message);
-  const transform = fields([old]).idToken.transform;
+  const transform = fields([old]).refreshToken.transform;
   const valid = await transform.input("synthetic-secret");
   await expect(missing.output(valid)).rejects.toThrow(message);
   for (const value of [

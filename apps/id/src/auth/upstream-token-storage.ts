@@ -25,7 +25,12 @@ export const upstreamTokenSecretsSchema = z
 
 export type UpstreamTokenSecrets = z.infer<typeof upstreamTokenSecretsSchema>;
 
-/** Dedicated upstream keys; never fall back to auth, signing or replay keys. */
+/**
+ * Dedicated upstream keys; never fall back to auth, signing or replay keys.
+ * Only the refresh token is stored. The provider's sign-in update also names
+ * the upstream access and ID tokens; the accounts table has no column for
+ * either, and Drizzle leaves unknown keys out of an update.
+ */
 export function upstreamTokenStorage(secrets?: UpstreamTokenSecrets) {
   const key = {
     currentVersion: secrets?.[0]?.version ?? 0,
@@ -65,11 +70,7 @@ export function upstreamTokenStorage(secrets?: UpstreamTokenSecrets) {
     id: "upstream-token-storage",
     schema: {
       account: {
-        fields: {
-          accessToken: field,
-          refreshToken: field,
-          idToken: field,
-        },
+        fields: { refreshToken: field },
       },
     },
   } as const satisfies BetterAuthPlugin;

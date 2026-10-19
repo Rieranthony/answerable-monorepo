@@ -8,7 +8,6 @@ import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import { accounts, users } from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
 
-const tokenFields = ["accessToken", "refreshToken", "idToken"] as const;
 let connection: DatabaseConnection;
 const userId = createId();
 beforeAll(async () => {
@@ -25,14 +24,10 @@ afterAll(async () => {
   await connection.close();
 });
 
-test("supported account field transforms cover writes, reads, joins and transactions", async () => {
+test("the refresh token transform covers writes, reads, joins and transactions", async () => {
   const auth = createAuth(connection.db, testEnvironment());
   const { adapter } = await auth.$context;
-  const tokens = {
-    accessToken: "upstream-access-proof",
-    refreshToken: "upstream-refresh-proof",
-    idToken: "upstream-id-proof",
-  };
+  const tokens = { refreshToken: "upstream-refresh-proof" };
   const row = await adapter.create({
     model: "account",
     data: {
@@ -50,10 +45,8 @@ test("supported account field transforms cover writes, reads, joins and transact
       .select()
       .from(accounts)
       .where(eq(accounts.id, row.id));
-    for (const field of tokenFields) {
-      expect(stored![field]).not.toBe(expected[field]);
-      expect(stored![field]).toStartWith("$ba$1$");
-    }
+    expect(stored!.refreshToken).not.toBe(expected.refreshToken);
+    expect(stored!.refreshToken).toStartWith("$ba$1$");
     expect(
       await adapter.findOne({
         model: "account",
@@ -70,9 +63,7 @@ test("supported account field transforms cover writes, reads, joins and transact
         providerId: "import-proof",
         issuer: "https://storage.example.com",
         accountId: createId(),
-        accessToken: null,
         refreshToken: null,
-        idToken: null,
       },
     }),
   );
@@ -80,17 +71,13 @@ test("supported account field transforms cover writes, reads, joins and transact
     .select()
     .from(accounts)
     .where(eq(accounts.id, imported.id));
-  expect(empty).toMatchObject({
-    accessToken: null,
-    refreshToken: null,
-    idToken: null,
-  });
+  expect(empty).toMatchObject({ refreshToken: null });
   expect(
     await adapter.findOne({
       model: "account",
       where: [{ field: "id", value: imported.id }],
     }),
-  ).toMatchObject({ accessToken: null, refreshToken: null, idToken: null });
+  ).toMatchObject({ refreshToken: null });
   await adapter.delete({
     model: "account",
     where: [{ field: "id", value: imported.id }],
@@ -111,9 +98,9 @@ test("supported account field transforms cover writes, reads, joins and transact
     await adapter.findOne({
       model: "account",
       where: [{ field: "id", value: row.id }],
-      select: ["idToken"],
+      select: ["refreshToken"],
     }),
-  ).toMatchObject({ idToken: tokens.idToken });
+  ).toMatchObject(tokens);
   const joined = await adapter.findOne<{ account: unknown[] }>({
     model: "user",
     where: [{ field: "id", value: userId }],
@@ -121,20 +108,16 @@ test("supported account field transforms cover writes, reads, joins and transact
   });
   expect(joined?.account).toEqual([expect.objectContaining(tokens)]);
 
-  const updated = { ...tokens, accessToken: "updated-access-proof" };
+  const updated = { refreshToken: "updated-refresh-proof" };
   expect(
     await adapter.update({
       model: "account",
       where: [{ field: "id", value: row.id }],
-      update: { accessToken: updated.accessToken },
+      update: updated,
     }),
   ).toMatchObject(updated);
   await assertStored(updated);
-  const final = {
-    accessToken: "transaction-access-proof",
-    refreshToken: "transaction-refresh-proof",
-    idToken: "transaction-id-proof",
-  };
+  const final = { refreshToken: "transaction-refresh-proof" };
   await adapter.transaction(async (tx) => {
     expect(
       await tx.update({
@@ -170,7 +153,7 @@ test("supported account field transforms cover writes, reads, joins and transact
   await assertStored(tokens);
   await connection.db
     .update(accounts)
-    .set({ idToken: "00".repeat(40) })
+    .set({ refreshToken: "00".repeat(40) })
     .where(eq(accounts.id, row.id));
   await expect(
     adapter.findOne({
@@ -187,11 +170,7 @@ test("production account storage retains old keys through incremental rotation",
     version: 2,
     value: Buffer.alloc(32, 29).toString("base64url"),
   };
-  const tokens = {
-    accessToken: "rotate-access",
-    refreshToken: "rotate-refresh",
-    idToken: "rotate-id",
-  };
+  const tokens = { refreshToken: "rotate-refresh" };
   const first = await createAuth(connection.db, environment).$context;
   const row = await first.adapter.create({
     model: "account",
@@ -211,18 +190,11 @@ test("production account storage retains old keys through incremental rotation",
   expect(
     await rotating.adapter.findOne({ model: "account", where }),
   ).toMatchObject(tokens);
-  await rotating.adapter.update({
-    model: "account",
-    where,
-    update: { idToken: tokens.idToken },
-  });
-  const [stored] = await connection.db
-    .select()
-    .from(accounts)
-    .where(eq(accounts.id, row.id));
-  expect(stored!.accessToken).toStartWith("$ba$1$");
-  expect(stored!.refreshToken).toStartWith("$ba$1$");
-  expect(stored!.idToken).toStartWith("$ba$2$");
+  const stored = async () =>
+    (
+      await connection.db.select().from(accounts).where(eq(accounts.id, row.id))
+    )[0]!.refreshToken;
+  expect(await stored()).toStartWith("$ba$1$");
   const retired = await createAuth(connection.db, {
     ...environment,
     upstreamTokenSecrets: [current],
@@ -231,6 +203,7 @@ test("production account storage retains old keys through incremental rotation",
     retired.adapter.findOne({ model: "account", where }),
   ).rejects.toThrow("Upstream token storage is unavailable");
   await rotating.adapter.update({ model: "account", where, update: tokens });
+  expect(await stored()).toStartWith("$ba$2$");
   expect(
     await retired.adapter.findOne({ model: "account", where }),
   ).toMatchObject(tokens);

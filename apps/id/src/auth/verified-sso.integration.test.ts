@@ -428,12 +428,7 @@ const swapSession = (started: Started, cookie: string) => {
 const deleteAccount = (accountId: string) =>
   fixture.db
     .update(accounts)
-    .set({
-      deletedAt: new Date(),
-      accessToken: null,
-      refreshToken: null,
-      idToken: null,
-    })
+    .set({ deletedAt: new Date(), refreshToken: null })
     .where(eq(accounts.accountId, accountId));
 const outsiderMember = (values: Partial<typeof members.$inferInsert>) =>
   fixture.db.insert(members).values({

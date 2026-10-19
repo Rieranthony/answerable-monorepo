@@ -74,8 +74,8 @@ bun run ops:preflight
 
 The preflight performs read-only, paged database scans. It decrypts every retained
 signing private key with the provider's supported secret configuration, verifies a
-local canary against its public key, reads each account's upstream token fields via
-the supported storage transform. Only counts are printed. Missing
+local canary against its public key, and reads each account's upstream refresh token
+via the supported storage transform. Only counts are printed. Missing
 or incorrect keys, invalid ciphertext, a mismatched key pair or no signing key fails
 with exit status 1. It never generates replacement keys or rewrites credentials.
 It does not prove backup completeness or validate
@@ -89,7 +89,7 @@ failure; do not use initialisation to replace missing restored keys.
 | Material                 | Supported configuration and use                                                                                                                                  | Retirement evidence needed                                                                             |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | Application secret       | `BETTER_AUTH_SECRET`; optional native `BETTER_AUTH_SECRETS` ring. Encrypts provider material including signing private keys; active secret signs browser cookies | Retained ciphertext and every required backup; promotion requires fresh browser sign-in                |
-| Upstream token keys      | `UPSTREAM_TOKEN_SECRETS`; first version writes, listed versions read account access, refresh and ID tokens                                                       | All surviving fields and required backups decrypt without the retiring version                         |
+| Upstream token keys      | `UPSTREAM_TOKEN_SECRETS`; first version writes, listed versions read account refresh tokens                                                                      | All surviving fields and required backups decrypt without the retiring version                         |
 | Platform application secrets | `GOOGLE_CLIENT_SECRET` and `MICROSOFT_CLIENT_SECRET`: environment only, never in PostgreSQL | Provider console shows the new secret and every replica has restarted; keep both secrets valid throughout rotation |
 | Database credentials     | Separate migration and runtime logins                                                                                                        | Provision new credentials and permissions after restore; do not restore owner credentials into runtime |
 | Root and IdP credentials | Deployment-managed root bootstrap secret and configured SSO credentials                                                                                          | Separate inventory and provider-specific revocation/rotation checks                                    |

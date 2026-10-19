@@ -31,7 +31,7 @@ Answerable's own deployment of ID, the Toolbox and the admin MCP (Civo, Kubernet
 | `BETTER_AUTH_URL` is the public issuer origin, `https://` | It becomes the JWT `iss`, the discovery document and the default admin audience (`${BETTER_AUTH_URL}/api/admin`). Changing it invalidates every issued token | `src/env.ts`, `src/auth.ts` |
 | Non-empty origin-only `BETTER_AUTH_TRUSTED_ORIGINS` | Lists other browser origins allowed to call `/auth/*` with cookies, and identity-provider endpoint origins. The ID origin itself is always trusted. The admin API sends no CORS headers: it has no browser client yet | `src/env.ts` production refinements |
 | Google and Microsoft endpoint origins in `BETTER_AUTH_TRUSTED_ORIGINS` and outbound HTTPS to them | Trust exact origins in use: Microsoft `https://login.microsoftonline.com` (discovery, authorisation, token, keys) and `https://graph.microsoft.com` (userinfo); Google `https://accounts.google.com` (discovery/authorisation), `https://oauth2.googleapis.com` (token/revocation), `https://www.googleapis.com` (JWKS), `https://openidconnect.googleapis.com` (userinfo). The service must reach these endpoints over HTTPS | Provider origin checks; SSO connectivity test reports `untrusted_origin` for a discovered endpoint outside the allowlist |
-| Four independent secret families | `BETTER_AUTH_SECRET` signs browser cookies and encrypts the stored JWKS private keys; `UPSTREAM_TOKEN_SECRETS` encrypts the upstream IdP tokens stored on accounts; `ROOT_ADMIN_SECRET` is the break-glass principal; platform application secrets authenticate Answerable to Google and Microsoft. Compromise of one must not expose the others, and none may be in the database or its backups | `src/env.ts` validation; `src/auth/upstream-token-storage.ts` |
+| Four independent secret families | `BETTER_AUTH_SECRET` signs browser cookies and encrypts the stored JWKS private keys; `UPSTREAM_TOKEN_SECRETS` encrypts the upstream IdP refresh token stored on accounts; `ROOT_ADMIN_SECRET` is the break-glass principal; platform application secrets authenticate Answerable to Google and Microsoft. Compromise of one must not expose the others, and none may be in the database or its backups | `src/env.ts` validation; `src/auth/upstream-token-storage.ts` |
 | `NODE_ENV=production` | Turns on the provider's rate limiter, the production refinements above and turns off the OpenAPI documents. The server refuses to start with `NODE_ENV=test`, which would turn off Better Auth's origin and CSRF checks and the runtime-role assertion | `src/env.ts`, `src/runtime.ts`, Better Auth defaults |
 | PostgreSQL `max_connections` ≥ replicas × `DATABASE_POOL_MAX` + migration and operator sessions | Each replica opens up to `DATABASE_POOL_MAX` connections (default 20). Exhausting the server turns every request into a `database_busy` 503 | `src/db/client.ts` |
 
@@ -127,7 +127,7 @@ curl -s https://id.answerable.org/.well-known/openid-configuration | jq .issuer
 curl -s https://id.answerable.org/auth/jwks    # first call generates the signing key
 ```
 
-**5. Preflight the keys** once JWKS exists. This decrypts every stored signing key and upstream token with the delivered secrets and exits non-zero if any key is wrong.
+**5. Preflight the keys** once JWKS exists. This decrypts every stored signing key and upstream refresh token with the delivered secrets and exits non-zero if any key is wrong.
 
 ```bash
 DATABASE_URL='<runtime url>' BETTER_AUTH_SECRET=… UPSTREAM_TOKEN_SECRETS=… \

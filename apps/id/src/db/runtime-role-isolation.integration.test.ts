@@ -599,9 +599,7 @@ test("restricted global user/session queries preserve global scope and exclude c
     providerId: "test",
     accountId: userId,
     issuer: "https://global.example",
-    accessToken: "upstream-secret",
     refreshToken: "refresh-secret",
-    idToken: "id-secret",
   });
   await inPlatformRead(runtime.db, async (context) => {
     expect(

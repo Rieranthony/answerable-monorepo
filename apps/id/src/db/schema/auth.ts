@@ -156,20 +156,15 @@ export const accounts = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    accessToken: text("access_token"),
     refreshToken: text("refresh_token"),
-    idToken: text("id_token"),
-    accessTokenExpiresAt: timestampColumn("access_token_expires_at"),
     refreshTokenExpiresAt: timestampColumn("refresh_token_expires_at"),
-    scope: text("scope"),
-    password: text("password"),
     ...timestamps(),
   },
   (table) => [
     ...softDeletionChecks(
       "accounts",
       table,
-      sql`num_nonnulls(${table.accessToken}, ${table.refreshToken}, ${table.idToken}, ${table.password}) = 0`,
+      sql`${table.refreshToken} is null`,
     ),
     foreignKey({
       name: "accounts_user_live_fk",

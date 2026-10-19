@@ -228,8 +228,7 @@ describe("integration: federated sign-in", () => {
       id: identities[0]!.id,
       userId: identities[0]!.userId,
     });
-    for (const field of ["accessToken", "refreshToken", "idToken"] as const)
-      expect(rows[0]![field]).toStartWith("$ba$1$");
+    expect(rows[0]!.refreshToken).toStartWith("$ba$1$");
   });
   test("legacy plaintext fails native sign-in without replacing the account or creating a session", async () => {
     await seedProvider();
@@ -238,7 +237,7 @@ describe("integration: federated sign-in", () => {
     const [initial] = await connection.db.select().from(accounts);
     await connection.db
       .update(accounts)
-      .set({ accessToken: "synthetic-legacy-plaintext" })
+      .set({ refreshToken: "synthetic-legacy-plaintext" })
       .where(eq(accounts.id, initial!.id));
     const [before] = await connection.db.select().from(accounts);
     issuer.enqueue(entraClaims());
@@ -303,13 +302,8 @@ describe("integration: federated sign-in", () => {
         model: "account",
         where: [{ field: "id", value: stored.id }],
       });
-      for (const field of ["accessToken", "refreshToken", "idToken"] as const) {
-        expect(stored[field]).toBeString();
-        expect(stored[field]).not.toBe(decoded![field]);
-        expect(stored[field]).toStartWith("$ba$1$");
-      }
+      expect(stored.refreshToken).toStartWith("$ba$1$");
       expect(decoded!.refreshToken).toBe("synthetic-federation-refresh-proof");
-      expect(decoded!.idToken).toMatch(/^eyJ/);
       expect(stored.issuer).toBe(entraIssuer);
       expect(stored.accountId).toBe("entra-subject");
     }

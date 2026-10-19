@@ -1,3 +1,5 @@
+**Superseded on what is stored (v0 schema audit, 19 October 2026).** ID now stores only the upstream refresh token (`accounts.refresh_token` and `refresh_token_expires_at`), encrypted under `UPSTREAM_TOKEN_SECRETS`, for the directory re-check `Q-AID-RECHECK`. The accounts table no longer has `access_token`, `id_token`, `access_token_expires_at`, `scope` or `password`: the provider's sign-in update still names the upstream access and ID tokens, and Drizzle leaves keys without a column out of the update. Erasure clears the refresh token, and the custody preflight decrypts it; where this report says access, refresh and ID tokens are encrypted, read the refresh token. Current behaviour: [ID's README](../apps/id/README.md) and [operations runbook](../apps/id/OPERATIONS.md).
+
 Historical evidence from the v0 candidate (tree da6acc8, tag id-v0-evidence). The restore rehearsal, capacity generator, encrypted replay results and admission mechanisms it describes were removed afterwards; current behaviour is documented in the READMEs and docs.
 
 # Upstream token custody: evidence and next change

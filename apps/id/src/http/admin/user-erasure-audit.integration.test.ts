@@ -384,7 +384,6 @@ test("global user erasure records actual cross-tenant effects without credential
     "oidcConfig",
     "accountId",
     "directoryUserId",
-    "password",
   ])
     expect(JSON.stringify(event!.data)).not.toContain(secret);
   const replay = await erase(person.userId, key);

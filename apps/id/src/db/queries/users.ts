@@ -278,11 +278,7 @@ export async function deleteUser(
     .update(accounts)
     .set({
       deletedAt: sql`now()`,
-      accessToken: null,
       refreshToken: null,
-      idToken: null,
-      password: null,
-      accessTokenExpiresAt: null,
       refreshTokenExpiresAt: null,
     })
     .where(and(isNull(accounts.deletedAt), eq(accounts.userId, userId)))

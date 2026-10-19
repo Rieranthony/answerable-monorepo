@@ -2,13 +2,23 @@ import { expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { createAdminFixture } from "../__tests__/admin.ts";
 import { createAuth } from "../auth.ts";
-import { jwks, adminOperations } from "../db/schema/index.ts";
+import { accounts, adminOperations, jwks } from "../db/schema/index.ts";
 import { checkKeyCustody } from "./preflight.ts";
 
 test("custody preflight reads retained provider and upstream material without changing it", async () => {
   const fixture = await createAdminFixture();
   try {
-    await createAuth(fixture.db, fixture.environment).api.getJwks();
+    const auth = createAuth(fixture.db, fixture.environment);
+    await auth.api.getJwks();
+    // The fixture's provider returns no refresh token; store one encrypted.
+    const [account] = await fixture.db.select().from(accounts).limit(1);
+    await (
+      await auth.$context
+    ).adapter.update({
+      model: "account",
+      where: [{ field: "id", value: account!.id }],
+      update: { refreshToken: "preflight-refresh-proof" },
+    });
     const created = await fixture.app.request(
       `/api/admin/v1/organizations/${fixture.tenant.organizationId}/groups`,
       {

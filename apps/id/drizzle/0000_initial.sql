@@ -8,18 +8,13 @@ CREATE TABLE "accounts" (
 	"directory_user_id" text,
 	"provider_id" text NOT NULL,
 	"user_id" uuid NOT NULL,
-	"access_token" text,
 	"refresh_token" text,
-	"id_token" text,
-	"access_token_expires_at" timestamp with time zone,
 	"refresh_token_expires_at" timestamp with time zone,
-	"scope" text,
-	"password" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "accounts_issuer_account_id_unique" UNIQUE("issuer","account_id"),
 	CONSTRAINT "accounts_live_check" CHECK ("accounts"."live" is not distinct from case when "accounts"."deleted_at" is null then true end),
-	CONSTRAINT "accounts_deleted_check" CHECK ("accounts"."deleted_at" is null or (num_nonnulls("accounts"."access_token", "accounts"."refresh_token", "accounts"."id_token", "accounts"."password") = 0))
+	CONSTRAINT "accounts_deleted_check" CHECK ("accounts"."deleted_at" is null or ("accounts"."refresh_token" is null))
 );
 --> statement-breakpoint
 CREATE TABLE "members" (

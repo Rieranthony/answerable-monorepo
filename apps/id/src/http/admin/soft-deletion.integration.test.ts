@@ -102,15 +102,7 @@ test("user deletion retains identity, hides ordinary reads and cannot be enabled
       .select()
       .from(accounts)
       .where(eq(accounts.userId, person.userId)),
-  ).toMatchObject([
-    {
-      deletedAt: expect.any(Date),
-      accessToken: null,
-      refreshToken: null,
-      idToken: null,
-      password: null,
-    },
-  ]);
+  ).toMatchObject([{ deletedAt: expect.any(Date), refreshToken: null }]);
   await expect(
     fixture.appDb
       .update(users)

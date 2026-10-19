@@ -821,12 +821,7 @@ for (const missing of [
     else if (missing === "account")
       await fixture.db
         .update(accounts)
-        .set({
-          deletedAt: new Date(),
-          accessToken: null,
-          refreshToken: null,
-          idToken: null,
-        })
+        .set({ deletedAt: new Date(), refreshToken: null })
         .where(eq(accounts.userId, input.userId));
     else if (missing === "member") {
       // The member's assignments go first: a live one would need a live member.

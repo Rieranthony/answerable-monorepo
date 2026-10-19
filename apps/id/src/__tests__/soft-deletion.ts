@@ -16,7 +16,7 @@ export function softDeleteUser(db: Database, userId: string) {
     sql`update entitlements set deleted_at = now(), status = 'disabled' where deleted_at is null and member_id in ${memberIds}`,
     sql`update group_members set deleted_at = now() where deleted_at is null and member_id in ${memberIds}`,
     sql`update members set deleted_at = now(), status = 'revoked', revoked_at = coalesce(revoked_at, now()) where deleted_at is null and user_id = ${userId}`,
-    sql`update accounts set deleted_at = now(), access_token = null, refresh_token = null, id_token = null, password = null where deleted_at is null and user_id = ${userId}`,
+    sql`update accounts set deleted_at = now(), refresh_token = null where deleted_at is null and user_id = ${userId}`,
     sql`update oauth_consents set deleted_at = now() where deleted_at is null and user_id = ${userId}`,
     sql`update users set deleted_at = now(), status = 'disabled', disabled_at = coalesce(disabled_at, now()) where id = ${userId}`,
   ]);

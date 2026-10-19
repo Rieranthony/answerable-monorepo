@@ -24,7 +24,7 @@ export async function checkKeyCustody(db: Database, environment: Environment) {
   let counts: { signingKeys: number; accounts: number };
   try {
     const upstream = upstreamTokenStorage(environment.upstreamTokenSecrets)
-      .schema.account.fields.accessToken.transform.output;
+      .schema.account.fields.refreshToken.transform.output;
     const { secretConfig } = await createAuth(db, environment).$context;
     counts = await db.transaction(async (tx) => {
       await tx.execute(sql`set transaction read only`);
@@ -60,20 +60,14 @@ export async function checkKeyCustody(db: Database, environment: Environment) {
       after = undefined;
       for (;;) {
         const rows = await tx
-          .select({
-            id: accounts.id,
-            access: accounts.accessToken,
-            refresh: accounts.refreshToken,
-            identity: accounts.idToken,
-          })
+          .select({ id: accounts.id, refresh: accounts.refreshToken })
           .from(accounts)
           .where(after ? gt(accounts.id, after) : undefined)
           .orderBy(asc(accounts.id))
           .limit(100);
         if (!rows.length) break;
         for (const row of rows) {
-          for (const value of [row.access, row.refresh, row.identity])
-            await upstream(value);
+          await upstream(row.refresh);
           counts.accounts++;
         }
         after = rows.at(-1)!.id;

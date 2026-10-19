@@ -1,6 +1,6 @@
 {
-  "id": "8536ec15-1304-4f20-aa85-20b4cd104ceb",
-  "prevId": "c3b4471f-ea75-46af-a247-f69ad984bfcd",
+  "id": "5dd7fc4c-27e6-4976-a2f8-d2b85dd76f08",
+  "prevId": "0fc9db57-4317-4cbb-ae6b-ee1b917140cb",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -63,45 +63,15 @@
           "primaryKey": false,
           "notNull": true
         },
-        "access_token": {
-          "name": "access_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "refresh_token": {
           "name": "refresh_token",
           "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "id_token": {
-          "name": "id_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "access_token_expires_at": {
-          "name": "access_token_expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "refresh_token_expires_at": {
           "name": "refresh_token_expires_at",
           "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "scope": {
-          "name": "scope",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "password": {
-          "name": "password",
-          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -208,7 +178,7 @@
         },
         "accounts_deleted_check": {
           "name": "accounts_deleted_check",
-          "value": "\"accounts\".\"deleted_at\" is null or (num_nonnulls(\"accounts\".\"access_token\", \"accounts\".\"refresh_token\", \"accounts\".\"id_token\", \"accounts\".\"password\") = 0)"
+          "value": "\"accounts\".\"deleted_at\" is null or (\"accounts\".\"refresh_token\" is null)"
         }
       },
       "isRLSEnabled": false
