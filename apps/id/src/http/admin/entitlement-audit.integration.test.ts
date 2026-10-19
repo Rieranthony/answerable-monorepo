@@ -4,6 +4,7 @@ import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
+import { createSharedClient } from "../../__tests__/client-queries.ts";
 import {
   expectNoop,
   expectReceipt,
@@ -17,11 +18,13 @@ import {
 } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
 let fixture: AdminFixture;
+let sharedClient: string;
 beforeEach(async () => {
   fixture = await createAdminFixture(
     { databasePoolMax: 4 },
     { restrictedRole: true },
   );
+  sharedClient = await createSharedClient(fixture.db);
 });
 afterEach(async () => {
   await fixture?.close();
@@ -63,14 +66,14 @@ test("member entitlement commands retain affected-user history through removal a
       id: createId(),
       organizationId: fixture.outsider.organizationId,
       memberId: otherMember!.id,
-      clientId: "answerable-bootstrap",
+      clientId: sharedClient,
       scopes: ["org:read"],
     })
     .returning();
   const base = `/api/admin/v1/organizations/${fixture.tenant.organizationId}/entitlements`;
   const created = await command(base, "POST", {
     memberId: person.memberId,
-    clientId: "answerable-bootstrap",
+    clientId: sharedClient,
     scopes: ["org:read"],
   });
   expect(created.status).toBe(201);
@@ -207,7 +210,7 @@ for (const principal of ["group", "organisation"] as const) {
     const base = `/api/admin/v1/organizations/${organizationId}/entitlements`;
     const create = await command(base, "POST", {
       ...(principal === "group" ? { groupId: group!.id } : {}),
-      clientId: "answerable-bootstrap",
+      clientId: sharedClient,
       scopes: ["org:read"],
     });
     expect(create.status).toBe(201);

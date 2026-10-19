@@ -7,6 +7,7 @@ import {
 import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
 import { auditEvents } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
+import { createSharedClient } from "../../__tests__/client-queries.ts";
 import { createGroup, addGroupMember } from "../../__tests__/group-queries.ts";
 import { createResource } from "../../__tests__/resource-queries.ts";
 import { routes } from "./access.ts";
@@ -43,6 +44,7 @@ async function read(
 test("tenant users review all three sources, readers review resource and client access, and machines read both", async () => {
   const organizationId = fixture.tenant.organizationId;
   const memberId = fixture.principals.tenantUsersOnly.memberId;
+  const clientId = await createSharedClient(fixture.db);
   const resource = "https://access.example";
   await createResource(fixture.db, {
     identifier: resource,
@@ -64,11 +66,7 @@ test("tenant users review all three sources, readers review resource and client 
     { resource, scopes: ["tutor:read"] },
     { resource, groupId: group.id, scopes: ["tutor:write", "tutor:read"] },
     { resource, memberId, scopes: ["tutor:admin"] },
-    {
-      clientId: fixture.platform.client.clientId,
-      memberId,
-      scopes: ["openid"],
-    },
+    { clientId, memberId, scopes: ["openid"] },
   ]) {
     const headers = fixture.headers("platformAdmin");
     const requestId = createId();
@@ -164,10 +162,7 @@ test("tenant users review all three sources, readers review resource and client 
         (item: { memberId: string }) => item.memberId === memberId,
       ).scopes,
     ).toEqual(["tutor:admin", "tutor:read", "tutor:write"]);
-    const clientResponse = await read(
-      `/access?clientId=${fixture.platform.client.clientId}`,
-      kind,
-    );
+    const clientResponse = await read(`/access?clientId=${clientId}`, kind);
     expect(clientResponse.status).toBe(200);
     expect((await clientResponse.json()).items).toEqual([
       expect.objectContaining({ memberId, scopes: ["openid"] }),
@@ -234,7 +229,7 @@ test("HTTP pair creation and reads preserve both targets without granting direct
   const actor = fixture.principals.tenantReader;
   const input = {
     memberId: actor.memberId,
-    clientId: fixture.platform.client.clientId,
+    clientId: await createSharedClient(fixture.db),
     resource: fixture.platform.adminResource,
     scopes: ["platform:write"],
   };

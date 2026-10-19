@@ -4,6 +4,7 @@ import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
+import { createSharedClient } from "../../__tests__/client-queries.ts";
 import {
   expectNoop,
   expectReceipt,
@@ -19,11 +20,13 @@ import {
 } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
 let fixture: AdminFixture;
+let sharedClient: string;
 beforeEach(async () => {
   fixture = await createAdminFixture(
     { databasePoolMax: 4 },
     { restrictedRole: true },
   );
+  sharedClient = await createSharedClient(fixture.db);
 });
 afterEach(async () => {
   await fixture?.close();
@@ -56,7 +59,7 @@ async function seedGroup(organizationId: string, memberId: string) {
         id: createId(),
         organizationId,
         groupId: group!.id,
-        clientId: "answerable-bootstrap",
+        clientId: sharedClient,
         scopes: ["org:read"],
       },
       {
@@ -71,7 +74,7 @@ async function seedGroup(organizationId: string, memberId: string) {
         id: createId(),
         organizationId,
         groupId: group!.id,
-        clientId: "answerable-bootstrap",
+        clientId: sharedClient,
         resource: fixture.platform.adminResource,
         scopes: ["org:read"],
         validFrom: new Date("2100-01-01"),

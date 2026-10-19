@@ -96,9 +96,13 @@ async function validateTarget(
     input.resource === null
       ? null
       : found(await readResourceForPolicy(context, input.resource));
+  // A client serves its own organisation, or any organisation when no organisation
+  // owns it; a machine client only its own.
   if (
-    (input.grantKind === "client_credentials" &&
-      client!.organizationId !== organizationId) ||
+    (client !== null &&
+      client.organizationId !== organizationId &&
+      (client.organizationId !== null ||
+        input.grantKind === "client_credentials")) ||
     (resource?.classification === "tenant_owned" &&
       resource.organizationId !== organizationId)
   )

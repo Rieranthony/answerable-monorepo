@@ -28,12 +28,15 @@ import {
   users,
 } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
+import { createSharedClient } from "../../__tests__/client-queries.ts";
 let fixture: AdminFixture;
+let sharedClient: string;
 beforeEach(async () => {
   fixture = await createAdminFixture(
     { databasePoolMax: 4 },
     { restrictedRole: true },
   );
+  sharedClient = await createSharedClient(fixture.db);
 });
 afterEach(async () => {
   await fixture?.close();
@@ -78,7 +81,7 @@ async function seed() {
       id: createId(),
       organizationId: member.organizationId,
       memberId: member.memberId,
-      clientId: "answerable-bootstrap",
+      clientId: sharedClient,
       resource: fixture.platform.adminResource,
       scopes: ["org:read"],
       status: "disabled",

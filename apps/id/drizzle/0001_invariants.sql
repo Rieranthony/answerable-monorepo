@@ -213,11 +213,16 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
+-- Entitlements and capabilities both fire this guard: they may name a shared resource or their
+-- organisation's own, and an unowned client or their organisation's own.
 CREATE FUNCTION protect_private_resource_assignment() RETURNS trigger
 LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF EXISTS (SELECT 1 FROM public.oauth_resources r WHERE r.identifier = NEW.resource AND r.classification = 'tenant_owned' AND r.organization_id <> NEW.organization_id) THEN
     RAISE EXCEPTION 'Private resource belongs to another organisation' USING ERRCODE = '23503';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.oauth_clients c WHERE c.client_id = NEW.client_id AND c.organization_id <> NEW.organization_id) THEN
+    RAISE EXCEPTION 'Client belongs to another organisation' USING ERRCODE = '23503';
   END IF;
   RETURN NEW;
 END;

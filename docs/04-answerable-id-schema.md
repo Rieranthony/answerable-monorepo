@@ -44,7 +44,7 @@ Live uniqueness permits replacements only where explicitly defined. Group assign
 
 ## Invariants
 
-- Composite foreign keys reject cross-tenant member/group references.
+- Composite foreign keys reject cross-tenant member/group references. An entitlement or capability names a shared resource or its organisation's own, and a client no organisation owns or its organisation's own; a machine capability needs its organisation's own client.
 - Tombstone rows keep unique public identifiers reserved after product deletion. Platform identity comes from immutable `system_bindings`; matching slugs cannot adopt it.
 - **Live foreign keys hold soft deletion.** Each soft-deletable table has a `live` column: true while `deleted_at` is null, null once it is set. Parents carry `unique (id, live)` and children reference `(parent_id, live)`, so a live row needs live parents and a parent with live children cannot be deleted. `system_bindings` keeps the platform organisation, its admin group and the admin resource live. Every deletion path soft-deletes children first.
 - **A deleted row holds no authority.** Per-table CHECKs require a disabled or revoked status, and no client secret, upstream refresh token or OIDC configuration. A trigger keeps deletion terminal and assigns `live`; writers never set it.

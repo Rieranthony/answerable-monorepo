@@ -120,13 +120,13 @@ beforeEach(async () => {
   login = undefined;
   fixture = await createAdminFixture();
   browserCookie = fixture.principals.tenantAdmin.cookie;
+  // No organisation owns the app, as hosts are registered: two tenants can approve it.
   await fixture.db.insert(oauthClients).values({
     id: createId(),
     clientId,
     clientSecret: hashClientSecret(secret),
     name: "OmniChat",
     uri: "https://client.example",
-    organizationId: fixture.tenant.organizationId,
     scopes: ["openid", "email", "offline_access", "mail:read"],
     grantTypes: ["authorization_code", "refresh_token"],
     redirectUris: [redirect],
@@ -2258,7 +2258,6 @@ const authorityChanges: {
         enableOrganization(context, fixture.tenant.organizationId),
       );
     },
-    // The client is owned by the tenant; the outsider grant is not.
     outsider: "kept",
     session: "kept",
   },

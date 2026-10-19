@@ -10,12 +10,16 @@ import {
 } from "../../__tests__/admin.ts";
 import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
 import { inPlatformWrite } from "../../__tests__/platform-context.ts";
-import { createClient } from "../../services/clients.ts";
+import { createClient, linkResource } from "../../services/clients.ts";
+import { createResourceGrant } from "../../auth/create-resource-grant.ts";
+import { userResourcePolicy } from "../../auth/user-resource-policy.ts";
+import { withDatabaseScope } from "../../db/isolation.ts";
 import { createResource } from "../../__tests__/resource-queries.ts";
 import {
   auditEvents,
   organizationCapabilities,
   oauthClients,
+  sessions,
 } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
 import { routes } from "./capabilities.ts";
@@ -406,14 +410,19 @@ test("direct-session approval rejects foreign resources, platform scopes for ten
 });
 
 test("platform user approvals distinguish login, exact pair and renewal across tenants and replay safely", async () => {
-  const machine = await setup();
-  await fixture.db
-    .update(oauthClients)
-    .set({
+  // A client no organisation owns can serve every organisation that approves it.
+  const { resource } = await setup();
+  const { clientId } = await inPlatformWrite(fixture.db, (context) =>
+    createClient(context, {
+      clientId: `shared-${createId()}`,
+      name: "Shared app",
       grantTypes: ["authorization_code", "refresh_token"],
+      redirectUris: ["https://shared-app.example/callback"],
+      tokenEndpointAuthMethod: "client_secret_basic",
       scopes: ["openid", "offline_access", "tool:read", "tool:write"],
-    })
-    .where(eq(oauthClients.clientId, machine.clientId));
+    }),
+  );
+  const app = { clientId, resource };
   for (const organizationId of [
     fixture.tenant.organizationId,
     fixture.outsider.organizationId,
@@ -426,17 +435,17 @@ test("platform user approvals distinguish login, exact pair and renewal across t
         scopes: ["openid", "offline_access"],
       },
       {
-        resource: machine.resource,
+        resource: app.resource,
         grantKind: "authorization_code",
         scopes: ["tool:read"],
       },
       {
-        resource: machine.resource,
+        resource: app.resource,
         grantKind: "refresh_token",
         scopes: ["tool:read"],
       },
     ]) {
-      const input = { clientId: machine.clientId, ...target };
+      const input = { clientId: app.clientId, ...target };
       const key = createId();
       const created = await request("POST", endpoint, input, key);
       expect(created.status).toBe(201);
@@ -485,7 +494,7 @@ test("platform user approvals distinguish login, exact pair and renewal across t
   expect(
     (
       await request("POST", base(), {
-        clientId: machine.clientId,
+        clientId: app.clientId,
         resource: null,
         grantKind: "refresh_token",
         scopes: ["openid"],
@@ -495,18 +504,18 @@ test("platform user approvals distinguish login, exact pair and renewal across t
   for (const target of [
     { resource: null, grantKind: "authorization_code", scopes: ["tool:read"] },
     {
-      resource: machine.resource,
+      resource: app.resource,
       grantKind: "authorization_code",
       scopes: ["openid"],
     },
     {
-      resource: machine.resource,
+      resource: app.resource,
       grantKind: "refresh_token",
       scopes: ["unknown"],
     },
   ])
     expect(
-      (await request("POST", base(), { clientId: machine.clientId, ...target }))
+      (await request("POST", base(), { clientId: app.clientId, ...target }))
         .status,
     ).toBe(400);
 });
@@ -569,6 +578,100 @@ test("user approvals reject unsupported registration and foreign private resourc
   );
   expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
   await expectReceipt(fixture.db, replay);
+});
+
+test("an organisation's own client cannot be approved, entitled or admitted in another organisation", async () => {
+  const organizationId = fixture.tenant.organizationId;
+  const resource = (
+    await createResource(fixture.db, {
+      identifier: `https://${createId()}.example/shared`,
+      name: "Shared",
+      allowedScopes: ["read"],
+    })
+  ).identifier;
+  const { clientId } = await inPlatformWrite(fixture.db, async (context) => {
+    const client = await createClient(context, {
+      clientId: `outsider-app-${createId()}`,
+      name: "Outsider app",
+      organizationId: fixture.outsider.organizationId,
+      grantTypes: ["authorization_code", "refresh_token"],
+      redirectUris: ["https://outsider-app.example/callback"],
+      tokenEndpointAuthMethod: "client_secret_basic",
+      scopes: ["openid", "read"],
+    });
+    await linkResource(context, client.clientId, resource);
+    return client;
+  });
+  for (const input of [
+    { clientId, grantKind: "authorization_code", scopes: ["openid"] },
+    { clientId, resource, grantKind: "authorization_code", scopes: ["read"] },
+    { clientId, resource, grantKind: "refresh_token", scopes: ["read"] },
+  ]) {
+    const refused = await request("POST", base(), input);
+    expect(refused.status).toBe(400);
+    expect(await refused.json()).toMatchObject({
+      code: "validation_failed",
+      title: "Capability target belongs to another organisation",
+    });
+  }
+  // The database holds the rule beneath the service, for both tables.
+  await expect(
+    fixture.db
+      .insert(organizationCapabilities)
+      .values({
+        id: createId(),
+        organizationId,
+        clientId,
+        grantKind: "authorization_code",
+        scopes: ["openid"],
+      })
+      .execute(),
+  ).rejects.toMatchObject({ cause: { code: "23503" } });
+  for (const input of [
+    { clientId, scopes: ["openid"] },
+    { clientId, resource, scopes: ["read"] },
+  ]) {
+    const refused = await request(
+      "POST",
+      `/api/admin/v1/organizations/${organizationId}/entitlements`,
+      input,
+    );
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({ code: "reference_violation" });
+  }
+  // Admission through the client finds no authority for the tenant's member.
+  const member = fixture.principals.tenantReader;
+  const [session] = await fixture.db
+    .select({ id: sessions.id })
+    .from(sessions)
+    .where(eq(sessions.userId, member.userId));
+  const decision = await fixture.appDb.transaction(async (tx) => {
+    const grant = await createResourceGrant(
+      tx,
+      {
+        userId: member.userId,
+        sessionId: session!.id,
+        memberId: member.memberId,
+        clientId,
+        resource,
+        scopes: ["read"],
+      },
+      60,
+    );
+    return withDatabaseScope(
+      tx,
+      { kind: "policy-user", userId: member.userId },
+      (policy) =>
+        userResourcePolicy(policy, {
+          id: grant.id,
+          clientId,
+          resource,
+          grantType: "authorization_code",
+          requestedScopes: ["read"],
+        }),
+    );
+  });
+  expect(decision).toMatchObject({ allowed: false });
 });
 
 test("the bound platform ceiling can be removed even when it supplies the last writer", async () => {

@@ -83,6 +83,7 @@ async function request(
   }
   return response;
 }
+import { createSharedClient } from "../../__tests__/client-queries.ts";
 import { createGroup } from "../../__tests__/group-queries.ts";
 import { createResource } from "../../__tests__/resource-queries.ts";
 import { createEntitlement } from "../../__tests__/entitlement-queries.ts";
@@ -329,20 +330,18 @@ test("client filter, foreign references, tenant isolation and request validation
   ])
     expect((await request(id, suffix)).status).toBe(400);
   expect((await request("bad")).status).toBe(400);
+  const clientId = await createSharedClient(fixture.db);
   const created = await request(
     id,
     "",
     "POST",
-    { clientId: fixture.platform.client.clientId, scopes: ["openid"] },
+    { clientId, scopes: ["openid"] },
     "platformAdmin",
     "entitlement.created",
   );
   expect(created.status).toBe(201);
   const clientRow = await created.json();
-  const filtered = await request(
-    id,
-    `?clientId=${fixture.platform.client.clientId}`,
-  );
+  const filtered = await request(id, `?clientId=${clientId}`);
   expect(
     (await filtered.json()).items.map((row: { id: string }) => row.id),
   ).toEqual([clientRow.id]);
