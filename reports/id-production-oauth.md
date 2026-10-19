@@ -1,5 +1,7 @@
 # Production user OAuth
 
+**Superseded on audit (v0 schema audit, 19 October 2026).** Every audit event is version 1 with one payload per action. User OAuth issuance is recorded once, at the code exchange (`oauth.user.issued` with `grantType: authorization_code`); a refresh records no event and `oauth.user.replayed` no longer exists; the payload's `decision` no longer copies the grant row the event targets. Where this report says schema version 4 and names `oauth.user.replayed`, read the current [storage contract](../docs/04-answerable-id-schema.md#audit-actions).
+
 **Migration baseline:** the development chain and its upgrade/cutover procedures below are historical. First installation now uses one initial migration; see the [consolidation record](id-initial-migration.md). Retained-key custody, native OAuth, deletion and recovery contracts still apply.
 
 Implemented on `codex/id-production-oauth`, based on

@@ -61,7 +61,8 @@
       "entry": [
         "src/server.ts",
         "src/**/*.test.ts",
-        "scripts/*.ts"
+        "scripts/*.ts",
+        "src/docs/*.ts"
       ],
       "project": [
         "src/**/*.{ts,tsx}"
