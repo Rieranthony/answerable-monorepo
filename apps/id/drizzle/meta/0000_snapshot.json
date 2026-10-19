@@ -1,5 +1,5 @@
 {
-  "id": "0fc9db57-4317-4cbb-ae6b-ee1b917140cb",
+  "id": "3ecfaa01-61d8-491d-b476-785653dce74b",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -935,12 +935,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
         },
         "alg": {
           "name": "alg",

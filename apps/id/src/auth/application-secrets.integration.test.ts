@@ -83,11 +83,9 @@ test("application secret rotation retains signing custody and requires new brows
       issuer: environment.betterAuthUrl,
       audience: "rotation-test",
     });
-    // Simulate a scheduled signing-key expiry; the provider owns replacement generation.
-    await db
-      .update(jwks)
-      .set({ expiresAt: new Date(0) })
-      .where(eq(jwks.id, oldKey!.id));
+    // With no stored key, as on a new installation, the provider generates one
+    // under the active version.
+    await db.delete(jwks);
     const replacement = await rotated.api.signJWT({
       body: { payload: { sub: "rotation-proof", aud: "rotation-test" } },
     });

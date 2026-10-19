@@ -34,7 +34,6 @@ export const jwks = pgTable("jwks", {
   /** Encrypted by the plugin with the application secret; custody is a later milestone. */
   privateKey: text("private_key").notNull(),
   createdAt: timestampColumn("created_at").defaultNow().notNull(),
-  expiresAt: timestampColumn("expires_at"),
   alg: text("alg"),
   crv: text("crv"),
 });

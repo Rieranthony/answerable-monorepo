@@ -17,7 +17,6 @@ import {
 import {
   createLocalJWKSet,
   decodeJwt,
-  decodeProtectedHeader,
   exportJWK,
   generateKeyPair,
   jwtVerify,
@@ -52,7 +51,6 @@ import {
   grantContexts,
   groupMembers,
   groups,
-  jwks as jwksTable,
   members,
   oauthAccessTokens,
   oauthClientAssertions,
@@ -2114,35 +2112,6 @@ test("user tokens carry an audience list, the authenticating session and no nonc
   const renewed = await refreshed.json();
   expect(renewed.id_token).toBeString();
   expect(decodeJwt(renewed.id_token).nonce).toBeUndefined();
-});
-
-test("signing-key rotation keeps the old key published and new tokens verifiable", async () => {
-  const jwks = async () =>
-    (
-      await auth.handler(
-        new Request(`${fixture.environment.betterAuthUrl}/auth/jwks`),
-      )
-    ).json();
-  const first = await issue();
-  const old = decodeProtectedHeader(first.access_token).kid!;
-  await fixture.db
-    .update(jwksTable)
-    .set({ expiresAt: new Date(Date.now() - 1000) })
-    .where(eq(jwksTable.id, old));
-  const second = await issue();
-  const current = decodeProtectedHeader(second.access_token).kid!;
-  expect(current).not.toBe(old);
-  const published = await jwks();
-  expect(published.keys.map((key: { kid: string }) => key.kid)).toEqual(
-    expect.arrayContaining([old, current]),
-  );
-  const keys = createLocalJWKSet(published);
-  for (const token of [first.access_token, second.access_token])
-    await jwtVerify(token, keys, {
-      issuer: fixture.environment.betterAuthUrl,
-      audience: resource,
-      typ: "at+jwt",
-    });
 });
 
 test("the published verifier accepts the user and machine tokens this app issues", async () => {

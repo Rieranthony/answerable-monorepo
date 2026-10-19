@@ -86,7 +86,7 @@ For an existing installation, stage a ring whose first entry has the existing se
 
 Keep the original singular secret while legacy ciphertext remains. Adding the ring does not rewrite existing private keys. Newly generated signing keys use versioned encryption; previous keys remain readable with retained versions. Do not remove a version until all dependent ciphertext and retained backups have been accounted for. Removing a required version fails signing rather than replacing its key. Retiring any required decryption key needs retained-data/backup evidence. Automatic rewrapping is not implemented. Emergency signing-key rotation, production secret delivery and post-snapshot recovery require the intended-environment rehearsal.
 
-The integration test proves staged cookie continuity, cookie refusal after promotion, fresh native SSO accepted only by the promoted active version, legacy signing continuity, provider-generated versioned keys after simulated expiry, retained-version signing and refusal when that version is removed. The server-only signing API used in this proof does not open a public JWT endpoint. See [the custody evidence](../../reports/answerable-id-upstream-token-custody.md#application-secret-rotation).
+The integration test proves staged cookie continuity, cookie refusal after promotion, fresh native SSO accepted only by the promoted active version, legacy signing continuity, a provider-generated key under the active version when none is stored, retained-version signing and refusal when that version is removed. The server-only signing API used in this proof does not open a public JWT endpoint. See [the custody evidence](../../reports/answerable-id-upstream-token-custody.md#application-secret-rotation).
 
 ## Boundaries
 
