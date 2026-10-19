@@ -499,7 +499,7 @@ export function createFakeId({
     resource(identifier: string, allowedScopes: string[]) {
       resources.set(identifier, {
         classification: "platform_shared", organizationId: null, id: crypto.randomUUID(), name: identifier, accessTokenTtl: null, refreshTokenTtl: null,
-        signingAlgorithm: null, allowedScopes, disabled: false, revision: 1, createdAt: now(), updatedAt: now(), clients: [],
+        allowedScopes, disabled: false, revision: 1, createdAt: now(), updatedAt: now(), clients: [],
       })
     },
     /** What ID holds for a resource. */

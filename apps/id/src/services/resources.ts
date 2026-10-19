@@ -27,7 +27,6 @@ function auditResource(row: ResourceRow) {
     accessTokenTtl: row.accessTokenTtl,
     refreshTokenTtl: row.refreshTokenTtl,
     allowedScopes: row.allowedScopes,
-    signingAlgorithm: row.signingAlgorithm,
     disabled: row.disabled,
   };
 }

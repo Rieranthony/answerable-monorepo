@@ -1,5 +1,5 @@
 {
-  "id": "ff654c28-2e6a-41da-b0f1-3a3f45fe78ad",
+  "id": "5433740b-a750-4bed-afed-5e2bac672c93",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -2106,12 +2106,6 @@
         "refresh_token_ttl": {
           "name": "refresh_token_ttl",
           "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "signing_algorithm": {
-          "name": "signing_algorithm",
-          "type": "text",
           "primaryKey": false,
           "notNull": false
         },

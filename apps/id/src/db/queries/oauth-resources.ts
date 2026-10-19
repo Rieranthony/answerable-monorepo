@@ -23,13 +23,9 @@ export type ResourceInput = {
   accessTokenTtl?: number;
   refreshTokenTtl?: number;
   allowedScopes: string[];
-  signingAlgorithm?: "EdDSA" | "ES256" | "RS256";
 };
 export type ResourcePatch = Partial<
-  Omit<
-    ResourceInput,
-    "identifier" | "signingAlgorithm" | "classification" | "organizationId"
-  >
+  Omit<ResourceInput, "identifier" | "classification" | "organizationId">
 >;
 export type ResourceQuery = PageQuery & { q?: string; disabled?: boolean };
 export async function listResources(

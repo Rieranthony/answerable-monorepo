@@ -20676,12 +20676,6 @@
                               "null"
                             ]
                           },
-                          "signingAlgorithm": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
                           "allowedScopes": {
                             "anyOf": [
                               {
@@ -20722,7 +20716,6 @@
                           "name",
                           "accessTokenTtl",
                           "refreshTokenTtl",
-                          "signingAlgorithm",
                           "allowedScopes",
                           "disabled",
                           "revision",
@@ -20991,14 +20984,6 @@
                       "type": "string",
                       "minLength": 1
                     }
-                  },
-                  "signingAlgorithm": {
-                    "type": "string",
-                    "enum": [
-                      "EdDSA",
-                      "ES256",
-                      "RS256"
-                    ]
                   }
                 },
                 "required": [
@@ -21078,12 +21063,6 @@
                             "null"
                           ]
                         },
-                        "signingAlgorithm": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "allowedScopes": {
                           "anyOf": [
                             {
@@ -21124,7 +21103,6 @@
                         "name",
                         "accessTokenTtl",
                         "refreshTokenTtl",
-                        "signingAlgorithm",
                         "allowedScopes",
                         "disabled",
                         "revision",
@@ -21550,12 +21528,6 @@
                         "null"
                       ]
                     },
-                    "signingAlgorithm": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
                     "allowedScopes": {
                       "anyOf": [
                         {
@@ -21602,7 +21574,6 @@
                     "name",
                     "accessTokenTtl",
                     "refreshTokenTtl",
-                    "signingAlgorithm",
                     "allowedScopes",
                     "disabled",
                     "revision",
@@ -22029,12 +22000,6 @@
                             "null"
                           ]
                         },
-                        "signingAlgorithm": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "allowedScopes": {
                           "anyOf": [
                             {
@@ -22075,7 +22040,6 @@
                         "name",
                         "accessTokenTtl",
                         "refreshTokenTtl",
-                        "signingAlgorithm",
                         "allowedScopes",
                         "disabled",
                         "revision",
@@ -22839,12 +22803,6 @@
                             "null"
                           ]
                         },
-                        "signingAlgorithm": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "allowedScopes": {
                           "anyOf": [
                             {
@@ -22885,7 +22843,6 @@
                         "name",
                         "accessTokenTtl",
                         "refreshTokenTtl",
-                        "signingAlgorithm",
                         "allowedScopes",
                         "disabled",
                         "revision",
@@ -23303,12 +23260,6 @@
                             "null"
                           ]
                         },
-                        "signingAlgorithm": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "allowedScopes": {
                           "anyOf": [
                             {
@@ -23349,7 +23300,6 @@
                         "name",
                         "accessTokenTtl",
                         "refreshTokenTtl",
-                        "signingAlgorithm",
                         "allowedScopes",
                         "disabled",
                         "revision",

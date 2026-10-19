@@ -69,7 +69,6 @@ for (const machine of [false, true])
       allowedScopes: ["tutor:read"],
       accessTokenTtl: 120,
       refreshTokenTtl: 600,
-      signingAlgorithm: "EdDSA",
     };
     const response = await request("", "POST", input, kind);
     expect(response.status).toBe(201);

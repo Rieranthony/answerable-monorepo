@@ -1,6 +1,6 @@
 {
-  "id": "541ab406-3d3a-4b24-85ce-4a040745ae5d",
-  "prevId": "ff654c28-2e6a-41da-b0f1-3a3f45fe78ad",
+  "id": "d821fb6b-3224-458a-a320-e0b85622d5b9",
+  "prevId": "5433740b-a750-4bed-afed-5e2bac672c93",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2106,12 +2106,6 @@
         "refresh_token_ttl": {
           "name": "refresh_token_ttl",
           "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "signing_algorithm": {
-          "name": "signing_algorithm",
-          "type": "text",
           "primaryKey": false,
           "notNull": false
         },

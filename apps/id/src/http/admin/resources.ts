@@ -33,7 +33,6 @@ const resourceSchema = z.object({
   name: z.string(),
   accessTokenTtl: z.number().nullable(),
   refreshTokenTtl: z.number().nullable(),
-  signingAlgorithm: z.string().nullable(),
   allowedScopes: z.array(z.string()).nullable(),
   disabled: z.boolean(),
   revision: z.number().int().positive(),
@@ -52,7 +51,6 @@ const createSchema = z
     organizationId: z.uuid().nullable().default(null),
     identifier: z.url(),
     ...fields,
-    signingAlgorithm: z.enum(["EdDSA", "ES256", "RS256"]).optional(),
   })
   .refine(
     (input) =>

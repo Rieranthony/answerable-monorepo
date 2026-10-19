@@ -238,7 +238,6 @@ CREATE TABLE "oauth_resources" (
 	"name" text NOT NULL,
 	"access_token_ttl" integer,
 	"refresh_token_ttl" integer,
-	"signing_algorithm" text,
 	"allowed_scopes" text[],
 	"disabled" boolean DEFAULT false NOT NULL,
 	"revision" integer DEFAULT 1 NOT NULL,

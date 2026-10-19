@@ -106,7 +106,6 @@ export const oauthResources = pgTable(
     name: text("name").notNull(),
     accessTokenTtl: integer("access_token_ttl"),
     refreshTokenTtl: integer("refresh_token_ttl"),
-    signingAlgorithm: text("signing_algorithm"),
     allowedScopes: text("allowed_scopes").array(),
     disabled: boolean("disabled").default(false).notNull(),
     revision: integer("revision").default(1).notNull(),

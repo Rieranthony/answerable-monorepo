@@ -2,7 +2,7 @@
 
 ## 0.5.1
 
-The fake ID's clients no longer carry `contacts`, `responseTypes` and `requirePKCE`, which ID's admin API dropped.
+The fake ID's clients no longer carry `contacts`, `responseTypes` and `requirePKCE`, nor its resources `signingAlgorithm`, which ID's admin API dropped.
 
 ## 0.5.0
 
