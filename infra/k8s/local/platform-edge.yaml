@@ -1,7 +1,7 @@
-# Applied on top of charts/platform/values-local.yaml once edge.yaml's certificates exist: Cloudflare's stand-in for
-# calls made inside the cluster. An nginx beside Traefik, in its pod, listens on 48444 with a certificate for the public
-# names, presents the origin-pull client certificate, appends the caller's address to X-Forwarded-For and connects to
-# Traefik's websecure entry point on 127.0.0.1:8443, the one address Traefik and ID trust in the stack.
+# Applied on top of charts/platform/values-local.yaml, after the stack has written edge.yaml and its Secrets: Cloudflare's
+# stand-in for calls made inside the cluster. An nginx beside Traefik, in its pod, listens on 48444 with a certificate for
+# the public names, presents the origin-pull client certificate, appends the caller's address to X-Forwarded-For and
+# connects to Traefik's websecure entry point on 127.0.0.1:8443, the one address Traefik and ID trust in the stack.
 traefik:
   deployment:
     additionalContainers:

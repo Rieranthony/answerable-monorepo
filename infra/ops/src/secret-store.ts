@@ -1,4 +1,3 @@
-import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs"
 import type { Kubernetes } from "./kubernetes"
 
 /** One value: a key of a named Secret, as the chart's Deployments and Jobs read it (`id-database`, `DATABASE_URL`). */
@@ -17,21 +16,5 @@ export function createKubernetesSecretStore(kube: Kubernetes): SecretStore {
       return (await kube.readSecret(secret))?.[key] || undefined
     },
     put: ({ secret, key }, value) => kube.writeSecretKey(secret, key, value),
-  }
-}
-
-/** A JSON file of `{ secret: { key: value } }`, readable by its owner only: for running the commands outside a cluster. */
-export function createFileSecretStore(path: string): SecretStore {
-  const read = (): Record<string, Record<string, string>> => (existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : {})
-  return {
-    async get({ secret, key }) {
-      return read()[secret]?.[key] || undefined
-    },
-    async put({ secret, key }, value) {
-      const all = read()
-      all[secret] = { ...all[secret], [key]: value }
-      writeFileSync(path, JSON.stringify(all, null, 2), { mode: 0o600 })
-      chmodSync(path, 0o600)
-    },
   }
 }

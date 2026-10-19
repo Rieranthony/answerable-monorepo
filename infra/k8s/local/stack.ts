@@ -23,6 +23,9 @@ export const image = (name: string) => `ghcr.io/rieranthony/answerable/${name}:l
 /** The company directory's port on the host (apps/id/scripts/stack-directories.ts). */
 const directoryPort = 47_710
 
+/** The Entra tenant register is given: ID has no Microsoft client in the stack, so it never reaches Entra. */
+const entraTenant = "00000000-0000-4000-8000-0000000000e1"
+
 /** The database's administrative login, as a managed database hands one out: it may create databases and roles, and is not a superuser. */
 export const databaseAdmin = "dbadmin"
 
@@ -38,6 +41,51 @@ export async function exec(command: string[], options: { env?: Record<string, st
 
 /** A random password: 32 hex digits. */
 const secret = () => Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("hex")
+
+/** A certificate and its key, PEM. */
+export type KeyPair = { cert: string; key: string }
+
+/**
+ * The stack's certificates, made with the system openssl (OpenSSL 3 on the runners, LibreSSL 3.3 on a Mac) in `directory`:
+ * three authorities, the stack's own, the stand-in for Cloudflare's origin-pull CA and the database's, and the
+ * certificates they sign, each ECDSA P-256 and valid for two days. Each has a config file of its own, so the system's
+ * openssl.cnf plays no part. On Civo, Terraform makes the origin certificate and the origin-pull CA, and the database
+ * comes with its own.
+ */
+async function makeCertificates(directory: string) {
+  const path = (name: string) => join(directory, name)
+  const read = (name: string) => readFileSync(path(name), "utf8")
+  const openssl = (...args: string[]) => exec(["openssl", ...args])
+  async function prepare(name: string, commonName: string, extensions: string[]) {
+    await Bun.write(path(`${name}.cnf`), `[req]\ndistinguished_name = dn\nprompt = no\n[dn]\nCN = ${commonName}\n[extensions]\n${extensions.join("\n")}\n`)
+    await openssl("ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", path(`${name}.key`))
+  }
+  async function authority(name: string, commonName: string) {
+    await prepare(name, commonName, ["basicConstraints = critical,CA:TRUE", "keyUsage = critical,keyCertSign,cRLSign", "subjectKeyIdentifier = hash"])
+    await openssl("req", "-new", "-x509", "-key", path(`${name}.key`), "-config", path(`${name}.cnf`), "-extensions", "extensions", "-days", "2", "-out", path(`${name}.pem`))
+    return { name, cert: read(`${name}.pem`) }
+  }
+  async function issue(name: string, commonName: string, by: { name: string }, extensions: string[]): Promise<KeyPair> {
+    await prepare(name, commonName, ["basicConstraints = critical,CA:FALSE", "keyUsage = critical,digitalSignature", ...extensions])
+    await openssl("req", "-new", "-key", path(`${name}.key`), "-config", path(`${name}.cnf`), "-out", path(`${name}.csr`))
+    await openssl("x509", "-req", "-in", path(`${name}.csr`), "-CA", path(`${by.name}.pem`), "-CAkey", path(`${by.name}.key`), "-set_serial", `0x${secret()}`,
+      "-days", "2", "-extfile", path(`${name}.cnf`), "-extensions", "extensions", "-out", path(`${name}.pem`))
+    return { cert: read(`${name}.pem`), key: read(`${name}.key`) }
+  }
+  const stack = await authority("stack-ca", "Answerable local stack CA")
+  const originPull = await authority("origin-pull-ca", "Answerable local origin-pull CA")
+  const database = await authority("database-ca", "Answerable local database CA")
+  return {
+    stackCa: stack.cert,
+    originPullCa: originPull.cert,
+    databaseCa: database.cert,
+    /** The three public names: origin-tls, which Traefik serves, and the edge's own (edge-tls). */
+    publicNames: await issue("public-names", hosts.id, stack, ["extendedKeyUsage = serverAuth", `subjectAltName = ${Object.values(hosts).map(host => `DNS:${host}`).join(",")}`]),
+    /** What the edge presents to Traefik, as Cloudflare does. */
+    originPullClient: await issue("origin-pull-client", "origin-pull.local", originPull, ["extendedKeyUsage = clientAuth"]),
+    postgres: await issue("postgres", "postgres.database.svc.cluster.local", database, ["extendedKeyUsage = serverAuth", "subjectAltName = DNS:postgres.database.svc.cluster.local,DNS:postgres.database.svc,DNS:postgres.database"]),
+  }
+}
 
 /** Wall-clock time of each step, printed at the end of the run. Each step also says when it starts and ends, so a log that stops shows where. */
 export const timings: [string, number][] = []
@@ -212,8 +260,6 @@ async function kindConfig(workdir: string) {
 export async function startStack() {
   const workdir = mkdtempSync(join(tmpdir(), "answerable-stack-"))
   const kubeconfig = join(workdir, "kubeconfig")
-  const originPullCaFile = join(workdir, "origin-pull-ca.pem")
-  const databaseCaFile = join(workdir, "database-ca.pem")
   const env = { ...helmEnv, KUBECONFIG: kubeconfig }
   const kubectl: Kubectl = (args, options = {}) => exec(["kubectl", ...args], { env, ...options })
   const helmOnly = (args: string[]) => exec(["helm", ...args], { env })
@@ -234,6 +280,9 @@ export async function startStack() {
     throw error
   }
   const apply = (namespace: string, objects: object[]) => kubectl(["apply", "-n", namespace, "-f", "-"], { stdin: JSON.stringify({ apiVersion: "v1", kind: "List", items: objects }) })
+  const tls = (name: string, pair: KeyPair, extra: Record<string, string> = {}) => ({ apiVersion: "v1", kind: "Secret", metadata: { name }, type: "kubernetes.io/tls", stringData: { "tls.crt": pair.cert, "tls.key": pair.key, ...extra } })
+  const opaque = (name: string, data: Record<string, string>) => ({ apiVersion: "v1", kind: "Secret", metadata: { name }, type: "Opaque", stringData: data })
+  const configMap = (name: string, data: Record<string, string>) => ({ apiVersion: "v1", kind: "ConfigMap", metadata: { name }, data })
   const readSecret = async (namespace: string, name: string) => {
     const { data } = JSON.parse((await kubectl(["get", "secret", "-n", namespace, name, "-o", "json"])).stdout) as { data: Record<string, string> }
     return Object.fromEntries(Object.entries(data).map(([key, value]) => [key, Buffer.from(value, "base64").toString()]))
@@ -271,48 +320,53 @@ export async function startStack() {
     await kubectl(["create", "namespace", "platform"])
     await kubectl(["create", "namespace", "database"])
     await apply("default", [{ apiVersion: "v1", kind: "Namespace", metadata: { name: "answerable", labels: { "pod-security.kubernetes.io/enforce": "restricted", "pod-security.kubernetes.io/warn": "restricted", "pod-security.kubernetes.io/audit": "restricted" } } }])
-    await step("install charts/platform", async () => {
-      buildDependencies("platform")
-      await helm(["upgrade", "--install", "platform", join(charts, "platform"), "--namespace", "platform", "--values", join(charts, "platform/values-local.yaml"), "--wait", "--timeout", helmTimeout])
-    })
-    await step("start the database and the edge", async () => {
-      await apply("database", [{ apiVersion: "v1", kind: "Secret", metadata: { name: "postgres-bootstrap" }, stringData: { SUPERUSER_PASSWORD: secrets.superuser, "admin.sql": adminSql(secrets) } }])
+    const certificates = await step("make the certificates with openssl", () => makeCertificates(workdir))
+    await step("start the database and the edge, and install charts/platform", async () => {
+      await apply("database", [
+        // The server's certificate, then its authority's: the chain the ops bootstrap fetches and keeps the root of.
+        tls("postgres-tls", { cert: certificates.postgres.cert + certificates.databaseCa, key: certificates.postgres.key }),
+        opaque("postgres-bootstrap", { SUPERUSER_PASSWORD: secrets.superuser, "admin.sql": adminSql(secrets) }),
+      ])
+      await apply("platform", [tls("edge-tls", certificates.publicNames, { "ca.crt": certificates.stackCa }), tls("edge-origin-pull", certificates.originPullClient)])
       await kubectl(["apply", "-f", join(here, "database.yaml"), "-f", join(here, "edge.yaml")])
-      await kubectl(["wait", "-n", "platform", "certificate/edge-tls", "certificate/edge-origin-pull", "--for=condition=Ready", "--timeout=180s"])
-      await kubectl(["wait", "-n", "database", "certificate/postgres-tls", "--for=condition=Ready", "--timeout=180s"])
       // The stand-in's origin-pull CA reaches the chart as Terraform passes Cloudflare's: originPull.caPem, from a file.
-      await Bun.write(originPullCaFile, (await readSecret("platform", "origin-pull-ca"))["ca.crt"]!)
-      await helm(["upgrade", "platform", join(charts, "platform"), "--namespace", "platform", "--values", join(charts, "platform/values-local.yaml"), "--values", join(here, "platform-edge.yaml"), "--set-file", `originPull.caPem=${originPullCaFile}`, "--wait", "--timeout", helmTimeout])
+      const originPullCaFile = join(workdir, "origin-pull-ca.pem")
+      await Bun.write(originPullCaFile, certificates.originPullCa)
+      buildDependencies("platform")
+      await helm(["upgrade", "--install", "platform", join(charts, "platform"), "--namespace", "platform", "--values", join(charts, "platform/values-local.yaml"), "--values", join(here, "platform-edge.yaml"), "--set-file", `originPull.caPem=${originPullCaFile}`, "--wait", "--timeout", helmTimeout])
       await kubectl(["rollout", "status", "-n", "database", "statefulset/postgres", "--timeout=300s"])
     })
     await step("load the images into the cluster", async () => {
       await built
       for (const { name } of images) await exec(["kind", "load", "docker-image", image(name), "--name", cluster])
     })
-    const stackCa = (await readSecret("platform", "local-ca"))["ca.crt"]
-    const databaseCa = (await readSecret("database", "database-ca"))["ca.crt"]!
-    // The database's CA reaches the chart as the deploy passes Civo's: database.caPem, from a file.
-    await Bun.write(databaseCaFile, databaseCa)
 
     // ID trusts the directory's two origins and may reach it on this host: what an operator configures for a company directory on a private network.
     const localValues = Bun.YAML.parse(readFileSync(join(charts, "answerable/values-local.yaml"), "utf8")) as { id: { trustedOrigins: string[] } }
     const trustedOrigins = [...localValues.id.trustedOrigins, directory.directory.issuer, new URL(directory.directory.tokenEndpoint).origin]
     const extraEgress = [{ to: [{ ipBlock: { cidr: `${podHost}/32` } }], ports: [{ port: directoryPort, protocol: "TCP" }] }]
-    /** `helm upgrade --install` of charts/answerable as the pipeline runs it, with the local values, the directory's settings and `sets`. */
+    const staffDomain = directory.directory.domain
+    /**
+     * `helm upgrade --install` of charts/answerable as the pipeline runs it, with the local values, the directory's
+     * settings, the staff domain and an Entra tenant for register (ID has no Microsoft client here, so register adds the
+     * domain and skips the provider), and `sets`.
+     */
     const release = (sets: string[], timeout = helmTimeout) => helm([
       "upgrade", "--install", "answerable", join(charts, "answerable"), "--namespace", "answerable", "--values", join(charts, "answerable/values-local.yaml"),
-      "--set-file", `database.caPem=${databaseCaFile}`,
       "--set-json", `id.trustedOrigins=${JSON.stringify(trustedOrigins)}`, "--set-json", `id.extraEgress=${JSON.stringify(extraEgress)}`,
+      "--set", `id.staffDomain=${staffDomain}`, "--set", `id.entraTenant=${entraTenant}`,
       ...sets.flatMap(set => ["--set", set]), "--wait", "--wait-for-jobs", "--timeout", timeout,
     ])
     await step("install charts/answerable with the ops bootstrap", async () => {
-      const opaque = (name: string, data: Record<string, string>) => ({ apiVersion: "v1", kind: "Secret", metadata: { name }, type: "Opaque", stringData: data })
-      // What the deploy applies from the sops file in a cloud; here, throwaway values. The ops Jobs write the rest, and the
-      // charts render the two certificate authorities (database.caPem, originPull.caPem). local-ca is the stack's alone.
+      // What Terraform writes on Civo (trusted-proxies, postgres-admin, origin-tls) and what the deploy writes (id-env);
+      // here, throwaway values. The ops Jobs write the rest, the database's certificate authority included: the bootstrap
+      // fetches it. local-ca is the stack's alone.
       await apply("answerable", [
-        opaque("id-env", { BETTER_AUTH_SECRET: secrets.betterAuthSecret, ROOT_ADMIN_SECRET: secrets.rootAdminSecret, UPSTREAM_TOKEN_SECRETS: JSON.stringify([{ version: 1, value: secrets.upstreamKey }]) }),
+        configMap("trusted-proxies", { cidrs: "127.0.0.1/32" }),
         opaque("postgres-admin", { OPS_DATABASE_ADMIN_URL: `postgres://${databaseAdmin}:${secrets.admin}@${database}/postgres?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem` }),
-        { apiVersion: "v1", kind: "ConfigMap", metadata: { name: "local-ca" }, data: { "ca.pem": stackCa } },
+        tls("origin-tls", certificates.publicNames),
+        opaque("id-env", { BETTER_AUTH_SECRET: secrets.betterAuthSecret, ROOT_ADMIN_SECRET: secrets.rootAdminSecret, UPSTREAM_TOKEN_SECRETS: JSON.stringify([{ version: 1, value: secrets.upstreamKey }]) }),
+        configMap("local-ca", { "ca.pem": certificates.stackCa }),
       ])
       await release(["ops.bootstrap=true"])
     })
@@ -321,9 +375,7 @@ export async function startStack() {
       await release(["ops.register=true"])
       for (const deployment of ["toolbox", "admin-mcp"]) await kubectl(["rollout", "status", "-n", "answerable", `deploy/${deployment}`, "--timeout=300s"])
     })
-    const client = await readSecret("platform", "edge-origin-pull")
-    const edgeServer = await readSecret("platform", "edge-tls")
-    return { kubectl, helm, release, diagnose: (why: string) => diagnose(kubectl, helmOnly, why), kubeconfig, readSecret, secrets, stop, stackCa, dockerGateway, podHost, directory: directory.directory, databaseCa, originPullCert: { cert: client["tls.crt"]!, key: client["tls.key"]! }, edgeCert: { cert: edgeServer["tls.crt"]!, key: edgeServer["tls.key"]! } }
+    return { kubectl, helm, release, diagnose: (why: string) => diagnose(kubectl, helmOnly, why), kubeconfig, readSecret, secrets, stop, dockerGateway, podHost, directory: directory.directory, certificates, stackCa: certificates.stackCa, originPullCert: certificates.originPullClient, edgeCert: certificates.publicNames }
   } catch (error) {
     // Show what the cluster says before it goes.
     if (created && !diagnosed.has(error as object)) await diagnose(kubectl, helmOnly, `the stack failed to start: ${(error as Error).message.split("\n")[0]}`)

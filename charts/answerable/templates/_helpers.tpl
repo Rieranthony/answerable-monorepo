@@ -61,18 +61,25 @@ capabilities:
   drop: [ALL]
 {{- end -}}
 
-{{/* The volumes every pod mounts: a writable /tmp, the database's certificate authority, and the stack's extra one. */}}
+{{/*
+The volumes of a pod: a writable /tmp, the database's certificate authority when it talks to the database (database), and
+the stack's extra one. The ConfigMap postgres-ca (key ca.pem) is written by the ops bootstrap on first use, before the
+migrations and the services mount it; the ops Jobs themselves do not, so bootstrap can run before it exists. Takes root
+and database.
+*/}}
 {{- define "answerable.volumes" -}}
 - name: tmp
   emptyDir:
     sizeLimit: 64Mi
+{{- if .database }}
 - name: postgres-ca
   configMap:
-    name: {{ .Values.database.caConfigMap }}
+    name: postgres-ca
     items:
       - key: ca.pem
         path: ca.pem
-{{- with .Values.extraCaConfigMap }}
+{{- end }}
+{{- with .root.Values.extraCaConfigMap }}
 - name: extra-ca
   configMap:
     name: {{ . }}
@@ -85,10 +92,12 @@ capabilities:
 {{- define "answerable.volumeMounts" -}}
 - name: tmp
   mountPath: /tmp
+{{- if .database }}
 - name: postgres-ca
   mountPath: /etc/ssl/db
   readOnly: true
-{{- if .Values.extraCaConfigMap }}
+{{- end }}
+{{- if .root.Values.extraCaConfigMap }}
 - name: extra-ca
   mountPath: /etc/ssl/extra
   readOnly: true
@@ -112,13 +121,13 @@ capabilities:
       key: {{ .key }}
 {{- end -}}
 
-{{/* The parts of a pod spec every workload shares. */}}
+{{/* The parts of a pod spec every workload shares. Takes root and database, as answerable.volumes does. */}}
 {{- define "answerable.podCommon" -}}
 # Kubernetes would otherwise set <SERVICE>_PORT=tcp://… for every Service in the namespace: TOOLBOX_PORT among them.
 enableServiceLinks: false
 securityContext:
-  {{- include "answerable.podSecurityContext" . | nindent 2 }}
-{{- with .Values.hostAliases }}
+  {{- include "answerable.podSecurityContext" .root | nindent 2 }}
+{{- with .root.Values.hostAliases }}
 hostAliases:
   {{- toYaml . | nindent 2 }}
 {{- end }}

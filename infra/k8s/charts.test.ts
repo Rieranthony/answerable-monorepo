@@ -5,22 +5,16 @@ import { join } from "node:path"
 import { buildDependencies, charts, check, crdSchemas, kubernetesVersion, type Manifest, overlays, render, run, templateArguments } from "./helm"
 
 // The charts' invariants, read from what `helm template` renders for the defaults and for every overlay. Needs `helm` and
-// `kubeconform` on the path and the network for the dependency charts and the schemas; no cluster and no Docker.
+// `kubeconform` on the path and the network for the dependency chart and the schemas; no cluster and no Docker.
 
 const tag = "sha-0123456789abcdef0123456789abcdef01234567"
-// Cloudflare's published ranges (api.cloudflare.com/client/v4/ips, etag 38f79d050aa027e3be3865e495dcc9bc, read 13 October 2026).
-const cloudflare = [
-  "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22", "141.101.64.0/18", "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20",
-  "197.234.240.0/22", "198.41.128.0/17", "162.158.0.0/15", "104.16.0.0/13", "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
-  "2400:cb00::/32", "2606:4700::/32", "2803:f800::/32", "2405:b500::/32", "2405:8100::/32", "2a06:98c0::/29", "2c0f:f248::/32",
-]
 const environments = {
   "values-civo-staging.yaml": { id: "id.answerable-staging.uk", toolbox: "toolbox.answerable-staging.uk", adminMcp: "admin-mcp.answerable-staging.uk", network: "10.10.0.0/24" },
   "values-civo-production.yaml": { id: "id.answerable.org", toolbox: "toolbox.answerable.org", adminMcp: "admin-mcp.answerable.org", network: "10.20.0.0/24" },
 } as const
 
-// The certificates Terraform and the deploy pass with --set-file, which the charts refuse to render without: a stand-in
-// PEM here (each chart checks only that it is PEM), and one that is not PEM.
+// The origin-pull CA Terraform passes to charts/platform with --set-file, which its Civo overlays refuse to render
+// without: a stand-in PEM here (the chart checks only that it is PEM), and one that is not PEM.
 const certificates = mkdtempSync(join(tmpdir(), "answerable-charts-ca-"))
 afterAll(() => rmSync(certificates, { recursive: true, force: true }))
 const caPem = "-----BEGIN CERTIFICATE-----\nY2hhcnQgdGVzdCBDQQ==\n-----END CERTIFICATE-----\n"
@@ -28,9 +22,11 @@ const caFile = join(certificates, "ca.pem")
 writeFileSync(caFile, caPem)
 const notPem = join(certificates, "not.pem")
 writeFileSync(notPem, "ca.crt\n")
-const supplied: Record<string, Record<string, string>> = { answerable: { "database.caPem": caFile }, platform: { "originPull.caPem": caFile } }
-/** Render a chart with the certificates the deploy supplies. */
+const supplied: Record<string, Record<string, string>> = { answerable: {}, platform: { "originPull.caPem": caFile } }
+/** Render a chart with the files Terraform supplies. */
 const renderSupplied = (chart: string, values: string[] = [], set: Record<string, string> = {}) => render(chart, values, set, supplied[chart])
+/** Every ops Job switched on, as the pipeline switches them one at a time. */
+const allJobs = { "ops.bootstrap": "true", "ops.register": "true", "ops.makeAdmin": "true", "ops.adminEmail": "you@answerable.org" }
 
 const podSpec = (manifest: Manifest) => manifest.spec?.template?.spec ?? manifest.spec?.jobTemplate?.spec?.template?.spec
 const workloads = (manifests: Manifest[]) => manifests.filter(manifest => podSpec(manifest) !== undefined)
@@ -46,6 +42,8 @@ const secretReferences = (manifest: Manifest) => [
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ...(podSpec(manifest).volumes ?? []).flatMap((volume: any) => volume.secret ? [volume.secret.secretName] : []),
 ]
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mountsDatabaseCa = (manifest: Manifest) => (podSpec(manifest).volumes ?? []).some((volume: any) => volume.configMap?.name === "postgres-ca")
 const weight = (manifest: Manifest) => Number(manifest.metadata.annotations?.["helm.sh/hook-weight"] ?? 0)
 
 beforeAll(() => {
@@ -61,17 +59,10 @@ describe("charts/answerable", () => {
 
   for (const [name, values] of cases) {
     describe(name, () => {
-      const manifests = renderSupplied("answerable", values, { "image.tag": tag, "ops.bootstrap": "true", "ops.register": "true" })
+      const manifests = renderSupplied("answerable", values, { "image.tag": tag, ...allJobs })
 
-      test("renders no namespace or Secret: Terraform, the deploy and the Jobs own those", () => {
-        expect(manifests.filter(manifest => ["Namespace", "Secret"].includes(manifest.kind))).toEqual([])
-      })
-
-      test("renders the database's certificate authority from database.caPem, as a hook before the bootstrap and the migrations that mount it", () => {
-        const configMap = named(manifests, "ConfigMap", "postgres-ca")!
-        expect(configMap.data).toEqual({ "ca.pem": caPem })
-        expect(configMap.metadata.annotations?.["helm.sh/hook"]).toBe("pre-install,pre-upgrade")
-        for (const job of manifests.filter(manifest => manifest.kind === "Job")) expect(weight(configMap), job.metadata.name).toBeLessThan(weight(job))
+      test("renders no namespace, Secret or ConfigMap: Terraform, the deploy and the Jobs own those", () => {
+        expect(manifests.filter(manifest => ["Namespace", "Secret", "ConfigMap"].includes(manifest.kind))).toEqual([])
       })
 
       test("every pod meets the restricted Pod Security Standard and runs read-only, with requests and a memory limit", () => {
@@ -125,20 +116,27 @@ describe("charts/answerable", () => {
           expect(podSpec(job).restartPolicy).toBe("Never")
           expect(podSpec(job).automountServiceAccountToken).toBe(false)
         }
-        const bootstrap = named(manifests, "Job", "ops-bootstrap")
-        expect(bootstrap!.metadata.annotations?.["helm.sh/hook"]).toBe("pre-install,pre-upgrade")
-        for (const job of migrations) expect(weight(job)).toBeGreaterThan(weight(bootstrap!))
-        expect(named(manifests, "Job", "ops-register")!.metadata.annotations?.["helm.sh/hook"]).toBe("post-install,post-upgrade")
+        const bootstrap = named(manifests, "Job", "ops-bootstrap")!
+        expect(bootstrap.metadata.annotations?.["helm.sh/hook"]).toBe("pre-install,pre-upgrade")
+        for (const job of migrations) expect(weight(job)).toBeGreaterThan(weight(bootstrap))
+        const register = named(manifests, "Job", "ops-register")!
+        const makeAdmin = named(manifests, "Job", "ops-make-admin")!
+        for (const job of [register, makeAdmin]) expect(job.metadata.annotations?.["helm.sh/hook"]).toBe("post-install,post-upgrade")
+        expect(weight(makeAdmin)).toBeGreaterThan(weight(register))
       })
 
-      test("the services never receive an owner login, and mount the database's certificate authority", () => {
+      test("the services and the migrations mount the database's certificate authority, which the bootstrap writes; the ops Jobs do not", () => {
+        for (const workload of workloads(manifests)) {
+          const isOps = workload.metadata.name.startsWith("ops-")
+          expect(mountsDatabaseCa(workload), workload.metadata.name).toBe(!isOps)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const mount = containersOf(workload)[0].volumeMounts.find((mount: any) => mount.mountPath === "/etc/ssl/db")
+          if (isOps) expect(mount, workload.metadata.name).toBeUndefined()
+          else expect(mount, workload.metadata.name).toMatchObject({ name: "postgres-ca", readOnly: true })
+        }
         for (const deployment of manifests.filter(manifest => manifest.kind === "Deployment")) {
           expect(secretReferences(deployment).filter(secret => secret.endsWith("-owner")), deployment.metadata.name).toEqual([])
           expect(podSpec(deployment).automountServiceAccountToken).toBe(false)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          expect(podSpec(deployment).volumes.find((volume: any) => volume.configMap?.name === "postgres-ca")).toBeDefined()
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          expect(containersOf(deployment)[0].volumeMounts.find((mount: any) => mount.mountPath === "/etc/ssl/db")).toMatchObject({ readOnly: true })
         }
       })
 
@@ -154,41 +152,44 @@ describe("charts/answerable", () => {
         }
       })
 
-      test("one Ingress per hostname, behind the origin-pull certificate check, with a certificate from cert-manager", () => {
+      test("one Ingress per hostname, serving the shared Secret origin-tls, with no issuer and no TLS option: Traefik's default one applies", () => {
         const ingresses = manifests.filter(manifest => manifest.kind === "Ingress")
         expect(ingresses.length).toBe(3)
         for (const ingress of ingresses) {
           expect(ingress.spec.ingressClassName).toBe("traefik")
-          expect(ingress.metadata.annotations).toMatchObject({
+          expect(ingress.metadata.annotations).toEqual({
             "traefik.ingress.kubernetes.io/router.entrypoints": "websecure",
             "traefik.ingress.kubernetes.io/router.tls": "true",
-            // The TLSOption charts/platform renders in this namespace: Cloudflare's origin-pull certificate required.
-            "traefik.ingress.kubernetes.io/router.tls.options": "answerable-origin-pull@kubernetescrd",
           })
-          // The namespaced Issuer charts/platform renders beside them; the kind stack's own CA is cluster-wide.
-          if (name === "values-local.yaml") expect(ingress.metadata.annotations).toMatchObject({ "cert-manager.io/cluster-issuer": "local" })
-          else expect(ingress.metadata.annotations).toMatchObject({ "cert-manager.io/issuer": "letsencrypt" })
-          expect(Object.keys(ingress.metadata.annotations ?? {}).filter(key => key.startsWith("cert-manager.io/"))).toHaveLength(1)
           expect(ingress.spec.rules.length).toBe(1)
-          expect(ingress.spec.tls).toEqual([{ hosts: [ingress.spec.rules[0].host], secretName: `${ingress.metadata.name}-tls` }])
+          expect(ingress.spec.tls).toEqual([{ hosts: [ingress.spec.rules[0].host], secretName: "origin-tls" }])
         }
       })
 
-      test("the ops Jobs: one attempt, their own ServiceAccount's token, the administrative login or the ID token from Secrets, the database's authority", () => {
+      test("ID takes TRUSTED_PROXY_CIDRS from the ConfigMap trusted-proxies, and its pods carry the checksum of id-env", () => {
+        const id = named(manifests, "Deployment", "id")!
+        expect(env(id, "TRUSTED_PROXY_CIDRS")).toEqual({ name: "TRUSTED_PROXY_CIDRS", valueFrom: { configMapKeyRef: { name: "trusted-proxies", key: "cidrs" } } })
+        expect(id.spec.template.metadata.annotations).toEqual({ "checksum/id-env": "" })
+        expect(containersOf(id)[0].envFrom).toEqual([{ secretRef: { name: "id-env" } }])
+        for (const server of ["toolbox", "admin-mcp"]) expect(named(manifests, "Deployment", server)!.spec.template.metadata.annotations, server).toBeUndefined()
+      })
+
+      test("the ops Jobs: one attempt, the token of their own ServiceAccount where they call Kubernetes, the administrative login or the ID token from Secrets", () => {
         const bootstrap = named(manifests, "Job", "ops-bootstrap")!
         const register = named(manifests, "Job", "ops-register")!
-        for (const job of [bootstrap, register]) {
+        const makeAdmin = named(manifests, "Job", "ops-make-admin")!
+        for (const [job, command] of [[bootstrap, "bootstrap"], [register, "register"], [makeAdmin, "make-admin"]] as const) {
           expect(job.spec).toMatchObject({ backoffLimit: 0, ttlSecondsAfterFinished: expect.any(Number), activeDeadlineSeconds: expect.any(Number) })
-          expect(podSpec(job)).toMatchObject({ serviceAccountName: "ops", automountServiceAccountToken: true, restartPolicy: "Never" })
-          expect(containersOf(job)[0].command.slice(0, 2)).toEqual(["bun", "infra/ops/src/cli.ts"])
-          expect(env(job, "OPS_NAMESPACE").valueFrom).toEqual({ fieldRef: { fieldPath: "metadata.namespace" } })
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          expect(containersOf(job)[0].volumeMounts.find((mount: any) => mount.mountPath === "/etc/ssl/db")).toMatchObject({ name: "postgres-ca", readOnly: true })
+          expect(podSpec(job).restartPolicy).toBe("Never")
+          expect(containersOf(job)[0].command).toEqual(["bun", "infra/ops/src/cli.ts", command])
         }
-        expect(containersOf(bootstrap)[0].command[2]).toBe("bootstrap")
+        for (const job of [bootstrap, register]) {
+          expect(podSpec(job)).toMatchObject({ serviceAccountName: "ops", automountServiceAccountToken: true })
+          expect(env(job, "OPS_NAMESPACE").valueFrom).toEqual({ fieldRef: { fieldPath: "metadata.namespace" } })
+        }
         expect(new Set(secretReferences(bootstrap))).toEqual(new Set(["postgres-admin"]))
         expect(env(bootstrap, "OPS_DATABASE_ADMIN_URL").valueFrom.secretKeyRef).toEqual({ name: "postgres-admin", key: "OPS_DATABASE_ADMIN_URL" })
-        expect(containersOf(register)[0].command[2]).toBe("register")
+        expect(containersOf(bootstrap)[0].env.map((variable: { name: string }) => variable.name).filter((variable: string) => variable.startsWith("OPS_"))).toEqual(["OPS_NAMESPACE", "OPS_DATABASE_ADMIN_URL"])
         // A staff token when the operator has stored one, else the root secret; either may be absent, and the command says which it needs.
         expect(env(register, "OPS_ID_TOKEN").valueFrom.secretKeyRef).toEqual({ name: "ops-staff-token", key: "OPS_ID_TOKEN", optional: true })
         expect(env(register, "OPS_ID_ROOT_SECRET").valueFrom.secretKeyRef).toEqual({ name: "id-env", key: "ROOT_ADMIN_SECRET", optional: true })
@@ -197,13 +198,28 @@ describe("charts/answerable", () => {
         expect(env(register, "OPS_ADMIN_MCP_URL").value).toBe(env(named(manifests, "Deployment", "admin-mcp")!, "ADMIN_RESOURCE_URL").value.replace(/\/mcp$/, ""))
         const replicas = name === "values-local.yaml" ? 1 : 2
         expect(env(register, "OPS_START_DEPLOYMENTS").value).toBe(`toolbox=${replicas},admin-mcp=${replicas}`)
+        // No staff directory unless the overlay names one.
+        expect(env(register, "OPS_STAFF_DOMAIN")).toBeUndefined()
+        expect(env(register, "OPS_ENTRA_TENANT")).toBeUndefined()
+        // make-admin calls only ID, with the root secret: no Kubernetes token, no Secret but id-env's.
+        expect(podSpec(makeAdmin).serviceAccountName).toBeUndefined()
+        expect(podSpec(makeAdmin).automountServiceAccountToken).toBe(false)
+        expect(new Set(secretReferences(makeAdmin))).toEqual(new Set(["id-env"]))
+        expect(env(makeAdmin, "OPS_ID_ROOT_SECRET").valueFrom.secretKeyRef).toEqual({ name: "id-env", key: "ROOT_ADMIN_SECRET", optional: true })
+        expect(env(makeAdmin, "OPS_ADMIN_EMAIL").value).toBe("you@answerable.org")
+        expect(env(makeAdmin, "OPS_ID_URL").value).toBe(env(register, "OPS_ID_URL").value)
       })
 
-      test("the ops ServiceAccount reads and patches exactly the Secrets its Jobs own, and only register touches the two Deployments", () => {
+      test("the ops ServiceAccount reads and patches exactly the Secrets and the ConfigMap its Jobs own, and only register touches the two Deployments", () => {
+        const databaseCa = [
+          { apiGroups: [""], resources: ["configmaps"], resourceNames: ["postgres-ca"], verbs: ["get", "patch"] },
+          { apiGroups: [""], resources: ["configmaps"], verbs: ["create"] },
+        ]
         const role = named(manifests, "Role", "ops")!
         expect(role.rules).toEqual([
           { apiGroups: [""], resources: ["secrets"], resourceNames: ["id-database-owner", "id-database", "toolbox-database-owner", "toolbox-database", "admin-database-owner", "admin-database", "toolbox-id-client", "admin-id-client"], verbs: ["get", "patch"] },
           { apiGroups: [""], resources: ["secrets"], verbs: ["create"] },
+          ...databaseCa,
           { apiGroups: ["apps"], resources: ["deployments"], resourceNames: ["toolbox", "admin-mcp"], verbs: ["get", "patch"] },
         ])
         expect(named(manifests, "ServiceAccount", "ops")!.automountServiceAccountToken).toBe(false)
@@ -212,10 +228,12 @@ describe("charts/answerable", () => {
         expect(named(bootstrapOnly, "Role", "ops")!.rules).toEqual([
           { apiGroups: [""], resources: ["secrets"], resourceNames: ["id-database-owner", "id-database", "toolbox-database-owner", "toolbox-database", "admin-database-owner", "admin-database"], verbs: ["get", "patch"] },
           { apiGroups: [""], resources: ["secrets"], verbs: ["create"] },
+          ...databaseCa,
         ])
         expect(named(bootstrapOnly, "Role", "ops")!.metadata.annotations?.["helm.sh/hook"]).toBe("pre-install,pre-upgrade")
         const registerOnly = renderSupplied("answerable", values, { "image.tag": tag, "ops.register": "true" })
         expect(named(registerOnly, "Role", "ops")!.rules[0].resourceNames).toEqual(["toolbox-id-client", "admin-id-client"])
+        expect(named(registerOnly, "Role", "ops")!.rules.some((rule: { resources: string[] }) => rule.resources.includes("configmaps"))).toBe(false)
         expect(named(registerOnly, "Role", "ops")!.metadata.annotations?.["helm.sh/hook"]).toBe("post-install,post-upgrade")
       })
 
@@ -249,14 +267,13 @@ describe("charts/answerable", () => {
   }
 
   for (const [file, expected] of Object.entries(environments)) {
-    test(`${file} names the environment's hostnames, issuer and resources, and trusts Cloudflare, the private network and the pod range`, () => {
+    test(`${file} names the environment's hostnames, issuer and resources, and the private network for the database`, () => {
       const manifests = renderSupplied("answerable", [file], { "image.tag": tag })
       const id = named(manifests, "Deployment", "id")!
       const toolbox = named(manifests, "Deployment", "toolbox")!
       const admin = named(manifests, "Deployment", "admin-mcp")!
       const issuer = `https://${expected.id}`
       expect(env(id, "BETTER_AUTH_URL").value).toBe(issuer)
-      expect(env(id, "TRUSTED_PROXY_CIDRS").value.split(",")).toEqual([...cloudflare, expected.network, "10.42.0.0/16"])
       expect(env(toolbox, "TOOLBOX_ID_ISSUER").value).toBe(issuer)
       expect(env(toolbox, "TOOLBOX_RESOURCE_URL").value).toBe(`https://${expected.toolbox}/mcp`)
       expect(env(toolbox, "TOOLBOX_ID_ADMIN_RESOURCE").value).toBe(`${issuer}/api/admin`)
@@ -282,8 +299,30 @@ describe("charts/answerable", () => {
     const ops = (manifests: Manifest[]) => manifests.filter(manifest => manifest.metadata.name === "ops" || manifest.metadata.name.startsWith("ops-")).map(manifest => `${manifest.kind}/${manifest.metadata.name}`).sort()
     // The Jobs are hooks, which run before the release's own resources: the policy must already be there from the release before.
     expect(ops(renderSupplied("answerable", [], { "image.tag": tag }))).toEqual(["NetworkPolicy/ops"])
-    expect(ops(renderSupplied("answerable", [], { "image.tag": tag, "ops.bootstrap": "true", "ops.register": "true", "images.ops.repository": "" }))).toEqual([])
+    expect(ops(renderSupplied("answerable", [], { "image.tag": tag, ...allJobs, "images.ops.repository": "" }))).toEqual([])
     expect(ops(renderSupplied("answerable", [], { "image.tag": tag, "ops.register": "true" }))).toEqual(["Job/ops-register", "NetworkPolicy/ops", "Role/ops", "RoleBinding/ops", "ServiceAccount/ops"])
+    // make-admin alone needs no account: it calls only ID.
+    expect(ops(renderSupplied("answerable", [], { "image.tag": tag, "ops.makeAdmin": "true", "ops.adminEmail": "you@answerable.org" }))).toEqual(["Job/ops-make-admin", "NetworkPolicy/ops"])
+  })
+
+  test("ops.makeAdmin without ops.adminEmail refuses to render, naming the value", () => {
+    const missing = run(templateArguments("answerable", [], { "image.tag": tag, "ops.makeAdmin": "true" }))
+    expect(missing.exitCode).not.toBe(0)
+    expect(missing.stderr).toContain("ops.makeAdmin needs ops.adminEmail")
+  })
+
+  test("id.staffDomain and id.entraTenant reach the register Job, and only it", () => {
+    const manifests = renderSupplied("answerable", ["values-civo-staging.yaml"], { "image.tag": tag, ...allJobs, "id.staffDomain": "answerable.org", "id.entraTenant": "0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0" })
+    const register = named(manifests, "Job", "ops-register")!
+    expect(env(register, "OPS_STAFF_DOMAIN").value).toBe("answerable.org")
+    expect(env(register, "OPS_ENTRA_TENANT").value).toBe("0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0")
+    for (const workload of workloads(manifests).filter(workload => workload !== register)) expect(env(workload, "OPS_STAFF_DOMAIN"), workload.metadata.name).toBeUndefined()
+  })
+
+  test("idEnvChecksum becomes the annotation of ID's pods, so a changed secret rolls them", () => {
+    const sum = "f".repeat(64)
+    const id = named(renderSupplied("answerable", ["values-civo-production.yaml"], { "image.tag": tag, idEnvChecksum: sum }), "Deployment", "id")!
+    expect(id.spec.template.metadata.annotations).toEqual({ "checksum/id-env": sum })
   })
 
   for (const file of overlays("answerable")) {
@@ -308,7 +347,7 @@ describe("charts/answerable", () => {
 
   test("an image with a digest runs by digest, the exact bytes verified; one without runs by the shared tag", () => {
     const digests = { id: "a".repeat(64), toolbox: "b".repeat(64), "admin-mcp": "c".repeat(64), ops: "d".repeat(64) }
-    const set = Object.fromEntries([["image.tag", tag], ["ops.bootstrap", "true"], ["ops.register", "true"], ...Object.entries(digests).map(([image, hex]) => [`images.${image}.digest`, `sha256:${hex}`])])
+    const set = Object.fromEntries([["image.tag", tag], ...Object.entries(allJobs), ...Object.entries(digests).map(([image, hex]) => [`images.${image}.digest`, `sha256:${hex}`])])
     const pinned = renderSupplied("answerable", ["values-civo-production.yaml"], set)
     const images = new Set(workloads(pinned).flatMap(workload => containersOf(workload).map((container: { image: string }) => container.image)))
     expect(images).toEqual(new Set(Object.entries(digests).map(([image, hex]) => `ghcr.io/rieranthony/answerable/${image}@sha256:${hex}`)))
@@ -318,25 +357,9 @@ describe("charts/answerable", () => {
     expect(containersOf(named(mixed, "Deployment", "id")!)[0].image).toBe(`ghcr.io/rieranthony/answerable/id:${tag}`)
     expect(containersOf(named(mixed, "Job", "toolbox-migrate")!)[0].image).toBe(`ghcr.io/rieranthony/answerable/toolbox@sha256:${digests.toolbox}`)
     // A digest that is not sha256 and 64 hex digits is refused, rather than deployed as something else.
-    const bad = run(templateArguments("answerable", [], { "image.tag": tag, "images.id.digest": "sha256:abc" }, supplied.answerable))
+    const bad = run(templateArguments("answerable", [], { "image.tag": tag, "images.id.digest": "sha256:abc" }))
     expect(bad.exitCode).not.toBe(0)
     expect(bad.stderr).toContain("images.id.digest")
-  })
-
-  test("without database.caPem, or with one that is not PEM, the chart refuses to render and names the value", () => {
-    const missing = run(templateArguments("answerable", ["values-civo-staging.yaml"], { "image.tag": tag }))
-    expect(missing.exitCode).not.toBe(0)
-    expect(missing.stderr).toContain("database.caPem is empty")
-    expect(missing.stderr).toContain("--set-file database.caPem=infra/civo/envs/<environment>/database-ca.pem")
-    const wrong = run(templateArguments("answerable", [], { "image.tag": tag }, { "database.caPem": notPem }))
-    expect(wrong.exitCode).not.toBe(0)
-    expect(wrong.stderr).toContain("database.caPem must be a PEM certificate chain")
-  })
-
-  test("an issuer kind other than Issuer or ClusterIssuer is refused", () => {
-    const bad = run(templateArguments("answerable", [], { "image.tag": tag, "ingress.issuer.kind": "Certificate" }, supplied.answerable))
-    expect(bad.exitCode).not.toBe(0)
-    expect(bad.stderr).toContain("ingress.issuer.kind must be Issuer or ClusterIssuer, not Certificate")
   })
 
   test("without an image tag the images say so, rather than falling back to a mutable tag", () => {
@@ -357,10 +380,11 @@ describe("charts/answerable", () => {
 })
 
 describe("charts/platform", () => {
-  test("pins Traefik, cert-manager and the Grafana agent, named as Terraform's values address them, all from OCI", async () => {
+  test("has one dependency, Traefik, named as Terraform's values address it, from OCI", async () => {
     const chart = Bun.YAML.parse(await Bun.file(join(charts, "platform/Chart.yaml")).text()) as { dependencies: { name: string; version: string; repository: string }[] }
-    expect(chart.dependencies.map(dependency => [dependency.name, dependency.version])).toEqual([["traefik", "41.7.1"], ["cert-manager", "v1.21.2"], ["k8s-monitoring", "4.5.3"]])
-    for (const dependency of chart.dependencies) expect(dependency.repository).toStartWith("oci://")
+    expect(chart.dependencies).toEqual([{ name: "traefik", version: "41.7.1", repository: "oci://ghcr.io/traefik/helm" }])
+    const lock = Bun.YAML.parse(await Bun.file(join(charts, "platform/Chart.lock")).text()) as { dependencies: { name: string }[] }
+    expect(lock.dependencies.map(dependency => dependency.name)).toEqual(["traefik"])
   })
 
   for (const [name, values] of [["the defaults", []], ...overlays("platform").map(file => [file, [file]])] as [string, string[]][]) {
@@ -371,58 +395,43 @@ describe("charts/platform", () => {
       expect(args).toContain("--entryPoints.websecure.forwardedHeaders.trustedIPs=203.0.113.0/24,10.10.0.0/24")
       expect(args.filter(arg => /notAppendXForwardedFor=true|forwardedHeaders\.insecure/.test(arg))).toEqual([])
       expect(args).toContain("--core.strictTLSOptions=true")
-      expect(args).toContain("--providers.kubernetesingress.crossProviderNamespaces=answerable")
       expect(args).toContain("--providers.kubernetescrd.defaultTLSResourcesNamespace=answerable")
+      // No Ingress names a TLS option, so none may reach across providers.
+      expect(args.filter(arg => arg.includes("crossProviderNamespaces"))).toEqual([])
       const service = manifests.find(manifest => manifest.kind === "Service" && manifest.metadata.name === "platform-traefik")!
       expect(service.metadata.annotations?.["kubernetes.civo.com/firewall-id"]).toBe("fw")
       // Plain HTTP is Cloudflare's to redirect: nothing listens on port 80 behind the load balancer.
       expect(service.spec.ports.map((port: { port: number }) => port.port)).toEqual([443])
       expect(manifests.filter(manifest => manifest.kind === "Namespace")).toEqual([])
+      // Traefik and its own objects, the TLS option and the CA's Secret: no certificate manager, no metrics agent.
+      expect(manifests.filter(manifest => /cert-manager|alloy|grafana|k8s-monitoring/i.test(JSON.stringify(manifest.metadata)) || /cert-manager\.io|monitoring\.coreos\.com/.test(manifest.apiVersion))).toEqual([])
     })
   }
 
-  test("every TLS connection must present Cloudflare's origin-pull certificate: the Ingresses' option and Traefik's default", () => {
+  test("one TLS option, Traefik's default, demands Cloudflare's origin-pull certificate of every connection", () => {
     const options = renderSupplied("platform").filter(manifest => manifest.kind === "TLSOption")
-    expect(options.map(option => `${option.metadata.namespace}/${option.metadata.name}`).sort()).toEqual(["answerable/default", "answerable/origin-pull"])
-    for (const option of options) {
-      expect(option.spec).toEqual({
-        minVersion: "VersionTLS12",
-        sniStrict: true,
-        clientAuth: { secretNames: ["cloudflare-origin-pull-ca"], clientAuthType: "RequireAndVerifyClientCert" },
-      })
-    }
+    expect(options.map(option => `${option.metadata.namespace}/${option.metadata.name}`)).toEqual(["answerable/default"])
+    expect(options[0]!.spec).toEqual({
+      minVersion: "VersionTLS12",
+      sniStrict: true,
+      clientAuth: { secretNames: ["cloudflare-origin-pull-ca"], clientAuthType: "RequireAndVerifyClientCert" },
+    })
   })
 
-  test("the Civo overlays issue certificates from Let's Encrypt through Cloudflare with a namespaced Issuer in answerable, and the kind stack from its own CA", () => {
-    for (const file of ["values-civo-staging.yaml", "values-civo-production.yaml"]) {
-      const manifests = renderSupplied("platform", [file])
-      const issuer = manifests.find(manifest => manifest.kind === "Issuer" && manifest.metadata.name === "letsencrypt")!
-      // Beside the Ingresses and the token the deploy applies there: an Issuer reads Secrets from its own namespace.
-      expect(issuer.metadata.namespace).toBe("answerable")
-      expect(issuer.metadata.annotations?.["helm.sh/hook"]).toBe("post-install,post-upgrade")
-      expect(issuer.spec.acme.server).toBe("https://acme-v02.api.letsencrypt.org/directory")
-      expect(issuer.spec.acme.solvers[0].dns01.cloudflare.apiTokenSecretRef).toEqual({ name: "cloudflare-api-token", key: "api-token" })
-      expect(manifests.filter(manifest => manifest.kind === "ClusterIssuer")).toEqual([])
-    }
-    const local = renderSupplied("platform", ["values-local.yaml"])
-    expect(local.find(manifest => manifest.kind === "ClusterIssuer" && manifest.metadata.name === "local")?.spec).toEqual({ ca: { secretName: "local-ca" } })
-    expect(local.filter(manifest => manifest.metadata.name === "letsencrypt")).toEqual([])
-  })
-
-  test("originPull.caPem renders the Secret the TLS options name, in their namespace", () => {
-    const secret = renderSupplied("platform", ["values-civo-production.yaml"]).find(manifest => manifest.kind === "Secret")!
+  test("originPull.caPem renders the Secret the TLS option names, in its namespace", () => {
+    const secret = renderSupplied("platform", ["values-civo-production.yaml"]).find(manifest => manifest.kind === "Secret" && manifest.metadata.name === "cloudflare-origin-pull-ca")!
     expect(secret.metadata).toMatchObject({ name: "cloudflare-origin-pull-ca", namespace: "answerable" })
     expect(Buffer.from(secret.data["ca.crt"], "base64").toString()).toBe(caPem)
   })
 
-  test("an empty originPull.caPem fails the Civo overlays' render, naming the value; the kind stack's first install renders without it", () => {
+  test("an empty originPull.caPem fails the Civo overlays' render, naming the value; the local overlay renders without it", () => {
     for (const file of ["values-civo-staging.yaml", "values-civo-production.yaml"]) {
       const missing = run(templateArguments("platform", [file]))
       expect(missing.exitCode, file).not.toBe(0)
       expect(missing.stderr).toContain("originPull.caPem is empty")
-      expect(missing.stderr).toContain("infra/civo/envs/<environment>/edge-ca/ca.pem")
+      expect(missing.stderr).toContain("Terraform's platform module passes it")
     }
-    expect(render("platform", ["values-local.yaml"]).filter(manifest => manifest.kind === "Secret")).toEqual([])
+    expect(render("platform", ["values-local.yaml"]).filter(manifest => manifest.kind === "Secret" && manifest.metadata.name === "cloudflare-origin-pull-ca")).toEqual([])
     const wrong = run(templateArguments("platform", [], {}, { "originPull.caPem": notPem }))
     expect(wrong.exitCode).not.toBe(0)
     expect(wrong.stderr).toContain("originPull.caPem must be a PEM certificate")
@@ -435,7 +444,7 @@ describe("lint and schemas", () => {
       test(`${chart} ${values[0] ?? "defaults"}: helm lint --strict and kubeconform -strict against Kubernetes ${kubernetesVersion}`, () => {
         const files = [...values.flatMap(file => ["--values", join(charts, chart, file)]), ...Object.entries(supplied[chart]!).flatMap(([key, path]) => ["--set-file", `${key}=${path}`])]
         check(["helm", "lint", "--strict", join(charts, chart), ...files])
-        const rendered = check(templateArguments(chart, values, chart === "answerable" ? { "image.tag": tag, "ops.bootstrap": "true", "ops.register": "true" } : {}, supplied[chart]))
+        const rendered = check(templateArguments(chart, values, chart === "answerable" ? { "image.tag": tag, ...allJobs } : {}, supplied[chart]))
         const result = run(["kubeconform", "-strict", "-summary", "-ignore-missing-schemas", "-kubernetes-version", kubernetesVersion, "-schema-location", "default", "-schema-location", crdSchemas, "-"], { stdin: rendered })
         expect(result.exitCode, result.stdout + result.stderr).toBe(0)
         expect(result.stdout).toContain("Invalid: 0, Errors: 0")

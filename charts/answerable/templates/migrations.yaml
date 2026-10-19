@@ -28,7 +28,7 @@ spec:
       serviceAccountName: migrate
       automountServiceAccountToken: false
       restartPolicy: Never
-      {{- include "answerable.podCommon" $root | nindent 6 }}
+      {{- include "answerable.podCommon" (dict "root" $root "database" true) | nindent 6 }}
       containers:
         - name: migrate
           image: {{ include "answerable.image" (dict "root" $root "name" .image) }}
@@ -41,7 +41,7 @@ spec:
           securityContext:
             {{- include "answerable.containerSecurityContext" $root | nindent 12 }}
           volumeMounts:
-            {{- include "answerable.volumeMounts" $root | nindent 12 }}
+            {{- include "answerable.volumeMounts" (dict "root" $root "database" true) | nindent 12 }}
 {{- end -}}
 apiVersion: v1
 kind: ServiceAccount

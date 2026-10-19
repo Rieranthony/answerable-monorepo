@@ -1,8 +1,10 @@
 {{/*
 One server: its ServiceAccount, Deployment, Service, Ingress, HorizontalPodAutoscaler and PodDisruptionBudget.
 Takes root, component (the resource name), image, port, values (its block of values), host, env (rendered variables),
-readiness (the readiness path), liveness (an HTTP path, or empty for a TCP check) and clientSecret (the Secret holding its
-ID client secret, or empty). Traefik streams responses as they come, which the MCP endpoints' server-sent events need.
+readiness (the readiness path), liveness (an HTTP path, or empty for a TCP check), clientSecret (the Secret holding its
+ID client secret, or empty) and podAnnotations (optional). Traefik streams responses as they come, which the MCP
+endpoints' server-sent events need. The Ingress serves the shared certificate ingress.tlsSecret and names no TLS option:
+Traefik's default one, which charts/platform renders, demands Cloudflare's origin-pull certificate.
 A server whose client Secret does not exist yet waits at zero replicas rather than failing to start: the ops register Job
 writes the Secret and scales it up (infra/ops/README.md), and the next upgrade, finding the Secret, renders it as usual.
 `helm template` has no cluster to look in, so it renders such a server at zero.
@@ -11,10 +13,6 @@ writes the Secret and scales it up (infra/ops/README.md), and the next upgrade, 
 {{- $root := .root -}}
 {{- $values := .values -}}
 {{- $scope := dict "root" $root "component" .component -}}
-{{- $issuer := $root.Values.ingress.issuer -}}
-{{- if not (has $issuer.kind (list "Issuer" "ClusterIssuer")) -}}
-{{- fail (printf "ingress.issuer.kind must be Issuer or ClusterIssuer, not %v" $issuer.kind) -}}
-{{- end -}}
 {{- $waiting := and .clientSecret (not (lookup "v1" "Secret" $root.Release.Namespace .clientSecret)) -}}
 apiVersion: v1
 kind: ServiceAccount
@@ -50,11 +48,15 @@ spec:
     metadata:
       labels:
         {{- include "answerable.labels" $scope | nindent 8 }}
+      {{- with .podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       serviceAccountName: {{ .component }}
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
-      {{- include "answerable.podCommon" $root | nindent 6 }}
+      {{- include "answerable.podCommon" (dict "root" $root "database" true) | nindent 6 }}
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
@@ -108,7 +110,7 @@ spec:
           securityContext:
             {{- include "answerable.containerSecurityContext" $root | nindent 12 }}
           volumeMounts:
-            {{- include "answerable.volumeMounts" $root | nindent 12 }}
+            {{- include "answerable.volumeMounts" (dict "root" $root "database" true) | nindent 12 }}
 ---
 apiVersion: v1
 kind: Service
@@ -132,17 +134,14 @@ metadata:
   labels:
     {{- include "answerable.labels" $scope | nindent 4 }}
   annotations:
-    cert-manager.io/{{ ternary "cluster-issuer" "issuer" (eq $issuer.kind "ClusterIssuer") }}: {{ $issuer.name }}
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
-    # Only Cloudflare holds a client certificate the origin-pull CA signed (Authenticated Origin Pulls, D19).
-    traefik.ingress.kubernetes.io/router.tls.options: {{ $root.Release.Namespace }}-{{ $root.Values.ingress.tlsOption }}@kubernetescrd
 spec:
   ingressClassName: {{ $root.Values.ingress.className }}
   tls:
     - hosts:
         - {{ .host }}
-      secretName: {{ .component }}-tls
+      secretName: {{ $root.Values.ingress.tlsSecret }}
   rules:
     - host: {{ .host }}
       http:

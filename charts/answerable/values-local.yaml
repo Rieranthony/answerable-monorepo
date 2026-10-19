@@ -12,18 +12,10 @@ hostnames:
   adminMcp: admin-mcp.127-0-0-1.sslip.io
 publicPort: "48443"
 
-ingress:
-  # The stack's own certificate authority, cluster-wide (charts/platform, values-local.yaml). The stack passes its
-  # database's CA as database.caPem (infra/k8s/local/stack.ts).
-  issuer:
-    kind: ClusterIssuer
-    name: local
-
-# Cloudflare's stand-in: an nginx beside Traefik in its pod (infra/k8s/local/edge.yaml), which presents the origin-pull
-# certificate for pods that call the public hostnames and reaches Traefik from 127.0.0.1. The test itself plays a visitor
-# and connects straight to Traefik from the Docker network's gateway, which is not trusted.
-trustedProxyCidrs:
-  - 127.0.0.1/32
+# The stack writes what Terraform writes on Civo (infra/k8s/local/stack.ts): the Secret origin-tls, from its own CA; the
+# ConfigMap trusted-proxies, 127.0.0.1/32, where Cloudflare's stand-in reaches Traefik from (an nginx beside Traefik in its
+# pod, infra/k8s/local/edge.yaml); and the Secret postgres-admin. The test itself plays a visitor and connects straight to
+# Traefik from the Docker network's gateway, which is not trusted.
 
 # The edge's certificate comes from the stack's CA, which the services must trust to call the issuer.
 extraCaConfigMap: local-ca

@@ -63,6 +63,29 @@ test("a refusal names the Secret and the status, never a value", async () => {
   await expect(creating.kube.writeSecretKey("x", "K", "v")).rejects.toThrow("Kubernetes answered 403 to POST Secret x")
 })
 
+const configMapPath = "/api/v1/namespaces/answerable/configmaps"
+
+test("reads a ConfigMap's data, empty when it has none, undefined when it is missing; a refusal names it", async () => {
+  const { kube, calls } = client({ [`GET ${configMapPath}/postgres-ca`]: { status: 200, body: { data: { "ca.pem": "PEM" } } }, [`GET ${configMapPath}/bare`]: { status: 200, body: {} }, [`GET ${configMapPath}/forbidden`]: { status: 403, body: { reason: "Forbidden" } } })
+  expect(await kube.readConfigMap("postgres-ca")).toEqual({ "ca.pem": "PEM" })
+  expect(await kube.readConfigMap("bare")).toEqual({})
+  expect(await kube.readConfigMap("missing")).toBeUndefined()
+  expect(calls[0]).toMatchObject({ method: "GET", url: `https://kubernetes.default.svc${configMapPath}/postgres-ca`, headers: { Authorization: "Bearer sa-token" }, ca: "CA PEM" })
+  await expect(kube.readConfigMap("forbidden")).rejects.toThrow("Kubernetes answered 403 Forbidden to GET ConfigMap forbidden")
+})
+
+test("writes a ConfigMap's keys: a merge patch on an existing one, else a new one labelled as the ops Jobs', as the field manager answerable-ops", async () => {
+  const existing = client({ [`PATCH ${configMapPath}/postgres-ca`]: { status: 200, body: {} } })
+  await existing.kube.writeConfigMap("postgres-ca", { "ca.pem": "PEM" })
+  expect(existing.calls).toEqual([expect.objectContaining({ method: "PATCH", url: `https://kubernetes.default.svc${configMapPath}/postgres-ca?fieldManager=answerable-ops`, body: { data: { "ca.pem": "PEM" } } })])
+  const missing = client({ [`POST ${configMapPath}`]: { status: 201, body: {} } })
+  await missing.kube.writeConfigMap("postgres-ca", { "ca.pem": "PEM" })
+  expect(missing.calls.map(call => call.method)).toEqual(["PATCH", "POST"])
+  expect(missing.calls[1]!.body).toEqual({ apiVersion: "v1", kind: "ConfigMap", metadata: { name: "postgres-ca", namespace: "answerable", labels: { "app.kubernetes.io/managed-by": "answerable-ops" } }, data: { "ca.pem": "PEM" } })
+  const refused = client({ [`POST ${configMapPath}`]: { status: 403, body: { reason: "Forbidden" } } })
+  await expect(refused.kube.writeConfigMap("postgres-ca", { "ca.pem": "PEM" })).rejects.toThrow("Kubernetes answered 403 Forbidden to POST ConfigMap postgres-ca")
+})
+
 test("reads a Deployment's replicas, 1 when unset as Kubernetes defaults it, undefined when it is missing, and patches them", async () => {
   const { kube, calls } = client({
     [`GET ${deploymentPath}/toolbox`]: { status: 200, body: { spec: { replicas: 0 } } },

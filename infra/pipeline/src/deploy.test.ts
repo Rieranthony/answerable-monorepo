@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { createHash } from "node:crypto"
 import { stat } from "node:fs/promises"
 import { PipelineError, UsageError } from "./errors"
 import {
   assertImageTag,
-  currentTag,
   deploy,
+  idEnv,
+  idEnvChecksum,
   kubeconfig,
   parseDigests,
   parseJob,
@@ -17,43 +19,34 @@ import type { RunResult } from "./run"
 import { createFakeRunner, createRoot, type RecordedCall } from "./testing"
 
 const TAG = `sha-${"a".repeat(40)}`
-const OLD_TAG = `sha-${"b".repeat(40)}`
 const CERTIFICATE = "-----BEGIN CERTIFICATE-----\nMIIBdemo\n-----END CERTIFICATE-----"
 const CLUSTER_ENV = {
   KUBE_SERVER: "https://cluster.example:6443",
   KUBE_CA: Buffer.from(CERTIFICATE).toString("base64"),
   KUBE_TOKEN: "deployer-token-value",
 }
-const DECRYPTED = `apiVersion: v1
-kind: Secret
-metadata:
-  name: id-env
-stringData:
-  BETTER_AUTH_SECRET: super-secret-value-123
-  ROOT_ADMIN_SECRET: another-secret-456
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: toolbox-extra
-data:
-  KEY: c2VjcmV0LWJhc2U2NA==
-`
+/** ID's secrets as the deploy step has them: the GitHub environment's. */
+const ID_ENV = {
+  BETTER_AUTH_SECRET: "better-auth-secret-value-123",
+  UPSTREAM_TOKEN_SECRETS: '[{"version":1,"value":"upstream-key-value-456"}]',
+  ROOT_ADMIN_SECRET: "root-admin-secret-value-789",
+  MICROSOFT_CLIENT_ID: "11111111-2222-3333-4444-555555555555",
+  MICROSOFT_CLIENT_SECRET: "microsoft-client-secret-value-012",
+}
+const ENV = { ...CLUSTER_ENV, ...ID_ENV }
 const VALUES = "charts/answerable/values-civo-staging.yaml"
-const SECRETS = "infra/civo/envs/staging/secrets.enc.yaml"
-const CA = "infra/civo/envs/staging/database-ca.pem"
 const CLIENT_SECRETS_COMMAND = "kubectl get secret toolbox-id-client admin-id-client -n answerable -o name --ignore-not-found"
 const BOTH_EXIST = "secret/toolbox-id-client\nsecret/admin-id-client\n"
 const NAMES = ["id", "toolbox", "admin-mcp", "ops"] as const
 
-/** The digests the registry answers for TAG, and the ones a release deployed earlier runs. */
+/** The digests the registry answers for TAG, and others given on the command line. */
 const DIGESTS: Digests = {
   id: `sha256:${"1".repeat(64)}`,
   toolbox: `sha256:${"2".repeat(64)}`,
   "admin-mcp": `sha256:${"3".repeat(64)}`,
   ops: `sha256:${"4".repeat(64)}`,
 }
-const OLD_DIGESTS: Digests = {
+const OTHER_DIGESTS: Digests = {
   id: `sha256:${"5".repeat(64)}`,
   toolbox: `sha256:${"6".repeat(64)}`,
   "admin-mcp": `sha256:${"7".repeat(64)}`,
@@ -62,6 +55,9 @@ const OLD_DIGESTS: Digests = {
 const pins = (digests: Digests) => NAMES.map((name) => `--set images.${name}.digest=${digests[name]}`).join(" ")
 const lookups = (tag: string) =>
   NAMES.map((name) => `docker buildx imagetools inspect ghcr.io/rieranthony/answerable/${name}:${tag} --format {{.Manifest.Digest}}`)
+const checksum = (values: Record<string, string>) => createHash("sha256").update(JSON.stringify(Object.fromEntries(Object.entries(values).sort(([a], [b]) => (a < b ? -1 : 1))))).digest("hex")
+const upgradeCommand = (rest: string) =>
+  `helm upgrade --install answerable charts/answerable --namespace answerable --rollback-on-failure --wait --wait-for-jobs --timeout 10m -f ${VALUES} --set image.tag=${TAG} ${rest}`
 
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -80,19 +76,10 @@ type FixtureOptions = {
   docker?: (call: RecordedCall) => Partial<RunResult>
   /** Answers the check for the client Secrets; both exist by default. */
   clients?: (call: RecordedCall) => Partial<RunResult>
-  /** Whether the database's CA file is in the repository; it is by default. */
-  withCa?: boolean
 }
 
-async function fixture(
-  reply: (call: RecordedCall) => Partial<RunResult> | undefined,
-  { env = CLUSTER_ENV, docker = registry, clients = () => ({ stdout: BOTH_EXIST }), withCa = true }: FixtureOptions = {},
-) {
-  const root = await createRoot({
-    [VALUES]: "",
-    [SECRETS]: "sops: {}\n",
-    ...(withCa ? { [CA]: "-----BEGIN CERTIFICATE-----\nMIIBdemo\n-----END CERTIFICATE-----\n" } : {}),
-  })
+async function fixture(reply: (call: RecordedCall) => Partial<RunResult> | undefined = () => undefined, { env = ENV, docker = registry, clients = () => ({ stdout: BOTH_EXIST }) }: FixtureOptions = {}) {
+  const root = await createRoot({ [VALUES]: "" })
   cleanups.push(root.remove)
   const isClientCheck = (call: RecordedCall) => call.argv[0] === "kubectl" && call.argv[1] === "get" && call.argv[2] === "secret"
   const runner = createFakeRunner((call) =>
@@ -103,15 +90,12 @@ async function fixture(
   return {
     deps,
     runner,
-    logs,
     root: root.path,
     log: () => logs.join(""),
     /** The commands that reached the cluster side, without the registry lookups. */
     cluster: () => runner.commands().filter((command) => !command.startsWith("docker ")),
   }
 }
-
-const happy = (call: RecordedCall) => (call.argv[0] === "sops" ? { stdout: DECRYPTED } : undefined)
 
 describe("readCluster", () => {
   test("reads the server, the certificate authority and the token", () => {
@@ -164,10 +148,9 @@ describe("assertImageTag and parseJob", () => {
       expect(() => assertImageTag(tag)).toThrow(UsageError)
   })
 
-  test("parseJob accepts the two ops jobs only", () => {
-    expect(parseJob("bootstrap")).toBe("bootstrap")
-    expect(parseJob("register")).toBe("register")
-    expect(() => parseJob("migrate")).toThrow("the job must be one of bootstrap, register")
+  test("parseJob accepts the three ops jobs only", () => {
+    for (const job of ["bootstrap", "register", "make-admin"] as const) expect(parseJob(job)).toBe(job)
+    expect(() => parseJob("migrate")).toThrow("the job must be one of bootstrap, register, make-admin")
     expect(() => parseJob(undefined)).toThrow(UsageError)
   })
 })
@@ -196,30 +179,90 @@ describe("parseDigests", () => {
   })
 })
 
+describe("idEnv and idEnvChecksum", () => {
+  test("hold the three required secrets and the Microsoft pair, trimmed, keys sorted", () => {
+    const values = idEnv({ ...ENV, ROOT_ADMIN_SECRET: ` ${ID_ENV.ROOT_ADMIN_SECRET}\n` })
+    expect(values).toEqual(ID_ENV)
+    expect(Object.keys(values)).toEqual([...Object.keys(ID_ENV)].sort())
+  })
+
+  test("add the Google pair and BETTER_AUTH_SECRETS when set, and leave out the Microsoft pair when it is not", () => {
+    const required = { BETTER_AUTH_SECRET: ID_ENV.BETTER_AUTH_SECRET, UPSTREAM_TOKEN_SECRETS: ID_ENV.UPSTREAM_TOKEN_SECRETS, ROOT_ADMIN_SECRET: ID_ENV.ROOT_ADMIN_SECRET }
+    const values = idEnv({ ...required, GOOGLE_CLIENT_ID: "google-id", GOOGLE_CLIENT_SECRET: "google-secret", BETTER_AUTH_SECRETS: '[{"version":2}]' })
+    expect(Object.keys(values)).toEqual(["BETTER_AUTH_SECRET", "BETTER_AUTH_SECRETS", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "ROOT_ADMIN_SECRET", "UPSTREAM_TOKEN_SECRETS"])
+    expect(idEnv({ ...required, BETTER_AUTH_SECRETS: " " })).toEqual(required)
+  })
+
+  test("refuse a required secret that is empty, naming every one, and half a pair", () => {
+    expect(() => idEnv({ ...ENV, BETTER_AUTH_SECRET: "", ROOT_ADMIN_SECRET: undefined })).toThrow(
+      "BETTER_AUTH_SECRET, ROOT_ADMIN_SECRET are not set: id-env needs BETTER_AUTH_SECRET, UPSTREAM_TOKEN_SECRETS, ROOT_ADMIN_SECRET",
+    )
+    expect(() => idEnv({ ...ENV, UPSTREAM_TOKEN_SECRETS: " " })).toThrow("UPSTREAM_TOKEN_SECRETS is not set")
+    expect(() => idEnv({ ...ENV, MICROSOFT_CLIENT_SECRET: "" })).toThrow(
+      "MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET go together: MICROSOFT_CLIENT_ID is set and MICROSOFT_CLIENT_SECRET is not",
+    )
+    expect(() => idEnv({ ...ENV, GOOGLE_CLIENT_SECRET: "google-secret" })).toThrow(
+      "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET go together: GOOGLE_CLIENT_SECRET is set and GOOGLE_CLIENT_ID is not",
+    )
+  })
+
+  test("the checksum is the SHA-256 of the values as JSON with sorted keys: the same values, the same sum; one changed, another", () => {
+    const values = idEnv(ENV)
+    expect(idEnvChecksum(values)).toBe(checksum(ID_ENV))
+    expect(idEnvChecksum(Object.fromEntries(Object.entries(values).reverse()))).toBe(idEnvChecksum(values))
+    expect(idEnvChecksum({ ...values, ROOT_ADMIN_SECRET: "rotated" })).not.toBe(idEnvChecksum(values))
+  })
+})
+
 describe("deploy", () => {
-  test("looks up the digests, logs in, applies the decrypted secrets and upgrades the release, pinned by digest", async () => {
-    const f = await fixture(happy)
+  test("looks up the digests, applies id-env and upgrades the release by digest, with the bootstrap and the secrets' checksum", async () => {
+    const f = await fixture()
     await deploy({ environment: "staging", imageTag: TAG }, f.deps)
     expect(f.runner.commands()).toEqual([
       ...lookups(TAG),
-      `sops --decrypt ${SECRETS}`,
       "kubectl apply -n answerable -f -",
       CLIENT_SECRETS_COMMAND,
-      `helm upgrade --install answerable charts/answerable --namespace answerable --rollback-on-failure --wait --timeout 10m -f ${VALUES} --set-file database.caPem=${CA} --set image.tag=${TAG} ${pins(DIGESTS)}`,
+      upgradeCommand(`${pins(DIGESTS)} --set-string idEnvChecksum=${checksum(ID_ENV)} --set ops.bootstrap=true`),
     ])
     expect(f.log()).toContain(`Deployed ${TAG} to staging.`)
     expect(f.log()).toContain(`id is ${DIGESTS.id}`)
+    expect(f.log()).toContain("id-env holds BETTER_AUTH_SECRET, MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, ROOT_ADMIN_SECRET, UPSTREAM_TOKEN_SECRETS.")
+  })
+
+  test("hands kubectl id-env on standard input, as base64 data in the answerable namespace, and logs no value", async () => {
+    const f = await fixture()
+    await deploy({ environment: "staging", imageTag: TAG }, f.deps)
+    const apply = f.runner.calls.find((call) => call.argv[0] === "kubectl")!
+    expect(apply.options.onOutput).toBeUndefined()
+    const manifest = JSON.parse(apply.options.input!)
+    expect(manifest).toMatchObject({ apiVersion: "v1", kind: "Secret", metadata: { name: "id-env", namespace: "answerable" }, type: "Opaque" })
+    expect(manifest.stringData).toBeUndefined()
+    expect(Object.fromEntries(Object.entries(manifest.data as Record<string, string>).map(([name, value]) => [name, Buffer.from(value, "base64").toString()]))).toEqual(ID_ENV)
+    const everything = [f.log(), ...f.runner.calls.flatMap((call) => call.argv)].join(" ")
+    for (const value of [...Object.values(ID_ENV), CLUSTER_ENV.KUBE_TOKEN]) expect(everything).not.toContain(value)
+  })
+
+  test("a changed secret changes the checksum, so the upgrade rolls ID; the same secrets keep it", async () => {
+    const first = await fixture()
+    await deploy({ environment: "staging", imageTag: TAG }, first.deps)
+    const again = await fixture()
+    await deploy({ environment: "staging", imageTag: TAG }, again.deps)
+    const rotated = await fixture(undefined, { env: { ...ENV, BETTER_AUTH_SECRETS: '[{"version":2,"value":"x"}]' } })
+    await deploy({ environment: "staging", imageTag: TAG }, rotated.deps)
+    const sum = (f: Awaited<ReturnType<typeof fixture>>) => f.cluster().at(-1)!.match(/idEnvChecksum=([0-9a-f]{64})/)![1]
+    expect(sum(again)).toBe(sum(first))
+    expect(sum(rotated)).not.toBe(sum(first))
   })
 
   test("pins the digests it is given and looks nothing up", async () => {
-    const f = await fixture(happy)
-    await deploy({ environment: "staging", imageTag: TAG, digests: OLD_DIGESTS }, f.deps)
+    const f = await fixture()
+    await deploy({ environment: "staging", imageTag: TAG, digests: OTHER_DIGESTS }, f.deps)
     expect(f.runner.commands().some((command) => command.startsWith("docker "))).toBe(false)
-    expect(f.cluster()[3]).toContain(`--set image.tag=${TAG} ${pins(OLD_DIGESTS)}`)
+    expect(f.cluster()[2]).toContain(`--set image.tag=${TAG} ${pins(OTHER_DIGESTS)}`)
   })
 
   test("stops before the cluster when a tag cannot be resolved", async () => {
-    const f = await fixture(happy, { docker: () => ({ exitCode: 1, stderr: "ghcr.io/…: manifest unknown\n" }) })
+    const f = await fixture(undefined, { docker: () => ({ exitCode: 1, stderr: "ghcr.io/…: manifest unknown\n" }) })
     await expect(deploy({ environment: "staging", imageTag: TAG }, f.deps)).rejects.toThrow(
       `could not resolve ghcr.io/rieranthony/answerable/id:${TAG} to a manifest digest (exit 1): ghcr.io/…: manifest unknown`,
     )
@@ -227,37 +270,14 @@ describe("deploy", () => {
   })
 
   test("refuses an answer that is not a digest, and says so when there was no answer at all", async () => {
-    const odd = await fixture(happy, { docker: () => ({ stdout: "latest\n" }) })
-    await expect(deploy({ environment: "staging", imageTag: TAG }, odd.deps)).rejects.toThrow(
-      `to a manifest digest (exit 0): latest`,
-    )
-    const none = await fixture(happy, { docker: () => ({}) })
+    const odd = await fixture(undefined, { docker: () => ({ stdout: "latest\n" }) })
+    await expect(deploy({ environment: "staging", imageTag: TAG }, odd.deps)).rejects.toThrow(`to a manifest digest (exit 0): latest`)
+    const none = await fixture(undefined, { docker: () => ({}) })
     await expect(deploy({ environment: "staging", imageTag: TAG }, none.deps)).rejects.toThrow("(exit 0): no answer")
   })
 
-  test("runs every cluster command in the repository root with a kubeconfig that exists only meanwhile", async () => {
-    const f = await fixture(happy)
-    await deploy({ environment: "staging", imageTag: TAG }, f.deps)
-    const clusterCalls = f.runner.calls.filter((call) => call.argv[0] !== "docker")
-    expect(clusterCalls).toHaveLength(4)
-    for (const call of f.runner.calls) expect(call.options.cwd).toBe(f.root)
-    for (const call of clusterCalls) {
-      expect(call.kubeconfig).toBeDefined()
-      expect(JSON.parse(call.kubeconfig!).users[0].user.token).toBe("deployer-token-value")
-    }
-    const path = clusterCalls[0]!.options.env!.KUBECONFIG!
-    expect(await stat(path).catch(() => null)).toBeNull()
-    expect(clusterCalls.every((call) => call.options.env!.KUBECONFIG === path)).toBe(true)
-  })
-
-  test("gives the registry lookups no kubeconfig, and the token to nobody else", async () => {
-    const f = await fixture(happy)
-    await deploy({ environment: "staging", imageTag: TAG }, f.deps)
-    for (const call of f.runner.calls.filter((call) => call.argv[0] === "docker")) expect(call.options.env).toBeUndefined()
-  })
-
-  test("writes the kubeconfig readable by its owner only", async () => {
-    const f = await fixture(happy)
+  test("runs every cluster command in the repository root with a kubeconfig, readable by its owner only, that exists only meanwhile", async () => {
+    const f = await fixture()
     const modes: number[] = []
     const deps: Deps = {
       ...f.deps,
@@ -267,78 +287,41 @@ describe("deploy", () => {
       },
     }
     await deploy({ environment: "staging", imageTag: TAG }, deps)
-    expect(modes).toHaveLength(4)
+    const clusterCalls = f.runner.calls.filter((call) => call.argv[0] !== "docker")
+    expect(clusterCalls).toHaveLength(3)
     expect(new Set(modes)).toEqual(new Set([0o600]))
-  })
-
-  test("keeps the decrypted text out of the log and hands it to kubectl on standard input", async () => {
-    const f = await fixture(happy)
-    await deploy({ environment: "staging", imageTag: TAG }, f.deps)
-    const sops = f.runner.calls.find((call) => call.argv[0] === "sops")!
-    const apply = f.runner.calls.find((call) => call.argv[0] === "kubectl")!
-    expect(sops.options.onOutput).toBeUndefined()
-    expect(apply.options.onOutput).toBeUndefined()
-    expect(apply.options.input).toBe(DECRYPTED)
-    expect(f.log()).not.toContain("super-secret-value-123")
-    expect(f.log()).not.toContain("deployer-token-value")
-    expect(f.runner.calls.flatMap((call) => call.argv).join(" ")).not.toContain("deployer-token-value")
+    for (const call of f.runner.calls) expect(call.options.cwd).toBe(f.root)
+    for (const call of clusterCalls) expect(JSON.parse(call.kubeconfig!).users[0].user.token).toBe("deployer-token-value")
+    const path = clusterCalls[0]!.options.env!.KUBECONFIG!
+    expect(await stat(path).catch(() => null)).toBeNull()
+    // The registry lookups get no kubeconfig.
+    for (const call of f.runner.calls.filter((call) => call.argv[0] === "docker")) expect(call.options.env).toBeUndefined()
   })
 
   test("prints only the lines in which kubectl names an object it applied", async () => {
     const f = await fixture((call) =>
-      call.argv[0] === "sops"
-        ? { stdout: DECRYPTED }
-        : call.argv[0] === "kubectl"
-          ? {
-              stdout:
-                "secret/id-env configured\nsecret/cloudflare-api-token unchanged\nWarning: super-secret-value-123 is deprecated\nsecret/x created extra super-secret-value-123\n",
-            }
-          : undefined,
+      call.argv[1] === "apply" ? { stdout: `secret/id-env configured\nWarning: ${ID_ENV.ROOT_ADMIN_SECRET} is deprecated\nsecret/x created extra ${ID_ENV.ROOT_ADMIN_SECRET}\n` } : undefined,
     )
     await deploy({ environment: "staging", imageTag: TAG }, f.deps)
     expect(f.log()).toContain("secret/id-env configured\n")
-    expect(f.log()).toContain("secret/cloudflare-api-token unchanged\n")
-    expect(f.log()).not.toContain("super-secret-value-123")
+    expect(f.log()).not.toContain(ID_ENV.ROOT_ADMIN_SECRET)
   })
 
-  test("runs the bootstrap Job in the same upgrade when asked", async () => {
-    const f = await fixture(happy)
-    await deploy({ environment: "staging", imageTag: TAG, bootstrap: true }, f.deps)
-    expect(f.runner.commands().at(-1)).toBe(
-      `helm upgrade --install answerable charts/answerable --namespace answerable --rollback-on-failure --wait --wait-for-jobs --timeout 10m -f ${VALUES} --set-file database.caPem=${CA} --set image.tag=${TAG} ${pins(DIGESTS)} --set ops.bootstrap=true`,
-    )
-  })
-
-  test("honours another values file, secrets file and timeout", async () => {
-    const f = await fixture(happy)
-    await deploy(
-      { environment: "staging", imageTag: TAG, valuesFile: SECRETS, secretsFile: VALUES, timeout: "15m" },
-      f.deps,
-    )
-    expect(f.cluster()[0]).toBe(`sops --decrypt ${VALUES}`)
-    expect(f.cluster()[3]).toContain(`--timeout 15m -f ${SECRETS}`)
-  })
-
-  test("hands the database's CA file to the chart, relative to the repository root", async () => {
-    const f = await fixture(happy)
-    await deploy({ environment: "staging", imageTag: TAG }, f.deps)
-    expect(f.cluster().at(-1)).toContain(` --set-file database.caPem=${CA} `)
-  })
-
-  test("stops before the registry and the cluster when the database's CA file is missing, naming the command that writes it", async () => {
-    const f = await fixture(happy, { withCa: false })
+  test("says nothing of what kubectl said when the apply fails", async () => {
+    const quoted = [ID_ENV.BETTER_AUTH_SECRET, JSON.stringify(ID_ENV.ROOT_ADMIN_SECRET), Buffer.from(ID_ENV.ROOT_ADMIN_SECRET).toString("base64")]
+    const f = await fixture((call) => (call.argv[1] === "apply" ? { exitCode: 1, stdout: `secret/id-env ${quoted[0]}\n`, stderr: `error: invalid value ${quoted.join(" ")}\n` } : undefined))
     const failure = await deploy({ environment: "staging", imageTag: TAG }, f.deps).catch((error: unknown) => error)
-    expect(failure).toBeInstanceOf(UsageError)
-    expect((failure as Error).message).toBe(`${CA} does not exist; write it with: bun run setup database-ca --environment staging`)
-    expect(f.runner.calls).toEqual([])
+    expect(failure).toBeInstanceOf(PipelineError)
+    expect((failure as Error).message).toBe("kubectl apply of the Secret id-env failed with exit code 1; its output is not shown, since it can quote a value")
+    for (const text of [(failure as Error).message, f.log()]) for (const value of quoted) expect(text).not.toContain(value)
+    expect(f.cluster()).toHaveLength(1)
   })
 
   test("registers in the same upgrade when neither client Secret exists yet, and says why", async () => {
-    const f = await fixture(happy, { clients: () => ({ stdout: "" }) })
+    const f = await fixture(undefined, { clients: () => ({ stdout: "" }) })
     await deploy({ environment: "staging", imageTag: TAG }, f.deps)
     expect(f.cluster()).toContain(CLIENT_SECRETS_COMMAND)
-    expect(f.cluster().at(-1)).toEndWith(`${pins(DIGESTS)} --set ops.register=true`)
-    expect(f.cluster().at(-1)).toContain("--wait --wait-for-jobs")
+    expect(f.cluster().at(-1)).toEndWith("--set ops.bootstrap=true --set ops.register=true")
     expect(f.log()).toContain("toolbox-id-client and admin-id-client do not exist in answerable yet, so this upgrade also runs register")
   })
 
@@ -347,7 +330,7 @@ describe("deploy", () => {
       ["secret/toolbox-id-client\n", "admin-id-client"],
       ["secret/admin-id-client\n", "toolbox-id-client"],
     ] as const) {
-      const f = await fixture(happy, { clients: () => ({ stdout: present }) })
+      const f = await fixture(undefined, { clients: () => ({ stdout: present }) })
       await deploy({ environment: "staging", imageTag: TAG }, f.deps)
       expect(f.cluster().at(-1)).toEndWith("--set ops.register=true")
       expect(f.log()).toContain(`${missing} does not exist in answerable yet, so this upgrade also runs register, which creates it and`)
@@ -355,104 +338,59 @@ describe("deploy", () => {
   })
 
   test("does not register once both client Secrets exist: root may be locked by then", async () => {
-    const f = await fixture(happy)
-    await deploy({ environment: "staging", imageTag: TAG, bootstrap: true }, f.deps)
+    const f = await fixture()
+    await deploy({ environment: "staging", imageTag: TAG }, f.deps)
     expect(f.cluster().at(-1)).not.toContain("ops.register")
     expect(f.log()).not.toContain("also runs register")
   })
 
-  test("runs bootstrap and then register when both are needed", async () => {
-    const f = await fixture(happy, { clients: () => ({ stdout: "" }) })
-    await deploy({ environment: "staging", imageTag: TAG, bootstrap: true }, f.deps)
-    expect(f.cluster().at(-1)).toEndWith("--set ops.bootstrap=true --set ops.register=true")
-  })
-
   test("stops before the upgrade when it cannot tell whether the client Secrets exist", async () => {
-    const f = await fixture(happy, { clients: () => ({ exitCode: 1, stderr: "Error from server (Forbidden): secrets is forbidden\n" }) })
+    const f = await fixture(undefined, { clients: () => ({ exitCode: 1, stderr: "Error from server (Forbidden): secrets is forbidden\n" }) })
     await expect(deploy({ environment: "staging", imageTag: TAG }, f.deps)).rejects.toThrow(
       "kubectl get secret failed with exit code 1: Error from server (Forbidden): secrets is forbidden",
     )
     expect(f.cluster().some((command) => command.startsWith("helm "))).toBe(false)
   })
 
-  test("refuses a mutable tag before touching anything", async () => {
-    const f = await fixture(happy)
+  test("honours another timeout", async () => {
+    const f = await fixture()
+    await deploy({ environment: "staging", imageTag: TAG, timeout: "15m" }, f.deps)
+    expect(f.cluster().at(-1)).toContain(`--timeout 15m -f ${VALUES}`)
+  })
+
+  test("refuses, before anything runs, a mutable tag, a missing values file, missing cluster credentials and a missing secret", async () => {
+    const f = await fixture()
     await expect(deploy({ environment: "staging", imageTag: "latest" }, f.deps)).rejects.toThrow(UsageError)
-    expect(f.runner.calls).toEqual([])
-  })
-
-  test("refuses to start when a file is missing", async () => {
-    const f = await fixture(happy)
-    await expect(
-      deploy({ environment: "production", imageTag: TAG }, f.deps),
-    ).rejects.toThrow("charts/answerable/values-civo-production.yaml does not exist")
-    expect(f.runner.calls).toEqual([])
-  })
-
-  test("refuses to start without cluster credentials", async () => {
-    const f = await fixture(happy, { env: {} })
-    await expect(deploy({ environment: "staging", imageTag: TAG }, f.deps)).rejects.toThrow("KUBE_SERVER is not set")
-    expect(f.runner.calls).toEqual([])
-  })
-
-  test("stops when sops cannot decrypt, naming the file", async () => {
-    const f = await fixture((call) => (call.argv[0] === "sops" ? { exitCode: 128, stderr: "no age identity found\n" } : undefined))
-    const failure = deploy({ environment: "staging", imageTag: TAG }, f.deps)
-    await expect(failure).rejects.toThrow(`sops could not decrypt ${SECRETS} (exit 128): no age identity found`)
-    expect(f.cluster()).toEqual([`sops --decrypt ${SECRETS}`])
-  })
-
-  test("says nothing of what kubectl said when the apply fails", async () => {
-    const quoted = [
-      "super-secret-value-123",
-      "super\\u002dsecret-value-123",
-      JSON.stringify("another-secret-456"),
-      Buffer.from("another-secret-456").toString("base64"),
-      "7421",
-    ]
-    const f = await fixture((call) =>
-      call.argv[0] === "sops"
-        ? { stdout: DECRYPTED }
-        : { exitCode: 1, stdout: `secret/id-env ${quoted[0]}\n`, stderr: `error: invalid value ${quoted.join(" ")} in id-env\n` },
-    )
-    const failure = await deploy({ environment: "staging", imageTag: TAG }, f.deps).catch((error: unknown) => error)
-    expect(failure).toBeInstanceOf(PipelineError)
-    expect((failure as Error).message).toBe(
-      "kubectl apply of the secrets failed with exit code 1; run it by hand with the decrypted file to see why",
-    )
-    for (const text of [(failure as Error).message, f.log()])
-      for (const value of quoted) expect(text).not.toContain(value)
-    expect(f.log()).not.toContain("invalid value")
-    expect(f.cluster()).toHaveLength(2)
+    await expect(deploy({ environment: "production", imageTag: TAG }, f.deps)).rejects.toThrow("charts/answerable/values-civo-production.yaml does not exist")
+    const noCluster = await fixture(undefined, { env: ID_ENV })
+    await expect(deploy({ environment: "staging", imageTag: TAG }, noCluster.deps)).rejects.toThrow("KUBE_SERVER is not set")
+    const noSecret = await fixture(undefined, { env: { ...ENV, ROOT_ADMIN_SECRET: "" } })
+    await expect(deploy({ environment: "staging", imageTag: TAG }, noSecret.deps)).rejects.toThrow("ROOT_ADMIN_SECRET is not set")
+    for (const each of [f, noCluster, noSecret]) expect(each.runner.calls).toEqual([])
   })
 
   test("reports a failed upgrade with the migration and ops Jobs' logs, and only those", async () => {
     const f = await fixture((call) => {
       const command = call.argv.join(" ")
-      if (call.argv[0] === "sops") return { stdout: DECRYPTED }
       if (call.argv[0] === "helm") return { exitCode: 1, stderr: "Error: timed out waiting for the condition\n" }
       if (command === "kubectl get jobs -n answerable -o name")
         return { stdout: "job.batch/answerable-id-migrate\njob.batch/answerable-cleanup\njob.batch/ops-bootstrap\n" }
       if (command.includes("logs")) return { stdout: `log of ${command.split("job-name=")[1]!.split(" ")[0]}\n` }
       return undefined
     })
-    await expect(deploy({ environment: "staging", imageTag: TAG }, f.deps)).rejects.toThrow(
-      "helm upgrade failed with exit code 1",
-    )
+    await expect(deploy({ environment: "staging", imageTag: TAG }, f.deps)).rejects.toThrow("helm upgrade failed with exit code 1")
     const commands = f.runner.commands()
     expect(commands).toContain("kubectl logs -n answerable -l job-name=answerable-id-migrate --all-containers --prefix --tail=200")
     expect(commands).toContain("kubectl describe pods -n answerable -l job-name=ops-bootstrap")
     expect(commands.some((command) => command.includes("answerable-cleanup"))).toBe(false)
     expect(f.log()).toContain("Error: timed out waiting for the condition")
     expect(f.log()).toContain("--- Job answerable-id-migrate ---")
-    expect(f.log()).toContain("log of answerable-id-migrate")
     expect(f.log()).toContain("log of ops-bootstrap")
     expect(f.log()).not.toContain("Deployed")
   })
 
-  test("still reports the upgrade failure when no Job can be listed", async () => {
+  test("still reports the upgrade failure when no Job can be listed, and removes the kubeconfig", async () => {
     const f = await fixture((call) => {
-      if (call.argv[0] === "sops") return { stdout: DECRYPTED }
       if (call.argv[0] === "helm") return { exitCode: 1 }
       if (call.argv[1] === "apply") return undefined
       return { exitCode: 1, stderr: "Error from server (Forbidden): jobs is forbidden\n" }
@@ -460,190 +398,104 @@ describe("deploy", () => {
     await expect(deploy({ environment: "staging", imageTag: TAG }, f.deps)).rejects.toThrow("helm upgrade failed")
     expect(f.log()).toContain("jobs is forbidden")
     expect(f.runner.commands().filter((command) => command.startsWith("kubectl logs"))).toEqual([])
-  })
-
-  test("removes the kubeconfig even when the upgrade fails", async () => {
-    const f = await fixture((call) => (call.argv[0] === "helm" ? { exitCode: 1 } : happy(call)))
-    await expect(deploy({ environment: "staging", imageTag: TAG }, f.deps)).rejects.toThrow()
-    const path = f.runner.calls.find((call) => call.argv[0] === "sops")!.options.env!.KUBECONFIG!
-    expect(await stat(path).catch(() => null)).toBeNull()
+    expect(await stat(f.runner.calls.find((call) => call.argv[1] === "apply")!.options.env!.KUBECONFIG!).catch(() => null)).toBeNull()
   })
 })
 
 describe("runJob", () => {
-  const releaseValues = (digests?: Partial<Record<keyof Digests, string>>) =>
-    JSON.stringify({
-      image: { tag: OLD_TAG },
-      ...(digests && { images: Object.fromEntries(Object.entries(digests).map(([name, digest]) => [name, { digest }])) }),
-    })
-  const registerReply =
-    (values: string = releaseValues(OLD_DIGESTS)) =>
-    (call: RecordedCall) => {
-      const command = call.argv.join(" ")
-      if (command.startsWith("helm get values")) return { stdout: values }
-      if (command === "kubectl get deployments -n answerable -o name")
-        return { stdout: "deployment.apps/answerable-id\ndeployment.apps/answerable-toolbox\ndeployment.apps/answerable-admin-mcp\n" }
-      return undefined
-    }
+  const jobUpgrade = (switches: string, rest = "") =>
+    `helm upgrade answerable charts/answerable --namespace answerable --rollback-on-failure --wait --wait-for-jobs --timeout 10m --reset-then-reuse-values -f ${VALUES} ${switches}${rest}`
+  const restarts = (call: RecordedCall) =>
+    call.argv.join(" ") === "kubectl get deployments -n answerable -o name"
+      ? { stdout: "deployment.apps/answerable-id\ndeployment.apps/answerable-toolbox\ndeployment.apps/answerable-admin-mcp\n" }
+      : call.argv[1] === "logs"
+        ? { stdout: "the Job's log\n" }
+        : undefined
 
-  test("upgrades the release on what it runs, with the Job switched on, then restarts the MCP servers after register", async () => {
-    const f = await fixture(registerReply())
+  test("register: an upgrade on the release's own values with register alone switched on, its log, then the MCP servers restarted", async () => {
+    const f = await fixture(restarts)
     await runJob({ environment: "staging", job: "register" }, f.deps)
     expect(f.runner.commands()).toEqual([
-      "helm get values answerable --namespace answerable -o json",
-      `helm upgrade answerable charts/answerable --namespace answerable --rollback-on-failure --wait --wait-for-jobs --timeout 10m -f ${VALUES} --set-file database.caPem=${CA} --set image.tag=${OLD_TAG} ${pins(OLD_DIGESTS)} --set ops.register=true`,
+      jobUpgrade("--set ops.bootstrap=false --set ops.register=true --set ops.makeAdmin=false"),
+      "kubectl logs -n answerable job/ops-register --all-containers",
       "kubectl get deployments -n answerable -o name",
       "kubectl rollout restart -n answerable deployment.apps/answerable-toolbox deployment.apps/answerable-admin-mcp",
       "kubectl rollout status -n answerable deployment.apps/answerable-toolbox --timeout=10m",
       "kubectl rollout status -n answerable deployment.apps/answerable-admin-mcp --timeout=10m",
     ])
-    expect(f.log()).toContain(`Ran register in staging on ${OLD_TAG}.`)
+    expect(f.log()).toContain("the Job's log")
+    expect(f.log()).toContain("Ran register in staging.")
   })
 
-  test("looks the digests up when the release was deployed without them or with only some", async () => {
-    for (const values of [releaseValues(), releaseValues({ id: OLD_DIGESTS.id }), releaseValues({ ...OLD_DIGESTS, ops: "sha256:abc" })]) {
-      const f = await fixture(registerReply(values))
-      await runJob({ environment: "staging", job: "bootstrap" }, f.deps)
-      expect(f.runner.commands().slice(0, 5)).toEqual(["helm get values answerable --namespace answerable -o json", ...lookups(OLD_TAG)])
-      expect(f.runner.commands()[5]).toContain(`--set image.tag=${OLD_TAG} ${pins(DIGESTS)}`)
-    }
-  })
-
-  test("looks up the digests of a tag it is given, and does not restart anything after bootstrap", async () => {
-    const f = await fixture(registerReply())
-    await runJob({ environment: "staging", job: "bootstrap", imageTag: TAG, timeout: "5m" }, f.deps)
-    expect(f.runner.commands()).toEqual([
-      ...lookups(TAG),
-      `helm upgrade answerable charts/answerable --namespace answerable --rollback-on-failure --wait --wait-for-jobs --timeout 5m -f ${VALUES} --set-file database.caPem=${CA} --set image.tag=${TAG} ${pins(DIGESTS)} --set ops.bootstrap=true`,
+  test("make-admin passes the email, and bootstrap runs alone; neither restarts anything", async () => {
+    const admin = await fixture(restarts)
+    await runJob({ environment: "staging", job: "make-admin", email: "you@answerable.org", timeout: "5m" }, admin.deps)
+    expect(admin.runner.commands()).toEqual([
+      jobUpgrade("--set ops.bootstrap=false --set ops.register=false --set ops.makeAdmin=true", " --set-string ops.adminEmail=you@answerable.org").replace("--timeout 10m", "--timeout 5m"),
+      "kubectl logs -n answerable job/ops-make-admin --all-containers",
     ])
+    const bootstrap = await fixture(restarts)
+    await runJob({ environment: "staging", job: "bootstrap" }, bootstrap.deps)
+    expect(bootstrap.runner.commands()[0]).toBe(jobUpgrade("--set ops.bootstrap=true --set ops.register=false --set ops.makeAdmin=false"))
+    expect(bootstrap.runner.commands().some((command) => command.startsWith("kubectl rollout"))).toBe(false)
   })
 
-  test("pins the digests it is given for the tag it is given", async () => {
-    const f = await fixture(registerReply())
-    await runJob({ environment: "staging", job: "bootstrap", imageTag: TAG, digests: OLD_DIGESTS }, f.deps)
-    expect(f.runner.commands()).toHaveLength(1)
-    expect(f.runner.commands()[0]).toContain(`--set image.tag=${TAG} ${pins(OLD_DIGESTS)}`)
+  test("says so when the Job's log cannot be read, and goes on", async () => {
+    const f = await fixture((call) => (call.argv[1] === "logs" ? { exitCode: 1 } : undefined))
+    await runJob({ environment: "staging", job: "bootstrap" }, f.deps)
+    expect(f.log()).toContain("(The Job's log could not be read: kubectl exited with 1.)")
+    expect(f.log()).toContain("Ran bootstrap in staging.")
   })
 
-  test("refuses digests without the tag they belong to", async () => {
-    const f = await fixture(registerReply())
-    await expect(runJob({ environment: "staging", job: "bootstrap", digests: DIGESTS }, f.deps)).rejects.toThrow(
-      "digests belong to a tag: give the image tag with them",
-    )
+  test("refuses make-admin without an email, an email for another job, an address Helm would split, and starts nothing", async () => {
+    const f = await fixture(restarts)
+    await expect(runJob({ environment: "staging", job: "make-admin" }, f.deps)).rejects.toThrow("make-admin needs --email")
+    await expect(runJob({ environment: "staging", job: "register", email: "you@answerable.org" }, f.deps)).rejects.toThrow("--email belongs to make-admin")
+    for (const email of ["you", "you@answerable.org,ops.bootstrap=true", "you @answerable.org"])
+      await expect(runJob({ environment: "staging", job: "make-admin", email }, f.deps)).rejects.toThrow("--email must be an email address")
+    await expect(runJob({ environment: "production", job: "register" }, f.deps)).rejects.toThrow("does not exist")
+    const bare = await fixture(restarts, { env: {} })
+    await expect(runJob({ environment: "staging", job: "register" }, bare.deps)).rejects.toThrow("KUBE_SERVER is not set")
     expect(f.runner.calls).toEqual([])
-  })
-
-  test("hands the database's CA file to the chart, and refuses to start without it", async () => {
-    const f = await fixture(registerReply())
-    await runJob({ environment: "staging", job: "bootstrap", imageTag: TAG, digests: DIGESTS }, f.deps)
-    expect(f.runner.commands()[0]).toContain(`-f ${VALUES} --set-file database.caPem=${CA} --set image.tag=${TAG}`)
-    const bare = await fixture(registerReply(), { withCa: false })
-    await expect(runJob({ environment: "staging", job: "register" }, bare.deps)).rejects.toThrow(
-      `${CA} does not exist; write it with: bun run setup database-ca --environment staging`,
-    )
     expect(bare.runner.calls).toEqual([])
   })
 
-  test("never touches the secrets", async () => {
-    const f = await fixture(registerReply())
+  test("never touches id-env: run-job needs only the cluster's credentials", async () => {
+    const f = await fixture(restarts, { env: CLUSTER_ENV })
     await runJob({ environment: "staging", job: "register" }, f.deps)
-    expect(f.runner.commands().some((command) => command.startsWith("sops") || command.startsWith("kubectl apply"))).toBe(false)
+    expect(f.runner.commands().some((command) => command.startsWith("kubectl apply"))).toBe(false)
   })
 
   test("prints the Jobs' logs and fails when the Job fails", async () => {
     const f = await fixture((call) => {
       const command = call.argv.join(" ")
       if (command.startsWith("helm upgrade")) return { exitCode: 1 }
-      if (command === "kubectl get jobs -n answerable -o name") return { stdout: "job.batch/ops-register\n" }
-      return registerReply()(call)
+      if (command === "kubectl get jobs -n answerable -o name") return { stdout: "job.batch/ops-make-admin\n" }
+      return restarts(call)
     })
-    await expect(runJob({ environment: "staging", job: "register" }, f.deps)).rejects.toThrow("helm upgrade failed")
-    expect(f.runner.commands()).toContain("kubectl logs -n answerable -l job-name=ops-register --all-containers --prefix --tail=200")
-    expect(f.runner.commands().some((command) => command.startsWith("kubectl rollout"))).toBe(false)
+    await expect(runJob({ environment: "staging", job: "make-admin", email: "you@answerable.org" }, f.deps)).rejects.toThrow("helm upgrade failed")
+    expect(f.runner.commands()).toContain("kubectl logs -n answerable -l job-name=ops-make-admin --all-containers --prefix --tail=200")
   })
 
-  test("refuses a bad tag, a missing values file and missing credentials before any command", async () => {
-    const f = await fixture(registerReply())
-    await expect(runJob({ environment: "staging", job: "register", imageTag: "staging" }, f.deps)).rejects.toThrow(UsageError)
-    await expect(runJob({ environment: "production", job: "register" }, f.deps)).rejects.toThrow("does not exist")
-    const bare = await fixture(registerReply(), { env: {} })
-    await expect(runJob({ environment: "staging", job: "register" }, bare.deps)).rejects.toThrow("KUBE_SERVER is not set")
-    expect(f.runner.calls).toEqual([])
-    expect(bare.runner.calls).toEqual([])
-  })
-
-  test("fails when the release's tag cannot be read", async () => {
-    const f = await fixture((call) => (call.argv[0] === "helm" ? { exitCode: 1, stderr: "Error: release: not found\n" } : undefined))
-    await expect(runJob({ environment: "staging", job: "register" }, f.deps)).rejects.toThrow(
-      "helm get values failed with exit code 1: Error: release: not found",
+  test("fails when a Deployment to restart is missing, or there are none", async () => {
+    const one = await fixture((call) =>
+      call.argv.join(" ") === "kubectl get deployments -n answerable -o name" ? { stdout: "deployment.apps/answerable-id\ndeployment.apps/answerable-toolbox\n" } : restarts(call),
     )
-  })
-
-  test("fails when a Deployment to restart is missing", async () => {
-    const f = await fixture((call) =>
-      call.argv.join(" ") === "kubectl get deployments -n answerable -o name"
-        ? { stdout: "deployment.apps/answerable-id\ndeployment.apps/answerable-toolbox\n" }
-        : registerReply()(call),
-    )
-    await expect(runJob({ environment: "staging", job: "register" }, f.deps)).rejects.toThrow(
+    await expect(runJob({ environment: "staging", job: "register" }, one.deps)).rejects.toThrow(
       "expected Deployments for toolbox and admin-mcp in answerable, found: deployment.apps/answerable-id, deployment.apps/answerable-toolbox",
     )
+    const none = await fixture((call) => (call.argv.join(" ") === "kubectl get deployments -n answerable -o name" ? { stdout: "" } : restarts(call)))
+    await expect(runJob({ environment: "staging", job: "register" }, none.deps)).rejects.toThrow("found: none")
   })
 
-  test("says so when there are no Deployments at all", async () => {
-    const f = await fixture((call) =>
-      call.argv.join(" ") === "kubectl get deployments -n answerable -o name" ? { stdout: "" } : registerReply()(call),
-    )
-    await expect(runJob({ environment: "staging", job: "register" }, f.deps)).rejects.toThrow("found: none")
-  })
-
-  test("fails when the Deployments cannot be listed", async () => {
-    const f = await fixture((call) =>
-      call.argv.join(" ") === "kubectl get deployments -n answerable -o name"
-        ? { exitCode: 1, stderr: "forbidden\n" }
-        : registerReply()(call),
-    )
-    await expect(runJob({ environment: "staging", job: "register" }, f.deps)).rejects.toThrow(
-      "kubectl get deployments failed with exit code 1: forbidden",
-    )
-  })
-
-  test("fails when the restart is refused or does not finish", async () => {
-    const refused = await fixture((call) =>
-      call.argv.slice(0, 3).join(" ") === "kubectl rollout restart" ? { exitCode: 1 } : registerReply()(call),
-    )
-    await expect(runJob({ environment: "staging", job: "register" }, refused.deps)).rejects.toThrow(
-      "kubectl rollout restart failed with exit code 1",
-    )
-    const stuck = await fixture((call) =>
-      call.argv.slice(0, 3).join(" ") === "kubectl rollout status" ? { exitCode: 1 } : registerReply()(call),
-    )
+  test("fails when the Deployments cannot be listed, and when the restart is refused or does not finish", async () => {
+    const listing = await fixture((call) => (call.argv.join(" ") === "kubectl get deployments -n answerable -o name" ? { exitCode: 1, stderr: "forbidden\n" } : restarts(call)))
+    await expect(runJob({ environment: "staging", job: "register" }, listing.deps)).rejects.toThrow("kubectl get deployments failed with exit code 1: forbidden")
+    const refused = await fixture((call) => (call.argv.slice(0, 3).join(" ") === "kubectl rollout restart" ? { exitCode: 1 } : restarts(call)))
+    await expect(runJob({ environment: "staging", job: "register" }, refused.deps)).rejects.toThrow("kubectl rollout restart failed with exit code 1")
+    const stuck = await fixture((call) => (call.argv.slice(0, 3).join(" ") === "kubectl rollout status" ? { exitCode: 1 } : restarts(call)))
     await expect(runJob({ environment: "staging", job: "register" }, stuck.deps)).rejects.toThrow(
       "deployment.apps/answerable-toolbox did not finish restarting (exit code 1)",
     )
-  })
-})
-
-describe("currentTag", () => {
-  test("reads the tag from the release's values, whatever else they hold", async () => {
-    const f = await fixture(() => ({
-      stdout: JSON.stringify({ image: { tag: TAG }, images: { id: { digest: DIGESTS.id } }, ops: { register: false } }),
-    }))
-    expect(await currentTag(f.deps)).toBe(TAG)
-    expect(f.runner.commands()).toEqual(["helm get values answerable --namespace answerable -o json"])
-  })
-
-  test("fails clearly when the release has no tag, null values or no JSON", async () => {
-    for (const stdout of ["null", "{}", JSON.stringify({ image: { tag: "latest" } }), JSON.stringify({ image: { tag: 7 } })]) {
-      const f = await fixture(() => ({ stdout }))
-      await expect(currentTag(f.deps)).rejects.toThrow("has no image.tag of the form sha-<commit>")
-    }
-    const broken = await fixture(() => ({ stdout: "Error: not json" }))
-    await expect(currentTag(broken.deps)).rejects.toThrow("helm get values did not answer JSON")
-  })
-
-  test("fails without credentials", async () => {
-    const f = await fixture(() => undefined, { env: {} })
-    await expect(currentTag(f.deps)).rejects.toThrow(UsageError)
   })
 })

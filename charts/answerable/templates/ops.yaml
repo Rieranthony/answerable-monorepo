@@ -1,13 +1,24 @@
 {{- /*
-The ops image's Jobs (infra/ops/README.md), each switched on for one upgrade by the pipeline (deploy.ts run-job):
-bootstrap, before the migrations, creates the databases and their logins with the postgres-admin login and writes the URL
-Secrets the migrations and the services read; register, after the release and once ID is up, registers the Toolbox and the
-admin MCP in ID, writes their client Secrets and starts the two servers, which wait at zero replicas until their Secret
-exists (_server.tpl). Their ServiceAccount may read and patch exactly the Secrets this run's Jobs own and, for register,
-the two Deployments it starts. Its NetworkPolicy is in network-policies.yaml.
+The ops image's Jobs (infra/ops/README.md), each switched on for one upgrade by the pipeline (deploy.ts):
+- bootstrap, before the migrations, writes the database's certificate authority to the ConfigMap postgres-ca on first
+  use, creates the databases and their logins with the postgres-admin login and writes the URL Secrets the migrations
+  and the services read;
+- register, after the release and once ID is up, registers the Toolbox and the admin MCP in ID, writes their client
+  Secrets and starts the two servers, which wait at zero replicas until their Secret exists (_server.tpl), and, with
+  id.staffDomain and id.entraTenant, connects the staff domain and directory to the platform organisation;
+- make-admin, after register, puts the first staff member, who has signed in once, in the owner and platform-admins
+  groups with ID's root secret, which locks that secret.
+The ServiceAccount of bootstrap and register may read and patch exactly the Secrets and, for bootstrap, the ConfigMap
+their Jobs own and, for register, the two Deployments it starts. make-admin calls only ID and mounts no token. Their
+NetworkPolicy is in network-policies.yaml.
 */ -}}
-{{- if and .Values.images.ops.repository (or .Values.ops.bootstrap .Values.ops.register) }}
+{{- if .Values.images.ops.repository }}
 {{- $scope := dict "root" . "component" "ops" }}
+{{- $switches := dict "bootstrap" .Values.ops.bootstrap "register" .Values.ops.register "make-admin" .Values.ops.makeAdmin }}
+{{- if .Values.ops.makeAdmin }}
+{{- $_ := required "ops.makeAdmin needs ops.adminEmail: the email of the staff member who signed in once" .Values.ops.adminEmail }}
+{{- end }}
+{{- if or .Values.ops.bootstrap .Values.ops.register }}
 {{- $phases := list }}
 {{- $secrets := list }}
 {{- if .Values.ops.bootstrap }}
@@ -44,6 +55,16 @@ rules:
   - apiGroups: [""]
     resources: [secrets]
     verbs: [create]
+  {{- if $.Values.ops.bootstrap }}
+  # The database's certificate authority, which bootstrap writes once, when reading it found none.
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [postgres-ca]
+    verbs: [get, patch]
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [create]
+  {{- end }}
   {{- if $.Values.ops.register }}
   - apiGroups: [apps]
     resources: [deployments]
@@ -61,8 +82,9 @@ subjects:
     namespace: {{ $.Release.Namespace }}
 {{- end }}
 {{- end }}
-{{- range $job := list "bootstrap" "register" }}
-{{- if index $.Values.ops $job }}
+{{- end }}
+{{- range $job := list "bootstrap" "register" "make-admin" }}
+{{- if get $switches $job }}
 ---
 apiVersion: batch/v1
 kind: Job
@@ -72,8 +94,8 @@ metadata:
     {{- include "answerable.labels" $scope | nindent 4 }}
   annotations:
     helm.sh/hook: {{ ternary "pre-install,pre-upgrade" "post-install,post-upgrade" (eq $job "bootstrap") }}
-    # Bootstrap before the migrations (-10 to -8); register after every resource of the release is up.
-    helm.sh/hook-weight: {{ ternary "-20" "10" (eq $job "bootstrap") | quote }}
+    # Bootstrap before the migrations (-10 to -8); register after every resource of the release is up; make-admin last.
+    helm.sh/hook-weight: {{ get (dict "bootstrap" "-20" "register" "10" "make-admin" "20") $job | quote }}
     helm.sh/hook-delete-policy: before-hook-creation
 spec:
   # One attempt: a failure needs a person to read the log, and running the command again is safe once they have.
@@ -85,46 +107,53 @@ spec:
       labels:
         {{- include "answerable.labels" $scope | nindent 8 }}
     spec:
+      {{- if eq $job "make-admin" }}
+      # It calls only ID: no Kubernetes token.
+      automountServiceAccountToken: false
+      {{- else }}
       serviceAccountName: ops
       # The token the Jobs read and write Secrets with, through the Kubernetes API.
       automountServiceAccountToken: true
+      {{- end }}
       restartPolicy: Never
-      {{- include "answerable.podCommon" $ | nindent 6 }}
+      {{- include "answerable.podCommon" (dict "root" $ "database" false) | nindent 6 }}
       containers:
         - name: ops
           image: {{ include "answerable.image" (dict "root" $ "name" "ops") }}
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
           command: ["bun", "infra/ops/src/cli.ts", {{ $job | quote }}]
           env:
+            {{- if eq $job "bootstrap" }}
             - name: OPS_NAMESPACE
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            {{- if eq $job "bootstrap" }}
-            # The managed database's administrative login (CREATEDB and CREATEROLE), as a URL whose sslrootcert is
-            # /etc/ssl/db/ca.pem: a Secret the deploy applies from the sops file.
+            # The managed database's administrative login (CREATEDB and CREATEROLE), as a URL with sslmode=verify-full:
+            # a Secret Terraform writes. Bootstrap verifies the database against the ConfigMap postgres-ca, which it
+            # writes on first use.
             {{- include "answerable.secretEnv" (dict "name" "OPS_DATABASE_ADMIN_URL" "secret" "postgres-admin" "key" "OPS_DATABASE_ADMIN_URL") | nindent 12 }}
-            {{- with $.Values.database.host }}
-            - name: OPS_DATABASE_HOST
-              value: {{ . | quote }}
-            {{- end }}
-            {{- with $.Values.database.port }}
-            - name: OPS_DATABASE_PORT
-              value: {{ . | quote }}
-            {{- end }}
             {{- else }}
-            - name: OPS_ID_URL
-              value: {{ include "answerable.idUrl" $ | quote }}
+            {{- if eq $job "register" }}
+            - name: OPS_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             - name: OPS_TOOLBOX_URL
               value: {{ include "answerable.toolboxUrl" $ | quote }}
             - name: OPS_ADMIN_MCP_URL
               value: {{ include "answerable.adminMcpUrl" $ | quote }}
-            - name: OPS_PLATFORM_SLUG
-              value: {{ $.Values.id.platformOrganization.slug | quote }}
             - name: OPS_CLAUDE_CALLBACK_PORT
               value: {{ $.Values.ops.claudeCallbackPort | quote }}
             - name: OPS_START_DEPLOYMENTS
               value: {{ include "answerable.opsStartDeployments" $ | quote }}
+            {{- with $.Values.id.staffDomain }}
+            - name: OPS_STAFF_DOMAIN
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with $.Values.id.entraTenant }}
+            - name: OPS_ENTRA_TENANT
+              value: {{ . | quote }}
+            {{- end }}
             # A staff token, once ID refuses the root secret (root_locked):
             # kubectl -n answerable create secret generic ops-staff-token --from-literal=OPS_ID_TOKEN=<token>
             - name: OPS_ID_TOKEN
@@ -133,6 +162,14 @@ spec:
                   name: ops-staff-token
                   key: OPS_ID_TOKEN
                   optional: true
+            {{- else }}
+            - name: OPS_ADMIN_EMAIL
+              value: {{ $.Values.ops.adminEmail | quote }}
+            {{- end }}
+            - name: OPS_ID_URL
+              value: {{ include "answerable.idUrl" $ | quote }}
+            - name: OPS_PLATFORM_SLUG
+              value: {{ $.Values.id.platformOrganization.slug | quote }}
             - name: OPS_ID_ROOT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -146,7 +183,7 @@ spec:
           securityContext:
             {{- include "answerable.containerSecurityContext" $ | nindent 12 }}
           volumeMounts:
-            {{- include "answerable.volumeMounts" $ | nindent 12 }}
+            {{- include "answerable.volumeMounts" (dict "root" $ "database" false) | nindent 12 }}
 {{- end }}
 {{- end }}
 {{- end }}

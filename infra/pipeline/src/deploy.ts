@@ -1,42 +1,34 @@
+import { createHash } from "node:crypto"
 import { access, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import {
-  CHART,
-  NAMESPACE,
-  REGISTRY,
-  RELEASE,
-  defaultDatabaseCaFile,
-  defaultSecretsFile,
-  defaultValuesFile,
-  type EnvironmentName,
-} from "./environments"
+import { CHART, NAMESPACE, REGISTRY, RELEASE, defaultValuesFile, type EnvironmentName } from "./environments"
 import { PipelineError, UsageError } from "./errors"
 import { commandLine, type Output, type RunOptions, type RunResult, type Runner } from "./run"
 
 /** What the deploy steps need from the outside world. Tests pass fakes. */
 export type Deps = {
-  /** Runs `sops`, `kubectl` and `helm`. */
+  /** Runs `docker`, `kubectl` and `helm`. */
   run: Runner
   /** Progress for people. The pipeline never writes a secret here. */
   log: Output
-  /** Where `KUBE_SERVER`, `KUBE_CA` and `KUBE_TOKEN` come from; `SOPS_AGE_KEY` reaches `sops` through the process environment. */
+  /** Where `KUBE_SERVER`, `KUBE_CA`, `KUBE_TOKEN` and ID's secrets come from. */
   env: Readonly<Record<string, string | undefined>>
   /** The repository root: commands run there, and every relative path is relative to it. */
   root: string
 }
 
-/** The `ops` Jobs the chart can run on request. */
-const OPS_JOBS = ["bootstrap", "register"] as const
+/** The `ops` Jobs the chart can run on request, and the value that switches each on. */
+const OPS_JOBS = { bootstrap: "ops.bootstrap", register: "ops.register", "make-admin": "ops.makeAdmin" } as const
 
-/** One of {@link OPS_JOBS}. */
-export type OpsJob = (typeof OPS_JOBS)[number]
+/** One of the ops Jobs. */
+export type OpsJob = keyof typeof OPS_JOBS
 
-/** Read the job name of `run-job`: it must be one of {@link OPS_JOBS}. */
+/** Read the job name of `run-job`: it must be one of the ops Jobs. */
 export function parseJob(value: string | undefined): OpsJob {
-  const found = OPS_JOBS.find((job) => job === value)
-  if (!found) throw new UsageError(`the job must be one of ${OPS_JOBS.join(", ")}`)
-  return found
+  const found = Object.keys(OPS_JOBS).find((job) => job === value)
+  if (!found) throw new UsageError(`the job must be one of ${Object.keys(OPS_JOBS).join(", ")}`)
+  return found as OpsJob
 }
 
 /** An image tag the pipeline accepts: the full commit SHA, never a branch or `latest`. */
@@ -46,7 +38,7 @@ const IMAGE_TAG = /^sha-[0-9a-f]{40}$/
 const REGISTERED_SERVERS = ["toolbox", "admin-mcp"]
 
 /** Jobs whose logs are printed when an upgrade fails. */
-const DIAGNOSED_JOBS = /(migrate|bootstrap|register)/
+const DIAGNOSED_JOBS = /(migrate|bootstrap|register|make-admin)/
 
 /** The deployer ServiceAccount's connection to the cluster. */
 export type Cluster = {
@@ -99,12 +91,48 @@ export function assertImageTag(tag: string): void {
   if (!IMAGE_TAG.test(tag)) throw new UsageError(`--image-tag must be sha- and the 40-character commit SHA, got "${tag}"`)
 }
 
+/** ID's secrets the deploy requires, each a variable of the deploy step: the GitHub environment's secrets of the same names. */
+const ID_ENV_REQUIRED = ["BETTER_AUTH_SECRET", "UPSTREAM_TOKEN_SECRETS", "ROOT_ADMIN_SECRET"] as const
+/** The platform applications' credentials: each pair both or neither. */
+const ID_ENV_PAIRS = [
+  ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET"],
+  ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
+] as const
+/** ID's versioned ring of authentication secrets, when one is being rotated (apps/id/README.md). */
+const ID_ENV_OPTIONAL = ["BETTER_AUTH_SECRETS"] as const
+
+/**
+ * The values of the Secret `id-env`, from the deploy's environment: the three required secrets, each platform
+ * application's pair when both halves are set, and `BETTER_AUTH_SECRETS` when it is. Refuses an empty required value
+ * and half a pair, naming the variables, never a value.
+ */
+export function idEnv(env: Deps["env"]): Record<string, string> {
+  const value = (name: string) => env[name]?.trim() || undefined
+  const empty = ID_ENV_REQUIRED.filter((name) => !value(name))
+  if (empty.length > 0)
+    throw new UsageError(`${empty.join(", ")} ${empty.length === 1 ? "is" : "are"} not set: id-env needs ${ID_ENV_REQUIRED.join(", ")}`)
+  const names: string[] = [...ID_ENV_REQUIRED, ...ID_ENV_OPTIONAL.filter(value)]
+  for (const pair of ID_ENV_PAIRS) {
+    const set = pair.filter(value)
+    if (set.length === 1)
+      throw new UsageError(`${pair[0]} and ${pair[1]} go together: ${set[0]} is set and ${pair.find((name) => name !== set[0])} is not`)
+    names.push(...set)
+  }
+  return Object.fromEntries(names.sort().map((name) => [name, value(name)!]))
+}
+
+/** The SHA-256 of `id-env`'s values, keys sorted, as JSON: the chart's `idEnvChecksum`, which rolls ID when a value changes. */
+export function idEnvChecksum(values: Record<string, string>): string {
+  const sorted = Object.fromEntries(Object.keys(values).sort().map((name) => [name, values[name]]))
+  return createHash("sha256").update(JSON.stringify(sorted)).digest("hex")
+}
+
 const IMAGE_NAMES = ["id", "toolbox", "admin-mcp", "ops"] as const
 
 /** One of the four images the release runs; the chart names them the same way in `images.<name>.digest`. */
 type ImageName = (typeof IMAGE_NAMES)[number]
 
-/** The manifest-list digest, `sha256:` and 64 hex characters, of each of the four images. */
+/** The manifest digest, `sha256:` and 64 hex characters, of each of the four images. */
 export type Digests = Record<ImageName, string>
 
 const DIGEST = /^sha256:[0-9a-f]{64}$/
@@ -131,8 +159,8 @@ export function parseDigests(pairs: readonly string[]): Digests | undefined {
 }
 
 /**
- * Ask the registry which manifest list each image's tag points to, so that the release pins the bytes and not a
- * tag that a rerun could move. Needs Docker with buildx; the packages are public, so no login.
+ * Ask the registry which manifest each image's tag points to, so that the release pins the bytes and not a tag that a
+ * rerun could move. Needs Docker with buildx; the packages are public, so no login.
  */
 async function resolveDigests(imageTag: string, deps: Deps): Promise<Digests> {
   const digests: Partial<Digests> = {}
@@ -179,41 +207,39 @@ async function withSession<T>(deps: Deps, cluster: Cluster, use: (session: Sessi
   }
 }
 
-async function requireFiles(root: string, files: string[]): Promise<void> {
-  for (const file of files)
-    try {
-      await access(resolve(root, file))
-    } catch {
-      throw new UsageError(`${file} does not exist (paths are relative to ${root})`)
-    }
+async function requireFile(root: string, file: string): Promise<void> {
+  try {
+    await access(resolve(root, file))
+  } catch {
+    throw new UsageError(`${file} does not exist (paths are relative to ${root})`)
+  }
 }
 
 // What `kubectl apply` prints for an object it applied: its kind, its name and what happened, nothing else.
 const APPLIED = /^[a-z][\w.-]*\/[\w.-]+ (created|configured|unchanged|serverside-applied)$/
 
-// Nothing of kubectl's own output is shown when the apply fails: an API error can quote a value, in any encoding.
-// Set the database's CA file or stop before the cluster is touched, naming the command that writes it.
-async function requireDatabaseCa(root: string, environment: EnvironmentName): Promise<string> {
-  const file = defaultDatabaseCaFile(environment)
-  try {
-    await access(resolve(root, file))
-  } catch {
-    throw new UsageError(`${file} does not exist; write it with: bun run setup database-ca --environment ${environment}`)
-  }
-  return file
-}
-
-async function applySecrets(session: Session, secretsFile: string): Promise<void> {
-  const decrypted = await session.quiet(["sops", "--decrypt", secretsFile])
-  if (decrypted.exitCode !== 0)
-    throw new PipelineError(`sops could not decrypt ${secretsFile} (exit ${decrypted.exitCode}): ${decrypted.stderr.trim()}`)
-  const applied = await session.quiet(["kubectl", "apply", "-n", NAMESPACE, "-f", "-"], { input: decrypted.stdout })
+/**
+ * Apply the Secret `id-env` on kubectl's standard input. Its values are `data`, base64, not `stringData`: kubectl
+ * records what it applied, and only a key it recorded under `data` is removed when a later apply leaves it out (a
+ * platform application's pair, `BETTER_AUTH_SECRETS` after a rotation). Nothing of kubectl's own output is shown when the
+ * apply fails: an API error can quote a value, in any encoding.
+ */
+async function applyIdEnv(session: Session, values: Record<string, string>): Promise<void> {
+  const manifest = JSON.stringify({
+    apiVersion: "v1",
+    kind: "Secret",
+    metadata: { name: "id-env", namespace: NAMESPACE },
+    type: "Opaque",
+    data: Object.fromEntries(Object.entries(values).map(([name, value]) => [name, Buffer.from(value).toString("base64")])),
+  })
+  const applied = await session.quiet(["kubectl", "apply", "-n", NAMESPACE, "-f", "-"], { input: manifest })
   if (applied.exitCode !== 0)
     throw new PipelineError(
-      `kubectl apply of the secrets failed with exit code ${applied.exitCode}; run it by hand with the decrypted file to see why`,
+      `kubectl apply of the Secret id-env failed with exit code ${applied.exitCode}; its output is not shown, since it can quote a value`,
     )
   for (const line of applied.stdout.split("\n"))
     if (APPLIED.test(line.trim())) session.deps.log(`${line.trim()}\n`)
+  session.deps.log(`id-env holds ${Object.keys(values).join(", ")}.\n`)
 }
 
 // The client Secrets that only `register` writes. The chart keeps the Toolbox and the admin MCP at zero replicas until
@@ -241,22 +267,12 @@ async function printJobDiagnostics(session: Session): Promise<void> {
   }
 }
 
-type Upgrade = {
-  install: boolean
-  imageTag: string
-  digests: Digests
-  valuesFile: string
-  /** The database's CA file, relative to the repository root; the chart renders it into the `postgres-ca` ConfigMap. */
-  databaseCaFile: string
-  timeout: string
-  jobs: readonly OpsJob[]
-}
-
-async function upgrade(session: Session, plan: Upgrade): Promise<void> {
+/** `helm upgrade` of the release with `args` after the chart's, which waits for the pods and the Jobs and rolls back on failure. */
+async function upgrade(session: Session, install: boolean, timeout: string, args: readonly string[]): Promise<void> {
   const result = await session.show([
     "helm",
     "upgrade",
-    ...(plan.install ? ["--install"] : []),
+    ...(install ? ["--install"] : []),
     RELEASE,
     CHART,
     "--namespace",
@@ -264,43 +280,15 @@ async function upgrade(session: Session, plan: Upgrade): Promise<void> {
     // Helm 4 deprecated --atomic for --rollback-on-failure; setup-tools pins Helm 4.
     "--rollback-on-failure",
     "--wait",
-    ...(plan.jobs.length ? ["--wait-for-jobs"] : []),
+    "--wait-for-jobs",
     "--timeout",
-    plan.timeout,
-    "-f",
-    plan.valuesFile,
-    "--set-file",
-    `database.caPem=${plan.databaseCaFile}`,
-    "--set",
-    `image.tag=${plan.imageTag}`,
-    ...IMAGE_NAMES.flatMap((name) => ["--set", `images.${name}.digest=${plan.digests[name]}`]),
-    ...plan.jobs.flatMap((job) => ["--set", `ops.${job}=true`]),
+    timeout,
+    ...args,
   ])
   if (result.exitCode === 0) return
   session.deps.log("\nThe upgrade failed. The logs of the migration and ops Jobs follow.\n")
   await printJobDiagnostics(session)
   throw new PipelineError(`helm upgrade failed with exit code ${result.exitCode}`)
-}
-
-/** What the release runs now: the tag, and the digests when the release was deployed by digest. */
-type Release = { tag: string; digests: Digests | undefined }
-
-async function readRelease(session: Session): Promise<Release> {
-  const result = await session.quiet(["helm", "get", "values", RELEASE, "--namespace", NAMESPACE, "-o", "json"])
-  if (result.exitCode !== 0)
-    throw new PipelineError(`helm get values failed with exit code ${result.exitCode}: ${result.stderr.trim()}`)
-  let values: { image?: { tag?: unknown }; images?: Record<string, { digest?: unknown } | undefined> } | null
-  try {
-    values = JSON.parse(result.stdout)
-  } catch {
-    throw new PipelineError("helm get values did not answer JSON")
-  }
-  const tag = values?.image?.tag
-  if (typeof tag !== "string" || !IMAGE_TAG.test(tag))
-    throw new PipelineError(`release ${RELEASE} has no image.tag of the form sha-<commit>; has it been deployed?`)
-  const kept = IMAGE_NAMES.map((name) => values?.images?.[name]?.digest)
-  const complete = kept.every((digest) => typeof digest === "string" && DIGEST.test(digest))
-  return { tag, digests: complete ? (Object.fromEntries(IMAGE_NAMES.map((name, index) => [name, kept[index]])) as Digests) : undefined }
 }
 
 async function restartServers(session: Session, timeout: string): Promise<void> {
@@ -327,98 +315,87 @@ export type DeployOptions = {
   imageTag: string
   /** The digests to pin, when they have been verified already; otherwise they are looked up from the tag. */
   digests?: Digests
-  /** Also run the idempotent `ops` bootstrap Job in this upgrade. */
-  bootstrap?: boolean
-  /** The Helm values overlay; defaults to the environment's. */
-  valuesFile?: string
-  /** The encrypted Secret manifests; defaults to the environment's. */
-  secretsFile?: string
   /** How long Helm waits, as a Go duration; defaults to `10m`. */
   timeout?: string
 }
 
 /**
  * Deploy an image tag to an environment: pin the four images by digest, log in with the deployer token, apply the
- * decrypted secrets, then `helm upgrade --install --rollback-on-failure` with the database's CA file. The upgrade also
- * runs `register` when the Toolbox's or the admin MCP's client Secret does not exist yet, which is the first install.
- * When the upgrade fails the migration and ops Jobs' logs are printed.
+ * Secret `id-env` from the deploy's environment, then `helm upgrade --install --rollback-on-failure` with the ops
+ * bootstrap switched on and `idEnvChecksum`, which rolls ID when a secret changed. The upgrade also runs `register` when
+ * the Toolbox's or the admin MCP's client Secret does not exist yet, which is the first install. When the upgrade fails
+ * the migration and ops Jobs' logs are printed.
  */
 export async function deploy(options: DeployOptions, deps: Deps): Promise<void> {
   assertImageTag(options.imageTag)
-  const valuesFile = options.valuesFile ?? defaultValuesFile(options.environment)
-  const secretsFile = options.secretsFile ?? defaultSecretsFile(options.environment)
-  await requireFiles(deps.root, [valuesFile, secretsFile])
-  const databaseCaFile = await requireDatabaseCa(deps.root, options.environment)
+  const valuesFile = defaultValuesFile(options.environment)
+  await requireFile(deps.root, valuesFile)
   const cluster = readCluster(deps.env)
+  const secrets = idEnv(deps.env)
   const digests = options.digests ?? (await resolveDigests(options.imageTag, deps))
   await withSession(deps, cluster, async (session) => {
-    await applySecrets(session, secretsFile)
+    await applyIdEnv(session, secrets)
     // The first install has no client Secrets, so the servers would wait at zero replicas for ever: register them in this
     // upgrade. Not otherwise: once a person holds platform:write, ID refuses the root secret that register would use.
     const missing = await missingClientSecrets(session)
-    const jobs: OpsJob[] = options.bootstrap ? ["bootstrap"] : []
+    const jobs: OpsJob[] = ["bootstrap"]
     if (missing.length > 0) {
       deps.log(
         `\n${missing.join(" and ")} ${missing.length === 1 ? "does" : "do"} not exist in ${NAMESPACE} yet, so this upgrade also runs register, which creates ${missing.length === 1 ? "it" : "them"} and starts the Toolbox and the admin MCP.\n`,
       )
       jobs.push("register")
     }
-    await upgrade(session, {
-      install: true,
-      imageTag: options.imageTag,
-      digests,
+    await upgrade(session, true, options.timeout ?? "10m", [
+      "-f",
       valuesFile,
-      databaseCaFile,
-      timeout: options.timeout ?? "10m",
-      jobs,
-    })
+      "--set",
+      `image.tag=${options.imageTag}`,
+      ...IMAGE_NAMES.flatMap((name) => ["--set", `images.${name}.digest=${digests[name]}`]),
+      "--set-string",
+      `idEnvChecksum=${idEnvChecksum(secrets)}`,
+      ...jobs.flatMap((job) => ["--set", `${OPS_JOBS[job]}=true`]),
+    ])
     deps.log(`\nDeployed ${options.imageTag} to ${options.environment}.\n`)
   })
 }
+
+/** An address Helm's `--set-string` keeps whole: no comma, which would split it, and no backslash or space. */
+const EMAIL = /^[^\s@,\\]+@[^\s@,\\]+\.[^\s@,\\]+$/
 
 /** What `runJob` does. */
 export type RunJobOptions = {
   environment: EnvironmentName
   job: OpsJob
-  /** The tag to run; defaults to the one the release runs now, with the digests it runs. */
-  imageTag?: string
-  /** The digests of `imageTag`, when they have been verified already; otherwise they are looked up. Needs `imageTag`. */
-  digests?: Digests
-  /** The Helm values overlay; defaults to the environment's. */
-  valuesFile?: string
+  /** `make-admin`'s staff member: the email they signed in with. */
+  email?: string
   /** How long Helm and the restarts wait, as a Go duration; defaults to `10m`. */
   timeout?: string
 }
 
 /**
- * Run an `ops` Job once: upgrade the release, on what it runs now unless told otherwise, with the Job's value
- * switched on, wait for the Job, and after `register` restart the Toolbox and the admin MCP so they read the client secrets the Job wrote.
+ * Run an `ops` Job once: upgrade the release on the values it runs (`--reset-then-reuse-values`, so the images, their
+ * digests and `idEnvChecksum` stay) with this Job alone switched on, wait for it, and print its log. After `register`
+ * it restarts the Toolbox and the admin MCP so they read the client secrets the Job wrote.
  */
 export async function runJob(options: RunJobOptions, deps: Deps): Promise<void> {
-  if (options.imageTag !== undefined) assertImageTag(options.imageTag)
-  if (options.digests && options.imageTag === undefined) throw new UsageError("digests belong to a tag: give the image tag with them")
-  const valuesFile = options.valuesFile ?? defaultValuesFile(options.environment)
-  await requireFiles(deps.root, [valuesFile])
-  const databaseCaFile = await requireDatabaseCa(deps.root, options.environment)
+  if (options.job === "make-admin" && !options.email) throw new UsageError("make-admin needs --email, the address the staff member signed in with")
+  if (options.job !== "make-admin" && options.email !== undefined) throw new UsageError("--email belongs to make-admin")
+  if (options.email !== undefined && !EMAIL.test(options.email)) throw new UsageError(`--email must be an email address, got "${options.email}"`)
+  const valuesFile = defaultValuesFile(options.environment)
+  await requireFile(deps.root, valuesFile)
   const cluster = readCluster(deps.env)
   const timeout = options.timeout ?? "10m"
   await withSession(deps, cluster, async (session) => {
-    let imageTag = options.imageTag
-    let digests = options.digests
-    if (imageTag === undefined) {
-      const release = await readRelease(session)
-      imageTag = release.tag
-      digests = release.digests
-    }
-    digests ??= await resolveDigests(imageTag, deps)
-    await upgrade(session, { install: false, imageTag, digests, valuesFile, databaseCaFile, timeout, jobs: [options.job] })
+    await upgrade(session, false, timeout, [
+      "--reset-then-reuse-values",
+      "-f",
+      valuesFile,
+      ...Object.entries(OPS_JOBS).flatMap(([job, value]) => ["--set", `${value}=${job === options.job}`]),
+      ...(options.email ? ["--set-string", `ops.adminEmail=${options.email}`] : []),
+    ])
+    const log = await session.show(["kubectl", "logs", "-n", NAMESPACE, `job/ops-${options.job}`, "--all-containers"])
+    if (log.exitCode !== 0) deps.log(`(The Job's log could not be read: kubectl exited with ${log.exitCode}.)\n`)
     if (options.job === "register") await restartServers(session, timeout)
-    deps.log(`\nRan ${options.job} in ${options.environment} on ${imageTag}.\n`)
+    deps.log(`\nRan ${options.job} in ${options.environment}.\n`)
   })
-}
-
-/** The image tag an environment's release runs now, read from the release's own values. */
-export async function currentTag(deps: Deps): Promise<string> {
-  const cluster = readCluster(deps.env)
-  return withSession(deps, cluster, async (session) => (await readRelease(session)).tag)
 }

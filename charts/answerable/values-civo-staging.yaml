@@ -1,45 +1,15 @@
 # Staging on Civo, in the answerable-staging account (D28), behind Cloudflare on answerable-staging.uk (D12). The pipeline
-# sets image.tag, and database.caPem with --set-file database.caPem=infra/civo/envs/staging/database-ca.pem (bun run setup
-# database-ca --environment staging); everything else about the environment is here. The Ingresses' certificates come from
-# the Issuer letsencrypt that charts/platform renders in this namespace.
+# sets the images and idEnvChecksum; Terraform writes the ConfigMap trusted-proxies and the Secrets postgres-admin and
+# origin-tls; everything else about the environment is here.
 
 hostnames:
   id: id.answerable-staging.uk
   toolbox: toolbox.answerable-staging.uk
   adminMcp: admin-mcp.answerable-staging.uk
 
-# The trusted_proxy_cidrs output of infra/civo/envs/staging: Cloudflare's ranges (api.cloudflare.com/client/v4/ips, read on
-# 13 October 2026, etag 38f79d050aa027e3be3865e495dcc9bc), the private network the load balancer connects from, and the
-# pod range Traefik connects from. A change in Cloudflare's list changes this file and the Terraform apply together.
-trustedProxyCidrs:
-  - 173.245.48.0/20
-  - 103.21.244.0/22
-  - 103.22.200.0/22
-  - 103.31.4.0/22
-  - 141.101.64.0/18
-  - 108.162.192.0/18
-  - 190.93.240.0/20
-  - 188.114.96.0/20
-  - 197.234.240.0/22
-  - 198.41.128.0/17
-  - 162.158.0.0/15
-  - 104.16.0.0/13
-  - 104.24.0.0/14
-  - 172.64.0.0/13
-  - 131.0.72.0/22
-  - 2400:cb00::/32
-  - 2606:4700::/32
-  - 2803:f800::/32
-  - 2405:b500::/32
-  - 2405:8100::/32
-  - 2a06:98c0::/29
-  - 2c0f:f248::/32
-  - 10.10.0.0/24
-  - 10.42.0.0/16
-
 id:
   autoscaling: { enabled: true, minReplicas: 2, maxReplicas: 4 }
-  # The platform applications' endpoint origins (docs/06). The client IDs arrive with the staging app registrations (B7).
+  # The platform applications' endpoint origins (docs/06).
   trustedOrigins:
     - https://login.microsoftonline.com
     - https://graph.microsoft.com
@@ -62,7 +32,7 @@ networkPolicy:
     - ipBlock:
         cidr: 0.0.0.0/0
   kubernetesApiPorts: [6443]
-  # The Civo database sits in the environment's private network (infra/civo/envs/staging, network_cidr).
+  # The Civo database sits in the environment's private network (network_cidr in infra/civo/envs/staging.tfvars).
   database:
     - ipBlock:
         cidr: 10.10.0.0/24

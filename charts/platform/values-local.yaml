@@ -1,6 +1,7 @@
 # The kind stack (infra/k8s/local). kind publishes Traefik's websecure host port on the laptop's 127.0.0.1:48443; there
-# is no cloud load balancer and no Cloudflare. The stack adds Cloudflare's stand-in for calls made inside the cluster, an
-# nginx beside Traefik in its pod, once cert-manager has issued its certificates (infra/k8s/local/platform-edge.yaml).
+# is no cloud load balancer and no Cloudflare. The stack installs it with its stand-in for Cloudflare's origin-pull CA as
+# originPull.caPem, as Terraform passes Cloudflare's, and adds Cloudflare's stand-in for calls made inside the cluster, an
+# nginx beside Traefik in its pod (infra/k8s/local/platform-edge.yaml).
 
 traefik:
   deployment:
@@ -25,9 +26,3 @@ traefik:
       forwardedHeaders:
         trustedIPs:
           - 127.0.0.1/32
-
-# The stack's own certificate authority. Its stand-in for Cloudflare's origin-pull CA comes after the first install, as
-# originPull.caPem on the upgrade that adds the edge (infra/k8s/local/stack.ts): empty until then.
-issuers:
-  local:
-    enabled: true

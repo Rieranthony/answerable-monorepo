@@ -4,23 +4,23 @@
   value: {{ include "answerable.idUrl" . | quote }}
 - name: BETTER_AUTH_TRUSTED_ORIGINS
   value: {{ join "," .Values.id.trustedOrigins | quote }}
+# The hops whose X-Forwarded-For entries ID skips, which Terraform writes from Cloudflare's live list.
 - name: TRUSTED_PROXY_CIDRS
-  value: {{ join "," .Values.trustedProxyCidrs | quote }}
+  valueFrom:
+    configMapKeyRef:
+      name: {{ .Values.trustedProxies.configMap }}
+      key: cidrs
 - name: PLATFORM_ORGANIZATION_SLUG
   value: {{ .Values.id.platformOrganization.slug | quote }}
 - name: PLATFORM_ORGANIZATION_NAME
   value: {{ .Values.id.platformOrganization.name | quote }}
-{{- with .Values.id.microsoftClientId }}
-- name: MICROSOFT_CLIENT_ID
-  value: {{ . | quote }}
-{{- end }}
-{{- with .Values.id.googleClientId }}
-- name: GOOGLE_CLIENT_ID
-  value: {{ . | quote }}
-{{- end }}
 {{ include "answerable.secretEnv" (dict "name" "DATABASE_URL" "secret" "id-database" "key" "DATABASE_URL") }}
 {{- end -}}
-{{- /* id-env holds ID's own secrets, by their variable names: BETTER_AUTH_SECRET, UPSTREAM_TOKEN_SECRETS, ROOT_ADMIN_SECRET and the platform applications' client secrets. */ -}}
+{{- /*
+id-env holds ID's own secrets, by their variable names: BETTER_AUTH_SECRET, UPSTREAM_TOKEN_SECRETS, ROOT_ADMIN_SECRET and the
+platform applications' client IDs and secrets, which the deploy writes from the GitHub environment. idEnvChecksum, the
+deploy's SHA-256 of them, rolls ID's pods when one changes, as a new tag of the same commit would not.
+*/ -}}
 {{- $envFrom := "- secretRef:\n    name: id-env" -}}
 {{ include "answerable.server" (dict
   "root" .
@@ -31,5 +31,6 @@
   "host" .Values.hostnames.id
   "env" (include "answerable.idEnv" .)
   "envFrom" $envFrom
+  "podAnnotations" (dict "checksum/id-env" (.Values.idEnvChecksum | toString))
   "readiness" "/readyz"
   "liveness" "/healthz") }}

@@ -1,28 +1,27 @@
 # charts/platform
 
-The cluster's shared pieces: Traefik (the edge, D31), cert-manager and its issuers, the Traefik TLS options that demand Cloudflare's origin-pull certificate, and the Grafana agent (off until Grafana Cloud exists). Release `platform`, namespace `platform`. Terraform installs it with the cluster's admin credential (`infra/civo/modules/platform`); the kind stack installs it with `values-local.yaml` (`infra/k8s/local`).
+The cluster's edge: Traefik (D31) and the Traefik TLS option that demands Cloudflare's origin-pull certificate. Release `platform`, namespace `platform`. Terraform installs it with the cluster's admin credential (`infra/civo/modules/platform`); the kind stack installs it with `values-local.yaml` (`infra/k8s/local`). Its one dependency is Traefik's OCI chart.
 
 ## What it renders outside its namespace
 
-All in `answerable`, beside the Ingresses that use them:
+Both in `answerable`, beside the Ingresses they guard:
 
 | Object | From | Notes |
 | --- | --- | --- |
-| TLSOptions `origin-pull` and `default` | always | Every TLS connection must present a client certificate the origin-pull CA signed (D19) |
-| Secret `cloudflare-origin-pull-ca`, key `ca.crt` | `originPull.caPem` | Cloudflare's origin-pull CA, which both TLS options name |
-| Issuer `letsencrypt` | `issuers.letsencrypt.enabled` (the Civo overlays) | Let's Encrypt through DNS-01 in the environment's Cloudflare zone. It reads the Secret `cloudflare-api-token`, key `api-token`, in `answerable`, which the deploy applies from the `sops` file. A post-install hook, after cert-manager's webhook is up |
+| TLSOption `default` | always | Every TLS connection must present a client certificate the origin-pull CA signed (D19). Traefik applies it to every router that names no option, which every Ingress of `charts/answerable` is; only `answerable` may define it (`defaultTLSResourcesNamespace`), and a router naming a conflicting option is refused (`strictTLSOptions`) |
+| Secret `cloudflare-origin-pull-ca`, key `ca.crt` | `originPull.caPem` | Cloudflare's origin-pull CA, which the option names |
 
-The kind stack's issuer is the ClusterIssuer `local`, a self-signed CA (`issuers.local.enabled`). There is no ACME ClusterIssuer.
+The certificate Traefik serves is the Secret `origin-tls` in `answerable`, which the Ingresses name: Terraform writes it from Cloudflare's Origin CA; the kind stack writes one from its own CA.
 
 ## Values supplied at install
 
 | Value | Who passes it | Empty |
 | --- | --- | --- |
-| `originPull.caPem` | Terraform, from `infra/civo/envs/<environment>/edge-ca/ca.pem` (`bun run setup origin-pull`); the kind stack, its stand-in's CA | The render fails on the Civo overlays (`originPull.caRequired`), naming the value. Elsewhere no Secret is rendered, and Traefik refuses every client certificate |
+| `originPull.caPem` | Terraform, from its edge module's origin-pull CA; the kind stack, its stand-in's | The render fails on the Civo overlays (`originPull.caRequired`), naming the value. Elsewhere no Secret is rendered, and Traefik refuses every client certificate |
 | `traefik.ports.websecure.forwardedHeaders.trustedIPs`, `traefik.service.annotations` | Terraform | Traefik keeps no forwarded header; the load balancer has no firewall |
 
 A `caPem` that is not PEM fails the render too.
 
 ## Tests
 
-`infra/k8s/charts.test.ts` renders every overlay (`bun --filter @answerable/infra-k8s test:charts`); `bun run infra:check` lints it and validates it with kubeconform, with a placeholder certificate for `originPull.caPem`.
+`infra/k8s/charts.test.ts` renders every overlay (`bun --filter @answerable/infra-k8s test:charts`); `bun run infra:check` lints it and validates it with kubeconform, with a placeholder certificate for `originPull.caPem`. `bun run infra:test` proves in a kind cluster that the `default` option alone keeps every host closed.

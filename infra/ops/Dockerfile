@@ -1,6 +1,7 @@
-# The ops image: database bootstrap and ID registration (infra/ops/README.md). Build from the repository root:
+# The ops image: the database bootstrap, the registration in ID and the first administrator (infra/ops/README.md).
+# Build from the repository root:
 # docker build -f infra/ops/Dockerfile -t answerable/ops .
-# The chart's Jobs run it as bun infra/ops/src/cli.ts bootstrap or register.
+# The chart's Jobs run it as bun infra/ops/src/cli.ts bootstrap, register or make-admin.
 ARG BUN_IMAGE=oven/bun:1.3.1-slim@sha256:86604aff15a156a8854137896af174e2d29e2310f9c9f1aa63de13882e25893d
 
 # The lockfile and every workspace's package.json, alone, so that the install layer changes only when they do.

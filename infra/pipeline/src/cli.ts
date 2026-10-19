@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util"
 import { resolve } from "node:path"
-import { currentTag, deploy, parseDigests, parseJob, runJob, type Deps } from "./deploy"
+import { deploy, parseDigests, parseJob, runJob, type Deps } from "./deploy"
 import { hostsFor, parseEnvironment } from "./environments"
 import { PipelineError, UsageError } from "./errors"
 import { systemRunner, type Output, type Runner } from "./run"
@@ -36,16 +36,17 @@ export function systemDeps(): CliDeps {
 }
 
 const USAGE = `Usage:
-  bun infra/pipeline/src/cli.ts deploy --environment <staging|production> --image-tag <sha-commit> [--image-digest <image>=sha256:<hex> x4] [--bootstrap] [--values <file>] [--secrets <file>] [--timeout <10m>]
-  bun infra/pipeline/src/cli.ts run-job <bootstrap|register> --environment <staging|production> [--image-tag <sha-commit> [--image-digest <image>=sha256:<hex> x4]] [--values <file>] [--timeout <10m>]
-  bun infra/pipeline/src/cli.ts current-tag
+  bun infra/pipeline/src/cli.ts deploy --environment <staging|production> --image-tag <sha-commit> [--image-digest <image>=sha256:<hex> x4] [--timeout <10m>]
+  bun infra/pipeline/src/cli.ts run-job <bootstrap|register|make-admin> --environment <staging|production> [--email <address>] [--timeout <10m>]
   bun infra/pipeline/src/cli.ts smoke --environment <staging|production> [--wait <seconds>] [--interval <seconds>]
 
-deploy and run-job pin the four images (id, toolbox, admin-mcp, ops) by manifest digest: given with
---image-digest for all four, or looked up with docker buildx from the tag (run-job without a tag keeps the digests
-the release runs). deploy, run-job and current-tag read the cluster from KUBE_SERVER, KUBE_CA and KUBE_TOKEN;
-deploy also needs SOPS_AGE_KEY. current-tag prints the tag the release runs on standard output; everything else reports on
-standard error. smoke prints its table on standard output. Exit codes: 0 done, 1 failed, 2 wrong usage.
+deploy pins the four images (id, toolbox, admin-mcp, ops) by manifest digest: given with --image-digest for all
+four, or looked up with docker buildx from the tag. It writes the Secret id-env from BETTER_AUTH_SECRET,
+UPSTREAM_TOKEN_SECRETS and ROOT_ADMIN_SECRET, the MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET pair and the
+GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET pair when set, and BETTER_AUTH_SECRETS when set. run-job runs one ops Job on
+the release's own values; make-admin needs --email. deploy and run-job read the cluster from KUBE_SERVER, KUBE_CA and
+KUBE_TOKEN and report on standard error. smoke prints its table on standard output. Exit codes: 0 done, 1 failed,
+2 wrong usage.
 `
 
 function parse<const Options extends NonNullable<Parameters<typeof parseArgs>[0]>["options"]>(args: readonly string[], options: Options) {
@@ -83,9 +84,6 @@ async function runCommand(command: string, args: readonly string[], deps: CliDep
         environment: { type: "string" },
         "image-tag": { type: "string" },
         "image-digest": { type: "string", multiple: true },
-        bootstrap: { type: "boolean" },
-        values: { type: "string" },
-        secrets: { type: "string" },
         timeout: { type: "string" },
       })
       noPositionals(positionals, command)
@@ -94,9 +92,6 @@ async function runCommand(command: string, args: readonly string[], deps: CliDep
           environment: parseEnvironment(values.environment),
           imageTag: require_(values["image-tag"], "--image-tag"),
           digests: parseDigests(values["image-digest"] ?? []),
-          bootstrap: values.bootstrap,
-          valuesFile: values.values,
-          secretsFile: values.secrets,
           timeout: values.timeout,
         },
         deployDeps(deps),
@@ -106,9 +101,7 @@ async function runCommand(command: string, args: readonly string[], deps: CliDep
     case "run-job": {
       const { values, positionals } = parse(args, {
         environment: { type: "string" },
-        "image-tag": { type: "string" },
-        "image-digest": { type: "string", multiple: true },
-        values: { type: "string" },
+        email: { type: "string" },
         timeout: { type: "string" },
       })
       if (positionals.length !== 1) throw new UsageError("run-job takes exactly one job name")
@@ -116,19 +109,11 @@ async function runCommand(command: string, args: readonly string[], deps: CliDep
         {
           environment: parseEnvironment(values.environment),
           job: parseJob(positionals[0]),
-          imageTag: values["image-tag"],
-          digests: parseDigests(values["image-digest"] ?? []),
-          valuesFile: values.values,
+          email: values.email,
           timeout: values.timeout,
         },
         deployDeps(deps),
       )
-      return 0
-    }
-    case "current-tag": {
-      const { positionals } = parse(args, {})
-      noPositionals(positionals, command)
-      deps.out(`${await currentTag(deployDeps(deps))}\n`)
       return 0
     }
     case "smoke": {

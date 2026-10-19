@@ -1,7 +1,7 @@
-# Defaults: production-shaped and cloud-neutral. Each environment's overlay (values-<cloud>-<environment>.yaml) sets its
-# hostnames, trusted proxies, network and sizes; the pipeline sets image.tag and database.caPem. The chart creates no
-# namespace and no Secret: Terraform creates the namespace, the deploy applies the human-provided Secrets from the sops
-# file, and the ops Jobs write the generated Secrets. It renders the postgres-ca ConfigMap from database.caPem.
+# Defaults: production-shaped. Each environment's overlay (values-civo-<environment>.yaml) sets its hostnames, network and
+# sizes; the pipeline sets image.tag, the digests and idEnvChecksum. The chart creates no namespace, Secret or ConfigMap:
+# Terraform creates the namespace and writes trusted-proxies, postgres-admin and origin-tls; the deploy writes id-env from
+# the GitHub environment; the ops Jobs write postgres-ca and the generated Secrets.
 
 image:
   # sha-<40 hex> from the pipeline, local on a laptop: every image's tag unless it has a digest, and the release's version
@@ -36,30 +36,21 @@ publicPort: ""
 ingress:
   # Traefik's IngressClass (charts/platform, D31).
   className: traefik
-  # The cert-manager issuer of each hostname's certificate: the namespaced Issuer letsencrypt that charts/platform renders
-  # in this namespace, beside the Cloudflare token it reads. kind is Issuer or ClusterIssuer (the kind stack's local).
-  issuer:
-    kind: Issuer
-    name: letsencrypt
-  # The Traefik TLSOption, in this namespace, that requires Cloudflare's origin-pull client certificate (D19); charts/platform
-  # renders it beside the Secret cloudflare-origin-pull-ca.
-  tlsOption: origin-pull
+  # The Secret (type kubernetes.io/tls) every Ingress serves, one certificate for the three hostnames: Cloudflare's Origin
+  # CA certificate, which Terraform writes in this namespace (the kind stack writes one from its own CA). The Ingresses
+  # name no TLS option: Traefik's default one, which charts/platform renders here, demands Cloudflare's origin-pull
+  # client certificate (D19).
+  tlsSecret: origin-tls
 
-database:
-  # The database's certificate authority (PEM), which the chart renders as the ConfigMap caConfigMap (key ca.pem), mounted
-  # at /etc/ssl/db/ca.pem: the sslrootcert of every database URL. The deploy passes it with
-  # --set-file database.caPem=infra/civo/envs/<environment>/database-ca.pem; the kind stack passes its database's CA.
-  # Empty fails the render.
-  caPem: ""
-  caConfigMap: postgres-ca
-  # The host and port the services reach the database at, which the ops bootstrap writes into their URLs. Empty: those of
-  # the administrative URL in the postgres-admin Secret.
-  host: ""
-  port: ""
+# ID's TRUSTED_PROXY_CIDRS: key cidrs of this ConfigMap, comma-separated, the hops whose X-Forwarded-For entries ID skips
+# (Cloudflare's ranges, the private network the load balancer connects from, the pod range). Terraform writes it from
+# Cloudflare's live list; ID's pods do not start without it.
+trustedProxies:
+  configMap: trusted-proxies
 
-# ID's TRUSTED_PROXY_CIDRS: the hops whose X-Forwarded-For entries ID skips (Cloudflare's ranges, the load balancer's
-# network, the pod range). Required in production; ID refuses to start without it.
-trustedProxyCidrs: []
+# The SHA-256 of id-env's values, which the deploy computes and sets: a changed value changes ID's pod template, so a
+# rotated secret rolls ID on the next deploy.
+idEnvChecksum: ""
 
 # A ConfigMap whose ca.pem the services trust for outbound HTTPS (NODE_EXTRA_CA_CERTS), for an issuer whose certificate is
 # not public. Only the kind stack needs it.
@@ -89,8 +80,11 @@ id:
   trustedOrigins: []
   # More egress rules for ID's pods (NetworkPolicy egress entries), such as a company directory on a private network.
   extraEgress: []
-  microsoftClientId: ""
-  googleClientId: ""
+  # The staff email domain (answerable.org) and the staff directory's Microsoft Entra tenant ID (a GUID). With both, the
+  # ops register Job adds the domain to the platform organisation and connects the tenant through Answerable's Microsoft
+  # platform application (MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET in id-env), as onboard.mdx's First run does.
+  staffDomain: ""
+  entraTenant: ""
   # Any other non-secret variable from docs/06's configuration table.
   env: {}
 
@@ -129,12 +123,16 @@ migrations:
   backoffLimit: 1
   activeDeadlineSeconds: 600
 
-# The ops image's Jobs (infra/ops/README.md): bootstrap creates the databases and their logins and writes their Secrets
-# before the migrations; register registers the Toolbox and the admin MCP in ID after the release, writes their client
-# Secrets and starts them. The pipeline switches one on per run (deploy.ts run-job).
+# The ops image's Jobs (infra/ops/README.md): bootstrap writes the database's certificate authority on first use, creates
+# the databases and their logins and writes their Secrets before the migrations; register registers the Toolbox and the
+# admin MCP in ID after the release, writes their client Secrets and starts them; make-admin makes adminEmail's member, who
+# has signed in once, an owner and a platform administrator, which locks ID's root secret. The deploy switches bootstrap
+# on every time and register on the first install; deploy.ts run-job switches one on for one upgrade.
 ops:
   bootstrap: false
   register: false
+  makeAdmin: false
+  adminEmail: ""
   # Claude Code's --callback-port, in the redirect URI of the host clients register creates (docs/admin/setup).
   claudeCallbackPort: 47700
   activeDeadlineSeconds: 600

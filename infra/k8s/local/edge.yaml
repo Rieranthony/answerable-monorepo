@@ -1,82 +1,14 @@
-# Cloudflare's stand-in for the kind stack, applied in the platform namespace after charts/platform and before
-# platform-edge.yaml puts the nginx beside Traefik.
+# Cloudflare's stand-in for the kind stack, applied in the platform namespace before charts/platform, whose
+# platform-edge.yaml puts the nginx beside Traefik. The test writes its two Secrets first, from certificates it makes with
+# openssl (infra/k8s/local/stack.ts):
 #
-# - origin-pull-ca: the certificate authority whose ca.crt Traefik verifies client certificates against (the TLSOptions
-#   of charts/platform), as the one Answerable uploads to Cloudflare does (D19). The test passes its certificate to
-#   charts/platform as originPull.caPem, which renders answerable/cloudflare-origin-pull-ca, as Terraform does on Civo.
-# - edge-origin-pull: the client certificate the edge presents, as Cloudflare does; the test presents it too.
-# - edge-tls: the edge's server certificate for the public names, from the stack's CA (charts/platform's local issuer).
-# - edge: a Service at a fixed address, which the pods' /etc/hosts gives for the public names (values-local.yaml).
-apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: origin-pull-root
-  namespace: platform
-spec:
-  selfSigned: {}
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: origin-pull-ca
-  namespace: platform
-spec:
-  isCA: true
-  commonName: Answerable local origin-pull CA
-  secretName: origin-pull-ca
-  duration: 720h
-  privateKey:
-    algorithm: ECDSA
-    size: 256
-  issuerRef:
-    kind: Issuer
-    name: origin-pull-root
----
-apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: origin-pull
-  namespace: platform
-spec:
-  ca:
-    secretName: origin-pull-ca
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: edge-origin-pull
-  namespace: platform
-spec:
-  secretName: edge-origin-pull
-  commonName: origin-pull.local
-  usages: [client auth, digital signature]
-  privateKey:
-    algorithm: ECDSA
-    size: 256
-  issuerRef:
-    kind: Issuer
-    name: origin-pull
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: edge-tls
-  namespace: platform
-spec:
-  secretName: edge-tls
-  dnsNames:
-    - id.127-0-0-1.sslip.io
-    - toolbox.127-0-0-1.sslip.io
-    - admin-mcp.127-0-0-1.sslip.io
-  usages: [server auth, digital signature]
-  privateKey:
-    algorithm: ECDSA
-    size: 256
-  issuerRef:
-    group: cert-manager.io
-    kind: ClusterIssuer
-    name: local
----
+# - edge-origin-pull: the client certificate the edge presents, as Cloudflare does, from the stand-in for Cloudflare's
+#   origin-pull CA, which the test passes to charts/platform as originPull.caPem; the test presents it too.
+# - edge-tls: the edge's server certificate for the public names and ca.crt, the stack's CA, which also signed origin-tls,
+#   the certificate Traefik serves.
+#
+# Here: the edge's nginx configuration, and a Service at a fixed address, which the pods' /etc/hosts gives for the public
+# names (values-local.yaml).
 apiVersion: v1
 kind: ConfigMap
 metadata:

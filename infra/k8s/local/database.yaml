@@ -1,63 +1,10 @@
 # The kind stack's PostgreSQL 17, standing in for the managed database: TLS only (plain connections are refused by
-# pg_hba), a server certificate from a certificate authority of its own (database-ca, which the services trust through
-# the postgres-ca ConfigMap and nothing else), and, as a managed database starts, one administrative login that may create
-# databases and roles but is not a superuser. The ops bootstrap Job creates the databases and their logins with it. The
-# test creates the Secret postgres-bootstrap first: the superuser's password and admin.sql, which runs once when the data
-# directory is created (infra/k8s/local/stack.ts writes it with a throwaway password).
-apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: database-root
-  namespace: database
-spec:
-  selfSigned: {}
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: database-ca
-  namespace: database
-spec:
-  isCA: true
-  commonName: Answerable local database CA
-  secretName: database-ca
-  duration: 720h
-  privateKey:
-    algorithm: ECDSA
-    size: 256
-  issuerRef:
-    kind: Issuer
-    name: database-root
----
-apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: database-ca
-  namespace: database
-spec:
-  ca:
-    secretName: database-ca
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: postgres-tls
-  namespace: database
-spec:
-  secretName: postgres-tls
-  commonName: postgres.database.svc.cluster.local
-  dnsNames:
-    - postgres.database.svc.cluster.local
-    - postgres.database.svc
-    - postgres.database
-  usages: [server auth, digital signature, key encipherment]
-  privateKey:
-    algorithm: ECDSA
-    size: 256
-  issuerRef:
-    kind: Issuer
-    name: database-ca
----
+# pg_hba), a server certificate from a certificate authority of its own, and, as a managed database starts, one
+# administrative login that may create databases and roles but is not a superuser. The ops bootstrap Job fetches that
+# authority into the postgres-ca ConfigMap, which the services trust and nothing else, and creates the databases and their
+# logins with the login. The test creates two Secrets first (infra/k8s/local/stack.ts): postgres-tls, the server's key and
+# its certificate followed by the authority's, made with openssl; and postgres-bootstrap, the superuser's password and
+# admin.sql, which runs once when the data directory is created, with throwaway passwords.
 apiVersion: v1
 kind: ConfigMap
 metadata:

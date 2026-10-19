@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { type Admin, setSsoProvider } from "@answerable/acceptance"
+import { X509Certificate } from "node:crypto"
 import type { SignInInput } from "./sign-in"
 import { databaseAdmin, exec, hosts, image, images, origin, type Stack, startStack, step, timings } from "./stack"
 
@@ -45,6 +46,21 @@ async function untilServed(url: string, ms = 90_000) {
   }
   await stack!.diagnose(`${url} did not answer through the edge within ${ms / 1000} s`)
   throw new Error(`${url} did not answer { status: "ok" } through the edge within ${ms / 1000} s; last: ${last}`)
+}
+
+/**
+ * Wait until `url` answers 200 through the edge `times` times in a row, each within 2 s. After a rollout Traefik sends
+ * requests to the old pod's address for a moment (measured: 2.5 s in kind after `rollout status`), and the old pod, which
+ * stops within a second of SIGTERM, is gone, so such a request hangs until Traefik's 30-second dial timeout.
+ */
+async function untilSettled(url: string, times = 8, ms = 60_000) {
+  let streak = 0
+  for (const deadline = Date.now() + ms; Date.now() < deadline; await Bun.sleep(250)) {
+    const answered = await viaIngress(url, { signal: AbortSignal.timeout(2000) }).then(response => response.status === 200, () => false)
+    streak = answered ? streak + 1 : 0
+    if (streak >= times) return
+  }
+  throw new Error(`${url} did not answer ${times} times in a row through the edge within ${ms / 1000} s`)
 }
 
 afterAll(async () => {
@@ -236,7 +252,8 @@ describe("inside the cluster", () => {
     // The Toolbox serves as its restricted runtime login, which its migration provisioned.
     expect(result.verified).toBe("ssl=true as answerable_toolbox_runtime")
     expect(result.plaintext).toContain("no encryption")
-    expect(result.wrongAuthority).toContain("unable to verify")
+    // The database presents its root with its certificate, so a wrong authority meets a self-signed root it does not trust.
+    expect(result.wrongAuthority).toMatch(/^refused: (self[- ]signed certificate in certificate chain|unable to verify)/)
     expect(result.bunAlone).toStartWith("refused")
   })
 
@@ -258,7 +275,7 @@ describe("inside the cluster", () => {
       }))`)
     expect(result.verified).toBe("ssl=true as answerable_id_runtime")
     expect(result.plaintext).toContain("no encryption")
-    expect(result.wrongAuthority).toMatch(/self-signed|unable to (verify|get)/)
+    expect(result.wrongAuthority).toMatch(/^refused: .*(self[- ]signed|unable to (verify|get))/)
   })
 
   test("ID provisions the platform organisation on its first start and verifies it on the next", async () => {
@@ -269,15 +286,26 @@ describe("inside the cluster", () => {
     // Every ID pod's log: the one the restart replaced may still be exiting.
     const next = await stack!.kubectl(["logs", "-n", "answerable", "-l", "app.kubernetes.io/component=id", "-c", "id", "--prefix", "--tail=-1"])
     expect(next.stdout).toContain("platform organisation answerable: verified")
+    // The proofs after this one reach ID through Traefik, which follows the rollout a moment later.
+    await untilSettled(`${origin(hosts.id)}/healthz`)
   }, 240_000)
 
-  test("the two certificate authorities come from the charts' values, as on Civo: originPull.caPem and database.caPem", async () => {
+  test("the origin-pull CA comes from the platform chart's originPull.caPem, as on Civo; the database's from the bootstrap's fetch, its fingerprint logged", async () => {
     const pull = JSON.parse((await stack!.kubectl(["get", "secret", "-n", "answerable", "cloudflare-origin-pull-ca", "-o", "json"])).stdout)
     expect(pull.metadata.annotations?.["meta.helm.sh/release-name"]).toBe("platform")
-    expect(Buffer.from(pull.data["ca.crt"], "base64").toString()).toBe((await stack!.readSecret("platform", "origin-pull-ca"))["ca.crt"])
+    expect(Buffer.from(pull.data["ca.crt"], "base64").toString()).toBe(stack!.certificates.originPullCa)
+    // Written by the Job, trust on first use, not by Helm: it stays across upgrades.
     const database = JSON.parse((await stack!.kubectl(["get", "configmap", "-n", "answerable", "postgres-ca", "-o", "json"])).stdout)
-    expect(database.metadata.annotations?.["helm.sh/hook"]).toBe("pre-install,pre-upgrade")
-    expect(database.data["ca.pem"]).toBe(stack!.databaseCa)
+    expect(database.metadata.labels?.["app.kubernetes.io/managed-by"]).toBe("answerable-ops")
+    expect(database.metadata.annotations?.["meta.helm.sh/release-name"]).toBeUndefined()
+    const fingerprint = new X509Certificate(stack!.certificates.databaseCa).fingerprint256
+    expect(new X509Certificate(database.data["ca.pem"]).fingerprint256).toBe(fingerprint)
+    const log = await jobLog("ops-bootstrap")
+    expect(log).toContain("The database at postgres.database.svc.cluster.local:5432 presented 2 certificates:")
+    expect(log).toContain("Wrote the ConfigMap postgres-ca (ca.pem): the self-signed root.")
+    expect(log).toContain(`SHA-256:  ${fingerprint}`)
+    expect(log).toContain("They cover postgres.database.svc.cluster.local, the host of OPS_DATABASE_ADMIN_URL.")
+    expect(log).not.toContain("Warning")
   })
 
   test("the migrations and the two ops Jobs ran to completion as the release's hooks", async () => {
@@ -390,8 +418,12 @@ describe("a staff member signs in through the cluster", () => {
   test("with the platform's company directory on this host, in Chromium through Traefik, and the official MCP client calls admin_whoami: no role, then owner", () => watched("the staff sign-in", 150_000, async () => {
     const { directory } = stack!
     const platform = ((await rootAdmin("GET", "/organizations?q=answerable&limit=100")).items as { id: string; slug: string }[]).find(item => item.slug === "answerable")!.id
-    // As an operator connects the platform organisation to its company directory on the first run (docs/06, step 6).
-    await rootAdmin("POST", `/organizations/${platform}/domains`, { domain: directory.domain })
+    // register added the staff domain (id.staffDomain), and, ID having no Microsoft client here, left the Entra provider
+    // out with a line. The test connects the company directory with its own credentials instead.
+    expect(((await rootAdmin("GET", `/organizations/${platform}/domains?limit=200`)).items as { domain: string }[]).map(item => item.domain)).toContain(directory.domain)
+    const register = await jobLog("ops-register")
+    expect(register).toContain(`Staff domain ${directory.domain}: added`)
+    expect(register).toContain("Staff directory not connected: ID has no Microsoft client")
     await setSsoProvider(rootAdmin, platform, directory)
     const ownerGroup = ((await rootAdmin("GET", `/organizations/${platform}/groups?q=answerable-owner&limit=100`)).items as { id: string; slug: string }[]).find(item => item.slug === "answerable-owner")!.id
     // Chromium runs in a process of its own, which signs in, calls admin_whoami, has root make the member an owner and calls
@@ -425,10 +457,9 @@ describe("running the ops Jobs again", () => {
   }), 600_000)
 })
 
-// Last, because it changes the cluster and restores it: each of the two TLS options alone demands Cloudflare's
-// certificate, so a lost reference or a lost default never opens a host. Traefik takes a few seconds to reload, so each
-// step waits until a certificate-less request gives the outcome it must, and a step that opens the host first proves the
-// reload happened.
+// Then, because it changes the cluster and restores it: the default TLS option, the only one, demands Cloudflare's
+// certificate of every host, and no Ingress names another. Traefik takes a few seconds to reload, so each step waits until
+// a certificate-less request gives the outcome it must, and the step that opens the host first proves the reload happened.
 describe("the edge fails closed", () => {
   const issuer = () => `${origin(hosts.id)}/healthz`
   const withoutCertificate = async () => (await freshRequest(issuer(), null)).status === 200 ? "open" : "refused"
@@ -437,34 +468,48 @@ describe("the edge fails closed", () => {
     return withoutCertificate()
   }
   const kubectl = (args: string[]) => stack!.kubectl(args)
-  const defaultOption = () => kubectl(["get", "tlsoption", "-n", "answerable", "default", "-o", "json"])
-  const reference = "traefik.ingress.kubernetes.io/router.tls.options"
 
-  test("the default option alone refuses a host whose Ingress lost its reference, and the reference alone refuses without the default", async () => {
-    const saved = JSON.parse((await defaultOption()).stdout)
+  test("the default option alone keeps every host closed: no Ingress names an option, and without the default the host opens", async () => {
+    expect((await kubectl(["get", "tlsoptions.traefik.io", "-A", "-o", "name"])).stdout.trim().split("\n")).toEqual(["tlsoption.traefik.io/default"])
+    const ingresses = JSON.parse((await kubectl(["get", "ingress", "-n", "answerable", "-o", "json"])).stdout) as { items: { metadata: { annotations?: Record<string, string> }; spec: { tls: { secretName: string }[] } }[] }
+    expect(ingresses.items).toHaveLength(3)
+    for (const ingress of ingresses.items) {
+      expect(Object.keys(ingress.metadata.annotations ?? {}).filter(key => key.includes("tls.options") || key.startsWith("cert-manager.io/"))).toEqual([])
+      expect(ingress.spec.tls.map(entry => entry.secretName)).toEqual(["origin-tls"])
+    }
+    const saved = JSON.parse((await kubectl(["get", "tlsoption", "-n", "answerable", "default", "-o", "json"])).stdout)
     // Helm's ownership annotations come back with it, so the platform release still owns the option.
     const restore = { apiVersion: saved.apiVersion, kind: saved.kind, metadata: { name: saved.metadata.name, namespace: saved.metadata.namespace, labels: saved.metadata.labels, annotations: saved.metadata.annotations }, spec: saved.spec }
     try {
-      // Neither: the host is open, which shows the changes reached Traefik.
+      // Without it, the host is open: nothing else demands the certificate, and the change reached Traefik.
       await kubectl(["delete", "tlsoption", "-n", "answerable", "default"])
-      await kubectl(["annotate", "ingress", "-n", "answerable", "id", `${reference}-`])
       expect(await until("open")).toBe("open")
-      // The default alone.
+      // With it alone, a request without the certificate is refused, and one with it is served.
       await stack!.kubectl(["apply", "-f", "-"], { stdin: JSON.stringify(restore) })
-      expect(await until("refused")).toBe("refused")
-      expect(await freshRequest(issuer(), stack!.originPullCert)).toEqual({ status: 200 })
-      // Neither again, then the reference alone.
-      await kubectl(["delete", "tlsoption", "-n", "answerable", "default"])
-      expect(await until("open")).toBe("open")
-      await kubectl(["annotate", "ingress", "-n", "answerable", "id", `${reference}=answerable-origin-pull@kubernetescrd`])
       expect(await until("refused")).toBe("refused")
       expect(await freshRequest(issuer(), stack!.originPullCert)).toEqual({ status: 200 })
     } finally {
       await stack!.kubectl(["apply", "-f", "-"], { stdin: JSON.stringify(restore) })
-      await kubectl(["annotate", "--overwrite", "ingress", "-n", "answerable", "id", `${reference}=answerable-origin-pull@kubernetescrd`])
     }
     expect(await until("refused")).toBe("refused")
   }, 300_000)
+})
+
+// Last, because it locks ID's root secret, which the proofs above use: the first run's last step, as ops.yml runs it.
+describe("the first administrator", () => {
+  test("make-admin puts the staff member who signed in in the owner group and platform-admins, and ID's root secret locks", () => watched("make-admin", 240_000, async () => {
+    const email = stack!.directory.email
+    await step("run make-admin", () => stack!.release(["ops.makeAdmin=true", `ops.adminEmail=${email}`]))
+    const log = await jobLog("ops-make-admin")
+    // The sign-in made them an owner already; make-admin leaves that as it is.
+    expect(log).toContain("already in answerable-owner")
+    expect(log).toContain("added to platform-admins")
+    expect(log).toContain("Root is locked now")
+    expect(log).not.toContain(stack!.secrets.rootAdminSecret)
+    const refused = await viaIngress(`${origin(hosts.id)}/api/admin/v1/organizations?limit=1`, { headers: { authorization: `Bearer ${stack!.secrets.rootAdminSecret}` } })
+    expect(refused.status).toBe(403)
+    expect(((await refused.json()) as { code: string }).code).toBe("root_locked")
+  }), 300_000)
 })
 
 function stackKubeconfig() {

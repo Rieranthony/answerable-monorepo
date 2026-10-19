@@ -6,8 +6,7 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src rehearsal --max-warnings 0",
-    "rehearse": "bun rehearsal/rehearse.ts"
+    "lint": "eslint src --max-warnings 0"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

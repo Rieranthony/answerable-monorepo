@@ -1,26 +1,24 @@
 {{- /*
 Only Cloudflare reaches the services (D18, D19): every TLS connection to Traefik must present a client certificate
-signed by the origin-pull CA. origin-pull is the option the answerable chart's Ingresses name; default is Traefik's
-fallback for any router without one, so a missing or mistyped reference still demands the certificate. Both refuse a
-connection whose server name matches no certificate. The CA Secret is beside them (origin-pull-ca.yaml); Traefik's CRDs come from
-its chart's crds/ directory, which Helm installs before these.
+signed by the origin-pull CA. default is the option Traefik applies to every router that names none, which every
+Ingress of the answerable chart is; only the answerable namespace may define it (defaultTLSResourcesNamespace), and a
+router that named a conflicting option would be refused (strictTLSOptions). It refuses a connection whose server name
+matches no certificate. The CA Secret is beside it (origin-pull-ca.yaml); Traefik's CRDs come from its chart's crds/
+directory, which Helm installs before this.
 */ -}}
-{{- range $name := list "origin-pull" "default" }}
----
 apiVersion: traefik.io/v1alpha1
 kind: TLSOption
 metadata:
-  name: {{ $name }}
-  namespace: {{ $.Values.originPull.namespace }}
+  name: default
+  namespace: {{ .Values.originPull.namespace }}
   labels:
     app.kubernetes.io/name: platform
-    app.kubernetes.io/instance: {{ $.Release.Name }}
-    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
 spec:
   minVersion: VersionTLS12
   sniStrict: true
   clientAuth:
     secretNames:
-      - {{ $.Values.originPull.caSecret }}
+      - {{ .Values.originPull.caSecret }}
     clientAuthType: RequireAndVerifyClientCert
-{{- end }}

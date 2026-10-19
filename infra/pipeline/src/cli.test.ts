@@ -16,6 +16,7 @@ const CLUSTER_ENV = {
   KUBE_CA: Buffer.from(CERTIFICATE).toString("base64"),
   KUBE_TOKEN: "deployer-token-value",
 }
+const ENV = { ...CLUSTER_ENV, BETTER_AUTH_SECRET: "b", UPSTREAM_TOKEN_SECRETS: "[]", ROOT_ADMIN_SECRET: "r" }
 
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -26,11 +27,7 @@ async function fixture(
   reply: (call: RecordedCall) => Partial<RunResult> | undefined = () => undefined,
   overrides: Partial<CliDeps> = {},
 ) {
-  const root = await createRoot({
-    "charts/answerable/values-civo-staging.yaml": "",
-    "infra/civo/envs/staging/secrets.enc.yaml": "sops: {}\n",
-    "infra/civo/envs/staging/database-ca.pem": "-----BEGIN CERTIFICATE-----\nMIIBdemo\n-----END CERTIFICATE-----\n",
-  })
+  const root = await createRoot({ "charts/answerable/values-civo-staging.yaml": "" })
   cleanups.push(root.remove)
   // The registry answers the same digest for every image, and both client Secrets exist.
   const runner = createFakeRunner((call) =>
@@ -47,7 +44,7 @@ async function fixture(
     fetch: async () => new Response("not found", { status: 404 }),
     sleep: async () => {},
     now: () => 0,
-    env: CLUSTER_ENV,
+    env: ENV,
     root: root.path,
     out: (text) => out.push(text),
     err: (text) => err.push(text),
@@ -58,46 +55,40 @@ async function fixture(
 
 describe("deploy", () => {
   test("deploys and reports on standard error, leaving standard output empty", async () => {
-    const f = await fixture((call) => (call.argv[0] === "sops" ? { stdout: "kind: Secret\n" } : undefined))
+    const f = await fixture()
     const code = await main(["deploy", "--environment", "staging", "--image-tag", TAG], f.deps)
     expect(code).toBe(0)
     expect(f.runner.commands().filter((command) => command.startsWith("docker buildx imagetools inspect"))).toHaveLength(4)
-    expect(f.runner.commands()).toHaveLength(8)
+    expect(f.runner.commands()).toHaveLength(7)
+    expect(f.runner.commands().at(-1)).toContain("--set ops.bootstrap=true")
     expect(f.err()).toContain(`Deployed ${TAG} to staging.`)
     expect(f.out()).toBe("")
   })
 
-  test("passes the options through", async () => {
+  test("passes the digests and the timeout through", async () => {
     const f = await fixture()
-    const code = await main(
-      [
-        "deploy", "--environment", "staging", "--image-tag", TAG, ...PAIRS, "--bootstrap", "--timeout", "15m",
-        "--values", "infra/civo/envs/staging/secrets.enc.yaml", "--secrets", "charts/answerable/values-civo-staging.yaml",
-      ],
-      f.deps,
-    )
+    const code = await main(["deploy", "--environment", "staging", "--image-tag", TAG, ...PAIRS, "--timeout", "15m"], f.deps)
     expect(code).toBe(0)
-    expect(f.runner.commands()[0]).toBe("sops --decrypt charts/answerable/values-civo-staging.yaml")
-    expect(f.runner.commands()[3]).toContain("--wait-for-jobs --timeout 15m -f infra/civo/envs/staging/secrets.enc.yaml")
-    expect(f.runner.commands()[3]).toEndWith("--set ops.bootstrap=true")
-    expect(f.runner.commands()[3]).toContain(`--set images.admin-mcp.digest=${DIGEST}`)
-    expect(f.runner.commands()).toHaveLength(4)
+    expect(f.runner.commands()).toHaveLength(3)
+    expect(f.runner.commands()[2]).toContain("--timeout 15m -f charts/answerable/values-civo-staging.yaml")
+    expect(f.runner.commands()[2]).toContain(`--set images.admin-mcp.digest=${DIGEST}`)
   })
 
   test("exits 1 and names the failing step", async () => {
-    const f = await fixture((call) => (call.argv[0] === "sops" ? { exitCode: 128, stderr: "no key\n" } : undefined))
+    const f = await fixture((call) => (call.argv[0] === "helm" ? { exitCode: 1 } : undefined))
     const code = await main(["deploy", "--environment", "staging", "--image-tag", TAG], f.deps)
     expect(code).toBe(1)
-    expect(f.err()).toContain("error: sops could not decrypt")
+    expect(f.err()).toContain("error: helm upgrade failed with exit code 1")
   })
 
-  test("exits 2 for a missing option, a bad tag, an unknown option and a stray argument", async () => {
+  test("exits 2 for a missing option, a bad tag, an option it no longer takes and a stray argument", async () => {
     for (const args of [
       ["deploy", "--image-tag", TAG],
       ["deploy", "--environment", "staging"],
       ["deploy", "--environment", "prod", "--image-tag", TAG],
       ["deploy", "--environment", "staging", "--image-tag", "latest"],
-      ["deploy", "--environment", "staging", "--image-tag", TAG, "--force"],
+      ["deploy", "--environment", "staging", "--image-tag", TAG, "--bootstrap"],
+      ["deploy", "--environment", "staging", "--image-tag", TAG, "--secrets", "x"],
       ["deploy", "extra", "--environment", "staging", "--image-tag", TAG],
       ["deploy", "--environment", "staging", "--image-tag", TAG, "--image-digest", `id=${DIGEST}`],
       ["deploy", "--environment", "staging", "--image-tag", TAG, "--image-digest", "id=sha256:abc"],
@@ -110,79 +101,39 @@ describe("deploy", () => {
     }
   })
 
-  test("reports the missing variable when there are no cluster credentials", async () => {
-    const f = await fixture(() => undefined, { env: {} })
-    expect(await main(["deploy", "--environment", "staging", "--image-tag", TAG], f.deps)).toBe(2)
-    expect(f.err()).toContain("error: KUBE_SERVER is not set")
+  test("reports the missing variable when there are no cluster credentials or secrets", async () => {
+    const noCluster = await fixture(() => undefined, { env: {} })
+    expect(await main(["deploy", "--environment", "staging", "--image-tag", TAG], noCluster.deps)).toBe(2)
+    expect(noCluster.err()).toContain("error: KUBE_SERVER is not set")
+    const noSecrets = await fixture(() => undefined, { env: CLUSTER_ENV })
+    expect(await main(["deploy", "--environment", "staging", "--image-tag", TAG], noSecrets.deps)).toBe(2)
+    expect(noSecrets.err()).toContain("error: BETTER_AUTH_SECRET, UPSTREAM_TOKEN_SECRETS, ROOT_ADMIN_SECRET are not set")
   })
 })
 
 describe("run-job", () => {
-  test("runs the named job with the tag it is given", async () => {
+  test("runs the named job, with the email and the timeout given", async () => {
     const f = await fixture()
-    const code = await main(["run-job", "bootstrap", "--environment", "staging", "--image-tag", TAG], f.deps)
+    const code = await main(["run-job", "make-admin", "--environment", "staging", "--email", "you@answerable.org", "--timeout", "3m"], f.deps)
     expect(code).toBe(0)
-    expect(f.runner.commands()).toHaveLength(5)
-    expect(f.runner.commands()[4]).toContain("--set ops.bootstrap=true")
+    expect(f.runner.commands()[0]).toContain("--timeout 3m --reset-then-reuse-values")
+    expect(f.runner.commands()[0]).toEndWith("--set ops.makeAdmin=true --set-string ops.adminEmail=you@answerable.org")
+    expect(f.err()).toContain("Ran make-admin in staging.")
   })
 
-  test("pins the digests it is given for the tag it is given", async () => {
-    const f = await fixture()
-    const code = await main(["run-job", "bootstrap", "--environment", "staging", "--image-tag", TAG, ...PAIRS], f.deps)
-    expect(code).toBe(0)
-    expect(f.runner.commands()[0]).toContain(`--set image.tag=${TAG} --set images.id.digest=${DIGEST}`)
-    expect(f.runner.commands().some((command) => command.startsWith("docker "))).toBe(false)
-  })
-
-  test("refuses digests without a tag", async () => {
-    const f = await fixture()
-    expect(await main(["run-job", "register", "--environment", "staging", ...PAIRS], f.deps)).toBe(2)
-    expect(f.err()).toContain("digests belong to a tag")
-    expect(f.runner.calls).toEqual([])
-  })
-
-  test("takes the release's tag when none is given, and passes --values and --timeout", async () => {
-    const f = await fixture((call) =>
-      call.argv[1] === "get" && call.argv[0] === "helm" ? { stdout: JSON.stringify({ image: { tag: TAG } }) } : undefined,
-    )
-    const code = await main(
-      ["run-job", "bootstrap", "--environment", "staging", "--values", "charts/answerable/values-civo-staging.yaml", "--timeout", "3m"],
-      f.deps,
-    )
-    expect(code).toBe(0)
-    expect(f.runner.commands()[5]).toContain(`--timeout 3m -f charts/answerable/values-civo-staging.yaml --set-file database.caPem=infra/civo/envs/staging/database-ca.pem --set image.tag=${TAG}`)
-  })
-
-  test("exits 2 without exactly one known job", async () => {
+  test("exits 2 without exactly one known job, without the environment, or with options it does not take", async () => {
     for (const args of [
       ["run-job", "--environment", "staging"],
       ["run-job", "migrate", "--environment", "staging"],
       ["run-job", "register", "bootstrap", "--environment", "staging"],
       ["run-job", "register"],
+      ["run-job", "make-admin", "--environment", "staging"],
+      ["run-job", "register", "--environment", "staging", "--image-tag", TAG],
     ]) {
       const f = await fixture()
       expect(await main(args, f.deps)).toBe(2)
       expect(f.runner.calls).toEqual([])
     }
-  })
-})
-
-describe("current-tag", () => {
-  test("prints only the tag on standard output", async () => {
-    const f = await fixture(() => ({ stdout: JSON.stringify({ image: { tag: TAG } }) }))
-    expect(await main(["current-tag"], f.deps)).toBe(0)
-    expect(f.out()).toBe(`${TAG}\n`)
-  })
-
-  test("exits 1 when the release has no tag", async () => {
-    const f = await fixture(() => ({ stdout: "{}" }))
-    expect(await main(["current-tag"], f.deps)).toBe(1)
-    expect(f.out()).toBe("")
-  })
-
-  test("takes no options", async () => {
-    const f = await fixture()
-    expect(await main(["current-tag", "--environment", "staging"], f.deps)).toBe(2)
   })
 })
 
@@ -274,7 +225,7 @@ describe("main", () => {
     const f = await fixture(() => {
       throw new Error("the runner broke")
     })
-    expect(await main(["current-tag"], f.deps)).toBe(1)
+    expect(await main(["run-job", "bootstrap", "--environment", "staging"], f.deps)).toBe(1)
     expect(f.err()).toContain("unexpected error: ")
     expect(f.err()).toContain("the runner broke")
   })
@@ -283,7 +234,7 @@ describe("main", () => {
     const f = await fixture(() => {
       throw "plain text"
     })
-    expect(await main(["current-tag"], f.deps)).toBe(1)
+    expect(await main(["run-job", "bootstrap", "--environment", "staging"], f.deps)).toBe(1)
     expect(f.err()).toContain("unexpected error: plain text")
   })
 })

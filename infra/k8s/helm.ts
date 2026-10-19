@@ -8,7 +8,7 @@ export const charts = join(repo, "charts")
 
 /** The Kubernetes version kubeconform validates against: Civo's, as `infra/check.ts` does. */
 export const kubernetesVersion = "1.33.0"
-/** Where kubeconform finds the schemas of custom resources (cert-manager's), as `infra/check.ts` does. */
+/** Where kubeconform finds the schemas of custom resources (Traefik's), as `infra/check.ts` does. */
 export const crdSchemas = "https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
 
 /** A rendered Kubernetes object, loosely typed: the tests read paths they assert on. */
