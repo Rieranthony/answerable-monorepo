@@ -795,10 +795,19 @@ test("restricted client queries exclude digests and preserve shared registration
       organizationId,
       "directory",
       async (context) => {
-        for (const client of clients)
-          expect(
-            await queries.findClientForAccess(context, client.clientId),
-          ).toEqual({ id: client.id });
+        // The unowned client and the tenant's own; another tenant's is missing.
+        for (const client of clients) {
+          const found = await queries.findClientForAccess(
+            context,
+            client.clientId,
+          );
+          if (
+            client.organizationId === null ||
+            client.organizationId === organizationId
+          )
+            expect(found).toEqual({ id: client.id });
+          else expect(found).toBeNull();
+        }
         expect(
           await queries.findClientForAccess(context, "missing-client-query"),
         ).toBeNull();
