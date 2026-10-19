@@ -145,7 +145,7 @@ footer { color: var(--muted); font-size: 13px; }
     <ul>
       <li>Name: <code>answerable-secrets</code>. Expiration: one year; put the date in your calendar now.</li>
       <li>Repository access: <b>Only select repositories</b> > <code>answerable-monorepo</code>.</li>
-      <li>Repository permissions: <b>Environments: Read and write</b>, <b>Secrets: Read and write</b>. Nothing else (Metadata: Read is added by itself).</li>
+      <li>Repository permissions: <b>Environments: Read and write</b>. Nothing else (Metadata: Read is added by itself). Not Administration: that would let the token delete the repository.</li>
     </ul>
     <p>Copy the token: it is shown once. It is one of the five values of part 5.</p>
     <div class="expect"><b>You should see</b> the token listed under Fine-grained tokens with the one repository and the two permissions.</div>
@@ -155,10 +155,10 @@ footer { color: var(--muted); font-size: 13px; }
     <div class="title"><input type="checkbox" id="s1.2" aria-label="Done"><h3><span class="num">1.2</span>Create the environment</h3><span class="time">1 min</span></div>
     <p>In the repository: Settings > Environments > New environment > <code>staging</code> > Configure environment.</p>
     <ul>
-      <li>Leave <b>Deployment branches and tags</b> at <b>No restriction</b>. Terraform restricts it to <code>main</code> and <code>staging/*</code> on the first apply.</li>
+      <li>Under <b>Deployment branches and tags</b> choose <b>Selected branches and tags</b>, then <b>Add deployment branch or tag rule</b> twice: the branch <code>main</code>, and the tag pattern <code>staging/*</code> (pick "Tag" as the type).</li>
       <li>No required reviewers for staging.</li>
     </ul>
-    <div class="expect"><b>You should see</b> an empty environment named <code>staging</code>, beside Vercel's <code>Preview</code> and <code>Production</code>.</div>
+    <div class="expect"><b>You should see</b> an environment named <code>staging</code> with two rules, <code>main</code> and <code>staging/*</code>, beside Vercel's <code>Preview</code> and <code>Production</code>. Nothing else can use its secrets.</div>
   </div>
 </section>
 
@@ -286,7 +286,7 @@ git tag staging/first main
 git push origin staging/first
 gh run watch</pre></div>
     <div class="expect"><b>You should see</b> the run <b>Deploy staging</b> go through: the guard, CI (about 15 min), <b>Apply the staging infrastructure</b> (the first apply creates the cluster, the database and the certificates: 15 to 25 min), the four builds, <b>Deploy to staging</b>, <b>Smoke test staging</b> with every check PASS.</div>
-    <div class="note"><b>What the first apply also did.</b> It restricted the environment to <code>main</code> and <code>staging/*</code> and wrote <code>KUBE_SERVER</code>, <code>KUBE_CA</code> and <code>KUBE_TOKEN</code> into it, so the deploy job that followed could sign in to the cluster. Check the environment's secret list: three more names.</div>
+    <div class="note"><b>What the first apply also did.</b> It wrote <code>KUBE_SERVER</code>, <code>KUBE_CA</code> and <code>KUBE_TOKEN</code> into the environment, so the deploy job that followed could sign in to the cluster. Check the environment's secret list: three more names.</div>
   </div>
 
   <div class="step" data-step="7.2">

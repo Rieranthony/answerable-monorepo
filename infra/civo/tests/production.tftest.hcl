@@ -8,13 +8,7 @@ mock_provider "kubernetes" {}
 mock_provider "helm" {}
 mock_provider "tls" {}
 
-mock_provider "github" {
-  mock_data "github_user" {
-    defaults = {
-      id = "1234567"
-    }
-  }
-}
+mock_provider "github" {}
 
 override_data {
   target = data.cloudflare_ip_ranges.this

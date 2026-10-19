@@ -254,7 +254,9 @@ const steps: { name: string; run: () => Promise<void> | void }[] = [
             "init",
             "-backend=false",
             "-input=false",
-            ...(isRoot(dir) ? ["-lockfile=readonly"] : []),
+            // The root's lock file is committed and must hold; a module's is not kept (.gitignore), so a stale one
+            // left by an earlier init must never pin an older provider than the module now asks for.
+            ...(isRoot(dir) ? ["-lockfile=readonly"] : ["-upgrade"]),
           ],
           dir,
           terraformEnv,

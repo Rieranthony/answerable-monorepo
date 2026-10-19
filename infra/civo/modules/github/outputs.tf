@@ -1,6 +1,6 @@
 output "environment" {
-  description = "The GitHub environment Terraform configures."
-  value       = github_repository_environment.this.environment
+  description = "The GitHub environment Terraform writes the deploy secrets into."
+  value       = var.environment
 }
 
 output "secret_names" {

@@ -1,2 +1,0 @@
-# Findings that `trivy config` reports at HIGH or CRITICAL and that we accept: one ID per line, its reason above it.
-# `bun run infra:check` fails on any other HIGH or CRITICAL finding under infra/ and charts/.

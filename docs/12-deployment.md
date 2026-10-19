@@ -17,7 +17,7 @@
 | **Migrations and ops Jobs** | Helm hook Jobs in `answerable`: `ops-bootstrap`, `id-migrate`, `toolbox-migrate`, `admin-migrate`, `ops-register`, `ops-make-admin` | one run per deploy; `make-admin` on request | the same, and [`infra/ops`](../infra/ops/README.md) |
 | **Traefik** (the edge in the cluster) | Deployment in namespace `platform`, behind a Civo load balancer | 2 | [`charts/platform`](../charts/platform/README.md) |
 | **PostgreSQL 17** | Civo Database on the environment's private network: `answerable_id`, `answerable_toolbox`, `answerable_admin` | 1 node | [`infra/civo`](../infra/civo/README.md) |
-| **Cluster, network, firewalls, Cloudflare zone, certificates, the GitHub environment's settings** | One Civo account, one Cloudflare zone and one GitHub environment per environment, Civo region LON1 | 2 nodes (staging), 3 nodes (production), Medium | `infra/civo`, `envs/<environment>.tfvars` |
+| **Cluster, network, firewalls, Cloudflare zone, certificates, the GitHub environment's deploy secrets** | One Civo account, one Cloudflare zone and one GitHub environment per environment, Civo region LON1 | 2 nodes (staging), 3 nodes (production), Medium | `infra/civo`, `envs/<environment>.tfvars` |
 | **The state bucket** | Civo object store in the environment's account | one 500 GB block | `bootstrap.yml` |
 | **Images** | GHCR, public: `ghcr.io/rieranthony/answerable/{id,toolbox,admin-mcp,ops}`, amd64 | one per image and commit | the Dockerfiles, `deploy-staging.yml` |
 | **The pipeline** | GitHub Actions: `ci.yml`, `bootstrap.yml`, `deploy-staging.yml`, `promote-production.yml`, `ops.yml` | | [`infra/pipeline`](../infra/pipeline/README.md) |
@@ -131,7 +131,7 @@ A request travels Cloudflare → the Civo load balancer → Traefik → a servic
 
 **Every secret lives in the GitHub environment, or is generated where it is used; nothing is done from a laptop** ([D23](goals/civo-deploy/decisions.md), [D33](goals/civo-deploy/decisions.md)).
 
-- **What a person provides** goes once into the GitHub environment, pasted in the browser: the Civo key, the Cloudflare token, the Entra client ID and secret, and a fine-grained GitHub token for this repository with read and write on Environments and Secrets. GitHub encrypts each value with a libsodium sealed box before it reaches GitHub, stores it write-only, masks it in logs and hands it only to the workflow steps that name it.
+- **What a person provides** goes once into the GitHub environment, pasted in the browser: the Civo key, the Cloudflare token, the Entra client ID and secret, and a fine-grained GitHub token for this repository with read and write on Environments alone (the permission that writes environment secrets; managing the environment itself would need repository administration, which can also delete the repository, so the environment's policy and reviewer are the owner's, set once). GitHub encrypts each value with a libsodium sealed box before it reaches GitHub, stores it write-only, masks it in logs and hands it only to the workflow steps that name it.
 - **What a workflow generates** goes into the environment the same way: `bootstrap.yml` creates the state bucket's credential in Civo and ID's three random secrets, each only when missing, and rotates `ROOT_ADMIN_SECRET` or the `UPSTREAM_TOKEN_SECRETS` ring on request.
 - **What Terraform makes** stays in its state and goes where it is used: the deploy credentials into the GitHub environment (the `github` module), the database administrator's URL, the origin certificate and the trusted proxies into the cluster (the `platform` module), the origin-pull certificate to Cloudflare (the `edge` module). Terraform holds no secret as input.
 - **What the ops Jobs generate never leaves the cluster.** `ops-bootstrap` writes the six database URLs and `ops-register` the two machine-client secrets straight into Kubernetes Secrets. A rebuilt cluster re-runs both: bootstrap sets a new password for a login whose Secret is gone, register rotates a client secret it cannot find.
@@ -149,7 +149,7 @@ A request travels Cloudflare → the Civo load balancer → Traefik → a servic
 
 Public, in the cluster: the ConfigMaps `trusted-proxies` (Terraform) and `postgres-ca` (the bootstrap Job).
 
-**The costs, named.** A changed secret has no reviewable history: GitHub shows when, not what. Write access to `main` is access to every secret of the `main`-scoped environments, so only the owner pushes to `main`, agents push branches, and every action is pinned by commit. The GitHub token that writes secrets is a crown jewel beside the Civo key: one repository, two permissions, an expiry in the owner's calendar.
+**The costs, named.** A changed secret has no reviewable history: GitHub shows when, not what. Write access to `main` is access to every secret of the `main`-scoped environments, so only the owner pushes to `main`, agents push branches, and every action is pinned by commit. The GitHub token that writes secrets is a crown jewel beside the Civo key: one repository, one permission, an expiry in the owner's calendar.
 
 ## Images and deploys
 
@@ -161,7 +161,7 @@ Public, in the cluster: the ConfigMaps `trusted-proxies` (Terraform) and `postgr
 
 1. The tag names a commit of `main`, or the run stops.
 2. CI (`ci.yml`): typecheck, lint, build, every test suite, `infra:check` and `infra:test`.
-3. `terraform apply` of `infra/civo` for staging, a no-op when nothing changed; it also keeps the environment's policies and the deploy credentials current.
+3. `terraform apply` of `infra/civo` for staging, a no-op when nothing changed; it also keeps the deploy credentials in the environment current.
 4. Build and sign the four images.
 5. Deploy: apply `id-env` from the environment, then `helm upgrade --install` with `--rollback-on-failure`. The hooks run in order: `ops-bootstrap` (every deploy; it records the database's certificate on the first run and changes nothing when nothing is missing), `id-migrate`, `toolbox-migrate`, `admin-migrate`, then the release, then `ops-register` when either client Secret is missing (the first install).
 6. Smoke test through Cloudflare: ID's health, readiness, discovery and keys, the MCPs' health and metadata, retried for five minutes.
@@ -207,13 +207,13 @@ Civo's list prices, measured on 10 October 2026 from its pricing page; USD a mon
 
 | Check | Proves | Needs |
 | --- | --- | --- |
-| `bun run infra:check` | Both charts lint and validate (`helm lint --strict`, `kubeconform` for every overlay); `terraform fmt`, `validate` and `terraform test` with mocked providers for every module and the root (the firewall rules, names, RBAC, the certificates' wiring, the GitHub environment's policies and refusals); `tflint`; `trivy config` (no HIGH or CRITICAL); `actionlint` on the workflows | No cloud account, no Docker |
+| `bun run infra:check` | Both charts lint and validate (`helm lint --strict`, `kubeconform` for every overlay); `terraform fmt`, `validate` and `terraform test` with mocked providers for every module and the root (the firewall rules, names, RBAC, the certificates' wiring, the three GitHub secrets and the refusals); `tflint`; `trivy config` (no HIGH or CRITICAL); `actionlint` on the workflows | No cloud account, no Docker |
 | `bun run infra:test` ([the kind stack](../infra/k8s/local/README.md)) | The four real images in a kind cluster with both charts, Traefik and a TLS-only PostgreSQL 17, with the stack writing what Terraform and the deploy write: refusal without the origin-pull certificate, the forged-header walk, restricted runtime logins, the bootstrap Job recording the database's certificate and `verify-full` against it, NetworkPolicies, `ops-bootstrap` and `ops-register`, a machine token, a staff sign-in in Chromium and an admin MCP call, the Jobs again changing nothing | Docker, kind, about four minutes |
 | `infra/k8s/charts.test.ts` | Every overlay renders with its invariants: digests, the restricted security context, hooks, the shared TLS Secret, the trusted-proxies ConfigMap | Helm |
 | `infra/ops` and `infra/pipeline` suites | The commands against fakes, at 100% line and function coverage | Bun |
 | The smoke test | Each deployed environment through Cloudflare, after every deploy | The environment |
 
-**Only B7a's evidence proves** what needs Civo, Cloudflare and GitHub themselves: the answers to the [first-apply questions](../infra/civo/README.md#what-the-first-apply-must-confirm) (whether the database serves TLS, the state lock on Civo's object store, the load balancer through the firewalls, the address Traefik sees), the Origin CA certificate and origin pulls end to end, the GitHub environment's policies set by Terraform, ID recording a real client address through Cloudflare, the backup and restore, `max_connections`, and the real monthly cost.
+**Only B7a's evidence proves** what needs Civo, Cloudflare and GitHub themselves: the answers to the [first-apply questions](../infra/civo/README.md#what-the-first-apply-must-confirm) (whether the database serves TLS, the state lock on Civo's object store, the load balancer through the firewalls, the address Traefik sees), the Origin CA certificate and origin pulls end to end, the deploy secrets written by Terraform, ID recording a real client address through Cloudflare, the backup and restore, `max_connections`, and the real monthly cost.
 
 ## Not yet
 

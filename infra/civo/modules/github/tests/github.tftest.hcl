@@ -1,14 +1,7 @@
-# The environment's GitHub side: who may deploy (the branch main and the tags <environment>/*), who must approve
-# (production: the token owner), and the three secrets the deploy and ops jobs reach the cluster with.
+# The environment's GitHub side: the three secrets the deploy and ops jobs reach the cluster with, written into the
+# environment the owner created. The environment's policy and reviewer are the owner's, not Terraform's (main.tf).
 mock_provider "github" {
   override_during = plan
-
-  mock_data "github_user" {
-    defaults = {
-      id    = "1234567"
-      login = "owner"
-    }
-  }
 }
 
 variables {
@@ -17,50 +10,6 @@ variables {
   kube_server = "https://74.220.1.2:6443"
   kube_ca     = "placeholder: cluster CA"
   kube_token  = "placeholder: deployer token"
-}
-
-run "deploys_from_main_and_the_environments_tags_only" {
-  command = plan
-
-  assert {
-    condition = (
-      github_repository_environment.this.repository == "answerable-monorepo"
-      && github_repository_environment.this.environment == "staging"
-    )
-    error_message = "The module must configure the environment named after the Answerable environment, in the repository given."
-  }
-
-  assert {
-    condition = (
-      length(github_repository_environment.this.deployment_branch_policy) == 1
-      && !github_repository_environment.this.deployment_branch_policy[0].protected_branches
-      && github_repository_environment.this.deployment_branch_policy[0].custom_branch_policies
-    )
-    error_message = "Only the custom policies may name what deploys, not every protected branch."
-  }
-
-  assert {
-    condition = (
-      github_repository_environment_deployment_policy.main.branch_pattern == "main"
-      && github_repository_environment_deployment_policy.main.tag_pattern == null
-      && github_repository_environment_deployment_policy.main.environment == "staging"
-    )
-    error_message = "One policy must admit the branch main."
-  }
-
-  assert {
-    condition = (
-      github_repository_environment_deployment_policy.tags.tag_pattern == "staging/*"
-      && github_repository_environment_deployment_policy.tags.branch_pattern == null
-      && github_repository_environment_deployment_policy.tags.environment == "staging"
-    )
-    error_message = "One policy must admit the tags staging/*, the deploy workflow's trigger."
-  }
-
-  assert {
-    condition     = length(github_repository_environment.this.reviewers) == 0
-    error_message = "Staging deploys without a review."
-  }
 }
 
 run "writes_the_three_kube_secrets" {
@@ -92,9 +41,14 @@ run "writes_the_three_kube_secrets" {
     condition     = output.secret_names == tolist(["KUBE_CA", "KUBE_SERVER", "KUBE_TOKEN"])
     error_message = "The module must report the secrets it writes."
   }
+
+  assert {
+    condition     = output.environment == "staging"
+    error_message = "The module must report the environment it writes into."
+  }
 }
 
-run "makes_production_wait_for_the_token_owner" {
+run "writes_into_the_production_environment" {
   command = plan
 
   variables {
@@ -102,17 +56,8 @@ run "makes_production_wait_for_the_token_owner" {
   }
 
   assert {
-    condition = (
-      length(github_repository_environment.this.reviewers) == 1
-      && github_repository_environment.this.reviewers[0].users == toset([1234567])
-      && !github_repository_environment.this.prevent_self_review
-    )
-    error_message = "Production must wait for the token owner, who may approve the run they started."
-  }
-
-  assert {
-    condition     = github_repository_environment_deployment_policy.tags.tag_pattern == "production/*"
-    error_message = "Production deploys from the tags production/*."
+    condition     = alltrue([for secret in github_actions_environment_secret.this : secret.environment == "production"])
+    error_message = "Production's secrets go into the production environment."
   }
 }
 

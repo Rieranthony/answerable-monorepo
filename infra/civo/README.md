@@ -29,7 +29,7 @@ infra/
 | `edge` | three `cloudflare_dns_record`s, zone settings, origin pulls, two `cloudflare_ruleset`s, [the certificates](#certificates) | Proxied A records for exactly the three hostnames, each one label under the zone; Full (strict), TLS 1.2 minimum, HSTS; no browser check, no challenge and no cache (except `/assets/`) on those hostnames; never `www` or the apex; the origin-pull CA, its client certificate (`client_auth`) and their upload; the Origin CA request for exactly the three hostnames, `origin-ecc`, 5475 days |
 | `platform` | the `answerable` and `platform` namespaces, ConfigMap `trusted-proxies`, Secrets `postgres-admin` and `origin-tls`, `helm_release.platform` | The restricted Pod Security Standard enforced on both namespaces; the three objects' names, keys, type and namespace; Traefik's Service names the firewall and claims the reserved address; Traefik's websecure entry point trusts `X-Forwarded-For` only from the ranges given; the chart's `values-civo-<environment>.yaml` must exist; `originPull.caPem` from the edge module ([what Terraform writes](modules/platform/README.md)) |
 | `deployer` | ServiceAccount `deployer`, its Role and binding, a token Secret | Manages only what `helm upgrade` of `charts/answerable` and the deploy touch, in `answerable`; no wildcards, no `escalate`, `bind`, `impersonate` or `exec`; Kubernetes' own API groups only |
-| `github` | the environment's settings, two deployment policies, three secrets | Deploys from the branch `main` and the tags `<environment>/*` only; production waits for the token owner; writes `KUBE_SERVER`, `KUBE_CA` and `KUBE_TOKEN` and nothing else ([the GitHub environment](#the-github-environment)) |
+| `github` | three environment secrets | Writes `KUBE_SERVER`, `KUBE_CA` and `KUBE_TOKEN` into the environment the owner created, and nothing else; the environment's policy and reviewer are the owner's ([the GitHub environment](#the-github-environment)) |
 
 Resources are named `answerable-<environment>-<what>`: `answerable-staging-cluster`, `answerable-production-database` and so on.
 
@@ -93,18 +93,16 @@ The zone's Cloudflare token needs these permissions, on that zone only:
 | **Zone > Config Rules > Edit** | The `http_config_settings` ruleset (no browser check or challenge) |
 | **Zone > Cache Rules > Edit** | The `http_request_cache_settings` ruleset (no cache except `/assets/`) |
 
-The last two are missing from B0's original list ([config rules](https://developers.cloudflare.com/rules/configuration-rules/create-api/), [cache rules](https://developers.cloudflare.com/cache/how-to/cache-rules/create-api/)). B0's Zone WAF Edit is not used.
+The last two are the ones easiest to miss ([config rules](https://developers.cloudflare.com/rules/configuration-rules/create-api/), [cache rules](https://developers.cloudflare.com/cache/how-to/cache-rules/create-api/)). Zone WAF Edit is not used.
 
 `GH_SECRETS_TOKEN` is a fine-grained personal access token for this repository alone, with an expiry in the owner's calendar. GitHub's [fine-grained permission tables](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens) name what the github module's calls need:
 
 | Repository permission | Used by |
 | --- | --- |
-| Administration: Read and write | Creating or updating the environment (its reviewer and branch policy setting) and its deployment policies |
-| Actions: Read | Reading the environment and its deployment policies back at every plan |
-| Environments: Read and write | The environment's secrets: the public key they are encrypted with, and `KUBE_SERVER`, `KUBE_CA`, `KUBE_TOKEN` |
+| Environments: Read and write | The environment's secrets: the public key they are encrypted with, and `KUBE_SERVER`, `KUBE_CA`, `KUBE_TOKEN`; the bootstrap workflow's `gh secret set` uses the same permission |
 | Metadata: Read | Reading the repository; GitHub adds it to every token |
 
-Administration: Read and write also lets the token change the repository's settings, rename it or delete it. It is the price of Terraform owning the environment's rules. Production's plan also reads the token owner's own user (`GET /user`) to name the reviewer.
+Nothing more. Managing the environment itself and its deployment policies would need Administration: Read and write, which also lets a token change the repository's settings, rename it or delete it; so the environment's policy and reviewer are set by the owner once, at creation, and Terraform never touches them.
 
 **The state is a secret in its own right.** Anyone who reads the state bucket owns the cluster and the database, so the bucket and its credential are guarded like `CIVO_TOKEN`: only the GitHub environment holds them. Terraform cannot keep these out of state:
 
@@ -124,11 +122,8 @@ Civo clusters always have a public API endpoint (6443). The cluster firewall adm
 
 ## The GitHub environment
 
-The owner creates each environment (`staging`, `production`) by hand, once, before Terraform first runs, and pastes its secrets: `CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` and `GH_SECRETS_TOKEN`. Terraform's `github` module then owns the rest of it:
+The owner creates each environment (`staging`, `production`) by hand, once, before Terraform first runs ([`infra/README.md`](../README.md#first-run)): its deployment policy admits the branch `main` and the tags `<environment>/*` and nothing else; production names the owner as its required reviewer; and the five secrets are pasted in: `CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` and `GH_SECRETS_TOKEN`. Terraform's `github` module writes one thing into it:
 
-- **The environment's settings.** The provider writes an environment with GitHub's [create or update an environment](https://docs.github.com/en/rest/deployments/environments#create-or-update-an-environment) call (`PUT`), so the first apply adopts the existing environment without an import, and every apply puts its settings back. `prevent_destroy` keeps Terraform from deleting it, and the owner's secrets with it.
-- **Who may deploy.** Custom deployment policies only: the branch `main` and the tags `<environment>/*`. Add no policy by hand: the provider creates each with `POST`, which fails on a duplicate. One added by hand is deleted in the settings or imported with `infra/civo/terraform.sh <environment> import 'module.github.github_repository_environment_deployment_policy.main' 'answerable-monorepo:<environment>:<policy id>'`.
-- **Who approves.** Production waits for one reviewer, the owner of `GH_SECRETS_TOKEN`, who may approve a run they started. Staging needs no review.
 - **The cluster's address and credential**: `KUBE_SERVER` (the cluster's `api_endpoint`), `KUBE_CA` (the cluster CA, PEM, from the deployer's token Secret) and `KUBE_TOKEN` (the deployer's token). A new cluster or a rotated token reaches GitHub in the same apply.
 
 ## Certificates
@@ -157,11 +152,11 @@ The apply uploads or issues the new certificate before it deletes the old one (`
 
 ## Before the first apply
 
-- The Civo account for the environment exists and its API key is the environment's `CIVO_TOKEN` ([B0](../../docs/goals/civo-deploy/briefs/b0.md)).
+- The Civo account for the environment exists and its API key is the environment's `CIVO_TOKEN`.
 - The zone's Cloudflare token has the six permissions above.
 - Bot Fight Mode is off in the zone (Security settings in the dashboard). The token cannot change it.
 - The zone has no `http_config_settings` or `http_request_cache_settings` ruleset made by hand. Cloudflare allows one per zone and phase; import an existing one with `infra/civo/terraform.sh <environment> import 'module.edge.cloudflare_ruleset.config' 'zones/<zone id>/<ruleset id>'`.
-- The GitHub environment exists with its five secrets, and no deployment policy or reviewer added by hand ([the GitHub environment](#the-github-environment)).
+- The GitHub environment exists with its five secrets, its deployment policy (`main` and the tags `<environment>/*`) and, for production, the owner as required reviewer ([the GitHub environment](#the-github-environment)).
 - The bootstrap workflow has run for the environment: the state bucket exists and `STATE_ACCESS_KEY_ID` and `STATE_SECRET_ACCESS_KEY` are in the GitHub environment.
 
 ## First apply
@@ -197,7 +192,6 @@ Each of these could not be proved without a Civo account. Record the answer in [
 | Which certificate does the database present, and does it name the private address that `postgres-admin` and the services use? | The first `bootstrap` Job connects with `verify-full` against the CA it stored | Switch the host in `modules/database` (output `admin_url`) and the services to the database's `dns_endpoint` |
 | Do standbys and backups work with the database's outbound traffic limited to the private network? | The restore drill ([B7](../../docs/goals/civo-deploy/briefs/b7.md)) | Widen the database firewall's egress |
 | Does the platform chart accept the values Terraform sets (`originPull.caPem`, `traefik.service.annotations`, `traefik.ports.websecure.forwardedHeaders.trustedIPs`)? | The full apply's `helm_release.platform` succeeds; the smoke test reaches the reserved address | Match the keys in `modules/platform/main.tf` to the chart |
-| Does the fine-grained token read its own user for production's reviewer (`GET /user`)? | Production's first plan | Name the owner's login in `data.github_user.reviewer` instead of `""` |
 
 ## Day two
 
