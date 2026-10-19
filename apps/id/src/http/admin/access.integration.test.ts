@@ -5,7 +5,7 @@ import {
   type AdminFixture,
 } from "../../__tests__/admin.ts";
 import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
-import { auditEvents } from "../../db/schema/index.ts";
+import { auditEvents, oauthClients } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
 import { createSharedClient } from "../../__tests__/client-queries.ts";
 import { createGroup, addGroupMember } from "../../__tests__/group-queries.ts";
@@ -291,7 +291,7 @@ test("HTTP pair creation and reads preserve both targets without granting direct
   );
 });
 
-test("target access hides foreign private resource existence", async () => {
+test("target access hides another organisation's private resource and own client", async () => {
   const resource = `https://${createId()}.example`;
   const own = `https://${createId()}.example`;
   for (const [identifier, organizationId] of [
@@ -305,12 +305,18 @@ test("target access hides foreign private resource existence", async () => {
       organizationId,
       allowedScopes: ["read"],
     });
+  const shared = await createSharedClient(fixture.db);
+  const [ownClient, foreignClient] = [createId(), createId()];
+  for (const [clientId, organizationId] of [
+    [ownClient, fixture.tenant.organizationId],
+    [foreignClient, fixture.outsider.organizationId],
+  ] as const)
+    await fixture.db
+      .insert(oauthClients)
+      .values({ id: createId(), clientId, organizationId, redirectUris: [] });
   for (const kind of ["tenantReader", "platformReader"] as const) {
     for (const target of [resource, "https://missing-private.example"])
-      for (const client of [
-        "",
-        `&clientId=${encodeURIComponent(fixture.platform.client.clientId)}`,
-      ])
+      for (const client of ["", `&clientId=${shared}`])
         expect(
           (
             await read(
@@ -319,11 +325,18 @@ test("target access hides foreign private resource existence", async () => {
             )
           ).status,
         ).toBe(404);
-    for (const target of [own, fixture.platform.adminResource])
-      expect(
-        (await read(`/access?resource=${encodeURIComponent(target)}`, kind))
-          .status,
-      ).toBe(200);
+    // Another organisation's client answers as a missing one does.
+    for (const clientId of [foreignClient, "missing-client"])
+      expect((await read(`/access?clientId=${clientId}`, kind)).status).toBe(
+        404,
+      );
+    for (const query of [
+      `resource=${encodeURIComponent(own)}`,
+      `resource=${encodeURIComponent(fixture.platform.adminResource)}`,
+      `clientId=${shared}`,
+      `clientId=${ownClient}`,
+    ])
+      expect((await read(`/access?${query}`, kind)).status).toBe(200);
   }
 });
 

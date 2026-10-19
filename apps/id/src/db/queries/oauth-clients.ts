@@ -13,6 +13,7 @@ import {
   sql,
   getTableColumns,
   isNull,
+  or,
 } from "drizzle-orm";
 
 import type { PageQuery } from "../../http/pagination.ts";
@@ -104,17 +105,24 @@ export async function lockClientForCommand(
   await context.revalidate();
   return row;
 }
-/** Client registration can be shared; this existence check grants no permission. */
+/** Unowned clients and this tenant's own only; registration is not permission. */
 export async function findClientForAccess(
   context: TenantReadContext<"directory">,
   clientId: string,
 ) {
-  const { tx } = context;
+  const { tx, organizationId } = context;
   const [row] = await tx
     .select({ id: oauthClients.id })
     .from(oauthClients)
     .where(
-      and(isNull(oauthClients.deletedAt), eq(oauthClients.clientId, clientId)),
+      and(
+        isNull(oauthClients.deletedAt),
+        eq(oauthClients.clientId, clientId),
+        or(
+          isNull(oauthClients.organizationId),
+          eq(oauthClients.organizationId, organizationId),
+        ),
+      ),
     );
   return row ?? null;
 }

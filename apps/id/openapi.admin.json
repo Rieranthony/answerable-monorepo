@@ -12635,7 +12635,7 @@
           }
         ],
         "summary": "List assigned members and current permissions",
-        "description": "Return a cursor page of members with effective assignments to one client, resource or exact pair. Scopes are assigned scopes, not a permission promise. Every row includes permission and source evidence for client-only login, exact client/resource authorization-code use or resource-only direct administration. Denied members stay in the page so the assignment can be diagnosed. Prefer getMemberAccess to inspect one member across targets; validation_failed rejects missing or malformed targets and not_found means the organisation or target is unavailable, including a resource private to another organisation.",
+        "description": "Return a cursor page of members with effective assignments to one client, resource or exact pair. Scopes are assigned scopes, not a permission promise. Every row includes permission and source evidence for client-only login, exact client/resource authorization-code use or resource-only direct administration. Denied members stay in the page so the assignment can be diagnosed. Prefer getMemberAccess to inspect one member across targets; validation_failed rejects missing or malformed targets and not_found means the organisation or target is unavailable, including a resource private to another organisation or a client another organisation owns.",
         "tags": [
           "Access"
         ],
