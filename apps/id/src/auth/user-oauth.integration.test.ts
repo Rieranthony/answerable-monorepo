@@ -2795,13 +2795,6 @@ test("grant RLS scopes isolate tenants, clients and admission sessions and resto
       read,
     ),
   ).toEqual([]);
-  expect(
-    await withDatabaseScope(
-      runtime.db,
-      { kind: "grant-admission", userId: a!.userId, sessionId: createId() },
-      read,
-    ),
-  ).toEqual([]);
   const revoke = (tx: Executor) =>
     tx
       .update(grantContexts)
@@ -2822,17 +2815,32 @@ test("grant RLS scopes isolate tenants, clients and admission sessions and resto
       revoke,
     ),
   ).toEqual([]);
+  // Admission inserts only the grant of its subject's own session: the token
+  // path, which binds no session, and another session insert nothing.
   await expect(
     withDatabaseScope(
       runtime.db,
-      { kind: "grant-admission", userId: a!.userId, sessionId: createId() },
-      (tx) =>
-        tx
+      { kind: "policy-user", userId: a!.userId, sessionId },
+      async (tx) => {
+        await tx
           .insert(grantContexts)
-          .values({ ...a!, id: createId() })
-          .execute(),
+          .values({ ...a!, id: createId(), authorizationCodeId: null });
+        throw new Error("rollback admission");
+      },
     ),
-  ).rejects.toMatchObject({ cause: { code: "42501" } });
+  ).rejects.toThrow("rollback admission");
+  for (const sessionId of [undefined, createId()])
+    await expect(
+      withDatabaseScope(
+        runtime.db,
+        { kind: "policy-user", userId: a!.userId, sessionId },
+        (tx) =>
+          tx
+            .insert(grantContexts)
+            .values({ ...a!, id: createId(), authorizationCodeId: null })
+            .execute(),
+      ),
+    ).rejects.toMatchObject({ cause: { code: "42501" } });
 
   expect(
     await withDatabaseScope(
@@ -2844,7 +2852,7 @@ test("grant RLS scopes isolate tenants, clients and admission sessions and resto
   expect(
     await withDatabaseScope(
       runtime.db,
-      { kind: "grant-admission", userId: a!.userId, sessionId },
+      { kind: "policy-user", userId: a!.userId, sessionId },
       revoke,
     ),
   ).toEqual([]);

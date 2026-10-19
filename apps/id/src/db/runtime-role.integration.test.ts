@@ -404,11 +404,6 @@ test("RLS denies missing/read-only context and isolates concurrent tenants on th
       ),
     ).rejects.toMatchObject({ cause: { code: "42501" } });
   }
-  const { inPlatformUsers } = await import("../__tests__/platform-context.ts");
-  await inPlatformUsers(runtime.db, async (context) => {
-    for (const table of tables)
-      expect((await rows(context.tx, table)).rows).toEqual([]);
-  });
   const insert = (tx: import("./client.ts").Executor, organizationId: string) =>
     tx.execute(
       sql`insert into groups(id, organization_id, slug, name) values (${createId()}, ${organizationId}, ${createId()}, 'RLS probe') returning id`,
@@ -551,12 +546,6 @@ test("RLS denies missing/read-only context and isolates concurrent tenants on th
       resource: environment.adminResourceIdentifier,
     }),
   ).toBe(false);
-  await withDatabaseScope(runtime.db, { kind: "policy-root" }, async (tx) => {
-    const binding = await owner.db.execute<{ organization_id: string }>(
-      sql`select organization_id from system_bindings`,
-    );
-    expect((await rows(tx, "groups")).rows).toEqual(binding.rows);
-  });
 });
 
 test("installed auth adapter and current tenant/platform read contexts work under the runtime role", async () => {

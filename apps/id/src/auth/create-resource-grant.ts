@@ -43,7 +43,7 @@ export async function createResourceGrant(
   return withDatabaseScope(
     tx,
     {
-      kind: "grant-admission",
+      kind: "policy-user",
       userId: input.userId,
       sessionId: input.sessionId,
     },

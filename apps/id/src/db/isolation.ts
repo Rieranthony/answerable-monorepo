@@ -5,11 +5,9 @@ type DatabaseScope =
   | { kind: "protocol" }
   | { kind: "platform"; access: "read" | "write" }
   | { kind: "tenant"; access: "read" | "write"; organizationId: string }
-  | { kind: "policy-user"; userId: string }
-  | { kind: "policy-root" }
-  | { kind: "platform-users" }
-  | { kind: "grant-client"; clientId: string }
-  | { kind: "grant-admission"; userId: string; sessionId: string };
+  /** With a session, admission may insert that session's grant for the user. */
+  | { kind: "policy-user"; userId: string; sessionId?: string }
+  | { kind: "grant-client"; clientId: string };
 
 /** Trusted transaction owners call this only after establishing authority. */
 export async function setDatabaseScope(tx: Executor, scope: DatabaseScope) {
@@ -19,7 +17,7 @@ export async function setDatabaseScope(tx: Executor, scope: DatabaseScope) {
     set_config('answerable.tenant', ${scope.kind === "tenant" ? scope.organizationId : ""}, true),
     set_config('answerable.subject', ${"userId" in scope ? scope.userId : ""}, true),
     set_config('answerable.client', ${scope.kind === "grant-client" ? scope.clientId : ""}, true),
-    set_config('answerable.session', ${scope.kind === "grant-admission" ? scope.sessionId : ""}, true)`);
+    set_config('answerable.session', ${scope.kind === "policy-user" ? (scope.sessionId ?? "") : ""}, true)`);
 }
 
 /** Restore the enclosing trusted scope; errors roll back the savepoint and settings. */

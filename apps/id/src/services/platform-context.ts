@@ -67,12 +67,8 @@ export async function authorizePlatformMutation<
       caller.claims,
     );
   await authorize();
-  await setDatabaseScope(
-    tx,
-    access === "write"
-      ? { kind: "platform", access: "write" }
-      : { kind: "platform-users" },
-  );
+  // platform:users commands are authorised separately but share the write scope.
+  await setDatabaseScope(tx, { kind: "platform", access: "write" });
   return {
     /** The actor needs the operation id, which exists only after authorisation. */
     run<T>(

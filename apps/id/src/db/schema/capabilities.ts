@@ -120,8 +120,7 @@ export const organizationCapabilities = pgTable(
       for: "select",
       using: sql`current_setting('answerable.scope', true) in ('platform-read', 'platform-write')
       or (current_setting('answerable.scope', true) in ('tenant-read', 'tenant-write') and ${table.organizationId} = nullif(current_setting('answerable.tenant', true), '')::uuid)
-      or (current_setting('answerable.scope', true) = 'policy-user' and ${table.organizationId} in (select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid and deleted_at is null and status = 'active' and (valid_from is null or valid_from <= statement_timestamp()) and (valid_until is null or valid_until > statement_timestamp())))
-      or (current_setting('answerable.scope', true) = 'policy-root' and ${table.organizationId} in (select organization_id from system_bindings))`,
+      or (current_setting('answerable.scope', true) = 'policy-user' and ${table.organizationId} in (select organization_id from members where user_id = nullif(current_setting('answerable.subject', true), '')::uuid and deleted_at is null and status = 'active' and (valid_from is null or valid_from <= statement_timestamp()) and (valid_until is null or valid_until > statement_timestamp())))`,
     }),
   ],
 ).enableRLS();

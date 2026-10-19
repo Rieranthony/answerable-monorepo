@@ -124,11 +124,15 @@ export async function effectiveGrants(
   );
 }
 
+// Platform reads see every tenant, but the query names only the bound platform
+// organisation, the one organisation whose capabilities can hold platform scopes.
+const platformRead = { kind: "platform", access: "read" } as const;
+
 export async function hasPlatformWriter(
   executor: Executor,
   input: { resource: string; noWait?: true; excludingUserId?: string },
 ): Promise<boolean> {
-  return withDatabaseScope(executor, { kind: "policy-root" }, async (tx) => {
+  return withDatabaseScope(executor, platformRead, async (tx) => {
     // Root admission depends on the absence of a writer. FOR UPDATE also blocks
     // new platform memberships through their organisation foreign key.
     const platform = await tx

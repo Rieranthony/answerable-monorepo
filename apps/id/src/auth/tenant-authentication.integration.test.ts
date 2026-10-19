@@ -264,7 +264,7 @@ test("independently verified B account evidence admits the same global user to B
   expect(grant.organizationId).toBe(fixture.outsider.organizationId);
   const evidence = await withDatabaseScope(
     runtime.db,
-    { kind: "grant-admission", userId, sessionId: session!.id },
+    { kind: "policy-user", userId, sessionId: session!.id },
     async (tx) => {
       await lockResourceGrantTargets(tx, {
         userId,

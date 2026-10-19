@@ -53,13 +53,14 @@ export const grantContexts = pgTable(
     const mode = sql`current_setting('answerable.scope', true)`;
     const tenant = sql`${table.organizationId} = nullif(current_setting('answerable.tenant', true), '')::uuid`;
     const subject = sql`${table.userId} = nullif(current_setting('answerable.subject', true), '')::uuid`;
-    const admission = sql`(${mode} = 'grant-admission' and ${subject} and ${table.authenticationSessionId} = nullif(current_setting('answerable.session', true), '')::uuid)`;
+    // Admission: the subject's policy scope, bound to the session it authenticated with.
+    const admission = sql`(${mode} = 'policy-user' and ${subject} and ${table.authenticationSessionId} = nullif(current_setting('answerable.session', true), '')::uuid)`;
     const client = sql`(${mode} = 'grant-client' and ${table.clientInstanceId} in (select id from oauth_clients where client_id = current_setting('answerable.client', true)))`;
-    const write = sql`(${mode} in ('platform-write', 'platform-users') or (${mode} = 'tenant-write' and ${tenant}) or ${client})`;
+    const write = sql`(${mode} = 'platform-write' or (${mode} = 'tenant-write' and ${tenant}) or ${client})`;
     return [
       pgPolicy("grant_read", {
         for: "select",
-        using: sql`${write} or ${mode} = 'platform-read' or (${mode} = 'tenant-read' and ${tenant}) or (${mode} = 'policy-user' and ${subject}) or ${admission}`,
+        using: sql`${write} or ${mode} = 'platform-read' or (${mode} = 'tenant-read' and ${tenant}) or (${mode} = 'policy-user' and ${subject})`,
       }),
       pgPolicy("grant_insert", {
         for: "insert",

@@ -85,7 +85,7 @@ export const auditEventUsers = pgTable(
     primaryKey({ columns: [table.userId, table.eventId] }),
     pgPolicy("audit_users_read", {
       for: "select",
-      using: sql`current_setting('answerable.scope', true) in ('platform-read', 'platform-write', 'platform-users')`,
+      using: sql`current_setting('answerable.scope', true) in ('platform-read', 'platform-write')`,
     }),
   ],
 ).enableRLS();
