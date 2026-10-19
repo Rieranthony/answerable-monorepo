@@ -113,10 +113,8 @@ test("a real user-delegated access token for the admin resource is not an admin 
     organizationId,
     scopes: ["openid", "platform:read"],
     grantTypes: ["authorization_code"],
-    responseTypes: ["code"],
     redirectUris: [redirect],
     tokenEndpointAuthMethod: "client_secret_basic",
-    requirePKCE: true,
     skipConsent: false,
   });
   await fixture.db

@@ -156,9 +156,9 @@ test("client administration queries cover writes, filters, pagination, missing r
   expect(
     await queries.updateClient(db, a.clientId, {
       name: "Changed",
-      contacts: ["owner@example.com"],
+      uri: "https://changed.example",
     }),
-  ).toMatchObject({ name: "Changed", contacts: ["owner@example.com"] });
+  ).toMatchObject({ name: "Changed", uri: "https://changed.example" });
   expect(await queries.setClientDisabled(db, a.clientId, true)).toMatchObject({
     disabled: true,
   });

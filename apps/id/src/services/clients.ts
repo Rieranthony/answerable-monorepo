@@ -33,7 +33,6 @@ export type CreateClientInput = {
   jwksUri?: string;
   skipConsent?: boolean;
   uri?: string;
-  contacts?: string[];
 };
 const notFound = "Client, resource or organisation not found";
 function publicClient({ clientSecret, deletedAt, ...row }: ClientRow) {
@@ -55,7 +54,6 @@ function auditClient(row: ClientRow) {
     redirectUris: row.redirectUris,
     scopes: row.scopes,
     clientCredentialsScopes: row.clientCredentialsScopes,
-    requirePKCE: row.requirePKCE,
     skipConsent: row.skipConsent,
     disabled: row.disabled,
     revision: row.revision,
@@ -250,10 +248,6 @@ export async function createClient(
     clientId,
     clientSecret:
       clientSecret === undefined ? null : hashClientSecret(clientSecret),
-    responseTypes: input.grantTypes.includes("authorization_code")
-      ? ["code"]
-      : [],
-    requirePKCE: true,
   });
   await recordCommandEvent(context, {
     organizationId: row.organizationId,

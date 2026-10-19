@@ -46,7 +46,7 @@ See [fresh authentication](#fresh-authentication) for the additional requirement
 | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
 | Domain, SSO, credentials, client/resource security configuration, capabilities, assignments, memberships, account/session lifecycle and deletion | Required                                           |
 | Reads and organisation `name` edits                                                                                                              | Not required                                       |
-| Client edits containing only `name`, `uri` or `contacts`; resource/group edits containing only `name`                                            | Not required                                       |
+| Client edits containing only `name` or `uri`; resource/group edits containing only `name`                                                        | Not required                                       |
 | Machine and root requests                                                                                                                        | Existing credential and current-authority contract |
 
 **Metadata.** Each route declares `x-fresh-authentication`: `true`, `false`, or `unlessOnly` listing display fields. A mixed display/security patch requires freshness. The requirement is server policy and cannot be supplied or weakened by a request.

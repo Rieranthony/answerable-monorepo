@@ -44,10 +44,8 @@ beforeEach(async () => {
     organizationId: fixture.tenant.organizationId,
     scopes: ["openid", "email", "offline_access", "mail:read"],
     grantTypes: ["authorization_code", "refresh_token"],
-    responseTypes: ["code"],
     redirectUris: [redirect],
     tokenEndpointAuthMethod: "client_secret_basic",
-    requirePKCE: true,
     skipConsent: false,
   });
   await fixture.db.insert(oauthResources).values({

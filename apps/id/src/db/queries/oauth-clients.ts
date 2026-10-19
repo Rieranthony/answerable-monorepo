@@ -41,7 +41,6 @@ export type ClientPatch = Partial<
     ClientInput,
     | "name"
     | "uri"
-    | "contacts"
     | "redirectUris"
     | "scopes"
     | "clientCredentialsScopes"

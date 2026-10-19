@@ -231,7 +231,6 @@ test("integration: an unowned client cannot mint a token", async () => {
     organizationId: null,
     redirectUris: [],
     grantTypes: ["client_credentials"],
-    responseTypes: [],
     tokenEndpointAuthMethod: "client_secret_basic",
     scopes: [],
     clientCredentialsScopes: ["platform:read"],

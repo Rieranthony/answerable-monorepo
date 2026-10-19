@@ -293,11 +293,7 @@ test("private key and public clients work through both admin credentials", async
     );
     expect(publicResponse.status).toBe(201);
     const publicClient = await publicResponse.json();
-    expect(publicClient).toMatchObject({
-      requirePKCE: true,
-      hasClientSecret: false,
-      responseTypes: ["code"],
-    });
+    expect(publicClient).toMatchObject({ hasClientSecret: false });
     expect(publicClient).not.toHaveProperty("clientSecret");
     expect(
       (await lockClient(fixture.db, publicClient.clientId))?.clientSecret,
@@ -323,7 +319,6 @@ test("client cross-field failures include errors; the create example reaches an 
     },
     { tokenEndpointAuthMethod: "private_key_jwt", jwks: "bad" },
     { redirectUris: ["not-a-uri"] },
-    { contacts: ["invalid"] },
     { clientId: "Bad_ID" },
   ]) {
     const response = await request("", "POST", { ...input, ...patch });

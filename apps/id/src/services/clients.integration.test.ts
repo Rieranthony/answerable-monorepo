@@ -98,7 +98,6 @@ test("client lifecycle hides digests, returns secrets once, revokes tokens, chan
   const created = await service.createClient(db, actor, input);
   expect(created.clientSecret).toBeString();
   expect(created.hasClientSecret).toBe(true);
-  expect(created.responseTypes).toEqual([]);
   const originalDigest = hashClientSecret(created.clientSecret!);
   expect((await queries.lockClient(db, created.clientId))?.clientSecret).toBe(
     originalDigest,
@@ -112,7 +111,6 @@ test("client lifecycle hides digests, returns secrets once, revokes tokens, chan
   const patch = {
     name: "Changed",
     uri: "https://app.example",
-    contacts: ["owner@example.com"],
     redirectUris: [],
     scopes: ["openid"],
     clientCredentialsScopes: ["read", "write"],
@@ -225,15 +223,11 @@ test("client lifecycle hides digests, returns secrets once, revokes tokens, chan
   ])
     expect(serialised).not.toContain(secret);
 });
-test("public and private key clients have no secret; generated IDs and response types are server owned", async () => {
+test("public and private key clients have no secret; generated IDs are server owned", async () => {
   const db = connection.db;
   const browser = await service.createClient(db, actor, publicInput);
   expect(browser.clientId).toMatch(/^client_[0-9a-f]{16}$/);
-  expect(browser).toMatchObject({
-    requirePKCE: true,
-    responseTypes: ["code"],
-    hasClientSecret: false,
-  });
+  expect(browser).toMatchObject({ hasClientSecret: false });
   expect(browser).not.toHaveProperty("clientSecret");
   expect(
     (await service.listClients(db, { limit: 10 })).items[0],

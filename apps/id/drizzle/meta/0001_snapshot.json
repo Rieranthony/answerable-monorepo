@@ -1,6 +1,6 @@
 {
-  "id": "525c9e6c-4829-4e72-b7bf-7859364f45da",
-  "prevId": "3ecfaa01-61d8-491d-b476-785653dce74b",
+  "id": "541ab406-3d3a-4b24-85ce-4a040745ae5d",
+  "prevId": "ff654c28-2e6a-41da-b0f1-3a3f45fe78ad",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1452,12 +1452,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "contacts": {
-          "name": "contacts",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": false
-        },
         "redirect_uris": {
           "name": "redirect_uris",
           "type": "text[]",
@@ -1485,18 +1479,6 @@
         "grant_types": {
           "name": "grant_types",
           "type": "text[]",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "response_types": {
-          "name": "response_types",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "require_pkce": {
-          "name": "require_pkce",
-          "type": "boolean",
           "primaryKey": false,
           "notNull": false
         },

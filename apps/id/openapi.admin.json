@@ -24119,33 +24119,7 @@
                         "null"
                       ]
                     },
-                    "contacts": {
-                      "anyOf": [
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
                     "grantTypes": {
-                      "anyOf": [
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "responseTypes": {
                       "anyOf": [
                         {
                           "type": "array",
@@ -24184,12 +24158,6 @@
                         }
                       ]
                     },
-                    "requirePKCE": {
-                      "type": [
-                        "boolean",
-                        "null"
-                      ]
-                    },
                     "skipConsent": {
                       "type": [
                         "boolean",
@@ -24219,12 +24187,9 @@
                     "tokenEndpointAuthMethod",
                     "jwks",
                     "jwksUri",
-                    "contacts",
                     "grantTypes",
-                    "responseTypes",
                     "scopes",
                     "clientCredentialsScopes",
-                    "requirePKCE",
                     "skipConsent",
                     "resources"
                   ]
@@ -24546,21 +24511,6 @@
                       }
                     ]
                   },
-                  "contacts": {
-                    "anyOf": [
-                      {
-                        "type": "array",
-                        "items": {
-                          "type": "string",
-                          "format": "email",
-                          "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
-                        }
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
                   "redirectUris": {
                     "type": "array",
                     "items": {
@@ -24747,33 +24697,7 @@
                             "null"
                           ]
                         },
-                        "contacts": {
-                          "anyOf": [
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
                         "grantTypes": {
-                          "anyOf": [
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "responseTypes": {
                           "anyOf": [
                             {
                               "type": "array",
@@ -24812,12 +24736,6 @@
                             }
                           ]
                         },
-                        "requirePKCE": {
-                          "type": [
-                            "boolean",
-                            "null"
-                          ]
-                        },
                         "skipConsent": {
                           "type": [
                             "boolean",
@@ -24841,12 +24759,9 @@
                         "tokenEndpointAuthMethod",
                         "jwks",
                         "jwksUri",
-                        "contacts",
                         "grantTypes",
-                        "responseTypes",
                         "scopes",
                         "clientCredentialsScopes",
-                        "requirePKCE",
                         "skipConsent"
                       ]
                     },
@@ -25192,8 +25107,7 @@
         "x-fresh-authentication": {
           "unlessOnly": [
             "name",
-            "uri",
-            "contacts"
+            "uri"
           ]
         },
         "x-scopes": {
@@ -25354,33 +25268,7 @@
                               "null"
                             ]
                           },
-                          "contacts": {
-                            "anyOf": [
-                              {
-                                "type": "array",
-                                "items": {
-                                  "type": "string"
-                                }
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
                           "grantTypes": {
-                            "anyOf": [
-                              {
-                                "type": "array",
-                                "items": {
-                                  "type": "string"
-                                }
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "responseTypes": {
                             "anyOf": [
                               {
                                 "type": "array",
@@ -25419,12 +25307,6 @@
                               }
                             ]
                           },
-                          "requirePKCE": {
-                            "type": [
-                              "boolean",
-                              "null"
-                            ]
-                          },
                           "skipConsent": {
                             "type": [
                               "boolean",
@@ -25448,12 +25330,9 @@
                           "tokenEndpointAuthMethod",
                           "jwks",
                           "jwksUri",
-                          "contacts",
                           "grantTypes",
-                          "responseTypes",
                           "scopes",
                           "clientCredentialsScopes",
-                          "requirePKCE",
                           "skipConsent"
                         ]
                       }
@@ -25740,14 +25619,6 @@
                   "uri": {
                     "type": "string",
                     "format": "uri"
-                  },
-                  "contacts": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "format": "email",
-                      "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
-                    }
                   }
                 },
                 "required": [
@@ -25869,33 +25740,7 @@
                             "null"
                           ]
                         },
-                        "contacts": {
-                          "anyOf": [
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
                         "grantTypes": {
-                          "anyOf": [
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "responseTypes": {
                           "anyOf": [
                             {
                               "type": "array",
@@ -25934,12 +25779,6 @@
                             }
                           ]
                         },
-                        "requirePKCE": {
-                          "type": [
-                            "boolean",
-                            "null"
-                          ]
-                        },
                         "skipConsent": {
                           "type": [
                             "boolean",
@@ -25966,12 +25805,9 @@
                         "tokenEndpointAuthMethod",
                         "jwks",
                         "jwksUri",
-                        "contacts",
                         "grantTypes",
-                        "responseTypes",
                         "scopes",
                         "clientCredentialsScopes",
-                        "requirePKCE",
                         "skipConsent"
                       ]
                     },
@@ -26435,33 +26271,7 @@
                             "null"
                           ]
                         },
-                        "contacts": {
-                          "anyOf": [
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
                         "grantTypes": {
-                          "anyOf": [
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "responseTypes": {
                           "anyOf": [
                             {
                               "type": "array",
@@ -26500,12 +26310,6 @@
                             }
                           ]
                         },
-                        "requirePKCE": {
-                          "type": [
-                            "boolean",
-                            "null"
-                          ]
-                        },
                         "skipConsent": {
                           "type": [
                             "boolean",
@@ -26529,12 +26333,9 @@
                         "tokenEndpointAuthMethod",
                         "jwks",
                         "jwksUri",
-                        "contacts",
                         "grantTypes",
-                        "responseTypes",
                         "scopes",
                         "clientCredentialsScopes",
-                        "requirePKCE",
                         "skipConsent"
                       ]
                     },
@@ -26985,33 +26786,7 @@
                             "null"
                           ]
                         },
-                        "contacts": {
-                          "anyOf": [
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
                         "grantTypes": {
-                          "anyOf": [
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "responseTypes": {
                           "anyOf": [
                             {
                               "type": "array",
@@ -27050,12 +26825,6 @@
                             }
                           ]
                         },
-                        "requirePKCE": {
-                          "type": [
-                            "boolean",
-                            "null"
-                          ]
-                        },
                         "skipConsent": {
                           "type": [
                             "boolean",
@@ -27079,12 +26848,9 @@
                         "tokenEndpointAuthMethod",
                         "jwks",
                         "jwksUri",
-                        "contacts",
                         "grantTypes",
-                        "responseTypes",
                         "scopes",
                         "clientCredentialsScopes",
-                        "requirePKCE",
                         "skipConsent"
                       ]
                     },
@@ -27944,33 +27710,7 @@
                             "null"
                           ]
                         },
-                        "contacts": {
-                          "anyOf": [
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
                         "grantTypes": {
-                          "anyOf": [
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "responseTypes": {
                           "anyOf": [
                             {
                               "type": "array",
@@ -28009,12 +27749,6 @@
                             }
                           ]
                         },
-                        "requirePKCE": {
-                          "type": [
-                            "boolean",
-                            "null"
-                          ]
-                        },
                         "skipConsent": {
                           "type": [
                             "boolean",
@@ -28038,12 +27772,9 @@
                         "tokenEndpointAuthMethod",
                         "jwks",
                         "jwksUri",
-                        "contacts",
                         "grantTypes",
-                        "responseTypes",
                         "scopes",
                         "clientCredentialsScopes",
-                        "requirePKCE",
                         "skipConsent"
                       ]
                     },

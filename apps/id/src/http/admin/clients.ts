@@ -40,12 +40,9 @@ export const clientSchema = z.object({
   tokenEndpointAuthMethod: z.string().nullable(),
   jwks: z.string().nullable(),
   jwksUri: z.string().nullable(),
-  contacts: z.array(z.string()).nullable(),
   grantTypes: z.array(z.string()).nullable(),
-  responseTypes: z.array(z.string()).nullable(),
   scopes: z.array(z.string()).nullable(),
   clientCredentialsScopes: z.array(z.string()).nullable(),
-  requirePKCE: z.boolean().nullable(),
   skipConsent: z.boolean().nullable(),
 });
 const scopes = z.array(z.string().min(1));
@@ -73,13 +70,11 @@ const createSchema = z.object({
   jwksUri: z.url().optional(),
   skipConsent: z.boolean().optional(),
   uri: z.url().optional(),
-  contacts: z.array(z.email()).optional(),
 });
 const patchSchema = z
   .object({
     name: z.string().min(1).max(200).optional(),
     uri: z.url().nullable().optional(),
-    contacts: z.array(z.email()).nullable().optional(),
     redirectUris: z.array(z.url()).optional(),
     scopes: scopes.nullable().optional(),
     clientCredentialsScopes: scopes.nullable().optional(),
@@ -205,7 +200,7 @@ export const routes = {
     tag: "Clients",
     platformScope: "platform:write",
     kind: "write",
-    freshAuthentication: { unlessOnly: ["name", "uri", "contacts"] },
+    freshAuthentication: { unlessOnly: ["name", "uri"] },
     parameters: [...parameters, revisionParameter],
     requestBody: body(patchSchema),
     example: { body: { name: "Renamed" } },

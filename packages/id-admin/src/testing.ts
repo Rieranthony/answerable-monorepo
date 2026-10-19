@@ -507,8 +507,7 @@ export function createFakeId({
     /** Register a client, as staff do. */
     client(clientId: string) {
       const unset = Object.fromEntries([
-        "organizationId", "uri", "tokenEndpointAuthMethod", "jwks", "jwksUri", "contacts", "grantTypes", "responseTypes", "scopes", "clientCredentialsScopes",
-        "requirePKCE", "skipConsent",
+        "organizationId", "uri", "tokenEndpointAuthMethod", "jwks", "jwksUri", "grantTypes", "scopes", "clientCredentialsScopes", "skipConsent",
       ].map(field => [field, null]))
       clients.set(clientId, {
         ...unset, id: crypto.randomUUID(), clientId, name: clientId, revision: 1, authorizationVersion: 1, hasClientSecret: true, redirectUris: [],

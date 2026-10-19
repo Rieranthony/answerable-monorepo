@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1
+
+The fake ID's clients no longer carry `contacts`, `responseTypes` and `requirePKCE`, which ID's admin API dropped.
+
 ## 0.5.0
 
 `pages(path, get)` yields every page of one of ID's lists, following `nextCursor`: `get` reads `path` with `limit=200` and the cursor appended, URL-encoded, with `?` or `&` as the path needs. The Toolbox's poller and enable operation and the admin MCP's reads each wrote this loop.
