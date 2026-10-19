@@ -36,10 +36,10 @@ resource "civo_vpc_firewall" "this" {
   }
 }
 
-# Civo's managed PostgreSQL, version 17 only and in beta (portability.md § Civo). It holds answerable_id,
-# answerable_toolbox and answerable_admin, each with an owner and a runtime login that the `bootstrap` Job creates
-# (B3). The provider keeps the administrator's username and password in state; the sensitive output admin_url carries
-# them to the bootstrap Job's postgres-admin Secret, and nothing else outputs them.
+# Civo's managed PostgreSQL, version 17 only and in beta. It holds answerable_id, answerable_toolbox and
+# answerable_admin, each with an owner and a runtime login that the `bootstrap` Job creates. The provider keeps the
+# administrator's username and password in state; the sensitive output admin_url carries them to the postgres-admin
+# Secret the platform module writes, and to the root's break-glass output.
 resource "civo_database" "this" {
   name        = local.name
   engine      = "postgresql"

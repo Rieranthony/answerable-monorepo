@@ -9,7 +9,7 @@ output "name" {
 }
 
 output "api_endpoint" {
-  description = "The Kubernetes API's URL, the deploy workflow's KUBE_SERVER."
+  description = "The Kubernetes API's URL, the environment's KUBE_SERVER secret."
   value       = civo_kubernetes_cluster.this.api_endpoint
 }
 
@@ -17,11 +17,6 @@ output "kubeconfig" {
   description = "The cluster's admin kubeconfig (cluster-admin): the kubernetes and helm providers of the root, and the root's admin_kubeconfig output for break-glass and diagnostics."
   value       = civo_kubernetes_cluster.this.kubeconfig
   sensitive   = true
-}
-
-output "api_open_to_internet" {
-  description = "Whether the Kubernetes API's firewall admits the whole internet; the addresses themselves stay sensitive."
-  value       = nonsensitive(contains(local.api_sources, "0.0.0.0/0"))
 }
 
 output "firewall_id" {

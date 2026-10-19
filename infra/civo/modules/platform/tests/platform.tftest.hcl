@@ -1,6 +1,7 @@
-# The cluster's platform layer: the two namespaces, and the platform chart (Traefik, cert-manager, the Grafana agent;
-# D31) installed with the values only Terraform knows: the load balancer's firewall and reserved address, the ranges
-# Traefik trusts for X-Forwarded-For on the websecure entry point, and the origin-pull CA certificate.
+# The cluster's platform layer: the two namespaces under the restricted Pod Security Standard, the objects the
+# answerable chart and its Jobs read (trusted-proxies, postgres-admin, origin-tls), and the platform chart (Traefik, D31)
+# installed with the values only Terraform knows: the load balancer's firewall and reserved address, the ranges Traefik
+# trusts for X-Forwarded-For on the websecure entry point, and the origin-pull CA certificate.
 mock_provider "kubernetes" {}
 mock_provider "helm" {}
 
@@ -9,27 +10,92 @@ variables {
   load_balancer_firewall_id = "44444444-4444-4444-8444-444444444444"
   load_balancer_ip          = "192.0.2.10"
   trusted_proxy_cidrs       = ["173.245.48.0/20", "2400:cb00::/32", "10.10.0.0/24"]
-  environment               = "staging"
-  zone_name                 = "answerable-staging.uk"
-  origin_pull_ca_file       = "tests/fixtures/edge-ca.pem"
+  pod_cidr                  = "10.42.0.0/16"
+  origin_pull_ca_pem        = "placeholder: origin-pull CA certificate"
+  database_admin_url        = "postgres://civo:secret@10.10.0.7:5432/postgres?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem"
+  origin_certificate_pem    = "placeholder: origin certificate"
+  origin_private_key_pem    = "placeholder: origin key"
 }
 
-run "creates_the_namespaces_with_pod_security" {
+run "creates_the_namespaces_under_the_restricted_standard" {
   command = plan
 
   assert {
     condition     = kubernetes_namespace_v1.answerable.metadata[0].name == "answerable" && kubernetes_namespace_v1.platform.metadata[0].name == "platform"
-    error_message = "The namespaces must be answerable (the application) and platform (the shared controllers)."
+    error_message = "The namespaces must be answerable (the application) and platform (the platform chart)."
   }
 
   assert {
-    condition     = kubernetes_namespace_v1.answerable.metadata[0].labels["pod-security.kubernetes.io/enforce"] == "restricted"
-    error_message = "The application namespace must enforce the restricted Pod Security Standard."
+    condition = alltrue([
+      for namespace in [kubernetes_namespace_v1.answerable, kubernetes_namespace_v1.platform] :
+      namespace.metadata[0].labels["pod-security.kubernetes.io/enforce"] == "restricted"
+    ])
+    error_message = "Both namespaces must enforce the restricted Pod Security Standard; nothing in either needs more."
+  }
+}
+
+# ID's TRUSTED_PROXY_CIDRS: Traefik's trusted peers (Cloudflare and the private network), then the pod range Traefik
+# reaches ID from.
+run "writes_the_trusted_proxies_configmap" {
+  command = plan
+
+  assert {
+    condition = (
+      kubernetes_config_map_v1.trusted_proxies.metadata[0].name == "trusted-proxies"
+      && kubernetes_config_map_v1.trusted_proxies.metadata[0].namespace == "answerable"
+      && keys(kubernetes_config_map_v1.trusted_proxies.data) == tolist(["cidrs"])
+    )
+    error_message = "The ConfigMap must be answerable/trusted-proxies with the one key cidrs."
   }
 
   assert {
-    condition     = kubernetes_namespace_v1.platform.metadata[0].labels["pod-security.kubernetes.io/warn"] == "restricted"
-    error_message = "The platform namespace must at least warn on pods that fall short of the restricted standard."
+    condition     = kubernetes_config_map_v1.trusted_proxies.data["cidrs"] == "173.245.48.0/20,2400:cb00::/32,10.10.0.0/24,10.42.0.0/16"
+    error_message = "cidrs must be Traefik's trusted ranges then the pod range, comma-separated."
+  }
+
+  assert {
+    condition     = output.trusted_proxy_cidrs == "173.245.48.0/20,2400:cb00::/32,10.10.0.0/24,10.42.0.0/16"
+    error_message = "The module must report the ConfigMap's cidrs."
+  }
+}
+
+run "writes_the_postgres_admin_secret" {
+  command = plan
+
+  assert {
+    condition = (
+      kubernetes_secret_v1.postgres_admin.metadata[0].name == "postgres-admin"
+      && kubernetes_secret_v1.postgres_admin.metadata[0].namespace == "answerable"
+      && nonsensitive(keys(kubernetes_secret_v1.postgres_admin.data)) == tolist(["OPS_DATABASE_ADMIN_URL"])
+    )
+    error_message = "The Secret must be answerable/postgres-admin with the one key OPS_DATABASE_ADMIN_URL."
+  }
+
+  assert {
+    condition     = nonsensitive(kubernetes_secret_v1.postgres_admin.data["OPS_DATABASE_ADMIN_URL"]) == "postgres://civo:secret@10.10.0.7:5432/postgres?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem"
+    error_message = "OPS_DATABASE_ADMIN_URL must be the database module's administrator URL, unchanged."
+  }
+}
+
+run "writes_the_origin_tls_secret" {
+  command = plan
+
+  assert {
+    condition = (
+      kubernetes_secret_v1.origin_tls.metadata[0].name == "origin-tls"
+      && kubernetes_secret_v1.origin_tls.metadata[0].namespace == "answerable"
+      && kubernetes_secret_v1.origin_tls.type == "kubernetes.io/tls"
+    )
+    error_message = "The Secret must be answerable/origin-tls of type kubernetes.io/tls, which the three Ingresses name."
+  }
+
+  assert {
+    condition = (
+      nonsensitive(kubernetes_secret_v1.origin_tls.data["tls.crt"]) == "placeholder: origin certificate"
+      && nonsensitive(kubernetes_secret_v1.origin_tls.data["tls.key"]) == "placeholder: origin key"
+      && length(kubernetes_secret_v1.origin_tls.data) == 2
+    )
+    error_message = "tls.crt must be the Origin CA certificate and tls.key its key, and nothing else."
   }
 }
 
@@ -67,7 +133,7 @@ run "installs_the_platform_chart_with_the_load_balancer_wiring" {
       yamldecode(helm_release.platform.values[length(helm_release.platform.values) - 1])["traefik"]["ports"]["websecure"]["forwardedHeaders"]["trustedIPs"]
       == ["173.245.48.0/20", "2400:cb00::/32", "10.10.0.0/24"]
     )
-    error_message = "Traefik's websecure entry point must trust X-Forwarded-For only from the ranges it was given, as a list."
+    error_message = "Traefik's websecure entry point must trust X-Forwarded-For only from the ranges it was given, as a list, without the pod range."
   }
 
   assert {
@@ -77,7 +143,19 @@ run "installs_the_platform_chart_with_the_load_balancer_wiring" {
       && keys(yamldecode(helm_release.platform.values[length(helm_release.platform.values) - 1])["traefik"]) == ["ports", "service"]
       && keys(yamldecode(helm_release.platform.values[length(helm_release.platform.values) - 1])["traefik"]["ports"]) == ["websecure"]
     )
-    error_message = "Terraform owns the origin-pull CA, the Traefik Service annotations and websecure's trusted ranges, nothing else; no ingress-nginx key survives (D31)."
+    error_message = "Terraform owns the origin-pull CA, the Traefik Service annotations and websecure's trusted ranges, nothing else."
+  }
+}
+
+run "passes_the_origin_pull_ca_to_the_chart" {
+  command = plan
+
+  assert {
+    condition = (
+      yamldecode(helm_release.platform.values[length(helm_release.platform.values) - 1])["originPull"]["caPem"]
+      == "placeholder: origin-pull CA certificate"
+    )
+    error_message = "The chart must receive the edge module's origin-pull CA certificate as originPull.caPem, byte for byte."
   }
 }
 
@@ -124,46 +202,12 @@ run "refuses_trusting_everyone" {
   expect_failures = [var.trusted_proxy_cidrs]
 }
 
-run "passes_the_origin_pull_ca_to_the_chart" {
-  command = plan
-
-  assert {
-    condition = (
-      yamldecode(helm_release.platform.values[length(helm_release.platform.values) - 1])["originPull"]["caPem"]
-      == file("tests/fixtures/edge-ca.pem")
-    )
-    error_message = "The chart must receive the committed origin-pull CA certificate as originPull.caPem, byte for byte."
-  }
-}
-
-# The full apply needs edge-ca/ca.pem, which `bun run setup origin-pull` writes after the cluster exists; the error
-# names the file and that command.
-run "fails_at_plan_without_the_origin_pull_ca" {
+run "refuses_a_pod_range_that_is_everyone" {
   command = plan
 
   variables {
-    origin_pull_ca_file = "tests/fixtures/missing-ca.pem"
+    pod_cidr = "0.0.0.0/0"
   }
 
-  expect_failures = [helm_release.platform]
-}
-
-run "refuses_a_file_that_is_not_a_certificate" {
-  command = plan
-
-  variables {
-    origin_pull_ca_file = "tests/fixtures/values-civo-test.yaml"
-  }
-
-  expect_failures = [helm_release.platform]
-}
-
-run "refuses_a_file_that_holds_a_private_key" {
-  command = plan
-
-  variables {
-    origin_pull_ca_file = "tests/fixtures/edge-ca-with-key-marker.pem"
-  }
-
-  expect_failures = [helm_release.platform]
+  expect_failures = [var.pod_cidr]
 }

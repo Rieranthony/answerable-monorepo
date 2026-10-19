@@ -15,27 +15,12 @@ variable "values_files" {
 
   validation {
     condition     = alltrue([for path in var.values_files : fileexists(path)])
-    error_message = "A platform values file is missing: ${join(", ", [for path in var.values_files : path if !fileexists(path)])}. charts/platform ships values-civo-<environment>.yaml; check platform_values_files in terraform.tfvars and that the chart is on this branch."
+    error_message = "A platform values file is missing: ${join(", ", [for path in var.values_files : path if !fileexists(path)])}. charts/platform ships values-civo-<environment>.yaml for each environment."
   }
 }
 
-variable "environment" {
-  description = "The environment, `staging` or `production`, named in the command an error message gives."
-  type        = string
-
-  validation {
-    condition     = contains(["staging", "production"], var.environment)
-    error_message = "The environment must be staging or production."
-  }
-}
-
-variable "zone_name" {
-  description = "The environment's Cloudflare zone, named in the command that writes the origin-pull CA."
-  type        = string
-}
-
-variable "origin_pull_ca_file" {
-  description = "The origin-pull CA's public certificate (PEM), as a path Terraform can open from the root module's directory: infra/civo/envs/<environment>/edge-ca/ca.pem, written by `bun run setup origin-pull`. Read only when the platform release is planned."
+variable "origin_pull_ca_pem" {
+  description = "The origin-pull CA's certificate (PEM, public), from the edge module: the chart's originPull.caPem."
   type        = string
 }
 
@@ -60,7 +45,7 @@ variable "load_balancer_ip" {
 }
 
 variable "trusted_proxy_cidrs" {
-  description = "The peers whose X-Forwarded-* headers Traefik's websecure entry point trusts (ports.websecure.forwardedHeaders.trustedIPs): the private network the load balancer forwards from, which is the peer Traefik sees without PROXY protocol, and Cloudflare's ranges, the peer it would see with it."
+  description = "The peers whose X-Forwarded-* headers Traefik's websecure entry point trusts (ports.websecure.forwardedHeaders.trustedIPs): Cloudflare's ranges, the peer Traefik would see with PROXY protocol, and the private network the load balancer forwards from, the peer it sees without."
   type        = list(string)
 
   validation {
@@ -72,4 +57,31 @@ variable "trusted_proxy_cidrs" {
     condition     = alltrue([for cidr in var.trusted_proxy_cidrs : try(tonumber(split("/", cidr)[1]) > 0, false)])
     error_message = "Trusting X-Forwarded-For from the whole internet would let any client choose its own address."
   }
+}
+
+variable "pod_cidr" {
+  description = "The cluster's pod range, from which Traefik reaches the services: ID trusts it as a proxy hop after Traefik's own trusted peers."
+  type        = string
+
+  validation {
+    condition     = can(cidrhost(var.pod_cidr, 0)) && try(tonumber(split("/", var.pod_cidr)[1]) > 0, false)
+    error_message = "The pod range must be a CIDR narrower than the whole internet."
+  }
+}
+
+variable "database_admin_url" {
+  description = "The database administrator's URL, from the database module: OPS_DATABASE_ADMIN_URL in the postgres-admin Secret."
+  type        = string
+  sensitive   = true
+}
+
+variable "origin_certificate_pem" {
+  description = "The origin's certificate (PEM) from Cloudflare's Origin CA, from the edge module: tls.crt in the origin-tls Secret."
+  type        = string
+}
+
+variable "origin_private_key_pem" {
+  description = "The origin certificate's private key (PEM), from the edge module: tls.key in the origin-tls Secret."
+  type        = string
+  sensitive   = true
 }

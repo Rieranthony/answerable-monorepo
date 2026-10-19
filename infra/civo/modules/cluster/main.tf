@@ -6,25 +6,26 @@ locals {
   # is the Traefik that charts/platform pins (D31), so Civo's copy goes and only one controller exists. metrics-server,
   # also a default, stays: the HorizontalPodAutoscalers read it. Civo cannot change applications after creation.
   applications = "-Traefik-v2-nodeport"
-
-  # Who may reach the Kubernetes API: the operators' addresses, plus the whole internet while api_open_to_internet
-  # is true (staging's stopgap for GitHub-hosted runners; see the variable).
-  api_sources = var.api_open_to_internet ? distinct(concat(var.allowed_api_cidrs, ["0.0.0.0/0"])) : var.allowed_api_cidrs
 }
 
-# Civo clusters always have a public address. This firewall admits the Kubernetes API from local.api_sources only,
-# and from the private network only the ports the load balancer and the nodes need of one another, each named below
-# with its source in the README. 6443 is never admitted from the network as such.
+# Civo clusters always have a public address. This firewall admits the Kubernetes API from the internet and, from the
+# private network, only the ports the load balancer and the nodes need of one another, each named below with its
+# source in the README. 6443 is never admitted from the network as such.
 resource "civo_vpc_firewall" "this" {
   name                 = local.name
   network_id           = var.network_id
   create_default_rules = false
 
+  # The Kubernetes API admits 0.0.0.0/0, as every Civo cluster's does by default, and the cluster authenticates every
+  # request: TLS to the public endpoint, then a credential, either the namespace-scoped deployer token the workflows
+  # hold or the admin certificate kept in state. GitHub-hosted runners publish thousands of address ranges and cannot
+  # be listed, so this is how D30 (GitHub reaching the API) is resolved. The cost: a leaked deployer token works from
+  # anywhere until it is rotated, and a flaw in the API server is reachable from the internet (README).
   ingress_rule {
     label      = "kubernetes-api"
     protocol   = "tcp"
     port_range = "6443"
-    cidr       = local.api_sources
+    cidr       = ["0.0.0.0/0"]
     action     = "allow"
   }
 
@@ -95,7 +96,7 @@ resource "civo_vpc_firewall" "this" {
   }
 }
 
-# The cluster. Its kubeconfig is written to state (`write_kubeconfig`) because this root configures the kubernetes and
+# The cluster. Its kubeconfig is written to state (`write_kubeconfig`) because the root configures the kubernetes and
 # helm providers from it; the state therefore holds the cluster's admin credential and is kept in the environment's
 # private object store (see the README).
 resource "civo_kubernetes_cluster" "this" {

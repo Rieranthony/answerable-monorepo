@@ -1,7 +1,81 @@
 # The environment's Cloudflare zone (D18, D19): three proxied records to the load balancer, TLS strict to the origin,
-# origin pulls on, and for the three machine-facing hostnames no browser check, no challenge and no cache except
-# /assets/. Nothing here may touch any other name in the zone, above all production's www, which Vercel serves.
-mock_provider "cloudflare" {}
+# origin pulls on with the zone's own client certificate, the origin's certificate from Cloudflare's Origin CA, and for
+# the three machine-facing hostnames no browser check, no challenge and no cache except /assets/. Nothing here may
+# touch any other name in the zone, above all production's www, which Vercel serves.
+mock_provider "cloudflare" {
+  override_during = plan
+}
+
+mock_provider "tls" {
+  override_during = plan
+}
+
+# Placeholders for what the tls provider and the Origin CA would generate, one per resource so that the wiring below
+# can tell them apart. The tests assert on arguments and wiring, never on certificate contents.
+override_resource {
+  target          = tls_private_key.origin_pull_ca
+  override_during = plan
+  values = {
+    private_key_pem = "placeholder: origin-pull CA key"
+  }
+}
+
+override_resource {
+  target          = tls_self_signed_cert.origin_pull_ca
+  override_during = plan
+  values = {
+    cert_pem = "placeholder: origin-pull CA certificate"
+  }
+}
+
+override_resource {
+  target          = tls_private_key.origin_pull_client
+  override_during = plan
+  values = {
+    private_key_pem = "placeholder: origin-pull client key"
+  }
+}
+
+override_resource {
+  target          = tls_cert_request.origin_pull_client
+  override_during = plan
+  values = {
+    cert_request_pem = "placeholder: origin-pull client request"
+  }
+}
+
+override_resource {
+  target          = tls_locally_signed_cert.origin_pull_client
+  override_during = plan
+  values = {
+    cert_pem = "placeholder: origin-pull client certificate"
+  }
+}
+
+override_resource {
+  target          = tls_private_key.origin
+  override_during = plan
+  values = {
+    private_key_pem = "placeholder: origin key"
+  }
+}
+
+override_resource {
+  target          = tls_cert_request.origin
+  override_during = plan
+  values = {
+    cert_request_pem = "placeholder: origin request"
+  }
+}
+
+override_resource {
+  target          = cloudflare_origin_ca_certificate.this
+  override_during = plan
+  values = {
+    certificate = "placeholder: origin certificate"
+    expires_on  = "2041-10-15T12:00:00Z"
+  }
+}
 
 variables {
   environment = "staging"
@@ -59,6 +133,120 @@ run "holds_tls_strict_with_origin_pulls" {
   assert {
     condition     = cloudflare_authenticated_origin_pulls_settings.this.enabled && cloudflare_authenticated_origin_pulls_settings.this.zone_id == "0123456789abcdef0123456789abcdef"
     error_message = "Zone-level authenticated origin pulls must be on."
+  }
+}
+
+# The origin-pull CA: ECDSA P-256, ten years, a CA that signs certificates and nothing else, named after the zone.
+run "makes_the_origin_pull_ca" {
+  command = plan
+
+  assert {
+    condition     = tls_private_key.origin_pull_ca.algorithm == "ECDSA" && tls_private_key.origin_pull_ca.ecdsa_curve == "P256"
+    error_message = "The origin-pull CA's key must be ECDSA P-256."
+  }
+
+  assert {
+    condition = (
+      tls_self_signed_cert.origin_pull_ca.is_ca_certificate
+      && tls_self_signed_cert.origin_pull_ca.validity_period_hours == 87600
+      && toset(tls_self_signed_cert.origin_pull_ca.allowed_uses) == toset(["cert_signing", "crl_signing"])
+      && tls_self_signed_cert.origin_pull_ca.subject[0].common_name == "Answerable origin-pull CA (answerable-staging.uk)"
+    )
+    error_message = "The origin-pull CA must be a CA for ten years, signing certificates and revocation lists only, named Answerable origin-pull CA (<zone>)."
+  }
+
+  assert {
+    condition     = nonsensitive(tls_self_signed_cert.origin_pull_ca.private_key_pem) == "placeholder: origin-pull CA key"
+    error_message = "The CA certificate must be self-signed with the CA's own key."
+  }
+
+  assert {
+    condition     = output.origin_pull_ca_pem == "placeholder: origin-pull CA certificate" && !issensitive(output.origin_pull_ca_pem)
+    error_message = "origin_pull_ca_pem must be the CA's certificate, a public value."
+  }
+}
+
+# The client certificate Cloudflare presents: a leaf the CA signs, for client authentication, five years, uploaded to
+# the zone with its own key.
+run "signs_and_uploads_the_client_certificate" {
+  command = plan
+
+  assert {
+    condition     = tls_private_key.origin_pull_client.algorithm == "ECDSA" && tls_private_key.origin_pull_client.ecdsa_curve == "P256"
+    error_message = "The client certificate's key must be ECDSA P-256."
+  }
+
+  assert {
+    condition = (
+      tls_cert_request.origin_pull_client.subject[0].common_name == "cloudflare-origin-pull.answerable-staging.uk"
+      && nonsensitive(tls_cert_request.origin_pull_client.private_key_pem) == "placeholder: origin-pull client key"
+    )
+    error_message = "The client's request must be cloudflare-origin-pull.<zone>, made with the client's own key."
+  }
+
+  assert {
+    condition = (
+      tls_locally_signed_cert.origin_pull_client.cert_request_pem == "placeholder: origin-pull client request"
+      && tls_locally_signed_cert.origin_pull_client.ca_cert_pem == "placeholder: origin-pull CA certificate"
+      && nonsensitive(tls_locally_signed_cert.origin_pull_client.ca_private_key_pem) == "placeholder: origin-pull CA key"
+    )
+    error_message = "The origin-pull CA must sign the client's request."
+  }
+
+  assert {
+    condition = (
+      toset(tls_locally_signed_cert.origin_pull_client.allowed_uses) == toset(["client_auth", "digital_signature"])
+      && tls_locally_signed_cert.origin_pull_client.validity_period_hours == 43800
+    )
+    error_message = "The client certificate must serve client authentication only (Traefik checks client_auth), for five years."
+  }
+
+  assert {
+    condition = (
+      cloudflare_authenticated_origin_pulls_certificate.this.zone_id == "0123456789abcdef0123456789abcdef"
+      && cloudflare_authenticated_origin_pulls_certificate.this.certificate == "placeholder: origin-pull client certificate"
+      && nonsensitive(cloudflare_authenticated_origin_pulls_certificate.this.private_key) == "placeholder: origin-pull client key"
+    )
+    error_message = "The zone's upload must be the signed client certificate with the client's key, never the CA."
+  }
+}
+
+# The origin's server certificate: Cloudflare's Origin CA, exactly the three hostnames, ECDSA, 5475 days.
+run "requests_the_origin_certificate_for_the_three_hostnames" {
+  command = plan
+
+  assert {
+    condition     = tls_private_key.origin.algorithm == "ECDSA" && tls_private_key.origin.ecdsa_curve == "P256"
+    error_message = "The origin certificate's key must be ECDSA P-256, which origin-ecc signs."
+  }
+
+  assert {
+    condition = (
+      tls_cert_request.origin.dns_names == tolist(["admin-mcp.answerable-staging.uk", "id.answerable-staging.uk", "toolbox.answerable-staging.uk"])
+      && tls_cert_request.origin.subject[0].common_name == "id.answerable-staging.uk"
+      && nonsensitive(tls_cert_request.origin.private_key_pem) == "placeholder: origin key"
+    )
+    error_message = "The origin's request must name the three hostnames, with ID's as the common name, made with the origin's key."
+  }
+
+  assert {
+    condition = (
+      cloudflare_origin_ca_certificate.this.hostnames == tolist(["admin-mcp.answerable-staging.uk", "id.answerable-staging.uk", "toolbox.answerable-staging.uk"])
+      && cloudflare_origin_ca_certificate.this.request_type == "origin-ecc"
+      && cloudflare_origin_ca_certificate.this.requested_validity == 5475
+      && cloudflare_origin_ca_certificate.this.csr == "placeholder: origin request"
+    )
+    error_message = "The Origin CA request must name exactly the three hostnames, ECC, for 5475 days, from the origin's own request."
+  }
+
+  assert {
+    condition = (
+      output.origin_certificate_pem == "placeholder: origin certificate"
+      && output.origin_certificate_expires_on == "2041-10-15T12:00:00Z"
+      && issensitive(output.origin_private_key_pem)
+      && nonsensitive(output.origin_private_key_pem) == "placeholder: origin key"
+    )
+    error_message = "The module must hand out the Origin CA certificate, its expiry and, as a sensitive value, its key."
   }
 }
 
@@ -121,6 +309,7 @@ run "leaves_production_www_alone" {
       for text in concat(
         [for record in cloudflare_dns_record.service : record.name],
         [cloudflare_ruleset.config.rules[0].expression, cloudflare_ruleset.cache.rules[0].expression],
+        cloudflare_origin_ca_certificate.this.hostnames,
       ) : !strcontains(text, "www") && text != "answerable.org"
     ])
     error_message = "Nothing the edge module writes may name www.answerable.org or the apex."

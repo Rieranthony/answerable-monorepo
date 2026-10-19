@@ -1,6 +1,6 @@
-# The cluster and its firewall: the Kubernetes API answers only the listed addresses, nothing else outside the private
-# network gets in, Cilium is the CNI and Civo's marketplace Traefik is never installed: the one ingress controller is
-# the Traefik charts/platform pins (D31).
+# The cluster and its firewall: the Kubernetes API answers the internet and the cluster authenticates it, nothing else
+# outside the private network gets in, Cilium is the CNI and Civo's marketplace Traefik is never installed: the one
+# ingress controller is the Traefik charts/platform pins (D31).
 mock_provider "civo" {
   override_during = plan
 
@@ -12,12 +12,11 @@ mock_provider "civo" {
 }
 
 variables {
-  environment       = "staging"
-  network_id        = "22222222-2222-4222-8222-222222222222"
-  network_cidr      = "10.10.0.0/24"
-  allowed_api_cidrs = ["198.51.100.7/32", "203.0.113.0/28"]
-  node_size         = "g4s.kube.medium"
-  node_count        = 2
+  environment  = "staging"
+  network_id   = "22222222-2222-4222-8222-222222222222"
+  network_cidr = "10.10.0.0/24"
+  node_size    = "g4s.kube.medium"
+  node_count   = 2
 }
 
 run "builds_the_cluster_on_the_private_network" {
@@ -64,7 +63,9 @@ run "builds_the_cluster_on_the_private_network" {
   }
 }
 
-run "admits_the_api_from_the_listed_addresses_only" {
+# D30, resolved: GitHub-hosted runners cannot be listed in a firewall, so 6443 admits the internet and the cluster's
+# own authentication (TLS, then the deployer token or the admin certificate) is the barrier.
+run "admits_the_api_from_the_internet_and_nothing_else_from_it" {
   command = plan
 
   assert {
@@ -80,9 +81,9 @@ run "admits_the_api_from_the_listed_addresses_only" {
   assert {
     condition = alltrue([
       for rule in civo_vpc_firewall.this.ingress_rule :
-      rule.cidr == toset(["198.51.100.7/32", "203.0.113.0/28"]) if rule.port_range == "6443"
+      rule.cidr == toset(["0.0.0.0/0"]) && rule.protocol == "tcp" && rule.action == "allow" if rule.port_range == "6443"
     ]) && length([for rule in civo_vpc_firewall.this.ingress_rule : rule if rule.port_range == "6443"]) == 1
-    error_message = "Exactly one rule may admit the Kubernetes API, from exactly the listed addresses."
+    error_message = "Exactly one rule admits the Kubernetes API, TCP 6443 from 0.0.0.0/0."
   }
 
   assert {
@@ -96,9 +97,9 @@ run "admits_the_api_from_the_listed_addresses_only" {
   assert {
     condition = alltrue([
       for rule in civo_vpc_firewall.this.ingress_rule :
-      !contains(rule.cidr, "0.0.0.0/0") && !contains(rule.cidr, "::/0") && rule.action == "allow"
+      !contains(rule.cidr, "0.0.0.0/0") && !contains(rule.cidr, "::/0") if rule.port_range != "6443"
     ])
-    error_message = "No inbound rule may admit the whole internet."
+    error_message = "Only the Kubernetes API may admit the whole internet."
   }
 
   assert {
@@ -108,8 +109,8 @@ run "admits_the_api_from_the_listed_addresses_only" {
 }
 
 # From the private network the firewall admits only what the load balancer and the nodes need of one another (see the
-# module README for the sources). A rule spanning every port, or any rule from the network reaching 6443, would let
-# anything on the network past allowed_api_cidrs, so neither may come back.
+# module README for the sources). A rule spanning every port, or any rule from the network reaching 6443, would add
+# nothing the API rule does not already admit and hide a mistake, so neither may come back.
 run "admits_only_named_ports_from_the_private_network" {
   command = plan
 
@@ -137,7 +138,7 @@ run "admits_only_named_ports_from_the_private_network" {
         )
       ) if rule.cidr == toset(["10.10.0.0/24"])
     ])
-    error_message = "No rule from the private network may reach 6443; the API answers allowed_api_cidrs and api_open_to_internet only."
+    error_message = "No rule from the private network may reach 6443; the API has its one rule."
   }
 
   assert {
@@ -157,119 +158,8 @@ run "lets_the_nodes_reach_out" {
       for rule in civo_vpc_firewall.this.egress_rule : rule
       if rule.cidr == toset(["0.0.0.0/0"]) && rule.action == "allow"
     ]) == 3
-    error_message = "The nodes need outbound TCP, UDP and ICMP: images from GHCR, DNS, the identity providers, Let's Encrypt."
+    error_message = "The nodes need outbound TCP, UDP and ICMP: images from GHCR, DNS, the identity providers."
   }
-}
-
-run "refuses_an_api_open_to_everyone" {
-  command = plan
-
-  variables {
-    allowed_api_cidrs = ["0.0.0.0/0"]
-  }
-
-  expect_failures = [var.allowed_api_cidrs]
-}
-
-run "refuses_no_api_addresses" {
-  command = plan
-
-  variables {
-    allowed_api_cidrs = []
-  }
-
-  expect_failures = [var.allowed_api_cidrs]
-}
-
-run "reports_a_closed_api_by_default" {
-  command = plan
-
-  assert {
-    condition     = output.api_open_to_internet == false
-    error_message = "By default the Kubernetes API admits the listed addresses only."
-  }
-}
-
-# The staging stopgap: GitHub-hosted runners have no fixed address, so staging's API admits the internet and the
-# cluster's own authentication is the barrier, until GitOps or a Cloudflare tunnel closes it again.
-run "opens_the_api_when_asked_and_nothing_else" {
-  command = plan
-
-  variables {
-    api_open_to_internet = true
-  }
-
-  assert {
-    condition = alltrue([
-      for rule in civo_vpc_firewall.this.ingress_rule :
-      rule.cidr == toset(["198.51.100.7/32", "203.0.113.0/28", "0.0.0.0/0"]) if rule.port_range == "6443"
-    ]) && length([for rule in civo_vpc_firewall.this.ingress_rule : rule if rule.port_range == "6443"]) == 1
-    error_message = "An open API admits the internet on 6443 and keeps the operators' addresses."
-  }
-
-  assert {
-    condition = alltrue([
-      for rule in civo_vpc_firewall.this.ingress_rule :
-      !contains(rule.cidr, "0.0.0.0/0") && !contains(rule.cidr, "::/0") if rule.port_range != "6443"
-    ]) && length(civo_vpc_firewall.this.ingress_rule) == 6
-    error_message = "Opening the API must open nothing but 6443."
-  }
-
-  assert {
-    condition     = output.api_open_to_internet
-    error_message = "The module must report an open API."
-  }
-}
-
-run "accepts_the_whole_internet_in_the_list_when_open" {
-  command = plan
-
-  variables {
-    api_open_to_internet = true
-    allowed_api_cidrs    = ["0.0.0.0/0"]
-  }
-
-  assert {
-    condition = alltrue([
-      for rule in civo_vpc_firewall.this.ingress_rule : rule.cidr == toset(["0.0.0.0/0"]) if rule.port_range == "6443"
-    ])
-    error_message = "The internet listed once is admitted once."
-  }
-}
-
-run "accepts_no_operator_addresses_when_open" {
-  command = plan
-
-  variables {
-    api_open_to_internet = true
-    allowed_api_cidrs    = []
-  }
-
-  assert {
-    condition     = output.api_open_to_internet
-    error_message = "An open API needs no operator address to be reachable."
-  }
-}
-
-run "refuses_an_open_api_in_production" {
-  command = plan
-
-  variables {
-    environment          = "production"
-    api_open_to_internet = true
-  }
-
-  expect_failures = [var.api_open_to_internet]
-}
-
-run "refuses_a_malformed_api_address" {
-  command = plan
-
-  variables {
-    allowed_api_cidrs = ["198.51.100.7"]
-  }
-
-  expect_failures = [var.allowed_api_cidrs]
 }
 
 run "refuses_a_node_size_that_is_not_a_kubernetes_size" {

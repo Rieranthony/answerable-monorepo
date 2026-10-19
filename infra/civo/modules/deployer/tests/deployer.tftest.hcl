@@ -1,5 +1,5 @@
-# The deploy workflow's identity (D25): a ServiceAccount that can do what `helm upgrade` of charts/answerable and the
-# secrets step need inside the answerable namespace and nothing else; reading another namespace is opt-in.
+# The deploy workflow's identity (D25): a ServiceAccount that can do what `helm upgrade` of charts/answerable, the
+# id-env Secret and the ops Jobs need inside the answerable namespace, and nothing in any other namespace.
 mock_provider "kubernetes" {}
 
 variables {
@@ -89,46 +89,37 @@ run "grants_what_helm_upgrade_needs_in_its_namespace_only" {
     ])
     error_message = "Pods belong to their controllers: the deployer reads them and never creates or deletes them."
   }
-}
-
-run "reads_no_other_namespace_by_default" {
-  command = plan
-
-  assert {
-    condition     = length(kubernetes_role_v1.read) == 0 && length(kubernetes_role_binding_v1.read) == 0 && length(output.read_namespaces) == 0
-    error_message = "The pipeline reads nothing outside answerable, so by default the deployer may not either."
-  }
-}
-
-# Kept for a future diagnostic: what read_namespaces grants when it is set.
-run "reads_the_platform_namespace_and_nothing_more" {
-  command = plan
-
-  variables {
-    read_namespaces = ["platform"]
-  }
-
-  assert {
-    condition     = kubernetes_role_v1.read["platform"].metadata[0].namespace == "platform" && kubernetes_role_binding_v1.read["platform"].metadata[0].namespace == "platform"
-    error_message = "The deployer's read access to platform must be a Role in that namespace."
-  }
 
   assert {
     condition = alltrue([
-      for rule in kubernetes_role_v1.read["platform"].rule : length(setsubtract(rule.verbs, ["get", "list", "watch"])) == 0
+      for rule in kubernetes_role_v1.this.rule :
+      length(setsubtract(rule.api_groups, ["", "events.k8s.io", "apps", "batch", "autoscaling", "policy", "networking.k8s.io", "rbac.authorization.k8s.io"])) == 0
     ])
-    error_message = "The deployer may only read the platform namespace."
+    error_message = "The deployer's rules name Kubernetes' own API groups only; charts/answerable renders no custom resource."
+  }
+}
+
+run "exposes_its_token_and_the_cluster_ca_only_as_sensitive_values" {
+  command = plan
+
+  override_resource {
+    target          = kubernetes_secret_v1.token
+    override_during = plan
+    values = {
+      data = {
+        token    = "a-token"
+        "ca.crt" = "-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----\n"
+      }
+    }
   }
 
   assert {
-    condition = alltrue([
-      for rule in kubernetes_role_v1.read["platform"].rule : !contains(rule.resources, "secrets")
-    ])
-    error_message = "The deployer must not read the platform namespace's secrets (the DNS token, the agent's credentials)."
+    condition     = issensitive(output.token) && issensitive(output.ca_certificate)
+    error_message = "KUBE_TOKEN and KUBE_CA leave the module only as sensitive values."
   }
 
   assert {
-    condition     = kubernetes_role_binding_v1.read["platform"].subject[0].name == "deployer" && kubernetes_role_binding_v1.read["platform"].subject[0].namespace == "answerable"
-    error_message = "The platform read binding must name the deployer in the answerable namespace."
+    condition     = nonsensitive(output.token) == "a-token" && startswith(nonsensitive(output.ca_certificate), "-----BEGIN CERTIFICATE-----")
+    error_message = "The outputs must be the token Secret's token and ca.crt."
   }
 }

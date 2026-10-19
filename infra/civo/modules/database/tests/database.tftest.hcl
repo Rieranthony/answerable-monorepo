@@ -1,5 +1,5 @@
 # The managed PostgreSQL 17 (D26): on the private network, behind a firewall that admits 5432 from that network only,
-# one node in staging and three (one primary, two standbys) in production.
+# one node in both environments until the failover of additional nodes is measured, then three or five.
 mock_provider "civo" {
   override_during = plan
 
@@ -77,7 +77,7 @@ run "admits_postgres_from_the_private_network_only" {
   }
 }
 
-run "production_runs_three_nodes" {
+run "runs_a_primary_with_two_standbys_when_asked" {
   command = plan
 
   variables {
@@ -88,7 +88,7 @@ run "production_runs_three_nodes" {
 
   assert {
     condition     = civo_database.this.name == "answerable-production-database" && civo_database.this.nodes == 3
-    error_message = "Production's database must be answerable-production-database with three nodes."
+    error_message = "A three-node database must be answerable-<environment>-database with three nodes."
   }
 }
 
@@ -133,14 +133,17 @@ run "builds_the_admin_url_with_an_encoded_password" {
     condition     = output.admin_url == "postgres://civo%20admin:p%40ss%3Aw%2Frd%3F%23%25%2B%20%C3%A4%26%3D@10.10.0.7:5432/postgres?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem"
     error_message = "The admin URL must be postgres://<user>:<password>@<private address>:<port>/postgres with verify-full against the mounted CA, the login percent-encoded."
   }
+
+  assert {
+    condition     = issensitive(output.admin_url)
+    error_message = "The admin URL carries the administrator's password: it must be a sensitive output."
+  }
 }
 
-run "names_the_admin_database_it_is_given" {
+# Civo documents its default database as postgres ("The default database name will be postgres",
+# civo.com/docs/database/postgresql/connect), so the URL names it and no variable can change it.
+run "names_civos_default_database" {
   command = plan
-
-  variables {
-    admin_database = "defaultdb"
-  }
 
   override_resource {
     target          = civo_database.this
@@ -154,17 +157,7 @@ run "names_the_admin_database_it_is_given" {
   }
 
   assert {
-    condition     = output.admin_url == "postgres://civo:plain@10.10.0.7:5432/defaultdb?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem"
-    error_message = "The admin URL must name the administrator's database the first real bootstrap confirms."
+    condition     = output.admin_url == "postgres://civo:plain@10.10.0.7:5432/postgres?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem"
+    error_message = "The admin URL must name Civo's default database, postgres."
   }
-}
-
-run "refuses_an_admin_database_name_that_needs_encoding" {
-  command = plan
-
-  variables {
-    admin_database = "post gres/x"
-  }
-
-  expect_failures = [var.admin_database]
 }

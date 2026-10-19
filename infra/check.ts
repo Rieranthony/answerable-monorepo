@@ -14,7 +14,6 @@ import { join, relative } from "node:path"
 const repo = Bun.fileURLToPath(new URL("../", import.meta.url))
 const infra = join(repo, "infra")
 const charts = join(repo, "charts")
-const civoEnvs = join(infra, "civo/envs")
 
 // Rendered manifests are validated against the schemas of this Kubernetes version, and custom resources against the
 // community catalogue; a kind with no schema anywhere is reported as skipped in the summary rather than failing.
@@ -102,9 +101,44 @@ function terraformDirectories(dir = infra): string[] {
 
 // A root module carries a backend and a committed lock file; a shared module has neither.
 const isRoot = (dir: string) => existsSync(join(dir, "backend.tf"))
-const hasTests = (dir: string) =>
-  existsSync(join(dir, "tests")) &&
-  readdirSync(join(dir, "tests")).some((name) => name.endsWith(".tftest.hcl"))
+const testFiles = (dir: string) =>
+  existsSync(join(dir, "tests"))
+    ? readdirSync(join(dir, "tests"))
+        .filter((name) => name.endsWith(".tftest.hcl"))
+        .sort()
+    : []
+const hasTests = (dir: string) => testFiles(dir).length > 0
+
+// The `terraform test` runs of one directory. A module's tests run in one go. A root with per-environment values
+// (envs/<environment>.tfvars) runs each environment's file, tests/<environment>.tftest.hcl, with those values, as
+// terraform.sh plans it; an environment without its test file, or a test file without its values, fails the check.
+function testRuns(dir: string): string[][] {
+  const envs = join(dir, "envs")
+  if (!existsSync(envs)) return [[]]
+  const environments = readdirSync(envs)
+    .filter((name) => name.endsWith(".tfvars"))
+    .map((name) => name.slice(0, -".tfvars".length))
+    .sort()
+  const tested = testFiles(dir).map((name) =>
+    name.slice(0, -".tftest.hcl".length),
+  )
+  const missing = [
+    ...environments
+      .filter((name) => !tested.includes(name))
+      .map((name) => `tests/${name}.tftest.hcl`),
+    ...tested
+      .filter((name) => !environments.includes(name))
+      .map((name) => `envs/${name}.tfvars`),
+  ]
+  if (missing.length > 0)
+    throw new Error(
+      `${show(dir)} pairs each envs/<environment>.tfvars with tests/<environment>.tftest.hcl; missing ${missing.join(", ")}`,
+    )
+  return environments.map((name) => [
+    `-filter=tests/${name}.tftest.hcl`,
+    `-var-file=envs/${name}.tfvars`,
+  ])
+}
 
 function chartDirectories() {
   if (!existsSync(charts)) return []
@@ -203,31 +237,6 @@ async function helmSteps() {
   }
 }
 
-// The two Civo roots differ only in their backend and their values: a resource added to one and not the other fails here.
-function civoRootsAgree() {
-  const staging = join(civoEnvs, "staging")
-  const production = join(civoEnvs, "production")
-  if (!existsSync(staging) && !existsSync(production)) return
-  const shared = (dir: string) =>
-    readdirSync(dir)
-      .filter((name) => name.endsWith(".tf") && name !== "backend.tf")
-      .sort()
-  const names = [...new Set([...shared(staging), ...shared(production)])]
-  const differing = names.filter((name) => {
-    const [a, b] = [join(staging, name), join(production, name)]
-    return (
-      !existsSync(a) ||
-      !existsSync(b) ||
-      readFileSync(a, "utf8") !== readFileSync(b, "utf8")
-    )
-  })
-  if (differing.length > 0)
-    throw new Error(
-      `infra/civo/envs/staging and production differ in ${differing.join(", ")}; only backend.tf and terraform.tfvars may differ`,
-    )
-  console.log(`The Civo roots share ${names.join(", ")} byte for byte.`)
-}
-
 const steps: { name: string; run: () => Promise<void> | void }[] = [
   { name: "Helm lint and kubeconform", run: helmSteps },
   {
@@ -235,7 +244,6 @@ const steps: { name: string; run: () => Promise<void> | void }[] = [
     run: () =>
       run(["terraform", "fmt", "-check", "-recursive", "-diff", "infra"]),
   },
-  { name: "Civo roots agree", run: civoRootsAgree },
   {
     name: "terraform init and validate",
     run: async () => {
@@ -259,7 +267,8 @@ const steps: { name: string; run: () => Promise<void> | void }[] = [
     name: "terraform test",
     run: async () => {
       for (const dir of terraformDirectories().filter(hasTests))
-        await run(["terraform", "test"], dir, terraformEnv)
+        for (const options of testRuns(dir))
+          await run(["terraform", "test", ...options], dir, terraformEnv)
     },
   },
   {
@@ -283,13 +292,11 @@ const steps: { name: string; run: () => Promise<void> | void }[] = [
           "HIGH,CRITICAL",
           "--exit-code",
           "1",
-          "--ignorefile",
-          join(infra, ".trivyignore"),
           "--skip-dirs",
           "**/.terraform",
-          // The dependency archives `helm dependency build` downloads are upstream charts (Traefik, cert-manager,
-          // the Grafana agent), not ours: managing Secrets and webhooks is their job, and their findings are not
-          // ours to fix. Our own templates are scanned, and rendered and validated by the Helm step.
+          // The dependency archives `helm dependency build` downloads are upstream charts (Traefik), not ours:
+          // their findings are not ours to fix. Our own templates are scanned, and rendered and validated by the
+          // Helm step.
           "--skip-dirs",
           "charts/*/charts",
           show(target),

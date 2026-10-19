@@ -8,7 +8,11 @@ terraform {
     }
     cloudflare = {
       source  = "cloudflare/cloudflare"
-      version = "5.27.0"
+      version = "5.28.0"
+    }
+    github = {
+      source  = "integrations/github"
+      version = "6.13.0"
     }
     helm = {
       source  = "hashicorp/helm"
@@ -17,6 +21,10 @@ terraform {
     kubernetes = {
       source  = "hashicorp/kubernetes"
       version = "3.3.0"
+    }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "4.4.1"
     }
   }
 }
