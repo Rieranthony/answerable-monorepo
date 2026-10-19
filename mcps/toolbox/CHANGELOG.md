@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.7
+
+No tool changes. `@answerable/mcp-postgres` 0.6.0 squashes its migrations into `mcp-postgres/0001_initial.sql`. Recreate a database migrated before this version: drop its `public` schema, then run `db:migrate`; otherwise `db:migrate` refuses it, naming `mcp-postgres/0001_evidence.sql`.
+
 ## 0.3.6
 
 No tool changes. The Toolbox serves as a restricted runtime login, and can run in a container. Breaking for an existing setup: `TOOLBOX_DATABASE_URL` must name the runtime login, and `db:migrate` reads the owner's URL from `TOOLBOX_DATABASE_MIGRATION_URL`.

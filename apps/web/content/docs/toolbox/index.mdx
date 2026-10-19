@@ -211,7 +211,7 @@ Intent events carry the intent's organisation, person, host client, capability a
 
 **What a row holds.** The organisation, actor, host client, capability identity and version, execution id, JSON-RPC id, trace and span ids, outcome and bounded `data` (at most 4 KiB). Inputs, results and secrets are never recorded.
 
-**The chain.** A database trigger takes a per-organisation lock, sets `seq` to the organisation's next number and `row_hash` to SHA-256 over the previous row's hash and every field, each written as its byte length, a colon and its text. The migration `packages/mcp-postgres/migrations/0001_evidence.sql` spells the layout out. Another trigger refuses `UPDATE`, `DELETE` and `TRUNCATE`. The Toolbox serves as a [runtime login](#database-roles) that holds no `UPDATE`, `DELETE` or `TRUNCATE` on events and cannot drop or disable either trigger: only the schema owner can, and the Toolbox refuses to start as the owner.
+**The chain.** A database trigger takes a per-organisation lock, sets `seq` to the organisation's next number and `row_hash` to SHA-256 over the previous row's hash and every field, each written as its byte length, a colon and its text. The migration `packages/mcp-postgres/migrations/0001_initial.sql` spells the layout out. Another trigger refuses `UPDATE`, `DELETE` and `TRUNCATE`. The Toolbox serves as a [runtime login](#database-roles) that holds no `UPDATE`, `DELETE` or `TRUNCATE` on events and cannot drop or disable either trigger: only the schema owner can, and the Toolbox refuses to start as the owner.
 
 ```ts
 import { SQL } from "bun"
@@ -346,6 +346,7 @@ The admin API's audience is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`, s
 | Log `relation "host_clients" does not exist`, or `"intents"`, and every list or call fails | The database lacks this version's migrations | Run `bun --env-file=.env run --filter @answerable/mcp-toolbox db:migrate` |
 | `db:migrate` fails with `Migration <directory>/<file> changed after it was applied…` | A migration file was edited after it was applied | Restore the file and put the change in a new file |
 | `db:migrate` fails with `column "checksum" does not exist` | The database was migrated before the migrations were reset | Drop its `public` schema, then run `db:migrate` again |
+| `db:migrate` fails with `Migration mcp-postgres/0001_evidence.sql was applied but its file is gone…` | The database was migrated before `@answerable/mcp-postgres` squashed its migrations into one file | Drop its `public` schema, then run `db:migrate` again |
 | `evidence_events is append-only: UPDATE is refused`, or `evidence_payloads only erases a body: UPDATE is refused` | Something tried to change evidence | Evidence is never changed; erase a payload with `erase` instead |
 | `Refusing to reset <database>; expected answerable_toolbox_test` | `db:test:migrate` points elsewhere | Point `TOOLBOX_TEST_DATABASE_URL` at `answerable_toolbox_test` |
 

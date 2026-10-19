@@ -9,7 +9,7 @@ import { migrate, runtimeGrants } from "./migrate"
 const db = database.connect()
 afterAll(() => db.close())
 
-const applied = ["mcp-postgres/0001_evidence.sql", "mcp-postgres/0002_intents.sql", "toolbox/0001_initial.sql"]
+const applied = ["mcp-postgres/0001_initial.sql", "toolbox/0001_initial.sql"]
 
 test("migrations apply once, the package's before the Toolbox's, and a second run changes nothing", async () => {
   await migrate(db)

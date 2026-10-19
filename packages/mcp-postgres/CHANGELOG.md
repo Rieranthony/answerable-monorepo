@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0
+
+The migrations reset to one file. Breaking: recreate a database migrated before this version (drop its `public` schema, then migrate).
+
+- `migrations/0001_evidence.sql` and `0002_intents.sql` are one file, `0001_initial.sql`: the evidence, then the intents, their text unchanged, so a new database has the same tables, triggers and functions.
+- `migrate` refuses a run, before anything applies, when a file recorded under a directory it is given is no longer in that directory, naming the file: `Migration mcp-postgres/0001_evidence.sql was applied but its file is gone; restore it, or recreate the database`. A database migrated before this version used to fail only with `relation "evidence_payloads" already exists`. Records of a directory not given are not checked.
+
 ## 0.5.0
 
 A server runs as a restricted runtime login and migrates as the owner, as Answerable ID does, so that the evidence triggers hold against the credential the server holds; and it can verify its database against a private certificate authority. Nothing breaks: `migrate` is unchanged.

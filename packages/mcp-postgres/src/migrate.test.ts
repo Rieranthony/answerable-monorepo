@@ -27,18 +27,19 @@ async function inSchema<T>(run: (scoped: SQL) => Promise<T>) {
   }
 }
 
-// A directory of migrations named `name`, holding the files of `files`, and a way to rewrite one of them.
+// A directory of migrations named `name`, holding the files of `files`, and ways to rewrite or delete one of them.
 async function directory(name: string, files: Record<string, string>) {
   const path = await mkdtemp(join(tmpdir(), "migrations-"))
   const write = (file: string, sql: string) => writeFile(join(path, file), sql)
   for (const [file, sql] of Object.entries(files)) await write(file, sql)
-  return { name, url: new URL(`${pathToFileURL(path).href}/`), write, remove: () => rm(path, { recursive: true }) }
+  const drop = (file: string) => rm(join(path, file))
+  return { name, url: new URL(`${pathToFileURL(path).href}/`), write, drop, remove: () => rm(path, { recursive: true }) }
 }
 
 test("the package's migrations apply once, recorded as mcp-postgres/<file> with the SHA-256 of their text, and a second run changes nothing", async () => {
   await migrate(db, [migrations])
   const before = await db`select name, checksum, applied_at from schema_migrations order by name`
-  expect(names(before)).toEqual(["mcp-postgres/0001_evidence.sql", "mcp-postgres/0002_intents.sql"])
+  expect(names(before)).toEqual(["mcp-postgres/0001_initial.sql"])
   for (const row of before) expect(row.checksum).toBe(sha256(await Bun.file(new URL(row.name.split("/")[1], migrations.url)).text()))
   expect(await migrate(db, [migrations])).toEqual([])
   expect(await db`select name, checksum, applied_at from schema_migrations order by name`).toEqual(before)
@@ -49,8 +50,8 @@ test("the package's migrations apply once, recorded as mcp-postgres/<file> with 
 test("two migrators on a fresh schema at once apply each file once, and both succeed", async () => {
   await inSchema(async scoped => {
     const applied = await Promise.all([migrate(scoped, [migrations]), migrate(scoped, [migrations])])
-    expect(applied.flat().sort()).toEqual(["mcp-postgres/0001_evidence.sql", "mcp-postgres/0002_intents.sql"])
-    expect(names(await scoped`select name from schema_migrations order by name`)).toEqual(["mcp-postgres/0001_evidence.sql", "mcp-postgres/0002_intents.sql"])
+    expect(applied.flat()).toEqual(["mcp-postgres/0001_initial.sql"])
+    expect(names(await scoped`select name from schema_migrations order by name`)).toEqual(["mcp-postgres/0001_initial.sql"])
   })
 })
 
@@ -81,4 +82,23 @@ test("a file changed after it was applied refuses the run before anything applie
       expect((await scoped`select table_name from information_schema.tables where table_schema = current_schema() order by 1`).map((row: { table_name: string }) => row.table_name)).toEqual(["a", "schema_migrations"])
     })
   } finally { await files.remove() }
+})
+
+test("a file applied and since gone from its directory refuses the run before anything applies, naming it; a directory not given is not checked", async () => {
+  const [files, other] = await Promise.all([
+    directory("server", { "0001_first.sql": "create table a (id int)", "0002_second.sql": "create table b (id int)" }),
+    directory("other", { "0001_initial.sql": "create table c (id int)" }),
+  ])
+  try {
+    await inSchema(async scoped => {
+      await migrate(scoped, [files, other])
+      await other.drop("0001_initial.sql")
+      expect(await migrate(scoped, [files])).toEqual([])
+      // Two applied files squashed into one, as a reset does.
+      await Promise.all([files.drop("0001_first.sql"), files.drop("0002_second.sql")])
+      await files.write("0001_initial.sql", "create table a (id int); create table b (id int)")
+      await expect(migrate(scoped, [files])).rejects.toThrow("Migration server/0001_first.sql was applied but its file is gone; restore it, or recreate the database")
+      expect((await scoped`select table_name from information_schema.tables where table_schema = current_schema() order by 1`).map((row: { table_name: string }) => row.table_name)).toEqual(["a", "b", "c", "schema_migrations"])
+    })
+  } finally { await Promise.all([files.remove(), other.remove()]) }
 })

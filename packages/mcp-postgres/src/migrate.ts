@@ -4,7 +4,7 @@ import { readdir } from "node:fs/promises"
 /** A directory of numbered `.sql` files: `name` prefixes each file's record in `schema_migrations`, and `url` ends in `/`. */
 export type MigrationDirectory = { name: string; url: URL }
 
-/** This package's own migrations, `0001_evidence.sql` and `0002_intents.sql`, recorded as `mcp-postgres/<file>`. A server passes it to `migrate` first. */
+/** This package's own migrations, `0001_initial.sql` (the evidence, then the intents), recorded as `mcp-postgres/<file>`. A server passes it to `migrate` first. */
 export const migrations: MigrationDirectory = { name: "mcp-postgres", url: new URL("../migrations/", import.meta.url) }
 
 // Any fixed number: concurrent migrators take turns on it.
@@ -14,7 +14,8 @@ const sha256 = (text: string) => new Bun.CryptoHasher("sha256").update(text).dig
 /**
  * Apply the `.sql` files of `directories` that `schema_migrations` does not list: the directories in the order given, the files of each in the
  * order of their names, each file in its own transaction under an advisory lock. Each file is recorded as `<directory name>/<file name>` with the
- * SHA-256 of its text, and the names applied are returned. A recorded file whose text has changed since refuses the run before anything applies.
+ * SHA-256 of its text, and the names applied are returned. A recorded file whose text has changed since, or that is no longer in its directory,
+ * refuses the run before anything applies; records of a directory not given are not checked.
  */
 export async function migrate(db: SQL, directories: readonly MigrationDirectory[]): Promise<string[]> {
   const files: { name: string; text: string; checksum: string }[] = []
@@ -28,9 +29,12 @@ export async function migrate(db: SQL, directories: readonly MigrationDirectory[
   await db.begin(async tx => {
     await tx`select pg_advisory_xact_lock(${lock})`
     await tx`create table if not exists schema_migrations (name text primary key, checksum text not null, applied_at timestamptz not null default now())`
-    const recorded = new Map((await tx`select name, checksum from schema_migrations`).map((row: { name: string; checksum: string }) => [row.name, row.checksum]))
+    const recorded = new Map<string, string>((await tx`select name, checksum from schema_migrations order by name`).map((row: { name: string; checksum: string }) => [row.name, row.checksum]))
     const changed = files.find(file => recorded.has(file.name) && recorded.get(file.name) !== file.checksum)
     if (changed) throw new Error(`Migration ${changed.name} changed after it was applied; restore it and put the change in a new file`)
+    const given = (name: string) => directories.some(directory => name.startsWith(`${directory.name}/`))
+    const gone = [...recorded.keys()].find(name => given(name) && !files.some(file => file.name === name))
+    if (gone) throw new Error(`Migration ${gone} was applied but its file is gone; restore it, or recreate the database`)
   })
   const applied: string[] = []
   for (const { name, text, checksum } of files) {
