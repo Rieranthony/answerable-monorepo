@@ -2636,28 +2636,36 @@ test("grant provenance and code binding cannot be forged, rewritten or revived",
         .where(eq(grantContexts.id, id))
         .execute(),
     ).rejects.toMatchObject(refused("grant_context_immutable"));
-  for (const patch of [
-    { organizationId: fixture.outsider.organizationId },
-    { authenticationSessionId: createId() },
-    { authTime: new Date(0) },
-    { authenticationAccountId: createId() },
-    { authenticationProviderId: createId() },
-    {
-      authenticationProviderRevision: grant!.authenticationProviderRevision + 1,
-    },
-    { upstreamAuthTime: new Date(0) },
+  // Provenance is the issuing transaction's. Outside the admission binding the
+  // runtime role inserts no grant, and no grant names another tenant's member.
+  const forged = {
+    ...grant!,
+    id: createId(),
+    authorizationCodeId: null,
+    authenticationAccountId: createId(),
+  };
+  for (const insert of [
+    () => runtime.db.insert(grantContexts).values(forged).execute(),
+    () =>
+      withDatabaseScope(
+        runtime.db,
+        {
+          kind: "tenant",
+          access: "write",
+          organizationId: grant!.organizationId,
+        },
+        (tx) => tx.insert(grantContexts).values(forged).execute(),
+      ),
   ])
-    await expect(
-      fixture.db
-        .insert(grantContexts)
-        .values({
-          ...grant!,
-          ...patch,
-          id: createId(),
-          authorizationCodeId: null,
-        })
-        .execute(),
-    ).rejects.toMatchObject(refused("grant_context_provenance"));
+    await expect(insert()).rejects.toMatchObject({ cause: { code: "42501" } });
+  await expect(
+    fixture.db
+      .insert(grantContexts)
+      .values({ ...forged, organizationId: fixture.outsider.organizationId })
+      .execute(),
+  ).rejects.toMatchObject(
+    refused("grant_contexts_organization_id_member_id_fk"),
+  );
   await expect(
     fixture.db
       .insert(grantContexts)

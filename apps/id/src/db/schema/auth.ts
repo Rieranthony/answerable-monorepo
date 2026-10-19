@@ -242,8 +242,9 @@ export const members = pgTable(
       table.organizationId,
       table.userId,
     ),
-    // Lets entitlements reference (organization_id, member_id) together, so a
-    // member-specific grant cannot point at another organization's member.
+    // Lets entitlements, group assignments and grant contexts reference
+    // (organization_id, member_id) together, so none can name another
+    // organisation's member.
     unique("members_organization_id_id_unique").on(
       table.organizationId,
       table.id,

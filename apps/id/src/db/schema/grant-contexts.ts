@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   index,
   integer,
   pgTable,
@@ -20,9 +21,7 @@ export const grantContexts = pgTable(
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "restrict" }),
-    memberId: uuid("member_id")
-      .notNull()
-      .references(() => members.id, { onDelete: "restrict" }),
+    memberId: uuid("member_id").notNull(),
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
@@ -58,6 +57,12 @@ export const grantContexts = pgTable(
     const client = sql`(${mode} = 'grant-client' and ${table.clientInstanceId} in (select id from oauth_clients where client_id = current_setting('answerable.client', true)))`;
     const write = sql`(${mode} = 'platform-write' or (${mode} = 'tenant-write' and ${tenant}) or ${client})`;
     return [
+      // The member belongs to the grant's organisation.
+      foreignKey({
+        name: "grant_contexts_organization_id_member_id_fk",
+        columns: [table.organizationId, table.memberId],
+        foreignColumns: [members.organizationId, members.id],
+      }).onDelete("restrict"),
       pgPolicy("grant_read", {
         for: "select",
         using: sql`${write} or ${mode} = 'platform-read' or (${mode} = 'tenant-read' and ${tenant}) or (${mode} = 'policy-user' and ${subject})`,

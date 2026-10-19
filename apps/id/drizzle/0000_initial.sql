@@ -527,10 +527,10 @@ ALTER TABLE "organization_capabilities" ADD CONSTRAINT "organization_capabilitie
 ALTER TABLE "organization_capabilities" ADD CONSTRAINT "organization_capabilities_resource_live_fk" FOREIGN KEY ("resource","live") REFERENCES "public"."oauth_resources"("identifier","live") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organization_capabilities" ADD CONSTRAINT "organization_capabilities_resource_fk" FOREIGN KEY ("resource") REFERENCES "public"."oauth_resources"("identifier") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "grant_contexts" ADD CONSTRAINT "grant_contexts_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "grant_contexts" ADD CONSTRAINT "grant_contexts_member_id_members_id_fk" FOREIGN KEY ("member_id") REFERENCES "public"."members"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "grant_contexts" ADD CONSTRAINT "grant_contexts_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "grant_contexts" ADD CONSTRAINT "grant_contexts_client_instance_id_oauth_clients_id_fk" FOREIGN KEY ("client_instance_id") REFERENCES "public"."oauth_clients"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "grant_contexts" ADD CONSTRAINT "grant_contexts_resource_instance_id_oauth_resources_id_fk" FOREIGN KEY ("resource_instance_id") REFERENCES "public"."oauth_resources"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "grant_contexts" ADD CONSTRAINT "grant_contexts_organization_id_member_id_fk" FOREIGN KEY ("organization_id","member_id") REFERENCES "public"."members"("organization_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "accounts_issuer_directory_user_id_idx" ON "accounts" USING btree ("issuer","directory_user_id") WHERE "accounts"."directory_user_id" is not null;--> statement-breakpoint
 CREATE INDEX "accounts_user_id_idx" ON "accounts" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "members_user_id_idx" ON "members" USING btree ("user_id");--> statement-breakpoint

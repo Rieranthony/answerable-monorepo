@@ -247,51 +247,18 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
--- The fixed provenance guard must lock members without granting admission callers UPDATE.
--- Callers already hold the user, organisation, client and resource locks.
+-- An issued grant changes only by binding its code once, before revocation, and by an
+-- irreversible revocation. The issuing transaction checks provenance under its own locks;
+-- RLS admits the insert only for the user and session it names.
 CREATE FUNCTION protect_grant_context() RETURNS trigger
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
-  IF TG_OP = 'UPDATE' THEN
-    IF (to_jsonb(NEW) - 'revoked_at' - 'authorization_code_id') IS DISTINCT FROM (to_jsonb(OLD) - 'revoked_at' - 'authorization_code_id')
-      OR (OLD.authorization_code_id IS NOT NULL AND NEW.authorization_code_id IS DISTINCT FROM OLD.authorization_code_id)
-      OR (OLD.revoked_at IS NOT NULL AND NEW.authorization_code_id IS DISTINCT FROM OLD.authorization_code_id)
-      OR (OLD.revoked_at IS NOT NULL AND NEW.revoked_at IS DISTINCT FROM OLD.revoked_at) THEN
-      RAISE EXCEPTION 'Grant context is immutable and revocation is irreversible'
-        USING ERRCODE = '23514', CONSTRAINT = 'grant_context_immutable';
-    END IF;
-    RETURN NEW;
-  END IF;
-  PERFORM 1 FROM public.members m
-    JOIN public.organizations o ON o.id = m.organization_id
-    JOIN public.users u ON u.id = m.user_id
-    JOIN public.sessions s ON s.user_id = u.id
-    JOIN public.oauth_clients c ON c.id = NEW.client_instance_id
-    WHERE m.id = NEW.member_id AND m.organization_id = NEW.organization_id
-      AND m.user_id = NEW.user_id AND m.status = 'active'
-      AND o.status = 'active' AND u.status = 'active' AND m.deleted_at IS NULL AND o.deleted_at IS NULL AND u.deleted_at IS NULL AND c.deleted_at IS NULL
-      AND s.id = NEW.authentication_session_id AND s.created_at = NEW.auth_time
-      AND s.expires_at > statement_timestamp() AND c.disabled = false
-      AND s.authentication_organization_id = NEW.organization_id
-      AND s.authentication_account_id = NEW.authentication_account_id
-      AND s.authentication_provider_id = NEW.authentication_provider_id
-      AND s.authentication_provider_revision = NEW.authentication_provider_revision
-      AND s.upstream_auth_time IS NOT DISTINCT FROM NEW.upstream_auth_time
-      AND NEW.requested_scopes <@ c.scopes
-    FOR SHARE OF m, s;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Grant authentication and membership must match'
-      USING ERRCODE = '23514', CONSTRAINT = 'grant_context_provenance';
-  END IF;
-  IF NEW.resource_instance_id IS NOT NULL THEN
-    PERFORM 1 FROM public.oauth_resources r WHERE r.id = NEW.resource_instance_id
-      AND r.disabled = false AND r.deleted_at IS NULL
-      AND (r.classification = 'platform_shared' OR r.organization_id = NEW.organization_id)
-      FOR SHARE;
-    IF NOT FOUND THEN
-      RAISE EXCEPTION 'Grant resource must be available to its tenant'
-        USING ERRCODE = '23514', CONSTRAINT = 'grant_context_resource';
-    END IF;
+  IF (to_jsonb(NEW) - 'revoked_at' - 'authorization_code_id') IS DISTINCT FROM (to_jsonb(OLD) - 'revoked_at' - 'authorization_code_id')
+    OR (OLD.authorization_code_id IS NOT NULL AND NEW.authorization_code_id IS DISTINCT FROM OLD.authorization_code_id)
+    OR (OLD.revoked_at IS NOT NULL AND NEW.authorization_code_id IS DISTINCT FROM OLD.authorization_code_id)
+    OR (OLD.revoked_at IS NOT NULL AND NEW.revoked_at IS DISTINCT FROM OLD.revoked_at) THEN
+    RAISE EXCEPTION 'Grant context is immutable and revocation is irreversible'
+      USING ERRCODE = '23514', CONSTRAINT = 'grant_context_immutable';
   END IF;
   RETURN NEW;
 END;
@@ -410,7 +377,7 @@ CREATE TRIGGER capability_private_resource_guard BEFORE INSERT OR UPDATE ON orga
 --> statement-breakpoint
 CREATE TRIGGER capability_revision_guard BEFORE UPDATE ON organization_capabilities FOR EACH ROW EXECUTE FUNCTION protect_configuration_revision();
 --> statement-breakpoint
-CREATE TRIGGER grant_context_guard BEFORE INSERT OR UPDATE ON grant_contexts
+CREATE TRIGGER grant_context_guard BEFORE UPDATE ON grant_contexts
 FOR EACH ROW EXECUTE FUNCTION protect_grant_context();
 --> statement-breakpoint
 CREATE TRIGGER sessions_authentication_origin_guard BEFORE INSERT OR UPDATE ON sessions
@@ -447,4 +414,4 @@ CREATE TRIGGER organization_capabilities_deletion_guard BEFORE INSERT OR UPDATE 
 CREATE TRIGGER audit_events_user_oauth_subjects AFTER INSERT ON audit_events
 FOR EACH ROW EXECUTE FUNCTION record_user_oauth_subjects();
 --> statement-breakpoint
-REVOKE EXECUTE ON FUNCTION protect_grant_context(), capture_audit_subjects(), record_user_oauth_subjects() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION capture_audit_subjects(), record_user_oauth_subjects() FROM PUBLIC;

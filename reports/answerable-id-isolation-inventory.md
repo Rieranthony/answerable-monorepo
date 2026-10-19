@@ -46,7 +46,7 @@ Membership writes allow `platform-write`, `protocol`, or `tenant-write` for the 
 
 Routing SELECT needs no scope, but `tenant-read` and `tenant-write` see only the selected organisation's domains and providers. Domain/provider writes require `platform-write` or selected `tenant-write`; SSO providers additionally permit `protocol` writes. Domain writes do not permit protocol scope. Audit SELECT allows `platform-read`, `platform-write`, or matching-organisation `tenant-read`/`tenant-write`. The audit event INSERT policy has `WITH CHECK (true)`, independently of scope; runtime grants prohibit inserting audit users. Audit policies do not grant UPDATE or DELETE.
 
-`protect_grant_context` runs as `SECURITY DEFINER` with a fixed `pg_catalog, public` search path. It validates grant provenance and locks the member and session as the owner; direct execution is revoked from PUBLIC. It does not grant callers unrestricted access to those parents.
+`protect_grant_context` fires on UPDATE only, as the caller: an issued grant changes only by one code binding before revocation and an irreversible revocation. Provenance is the issuing transaction's: `createResourceGrant` copies it from the session under its own user, organisation, session, client and resource locks, RLS admits the insert only under `policy-user` for the session it names, and the `(organization_id, member_id)` foreign key keeps the member in the grant's organisation.
 
 ## Grant-context database scopes
 
