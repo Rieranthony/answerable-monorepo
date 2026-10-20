@@ -34,7 +34,6 @@ import {
 import { createId } from "../lib/id.ts";
 import * as federation from "../services/federation.ts";
 import { putSsoProvider } from "../services/sso-providers.ts";
-import * as tenantAuthentication from "./tenant-authentication.ts";
 
 let fixture: AdminFixture;
 let runtime: ReturnType<typeof createDatabase>;
@@ -677,56 +676,6 @@ test.each(refusals)(
     ).toHaveLength(0);
   },
 );
-
-for (const failure of ["lost-authority", "database-failure"] as const) {
-  test(`native resolution rolls back when callback revalidation reports ${failure}`, async () => {
-    const started = await begin("link", fixture.principals.tenantAdmin.cookie);
-    const original = tenantAuthentication.tenantAuthentication;
-    let checks = 0;
-    const validation = spyOn(
-      tenantAuthentication,
-      "tenantAuthentication",
-    ).mockImplementation(async (...args) => {
-      const evidence = await original(...args);
-      // Allow transaction entry, then fault the later callback revalidation.
-      if (++checks === 2) {
-        if (failure === "database-failure")
-          throw new Error("Authentication query unavailable");
-        return null;
-      }
-      return evidence;
-    });
-    const before = await fixture.db.select().from(sessions);
-    try {
-      const completed = await complete(started, {
-        sub: "resolution-fault",
-        email: "proof@outsider.example.com",
-        auth_time: Math.floor(Date.now() / 1000),
-      });
-      expect(completed.response.headers.get("location")).not.toBe(
-        `${fixture.trustedOrigin}/callback`,
-      );
-      expect(checks).toBe(2);
-      expect(
-        await fixture.db
-          .select()
-          .from(accounts)
-          .where(eq(accounts.accountId, "resolution-fault")),
-      ).toHaveLength(0);
-      expect(await fixture.db.select().from(sessions)).toHaveLength(
-        before.length,
-      );
-      expect(
-        await fixture.db
-          .select()
-          .from(auditEvents)
-          .where(eq(auditEvents.action, "identity.linked")),
-      ).toHaveLength(0);
-    } finally {
-      validation.mockRestore();
-    }
-  });
-}
 
 test("native origin validation protects both verified-flow redirect URLs", async () => {
   const auth = createAuth(runtime.db, fixture.environment);

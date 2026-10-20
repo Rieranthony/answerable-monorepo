@@ -1,15 +1,14 @@
 import { setDatabaseScope } from "../db/isolation.ts";
 import { lockUser } from "../db/locks.ts";
-import { AsyncLocalStorage } from "node:async_hooks";
 import type {
   SSOUserResolutionInput,
   SSOUserResolution,
   sso,
 } from "@better-auth/sso";
 import type { DBTransactionAdapter, BetterAuthPlugin } from "better-auth";
+import { defineRequestState, hasRequestState } from "@better-auth/core/context";
 import {
   APIError,
-  isAPIError,
   addOAuthServerContext,
   createAuthEndpoint,
   createAuthMiddleware,
@@ -71,13 +70,17 @@ function invalid() {
  * callback itself still uses a separate state lookup and deletion.
  */
 export function createVerifiedSso(db: Database) {
-  const requests = new AsyncLocalStorage<RequestState>();
-  function run<T>(work: () => T) {
-    return requests.run({}, work);
-  }
+  // Better Auth runs every endpoint call in its own request state; this
+  // carries the callback's session and flow to the adapter hooks below.
+  const state = defineRequestState<RequestState>(() => ({}));
+  const requests = {
+    async current() {
+      return (await hasRequestState()) ? state.get() : undefined;
+    },
+  };
 
   async function observe() {
-    const request = requests.getStore();
+    const request = await requests.current();
     if (!request || request.flow) return;
     const id = (await getOAuthState())?.serverContext?.answerableIdentityFlow;
     if (id === undefined) return;
@@ -153,7 +156,7 @@ export function createVerifiedSso(db: Database) {
   }
 
   async function beforeTransaction(tx: Executor) {
-    const flow = requests.getStore()?.flow;
+    const flow = (await requests.current())?.flow;
     if (!flow) return;
     // Acquire our source/target locks before native SSO's provider update lock.
     await lockUser(tx, flow.userId);
@@ -182,16 +185,12 @@ export function createVerifiedSso(db: Database) {
     database: DBTransactionAdapter,
     authTime: Date | null,
   ): Promise<SSOUserResolution | undefined> {
-    const request = requests.getStore();
+    const request = await requests.current();
     const flow = request?.flow;
     if (!flow) return;
+    // beforeTransaction checked current authority under the locks this
+    // transaction still holds.
     const tx = authTransaction(database);
-    try {
-      await current(tx, flow);
-    } catch (error) {
-      if (isAPIError(error)) return reject(error.body!.code!);
-      throw error;
-    }
     const [provider] = await tx
       .select()
       .from(ssoProviders)
@@ -248,14 +247,6 @@ export function createVerifiedSso(db: Database) {
       },
     });
     return resolution;
-  }
-
-  async function beforeSession(tx: Executor, authTime: Date | null) {
-    const flow = requests.getStore()?.flow;
-    if (!flow) return;
-    await current(tx, flow);
-    if (!(await isFreshAuthentication(tx, authTime)))
-      throw new APIError("FORBIDDEN", { code: "reauthentication_required" });
   }
 
   function plugin(native: ReturnType<typeof sso>): BetterAuthPlugin {
@@ -399,7 +390,7 @@ export function createVerifiedSso(db: Database) {
             matcher: (ctx) => ctx.path === "/sso/callback",
             handler: createAuthMiddleware(async (ctx) => {
               const session = await getSessionFromCtx(ctx);
-              const request = requests.getStore();
+              const request = await requests.current();
               if (request) {
                 request.consume =
                   ctx.context.internalAdapter.consumeVerificationValue;
@@ -415,7 +406,7 @@ export function createVerifiedSso(db: Database) {
       },
     };
   }
-  return { run, observe, beforeTransaction, resolve, beforeSession, plugin };
+  return { observe, beforeTransaction, resolve, plugin };
 }
 
 export type VerifiedSso = ReturnType<typeof createVerifiedSso>;

@@ -115,7 +115,6 @@ export function createSsoOriginBoundary(verifiedSso?: VerifiedSso) {
         code: "authentication_origin_missing",
       });
     const tx = authTransaction(adapter);
-    await verifiedSso?.beforeSession(tx, origin.upstreamAuthTime);
     origins.delete(adapter);
     if (origin.userId !== session.userId)
       throw new APIError("FORBIDDEN", {

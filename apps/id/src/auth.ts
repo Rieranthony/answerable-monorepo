@@ -40,7 +40,7 @@ export function createAuth(db: Database, environment: Environment) {
     organizationProvisioning: { disabled: true },
     resolveUser: ssoOrigin.resolveUser,
   });
-  const auth = betterAuth({
+  return betterAuth({
     appName: "Answerable ID",
     onAPIError: {
       errorURL: `${environment.betterAuthUrl}/error`,
@@ -250,10 +250,6 @@ export function createAuth(db: Database, environment: Environment) {
       openAPI({ disableDefaultReference: true }),
     ],
   });
-  return {
-    ...auth,
-    handler: (request: Request) => verifiedSso.run(() => auth.handler(request)),
-  };
 }
 
 export type Auth = ReturnType<typeof createAuth>;
