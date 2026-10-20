@@ -26,7 +26,7 @@ Admission requires a live user, current provider/account binding, effective memb
 
 Removal revokes the membership/grants and removes direct assignments in that tenant. Explicit reinstatement remains supported for an eligible revoked membership but restores neither assignments nor revoked grants. Product `deletedAt` is terminal, including for memberships.
 
-Removing the last platform administrator through membership, group or capability changes is allowed. Recover with the root secret and `ROOT_ADMIN_BREAK_GLASS=true`. Global user disable and erasure retain their last-writer safeguard.
+Removing the last platform administrator is allowed; recovery is in [ID's README](../apps/id/README.md#commands) (First run).
 
 ### Database isolation
 
@@ -81,15 +81,13 @@ Recovery must preserve retained keys, reservations, receipts and revocation barr
 
 ## 7. Enterprise and adversarial operation
 
-The service must be reachable only through the ingress proxies listed in `TRUSTED_PROXY_CIDRS` (comma-separated IPv4/IPv6 networks). Network rules must refuse traffic that does not arrive through those proxies. The ingress supplies `x-forwarded-for`; Better Auth walks it from the right, skips listed proxies and selects the first untrusted address. The same resolver supplies rate-limit keys, session IPs and administrative/sign-in audit IPs. In production, unresolved addresses on `/auth/*` and `/api/admin/*` receive `403 {"error":"untrusted_ingress"}`, `Cache-Control: no-store` and a request ID before authentication, with no audit event. Health and readiness remain reachable. The header resolver cannot verify the socket peer; the network restriction is required.
+The service is reachable only through the ingress proxies in `TRUSTED_PROXY_CIDRS`; the rule and the `403 untrusted_ingress` refusal are in [ID's README](../apps/id/README.md#http-surface).
 
 Request-body, pool and statement limits remain in effect. Sensitive human changes/linking need verified upstream authentication within five minutes; broker time is not an acceptable substitute. Machine/root authority remains explicit.
 
-A startup check that the application secrets decrypt the newest signing key and fixed-cardinality process summaries are implemented. Not yet. A restore drill against production-shaped data is a release input. No production capacity, tenant fairness, percentile latency, ingress or RTO/RPO is certified.
+A startup check that the application secrets decrypt the newest signing key and fixed-cardinality process summaries are implemented; the restore drill is in [§6](#6-interruption-external-effects-and-money). No production capacity, tenant fairness, percentile latency, ingress or RTO/RPO is certified.
 
 Upstream-disable detection, downstream logout and actual consumer cache/session behaviour remain release requirements. Their wider mechanisms are **Not yet**, rather than hidden behind a green local suite.
-
-Removing the last platform administrator through membership, group or capability changes is allowed. Recover with the root secret and `ROOT_ADMIN_BREAK_GLASS=true`. Global user disable and erasure retain their last-writer safeguard.
 
 ## 8. Implementation sequence and proof
 
@@ -110,7 +108,7 @@ Mandatory fixtures remain two unrelated tenants, shared A+B user, platform staff
 
 ID has never shipped. A generated initial migration and a reviewed invariants migration replace the unshipped development chain. No legacy production conversion, backfill or mixed-version cutover is required. After first deployment, use ordinary forward migrations.
 
-Empty and repeated install, catalogue, concurrent bootstrap and runtime roles have proof in the ID tests ([commands](../apps/id/README.md#commands)). Not yet. A restore drill against production-shaped data is a release input.
+Empty and repeated install, catalogue, concurrent bootstrap and runtime roles have proof in the ID tests ([commands](../apps/id/README.md#commands)); recovery is in [§6](#6-interruption-external-effects-and-money).
 
 ## 10. Documentation is part of completion
 

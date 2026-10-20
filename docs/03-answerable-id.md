@@ -102,7 +102,7 @@ Registration is platform administration, not permission. Clients require configu
 
 Retained signing keys use Better Auth application-secret encryption. Upstream tokens use a separate key ring. Secrets never belong in audit evidence.
 
-The [operations runbook](../apps/id/OPERATIONS.md) covers the keys ID holds and retained-key dependencies; startup refuses application secrets that cannot decrypt the newest signing key. Restore drills: Not yet. A restore drill against production-shaped data is a release input. External secret delivery and emergency rotation require the intended deployment. No KMS-backed signing or secret-store operator has been selected here.
+The [operations runbook](../apps/id/OPERATIONS.md) covers the keys ID holds and retained-key dependencies; startup refuses application secrets that cannot decrypt the newest signing key. Restore drills are in [the foundation's §6](05-id-enterprise-foundation.md#6-interruption-external-effects-and-money). External secret delivery and emergency rotation require the intended deployment. No KMS-backed signing or secret-store operator has been selected here.
 
 ## Availability and failure modes
 
@@ -114,7 +114,7 @@ Bun runs in production behind Cloudflare, with TLS at Cloudflare's edge and agai
 
 ## Tailnet hardening
 
-The service must be reachable only through the ingress proxies listed in `TRUSTED_PROXY_CIDRS` (comma-separated IPv4/IPv6 networks). Network rules must refuse traffic that does not arrive through those proxies. The ingress supplies `x-forwarded-for`; Better Auth walks it from the right, skips listed proxies and selects the first untrusted address. The same resolver supplies rate-limit keys, session IPs and administrative/sign-in audit IPs. In production, unresolved addresses on `/auth/*` and `/api/admin/*` receive `403 {"error":"untrusted_ingress"}`, `Cache-Control: no-store` and a request ID before authentication, with no audit event. Health and readiness remain reachable. The header resolver cannot verify the socket peer; the network restriction is required.
+The service is reachable only through the ingress proxies in `TRUSTED_PROXY_CIDRS`; the rule, the address resolution and the `403 untrusted_ingress` refusal are in [ID's README](../apps/id/README.md#http-surface).
 
 Browser authorisation and callbacks must be reachable from the browser. Public/tailnet exposure must be tested at actual ingress; an in-process allowlist does not prove network isolation. No particular ACL or split-listener deployment is certified.
 
