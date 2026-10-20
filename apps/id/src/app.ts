@@ -1,5 +1,6 @@
 import { createPagesApp, isPagePath } from "./http/pages/index.ts";
 import { getIP } from "@better-auth/core/utils/ip";
+import { sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { describeRoute, openAPIRouteHandler, resolver } from "hono-openapi";
@@ -17,7 +18,6 @@ import { problemHandler } from "./http/problem.ts";
 import { logRejectedSignIn } from "./http/signin-rejection.ts";
 import { createId } from "./lib/id.ts";
 import { limitRequestBody } from "./http/request-limits.ts";
-import { checkDatabase } from "./db/queries/health.ts";
 import { publicOAuthMetadata } from "./http/oauth-metadata.ts";
 import type { OperationalMetrics } from "./operations/metrics.ts";
 
@@ -146,7 +146,7 @@ export function createApp(services: AppServices) {
     }),
     async (context) => {
       try {
-        await checkDatabase(context.get("db"));
+        await context.get("db").execute(sql`select 1`);
         return context.json({ status: "ok" as const }, 200);
       } catch {
         return context.json({ status: "unavailable" as const }, 503);

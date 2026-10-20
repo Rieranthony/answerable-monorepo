@@ -4,7 +4,7 @@ The migrations protect ten tables: `groups`, `group_members`, `entitlements`, `o
 
 ## Current query boundary review
 
-Query functions use typed contexts, with explicit broker/health/audit and pure-helper exceptions:
+Query functions use typed contexts, with explicit broker/audit and pure-helper exceptions:
 
 | Function                                                             | Boundary                                                                                                                |
 | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
@@ -12,7 +12,6 @@ Query functions use typed contexts, with explicit broker/health/audit and pure-h
 | `findMachineCapability`                                              | Broker query after authenticated ownership and scoped policy preparation.                                               |
 | `effectiveGrants`                                                    | Authenticated user policy read, own-tenant SSO, locks and post-wait current checks. A UUID alone is not authentication. |
 | `hasPlatformWriter`                                                  | Platform-read of the bound platform organisation, the only one that can hold `platform:*`, for root locking and global user deletion. |
-| `checkDatabase`                                                      | `select 1`; no tenant data.                                                                                             |
 | `matchingEntitlements`, `isEffective`                                | Query/SQL construction; executing callers supply trusted authority and scope.                                           |
 | `serializeSsoProviderConfig`, `redactSsoProvider`, `retiredEmailFor` | Pure transformations, not independent readers.                                                                          |
 
