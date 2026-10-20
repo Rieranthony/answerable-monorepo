@@ -34,7 +34,7 @@ for (const spoof of [false, true])
       };
       for (const [index, address] of ["192.0.2.1", "198.51.100.7"].entries()) {
         const response = await auth.handler(
-          new Request(`${environment.betterAuthUrl}/auth/ok`, {
+          new Request(`${environment.betterAuthUrl}/auth/get-session`, {
             headers: {
               "x-forwarded-for": `${address}, ${spoof ? "203.0.113.5, " : ""}10.0.0.1`,
             },
@@ -48,7 +48,7 @@ for (const spoof of [false, true])
   );
 
 for (const path of [
-  "/auth/ok",
+  "/auth/get-session",
   "/api/admin/v1/me",
   "/login",
   "/assets/tailwind.css",
@@ -107,7 +107,7 @@ test("unresolved client context refuses authentication before dispatch", async (
     auth,
     environment: { ...environment, nodeEnv: "production" },
   });
-  expect((await app.request("/auth/ok")).status).toBe(403);
+  expect((await app.request("/auth/get-session")).status).toBe(403);
 });
 
 // An office signs in through one egress address and a server-side host refreshes

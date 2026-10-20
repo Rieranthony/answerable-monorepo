@@ -141,13 +141,14 @@ describe("unit: Hono application", () => {
       environment: testEnvironment(),
     });
 
-    expect(isAllowedAuthRoute("get", "/auth/ok")).toBe(true);
+    expect(isAllowedAuthRoute("get", "/auth/ok")).toBe(false);
     expect(isAllowedAuthRoute("post", "/auth/sign-in/sso")).toBe(true);
     expect(isAllowedAuthRoute("get", "/auth/sso/callback")).toBe(true);
     expect(isAllowedAuthRoute("get", "/auth/get-session")).toBe(true);
     expect(isAllowedAuthRoute("post", "/auth/sign-out")).toBe(true);
     expect(isAllowedAuthRoute("POST", "/auth/organization/create")).toBe(false);
-    expect((await app.request("/auth/ok")).status).toBe(200);
+    expect((await app.request("/auth/get-session")).status).toBe(200);
+    expect((await app.request("/auth/ok")).status).toBe(404);
     expect(
       (await app.request("/auth/organization/create", { method: "POST" }))
         .status,
@@ -321,7 +322,7 @@ test("unusable correlation headers are replaced consistently before auth", async
         },
       },
     });
-    const response = await app.request("/auth/ok", {
+    const response = await app.request("/auth/get-session", {
       headers: { "x-request-id": supplied },
     });
     expect(response.status).toBe(200);
@@ -407,7 +408,7 @@ test("maximum valid correlation ids survive in both context and auth headers", a
         },
       },
     });
-    const response = await app.request("/auth/ok", {
+    const response = await app.request("/auth/get-session", {
       headers: { "x-request-id": value },
     });
     expect(response.headers.get("x-request-id")).toBe(value);
@@ -439,8 +440,8 @@ for (const path of [
   "/auth/../auth/sso/register",
   "//auth/sso/register",
   "/auth/oauth2/token/",
-  "/AUTH/OK",
-  "/auth/ok/../update-user",
+  "/AUTH/GET-SESSION",
+  "/auth/get-session/../update-user",
 ]) {
   test(`auth allowlist rejects path bypass ${path}`, async () => {
     const auth = stubAuth();
@@ -478,10 +479,10 @@ for (const header of ["X-HTTP-Method-Override", "X-Method-Override"]) {
       db: stubDatabase(),
       environment: testEnvironment(),
     });
-    const response = await app.request("/auth/ok", {
+    const response = await app.request("/auth/get-session", {
       headers: { [header]: "DELETE" },
     });
     expect(response.status).toBe(200);
-    expect(reached).toEqual(["GET /auth/ok"]);
+    expect(reached).toEqual(["GET /auth/get-session"]);
   });
 }

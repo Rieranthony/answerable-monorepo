@@ -145,13 +145,6 @@ export const publicAuthRoutes: ReadonlyArray<PublicAuthRoute> = [
     },
   },
   {
-    method: "GET",
-    path: "/auth/ok",
-    operationId: "ok",
-    summary: "Check that Answerable ID is reachable",
-    tag: "Session",
-  },
-  {
     method: "POST",
     path: "/auth/sign-in/sso",
     operationId: "signInWithSso",

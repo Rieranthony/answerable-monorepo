@@ -438,7 +438,9 @@ test("pages carry security headers and serve their assets; API routes do not", a
   expect(response.headers.get("referrer-policy")).toBe("same-origin");
   expect(response.headers.get("cross-origin-opener-policy")).toBeNull();
   expect(
-    (await f.app.request("/auth/ok")).headers.get("content-security-policy"),
+    (await f.app.request("/auth/get-session")).headers.get(
+      "content-security-policy",
+    ),
   ).toBeNull();
   const css = await f.app.request("/assets/tailwind.css");
   expect(css.status).toBe(200);
@@ -462,7 +464,12 @@ test("pages carry security headers and serve their assets; API routes do not", a
     "/assets/fonts/public-sans.woff2",
   ])
     expect(isPagePath(path)).toBe(true);
-  for (const path of ["/auth/ok", "/api/admin/v1", "/unknown", "/login/child"])
+  for (const path of [
+    "/auth/get-session",
+    "/api/admin/v1",
+    "/unknown",
+    "/login/child",
+  ])
     expect(isPagePath(path)).toBe(false);
 });
 

@@ -28,7 +28,7 @@ test("operational summaries retain in-flight work across windows without request
       },
     },
   });
-  const pending = app.request("/auth/ok?secret-query=private", {
+  const pending = app.request("/auth/get-session?secret-query=private", {
     headers: {
       "x-request-id": "private-request",
       Authorization: "Bearer private-token",

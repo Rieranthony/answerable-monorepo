@@ -109,12 +109,6 @@ export function stubAuth(): Auth {
           "/sso/link": {
             post: { responses: { "200": { description: "OK" } } },
           },
-          "/ok": {
-            get: {
-              operationId: "betterAuthOk",
-              responses: { "200": { description: "OK" } },
-            },
-          },
           "/sign-in/sso": {
             post: {
               operationId: "betterAuthSignInSso",
