@@ -15,7 +15,6 @@ import { errorFields } from "./http/problem.ts";
 import { createId } from "./lib/id.ts";
 import { logEvent } from "./lib/log.ts";
 import { createSsoOriginBoundary } from "./auth/sso-origin.ts";
-import { upstreamTokenStorage } from "./auth/upstream-token-storage.ts";
 import { createVerifiedSso } from "./auth/verified-sso.ts";
 import { grantLifetimeSeconds } from "./auth/user-oauth-flow.ts";
 
@@ -123,7 +122,7 @@ export function createAuth(db: Database, environment: Environment) {
       },
     },
     account: {
-      // The storage plugin protects all three fields; do not encrypt twice.
+      // No upstream token is stored (answerable-schema.ts), so none is encrypted.
       encryptOAuthTokens: false,
       accountLinking: {
         enabled: false,
@@ -181,7 +180,6 @@ export function createAuth(db: Database, environment: Environment) {
     },
     plugins: [
       answerableSchema(),
-      upstreamTokenStorage(environment.upstreamTokenSecrets),
       organization({
         allowUserToCreateOrganization: false,
         schema: {

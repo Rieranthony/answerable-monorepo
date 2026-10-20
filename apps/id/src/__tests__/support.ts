@@ -20,9 +20,6 @@ export function testEnvironment(
     betterAuthUrl: "http://localhost:47300",
     betterAuthSecret: "test-secret-that-is-at-least-32-characters",
     betterAuthSecrets: undefined,
-    upstreamTokenSecrets: [
-      { version: 1, value: Buffer.alloc(32, 73).toString("base64url") },
-    ],
     trustedOrigins: [],
     platformApplications: {},
     trustedProxyCidrs: [],

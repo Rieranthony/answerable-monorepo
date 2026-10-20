@@ -92,7 +92,7 @@ export function assertImageTag(tag: string): void {
 }
 
 /** ID's secrets the deploy requires, each a variable of the deploy step: the GitHub environment's secrets of the same names. */
-const ID_ENV_REQUIRED = ["BETTER_AUTH_SECRET", "UPSTREAM_TOKEN_SECRETS", "ROOT_ADMIN_SECRET"] as const
+const ID_ENV_REQUIRED = ["BETTER_AUTH_SECRET", "ROOT_ADMIN_SECRET"] as const
 /** The platform applications' credentials: each pair both or neither. */
 const ID_ENV_PAIRS = [
   ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET"],
@@ -102,7 +102,7 @@ const ID_ENV_PAIRS = [
 const ID_ENV_OPTIONAL = ["BETTER_AUTH_SECRETS"] as const
 
 /**
- * The values of the Secret `id-env`, from the deploy's environment: the three required secrets, each platform
+ * The values of the Secret `id-env`, from the deploy's environment: the two required secrets, each platform
  * application's pair when both halves are set, and `BETTER_AUTH_SECRETS` when it is. Refuses an empty required value
  * and half a pair, naming the variables, never a value.
  */

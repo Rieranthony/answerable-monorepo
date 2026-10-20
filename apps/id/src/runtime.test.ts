@@ -85,6 +85,7 @@ test("runtime sweeps expired protocol rows on its interval, unless disabled, and
       allowTestEnvironment: true,
       seed: async () => seedResult,
       authFactory: stubAuth,
+      signingKeyCheck: async () => {},
     };
     await (
       await startRuntime(testEnvironment({ port: 0 }), options)
@@ -148,6 +149,7 @@ describe("unit: process runtime", () => {
       seed,
       databaseFactory: () => database,
       authFactory: stubAuth,
+      signingKeyCheck: async () => {},
     });
     expect(seed).toHaveBeenCalledTimes(1);
     expect(seed).toHaveBeenCalledWith(
@@ -213,6 +215,7 @@ test("runtime caps declared and streamed request bodies before provider work", a
   const runtime = await startRuntime(testEnvironment({ port: 0 }), {
     allowTestEnvironment: true,
     seed: async () => seedResult,
+    signingKeyCheck: async () => {},
     authFactory: () => ({
       ...stubAuth(),
       handler: async (request) => {

@@ -3,15 +3,14 @@ import { classifyIssuer } from "../services/federation.ts";
 import { logEvent } from "../lib/log.ts";
 
 export const platformApplications = {
-  google: {
-    tokenEndpointAuthentication: "client_secret_post",
-    scopes: ["email", "openid", "profile"],
-  },
-  microsoft: {
-    tokenEndpointAuthentication: "client_secret_post",
-    scopes: ["email", "offline_access", "openid", "profile"],
-  },
+  google: { tokenEndpointAuthentication: "client_secret_post" },
+  microsoft: { tokenEndpointAuthentication: "client_secret_post" },
 } as const;
+
+/** The scopes an SSO row gets when it names none. ID stores no upstream
+ * refresh token, so it never asks a directory for `offline_access`, which
+ * the SSO plugin's own default would request. */
+export const directoryScopes = ["email", "openid", "profile"] as const;
 
 type PlatformApplication = { clientId: string; clientSecret: string };
 export type PlatformApplications = {

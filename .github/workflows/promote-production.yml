@@ -132,7 +132,6 @@ jobs:
           KUBE_CA: ${{ secrets.KUBE_CA }}
           KUBE_TOKEN: ${{ secrets.KUBE_TOKEN }}
           BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
-          UPSTREAM_TOKEN_SECRETS: ${{ secrets.UPSTREAM_TOKEN_SECRETS }}
           ROOT_ADMIN_SECRET: ${{ secrets.ROOT_ADMIN_SECRET }}
           MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}
           MICROSOFT_CLIENT_SECRET: ${{ secrets.MICROSOFT_CLIENT_SECRET }}

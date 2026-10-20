@@ -111,7 +111,6 @@ function generateSecrets() {
     admin: secret(),
     rootAdminSecret: `${secret()}${secret()}`,
     betterAuthSecret: `${secret()}${secret()}`,
-    upstreamKey: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url"),
   }
 }
 
@@ -365,7 +364,7 @@ export async function startStack() {
         configMap("trusted-proxies", { cidrs: "127.0.0.1/32" }),
         opaque("postgres-admin", { OPS_DATABASE_ADMIN_URL: `postgres://${databaseAdmin}:${secrets.admin}@${database}/postgres?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem` }),
         tls("origin-tls", certificates.publicNames),
-        opaque("id-env", { BETTER_AUTH_SECRET: secrets.betterAuthSecret, ROOT_ADMIN_SECRET: secrets.rootAdminSecret, UPSTREAM_TOKEN_SECRETS: JSON.stringify([{ version: 1, value: secrets.upstreamKey }]) }),
+        opaque("id-env", { BETTER_AUTH_SECRET: secrets.betterAuthSecret, ROOT_ADMIN_SECRET: secrets.rootAdminSecret }),
         configMap("local-ca", { "ca.pem": certificates.stackCa }),
       ])
       await release(["ops.bootstrap=true"])

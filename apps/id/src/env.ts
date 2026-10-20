@@ -1,7 +1,6 @@
 import { findInvalidTrustedProxies } from "@better-auth/core/utils/ip";
 import { z } from "zod";
 import type { PlatformApplications } from "./auth/platform-applications.ts";
-import { upstreamTokenSecretsSchema } from "./auth/upstream-token-storage.ts";
 import { slugPattern } from "./db/schema/columns.ts";
 
 const applicationSecrets = z.string().transform((value, context) => {
@@ -32,19 +31,6 @@ const applicationSecrets = z.string().transform((value, context) => {
       "Expected distinct non-negative integer versions and secrets of at least 32 characters",
   });
   return z.NEVER;
-});
-
-const upstreamTokenSecrets = z.string().transform((value, context) => {
-  try {
-    return upstreamTokenSecretsSchema.parse(JSON.parse(value));
-  } catch {
-    context.addIssue({
-      code: "custom",
-      message:
-        "Expected distinct positive key versions and canonical 256-bit base64url upstream keys",
-    });
-    return z.NEVER;
-  }
 });
 
 /** The largest delay setTimeout honours; above it the timer fires at once. */
@@ -88,7 +74,6 @@ const environmentSchema = z
     GOOGLE_CLIENT_SECRET: optionalCredential,
     MICROSOFT_CLIENT_ID: optionalCredential,
     MICROSOFT_CLIENT_SECRET: optionalCredential,
-    UPSTREAM_TOKEN_SECRETS: upstreamTokenSecrets.optional(),
     BETTER_AUTH_TRUSTED_ORIGINS: z.string().default(""),
     /** Initial platform slug; persisted system bindings determine authority afterwards. */
     PLATFORM_ORGANIZATION_SLUG: z
@@ -198,7 +183,6 @@ const environmentSchema = z
     betterAuthUrl: environment.BETTER_AUTH_URL,
     betterAuthSecret: environment.BETTER_AUTH_SECRET,
     betterAuthSecrets: environment.BETTER_AUTH_SECRETS,
-    upstreamTokenSecrets: environment.UPSTREAM_TOKEN_SECRETS,
     trustedOrigins: environment.BETTER_AUTH_TRUSTED_ORIGINS.split(",")
       .map((origin) => origin.trim())
       .filter(Boolean),

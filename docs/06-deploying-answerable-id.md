@@ -2,7 +2,7 @@
 
 > **TL;DR**
 > - **Decides:** what a production deployment of `apps/id` needs, in what order, and why each piece exists.
-> - **Rule:** the service is reachable only through the ingress proxies you list; the application never runs as the database owner; the four deployment secret families are independent and live outside Postgres; Google and Entra use platform applications by default.
+> - **Rule:** the service is reachable only through the ingress proxies you list; the application never runs as the database owner; the three deployment secret families are independent and live outside Postgres; Google and Entra use platform applications by default.
 > - **Not here:** the design (`03-answerable-id.md`), the schema (`04-answerable-id-schema.md`), day-two operations (`../apps/id/OPERATIONS.md`), the release gate (`../reports/answerable-id-release-decision-plan.md`).
 
 Everything below is derived from the code on this branch: `apps/id/src/env.ts` (configuration), `apps/id/src/runtime.ts` (startup checks), `apps/id/src/db/runtime-role.ts` and `apps/id/scripts/migrate.ts` (database roles), `apps/id/src/app.ts` (ingress admission), `apps/id/src/auth.ts` (provider configuration), `apps/id/src/auth/platform-applications.ts` (platform credentials and default scopes). If the code and this page disagree, the code wins; fix the page.
@@ -31,7 +31,7 @@ Answerable's own deployment of ID, the Toolbox and the admin MCP (Civo, Kubernet
 | `BETTER_AUTH_URL` is the public issuer origin, `https://` | It becomes the JWT `iss`, the discovery document and the default admin audience (`${BETTER_AUTH_URL}/api/admin`). Changing it invalidates every issued token | `src/env.ts`, `src/auth.ts` |
 | Non-empty origin-only `BETTER_AUTH_TRUSTED_ORIGINS` | Lists other browser origins allowed to call `/auth/*` with cookies, and identity-provider endpoint origins. The ID origin itself is always trusted. The admin API sends no CORS headers: it has no browser client yet | `src/env.ts` production refinements |
 | Google and Microsoft endpoint origins in `BETTER_AUTH_TRUSTED_ORIGINS` and outbound HTTPS to them | Trust exact origins in use: Microsoft `https://login.microsoftonline.com` (discovery, authorisation, token, keys) and `https://graph.microsoft.com` (userinfo); Google `https://accounts.google.com` (discovery/authorisation), `https://oauth2.googleapis.com` (token/revocation), `https://www.googleapis.com` (JWKS), `https://openidconnect.googleapis.com` (userinfo). The service must reach these endpoints over HTTPS | Provider origin checks; SSO connectivity test reports `untrusted_origin` for a discovered endpoint outside the allowlist |
-| Four independent secret families | `BETTER_AUTH_SECRET` signs browser cookies and encrypts the stored JWKS private keys; `UPSTREAM_TOKEN_SECRETS` encrypts the upstream IdP refresh token stored on accounts; `ROOT_ADMIN_SECRET` is the break-glass principal; platform application secrets authenticate Answerable to Google and Microsoft. Compromise of one must not expose the others, and none may be in the database or its backups | `src/env.ts` validation; `src/auth/upstream-token-storage.ts` |
+| Three independent secret families | `BETTER_AUTH_SECRET` signs browser cookies and encrypts the stored JWKS private keys; `ROOT_ADMIN_SECRET` is the break-glass principal; platform application secrets authenticate Answerable to Google and Microsoft. ID stores no upstream IdP token. Compromise of one must not expose the others, and none may be in the database or its backups | `src/env.ts` validation; `src/runtime.ts` refuses to start when the application secrets cannot decrypt the newest signing key; `src/auth/answerable-schema.ts` discards an upstream refresh token |
 | `NODE_ENV=production` | Turns on the provider's rate limiter (limits under "Operating it"), the production refinements above and turns off the OpenAPI documents. The server refuses to start with `NODE_ENV=test`, which would turn off Better Auth's origin and CSRF checks and the runtime-role assertion | `src/env.ts`, `src/runtime.ts`, Better Auth defaults |
 | PostgreSQL `max_connections` ≥ replicas × `DATABASE_POOL_MAX` + migration and operator sessions | Each replica opens up to `DATABASE_POOL_MAX` connections (default 20). Exhausting the server turns every request into a `database_busy` 503 | `src/db/client.ts` |
 
@@ -44,7 +44,7 @@ Answerable uses one multi-tenant Entra app registration and one Google OAuth cli
 1. Create an app registration. Set **Supported account types** to **Multiple Entra ID tenants** (older portals: **Accounts in any organizational directory**).
 2. Under **Authentication → Add a platform → Web**, register `https://id.answerable.org/auth/sso/callback` and `https://id.answerable.org/login`. The second URI is only the landing page for admin consent. For local sign-in, register `http://localhost:47300/auth/sso/callback`.
 3. Copy **Application (client) ID** from **Overview** to `MICROSOFT_CLIENT_ID`. Under **Certificates & secrets**, create a client secret and deliver its value as `MICROSOFT_CLIENT_SECRET` through the secret store. Record its expiry and rotate before it expires.
-4. Obtain customer admin consent with `https://login.microsoftonline.com/<tenant-id>/v2.0/adminconsent?client_id=<MICROSOFT_CLIENT_ID>&scope=openid%20profile%20email%20offline_access&redirect_uri=https%3A%2F%2Fid.answerable.org%2Flogin&state=<slug>`. The landing URL returns `admin_consent=True&tenant=<GUID>`. Alternatively, a Global Administrator signs in first and ticks **consent on behalf of your organisation**; only Privileged Role Administrators see that option. The default tenant policy blocks ordinary users from consenting to unverified multi-tenant apps. Requesting `email` on v2.0 supplies the email claim for managed users.
+4. Obtain customer admin consent with `https://login.microsoftonline.com/<tenant-id>/v2.0/adminconsent?client_id=<MICROSOFT_CLIENT_ID>&scope=openid%20profile%20email&redirect_uri=https%3A%2F%2Fid.answerable.org%2Flogin&state=<slug>`. The landing URL returns `admin_consent=True&tenant=<GUID>`. Alternatively, a Global Administrator signs in first and ticks **consent on behalf of your organisation**; only Privileged Role Administrators see that option. The default tenant policy blocks ordinary users from consenting to unverified multi-tenant apps. Requesting `email` on v2.0 supplies the email claim for managed users.
 5. Publisher verification: Not yet. It needs a Partner Center (Cloud Partner Program) ID and a verified publisher domain; track [Q-PUBLISHER-VERIFICATION](02-plan.md#open-register). A certificate credential: Not yet. Better Auth 1.7.2's `private_key_jwt` assertion lacks the `x5t#S256` header Entra requires. Use the client secret until [Q-ENTRA-CERTIFICATE](02-plan.md#open-register) resolves.
 
 **Google.**
@@ -55,15 +55,13 @@ Answerable uses one multi-tenant Entra app registration and one Google OAuth cli
 4. Copy the client ID to `GOOGLE_CLIENT_ID` and the secret, shown once, to `GOOGLE_CLIENT_SECRET` through the secret store. Never put either provider's secret in an SSO PUT body when using platform credentials.
 5. Workspace customers with restricted third-party apps mark the client ID **Trusted** under **Admin console → Security → Access and data control → API controls → Manage App Access → Configure new app**. The default policy allows any third-party app. The `hd` request parameter is only a hint; Answerable ID verifies the ID token's `hd` claim.
 
-Google defaults to `email openid profile`; Entra defaults to `email offline_access openid profile`. Own-credential rows for these issuers receive the same defaults when scopes are omitted. See [directory onboarding](../apps/web/content/docs/id/onboard.mdx#connect-the-directory) for tenant IDs and own credentials.
+Every SSO row, platform or own credentials, defaults to `email openid profile` when scopes are omitted. ID asks for no `offline_access` and keeps no upstream refresh token. See [directory onboarding](../apps/web/content/docs/id/onboard.mdx#connect-the-directory) for tenant IDs and own credentials.
 
 ## Configuration
 
 Required in production. Generate secrets on a machine you trust and deliver them through your secret store; nothing here reads a file.
 
 ```bash
-# 32 random bytes, canonical base64url (43 characters, no padding)
-openssl rand -base64 32 | tr '+/' '-_' | tr -d '='
 # 48 random bytes for the application and root secrets
 openssl rand -base64 48
 ```
@@ -79,7 +77,6 @@ openssl rand -base64 48
 | `DATABASE_MIGRATION_URL` | owner login, used only by `db:migrate` runs you start by hand; never given to the service | DDL and permission provisioning |
 | `DATABASE_RUNTIME_ROLE` | `answerable_id_runtime` unless you named it differently | Which role `db:migrate` provisions |
 | `BETTER_AUTH_SECRET` | ≥ 32 characters, high entropy | Cookie signing, JWKS private-key encryption |
-| `UPSTREAM_TOKEN_SECRETS` | `[{"version":1,"value":"<base64url key>"}]` | Upstream token encryption; required before the first SSO login |
 | `GOOGLE_CLIENT_ID` | Google Web application client ID | Set together with `GOOGLE_CLIENT_SECRET` when using Google platform credentials |
 | `GOOGLE_CLIENT_SECRET` | Google client secret from the secret store | Environment only; never stored in platform SSO rows |
 | `MICROSOFT_CLIENT_ID` | Multi-tenant Entra Application (client) ID | Set together with `MICROSOFT_CLIENT_SECRET` when using Microsoft platform credentials |
@@ -110,7 +107,7 @@ bun --filter @answerable/id db:migrate
 
 The migration connection waits at most 5 s for a lock and 5 minutes for a statement. While DDL waits for a table lock, every later query on that table queues behind it, so on a live database a migration gives up rather than stall the service; rerun it once the blocking transaction ends. The statement bound stops a runaway statement from holding its locks indefinitely.
 
-**3. Start `apps/id`** with the configuration above. Startup verifies the runtime role and, on an empty database, seeds the platform organisation, admin resource, `platform-admins` group, its entitlement and the platform capability, then listens. Later starts verify that binding, refuse a changed `ADMIN_RESOURCE_IDENTIFIER` and restore only the admin resource's definition; the rest belongs to operators. An unsafe role or missing variable fails the process before it listens; read the error, it names the variable or the privilege.
+**3. Start `apps/id`** with the configuration above. Startup verifies the runtime role and, on an empty database, seeds the platform organisation, admin resource, `platform-admins` group, its entitlement and the platform capability, then listens. Later starts verify that binding, refuse a changed `ADMIN_RESOURCE_IDENTIFIER` and restore only the admin resource's definition; the rest belongs to operators. An unsafe role, a missing variable or application secrets that cannot decrypt the newest stored signing key fail the process before it listens; read the error, it names the variable, the privilege or the key.
 
 ```bash
 bun --filter @answerable/id build && bun apps/id/dist/server.js
@@ -127,16 +124,9 @@ curl -s https://id.answerable.org/.well-known/openid-configuration | jq .issuer
 curl -s https://id.answerable.org/auth/jwks    # first call generates the signing key
 ```
 
-**5. Preflight the keys** once JWKS exists. This decrypts every stored signing key and upstream refresh token with the delivered secrets and exits non-zero if any key is wrong.
+**5. Deploy `apps/web`** for the site and docs.
 
-```bash
-DATABASE_URL='<runtime url>' BETTER_AUTH_SECRET=… UPSTREAM_TOKEN_SECRETS=… \
-bun --filter @answerable/id ops:preflight
-```
-
-**6. Deploy `apps/web`** for the site and docs.
-
-**7. First run with the root bearer.** Every mutation needs an `Idempotency-Key` header; reuse the same key to retry. `ID=https://id.answerable.org`, `ROOT=$ROOT_ADMIN_SECRET`.
+**6. First run with the root bearer.** Every mutation needs an `Idempotency-Key` header; reuse the same key to retry. `ID=https://id.answerable.org`, `ROOT=$ROOT_ADMIN_SECRET`.
 
 ```bash
 # The platform organisation id
@@ -169,7 +159,7 @@ curl -s -X PUT -H "Authorization: Bearer $ROOT" -H "Idempotency-Key: platform-ad
 
 If you ever remove the last platform administrator, set `ROOT_ADMIN_BREAK_GLASS=true`, restart, repeat this step, then set it back to `false`.
 
-**8. Register the first application** as a client and grant its entitlements through the admin API; the public guide is at `apps/web/content/docs/id/oauth.mdx` and the admin reference at `/docs/id/admin-api`.
+**7. Register the first application** as a client and grant its entitlements through the admin API; the public guide is at `apps/web/content/docs/id/oauth.mdx` and the admin reference at `/docs/id/admin-api`.
 
 ## Operating it
 
@@ -177,10 +167,10 @@ If you ever remove the last platform administrator, set `ROOT_ADMIN_BREAK_GLASS=
 - **Logs.** Every `OPERATIONAL_LOG_INTERVAL_MS` each process prints `[id] operations` followed by JSON with request counts by route class and status, plus pool counts. Provider diagnostics print a severity, the event name `provider_diagnostic` and, for a thrown error, its class and SQLSTATE, never message text, so a failing sign-in shows up in audit (`auth.signin.failed`), not in logs. The operator signals table is in `../apps/id/OPERATIONS.md`.
 - **Rate limits.** In production Better Auth refuses a client address with `429` past these bursts: `POST /auth/sign-in/sso` 60 per 10 s, `GET /auth/sso/callback` 300 per 10 s, `/auth/oauth2/authorize` 300 a minute, `POST /auth/oauth2/token` 600 a minute; other routes keep Better Auth's defaults (`src/auth.ts`). They are sized for shared addresses: an office signs in through one egress address, and a server-side host refreshes every user's token from one address, so 600 token calls a minute serve 9,000 users on 900 s tokens from one host address. Buckets live in memory, keyed per client address per process, so each replica adds its own allowance. They are not a volumetric defence; that is Cloudflare's rate limiting in front (`Q-ADMIN-API-RATE-LIMIT`).
 - **Scaling.** Add replicas; nothing is process-local except rate-limit buckets and the JWKS cache. Size `max_connections` from the pool formula above. Long lock waits fail at 2 s and stuck transactions at 15 s by design; raise them only with evidence.
-- **Backups.** Back up PostgreSQL with your provider's tooling and keep `BETTER_AUTH_SECRET`, `BETTER_AUTH_SECRETS` and `UPSTREAM_TOKEN_SECRETS` in the secret store with their own retention: a restored database is unreadable without the keys that were active when its rows were written. There is no restore drill in the repository any more; run one against a copy of production data before relying on backups.
+- **Backups.** Back up PostgreSQL with your provider's tooling and keep `BETTER_AUTH_SECRET` and `BETTER_AUTH_SECRETS` in the secret store with their own retention: a restored database is unreadable without the keys that were active when its rows were written. There is no restore drill in the repository any more; run one against a copy of production data before relying on backups.
 - **Storage growth.** `admin_operations` keeps one receipt per administrative command and `audit_events` one row per recorded event, both permanently: nothing prunes them, so plan their disk and index growth with the database. Expired sessions, OAuth access and refresh tokens and client assertions do not accumulate: every `PROTOCOL_SWEEP_INTERVAL_MS` ID deletes them in batches of `PROTOCOL_SWEEP_BATCH` rows, an advisory lock keeps two replicas from deleting at once, and a run that deleted rows prints `[id] protocol sweep` with the count per table.
 - **Platform application rotation.** Create a new secret in the provider console, update the environment and rolling-restart every replica while both secrets remain valid; retire the old secret afterwards. No SSO rows, revisions or grants change. Replacing a platform client ID interrupts in-flight sign-ins with `?error=invalid_state&error_description=sso_provider_changed_during_authentication`: the SSO plugin detects the changed application, without a row revision change, so `SSO_PROVIDER_CHANGED` does not apply. For Entra it also changes every user’s pairwise `sub`, so existing accounts stop matching. See [sign-in errors](../apps/web/content/docs/id/sign-in.mdx#when-sign-in-is-refused).
-- **Rotation.** Application secret and upstream key rotation are documented in the ID README. Promoting a new head application secret signs every browser session out.
+- **Rotation.** Application secret rotation is documented in the ID README. Promoting a new head application secret signs every browser session out.
 
 ## Not ready yet
 

@@ -24,44 +24,6 @@ afterEach(() => {
 });
 
 describe("unit: environment", () => {
-  test("parses dedicated upstream versions and rejects invalid rings without revealing values", () => {
-    const keys = [
-      { version: 2, value: Buffer.alloc(32, 2).toString("base64url") },
-      { version: 1, value: Buffer.alloc(32, 1).toString("base64url") },
-    ];
-    expect(
-      parseEnvironment({
-        ...requiredEnvironment,
-        UPSTREAM_TOKEN_SECRETS: JSON.stringify(keys),
-      }).upstreamTokenSecrets,
-    ).toEqual(keys);
-    for (const value of [
-      "not-json",
-      "[]",
-      "null",
-      JSON.stringify([keys[0], keys[0]]),
-      JSON.stringify([{ ...keys[0], version: 0 }]),
-      JSON.stringify([{ ...keys[0], value: "private-short-secret" }]),
-      JSON.stringify([{ ...keys[0], value: "A".repeat(42) + "B" }]),
-    ]) {
-      expect(() =>
-        parseEnvironment({
-          ...requiredEnvironment,
-          UPSTREAM_TOKEN_SECRETS: value,
-        }),
-      ).toThrow(
-        "UPSTREAM_TOKEN_SECRETS: Expected distinct positive key versions",
-      );
-      try {
-        parseEnvironment({
-          ...requiredEnvironment,
-          UPSTREAM_TOKEN_SECRETS: value,
-        });
-      } catch (error) {
-        expect(String(error)).not.toContain(value);
-      }
-    }
-  });
   test("parses defaults", () => {
     expect(parseEnvironment(requiredEnvironment)).toEqual({
       nodeEnv: "development",
@@ -70,7 +32,6 @@ describe("unit: environment", () => {
       betterAuthUrl: requiredEnvironment.BETTER_AUTH_URL,
       betterAuthSecret: requiredEnvironment.BETTER_AUTH_SECRET,
       betterAuthSecrets: undefined,
-      upstreamTokenSecrets: undefined,
       trustedOrigins: [],
       platformApplications: {},
       trustedProxyCidrs: [],

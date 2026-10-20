@@ -85,7 +85,7 @@ The service must be reachable only through the ingress proxies listed in `TRUSTE
 
 Request-body, pool and statement limits remain in effect. Sensitive human changes/linking need verified upstream authentication within five minutes; broker time is not an acceptable substitute. Machine/root authority remains explicit.
 
-Custody preflight and fixed-cardinality process summaries are implemented. Not yet. A restore drill against production-shaped data is a release input. No production capacity, tenant fairness, percentile latency, ingress or RTO/RPO is certified.
+A startup check that the application secrets decrypt the newest signing key and fixed-cardinality process summaries are implemented. Not yet. A restore drill against production-shaped data is a release input. No production capacity, tenant fairness, percentile latency, ingress or RTO/RPO is certified.
 
 Upstream-disable detection, downstream logout and actual consumer cache/session behaviour remain release requirements. Their wider mechanisms are **Not yet**, rather than hidden behind a green local suite.
 

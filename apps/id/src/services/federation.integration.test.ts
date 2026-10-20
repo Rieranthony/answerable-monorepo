@@ -1,5 +1,5 @@
 import {
-  platformApplications as applicationDefaults,
+  directoryScopes,
   type PlatformApplications,
 } from "../auth/platform-applications.ts";
 import { inTenant } from "../__tests__/tenant-command.ts";
@@ -135,14 +135,7 @@ async function seedProvider({
     domain,
     oidc: {
       ...(credentials === "platform"
-        ? {
-            credentials: "platform" as const,
-            scopes: [
-              ...(providerIssuer === "https://accounts.google.com"
-                ? applicationDefaults.google.scopes
-                : applicationDefaults.microsoft.scopes),
-            ],
-          }
+        ? { credentials: "platform" as const, scopes: [...directoryScopes] }
         : { clientId: `${slug}-client`, clientSecret: "secret" }),
       ...(endpoints
         ? {
@@ -225,64 +218,14 @@ describe("integration: federated sign-in", () => {
       id: identities[0]!.id,
       userId: identities[0]!.userId,
     });
-    expect(rows[0]!.refreshToken).toStartWith("$ba$1$");
+    expect(rows[0]!.refreshToken).toBeNull();
   });
-  test("legacy plaintext fails native sign-in without replacing the account or creating a session", async () => {
+  test("native SSO discards a returned upstream refresh token on first and repeated sign-in", async () => {
     await seedProvider();
-    issuer.enqueue(entraClaims());
-    expect((await signIn()).location).toBe(callbackURL);
-    const [initial] = await connection.db.select().from(accounts);
-    await connection.db
-      .update(accounts)
-      .set({ refreshToken: "synthetic-legacy-plaintext" })
-      .where(eq(accounts.id, initial!.id));
-    const [before] = await connection.db.select().from(accounts);
-    issuer.enqueue(entraClaims());
-    const failed = await signIn();
-    expect(failed.response.status).toBe(302);
-    expect(errorCode(failed.location)).toBe("SSO_USER_RESOLUTION_FAILED");
-    expect(failed.location).not.toContain("synthetic-legacy-plaintext");
-    expect(await connection.db.select().from(accounts)).toEqual([before!]);
-    expect(await connection.db.select().from(sessions)).toHaveLength(1);
-    expect(await connection.db.select().from(users)).toHaveLength(1);
-    expect(await connection.db.select().from(members)).toHaveLength(1);
-  });
-  test("missing upstream storage keys cannot commit a native SSO identity or session", async () => {
-    await seedProvider();
-    const environment = testEnvironment({
-      upstreamTokenSecrets: undefined,
-      trustedOrigins: [issuer.origin, new URL(callbackURL).origin],
-    });
-    const auth = createAuth(runtime.db, environment);
-    const unavailableApp = createApp({ auth, db: runtime.db, environment });
-    issuer.enqueue(entraClaims());
-    const result = await signInThroughIdp(unavailableApp, {
-      providerId: "contoso",
-      callbackURL,
-      errorCallbackURL,
-    });
-    expect(result.location).not.toBe(callbackURL);
-    expect(result.response.status).toBe(500);
-    expect(await result.response.json()).toEqual({
-      code: "authentication_unavailable",
-      message: "Authentication is temporarily unavailable",
-    });
-    expect(await connection.db.select().from(accounts)).toHaveLength(0);
-    expect(await connection.db.select().from(users)).toHaveLength(0);
-    expect(await connection.db.select().from(sessions)).toHaveLength(0);
-    expect(await connection.db.select().from(members)).toHaveLength(0);
-  });
-  test("native SSO supports encrypted account fields on first and repeated sign-in", async () => {
-    await seedProvider();
-    const environment = testEnvironment({
-      trustedOrigins: [issuer.origin, new URL(callbackURL).origin],
-    });
-    const auth = createAuth(runtime.db, environment);
-    const protectedApp = createApp({ auth, db: runtime.db, environment });
     let accountId: string | undefined;
     for (let attempt = 0; attempt < 2; attempt++) {
       issuer.enqueue(entraClaims());
-      const result = await signInThroughIdp(protectedApp, {
+      const result = await signInThroughIdp(app, {
         providerId: "contoso",
         callbackURL,
         errorCallbackURL,
@@ -294,13 +237,8 @@ describe("integration: federated sign-in", () => {
       const stored = rows[0]!;
       if (accountId) expect(stored.id).toBe(accountId);
       accountId = stored.id;
-      const { adapter } = await auth.$context;
-      const decoded = await adapter.findOne<Record<string, string>>({
-        model: "account",
-        where: [{ field: "id", value: stored.id }],
-      });
-      expect(stored.refreshToken).toStartWith("$ba$1$");
-      expect(decoded!.refreshToken).toBe("synthetic-federation-refresh-proof");
+      // The issuer returns a refresh token; ID keeps none.
+      expect(stored.refreshToken).toBeNull();
       expect(stored.issuer).toBe(entraIssuer);
       expect(stored.accountId).toBe("entra-subject");
     }
@@ -1220,8 +1158,11 @@ for (const application of ["google", "microsoft"] as const) {
     expect(
       url.searchParams.get("client_id") === platformApps[application]!.clientId,
     ).toBe(true);
+    // No offline_access: ID stores no upstream refresh token.
     expect(url.searchParams.get("scope")!.split(" ").sort()).toEqual([
-      ...applicationDefaults[application].scopes,
+      "email",
+      "openid",
+      "profile",
     ]);
     issuer.enqueue(
       application === "google"

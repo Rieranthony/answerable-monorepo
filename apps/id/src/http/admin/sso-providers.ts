@@ -1,8 +1,4 @@
 import {
-  platformApplicationFor,
-  platformApplications,
-} from "../../auth/platform-applications.ts";
-import {
   commandJson,
   json,
   body,
@@ -27,8 +23,9 @@ import type { Hono } from "hono";
 import { z } from "zod";
 import { platformCommand } from "./command.ts";
 import type { AppEnvironment } from "../context.ts";
-import { uniqueSorted } from "../../lib/scopes.ts";
 import { problemResponses } from "../problem.ts";
+import { directoryScopes } from "../../auth/platform-applications.ts";
+import { uniqueSorted } from "../../lib/scopes.ts";
 import { validate } from "../validation.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 import * as service from "../../services/sso-providers.ts";
@@ -266,14 +263,10 @@ export function register(app: Hono<AppEnvironment>) {
       const organizationId = context.req.param("organizationId")!;
       const input = putSchema.parse(await context.req.json());
       input.oidc ??= { credentials: "platform" };
-      const application = platformApplicationFor(input.issuer);
-      if (application)
-        input.oidc.scopes ??= [...platformApplications[application].scopes];
+      input.oidc.scopes = uniqueSorted(input.oidc.scopes ?? directoryScopes);
       if (input.oidc.credentials !== "platform")
         input.oidc.tokenEndpointAuthentication ??= "client_secret_post";
       input.oidc.discoveryEndpoint ??= `${input.issuer}/.well-known/openid-configuration`;
-      if (input.oidc.scopes)
-        input.oidc.scopes = uniqueSorted(input.oidc.scopes);
       return platformCommand(
         context,
         "write",

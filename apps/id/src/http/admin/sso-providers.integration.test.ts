@@ -600,13 +600,13 @@ test("SSO diagnosis reports each endpoint on an origin removed from trustedOrigi
   }
 });
 
-for (const [issuer, scopes] of [
-  ["https://accounts.google.com", ["email", "openid", "profile"]],
-  [
-    "https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0",
-    ["email", "offline_access", "openid", "profile"],
-  ],
-] as const) {
+// ID stores no upstream refresh token, so no directory is asked for offline_access.
+for (const issuer of [
+  "https://accounts.google.com",
+  "https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0",
+  "https://idp.example.com",
+]) {
+  const scopes = ["email", "openid", "profile"];
   test(`own credentials for ${issuer} receive directory scopes while preserving explicit choices`, async () => {
     const org = await createOrganization(fixture.db, {
       slug: `own-defaults-${createId()}`,

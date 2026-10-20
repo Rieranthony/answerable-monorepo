@@ -156,6 +156,8 @@ export const accounts = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    /** Stays null: ID discards the upstream refresh token at write
+     * (`auth/answerable-schema.ts`). Kept for the directory re-check, `Q-AID-RECHECK`. */
     refreshToken: text("refresh_token"),
     refreshTokenExpiresAt: timestampColumn("refresh_token_expires_at"),
     ...timestamps(),

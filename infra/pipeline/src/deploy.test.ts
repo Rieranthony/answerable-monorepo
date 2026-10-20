@@ -28,7 +28,6 @@ const CLUSTER_ENV = {
 /** ID's secrets as the deploy step has them: the GitHub environment's. */
 const ID_ENV = {
   BETTER_AUTH_SECRET: "better-auth-secret-value-123",
-  UPSTREAM_TOKEN_SECRETS: '[{"version":1,"value":"upstream-key-value-456"}]',
   ROOT_ADMIN_SECRET: "root-admin-secret-value-789",
   MICROSOFT_CLIENT_ID: "11111111-2222-3333-4444-555555555555",
   MICROSOFT_CLIENT_SECRET: "microsoft-client-secret-value-012",
@@ -187,17 +186,17 @@ describe("idEnv and idEnvChecksum", () => {
   })
 
   test("add the Google pair and BETTER_AUTH_SECRETS when set, and leave out the Microsoft pair when it is not", () => {
-    const required = { BETTER_AUTH_SECRET: ID_ENV.BETTER_AUTH_SECRET, UPSTREAM_TOKEN_SECRETS: ID_ENV.UPSTREAM_TOKEN_SECRETS, ROOT_ADMIN_SECRET: ID_ENV.ROOT_ADMIN_SECRET }
+    const required = { BETTER_AUTH_SECRET: ID_ENV.BETTER_AUTH_SECRET, ROOT_ADMIN_SECRET: ID_ENV.ROOT_ADMIN_SECRET }
     const values = idEnv({ ...required, GOOGLE_CLIENT_ID: "google-id", GOOGLE_CLIENT_SECRET: "google-secret", BETTER_AUTH_SECRETS: '[{"version":2}]' })
-    expect(Object.keys(values)).toEqual(["BETTER_AUTH_SECRET", "BETTER_AUTH_SECRETS", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "ROOT_ADMIN_SECRET", "UPSTREAM_TOKEN_SECRETS"])
+    expect(Object.keys(values)).toEqual(["BETTER_AUTH_SECRET", "BETTER_AUTH_SECRETS", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "ROOT_ADMIN_SECRET"])
     expect(idEnv({ ...required, BETTER_AUTH_SECRETS: " " })).toEqual(required)
   })
 
   test("refuse a required secret that is empty, naming every one, and half a pair", () => {
     expect(() => idEnv({ ...ENV, BETTER_AUTH_SECRET: "", ROOT_ADMIN_SECRET: undefined })).toThrow(
-      "BETTER_AUTH_SECRET, ROOT_ADMIN_SECRET are not set: id-env needs BETTER_AUTH_SECRET, UPSTREAM_TOKEN_SECRETS, ROOT_ADMIN_SECRET",
+      "BETTER_AUTH_SECRET, ROOT_ADMIN_SECRET are not set: id-env needs BETTER_AUTH_SECRET, ROOT_ADMIN_SECRET",
     )
-    expect(() => idEnv({ ...ENV, UPSTREAM_TOKEN_SECRETS: " " })).toThrow("UPSTREAM_TOKEN_SECRETS is not set")
+    expect(() => idEnv({ ...ENV, ROOT_ADMIN_SECRET: " " })).toThrow("ROOT_ADMIN_SECRET is not set")
     expect(() => idEnv({ ...ENV, MICROSOFT_CLIENT_SECRET: "" })).toThrow(
       "MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET go together: MICROSOFT_CLIENT_ID is set and MICROSOFT_CLIENT_SECRET is not",
     )
@@ -226,7 +225,7 @@ describe("deploy", () => {
     ])
     expect(f.log()).toContain(`Deployed ${TAG} to staging.`)
     expect(f.log()).toContain(`id is ${DIGESTS.id}`)
-    expect(f.log()).toContain("id-env holds BETTER_AUTH_SECRET, MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, ROOT_ADMIN_SECRET, UPSTREAM_TOKEN_SECRETS.")
+    expect(f.log()).toContain("id-env holds BETTER_AUTH_SECRET, MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, ROOT_ADMIN_SECRET.")
   })
 
   test("hands kubectl id-env on standard input, as base64 data in the answerable namespace, and logs no value", async () => {

@@ -41,8 +41,8 @@ const USAGE = `Usage:
   bun infra/pipeline/src/cli.ts smoke --environment <staging|production> [--wait <seconds>] [--interval <seconds>]
 
 deploy pins the four images (id, toolbox, admin-mcp, ops) by manifest digest: given with --image-digest for all
-four, or looked up with docker buildx from the tag. It writes the Secret id-env from BETTER_AUTH_SECRET,
-UPSTREAM_TOKEN_SECRETS and ROOT_ADMIN_SECRET, the MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET pair and the
+four, or looked up with docker buildx from the tag. It writes the Secret id-env from BETTER_AUTH_SECRET
+and ROOT_ADMIN_SECRET, the MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET pair and the
 GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET pair when set, and BETTER_AUTH_SECRETS when set. run-job runs one ops Job on
 the release's own values; make-admin needs --email. deploy and run-job read the cluster from KUBE_SERVER, KUBE_CA and
 KUBE_TOKEN and report on standard error. smoke prints its table on standard output. Exit codes: 0 done, 1 failed,

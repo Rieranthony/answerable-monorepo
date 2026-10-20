@@ -1,12 +1,44 @@
 import { createApp } from "./app.ts";
 import { maxRequestBodyBytes } from "./http/request-limits.ts";
 import { bootstrap, systemActor } from "./bootstrap.ts";
-import { createAuth } from "./auth.ts";
-import { createDatabase } from "./db/client.ts";
+import { createAuth, type Auth } from "./auth.ts";
+import { createDatabase, type Database } from "./db/client.ts";
+import { jwks } from "./db/schema/index.ts";
 import type { Environment } from "./env.ts";
 import { assertRuntimeRole } from "./db/runtime-role.ts";
 import { createOperationalMetrics } from "./operations/metrics.ts";
 import { startProtocolSweep } from "./operations/protocol-sweep.ts";
+import { symmetricDecrypt } from "better-auth/crypto";
+import { desc } from "drizzle-orm";
+
+/**
+ * Better Auth decrypts a signing key only when it signs, so a wrong application
+ * secret would start, report ready and fail every issuance. Decrypt the key it
+ * will sign with first; a database with no key yet passes.
+ */
+export async function assertSigningKeyReadable(db: Database, auth: Auth) {
+  const [newest] = await db
+    .select({ privateKey: jwks.privateKey })
+    .from(jwks)
+    .orderBy(desc(jwks.createdAt), desc(jwks.id))
+    .limit(1);
+  if (!newest) return;
+  const { secretConfig } = await auth.$context;
+  try {
+    await symmetricDecrypt({
+      key: secretConfig,
+      data: JSON.parse(newest.privateKey),
+    });
+  } catch {
+    // The message names the cause and never quotes key material.
+    throw Object.assign(
+      new Error(
+        "The configured application secrets cannot decrypt the newest signing key",
+      ),
+      { name: "SigningKeyCustodyError" },
+    );
+  }
+}
 
 export async function startRuntime(
   environment: Environment,
@@ -15,12 +47,15 @@ export async function startRuntime(
     seed = bootstrap,
     databaseFactory = createDatabase,
     authFactory = createAuth,
+    signingKeyCheck = assertSigningKeyReadable,
   }: {
     /** Tests only: NODE_ENV=test drops Better Auth's origin checks and the role check. */
     allowTestEnvironment?: boolean;
     seed?: typeof bootstrap;
     databaseFactory?: typeof createDatabase;
     authFactory?: typeof createAuth;
+    /** Tests with a stub auth have no secrets to check. */
+    signingKeyCheck?: typeof assertSigningKeyReadable;
   } = {},
 ) {
   if (environment.nodeEnv === "test" && !allowTestEnvironment)
@@ -48,6 +83,7 @@ export async function startRuntime(
       }),
     );
     const auth = authFactory(database.db, environment);
+    await signingKeyCheck(database.db, auth);
     const app = createApp({ auth, db: database.db, environment, metrics });
     server = Bun.serve({
       port: environment.port,

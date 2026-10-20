@@ -59,37 +59,23 @@ a database error, its SQLSTATE as `code` and any `constraint`, never its message
 | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | Rising 503 counts, active work and pool waiters                         | Compare with traffic and database limits; inspect authorised audit/history for context                                                       |
 | `admin_denial_audit_unavailable`, `token_rejection_audit_unavailable` or `signin_rejection_audit_unavailable` | Investigate database/audit availability; refusal remains refusal                                                                             |
-| `custody_preflight_failed`                                              | Keep recovery traffic closed; `reason` names absent keys, no signing key, an unsafe runtime role or a failed decryption                      |
+| `SigningKeyCustodyError` at startup                                    | The configured application secrets cannot decrypt the newest signing key: deliver the version that encrypted it; never delete the key       |
 | `protocol_sweep_failed`, repeated                                       | Check database availability and lock waits; expired protocol rows accumulate until a sweep succeeds                                          |
 | Missing process summaries                                               | Check process health and collector delivery before interpreting demand                                                                       |
 | Backup age or retrieval failure                                         | Use the backup service's independently monitored completion/recovery evidence; `/readyz` cannot detect this                                  |
 
-## Deliver and check keys
+## Keys
 
-```bash
-# From apps/id, with deployment configuration supplied by its secret store.
-# Stop writers and use the restricted runtime DATABASE_URL, never the owner login.
-bun run ops:preflight
-```
-
-The preflight performs read-only, paged database scans. It decrypts every retained
-signing private key with the provider's supported secret configuration, verifies a
-local canary against its public key, and reads each account's upstream refresh token
-via the supported storage transform. Only counts are printed. Missing
-or incorrect keys, invalid ciphertext, a mismatched key pair or no signing key fails
-with exit status 1. It never generates replacement keys or rewrites credentials.
-It does not prove backup completeness or validate
-cookies, external IdP private keys and every provider credential family.
-
-On a **new installation**, initialise native JWKS in the isolated runtime before
-the preflight, using `GET /auth/jwks`. Supply versioned application-secret custody
-before that first generation. An unexpectedly empty JWKS after restore is a recovery
-failure; do not use initialisation to replace missing restored keys.
+Startup decrypts the newest stored signing key with the configured application
+secrets before it listens; a wrong or missing version stops the process with
+`SigningKeyCustodyError`, so the previous replicas keep serving. A database with no
+key yet passes; the first `GET /auth/jwks` generates one. An unexpectedly empty JWKS
+after restore is a recovery failure; do not use that generation to replace missing
+restored keys.
 
 | Material                 | Supported configuration and use                                                                                                                                  | Retirement evidence needed                                                                             |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | Application secret       | `BETTER_AUTH_SECRET`; optional native `BETTER_AUTH_SECRETS` ring. Encrypts provider material including signing private keys; active secret signs browser cookies | Retained ciphertext and every required backup; promotion requires fresh browser sign-in                |
-| Upstream token keys      | `UPSTREAM_TOKEN_SECRETS`; first version writes, listed versions read account refresh tokens                                                                      | All surviving fields and required backups decrypt without the retiring version                         |
 | Platform application secrets | `GOOGLE_CLIENT_SECRET` and `MICROSOFT_CLIENT_SECRET`: environment only, never in PostgreSQL | Provider console shows the new secret and every replica has restarted; keep both secrets valid throughout rotation |
 | Database credentials     | Separate migration and runtime logins                                                                                                        | Provision new credentials and permissions after restore; do not restore owner credentials into runtime |
 | Root and IdP credentials | Deployment-managed root bootstrap secret and configured SSO credentials                                                                                          | Separate inventory and provider-specific revocation/rotation checks                                    |
@@ -100,8 +86,7 @@ access to one, or prove that every replica received a version.
 
 **Normal rotation.** Inventory current ciphertext, backups and replicas first.
 Distribute a new version to every replica while keeping the current active version
-first. Run the preflight against stopped
-writers with the staged configuration. Coordinate promotion across replicas, then
+first. Coordinate promotion across replicas, then
 recheck and exercise a synthetic native sign-in, issuance, refresh and command replay.
 Changing the active application secret requires fresh sign-in; staged old cookies
 do not establish continuity after promotion. Never reuse a version for different
@@ -111,7 +96,7 @@ There is no automatic ciphertext rewrapping or old-key retirement job.
 **Signing-key lifecycle.** The pinned provider generates and publishes database-backed
 JWKS keys and supports retained application-secret decryption. Tests exercise native
 generation after simulated expiry and verification with retained public keys. The
-preflight checks stored pairs, not prepublication, downstream JWKS-cache behaviour
+startup check decrypts the newest key only; it does not check prepublication, downstream JWKS-cache behaviour
 or an emergency signing-key cutover. Do not edit JWKS rows or delete a key to force
 rotation. A production emergency rotation procedure, verification overlap and
 offline token exposure window still require a deployment rehearsal. In a custody

@@ -143,7 +143,6 @@ A changed secret in the environment reaches the cluster on the next tag: the dep
 | Family | How |
 | --- | --- |
 | `ROOT_ADMIN_SECRET` | The Bootstrap workflow with `rotate: ROOT_ADMIN_SECRET`, then a tag |
-| `UPSTREAM_TOKEN_SECRETS` | The Bootstrap workflow with `rotate: UPSTREAM_TOKEN_SECRETS`, then a tag. The new key goes first and the previous ones stay, so stored tokens stay readable |
 | `BETTER_AUTH_SECRET` | Never replaced: it decrypts ID's stored signing keys. Rotate through the ring `BETTER_AUTH_SECRETS`, two ships apart, as [ID's README](../apps/id/README.md#application-secret-rotation) describes: set the environment secret `BETTER_AUTH_SECRETS`, which the deploy passes through. Promotion signs every browser out |
 | Microsoft or Google platform application | Create a new secret in the provider's console, set both of the pair in the environment (`gh secret set MICROSOFT_CLIENT_SECRET --env staging`, which asks for the value), tag, then retire the old secret ([`docs/06`](../docs/06-deploying-answerable-id.md#operating-it)) |
 | A database login (six) | Empty its key, for example `kubectl -n answerable patch secret id-database --type merge -p '{"stringData":{"DATABASE_URL":""}}'` with a [kubeconfig](#get-a-kubeconfig); tag (`ops-bootstrap` gives the login a new password and writes its URL); the service restarts with the deploy ([`infra/ops`](ops/README.md#bootstrap)) |
@@ -179,11 +178,10 @@ civo database restore answerable-staging-database --name <restore name> --backup
 
 After any restore, before traffic:
 
-1. **Tag the current commit again**, so that `ops-bootstrap` sets every login's password back to the one its Secret holds.
-2. **Run ID's custody preflight**, which decrypts every stored signing key and upstream token with the deployed secrets: `kubectl -n answerable exec deploy/id -- bun apps/id/scripts/operations-preflight.ts` must print `custody_preflight_passed`.
-3. **Smoke-test**: `bun infra/pipeline/src/cli.ts smoke --environment staging`.
+1. **Tag the current commit again**, so that `ops-bootstrap` sets every login's password back to the one its Secret holds. ID decrypts the newest stored signing key before it listens, so a restored database its secrets cannot read keeps the new pods from starting.
+2. **Smoke-test**: `bun infra/pipeline/src/cli.ts smoke --environment staging`.
 
-A restored database needs the keys that were active when its rows were written. Rotation keeps earlier upstream keys in the ring and `BETTER_AUTH_SECRET` is never replaced, so the environment's secrets read an older backup.
+A restored database needs the keys that were active when its rows were written. `BETTER_AUTH_SECRET` is never replaced, so the environment's secrets read an older backup.
 
 ## Break glass
 
@@ -207,7 +205,7 @@ Useful reads: `kubectl -n answerable logs deploy/id`, `kubectl -n answerable log
 When nobody can administer ID ([`onboard.mdx`](../apps/web/content/docs/id/onboard.mdx#first-run), step 7):
 
 1. Add `ROOT_ADMIN_BREAK_GLASS: "true"` under `id.env` in `charts/answerable/values-civo-staging.yaml`, and tag (for production, tag and approve).
-2. Repair access with the root secret. Read it into your shell without printing it: `ROOT=$(kubectl -n answerable get secret id-env -o jsonpath='{.data.ROOT_ADMIN_SECRET}' | base64 --decode)`, then follow [`docs/06`](../docs/06-deploying-answerable-id.md#install-in-order) step 7 against the environment's host.
+2. Repair access with the root secret. Read it into your shell without printing it: `ROOT=$(kubectl -n answerable get secret id-env -o jsonpath='{.data.ROOT_ADMIN_SECRET}' | base64 --decode)`, then follow [`docs/06`](../docs/06-deploying-answerable-id.md#install-in-order) step 6 against the environment's host.
 3. Remove the line and tag again. Every use of the root secret is in the audit log as `admin.root_request`.
 
 ## Destroy an environment

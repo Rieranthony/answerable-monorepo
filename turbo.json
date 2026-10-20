@@ -121,7 +121,6 @@
         "ROOT_ADMIN_BREAK_GLASS",
         "DATABASE_*",
         "BETTER_AUTH_*",
-        "UPSTREAM_TOKEN_SECRETS",
         "MICROSOFT_*",
         "GOOGLE_CLIENT_*",
         "TRUSTED_PROXY_CIDRS",

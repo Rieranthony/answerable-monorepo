@@ -102,7 +102,7 @@ Registration is platform administration, not permission. Clients require configu
 
 Retained signing keys use Better Auth application-secret encryption. Upstream tokens use a separate key ring. Secrets never belong in audit evidence.
 
-The [operations runbook](../apps/id/OPERATIONS.md) covers custody preflight and retained-key dependencies. Restore drills: Not yet. A restore drill against production-shaped data is a release input. External secret delivery and emergency rotation require the intended deployment. No KMS-backed signing or secret-store operator has been selected here.
+The [operations runbook](../apps/id/OPERATIONS.md) covers the keys ID holds and retained-key dependencies; startup refuses application secrets that cannot decrypt the newest signing key. Restore drills: Not yet. A restore drill against production-shaped data is a release input. External secret delivery and emergency rotation require the intended deployment. No KMS-backed signing or secret-store operator has been selected here.
 
 ## Availability and failure modes
 

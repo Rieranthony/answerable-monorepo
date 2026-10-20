@@ -4,6 +4,19 @@ export function answerableSchema(): BetterAuthPlugin {
   return {
     id: "answerable-schema",
     schema: {
+      account: {
+        fields: {
+          // ID asks no directory for offline_access and keeps no upstream
+          // refresh token, even when a directory returns one.
+          refreshToken: {
+            type: "string",
+            required: false,
+            input: false,
+            returned: false,
+            transform: { input: () => null },
+          },
+        },
+      },
       ssoProvider: {
         fields: {
           deletedAt: {

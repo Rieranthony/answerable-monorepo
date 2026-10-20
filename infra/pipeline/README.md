@@ -22,7 +22,7 @@ Two environments, `staging` and `production`, each allowed for the branch `main`
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | The owner, once | `deploy`, into `id-env` |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (optional) | The owner | `deploy`, into `id-env` |
 | `STATE_ACCESS_KEY_ID`, `STATE_SECRET_ACCESS_KEY` | `bootstrap.yml` | Terraform's backend (`infra/civo/terraform.sh`) |
-| `BETTER_AUTH_SECRET`, `UPSTREAM_TOKEN_SECRETS`, `ROOT_ADMIN_SECRET` | `bootstrap.yml` | `deploy`, into `id-env` |
+| `BETTER_AUTH_SECRET`, `ROOT_ADMIN_SECRET` | `bootstrap.yml` | `deploy`, into `id-env` |
 | `BETTER_AUTH_SECRETS` (optional) | The owner, while rotating ID's secret (`apps/id/README.md`) | `deploy`, into `id-env` |
 | `KUBE_SERVER`, `KUBE_CA`, `KUBE_TOKEN` | Terraform (`github` module) | `deploy`, `run-job` |
 
@@ -70,7 +70,7 @@ Needs `bun`, `helm`, `kubectl` and, for `deploy` without `--image-digest`, Docke
 
 ```bash
 export KUBE_SERVER=https://… KUBE_CA=… KUBE_TOKEN=…   # the deployer ServiceAccount
-export BETTER_AUTH_SECRET=… UPSTREAM_TOKEN_SECRETS=… ROOT_ADMIN_SECRET=… MICROSOFT_CLIENT_ID=… MICROSOFT_CLIENT_SECRET=…   # deploy only
+export BETTER_AUTH_SECRET=… ROOT_ADMIN_SECRET=… MICROSOFT_CLIENT_ID=… MICROSOFT_CLIENT_SECRET=…   # deploy only
 
 bun infra/pipeline/src/cli.ts deploy --environment staging --image-tag sha-<40 hex> [--image-digest <image>=sha256:<hex> x4] [--timeout 10m]
 bun infra/pipeline/src/cli.ts run-job <bootstrap|register|make-admin> --environment staging [--email you@answerable.org] [--timeout 10m]
