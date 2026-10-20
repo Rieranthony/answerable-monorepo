@@ -111,7 +111,7 @@ openssl rand -base64 48
 
 Your browser session is enough for commands you type by hand. For scripts and agents, create a client owned by the platform organisation, allow it to use the admin API, and swap its secret for a token.
 
-Set `MACHINE_LINK_KEY` and `MACHINE_CAPABILITY_KEY` once for their separate commands. A human cookie requires [fresh authentication](/docs/id/manage#fresh-authentication). Send client creation with an `Idempotency-Key`: without one, a resend creates a second client. Use a distinct key for each intended registration, and reuse it after a lost response. A retry returns the receipt; a lost secret requires another rotation with a new key; see [operation status and retries](/docs/id/manage#operation-status).
+Set `MACHINE_LINK_KEY` and `MACHINE_CAPABILITY_KEY` once for their separate commands. A human cookie requires [fresh authentication](/docs/id/manage#fresh-authentication). Send client creation with an `Idempotency-Key`: without one, a resend creates a second client. Use a distinct key for each intended registration, and reuse it after a lost response. A retry returns the receipt; a lost secret requires another rotation with a new key; see [retries and receipts](/docs/id/manage#retries-and-receipts).
 
 ```bash
 curl https://id.answerable.org/api/admin/v1/clients \
@@ -228,7 +228,7 @@ curl https://id.answerable.org/api/admin/v1/organizations \
   -d '{"slug":"contoso","name":"Contoso"}'
 ```
 
-**Retry key.** Set `ORGANISATION_CREATE_KEY` once for this intended creation and reuse it with identical input after a lost response. All organisation mutations require keys; retries return receipts. PATCH also accepts the optional strong If-Match ETag from getOrganization; see [editing organisation configuration](/docs/id/manage#operation-status).
+**Retry key.** Set `ORGANISATION_CREATE_KEY` once for this intended creation and reuse it with identical input after a lost response. All organisation mutations accept keys; retries return receipts. PATCH also accepts the optional strong If-Match ETag from getOrganization; see [retries and receipts](/docs/id/manage#retries-and-receipts).
 
 **Slug.** Lowercase labels joined by single hyphens, the same grammar as the Omni-Weaver tenant id. It cannot change later. Set `ORG` to the returned `id`.
 

@@ -233,7 +233,7 @@ const tenantRoutes = () =>
 test("tenant routes answer 404 for another tenant's organisation and its rows", async () => {
   const results = [];
   for (const route of tenantRoutes()) results.push(await call(route, b));
-  expect(results.length).toBeGreaterThan(20);
+  expect(results.length).toBeGreaterThanOrEqual(20);
   expect(
     results.filter((result) => result.status !== 404 || result.leaked.length),
   ).toEqual([]);

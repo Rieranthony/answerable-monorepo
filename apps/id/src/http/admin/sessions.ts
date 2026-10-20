@@ -41,7 +41,6 @@ const sessionSchema = z.object({
 });
 const revokedSchema = z.object({ revoked: z.number().int() });
 const userParams = uuidParam("userId");
-const sessionParams = userParams.extend({ sessionId: z.uuid() });
 export const routes = {
   listUserSessions: {
     method: "get",
@@ -68,7 +67,7 @@ export const routes = {
     operationId: "revokeUserSessions",
     summary: "Revoke user sessions",
     description:
-      "Revoke all of the user’s sessions and tokens and return an object containing the revoked session count. Prefer revokeUserSession to end only one session; validation_failed rejects malformed ids and not_found means the user is missing.",
+      "Revoke all of the user’s sessions and tokens and return an object containing the revoked session count; validation_failed rejects malformed ids and not_found means the user is missing.",
     tag: "Sessions",
     platformScope: "platform:users",
     kind: "write",
@@ -79,25 +78,6 @@ export const routes = {
         description: "Success",
         content: commandJson(revokedSchema),
       },
-      ...problemResponses(404),
-    },
-  },
-  revokeUserSession: {
-    method: "delete",
-    path: "/users/:userId/sessions/:sessionId",
-    operationId: "revokeUserSession",
-    summary: "Revoke user session",
-    description:
-      "Revoke one user session and its associated tokens and return no content. Prefer revokeUserSessions to revoke every session and token for that user; validation_failed rejects malformed ids and not_found means the user or session is missing.",
-    tag: "Sessions",
-    platformScope: "platform:users",
-    kind: "write",
-    freshAuthentication: true,
-    parameters: [
-      ...["userId", "sessionId"].map((name) => pathParameter(name, "uuid")),
-    ],
-    responses: {
-      204: { description: "Success" },
       ...problemResponses(404),
     },
   },
@@ -138,28 +118,6 @@ export function register(app: Hono<AppEnvironment>) {
             body: { revoked: result.revoked },
             changed: result.changed,
             resultReference: { type: "user", id: userId },
-          };
-        },
-      );
-    },
-  );
-  registerRoute(
-    app,
-    routes.revokeUserSession,
-    validate("param", sessionParams),
-    async (context) => {
-      const userId = context.req.param("userId")!;
-      const sessionId = context.req.param("sessionId")!;
-      return platformCommand(
-        context,
-        "users",
-        { userId, sessionId },
-        204,
-        async (platform) => {
-          await service.revokeUserSession(platform, userId, sessionId);
-          return {
-            body: null,
-            resultReference: { type: "session", id: sessionId },
           };
         },
       );

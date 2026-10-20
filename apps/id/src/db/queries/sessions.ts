@@ -50,30 +50,3 @@ export async function listUserSessions(
     page.limit,
   );
 }
-
-export async function deleteSession(
-  context: PlatformUsersContext,
-  userId: string,
-  sessionId: string,
-) {
-  const { tx: executor } = context;
-  const [row] = await executor
-    .delete(sessions)
-    .where(and(eq(sessions.userId, userId), eq(sessions.id, sessionId)))
-    .returning(selection);
-  return row ?? null;
-}
-
-export async function findUserSession(
-  context: PlatformUsersContext,
-  userId: string,
-  sessionId: string,
-) {
-  const { tx: executor } = context;
-  const [row] = await executor
-    .select(selection)
-    .from(sessions)
-    .where(and(eq(sessions.userId, userId), eq(sessions.id, sessionId)))
-    .for("update");
-  return row ?? null;
-}

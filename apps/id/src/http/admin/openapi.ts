@@ -20,7 +20,6 @@ export const adminSecuritySchemes = {
 export const adminTags = [
   { name: "Diagnostics", description: "Read-only sign-in and SSO diagnostics" },
   { name: "Audit", description: "Audit event reads" },
-  { name: "Operations", description: "Committed operation reads" },
   { name: "Users", description: "User administration" },
   { name: "Sessions", description: "Session administration" },
   {

@@ -72,24 +72,6 @@ export function revokeOrganizationGrantContexts(
   ).returning({ id: grantContexts.id, userId: grantContexts.userId });
 }
 
-export function revokeSessionGrantContexts(
-  context: PlatformUsersContext,
-  userId: string,
-  sessionId: string,
-) {
-  const { tx: executor } = context;
-  return revokeGrantContexts(
-    executor,
-    and(
-      eq(grantContexts.userId, userId),
-      eq(grantContexts.authenticationSessionId, sessionId),
-    )!,
-  ).returning({
-    id: grantContexts.id,
-    organizationId: grantContexts.organizationId,
-  });
-}
-
 export function revokeResourceGrantContexts(
   context: PlatformWriteContext,
   resourceInstanceId: string,

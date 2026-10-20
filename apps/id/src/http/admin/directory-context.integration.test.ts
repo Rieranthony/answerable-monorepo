@@ -58,7 +58,6 @@ test("every tenant read route rechecks membership inside its read transaction", 
     [`/access?resource=${encodeURIComponent(resource)}`, "tenantReader"],
     ["/members", "tenantReader"],
     [`/members/${reader}`, "tenantReader"],
-    [`/members/${reader}/configuration`, "tenantUsersOnly"],
     [`/members/${reader}/access`, "tenantUsersOnly"],
     [
       "/sign-in-diagnosis?email=tenantadmin%40tenant.example.com",

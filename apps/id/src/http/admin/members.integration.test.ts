@@ -27,9 +27,10 @@ afterAll(async () => {
 });
 describeAdminRoutes(routes, () => fixture);
 type Kind = Parameters<AdminFixture["headers"]>[0];
-async function configurationTag(path: string, headers: Headers) {
-  const response = await fixture.app.request(`${path}/configuration`, {
-    headers,
+/** The member's ETag, read by staff; a placeholder when the member is not there. */
+async function configurationTag(path: string) {
+  const response = await fixture.app.request(path, {
+    headers: fixture.headers("platformAdmin"),
   });
   return (
     response.headers.get("ETag") ?? '"00000000-0000-7000-8000-000000000000:1"'
@@ -54,7 +55,6 @@ async function request(
       "If-Match",
       await configurationTag(
         `/api/admin/v1/organizations/${organizationId}/members${suffix}`,
-        headers,
       ),
     );
   const response = await fixture.app.request(
@@ -373,7 +373,6 @@ test.each(["PATCH", "DELETE", "POST"])(
         "If-Match",
         await configurationTag(
           `/api/admin/v1/organizations/${fixture.tenant.organizationId}/members/${target.id}`,
-          headers,
         ),
       );
     const original = fixture.appDb.transaction.bind(fixture.appDb);
@@ -495,7 +494,6 @@ test("an owned machine with org:users changes only its tenant's members", async 
       "If-Match",
       await configurationTag(
         `/api/admin/v1/organizations/${organizationId}/members/${memberId}`,
-        headers,
       ),
     );
     const response = await fixture.app.request(

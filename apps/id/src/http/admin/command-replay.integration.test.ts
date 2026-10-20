@@ -237,7 +237,7 @@ const rows: Row[] = [
         body: { validUntil: future },
         status: 200,
         changed: { body: { validUntil: "2099-01-01T00:00:00.000Z" } },
-        precondition: `${path}/configuration`,
+        precondition: path,
         noop: {},
       };
     },
@@ -486,19 +486,6 @@ const rows: Row[] = [
         status: 200,
         changed: { path: `/users/${createId()}/sessions` },
         noop: {},
-      };
-    },
-  },
-  {
-    family: "session",
-    command: "revoke one",
-    prepare: async () => {
-      const { id, sessionId } = await person(true);
-      return {
-        method: "DELETE",
-        path: `/users/${id}/sessions/${sessionId}`,
-        status: 204,
-        changed: { path: `/users/${id}/sessions/${createId()}` },
       };
     },
   },

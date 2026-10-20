@@ -626,12 +626,6 @@ test("restricted global user/session queries preserve global scope and exclude c
   });
   await inPlatformUsers(runtime.db, async (context) => {
     await userQueries.lockUser(context, userId);
-    expect(
-      await sessionQueries.findUserSession(context, userId, sessionIds[1]!),
-    ).toBeNull();
-    expect(
-      await sessionQueries.deleteSession(context, userId, sessionIds[1]!),
-    ).toBeNull();
     expect(await sessionQueries.deleteUserSessionIds(context, userId)).toEqual([
       sessionIds[0]!,
     ]);
@@ -875,7 +869,7 @@ test("restricted revocation queries preserve their tenant, user, client and sess
     { clientId: clientIds[0]!, userId: null, sessionId: null },
     { clientId: clientIds[1]!, userId: null, sessionId: null },
   ];
-  for (const kind of ["user", "session", "client", "organization"] as const) {
+  for (const kind of ["user", "client", "organization"] as const) {
     const seeded: {
       table: typeof oauthAccessTokens | typeof oauthRefreshTokens;
       id: string;
@@ -885,11 +879,9 @@ test("restricted revocation queries preserve their tenant, user, client and sess
       const shouldRevoke =
         kind === "user"
           ? spec.userId === userIds[0]
-          : kind === "session"
-            ? spec.sessionId === sessionIds[0]
-            : kind === "client"
-              ? spec.clientId === clientIds[0]
-              : spec.clientId === clientIds[0] && spec.userId === null;
+          : kind === "client"
+            ? spec.clientId === clientIds[0]
+            : spec.clientId === clientIds[0] && spec.userId === null;
       for (const table of [oauthAccessTokens, oauthRefreshTokens]) {
         if (table === oauthRefreshTokens && spec.userId === null) continue;
         const id = createId();
@@ -906,10 +898,6 @@ test("restricted revocation queries preserve their tenant, user, client and sess
     if (kind === "user")
       await inPlatformUsers(runtime.db, (context) =>
         queries.revokeUserTokens(context, userIds[0]!),
-      );
-    else if (kind === "session")
-      await inPlatformUsers(runtime.db, (context) =>
-        queries.revokeSessionTokens(context, sessionIds[0]!),
       );
     else if (kind === "client")
       await inPlatformWrite(runtime.db, (context) =>
@@ -1045,7 +1033,6 @@ test("restricted revocation queries preserve their tenant, user, client and sess
   ];
   for (const operation of [
     "revokeUser",
-    "revokeSession",
     "revokeErasedUser",
     "revokeOrganization",
     "revokeResource",
@@ -1060,53 +1047,43 @@ test("restricted revocation queries preserve their tenant, user, client and sess
         expiresAt: new Date(Date.now() + 60000),
       });
     const expected = ids.filter((_, index) =>
-      operation === "revokeSession"
-        ? index === 0
-        : operation === "revokeUser" || operation === "revokeErasedUser"
-          ? index < 2
-          : operation.includes("Resource")
-            ? index === 0 || index === 3
-            : operation.includes("Client")
-              ? index < 2
-              : index === 0 || index === 2,
+      operation === "revokeUser" || operation === "revokeErasedUser"
+        ? index < 2
+        : operation.includes("Resource")
+          ? index === 0 || index === 3
+          : operation.includes("Client")
+            ? index < 2
+            : index === 0 || index === 2,
     );
     const run = () =>
       operation === "revokeUser"
         ? inPlatformUsers(runtime.db, (context) =>
             grantQueries.revokeUserGrantContexts(context, userIds[0]!),
           )
-        : operation === "revokeSession"
-          ? inPlatformUsers(runtime.db, (context) =>
-              grantQueries.revokeSessionGrantContexts(
-                context,
-                userIds[0]!,
-                targets[0]!.authenticationSessionId,
-              ),
-            )
-          : inPlatformWrite(runtime.db, (context) => {
-              switch (operation) {
-                case "revokeErasedUser":
-                  return grantQueries.revokeErasedUserGrantContexts(
-                    context,
-                    userIds[0]!,
-                  );
-                case "revokeOrganization":
-                  return grantQueries.revokeOrganizationGrantContexts(
-                    context,
-                    tenantIds[0]!,
-                  );
-                case "revokeResource":
-                  return grantQueries.revokeResourceGrantContexts(
-                    context,
-                    resourceIds[0]!,
-                  );
-                case "revokeClient":
-                  return grantQueries.revokeClientGrantContexts(
-                    context,
-                    clientIds[0]!,
-                  );
-              }
-            });
+        : inPlatformWrite(runtime.db, (context) => {
+            switch (operation) {
+              case "revokeErasedUser":
+                return grantQueries.revokeErasedUserGrantContexts(
+                  context,
+                  userIds[0]!,
+                );
+              case "revokeOrganization":
+                return grantQueries.revokeOrganizationGrantContexts(
+                  context,
+                  tenantIds[0]!,
+                );
+              case "revokeResource":
+                return grantQueries.revokeResourceGrantContexts(
+                  context,
+                  resourceIds[0]!,
+                );
+              case "revokeClient":
+                return grantQueries.revokeClientGrantContexts(
+                  context,
+                  clientIds[0]!,
+                );
+            }
+          });
     expect((await run()).map((row) => row.id).sort()).toEqual(
       [...expected].sort(),
     );

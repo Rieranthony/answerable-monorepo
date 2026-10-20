@@ -237,7 +237,7 @@ curl -X DELETE "https://id.answerable.org/api/admin/v1/users/$USER_ID?confirm=$U
   -H "Idempotency-Key: $USER_DELETE_KEY"
 ```
 
-**Set the key once.** An authorised retry with the same key and input returns the receipt. See [eraseUser](/docs/id/admin-api/users/eraseUser) and [operation status](#operation-status). The existing `erase` operation names now perform soft deletion.
+**Set the key once.** An authorised retry with the same key and input returns the receipt. See [eraseUser](/docs/id/admin-api/users/eraseUser) and [retries and receipts](#retries-and-receipts). The existing `erase` operation names now perform soft deletion.
 
 **Deletion is terminal.** Product deletion sets `deletedAt`. Ordinary reads, discovery, sign-in and permission checks exclude deleted records. Enable, update, SSO and membership reinstatement cannot clear the marker. A new-key request targeting a deleted record returns `not_found`; the original key can still recover its receipt while recovery is available.
 
@@ -324,20 +324,13 @@ curl "$ID_ORIGIN/api/admin/v1/audit-events?operationId=$OPERATION_ID" \
 
 **Historical audit.** User and organisation audit endpoints can return retained history after erasure. A UUID with neither a live record nor retained history returns `not_found`. A person's history is recorded with each event, so it survives deletion. Platform user history also includes users named in recorded grant-erasure effects, even after their live rows are removed. These global events remain excluded from tenant history because their payload can contain other tenants' details.
 
-## Operation status
+## Retries and receipts
 
-```bash
-curl "$ID_ORIGIN/api/admin/v1/operations/$OPERATION_ID" \
-  -H "Authorization: Bearer $ACCESS_TOKEN"
-```
+**Committed operations** have an applied or no-op outcome, an original status and a result reference. A retry with the same key and input returns `{ "operationId": "…", "outcome": "applied", "statusCode": 200, "resultReference": { "type": "…", "id": "…" } }` at the original status code; 204 stays empty. Reservations are permanent. Fetch the current representation through the referenced read route. Response bodies are not stored.
 
-**Current receipt visibility.** Operation reads require current platform audit authority (`platform:read`), rechecked inside the transaction. Status remains available after organisation erasure and uses `Cache-Control: no-store`.
+**Tracing a command.** Its response carries `Operation-Id`; filter audit events by `operationId` (above) to see what it did. A no-op records no event: its receipt is the record.
 
-**Committed operations** expose their applied/no-op outcome, original status and result reference. A retry with the same key and input returns `{ "operationId": "…", "outcome": "applied", "statusCode": 200, "resultReference": { "type": "…", "id": "…" } }` at the original status code; 204 stays empty. Reservations are permanent. Fetch the current representation through the referenced read route. Response bodies are not stored.
-
-**Unknown operations** return `not_found`. This does not prove that a concurrent request is not running. Status remains available after the referenced entity is erased, subject to current platform audit authority.
-
-**Client creation and secret rotation** accept `Idempotency-Key`; without one, every request is a new command. Reuse the same key and validated input after a lost response to obtain the receipt, subject to current authority. The secret is returned only in the first response. If it is lost, rotate again with a new key. `Operation-Id` identifies the journal record; `Idempotency-Replayed: true` marks a retry. Status uses `/api/admin/v1/operations/{operationId}`.
+**Client creation and secret rotation** accept `Idempotency-Key`; without one, every request is a new command. Reuse the same key and validated input after a lost response to obtain the receipt, subject to current authority. The secret is returned only in the first response. If it is lost, rotate again with a new key. `Operation-Id` identifies the journal record; `Idempotency-Replayed: true` marks a retry.
 
 ```bash
 curl -X POST "$ID_ORIGIN/api/admin/v1/clients/$CLIENT_ID/rotate-secret" \
@@ -449,7 +442,7 @@ Reuse the same operation key and input after a lost response. Member update, rem
 ### Updating a member window
 
 ```bash
-curl -i "$ID_URL/api/admin/v1/organizations/$ORG_ID/members/$MEMBER_ID/configuration" \
+curl -i "$ID_URL/api/admin/v1/organizations/$ORG_ID/members/$MEMBER_ID" \
   -H "Authorization: Bearer $TOKEN"
 
 # Set MEMBER_ETAG to the quoted ETag returned above.
@@ -461,15 +454,15 @@ curl -X PATCH "$ID_URL/api/admin/v1/organizations/$ORG_ID/members/$MEMBER_ID" \
   --data '{"validUntil":null}'
 ```
 
-The [configuration read](/docs/id/admin-api/members/getMemberConfiguration) requires `platform:users` or the tenant's `org:users`. Its ETag describes membership identity, lifecycle and validity, excluding profile details, groups and clock-dependent access. The member detail response carries the revision but no configuration ETag.
+The [member read](/docs/id/admin-api/members/getMember) requires `platform:read` or the tenant's `org:read`, and answers the member's ETag: its identity and revision. The revision moves with lifecycle and validity changes, not with profile details, groups or clock-dependent access.
 
-Reuse the original key, body and ETag after response loss: a committed replay is recovered before the stale revision check. A new stale command returns `revision_mismatch` (412); read current configuration and review it before submitting a new command. Weak, wildcard or malformed tags return `invalid_revision` (400). Unchanged window updates preserve the revision. Removal and reinstatement advance it, so reactivation cannot restore an old configuration ETag.
+Reuse the original key, body and ETag after response loss: a committed replay is recovered before the stale revision check. A new stale command returns `revision_mismatch` (412); read the member again and review it before submitting a new command. Weak, wildcard or malformed tags return `invalid_revision` (400). Unchanged window updates preserve the revision. Removal and reinstatement advance it, so reactivation cannot restore an old configuration ETag.
 
-See [member operations](/docs/id/admin-api/members/updateMember) and [operation status](/docs/id/admin-api/operations/getOperationStatus).
+See [member operations](/docs/id/admin-api/members/updateMember) and [retries and receipts](#retries-and-receipts).
 
 **Domain command retries.** Create, enable, disable and delete accept `Idempotency-Key` and return receipts on replay. Reuse the key and identical input after response loss. Lifecycle requests with a new key return unchanged state when already enabled/disabled and record a no-op. A committed deletion can be replayed after the row is gone. Creation still rejects an existing conflicting assignment; replay returns the receipt and does not adopt another organisation's domain. Domain writes remain platform-only.
 
-**Organisation command retries.** Platform staff send a new `Idempotency-Key` with create, PATCH, enable, disable and erase to retry them safely. Identical authorised retries return the receipt, including after erasure; they do not recreate the organisation. New-key unchanged state records a noop. No-op disable preserves the existing tenant epoch and does not repeat revocation. Organisation PATCH accepts the optional strong If-Match ETag returned by getOrganization; stale new commands return 412. Keep the original tag with the original key on retry. Use the platform operation-status route for these receipts.
+**Organisation command retries.** Platform staff send a new `Idempotency-Key` with create, PATCH, enable, disable and erase to retry them safely. Identical authorised retries return the receipt, including after erasure; they do not recreate the organisation. New-key unchanged state records a noop. No-op disable preserves the existing tenant epoch and does not repeat revocation. Organisation PATCH accepts the optional strong If-Match ETag returned by getOrganization; stale new commands return 412. Keep the original tag with the original key on retry.
 
 **Edit organisation configuration.** Platform staff read the current ETag before a new PATCH. Copy the returned `ETag` into `ORGANISATION_ETAG`, including its quotes, and set `ORGANISATION_PATCH_KEY` once for this intended edit:
 
@@ -507,7 +500,7 @@ curl -X PUT "$ID_URL/api/admin/v1/organizations/$ORG_ID/sso-provider" \
 
 For first creation, use `If-None-Match: *` instead of `If-Match`. Sending both headers is an error. On 412, read and review the current provider before a new command; old tags also fail after deletion and recreation. Own-credential secret changes advance the revision even though responses remain redacted. Platform secret rotation uses the environment and restart only; it changes no rows, revisions or grants.
 
-**Group command retries.** Group create, PATCH, enable, disable and erase, and group membership PUT/delete, accept Idempotency-Key. A retry returns the receipt. New-key unchanged configuration, lifecycle state or membership windows records a noop. Omitted window fields retain existing values. A removal retry cannot delete a later re-added assignment. Membership result references identify the group/member pair as `<group UUID>:<member UUID>`; these receipts use the platform operation-status route. Group PATCH accepts the optional strong If-Match ETag from getGroup. Membership PUT accepts optional If-Match from getGroupMember; omitted preconditions use the current row.
+**Group command retries.** Group create, PATCH, enable, disable and erase, and group membership PUT/delete, accept Idempotency-Key. A retry returns the receipt. New-key unchanged configuration, lifecycle state or membership windows records a noop. Omitted window fields retain existing values. A removal retry cannot delete a later re-added assignment. Membership result references identify the group/member pair as `<group UUID>:<member UUID>`. Group PATCH accepts the optional strong If-Match ETag from getGroup. Membership PUT accepts optional If-Match from getGroupMember; omitted preconditions use the current row.
 
 **Edit a group.** Read the group's ETag and copy it, including quotes, into `GROUP_ETAG`. Set `GROUP_PATCH_KEY` once for this intended edit:
 
@@ -787,7 +780,7 @@ These events record exact changed token rows under `data.revokedTokens.access` a
 | Event                                     | Visibility                                  |
 | ----------------------------------------- | ------------------------------------------- |
 | `user.disabled`                           | Platform history                            |
-| `session.revoked`, `session.revoked_all`  | Platform history                            |
+| `session.revoked_all`                     | Platform history                            |
 | `client.grants_revoked`                   | Platform history, alongside `grantContexts` |
 
 Client disable and secret rotation leave counts and `grantEffectsEventId` in the owner's event. Individual users and tokens remain in the restricted effect event. Affected-user UUIDs remain searchable after live rows are erased.

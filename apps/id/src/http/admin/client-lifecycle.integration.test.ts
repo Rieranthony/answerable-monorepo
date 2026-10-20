@@ -8,7 +8,7 @@ import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
-import { auditEvents } from "../../db/schema/index.ts";
+import { adminOperations, auditEvents } from "../../db/schema/index.ts";
 let fixture: AdminFixture;
 beforeAll(async () => {
   fixture = await createAdminFixture({}, { restrictedRole: true });
@@ -24,12 +24,16 @@ function request(path: string, method: string, key: string, body?: unknown) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
+/** The command's receipt in the journal. */
 async function status(response: Response) {
   const id = response.headers.get("Operation-Id");
   expect(id).toBeString();
-  const result = await request(`/operations/${id}`, "GET", "read");
-  expect(result.status).toBe(200);
-  return result.json();
+  const [receipt] = await fixture.db
+    .select()
+    .from(adminOperations)
+    .where(eq(adminOperations.id, id!));
+  expect(receipt).toBeDefined();
+  return receipt;
 }
 
 test("resource links and erasure replay without recreating erased state", async () => {

@@ -87,7 +87,7 @@ import {
   enableResource,
   updateResource,
 } from "../services/resources.ts";
-import { revokeUserSession, revokeUserSessions } from "../services/sessions.ts";
+import { revokeUserSessions } from "../services/sessions.ts";
 import {
   deleteSsoProvider,
   putSsoProvider,
@@ -2066,20 +2066,6 @@ const authorityChanges: {
     session: "gone",
   },
   {
-    change: "revocation of the authenticating session",
-    apply: async (grant) => {
-      await inPlatformUsers(fixture.db, (context) =>
-        revokeUserSession(
-          context,
-          fixture.principals.tenantAdmin.userId,
-          grant.authenticationSessionId,
-        ),
-      );
-    },
-    outsider: "kept",
-    session: "gone",
-  },
-  {
     change: "revocation of every session",
     apply: async () => {
       await inPlatformUsers(fixture.db, (context) =>
@@ -2888,15 +2874,6 @@ const issuanceWriters: Record<string, Writer> = {
     apply: (context) =>
       disableUser(context, fixture.principals.tenantAdmin.userId),
   },
-  session: {
-    users: true,
-    apply: async (context) =>
-      revokeUserSession(
-        context,
-        fixture.principals.tenantAdmin.userId,
-        await browserSessionId(),
-      ),
-  },
   "all-sessions": {
     users: true,
     apply: (context) =>
@@ -3031,7 +3008,6 @@ const creationChanges = [
   "remove-member",
   "disable-user",
   "disable-tenant",
-  "revoke-session",
   "revoke-all-sessions",
   "disable-client",
   "disable-resource",
@@ -3059,10 +3035,6 @@ async function creationRace(
     "disable-tenant": {
       apply: (context) =>
         disableOrganization(context, fixture.tenant.organizationId),
-    },
-    "revoke-session": {
-      users: true,
-      apply: (context) => revokeUserSession(context, userId, sessionId),
     },
     "revoke-all-sessions": {
       users: true,

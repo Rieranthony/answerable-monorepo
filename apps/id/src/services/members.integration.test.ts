@@ -351,20 +351,6 @@ test("revocation retains identity, denies tenant A, preserves tenant B and requi
     ).rejects.toThrow();
 });
 
-test("member configuration omits identity and rejects missing organisations", async () => {
-  const { db, org, ids } = await seed();
-  await inTenantRead(db, org.id, "configuration", async (context) => {
-    const row = await memberService.getMemberConfiguration(context, ids[0]!);
-    expect(row.id).toBe(ids[0]!);
-    expect(row).not.toHaveProperty("email");
-  });
-  await expect(
-    inTenantRead(db, createId(), "configuration", (context) =>
-      memberService.getMemberConfiguration(context, ids[0]!),
-    ),
-  ).rejects.toMatchObject({ status: 404 });
-});
-
 test("tenant actor identity comes from authority, never metadata", async () => {
   const { db, org, ids } = await seed();
   const { authorizeTenantMemberCommand } = await import("./tenant-context.ts");

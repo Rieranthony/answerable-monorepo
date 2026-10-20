@@ -28,11 +28,9 @@ import * as auditEvents from "./audit-events.ts";
 import * as diagnostics from "./diagnostics.ts";
 
 import * as capabilities from "./capabilities.ts";
-import * as operations from "./operations.ts";
 
 const families = [
   capabilities,
-  operations,
   diagnostics,
   me,
   users,

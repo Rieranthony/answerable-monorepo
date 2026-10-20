@@ -55,16 +55,6 @@ const detailSchema = memberSchema.extend({
     }),
   ),
 });
-const configurationSchema = memberSchema.pick({
-  id: true,
-  revision: true,
-  organizationId: true,
-  userId: true,
-  membershipStatus: true,
-  revokedAt: true,
-  validFrom: true,
-  validUntil: true,
-});
 const querySchema = pageQuerySchema.extend({
   email: z.email().toLowerCase().optional(),
   q: z.string().trim().min(1).max(100).optional(),
@@ -76,30 +66,6 @@ const patchSchema = windowSchema.refine(
 );
 const memberParams = orgParams.extend({ memberId: z.uuid() });
 export const routes = {
-  getMemberConfiguration: {
-    method: "get",
-    path: "/organizations/:organizationId/members/:memberId/configuration",
-    operationId: "getMemberConfiguration",
-    summary: "Read member configuration",
-    description:
-      "Read the stable membership identity, lifecycle and validity window with its strong ETag for If-Match on updateMember. Requires member administration authority. Excludes global profile, groups and time-dependent effective access. validation_failed rejects malformed IDs; not_found means the target is unavailable.",
-    tag: "Members",
-    platformScope: "platform:users",
-    orgScope: "org:users",
-    kind: "read",
-    parameters: ["organizationId", "memberId"].map((name) =>
-      pathParameter(name, "uuid"),
-    ),
-    responses: {
-      200: {
-        description: "Member configuration",
-        content: json(configurationSchema),
-        headers: revisionResponseHeaders,
-      },
-      ...problemResponses(400, 404),
-    },
-  },
-
   listMembers: {
     method: "get",
     path: "/organizations/:organizationId/members",
@@ -126,7 +92,7 @@ export const routes = {
     operationId: "getMember",
     summary: "Get an organisation member",
     description:
-      "Return an organisation member with group memberships without changing state. Prefer getUser for the global user record; validation_failed rejects malformed ids and not_found means the member or organisation is unavailable.",
+      "Return an organisation member with group memberships without changing state, with its strong ETag for If-Match on updateMember. Prefer getUser for the global user record; validation_failed rejects malformed ids and not_found means the member or organisation is unavailable.",
     tag: "Members",
     platformScope: "platform:read",
     kind: "read",
@@ -135,7 +101,11 @@ export const routes = {
     ),
     orgScope: "org:read",
     responses: {
-      200: { description: "Success", content: json(detailSchema) },
+      200: {
+        description: "Success",
+        content: json(detailSchema),
+        headers: revisionResponseHeaders,
+      },
       ...problemResponses(400, 404),
     },
   },
@@ -145,7 +115,7 @@ export const routes = {
     operationId: "updateMember",
     summary: "Update a member window",
     description:
-      "Accepts the If-Match ETag from getMemberConfiguration. Stale supplied revisions return 412. A committed replay is recovered before checking the old revision. The response includes the current member revision; read getMemberConfiguration for the next ETag. Change a member’s validity window and return the member with group memberships, affecting when organisation access is effective. Prefer removeMember for offboarding; validation_failed rejects an empty or malformed patch, not_found means the member or organisation is unavailable, and constraint_violation rejects an invalid validity window.",
+      "Accepts the If-Match ETag from getMember. Stale supplied revisions return 412. A committed replay is recovered before checking the old revision. The response includes the current member revision; read getMember for the next ETag. Change a member’s validity window and return the member with group memberships, affecting when organisation access is effective. Prefer removeMember for offboarding; validation_failed rejects an empty or malformed patch, not_found means the member or organisation is unavailable, and constraint_violation rejects an invalid validity window.",
     tag: "Members",
     platformScope: "platform:users",
     kind: "write",
@@ -218,19 +188,6 @@ export const routes = {
 export function register(app: Hono<AppEnvironment>) {
   registerRoute(
     app,
-    routes.getMemberConfiguration,
-    validate("param", memberParams),
-    async (context) => {
-      const body = await tenantRead(context, "configuration", (tenant) =>
-        service.getMemberConfiguration(tenant, context.req.param("memberId")!),
-      );
-      context.header("ETag", revisionTag(body));
-      return context.json(body);
-    },
-  );
-
-  registerRoute(
-    app,
     routes.reinstateMember,
     validate("param", memberParams),
     async (context) => {
@@ -279,12 +236,11 @@ export function register(app: Hono<AppEnvironment>) {
     routes.getMember,
     validate("param", memberParams),
     async (context) => {
-      return context.json(
-        await tenantRead(context, "directory", (tenant) =>
-          service.getMember(tenant, context.req.param("memberId")!),
-        ),
-        200,
+      const member = await tenantRead(context, "directory", (tenant) =>
+        service.getMember(tenant, context.req.param("memberId")!),
       );
+      context.header("ETag", revisionTag(member));
+      return context.json(member, 200);
     },
   );
   registerRoute(

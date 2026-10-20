@@ -41,10 +41,9 @@ async function request(
 ) {
   const headers = fixture.headers(kind);
   if (method === "PATCH" && /\/members\/[^/]+$/.test(path)) {
-    const current = await fixture.app.request(
-      `/api/admin/v1${path}/configuration`,
-      { headers },
-    );
+    const current = await fixture.app.request(`/api/admin/v1${path}`, {
+      headers: fixture.headers("platformAdmin"),
+    });
     headers.set("If-Match", current.headers.get("ETag")!);
   }
   if (body !== undefined) headers.set("content-type", "application/json");

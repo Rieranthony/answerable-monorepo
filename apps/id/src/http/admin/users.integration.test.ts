@@ -193,21 +193,15 @@ test("platform admin and machine administer a fresh user through revocation, dis
     expect(JSON.stringify(sessionBody)).not.toContain('"token"');
     expect(
       (
-        await request(
-          path + "/sessions/" + fresh.sessionId,
-          "DELETE",
-          undefined,
-          kind,
-          {
-            action: "session.revoked",
-            targetType: "session",
-            targetId: fresh.sessionId,
-            organizationId: null,
-            data: { userId: id },
-          },
-        )
+        await request(path + "/sessions", "DELETE", undefined, kind, {
+          action: "session.revoked_all",
+          targetType: "user",
+          targetId: id,
+          organizationId: null,
+          data: { userId: id, sessions: 1 },
+        })
       ).status,
-    ).toBe(204);
+    ).toBe(200);
     await deadCookie(fresh.cookie);
     const again = await signIn(fresh.subject);
     expect(again.location).toBe(fixture.trustedOrigin + "/callback");

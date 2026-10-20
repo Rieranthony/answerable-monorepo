@@ -25,7 +25,6 @@ export type TenantMemberContext = ScopedContext<"command"> & {
 };
 const readScopes = {
   directory: { platform: "platform:read", tenant: "org:read" },
-  configuration: { platform: "platform:users", tenant: "org:users" },
   memberAccess: { platform: "platform:read", tenant: "org:users" },
   history: { platform: "platform:read", tenant: "org:read" },
 } as const;

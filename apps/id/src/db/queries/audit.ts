@@ -69,7 +69,6 @@ export const auditActions = [
   "resource.enabled",
   "resource.erased",
   "resource.updated",
-  "session.revoked",
   "session.revoked_all",
   "sso_provider.created",
   "sso_provider.deleted",

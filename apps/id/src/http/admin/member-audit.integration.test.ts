@@ -26,8 +26,8 @@ afterEach(async () => {
 const path = () =>
   `/api/admin/v1/organizations/${fixture.tenant.organizationId}/members/${fixture.principals.tenantReader.memberId}`;
 async function configuration() {
-  const response = await fixture.app.request(`${path()}/configuration`, {
-    headers: fixture.headers("tenantUsersOnly"),
+  const response = await fixture.app.request(path(), {
+    headers: fixture.headers("platformAdmin"),
   });
   expect(response.status).toBe(200);
   return { tag: response.headers.get("ETag")!, body: await response.json() };

@@ -1,6 +1,7 @@
-import { expectReceipt } from "../../__tests__/operation-receipt.ts";
-import { eq } from "drizzle-orm";
-import { auditEvents } from "../../db/schema/index.ts";
+import {
+  expectNoop,
+  expectReceipt,
+} from "../../__tests__/operation-receipt.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import {
   createAdminFixture,
@@ -69,19 +70,8 @@ test("configuration patches reject stale revisions but replay an already committ
   );
   expect(noop.status).toBe(200);
   expect(await noop.json()).toEqual(after);
-  const status = await fixture.app.request(
-    `/api/admin/v1/operations/${noop.headers.get("Operation-Id")}`,
-    { headers: fixture.headers("platformAdmin") },
-  );
-  const operation = await status.json();
-  expect(operation).toMatchObject({ outcome: "noop" });
   // The receipt is the no-op's record; it writes no audit event.
-  expect(
-    await fixture.db.$count(
-      auditEvents,
-      eq(auditEvents.operationId, operation.id),
-    ),
-  ).toBe(0);
+  await expectNoop(fixture.db, noop);
 });
 
 test("weak, wildcard, malformed and unrelated tags do not update a client", async () => {

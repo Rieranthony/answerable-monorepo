@@ -158,20 +158,14 @@ test("platform administrator and machine revoke global user sessions", async () 
     await deadCookie(fresh.cookie);
   }
 });
-test("single-session revocation preserves another user's session; pagination and UUID validation", async () => {
+test("session lists page through one user's sessions and validate the UUID", async () => {
   const fresh = await freshUser();
   const other = await freshUser();
   const path = `/users/${fresh.userId}/sessions`;
   expect((await request(path, "GET", undefined, "platformReader")).status).toBe(
     200,
   );
-  expect((await request(path + "/" + other.sessionId, "DELETE")).status).toBe(
-    404,
-  );
-  for (const url of ["/users/bad/sessions", path + "/bad"])
-    expect(
-      (await request(url, url.endsWith("/bad") ? "DELETE" : "GET")).status,
-    ).toBe(400);
+  expect((await request("/users/bad/sessions")).status).toBe(400);
   await fixture.db.insert(sessions).values({
     id: createId(),
     userId: fresh.userId,
@@ -187,27 +181,6 @@ test("single-session revocation preserves another user's session; pagination and
   expect(second.items).toHaveLength(1);
   expect(second.nextCursor).toBeNull();
   expect(second.items[0].id).not.toBe(first.items[0].id);
-  expect(
-    (
-      await request(
-        path + "/" + fresh.sessionId,
-        "DELETE",
-        undefined,
-        "platformAdmin",
-        {
-          action: "session.revoked",
-          targetId: fresh.sessionId,
-          targetType: "session",
-          organizationId: null,
-          data: { userId: fresh.userId },
-        },
-      )
-    ).status,
-  ).toBe(204);
-  await deadCookie(fresh.cookie);
-  expect((await request(path + "/" + fresh.sessionId, "DELETE")).status).toBe(
-    404,
-  );
   expect(
     (await (await request(`/users/${other.userId}/sessions`)).json()).items,
   ).toHaveLength(1);

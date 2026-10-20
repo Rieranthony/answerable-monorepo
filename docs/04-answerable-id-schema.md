@@ -114,7 +114,6 @@ Soft-deleted entitlements, group assignments and memberships have one evidence s
 | `organization.erased` | `before`, `after`, `deletionMode`, `revokedGrantContexts`, `effects` (the soft-deleted entitlements, assignments, members, groups, capabilities, domains and SSO providers). |
 | `resource.enabled`, `resource.disabled` | `before`, `after`, `effects.revokedGrantContexts`. |
 | `resource.erased` | `before`, `after`, `deletionMode`, `revokedGrantContexts`. |
-| `session.revoked` | `userId`, `before`, `after: null`, `sessionIds`, `revokedGrantContexts`, token counts, `revokedTokens`. |
 | `session.revoked_all` | `userId`, `sessions`, `sessionIds`, `revokedGrantContexts`, token counts, `revokedTokens`. |
 | `sso_provider.created`, `sso_provider.updated` | `before` (null on creation), `after`, `credentialsChanged`, `effects.revokedGrantContexts`. |
 | `sso_provider.deleted` | `before`, `after` (with `credentialsCleared`), `deletionMode`, `effects.revokedGrantContexts`. |

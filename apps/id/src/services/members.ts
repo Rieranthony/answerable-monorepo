@@ -36,7 +36,7 @@ export async function updateWindow(
   assertRevision(
     before,
     expected,
-    "Member changed; read its configuration before issuing a new command",
+    "Member changed; read it again before issuing a new command",
   );
   const accessBefore = await memberAccess(context, memberId);
   const row = found(
@@ -141,14 +141,4 @@ export async function reinstate(
     row: found(await queries.findMember(context, memberId), notFound),
     changed,
   };
-}
-
-export async function getMemberConfiguration(
-  context: TenantMemberContext | TenantReadContext<"configuration">,
-  memberId: string,
-) {
-  return found(
-    await queries.findMemberConfiguration(context, memberId),
-    notFound,
-  );
 }

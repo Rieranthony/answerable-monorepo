@@ -27,17 +27,6 @@ import type { Actor } from "./actor.ts";
 import * as implementation from "./sessions.ts";
 import { inPlatformUsers } from "../__tests__/platform-context.ts";
 const service = {
-  revokeUserSession: (
-    db: Database,
-    actor: Actor,
-    userId: string,
-    sessionId: string,
-  ) =>
-    inPlatformUsers(
-      db,
-      (context) => implementation.revokeUserSession(context, userId, sessionId),
-      actor,
-    ),
   revokeUserSessions: (db: Database, actor: Actor, userId: string) =>
     inPlatformUsers(
       db,
@@ -114,15 +103,11 @@ async function seedSessionGrants() {
   const db = connection.db;
   const userId = await seed(),
     otherUserId = await seed();
-  const [session] = await db
-    .select()
-    .from(sessions)
-    .where(eq(sessions.userId, userId));
   const [membership] = await db
     .select()
     .from(members)
     .where(eq(members.userId, userId));
-  const second = await insertOriginSession(db, membership!);
+  await insertOriginSession(db, membership!);
   await db.update(oauthClients).set({ scopes: ["read"] });
   const contexts = [];
   for (const current of await db.select().from(sessions)) {
@@ -147,14 +132,7 @@ async function seedSessionGrants() {
       }),
     );
   }
-  return {
-    db,
-    userId,
-    otherUserId,
-    session: session!,
-    second,
-    contexts,
-  };
+  return { db, userId, otherUserId, contexts };
 }
 test("revoke-all includes persistent grants whose browser sessions have already disappeared", async () => {
   const { db, userId, otherUserId, contexts } = await seedSessionGrants();
@@ -194,13 +172,9 @@ test("revoke-all includes persistent grants whose browser sessions have already 
   expect(audit[1]!.data).toMatchObject({ revokedGrantContexts: [] });
 });
 
-test("session audit failure restores grant contexts for single and global revocation", async () => {
-  const { db, userId, session, contexts } = await seedSessionGrants();
+test("session audit failure restores grant contexts", async () => {
+  const { db, userId, contexts } = await seedSessionGrants();
   const invalid = { ...actor, requestId: "\0" };
-  await expect(
-    service.revokeUserSession(db, invalid, userId, session.id),
-  ).rejects.toThrow();
-  expect(await db.select().from(grantContexts)).toEqual(contexts);
   await expect(
     service.revokeUserSessions(db, invalid, userId),
   ).rejects.toThrow();

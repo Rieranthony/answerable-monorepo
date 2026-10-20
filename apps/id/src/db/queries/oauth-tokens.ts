@@ -59,14 +59,6 @@ export function revokeClientTokens(
   return revokeTokens(tx, "clientId", clientId);
 }
 
-export function revokeSessionTokens(
-  context: PlatformUsersContext,
-  sessionId: string,
-) {
-  const { tx } = context;
-  return revokeTokens(tx, "sessionId", sessionId);
-}
-
 /** Immutable client ownership identifies machine tenant; user grants need their own context. */
 export async function revokeOrganizationMachineTokens(
   context: PlatformWriteContext,

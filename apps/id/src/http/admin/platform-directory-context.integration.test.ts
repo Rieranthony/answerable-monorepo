@@ -35,7 +35,7 @@ const paths = () => {
     "/organizations",
     "/entitlements",
     "/audit-events",
-    `/operations/${operationId}`,
+    `/audit-events?operationId=${operationId}`,
     "/users",
     `/users/${user}`,
     `/users/${user}/sessions`,

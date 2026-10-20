@@ -184,10 +184,7 @@ export async function removeMemberAssignments(
 
 /** Stable membership configuration; excludes user/group projections and clock-derived access. */
 export async function findMemberConfiguration(
-  context:
-    | TenantReadContext<"configuration">
-    | TenantReadContext<"memberAccess">
-    | TenantMemberContext,
+  context: TenantReadContext<"memberAccess"> | TenantMemberContext,
   memberId: string,
 ) {
   const { tx: executor, organizationId } = context;
