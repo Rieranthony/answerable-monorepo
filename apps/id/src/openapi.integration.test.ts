@@ -17,6 +17,23 @@ afterAll(async () => {
   await connection.close();
 });
 
+const update = "UPDATE_SNAPSHOT=1 bun test src/openapi.integration.test.ts";
+
+/** The committed snapshot, rewritten from the served document first under
+ * UPDATE_SNAPSHOT=1. Snapshots name the production origin as their server. */
+async function readSnapshot<Document>(
+  file: string,
+  document: Document,
+): Promise<Document> {
+  const url = new URL(`../${file}`, import.meta.url);
+  if (Bun.env.UPDATE_SNAPSHOT)
+    await Bun.write(
+      url,
+      `${JSON.stringify({ ...document, servers: [{ url: "https://id.answerable.org" }] }, null, 2)}\n`,
+    );
+  return (await Bun.file(url).json()) as Document;
+}
+
 function withoutServers(
   document: PublicOpenApiDocument,
 ): Partial<PublicOpenApiDocument> {
@@ -31,9 +48,7 @@ test("the public OpenAPI snapshot matches the served document", async () => {
   const app = createApp({ auth, db: connection.db, environment });
   const response = await app.request("/openapi.json");
   const document = (await response.json()) as PublicOpenApiDocument;
-  const snapshot = (await Bun.file(
-    new URL("../openapi.json", import.meta.url),
-  ).json()) as PublicOpenApiDocument;
+  const snapshot = await readSnapshot("openapi.json", document);
 
   expect(response.status).toBe(200);
   for (const field of [
@@ -46,7 +61,7 @@ test("the public OpenAPI snapshot matches the served document", async () => {
     );
   expect(
     withoutServers(document),
-    "Public OpenAPI snapshot drifted; run `bun run openapi:export` from apps/id.",
+    `Public OpenAPI snapshot drifted; run \`${update}\` from apps/id.`,
   ).toEqual(withoutServers(snapshot));
 
   for (const [path, pathItem] of Object.entries(document.paths)) {
@@ -72,13 +87,11 @@ test("the admin OpenAPI snapshot matches the served document", async () => {
   const app = createApp({ auth, db: connection.db, environment });
   const response = await app.request("/api/admin/openapi.json");
   const document = await response.json();
-  const snapshot = await Bun.file(
-    new URL("../openapi.admin.json", import.meta.url),
-  ).json();
+  const snapshot = await readSnapshot("openapi.admin.json", document);
 
   expect(response.status).toBe(200);
   expect(
     withoutServers(document),
-    "Admin OpenAPI snapshot drifted; run `bun run openapi:export` from apps/id.",
+    `Admin OpenAPI snapshot drifted; run \`${update}\` from apps/id.`,
   ).toEqual(withoutServers(snapshot));
 });

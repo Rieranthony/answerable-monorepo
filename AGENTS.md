@@ -4,7 +4,7 @@ Answerable monorepo. Bun 1.3.1, Turborepo. Two apps: `apps/web` (Next.js 16: the
 
 ## Documentation
 
-Docs are MDX in `apps/web/content/docs`, rendered with Fumadocs at `/docs`. The API reference is generated from `apps/id/openapi.json` and `apps/id/openapi.admin.json`. Never edit those files by hand; run `bun run openapi:export` in `apps/id`.
+Docs are MDX in `apps/web/content/docs`, rendered with Fumadocs at `/docs`. The API reference is generated from `apps/id/openapi.json` and `apps/id/openapi.admin.json`. Never edit those files by hand; run `UPDATE_SNAPSHOT=1 bun test src/openapi.integration.test.ts` in `apps/id`.
 
 **Keep code and types in sync.** Never paste code or a type into a page; the build renders them from the repository:
 
@@ -55,7 +55,7 @@ Here's how we write documentation. These are Lee Robinson's ten principles (http
 - First run: Set `ROOT_ADMIN_SECRET`, start the service (the platform organisation is seeded at boot), then with the root bearer add the platform domain and SSO provider, sign in once, and add yourself to the `platform-admins` group; root locks itself afterwards.
 - Ports: web 47100 · id 47300 · toolbox 47400 · e2e MCP 47500 · a scaffolded MCP 47510 · admin MCP 47520 · postgres 47432 · the kind stack 48443 (Traefik, on `127.0.0.1` and `[::1]`), 47710 and 47700. The acceptance's ports are under MCP kit and Toolbox.
 - Style: Prettier without semicolons in `apps/web`, `packages/ui` and `packages/countries`, with semicolons in `apps/id`. No semicolons in `packages/auth`, `packages/id-admin`, `packages/mcp`, `packages/mcp-postgres`, `packages/acceptance`, `mcps/*`, `infra/*` and `scripts`. Tests are colocated `*.test.ts`; `apps/id` enforces 100% line and function coverage, integration tests end in `.integration.test.ts`; the MCP workspaces' gates are under MCP kit and Toolbox.
-- OpenAPI: `bun run --filter @answerable/id openapi:export` regenerates `apps/id/openapi.json` and `apps/id/openapi.admin.json`; tests fail when either drifts.
+- OpenAPI: `UPDATE_SNAPSHOT=1 bun test src/openapi.integration.test.ts`, in `apps/id` (Turborepo strips the variable), regenerates `apps/id/openapi.json` and `apps/id/openapi.admin.json`; the same test fails when either drifts.
 - Env: `default.env` is the tracked inventory of every variable, with empty values; add new variables there and to `.env.example`. `.env` files stay ignored and never hold committed values.
 - Commits: imperative, sentence case, no prefix, no trailing period.
 
