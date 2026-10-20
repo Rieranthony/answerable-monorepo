@@ -20,6 +20,16 @@ const [planPath, manifestPath] = process.argv.slice(2);
 if (!planPath || !manifestPath || !process.argv.includes("--isolated-mcp-fixture"))
   throw new Error("Use the isolated MCP acceptance runner");
 
+// The pages serve a prebuilt stylesheet; a source run compiles it first.
+if (
+  !Bun.spawnSync([process.execPath, "scripts/build-css.ts"], {
+    cwd: new URL("..", import.meta.url).pathname,
+    stdout: "ignore",
+    stderr: "inherit",
+  }).success
+)
+  throw new Error("scripts/build-css.ts failed");
+
 // Every company directory is a local test issuer whose one person signs in `signIns` times.
 const queued = z.number().int().min(0);
 const directory = z.object({ slug: z.string().min(1), signIns: queued });

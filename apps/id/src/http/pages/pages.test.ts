@@ -445,6 +445,8 @@ test("pages carry security headers and serve their assets; API routes do not", a
   const css = await f.app.request("/assets/tailwind.css");
   expect(css.status).toBe(200);
   expect(css.headers.get("content-type")).toContain("text/css");
+  // The prebuilt file, served as it is: the same bytes a deployment serves.
+  expect(css.headers.get("cache-control")).toBe("public, max-age=3600");
   expect(await css.text()).toContain("--font-sans");
   const font = await f.app.request("/assets/fonts/public-sans.woff2");
   expect(font.status).toBe(200);

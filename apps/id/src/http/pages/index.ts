@@ -1,10 +1,8 @@
-import { existsSync } from "node:fs";
 import path from "node:path";
 import { Hono } from "hono";
 import { type Child } from "hono/jsx";
 import { jsxRenderer } from "hono/jsx-renderer";
 import { secureHeaders } from "hono/secure-headers";
-import { tailwind } from "hono-tailwind";
 import type { AppEnvironment } from "../context.ts";
 import fontPath from "./fonts/PublicSans-Variable.woff2" with { type: "file" };
 import { Document } from "./views/layout.tsx";
@@ -61,15 +59,19 @@ export function createPagesApp(): Hono<AppEnvironment> {
     });
     app.use(route, jsxRenderer(Document, { docType: true }));
   }
-  // The build writes the compiled stylesheet next to the bundle; source runs
-  // compile it on each request.
+  // scripts/build-css.ts writes the compiled stylesheet next to this module:
+  // beside the bundle in dist/, beside the source for dev and tests. The
+  // service never compiles it, so a deployment needs no node_modules.
   const stylesheet = path.join(import.meta.dir, "tailwind.css");
   app.get(
     "/assets/tailwind.css",
-    tailwind({
-      in: path.join(import.meta.dir, "styles.css"),
-      ...(existsSync(stylesheet) ? { out: stylesheet } : {}),
-    }),
+    () =>
+      new Response(Bun.file(stylesheet), {
+        headers: {
+          "Content-Type": "text/css; charset=utf-8",
+          "Cache-Control": "public, max-age=3600",
+        },
+      }),
   );
   app.get("/assets/fonts/public-sans.woff2", () => {
     return new Response(Bun.file(new URL(fontPath, import.meta.url)), {

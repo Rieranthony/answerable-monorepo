@@ -8,3 +8,12 @@ for (const name of [
   "BETTER_AUTH_URL",
 ])
   delete process.env[name];
+
+// The pages serve a prebuilt stylesheet; compile it once, so `bun test` alone
+// runs the asset tests against what a deployment serves.
+const css = Bun.spawnSync([process.execPath, "scripts/build-css.ts"], {
+  cwd: new URL("../..", import.meta.url).pathname,
+  stdout: "ignore",
+  stderr: "inherit",
+});
+if (!css.success) throw new Error("scripts/build-css.ts failed");

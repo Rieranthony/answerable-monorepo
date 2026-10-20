@@ -35,6 +35,8 @@ bun --filter @answerable/id build
 bun --filter @answerable/id test
 ```
 
+**Stylesheet.** The pages serve a prebuilt stylesheet and never compile it. `scripts/build-css.ts` writes it next to the module that serves it: `dev` and the test preload write `src/http/pages/tailwind.css` (ignored by git), `build` writes `dist/tailwind.css`, so `dist` runs without `node_modules`.
+
 **Local PostgreSQL.** `docker-compose.yml` runs PostgreSQL 17 (`postgres:17-alpine`), the version every environment runs. A data volume made by the earlier `postgres:16-alpine` does not start on 17: run `bun run env:reset` once, then `bun run env:up`, which recreates the databases and logins from `infra/postgres/init`. The reset deletes local data.
 
 **First run.** Copy `.env.example` to `.env`, start PostgreSQL and run `db:migrate` with that environment loaded. First-volume initialisation creates the unprivileged local `answerable_id_runtime` login, and the Toolbox's and the admin MCP's runtime logins; migration grants their runtime permissions. Existing volumes need those logins created by the database administrator using `infra/postgres/init/002-create-runtime-role.sql` and `005-create-mcp-runtime-roles.sql`. Set `ROOT_ADMIN_SECRET`, start the service (the platform organisation, admin resource and admin group are seeded and bound by immutable IDs at boot), then with the root bearer add the platform domain and SSO provider, sign in once, and add yourself to the `platform-admins` group; root locks itself afterwards. Removing the last platform administrator through membership, group or capability changes is allowed. Recover with the root secret and `ROOT_ADMIN_BREAK_GLASS=true`. Global user disable and erasure retain their last-writer safeguard.

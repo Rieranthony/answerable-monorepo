@@ -114,7 +114,7 @@ The migration connection waits at most 5 s for a lock and 5 minutes for a statem
 bun --filter @answerable/id build && bun apps/id/dist/server.js
 ```
 
-The build compiles the sign-in pages' stylesheet into `apps/id/dist/tailwind.css`. The bundle still loads `hono-tailwind` from `node_modules` when it starts, so run it from an installed checkout.
+The build compiles the sign-in pages' stylesheet into `apps/id/dist/tailwind.css`, which the bundle serves as it is; `apps/id/dist` runs without `node_modules`.
 
 **4. Check it is up** through the ingress, not the pod.
 
