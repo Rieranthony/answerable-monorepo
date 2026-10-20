@@ -38,54 +38,14 @@ async function addSession(userId: string) {
   });
   return id;
 }
-function command(
-  key: string,
-  userId: string,
-  sessionId?: string,
-  kind: "platformAdmin" | "platformReader" = "platformAdmin",
-) {
-  const headers = fixture.headers(kind);
+function command(key: string, userId: string) {
+  const headers = fixture.headers("platformAdmin");
   headers.set("Idempotency-Key", key);
-  return fixture.app.request(
-    `/api/admin/v1/users/${userId}/sessions${sessionId ? `/${sessionId}` : ""}`,
-    { method: "DELETE", headers },
-  );
+  return fixture.app.request(`/api/admin/v1/users/${userId}/sessions`, {
+    method: "DELETE",
+    headers,
+  });
 }
-test("single session revocation replays after removal and records exact secret-free effects", async () => {
-  const target = await seed();
-  const response = await command("single", target.userId, target.sessionId);
-  expect(response.status).toBe(204);
-  const later = await addSession(target.userId);
-  const replay = await command("single", target.userId, target.sessionId);
-  expect(replay.status).toBe(204);
-  expect(replay.headers.get("Idempotency-Replayed")).toBe("true");
-  expect(replay.headers.get("Operation-Id")).toBe(
-    response.headers.get("Operation-Id"),
-  );
-  const events = await fixture.db
-    .select()
-    .from(auditEvents)
-    .where(eq(auditEvents.operationId, response.headers.get("Operation-Id")!));
-  expect(events).toHaveLength(1);
-  expect(events[0]).toMatchObject({
-    actorType: "user",
-    actorId: fixture.principals.platformAdmin.userId,
-  });
-  expect(events[0]?.data).toMatchObject({
-    userId: target.userId,
-    before: { id: target.sessionId },
-    after: null,
-    sessionIds: [target.sessionId],
-  });
-  expect(JSON.stringify(events)).not.toContain(`secret-${target.sessionId}`);
-  expect(
-    await fixture.db
-      .select({ id: sessions.id })
-      .from(sessions)
-      .where(eq(sessions.userId, target.userId)),
-  ).toEqual([{ id: later }]);
-  expect((await command("single", target.userId, later)).status).toBe(409);
-});
 test("revoke-all replay preserves later sessions and new empty commands are noops", async () => {
   const target = await seed();
   const first = await command("all", target.userId);

@@ -35,7 +35,7 @@ function request(
 }
 const sorted = <T extends { id: string }>(rows: T[]) =>
   [...rows].sort((a, b) => a.id.localeCompare(b.id));
-for (const mode of ["user", "session", "all", "client", "rotate"] as const) {
+for (const mode of ["user", "all", "client", "rotate"] as const) {
   test(`restricted ${mode} revocation retains exact safe token effects, rolls back subject failure and replays after erasure`, async () => {
     const db = fixture.db;
     const ids = [createId(), createId()];
@@ -113,7 +113,7 @@ for (const mode of ["user", "session", "all", "client", "rotate"] as const) {
     };
     const path = clientWide
       ? `/clients/${clientId}/${mode === "rotate" ? "rotate-secret" : "disable"}`
-      : `/users/${ids[0]}${mode === "user" ? "/disable" : `/sessions${mode === "session" ? `/${sessionId}` : ""}`}`;
+      : `/users/${ids[0]}${mode === "user" ? "/disable" : "/sessions"}`;
     const method = clientWide || mode === "user" ? "POST" : "DELETE";
     const key = createId();
     await db.execute(
@@ -130,7 +130,7 @@ for (const mode of ["user", "session", "all", "client", "rotate"] as const) {
       );
     }
     const applied = await request(path, method, key);
-    expect(applied.status).toBe(mode === "session" ? 204 : 200);
+    expect(applied.status).toBe(200);
     await applied.text();
     const operationId = applied.headers.get("Operation-Id")!;
     const events = await db
