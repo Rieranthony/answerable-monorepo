@@ -20,7 +20,7 @@ The documented production configuration uses `https://id.answerable.org` as `BET
 
 ## Commands
 
-The [operations runbook](OPERATIONS.md) covers process summaries and the keys ID holds. It lists the production inputs that remain unknown. The [deployment guide](../../docs/06-deploying-answerable-id.md) explains what a production deployment needs and why.
+The [operations runbook](OPERATIONS.md) covers the runtime bounds, the log signals and the keys ID holds. The [deployment guide](../../docs/06-deploying-answerable-id.md) explains what a production deployment needs and why; Answerable's own topology and secret delivery are in [`docs/12`](../../docs/12-deployment.md), operated with [the infrastructure runbook](../../infra/README.md).
 
 From the repository root:
 
@@ -93,14 +93,14 @@ The integration test proves staged cookie continuity, cookie refusal after promo
 
 - Public discovery and `/auth/jwks` describe production code/refresh/machine grants. Login-only access is opaque; resource access uses signed audience-bound JWTs. [OAuth guide](../web/content/docs/id/oauth.mdx).
 - One server-bound flow fixes tenant/client/resource/consent. Every new flow requests consent except explicit first-party bypass. Every exchange and refresh rechecks current policy before native issuance; token persistence and user audit commit together. A reused rotated refresh token revokes its family.
-- Human tenant authority requires that tenant's current SSO. Sensitive commands/linking require five-minute verified upstream freshness, including replay and post-lock checks. Unknown upstream time stays unknown.
+- Human tenant authority requires that tenant's current SSO. Sensitive commands/linking require five-minute verified upstream freshness, checked before replay and again after the command's waits. Unknown upstream time stays unknown.
 - RLS protects ten tables with transaction-local scopes; administrative contexts and trusted native broker checks remain necessary. Native adapter transactions and standalone membership operations use protocol scope; routing reads and audit inserts are available without scope. [Isolation inventory](../../reports/answerable-id-isolation-inventory.md).
-- All administrative mutations use an idempotency key with a permanent reservation; a retry returns the receipt. [Mutation inventory](../../reports/answerable-id-mutation-inventory.md).
+- Every administrative mutation is journalled with a permanent reservation, under the caller's `Idempotency-Key` or, without one, a server key; a retry with the same key returns the receipt. [Mutation inventory](../../reports/answerable-id-mutation-inventory.md).
 - Ordinary browser sign-out can preserve refresh delegation. Administrative revocation, offline JWT expiry and downstream session termination are separate contracts.
 - DCR/CIMD, introspection, PAR, device flow, OIDC logout, bounded directory polling and downstream logout delivery are not implemented. Real Entra/OmniChat/Claude and deployment acceptance remain open.
 
 ## Product deletion
 
-Fifteen product tables use terminal `deletedAt`. Ordinary reads and eligibility exclude deleted rows; credential material is cleared/revoked and grant contexts retain revocation. Product data, UUID audit and command recovery remain. This is not anonymisation. Physical product purge jobs and their duration are deferred; no named-identity recovery feature is required.
+Fourteen product tables use terminal `deletedAt` ([the list](../../docs/04-answerable-id-schema.md#soft-deletion)). Ordinary reads and eligibility exclude deleted rows; credential material is cleared/revoked and grant contexts retain revocation. Product data, UUID audit and command recovery remain. This is not anonymisation. Physical product purge jobs and their duration are deferred; no named-identity recovery feature is required.
 
 Explicit membership reinstatement remains supported for revoked, undeleted memberships and never restores removed assignments or revoked grants. Organisation deletion preserves global people/sessions and clears tenant selection. See [soft deletion](../../docs/04-answerable-id-schema.md#soft-deletion) and the [deletion table](../web/content/docs/id/manage.mdx#deletion-and-retained-data).

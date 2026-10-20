@@ -50,7 +50,7 @@ Current grant authentication and policy are checked under the grant's locks befo
 
 ## 4. Idempotency and concurrency contract
 
-All 48 mutations accept idempotency keys (a mutation without one is journalled under a server key) and expose operation/replay headers. Seven PATCH routes accept If-Match; SSO and assignment replacement PUTs also accept optional revision preconditions. Without If-Match, commands use the current row. Keep actor, tenant, command, target and normalised input fixed when retrying.
+All 47 mutations accept idempotency keys (a mutation without one is journalled under a server key) and expose operation/replay headers. Seven PATCH routes accept If-Match; SSO and assignment replacement PUTs also accept optional revision preconditions. Without If-Match, commands use the current row. Keep actor, tenant, command, target and normalised input fixed when retrying.
 
 - Before commit, interruption leaves no successful effect, fact or completed receipt.
 - After commit, the same key/input and current authority return a receipt with the original status code; 204 stays empty. Read the current representation through the result reference.
@@ -69,7 +69,7 @@ Every audit event is schema version 1 with one `data` shape per action; the firs
 
 ### Erasure and identifying a person
 
-Product deletion uses terminal `deletedAt` on 15 tables, ordinary read/eligibility denial and credential clearing/revocation. Retained rows may contain identifying fields: this is not anonymisation. UUID audit remains queryable with current authority. No named-identity recovery feature is required. Domain purge jobs and their retention duration are deferred; native protocol expiry remains a separate contract.
+Product deletion uses terminal `deletedAt` on 14 tables, ordinary read/eligibility denial and credential clearing/revocation. Retained rows may contain identifying fields: this is not anonymisation. UUID audit remains queryable with current authority. No named-identity recovery feature is required. Domain purge jobs and their retention duration are deferred; native protocol expiry remains a separate contract.
 
 Every deletion action has one version 1 payload, listed in the [audit actions](04-answerable-id-schema.md#audit-actions).
 
@@ -96,8 +96,8 @@ Upstream-disable detection, downstream logout and actual consumer cache/session 
 | F0  | Actual native production flows and meaningful regression/fault proofs               | T1/T2 reports and user OAuth suite; real provider/consumer journey outstanding.       |
 | F1  | Immutable identity, reservations, system binding and token versions                 | Schema/HTTP identity tests; actual consumer interpretation outstanding.               |
 | F2  | Durable UUID subjects, audit/effect/receipt atomicity, product tombstones           | T3 restricted lifecycle/fault tests; external key custody/recovery remains.           |
-| F3  | All 48 mutations, current-authority replay, revisions and crash proof               | Route inventory and command/process tests; intended-environment recovery remains.     |
-| F4  | Own-tenant SSO, deliberate linking, tenant-local lifecycle and eleven-table RLS     | T1/T2/T3 restricted A/B tests; real multi-provider acceptance remains.                |
+| F3  | All 47 mutations, current-authority replay, revisions and crash proof               | Route inventory and command/process tests; intended-environment recovery remains.     |
+| F4  | Own-tenant SSO, deliberate linking, tenant-local lifecycle and ten-table RLS        | T1/T2/T3 restricted A/B tests; real multi-provider acceptance remains.                |
 | F5  | Shared exact-pair evaluator, scope narrowing and actual claim/audit binding         | Production code/refresh/machine and access tests; consumer denial matrix remains.     |
 | F6  | Fresh sensitive authority, local revocation, body limits, custody tooling | T1–T4 tests and measured limits; remote offboarding, capacity/ingress/custody remain. |
 | F7  | One initial install, installation proof, reconciled docs and local gates            | Final report; production remains no-go until the external checklist closes.           |

@@ -10,7 +10,7 @@ This is the dependency order, not a deployment claim. The [design](03-answerable
 
 ## How we build
 
-- Bun 1.3.1, Hono, Postgres and pinned Better Auth 1.7.2; Redis is reserved for later.
+- Bun 1.3.1, Hono, Postgres and pinned Better Auth 1.7.2; no other store.
 - Admin API first, typed OpenAPI and explicit authentication-route allowlisting.
 - Behaviour changes need meaningful regression/fault tests. ID requires 100% application line/function coverage; a test that exists only to light a line goes together with the branch it lit, and a fact is proved once, at the layer closest to the consumer ([test audit](goals/test-audit/conclusions.md)).
 - The schema is a contract: a column, a kind or a trigger branch exists because something writes and reads it, an invariant lives in a constraint before a trigger and in a trigger before caller discipline, and nothing guards a hot path that the issuing transaction already checks ([schema audit](goals/schema-audit/task_plan.md)).
@@ -28,7 +28,7 @@ This is the dependency order, not a deployment claim. The [design](03-answerable
 | 0        | Code location and pinned runtime settled                                                  | Publisher verification, secret-store/operator and real tenant references.                                          |
 | 1, 2a    | Final schema and one initial install (generated migration plus invariants) implemented    | Intended-environment installation/recovery.                                                                        |
 | 2        | Federation, own-tenant admission, immutable linking and five-minute freshness implemented | Real Entra consent/claims and multi-provider journey.                                                              |
-| 2b, 2b.1 | Admin platform, 49 journalled mutations, F0–F6 local mechanisms integrated                | Local acceptance passed; external evidence below remains required.                                      |
+| 2b, 2b.1 | Admin platform, 47 journalled mutations, F0–F6 local mechanisms integrated                | Local acceptance passed; external evidence below remains required.                                      |
 | 2c       | Tenant membership administration exists                                                   | **Not yet:** broader self-service, DNS verification, guest opt-in and tenant rate policy.                          |
 | 3        | Production code/refresh/OIDC, selection and consent implemented                           | Actual OmniChat configuration/verifier acceptance.                                                                 |
 | 3a       | Login, selection, consent and security pages are served by Answerable ID                  | **Not yet:** full administrative console.                                                                          |

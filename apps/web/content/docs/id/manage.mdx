@@ -168,7 +168,7 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORGANIZATION_ID/audi
 
 **Audit outage.** If recording the rejection also fails, the original error still reaches the caller. The service emits the safe `token_rejection_audit_unavailable` operational signal. There is no retry queue or guarantee of a durable failed-attempt record during a database outage.
 
-**Authentication failures.** Native failed client authentication records the same action with a system actor and null client/tenant/decision. Transport and body refusals occur before that boundary. An unverified client ID never attributes an event to a tenant. [User OAuth](/docs/id/oauth) has separate atomic outcome events for authorisation, issuance, response replay and revocation.
+**Authentication failures.** A failed client authentication writes no event; ID logs one line, `[id] auth` with event `token_rejected`, holding the request ID, the client address and the reason. Transport and body refusals occur before that boundary. An unverified client ID never attributes an event to a tenant. [User OAuth](/docs/id/oauth) has separate atomic outcome events for authorisation, code exchange and revocation; a refresh records none.
 
 ## Request boundaries
 
@@ -258,7 +258,7 @@ curl -X DELETE "https://id.answerable.org/api/admin/v1/users/$USER_ID?confirm=$U
 
 **Retained data is not anonymous.** Deleted rows can contain names, email addresses, upstream identity identifiers and other identifying fields. Audit attribution uses UUIDs, with current access checks on history. The marker is neither physical erasure nor a named-identity recovery feature.
 
-**Cleanup later.** Physical cleanup jobs and their retention period are [Not yet.](/docs/id#today-and-next). They are separate from session expiry, one-time code/assertion consumption, credential revocation and existing encrypted command-result expiry. Local revocation does not prove that a downstream session ended; offline tokens retain their documented expiry limits.
+**Cleanup later.** Physical cleanup jobs and their retention period are [Not yet.](/docs/id#today-and-next). They are separate from session expiry, one-time code/assertion consumption and credential revocation. Local revocation does not prove that a downstream session ended; offline tokens retain their documented expiry limits.
 
 **Deletion audit.** Deletion events record `deletionMode: "soft"` and retained after-state. `client.grants_erased` remains platform-only. Relationship manifests name `softDeleted*` arrays and include deletion timestamps. Membership removal leaves the membership eligible for explicit reinstatement. Its effect keys are `removedGrants` for retired direct entitlements, `softDeletedAssignments` for retired group assignments and `revokedGrantContexts`. Physically removed sessions/tokens retain `deleted*` names; grant-context effects use `revokedGrantContexts`.
 
@@ -413,13 +413,11 @@ See the [admin API reference](/docs/id/admin-api) for request and response schem
 
 **Global sign-in.** Organisation disable preserves global browser sessions. Unbound historical token rows may remain stored but cannot obtain current grant authority. A shared person can use another organisation after that organisation's own current SSO. An application's owner does not identify the tenant of every person using it. Stored grant contexts bound to the disabled organisation are irreversibly revoked; re-enable does not restore them. The audit records newly revoked IDs. Organisation deletion records newly revoked context IDs and affected users. These effects commit with the lifecycle audit or roll back together.
 
-**Tenant session views: Not yet.** [User OAuth](/docs/id/oauth) binds each grant to verified tenant authentication. Tenant delegation views remain part of the [foundation work](/docs/id#today-and-next). The former member-session GET/DELETE routes have been removed because they exposed and revoked global sessions. They return 404. Global session administration uses the platform-only `/users/{userId}/sessions` routes. Offline resource servers require expiry or an online check to observe a changed authorization version.
-
-**Tenant session API transition.** Remove calls to `/organizations/{org}/members/{memberId}/sessions`. Do not replace them with the platform user-session endpoint in tenant tools: that endpoint acts across organisations. For tenant offboarding, revoke the membership using [removeMember](/docs/id/admin-api/members/removeMember). Tenant grant/delegation views are Not yet; they require verified tenant-bound grant records.
+**Tenant session and delegation views: [Not yet.](/docs/id#today-and-next)** Browser sessions are global, so `/organizations/{org}/members/{memberId}/sessions` answers 404, and the platform-only `/users/{userId}/sessions` acts across organisations: do not call it from tenant tools. For tenant offboarding, revoke the membership with [removeMember](/docs/id/admin-api/members/removeMember). Offline resource servers require expiry or an online check to observe a changed authorization version.
 
 **Resource erasure requires unlinking.** Inspect the resource's client list, then use the [client unlink operation](/docs/id/admin-api/clients/unlinkClientResource) for each link before erasing the resource. `resource_has_clients` returns 409 and leaves the resource and its links intact. A failed erase does not reserve its operation key, so retrying that command after unlinking can commit normally. Client deletion retires that client's links with `deletedAt`.
 
-**Member write authority.** Updating, removing or reinstating a member rechecks current authority inside the database transaction. The caller needs `platform:users`, or `org:users` for that organisation. A membership revoked after request admission cannot authorise the pending write. These member operations accept `Idempotency-Key`; member PATCH also accepts optional `If-Match` from the configuration read.
+**Member write authority.** Updating, removing or reinstating a member rechecks current authority inside the database transaction. The caller needs `platform:users`, or `org:users` for that organisation. A membership revoked before that check cannot authorise the write. These member operations accept `Idempotency-Key`; member PATCH also accepts optional `If-Match` with the ETag of the [member read](/docs/id/admin-api/members/getMember).
 
 ## Retrying member commands
 
@@ -456,7 +454,7 @@ curl -X PATCH "$ID_URL/api/admin/v1/organizations/$ORG_ID/members/$MEMBER_ID" \
 
 The [member read](/docs/id/admin-api/members/getMember) requires `platform:read` or the tenant's `org:read`, and answers the member's ETag: its identity and revision. The revision moves with lifecycle and validity changes, not with profile details, groups or clock-dependent access.
 
-Reuse the original key, body and ETag after response loss: a committed replay is recovered before the stale revision check. A new stale command returns `revision_mismatch` (412); read the member again and review it before submitting a new command. Weak, wildcard or malformed tags return `invalid_revision` (400). Unchanged window updates preserve the revision. Removal and reinstatement advance it, so reactivation cannot restore an old configuration ETag.
+Reuse the original key, body and ETag after response loss: a committed replay is recovered before the stale revision check. A new stale command returns `revision_mismatch` (412); read the member again and review it before submitting a new command. Weak, wildcard or malformed tags return `invalid_revision` (400). Unchanged window updates preserve the revision. Removal and reinstatement advance it, so reactivation cannot restore an old ETag.
 
 See [member operations](/docs/id/admin-api/members/updateMember) and [retries and receipts](#retries-and-receipts).
 
@@ -592,11 +590,11 @@ curl -X DELETE "https://id.answerable.org/api/admin/v1/users/$USER/sessions" \
   -H "Idempotency-Key: $SESSION_REVOKE_KEY"
 ```
 
-Set `SESSION_REVOKE_KEY` once for this command. Both revoke-all and single-session revocation require a key. Reuse it on retry: the receipt is returned, without revoking sessions created later. Current `platform:users` authority is checked before recovery. Changed-input key reuse returns 409.
+The key is optional. Set `SESSION_REVOKE_KEY` once and reuse it on retry: the receipt is returned, without revoking sessions created later. Current `platform:users` authority is checked before recovery. Changed-input key reuse returns 409. To end one session, revoke them all: there is no single-session route.
 
-A new revoke-all command returns the number of sessions removed. Zero can still mean that active user tokens or stored grant contexts were revoked; when none of those effects changed, the operation records a noop. Single-session revocation returns 204; a new key for a missing session returns 404. Operation status reads require `platform:read`.
+The command returns the number of sessions removed. Zero can still mean that active user tokens or stored grant contexts were revoked; when none of those effects changed, the operation records a `noop` receipt and no audit event. To trace a command, list audit events with `?operationId=` set to its `Operation-Id`.
 
-**Grant-context scope.** Single-session administrative revocation also revokes contexts established by that session across the user's tenants, preserving contexts from other sessions. Revoke-all covers all of the user's contexts, including those whose original browser session no longer exists. Both record newly revoked IDs and organisations in the same audit transaction. Ordinary browser sign-out preserves existing delegation: native tests exercise cached replay and fresh refresh after the session disappears. Explicit all-session revocation then denies those grants even when it reports zero deleted sessions. Both administrative session commands are tested against in-flight issuance using the shared user lock. [User OAuth](/docs/id/oauth) enforces these revocation barriers.
+**Grant-context scope.** Revocation covers all of the user's contexts, including those whose original browser session no longer exists, and records the newly revoked IDs and organisations in the same audit transaction. Ordinary browser sign-out preserves existing delegation: refresh keeps working after the session disappears. Revocation then denies those grants even when it reports zero deleted sessions. It is tested against in-flight issuance using the shared user lock. [User OAuth](/docs/id/oauth) enforces these revocation barriers.
 
 ### Global user retries
 
@@ -769,7 +767,7 @@ The bound admin resource is different: its name, token lifetime and scopes belon
 
 **Platform objects.** The bound organisation, group and resource retain deletion protection; the bound admin resource also retains disable protection.
 
-**Current deletion history.** User, organisation, group and client commands write version-three soft-deletion facts. Smaller product deletions and assignment/member removals use the versions listed in [deletion and retained data](#deletion-and-retained-data). Read action and schema version together; older physical-erasure payloads are historical contracts.
+**Current deletion history.** Every deletion and removal writes a schema version 1 event with one payload per action; [deletion and retained data](#deletion-and-retained-data) lists what each command removes and retains.
 
 **Permission evidence.** Group status and broad entitlement changes retain actual assignment/member source observations where defined. Those observations do not prove an isolated causal access change or remote session termination. Grant effects, subject capture and command receipts remain atomic.
 

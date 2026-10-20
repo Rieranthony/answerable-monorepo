@@ -16,7 +16,7 @@ The [public guides](../apps/web/content/docs/id/index.mdx) document reachable be
 
 ## Architecture
 
-Corporate IdP → Answerable ID → registered application or resource. Postgres owns sessions, native OAuth state, policy, audit and command receipts. Redis is reserved for later caching. Better Auth verifies the protocol; Answerable plugins bind verified state to current tenant policy.
+Corporate IdP → Answerable ID → registered application or resource. Postgres owns sessions, native OAuth state, policy, audit and command receipts; there is no other store. Better Auth verifies the protocol; Answerable plugins bind verified state to current tenant policy.
 
 Only allowlisted authentication routes are public. Administrative routes use typed Hono contracts, service contexts and transactionally rechecked authority. Schema owners and runtime processes use separate database roles.
 
@@ -100,7 +100,7 @@ Registration is platform administration, not permission. Clients require configu
 
 ## Keys and credential custody (non-negotiable)
 
-Retained signing keys use Better Auth application-secret encryption. Upstream tokens use a separate key ring. Secrets never belong in audit evidence.
+Retained signing keys use Better Auth application-secret encryption. ID stores no upstream token. Secrets never belong in audit evidence.
 
 The [operations runbook](../apps/id/OPERATIONS.md) covers the keys ID holds and retained-key dependencies; startup refuses application secrets that cannot decrypt the newest signing key. Restore drills are in [the foundation's §6](05-id-enterprise-foundation.md#6-interruption-external-effects-and-money). External secret delivery and emergency rotation require the intended deployment. No KMS-backed signing or secret-store operator has been selected here.
 
@@ -112,17 +112,17 @@ Pool checkout, statements and request bodies have limits. Successful effects, au
 
 Bun runs in production behind Cloudflare, with TLS at Cloudflare's edge and again at the in-cluster ingress, which admits only Cloudflare's origin-pull certificate ([`12-deployment.md`](12-deployment.md)). `https://id.answerable.org` is the documented configuration example, not evidence of a deployed issuer. Topology, replica count, databases, URLs and listener policy remain external inputs.
 
-## Tailnet hardening
+## Ingress admission
 
 The service is reachable only through the ingress proxies in `TRUSTED_PROXY_CIDRS`; the rule, the address resolution and the `403 untrusted_ingress` refusal are in [ID's README](../apps/id/README.md#http-surface).
 
-Browser authorisation and callbacks must be reachable from the browser. Public/tailnet exposure must be tested at actual ingress; an in-process allowlist does not prove network isolation. No particular ACL or split-listener deployment is certified.
+Browser authorisation and callbacks must be reachable from the browser. An in-process allowlist does not prove network isolation: the deployed ingress ([`12-deployment.md`](12-deployment.md#network-and-ingress)) admits only Cloudflare's origin pulls, and its proof waits for the first staging run.
 
 ## Security posture
 
-Sensitive human commands and linking require verified upstream authentication within five minutes. Reauthentication uses `POST /auth/sso/reauthenticate` with native `prompt=login`, `max_age=0`. Authority/freshness is checked before replay and after relevant waits. Ordinary display edits and reads follow route metadata; machines/root retain their own authority contracts.
+Sensitive human commands and linking require verified upstream authentication within five minutes. Reauthentication uses `POST /auth/sso/reauthenticate` with native `prompt=login`, `max_age=0`. Authority and freshness are checked once inside the command's transaction, before replay; freshness again after the command's waits. Ordinary display edits and reads follow route metadata; machines/root retain their own authority contracts.
 
-All 48 mutations accept an idempotency key; a mutation without one is journalled under a server key. Conditional changes require current revisions. Replay still requires current authority. Audit covers successful effects and bounded rejection facts without attributing unverified client claims. See the [mutation inventory](../reports/answerable-id-mutation-inventory.md).
+All 47 mutations accept an idempotency key; a mutation without one is journalled under a server key. Conditional changes require current revisions. Replay still requires current authority. Audit covers successful effects and bounded rejection facts without attributing unverified client claims. See the [mutation inventory](../reports/answerable-id-mutation-inventory.md).
 
 ## Omni Accelerator / Circle consolidation
 

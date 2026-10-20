@@ -1,7 +1,10 @@
 # Operating Answerable ID
 
-These commands cover repository-owned checks. Production topology, traffic targets,
-secret delivery, backup retention and recovery objectives have not been supplied.
+The runtime bounds, the log signals and the keys of one ID process. Answerable's
+topology, secret delivery and backups are in [`docs/12`](../../docs/12-deployment.md)
+and the [infrastructure runbook](../../infra/README.md); traffic targets and recovery
+objectives wait for the first staging run (E6 and E7 in the
+[release checklist](../../reports/answerable-id-release-decision-plan.md)).
 ## Runtime bounds
 
 | Boundary            | Repository default or behaviour                                            | Limit of the claim                                                         |

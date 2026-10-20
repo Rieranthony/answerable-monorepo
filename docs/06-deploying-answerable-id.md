@@ -15,8 +15,6 @@ Everything below is derived from the code on this branch: `apps/id/src/env.ts` (
 | `apps/web` | Next.js site and docs | Public website |
 | PostgreSQL 17 | The only state: users, sessions, native OAuth state, policy, audit, command receipts | Local compose uses `postgres:17-alpine`; production needs your own instance with backups |
 | Ingress | TLS termination and the `x-forwarded-for` header | The **only** network path to `apps/id`; see the first requirement below |
-| Redis | Reserved for later caching | Not used by `apps/id` today; do not provision it for ID |
-
 ID serves its own login, selection, consent, error and security pages at `BETTER_AUTH_URL` (`/login`, `/authorize`, `/consent`, `/error`, `/security`).
 
 Answerable's own deployment of ID, the Toolbox and the admin MCP (Civo, Kubernetes, Cloudflare in front) is described in [`12-deployment.md`](12-deployment.md), and operated with [`infra/README.md`](../infra/README.md).
@@ -26,7 +24,7 @@ Answerable's own deployment of ID, the Toolbox and the admin MCP (Civo, Kubernet
 | Requirement | Why | Enforced by |
 | --- | --- | --- |
 | `apps/id` reachable only through the proxies in `TRUSTED_PROXY_CIDRS` | Better Auth's rate limiter and every audit row key on the client address. The address is taken from `x-forwarded-for`, walking from the right and skipping listed proxies. A request that reaches the process directly has no trustworthy address; in production it is refused with `403 untrusted_ingress` before authentication | `src/app.ts` ingress check; `src/env.ts` requires the variable in production |
-| The application's `DATABASE_URL` is an unprivileged login, never the owner | Row-level security does not apply to the table owner. Eleven tables rely on it for tenant isolation, and audit rows are immutable only because the runtime role cannot update or delete them. Startup refuses an owner or privileged role in every environment | `src/runtime.ts` calls `assertRuntimeRole` before listening |
+| The application's `DATABASE_URL` is an unprivileged login, never the owner | Row-level security does not apply to the table owner. Ten tables rely on it for tenant isolation, and audit rows are immutable only because the runtime role cannot update or delete them. Startup refuses an owner or privileged role in every environment | `src/runtime.ts` calls `assertRuntimeRole` before listening |
 | A separate schema-owner login for migrations | DDL, functions, triggers and policies need ownership; the same run provisions the runtime role's permissions so the two never drift | `scripts/migrate.ts` migrates with `DATABASE_MIGRATION_URL`, then runs `configureRuntimeRole` for `DATABASE_RUNTIME_ROLE` |
 | `BETTER_AUTH_URL` is the public issuer origin, `https://` | It becomes the JWT `iss`, the discovery document and the default admin audience (`${BETTER_AUTH_URL}/api/admin`). Changing it invalidates every issued token | `src/env.ts`, `src/auth.ts` |
 | Non-empty origin-only `BETTER_AUTH_TRUSTED_ORIGINS` | Lists other browser origins allowed to call `/auth/*` with cookies, and identity-provider endpoint origins. The ID origin itself is always trusted. The admin API sends no CORS headers: it has no browser client yet | `src/env.ts` production refinements |
@@ -182,5 +180,5 @@ These include release evidence and unbuilt capabilities. The release gate in `..
 - Publisher verification and an Entra certificate credential: Not yet. Track [Q-PUBLISHER-VERIFICATION and Q-ENTRA-CERTIFICATE](02-plan.md#open-register); the certificate work gates E1.
 - A restore drill against production-shaped data with the real backup system and RTO/RPO (E7).
 - A load test through the real ingress with agreed latency and refusal budgets (E6).
-- A monitoring destination and alert budgets for the signals above; the choice of secret store (`Q-SECRET-STORE` in `02-plan.md`).
+- A monitoring destination and alert budgets for the signals above. Where secrets live is settled (`Q-SECRET-STORE` in `02-plan.md`, resolved on 19 October 2026); a store with a read audit waits for a second team or a compliance need.
 - Upstream-disable detection and downstream logout delivery are not implemented (E4); local revocation is immediate, remote sessions are not.

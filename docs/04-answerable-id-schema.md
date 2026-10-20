@@ -129,7 +129,7 @@ RLS protects `groups`, `group_members`, `entitlements`, `organization_capabiliti
 
 ## Completed administrative operations
 
-All 48 mutations share the journal. Actor, tenant scope, operation kind, target and normalised input identify a reservation. Matching retries require current authority and return the receipt without repeating effects; mismatches conflict.
+All 47 mutations share the journal; a mutation sent without an `Idempotency-Key` is journalled under a server key. Actor, tenant scope, operation kind, target and normalised input identify a reservation. Matching retries require current authority and return the receipt without repeating effects; mismatches conflict.
 
 Reservations are permanent. Replays return receipts at the original status code, with an empty body for 204. Response bodies are not stored.
 
