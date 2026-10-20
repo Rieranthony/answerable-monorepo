@@ -110,13 +110,38 @@ test("unresolved client context refuses authentication before dispatch", async (
   expect((await app.request("/auth/ok")).status).toBe(403);
 });
 
-test("production rate-limits token requests per client address", async () => {
-  // Better Auth enables its limiter from NODE_ENV at module load, so production needs a fresh process.
-  const child = Bun.spawn(
-    [
-      process.execPath,
-      "-e",
-      `
+// An office signs in through one egress address and a server-side host refreshes
+// every user's token from one address, so each route class allows a burst sized
+// for that, per client address and per process.
+for (const { route, limit, request } of [
+  {
+    route: "POST /auth/sign-in/sso",
+    limit: 60,
+    request: `{ path: "/auth/sign-in/sso", method: "POST", headers: { "content-type": "application/json", origin: environment.betterAuthUrl }, body: JSON.stringify({ email: "person@example.com", callbackURL: environment.betterAuthUrl + "/" }) }`,
+  },
+  {
+    route: "GET /auth/sso/callback",
+    limit: 300,
+    request: `{ path: "/auth/sso/callback?state=x&code=y" }`,
+  },
+  {
+    route: "GET /auth/oauth2/authorize",
+    limit: 300,
+    request: `{ path: "/auth/oauth2/authorize?client_id=x&response_type=code" }`,
+  },
+  {
+    route: "POST /auth/oauth2/token",
+    limit: 600,
+    request: `{ path: "/auth/oauth2/token", method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "grant_type=client_credentials" }`,
+  },
+])
+  test(`production allows ${limit} ${route} requests per client address`, async () => {
+    // Better Auth enables its limiter from NODE_ENV at module load, so production needs a fresh process.
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        "-e",
+        `
     import { createApp } from "./src/app.ts";
     import { createAuth } from "./src/auth.ts";
     import { createDatabase } from "./src/db/client.ts";
@@ -124,28 +149,33 @@ test("production rate-limits token requests per client address", async () => {
     const environment = testEnvironment({ nodeEnv: "production", trustedProxyCidrs: ["10.0.0.0/8"] });
     const connection = createDatabase(environment);
     const app = createApp({ auth: createAuth(connection.db, environment), db: connection.db, environment });
-    const token = (client) => app.request("/auth/oauth2/token", {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded", "x-forwarded-for": client + ", 10.0.0.1" },
-      body: "grant_type=client_credentials",
-    });
+    const send = async (client) => {
+      const { path, method, headers, body } = ${request};
+      const response = await app.request(path, { method, body, headers: { ...headers, "x-forwarded-for": client + ", 10.0.0.1" } });
+      await response.arrayBuffer();
+      return response.status;
+    };
     const statuses = [];
-    for (let attempt = 0; attempt < 21; attempt++) statuses.push((await token("198.51.100.7")).status);
-    const other = (await token("192.0.2.1")).status;
+    for (let attempt = 0; attempt <= ${limit}; attempt++) statuses.push(await send("198.51.100.7"));
+    const other = await send("192.0.2.1");
     await connection.close();
     console.log(JSON.stringify({ statuses, other }));
   `,
-    ],
-    {
-      cwd: import.meta.dir + "/../..",
-      env: { ...process.env, NODE_ENV: "production", TEST: "" },
-      stdout: "pipe",
-      stderr: "pipe",
-    },
-  );
-  const result = JSON.parse(await new Response(child.stdout).text());
-  expect(await child.exited).toBe(0);
-  // The default burst for the token endpoint is 20 requests a minute.
-  expect(result.statuses).toEqual([...Array(20).fill(400), 429]);
-  expect(result.other).toBe(400);
-});
+      ],
+      {
+        cwd: import.meta.dir + "/../..",
+        env: { ...process.env, NODE_ENV: "production", TEST: "" },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const output = await new Response(child.stdout).text();
+    expect(await child.exited).toBe(0);
+    const { statuses, other } = JSON.parse(output) as {
+      statuses: number[];
+      other: number;
+    };
+    expect(statuses.slice(0, limit)).not.toContain(429);
+    expect(statuses[limit]).toBe(429);
+    expect(other).not.toBe(429);
+  }, 60_000);

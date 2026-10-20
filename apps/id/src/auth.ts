@@ -113,6 +113,15 @@ export function createAuth(db: Database, environment: Environment) {
       },
     },
     trustedOrigins: environment.trustedOrigins,
+    // Production only, per client address per process: replicas multiply these.
+    // An office signs in through one egress address; the provider's options
+    // below size authorize and token for a host refreshing for all its users.
+    rateLimit: {
+      customRules: {
+        "/sign-in/sso": { window: 10, max: 60 },
+        "/sso/callback": { window: 10, max: 300 },
+      },
+    },
     account: {
       // The storage plugin protects all three fields; do not encrypt twice.
       encryptOAuthTokens: false,
@@ -230,6 +239,10 @@ export function createAuth(db: Database, environment: Environment) {
             environment.oauthRefreshReuseIntervalSeconds,
           // Client creation and rotation store hashClientSecret digests.
           storeClientSecret: "hashed",
+          rateLimit: {
+            authorize: { window: 60, max: 300 },
+            token: { window: 60, max: 600 },
+          },
           loginPage: `${environment.betterAuthUrl}/login`,
           consentPage: `${environment.betterAuthUrl}/consent`,
         },
