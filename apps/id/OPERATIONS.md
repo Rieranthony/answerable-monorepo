@@ -5,65 +5,58 @@ topology, secret delivery and backups are in [`docs/12`](../../docs/12-deploymen
 and the [infrastructure runbook](../../infra/README.md); traffic targets and recovery
 objectives wait for the first staging run (E6 and E7 in the
 [release checklist](../../reports/answerable-id-release-decision-plan.md)).
+
 ## Runtime bounds
 
-| Boundary            | Repository default or behaviour                                            | Limit of the claim                                                         |
+Constants in `src/env.ts` and `src/http/request-limits.ts`, each with its reason;
+a change ships as a release. Only the pool size is a variable.
+
+| Boundary            | Value                                                                      | Limit of the claim                                                         |
 | ------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Database pool       | 20 connections; checkout 5 seconds; idle 10 seconds                        | Multiply pools by processes and include other database users               |
-| Database statements | 10 seconds per statement; lock wait 2 seconds; idle transaction 15 seconds | Not a whole-request deadline; transactions may execute multiple statements |
-| Request body        | 256 KiB; acquisition deadline 5 seconds                                    | Does not bound response streaming or socket count                          |
-| Forwarded IP        | Rightmost untrusted address after listed ingress proxies                   | Requires proxy-only network access and TRUSTED_PROXY_CIDRS                 |
+| Database pool       | `DATABASE_POOL_MAX` connections (default 20); checkout 5 s; idle 10 s      | Multiply pools by processes and include other database users               |
+| Database statements | 10 s per statement; lock wait 2 s; idle transaction 15 s                   | Not a whole-request deadline; transactions may execute multiple statements |
+| Request body        | 256 KiB; acquisition deadline 5 s                                          | Does not bound response streaming or socket count                          |
+| Rate limits         | Per client address per process, production only ([docs/06](../../docs/06-deploying-answerable-id.md#operating-it)) | Replicas multiply them; not a volumetric defence                           |
+| Forwarded IP        | Rightmost untrusted address after the proxies in `TRUSTED_PROXY_CIDRS`     | Requires proxy-only network access ([README](README.md#http-surface))      |
 
 **Runtime summaries.** Every 30 seconds each process writes `[id] operations`
-followed by JSON. Route classes and HTTP statuses are the only request dimensions.
-There are no URLs, queries, tenant/user IDs, credentials or per-request buffers.
-`requests` contains completed handler count, total duration and maximum duration per
-class/status since the last report. `active` and `pool` counts are instantaneous;
-`peakActive` is the handler high-water mark in that window. Duration ends when Hono
-finishes the handler, before any later response-body streaming. A slow handler appears
-as active until completion. Process shutdown stops reporting; counters are not durable.
+followed by JSON: per route class and HTTP status, the completed handler count,
+total and maximum duration since the last report; `active` and `pool` counts are
+instantaneous, `peakActive` is the window's high-water mark. There are no URLs,
+tenant or user IDs or credentials. Counters are not durable, and a missing summary
+is not zero load. Do not derive latency percentiles, tenant fairness or peak pool
+usage from these aggregates.
 
-Use the deployment log collector's process identity when combining summaries. Do not
-derive latency percentiles, tenant fairness or peak pool usage from these aggregates.
-An absent summary requires checking the process and collector; it is not zero load.
-Measure representative traffic and database sizing before changing existing limits.
+**Protocol sweep.** Every 60 seconds each process deletes expired rows from
+`oauth_access_tokens`, `oauth_refresh_tokens` (with the access tokens that name
+them), `oauth_client_assertions` and `sessions`, in transactions of at most 1,000
+rows. An advisory lock lets one process delete at a time. A run that deleted rows
+writes `[id] protocol sweep` with the count per table; expiry records no audit.
+Better Auth deletes expired `verifications` itself.
 
-**Protocol sweep.** Every 60 seconds each run deletes rows whose `expires_at` has
-passed from `oauth_access_tokens`, `oauth_refresh_tokens` (with the access tokens
-that name them), `oauth_client_assertions` and `sessions`, as the runtime role, in
-transactions of at most 1,000 rows. Rotated refresh
-tokens stay until their own expiry. An advisory lock lets one process delete at a
-time; a process that finds it taken skips the rest of that run. A run that deleted
-rows writes `[id] protocol sweep` followed by JSON with the count per table; expiry
-records no audit. A failed run writes only `protocol_sweep_failed`, with the
-error's class and its SQLSTATE when the database gave one, and the next interval retries. Better Auth deletes
-expired `verifications` itself.
+**Shutdown.** On `SIGINT` or `SIGTERM` the process stops listening, waits for
+in-flight requests, stops the sweep after its running batch and closes the pool.
 
-**Shutdown.** On `SIGINT` or `SIGTERM` the process stops listening, waits for in-flight
-requests, stops the sweep after its running batch and closes the pool. A failed shutdown
-writes `shutdown_failed` with the error's class and exits with status 1.
+## Signals
 
-**Monitoring handoff.** Configure the selected collector/scheduler to route these
-signals to an operator. No destination or numerical alert budget is configured here.
-Each event is one line: `[id] <area>`, then JSON that starts with `level` and `event`.
-An unexpected request error writes `[id] error` with `unexpected_error`; a sign-in page
-whose in-process authentication call throws writes `[id] page` with
-`page_auth_call_failed` and the auth path, then shows its friendly message. These,
-`provider_diagnostic` for a thrown error, `protocol_sweep_failed`, `shutdown_failed`
-and the `admin_denial_audit_unavailable` and `token_rejection_audit_unavailable`
-events name the error's class as `name` and, for
-a database error, its SQLSTATE as `code` and any `constraint`, never its message.
+Each event is one line: `[id] <area>`, then JSON that starts with `level` and
+`event`. An error names its class as `name` and, for a database error, its
+SQLSTATE as `code` and any `constraint`, never its message. No alert destination
+or budget is configured here.
 
-| Signal                                                                  | Operator check                                                                                                                               |
+| Signal                                                                  | What to do                                                                                                                                   |
 | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Rising 503 counts, active work and pool waiters                         | Compare with traffic and database limits; inspect authorised audit/history for context                                                       |
+| Rising 503 counts, active work and pool waiters                         | Compare with traffic and database limits; inspect authorised audit history for context                                                       |
+| `[id] error` `unexpected_error`, or `provider_diagnostic` with an error | Read the class and SQLSTATE; a repeated one is a defect or a database fault                                                                  |
+| `[id] page` `page_auth_call_failed`                                     | A sign-in page's in-process authentication call threw; the person saw the friendly message. Check the named auth path and the database       |
 | `admin_denial_audit_unavailable` or `token_rejection_audit_unavailable` | Investigate database/audit availability; refusal remains refusal                                                                             |
 | Rising `token_rejected` or `signin_rejected` (`[id] auth`)              | Refusals that verified no client or identity, logged instead of audited: a misconfigured client or directory, or credential stuffing; compare with 429s and the edge rate limits |
 | `[id] admin` `admin_auth_refused`, repeated                             | A missing or invalid credential on `/api/admin` (`reason` `unauthenticated` or `invalid_token`, with request id, address and path); no audit row is written. Compare the addresses with the ingress log |
-| `SigningKeyCustodyError` at startup                                    | The configured application secrets cannot decrypt the newest signing key: deliver the version that encrypted it; never delete the key       |
+| `SigningKeyCustodyError` at startup                                     | The configured application secrets cannot decrypt the newest signing key: deliver the version that encrypted it; never delete the key       |
 | `protocol_sweep_failed`, repeated                                       | Check database availability and lock waits; expired protocol rows accumulate until a sweep succeeds                                          |
+| `shutdown_failed`                                                       | The process exited with status 1 before closing cleanly; read the class                                                                      |
 | Missing process summaries                                               | Check process health and collector delivery before interpreting demand                                                                       |
-| Backup age or retrieval failure                                         | Use the backup service's independently monitored completion/recovery evidence; `/readyz` cannot detect this                                  |
+| Backup age or retrieval failure                                         | Use the backup service's own monitoring; `/readyz` cannot detect this                                                                        |
 
 ## Keys
 
@@ -72,52 +65,15 @@ secrets before it listens; a wrong or missing version stops the process with
 `SigningKeyCustodyError`, so the previous replicas keep serving. A database with no
 key yet passes; the first `GET /auth/jwks` generates one. An unexpectedly empty JWKS
 after restore is a recovery failure; do not use that generation to replace missing
-restored keys.
+restored keys, and never edit or delete a JWKS row to force rotation.
 
-| Material                 | Supported configuration and use                                                                                                                                  | Retirement evidence needed                                                                             |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Application secret       | `BETTER_AUTH_SECRET`; optional native `BETTER_AUTH_SECRETS` ring. Encrypts provider material including signing private keys; active secret signs browser cookies | Retained ciphertext and every required backup; promotion requires fresh browser sign-in                |
-| Platform application secrets | `GOOGLE_CLIENT_SECRET` and `MICROSOFT_CLIENT_SECRET`: environment only, never in PostgreSQL | Provider console shows the new secret and every replica has restarted; keep both secrets valid throughout rotation |
-| Database credentials     | Separate migration and runtime logins                                                                                                        | Provision new credentials and permissions after restore; do not restore owner credentials into runtime |
-| Root and IdP credentials | Deployment-managed root bootstrap secret and configured SSO credentials                                                                                          | Separate inventory and provider-specific revocation/rotation checks                                    |
+| Material                     | Where it lives                                                                                                  | Rotation                                                                 |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Application secret           | `BETTER_AUTH_SECRET` and the optional `BETTER_AUTH_SECRETS` ring; encrypts the signing keys, signs browser cookies | [README](README.md#application-secret-rotation); promotion signs everyone out |
+| Platform application secrets | `GOOGLE_CLIENT_SECRET` and `MICROSOFT_CLIENT_SECRET`, environment only, never in PostgreSQL                     | [docs/06](../../docs/06-deploying-answerable-id.md#operating-it)        |
+| Database credentials         | Separate migration and runtime logins                                                                           | [Infrastructure runbook](../../infra/README.md#rotate)                   |
+| Root secret                  | `ROOT_ADMIN_SECRET`, break-glass only                                                                           | [Infrastructure runbook](../../infra/README.md#rotate)                   |
 
-Keep these families independent and outside PostgreSQL backups. The repository
-accepts delivered configuration; it does not implement a secret manager, approve
-access to one, or prove that every replica received a version.
-
-**Normal rotation.** Inventory current ciphertext, backups and replicas first.
-Distribute a new version to every replica while keeping the current active version
-first. Coordinate promotion across replicas, then
-recheck and exercise a synthetic native sign-in, issuance, refresh and command replay.
-Changing the active application secret requires fresh sign-in; staged old cookies
-do not establish continuity after promotion. Never reuse a version for different
-material. Retain old keys until the inventory and backup retention justify removal.
-There is no automatic ciphertext rewrapping or old-key retirement job.
-
-**Signing-key lifecycle.** The pinned provider generates and publishes database-backed
-JWKS keys and supports retained application-secret decryption. Tests exercise native
-generation after simulated expiry and verification with retained public keys. The
-startup check decrypts the newest key only; it does not check prepublication, downstream JWKS-cache behaviour
-or an emergency signing-key cutover. Do not edit JWKS rows or delete a key to force
-rotation. A production emergency rotation procedure, verification overlap and
-offline token exposure window still require a deployment rehearsal. In a custody
-incident, close traffic and preserve recovery evidence before changing keys.
-
-## Retention and external decisions
-
-Product deletion remains terminal `deletedAt` soft deletion with immediate credential
-clearing and durable UUID/identifier reservations. Physical domain-data purge jobs and
-durations are deferred.
-
-Before deployment, assign owners and supply:
-
-1. Process/pool topology, database capacity, ingress limits and `TRUSTED_PROXY_CIDRS`.
-   Restrict service access to those proxies; refuse other traffic at the network boundary.
-   Production auth/admin requests with no resolvable address receive `403 untrusted_ingress`.
-2. Representative traffic mix, burst/concurrency targets and acceptable refusal/latency
-   budgets for each flow, including unauthenticated traffic and tenant B OAuth.
-3. Secret-store delivery, access control, version inventory, promotion/rollback and
-   signing-key emergency rotation/verification overlap.
-4. Backup/key retention, a complete post-snapshot recovery source, independent
-   acknowledgement evidence, recovery RTO/RPO, and authority to reopen traffic.
-5. Monitoring and incident ownership. Domain-data purge policy remains a separate deferred decision.
+Keep these families independent and outside PostgreSQL backups: a restored database
+is unreadable without the application secrets that were active when its keys were
+written.
