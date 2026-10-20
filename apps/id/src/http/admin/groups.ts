@@ -156,7 +156,7 @@ export const routes = {
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",
-    freshAuthentication: { unlessOnly: ["name"] },
+    freshAuthentication: false,
     parameters: [
       ...["organizationId", "groupId"].map((name) =>
         pathParameter(name, "uuid"),

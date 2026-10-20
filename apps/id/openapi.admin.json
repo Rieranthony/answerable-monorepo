@@ -14339,11 +14339,7 @@
           }
         ],
         "x-kind": "write",
-        "x-fresh-authentication": {
-          "unlessOnly": [
-            "name"
-          ]
-        },
+        "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:write"
         }
