@@ -105,6 +105,27 @@ async function request(
 }
 const past = "2000-01-01T00:00:00.000Z";
 const future = "2100-01-01T00:00:00.000Z";
+
+test("a created group and its read carry only declared fields, not the soft-deletion markers", async () => {
+  const org = fixture.tenant.organizationId;
+  const created = await request(
+    org,
+    "",
+    "POST",
+    { slug: `declared-${Date.now()}`, name: "Declared" },
+    "platformAdmin",
+    "group.created",
+  );
+  expect(created.status).toBe(201);
+  const body = await created.json();
+  const read = await (await request(org, `/${body.id}`)).json();
+  const page = await (await request(org, `?q=${body.slug}`)).json();
+  for (const row of [body, read, page.items[0]]) {
+    expect(row).toMatchObject({ id: body.id, slug: body.slug });
+    expect(row).not.toHaveProperty("deletedAt");
+    expect(row).not.toHaveProperty("live");
+  }
+});
 test("tenant and platform readers read groups and memberships with organisation isolation", async () => {
   for (const org of [fixture.tenant, fixture.outsider]) {
     const group = await createGroup(fixture.db, {

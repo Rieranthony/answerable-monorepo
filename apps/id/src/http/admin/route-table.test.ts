@@ -153,6 +153,62 @@ test("registerRoute describes and handles a route, audits root, and records a re
   });
 });
 
+test("an answer drops a row's soft-deletion markers, and its page's rows', but keeps evidence's and other answers", async () => {
+  const app = new Hono<AppEnvironment>();
+  app.use("*", async (c, next) => {
+    c.set("principal", {
+      type: "user",
+      userId: "u",
+      email: "e",
+      sessionId: "s",
+      grants: [],
+    });
+    await next();
+  });
+  const minimalRoute = {
+    method: "get",
+    path: "/",
+    operationId: "",
+    summary: "Read",
+    description: "Read.",
+    tag: "Test",
+    platformScope: "platform:read",
+    kind: "read",
+    responses: { 200: { description: "OK" } },
+  } satisfies AdminRoute;
+  const row = { id: "row", name: "Row", deletedAt: null, live: true };
+  const evidence = {
+    id: "event",
+    data: { deletedAt: "2026-10-20T00:00:00.000Z" },
+  };
+  const answers: Record<string, () => Response> = {
+    row: () => Response.json(row, { headers: { ETag: '"row:1"' } }),
+    page: () => Response.json({ items: [row, evidence], nextCursor: null }),
+    evidence: () => Response.json({ items: [evidence], nextCursor: null }),
+    text: () => new Response("plain"),
+    empty: () => new Response(null, { status: 204 }),
+  };
+  for (const name of Object.keys(answers))
+    registerRoute(
+      app,
+      { ...minimalRoute, path: `/${name}`, operationId: name },
+      () => answers[name]!(),
+    );
+  const row200 = await app.request("/row");
+  expect(row200.headers.get("ETag")).toBe('"row:1"');
+  expect(await row200.json()).toEqual({ id: "row", name: "Row" });
+  expect(await (await app.request("/page")).json()).toEqual({
+    items: [{ id: "row", name: "Row" }, evidence],
+    nextCursor: null,
+  });
+  expect(await (await app.request("/evidence")).json()).toEqual({
+    items: [evidence],
+    nextCursor: null,
+  });
+  expect(await (await app.request("/text")).text()).toBe("plain");
+  expect((await app.request("/empty")).status).toBe(204);
+});
+
 test("me serialises root scopes without phantom grants", async () => {
   const app = new Hono<AppEnvironment>();
   app.use("*", async (c, next) => {

@@ -77,6 +77,36 @@ async function recordDenial(
     context.header("WWW-Authenticate", 'Bearer error="insufficient_scope"');
 }
 
+/**
+ * A soft-deletable table's row carries `deletedAt` and `live`, which no
+ * response declares and an answer never needs: a deleted row is not served.
+ * Drop them from the answer's row, or from each row of its page. A row is
+ * known by holding both; audit evidence nests its own `deletedAt` and keeps it.
+ */
+async function withoutSoftDeletion(response: Response) {
+  if (!response.headers.get("Content-Type")?.startsWith("application/json"))
+    return response;
+  const body: unknown = await response.clone().json();
+  const rows = [
+    body,
+    ...(body &&
+    typeof body === "object" &&
+    "items" in body &&
+    Array.isArray(body.items)
+      ? body.items
+      : []),
+  ].filter(
+    (row): row is { deletedAt?: unknown; live?: unknown } =>
+      !!row && typeof row === "object" && "deletedAt" in row && "live" in row,
+  );
+  if (!rows.length) return response;
+  for (const row of rows) {
+    delete row.deletedAt;
+    delete row.live;
+  }
+  return new Response(JSON.stringify(body), response);
+}
+
 export function registerRoute(
   app: Hono<AppEnvironment>,
   route: AdminRoute,
@@ -90,6 +120,8 @@ export function registerRoute(
       await next();
       if (context.error instanceof AuthorityDenied)
         await recordDenial(context, context.error);
+      else if (context.res.ok)
+        context.res = await withoutSoftDeletion(context.res);
     },
     admitRoot(),
     ...handlers,
