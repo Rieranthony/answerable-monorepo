@@ -110,7 +110,7 @@ export const routes = {
     operationId: "testSsoProvider",
     summary: "Test SSO connectivity",
     description:
-      "Perform an outbound request to discovery and JWKS endpoints without changing state or sending credentials. Report reachability, issuer equality and key count; problems explain failed checks. Credentials are only provable by a real sign-in. Private hosts, insecure URLs and redirects are refused. Use diagnoseSignIn for database checks for an email. validation_failed rejects malformed ids; provider_not_found returns 404 when no provider exists.",
+      "Perform an outbound request to discovery and JWKS endpoints without changing state or sending credentials. Report reachability, issuer equality and key count; problems explain failed checks. Credentials are only provable by a real sign-in. Discovery runs as sign-in runs it and stops at the first problem: the discovery URL and every endpoint it names must be on a trusted origin, and redirects are refused. Use diagnoseSignIn for database checks for an email. validation_failed rejects malformed ids; provider_not_found returns 404 when no provider exists.",
     tag: "Diagnostics",
     platformScope: "platform:read",
     kind: "read",
@@ -228,10 +228,7 @@ export function register(app: Hono<AppEnvironment>) {
               context.req.param("organizationId")!,
             ),
           ),
-          {
-            ...context.get("ssoTest"),
-            trustedOrigins: context.get("environment").trustedOrigins,
-          },
+          { trustedOrigins: context.get("environment").trustedOrigins },
         ),
       ),
   );

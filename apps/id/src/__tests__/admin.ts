@@ -103,10 +103,7 @@ export async function createAdminFixture(
       context.skipOriginCheck = false;
       context.skipCSRFCheck = false;
     }
-    const app = createApp(
-      { auth, db: appDb, environment },
-      { ssoTest: { allowPrivateHosts: true } },
-    );
+    const app = createApp({ auth, db: appDb, environment });
     const bootstrapped = await bootstrap(db, systemActor("fixture"), {
       platformOrganizationSlug: environment.platformOrganizationSlug,
       platformOrganizationName: "Answerable",

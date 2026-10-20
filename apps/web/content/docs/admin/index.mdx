@@ -282,7 +282,7 @@ Read from the root `.env` by `bun run admin:dev`; every variable is listed in `d
 | The platform organisation | `organisations_disable` refuses it: every member of staff would lose access |
 | Intents | Controlled class, 30 minutes from prepare to commit |
 | Evidence of a commit call | Its `capability.completed` row names `upstream: "id"` whichever tool the intent is for; the `intent.committed` row names that tool |
-| `sso_test` | ID refuses an issuer over plain HTTP, such as a local test directory, with the problem `insecure_issuer` |
+| `sso_test` | ID tests discovery as sign-in runs it: an issuer whose origin is not in ID's trusted origins, such as a local test directory, gets the problem `untrusted_origin` |
 | Results | Not limited in size: lists are paged, and `organisations_get` answers every domain |
 | Evidence of calls refused because ID did not answer | Not recorded: the SDK answers that refusal before the server's call wrapper runs |
 

@@ -6,6 +6,7 @@ The fake ID follows ID's admin API:
 
 - A write without an `Idempotency-Key` is journalled under a key of its own, as in ID: a new command each time. An empty or over-long key still answers `400 invalid_idempotency_key`.
 - A member's read sends its `ETag`, as ID's `getMember` now does; ID dropped the member configuration read.
+- The SSO connectivity test passes for every issuer, as ID's does for a provider on its trusted origins: ID now runs discovery as sign-in does and no longer refuses an issuer over plain HTTP.
 
 ## 0.5.1
 

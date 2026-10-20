@@ -1,6 +1,8 @@
-import dns from "node:dns/promises";
-import { isIP } from "node:net";
-import { isPublicRoutableHost } from "@better-auth/core/utils/host";
+import {
+  computeDiscoveryUrl,
+  discoverOIDCConfig,
+  DiscoveryError,
+} from "@better-auth/sso";
 import { z } from "zod";
 import { type PlatformReadContext } from "./platform-context.ts";
 import { readSsoEndpoints } from "../db/queries/sso-providers.ts";
@@ -10,61 +12,31 @@ import { classifyIssuer } from "./federation.ts";
 export const ssoProblemCodes = [
   "untrusted_origin",
   "insecure_issuer",
-  "private_host",
   "discovery_unreachable",
   "discovery_invalid",
   "issuer_mismatch",
   "jwks_unreachable",
   "jwks_invalid",
 ] as const;
+type SsoProblemCode = (typeof ssoProblemCodes)[number];
 export type SsoTestOptions = {
-  trustedOrigins?: string[];
-  fetch?: typeof fetch;
+  /** ID's trusted origins, which sign-in's discovery requires of every endpoint. */
+  trustedOrigins: string[];
+  /** Per request; sign-in's default, 10 s, when absent. */
   timeoutMs?: number;
-  allowPrivateHosts?: boolean;
 };
-/** Better Auth's SSRF gate (the RFC 6890 special-purpose ranges, localhost and
- * cloud metadata names), plus the internal-only .internal and .local names. */
-function isPrivateHost(hostname: string) {
-  const host = hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "");
-  return (
-    !isPublicRoutableHost(host) ||
-    ["internal", "local"].some(
-      (name) => host === name || host.endsWith(`.${name}`),
-    )
-  );
-}
-const discoverySchema = z.object({
-  issuer: z.url(),
-  authorization_endpoint: z.url(),
-  token_endpoint: z.url(),
-  jwks_uri: z.url(),
-  userinfo_endpoint: z.url().optional(),
-});
+
+/** Sign-in's discovery errors in the probe's words; the rest mean unreachable. */
+const discoveryProblems: Partial<Record<string, SsoProblemCode>> = {
+  discovery_untrusted_origin: "untrusted_origin",
+  discovery_invalid_url: "insecure_issuer",
+  discovery_invalid_json: "discovery_invalid",
+  discovery_incomplete: "discovery_invalid",
+  issuer_mismatch: "issuer_mismatch",
+};
 const jwksSchema = z.object({
   keys: z.array(z.object({ kty: z.string().min(1) })),
 });
-const maxBytes = 256 * 1024;
-
-async function readJson(response: Response): Promise<unknown> {
-  if (!response.body) throw new Error("Empty body");
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let bytes = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      bytes += value.byteLength;
-      if (bytes > maxBytes) throw new Error("Body exceeds 256 KiB");
-      chunks.push(value);
-    }
-    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-  } finally {
-    await reader.cancel();
-    reader.releaseLock();
-  }
-}
 
 /** Read only the endpoint snapshot needed by the connectivity probe. */
 export async function getSsoTestConfiguration(
@@ -77,16 +49,18 @@ export async function getSsoTestConfiguration(
   return provider;
 }
 
-/** No database access: run after the authorised snapshot transaction closes. */
+/**
+ * Discovery as sign-in runs it, the pinned SSO plugin's `discoverOIDCConfig`,
+ * then the JWKS fetch sign-in makes when it verifies an ID token. No database
+ * access: run after the authorised snapshot transaction closes.
+ */
 export async function testSsoProvider(
   configuration: { issuer: string; discoveryEndpoint?: string },
-  options: SsoTestOptions = {},
+  options: SsoTestOptions,
 ) {
   const started = performance.now();
   const { issuer } = configuration;
-  const url =
-    configuration.discoveryEndpoint ??
-    `${issuer.replace(/\/$/, "")}/.well-known/openid-configuration`;
+  const url = configuration.discoveryEndpoint ?? computeDiscoveryUrl(issuer);
   const result = {
     issuer,
     kind: classifyIssuer(issuer).kind,
@@ -101,125 +75,76 @@ export async function testSsoProvider(
     },
     jwks: { reachable: false, keys: null as number | null },
     elapsedMs: 0,
-    problems: [] as {
-      code: (typeof ssoProblemCodes)[number];
-      detail: string;
-    }[],
+    problems: [] as { code: SsoProblemCode; detail: string }[],
   };
-  function problem(code: (typeof ssoProblemCodes)[number], detail: string) {
-    result.problems.push({ code, detail });
-  }
-  function allowed(value: string) {
-    let parsed: URL;
-    try {
-      parsed = new URL(value);
-    } catch {
-      problem("insecure_issuer", "Endpoint must be an absolute HTTPS URL");
-      return false;
-    }
-    const privateHost = isPrivateHost(parsed.hostname);
-    if (
-      parsed.protocol !== "https:" &&
-      !(options.allowPrivateHosts && privateHost && parsed.protocol === "http:")
-    ) {
-      problem("insecure_issuer", "Issuer and fetched endpoints must use HTTPS");
-      return false;
-    }
-    if (privateHost && !options.allowPrivateHosts) {
-      problem("private_host", "Private hosts are not allowed");
-      return false;
-    }
-    return true;
-  }
-  // As Better Auth's sign-in guard does, refuse names resolving to internal addresses.
-  async function publicDestination(value: string) {
-    const host = new URL(value).hostname.replace(/^\[|\]$/g, "");
-    if (options.allowPrivateHosts || isIP(host)) return true;
-    const addresses = await dns.lookup(host, { all: true });
-    if (addresses.some(({ address }) => isPrivateHost(address))) {
-      problem(
-        "private_host",
-        "Endpoint hostname resolves to a private address",
-      );
-      return false;
-    }
-    return true;
-  }
-  function checkTrustedOrigin(value: string) {
-    if (!options.trustedOrigins || !URL.canParse(value)) return;
-    const { origin } = new URL(value);
-    if (!options.trustedOrigins.includes(origin))
-      problem("untrusted_origin", `Endpoint origin is not trusted: ${origin}`);
-  }
+  const isTrustedOrigin = (value: string) =>
+    URL.canParse(value) &&
+    options.trustedOrigins.includes(new URL(value).origin);
   async function inspect() {
-    checkTrustedOrigin(url);
-    if (!allowed(issuer) || !allowed(url)) return;
-    const fetcher = options.fetch ?? fetch;
-    const signal = AbortSignal.timeout(options.timeoutMs ?? 5000);
+    let jwksUri: string;
+    try {
+      const discovered = await discoverOIDCConfig({
+        issuer,
+        discoveryEndpoint: url,
+        isTrustedOrigin,
+        timeout: options.timeoutMs,
+      });
+      // The plugin accepts only a successful (2xx) answer.
+      result.discovery = {
+        url,
+        reachable: true,
+        status: 200,
+        issuerMatches: true,
+        authorizationEndpoint: discovered.authorizationEndpoint,
+        tokenEndpoint: discovered.tokenEndpoint,
+        jwksUri: discovered.jwksEndpoint,
+      };
+      jwksUri = discovered.jwksEndpoint;
+    } catch (error) {
+      // Past the fetch, the plugin throws a TypeError on an endpoint that is
+      // not a string; everything else is a DiscoveryError.
+      const known = error instanceof DiscoveryError;
+      const code = known
+        ? (discoveryProblems[error.code] ?? "discovery_unreachable")
+        : "discovery_invalid";
+      const status = known
+        ? (error.details as { status?: unknown } | undefined)?.status
+        : undefined;
+      if (typeof status === "number") result.discovery.status = status;
+      if (code === "discovery_invalid" || code === "issuer_mismatch")
+        result.discovery.reachable = true;
+      if (code === "issuer_mismatch") result.discovery.issuerMatches = false;
+      result.problems.push({
+        code,
+        detail: known
+          ? error.message
+          : "Discovery endpoints must be URL strings",
+      });
+      return;
+    }
     let response: Response;
     try {
-      if (!(await publicDestination(url))) return;
-      response = await fetcher(url, { signal, redirect: "manual" });
-      result.discovery.status = response.status;
-      if (!response.ok) throw new Error("HTTP failure or redirect");
-    } catch {
-      problem(
-        "discovery_unreachable",
-        "Discovery request failed, timed out or returned a non-success status",
-      );
-      return;
-    }
-    result.discovery.reachable = true;
-    let discovery: z.infer<typeof discoverySchema>;
-    try {
-      discovery = discoverySchema.parse(await readJson(response));
-    } catch {
-      problem(
-        "discovery_invalid",
-        "Discovery must contain issuer, authorization_endpoint, token_endpoint and jwks_uri URLs within 256 KiB",
-      );
-      return;
-    }
-    for (const endpoint of [
-      discovery.authorization_endpoint,
-      discovery.token_endpoint,
-      discovery.jwks_uri,
-      discovery.userinfo_endpoint,
-    ]) {
-      if (endpoint) checkTrustedOrigin(endpoint);
-    }
-    result.discovery.issuerMatches = discovery.issuer === issuer;
-    result.discovery.authorizationEndpoint = discovery.authorization_endpoint;
-    result.discovery.tokenEndpoint = discovery.token_endpoint;
-    result.discovery.jwksUri = discovery.jwks_uri;
-    if (!result.discovery.issuerMatches)
-      problem(
-        "issuer_mismatch",
-        "Discovery issuer does not exactly match the configured issuer",
-      );
-    if (!allowed(discovery.jwks_uri)) return;
-    try {
-      if (!(await publicDestination(discovery.jwks_uri))) return;
-      response = await fetcher(discovery.jwks_uri, {
-        signal,
+      response = await fetch(jwksUri, {
         redirect: "manual",
+        signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
       });
       if (!response.ok) throw new Error("HTTP failure or redirect");
     } catch {
-      problem(
-        "jwks_unreachable",
-        "JWKS request failed, timed out or returned a non-success status",
-      );
+      result.problems.push({
+        code: "jwks_unreachable",
+        detail:
+          "JWKS request failed, timed out or returned a non-success status",
+      });
       return;
     }
     result.jwks.reachable = true;
     try {
-      result.jwks.keys = jwksSchema.parse(await readJson(response)).keys.length;
+      result.jwks.keys = jwksSchema.parse(await response.json()).keys.length;
     } catch {
-      problem(
-        "jwks_invalid",
-        "JWKS must contain an array of keys with kty within 256 KiB",
-      );
+      result.problems.push({
+        code: "jwks_invalid",
+        detail: "JWKS must contain an array of keys with kty",
+      });
     }
   }
   await inspect();

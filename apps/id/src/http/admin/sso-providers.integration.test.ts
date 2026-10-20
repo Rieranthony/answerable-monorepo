@@ -271,7 +271,7 @@ test("SSO test reports a missing provider and an unreachable issuer", async () =
     ssoTestSchema
       .parse(await unreachable.json())
       .problems.map((problem: { code: string }) => problem.code),
-  ).toEqual(["untrusted_origin", "discovery_unreachable"]);
+  ).toEqual(["untrusted_origin"]);
 });
 
 const preconditions = new Map<string, { name: string; value: string }>();
@@ -579,7 +579,7 @@ test("tenantReader sees the platform client id without credentials", async () =>
       .where(eq(ssoProviders.id, previous!.id));
   }
 });
-test("SSO diagnosis reports each endpoint on an origin removed from trustedOrigins", async () => {
+test("SSO diagnosis stops, as sign-in does, at an issuer removed from trustedOrigins", async () => {
   const trustedOrigins = fixture.environment.trustedOrigins;
   fixture.environment.trustedOrigins = trustedOrigins.filter(
     (origin) => origin !== fixture.issuer.origin,
@@ -589,12 +589,10 @@ test("SSO diagnosis reports each endpoint on an origin removed from trustedOrigi
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(
-      body.problems.filter(
-        (problem: { code: string }) => problem.code === "untrusted_origin",
-      ),
-    ).toHaveLength(4);
-    expect(body.discovery.reachable).toBe(true);
-    expect(body.jwks.reachable).toBe(true);
+      body.problems.map((problem: { code: string }) => problem.code),
+    ).toEqual(["untrusted_origin"]);
+    expect(body.discovery.reachable).toBe(false);
+    expect(body.jwks.reachable).toBe(false);
   } finally {
     fixture.environment.trustedOrigins = trustedOrigins;
   }

@@ -123,19 +123,18 @@ export function createFakeId({
     }
     return changed
   }
-  // What ID's SSO connectivity test answers for a provider: it refuses an issuer over plain HTTP, as it refuses loopback HTTP issuers.
+  // What ID's SSO connectivity test answers for a provider whose origins it trusts, as the fake trusts every issuer: it passed.
   function ssoTest({ issuer: providerIssuer }: Stored) {
-    const insecure = String(providerIssuer).startsWith("http://")
     const kind = String(providerIssuer).startsWith("https://login.microsoftonline.com/") ? "entra" : providerIssuer === "https://accounts.google.com" ? "google" : "oidc"
     return {
       issuer: providerIssuer, kind,
       discovery: {
-        url: `${providerIssuer}/.well-known/openid-configuration`, reachable: !insecure, status: insecure ? null : 200, issuerMatches: insecure ? null : true,
-        authorizationEndpoint: insecure ? null : `${providerIssuer}/authorize`, tokenEndpoint: insecure ? null : `${providerIssuer}/token`, jwksUri: insecure ? null : `${providerIssuer}/keys`,
+        url: `${providerIssuer}/.well-known/openid-configuration`, reachable: true, status: 200, issuerMatches: true,
+        authorizationEndpoint: `${providerIssuer}/authorize`, tokenEndpoint: `${providerIssuer}/token`, jwksUri: `${providerIssuer}/keys`,
       },
-      jwks: { reachable: !insecure, keys: insecure ? null : 1 },
+      jwks: { reachable: true, keys: 1 },
       elapsedMs: 12,
-      problems: insecure ? [{ code: "insecure_issuer", detail: "The issuer must use HTTPS" }] : [],
+      problems: [],
     }
   }
   function groupRoute(request: Request, organisation: string, groupId: string, rest: string, body: Record<string, unknown>) {

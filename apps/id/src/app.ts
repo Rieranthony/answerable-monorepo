@@ -33,13 +33,7 @@ export type AppServices = {
   metrics?: OperationalMetrics;
 };
 
-/** Seams for the test fixture only; the server entry point never passes them. */
-export type AppTesting = {
-  /** Lets the SSO probe reach an in-process issuer on a private HTTP host. */
-  ssoTest?: { allowPrivateHosts: boolean };
-};
-
-export function createApp(services: AppServices, testing: AppTesting = {}) {
+export function createApp(services: AppServices) {
   const app = new Hono<AppEnvironment>();
 
   app.use("*", async (context, next) => {
@@ -52,7 +46,6 @@ export function createApp(services: AppServices, testing: AppTesting = {}) {
     context.set("environment", services.environment);
     context.set("auth", services.auth);
     context.set("db", services.db);
-    context.set("ssoTest", testing.ssoTest);
     context.set("requestId", requestId);
     context.header("x-request-id", requestId);
 

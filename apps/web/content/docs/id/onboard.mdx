@@ -203,18 +203,17 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/sso-provider/tes
   -H "Authorization: Bearer $TOKEN"
 ```
 
-[testSsoProvider](/docs/id/admin-api/diagnostics/testSsoProvider) fetches discovery and JWKS without sending credentials or changing state. It reports reachability, exact issuer equality, key count and elapsed time. It requires current `platform:read` when reading the endpoint configuration and returns `Cache-Control: no-store`. Network requests run after that read transaction closes, so the result describes the captured endpoints even if configuration changes during the probe. It does not prove client credentials, consent, a usable signing key or a person's ability to sign in; complete a real sign-in for those checks.
+[testSsoProvider](/docs/id/admin-api/diagnostics/testSsoProvider) runs discovery as sign-in runs it, then fetches JWKS, without sending credentials or changing state. It reports reachability, issuer equality (a trailing slash aside, as at sign-in), key count and elapsed time, and stops at the first problem, as sign-in does. It requires current `platform:read` when reading the endpoint configuration and returns `Cache-Control: no-store`. Network requests run after that read transaction closes, so the result describes the captured endpoints even if configuration changes during the probe. It does not prove client credentials, consent, a usable signing key or a person's ability to sign in; complete a real sign-in for those checks.
 
 | Problem code            | Meaning                                                                              | What to do                                                |
 | ----------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------- |
-| `insecure_issuer`       | A fetched endpoint or issuer is not an absolute HTTPS URL.                           | Correct the configured URLs.                              |
-| `private_host`          | A host, or an address it resolves to, is not publicly routable (RFC 6890 special-purpose ranges, `localhost`, `.local`, `.internal`). | Use public provider endpoints.                            |
+| `insecure_issuer`       | The issuer or discovery URL is not an absolute HTTP or HTTPS URL.                    | Correct the configured URLs.                              |
 | `discovery_unreachable` | Discovery failed, timed out or returned a non-success status; redirects are refused. | Check the discovery URL and connectivity.                 |
-| `discovery_invalid`     | Discovery JSON is missing required URLs or exceeds the size limit.                   | Correct the provider's discovery document.                |
-| `untrusted_origin` | A discovered endpoint origin is missing from `BETTER_AUTH_TRUSTED_ORIGINS`. | Ask Answerable staff to add its exact trusted origin and check outbound HTTPS, then rerun the test. |
+| `discovery_invalid`     | Discovery JSON is missing required URLs.                                             | Correct the provider's discovery document.                |
+| `untrusted_origin` | The discovery URL's origin, or a discovered endpoint's, is missing from `BETTER_AUTH_TRUSTED_ORIGINS`. | Ask Answerable staff to add its exact trusted origin and check outbound HTTPS, then rerun the test. |
 | `issuer_mismatch`       | Discovery issuer differs from the configured issuer.                                 | Use the exact tenant issuer.                              |
 | `jwks_unreachable`      | JWKS failed, timed out or returned a non-success status; redirects are refused.      | Check the discovery document's JWKS URL and connectivity. |
-| `jwks_invalid`          | JWKS is invalid or exceeds the size limit.                                           | Correct the provider's key document.                      |
+| `jwks_invalid`          | JWKS is not a JSON array of keys.                                                    | Correct the provider's key document.                      |
 
 No provider returns HTTP `404 provider_not_found`; configure it first. Other failed checks appear in `problems` on a successful HTTP response.
 
