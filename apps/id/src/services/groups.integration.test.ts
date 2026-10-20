@@ -85,14 +85,7 @@ const service = {
   eraseGroup: platformWriteService(implementation.eraseGroup),
   putMember: platformWriteService(implementation.putMember),
   removeMember: platformWriteService(implementation.removeMember),
-  listGroups: (
-    db: Database,
-    org: string,
-    arg1: Parameters<typeof implementation.listGroups>[1],
-  ) =>
-    inTenantRead(db, org, "directory", (context) =>
-      implementation.listGroups(context, arg1),
-    ),
+  listGroups: queries.listGroups,
   getGroup: (
     db: Database,
     org: string,

@@ -18,6 +18,7 @@ import {
   revisionParameter,
   revisionResponseHeaders,
 } from "./revision.ts";
+import { listGroups } from "../../db/queries/groups.ts";
 import * as service from "../../services/groups.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
@@ -368,7 +369,7 @@ export function register(app: Hono<AppEnvironment>) {
     async (context) => {
       return context.json(
         await tenantRead(context, "directory", (tenant) =>
-          service.listGroups(tenant, querySchema.parse(context.req.query())),
+          listGroups(tenant, querySchema.parse(context.req.query())),
         ),
         200,
       );

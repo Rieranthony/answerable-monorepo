@@ -17,6 +17,7 @@ import {
 import { platformCommand } from "./command.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
+import { listClients } from "../../db/queries/oauth-clients.ts";
 import * as service from "../../services/clients.ts";
 import type { AppEnvironment } from "../context.ts";
 import { uniqueSorted } from "../../lib/scopes.ts";
@@ -351,7 +352,7 @@ export function register(app: Hono<AppEnvironment>) {
       const query = querySchema.parse(context.req.query());
       return context.json(
         await platformRead(context, (platform) =>
-          service.listClients(platform, {
+          listClients(platform, {
             ...query,
             disabled:
               query.disabled === undefined

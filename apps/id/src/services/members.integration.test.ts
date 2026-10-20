@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { bindTenantQuery } from "../__tests__/bind-query.ts";
+import * as memberQueries from "../db/queries/members.ts";
 import { eq, sql } from "drizzle-orm";
 import {
   insertGrantContext,
@@ -99,14 +101,7 @@ const service = {
     inTenantRead(db, org, "directory", (context) =>
       memberService.getMember(context, id),
     ),
-  listMembers: (
-    db: Database,
-    org: string,
-    query: Parameters<typeof memberService.listMembers>[1],
-  ) =>
-    inTenantRead(db, org, "directory", (context) =>
-      memberService.listMembers(context, query),
-    ),
+  listMembers: bindTenantQuery("directory", memberQueries.listMembers),
   updateWindow: (
     db: Executor,
     actor: Actor,

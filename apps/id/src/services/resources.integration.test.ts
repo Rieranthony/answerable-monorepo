@@ -20,6 +20,8 @@ import {
 } from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
 import type { Actor } from "./actor.ts";
+import { bindQuery } from "../__tests__/bind-query.ts";
+import * as resourceQueries from "../db/queries/oauth-resources.ts";
 import * as implementation from "./resources.ts";
 const service = {
   ...implementation,
@@ -31,13 +33,7 @@ const service = {
   disableResource: platformWriteService(implementation.disableResource),
   enableResource: platformWriteService(implementation.enableResource),
   eraseResource: platformWriteService(implementation.eraseResource),
-  listResources: (
-    db: Database,
-    query: Parameters<typeof implementation.listResources>[1],
-  ) =>
-    inPlatformRead(db, (context) =>
-      implementation.listResources(context, query),
-    ),
+  listResources: bindQuery(inPlatformRead)(resourceQueries.listResources),
   getResource: (db: Database, id: string) =>
     inPlatformRead(db, (context) => implementation.getResource(context, id)),
 };

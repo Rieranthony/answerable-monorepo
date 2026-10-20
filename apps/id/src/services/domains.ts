@@ -1,5 +1,4 @@
 import { type PlatformWriteContext } from "./platform-context.ts";
-import { type TenantReadContext } from "./tenant-context.ts";
 import * as queries from "../db/queries/organization-domains.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { recordCommandEvent, statusAction } from "./audit.ts";
@@ -18,12 +17,6 @@ function auditDomain(
     domain: row.domain,
     status: row.status,
   };
-}
-export async function listDomains(
-  context: TenantReadContext<"directory">,
-  query: queries.DomainQuery,
-) {
-  return queries.listOrganizationDomains(context, query);
 }
 export async function createDomain(
   context: PlatformWriteContext,

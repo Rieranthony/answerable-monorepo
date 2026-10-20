@@ -16,6 +16,10 @@ import {
   revisionParameter,
   revisionResponseHeaders,
 } from "./revision.ts";
+import {
+  listAllEntitlements,
+  listEntitlements,
+} from "../../db/queries/entitlements.ts";
 import * as service from "../../services/entitlements.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
@@ -264,7 +268,7 @@ export function register(app: Hono<AppEnvironment>) {
     async (context) =>
       context.json(
         await platformRead(context, (platform) =>
-          service.listAllEntitlements(
+          listAllEntitlements(
             platform,
             allQuerySchema.parse(context.req.query()),
           ),
@@ -280,7 +284,7 @@ export function register(app: Hono<AppEnvironment>) {
       const query = querySchema.parse(context.req.query());
       return context.json(
         await tenantRead(context, "directory", (tenant) =>
-          service.listEntitlements(tenant, query),
+          listEntitlements(tenant, query),
         ),
         200,
       );

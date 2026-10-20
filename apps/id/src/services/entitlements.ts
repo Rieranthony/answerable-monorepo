@@ -1,7 +1,4 @@
-import {
-  type PlatformWriteContext,
-  type PlatformReadContext,
-} from "./platform-context.ts";
+import { type PlatformWriteContext } from "./platform-context.ts";
 import { type TenantReadContext } from "./tenant-context.ts";
 import * as queries from "../db/queries/entitlements.ts";
 import { findMemberForAssignment } from "../db/queries/members.ts";
@@ -73,12 +70,6 @@ async function lockedEntitlement(
       entitlementId,
     ),
   );
-}
-export async function listEntitlements(
-  context: TenantReadContext<"directory">,
-  query: queries.EntitlementQuery,
-) {
-  return queries.listEntitlements(context, query);
 }
 export async function getEntitlement(
   context: TenantReadContext<"directory">,
@@ -252,11 +243,4 @@ async function checkScopes(
       "scopes",
       `Scopes are not allowed for this resource: ${unknown.join(", ")}`,
     );
-}
-
-export async function listAllEntitlements(
-  context: PlatformReadContext,
-  query: queries.EntitlementQuery,
-) {
-  return queries.listAllEntitlements(context, query);
 }

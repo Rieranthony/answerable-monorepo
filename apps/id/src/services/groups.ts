@@ -46,12 +46,6 @@ async function lockedGroup(
     notFound,
   );
 }
-export async function listGroups(
-  context: TenantReadContext<"directory">,
-  query: queries.GroupQuery,
-) {
-  return queries.listGroups(context, query);
-}
 export async function getGroup(
   context: TenantReadContext<"directory">,
   groupId: string,

@@ -1,4 +1,6 @@
 import { platformWriteService } from "../__tests__/platform-context.ts";
+import { bindTenantQuery } from "../__tests__/bind-query.ts";
+import * as entitlementQueries from "../db/queries/entitlements.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import { testEnvironment } from "../__tests__/support.ts";
@@ -95,14 +97,10 @@ const service = {
   disableEntitlement: platformWriteService(implementation.disableEntitlement),
   enableEntitlement: platformWriteService(implementation.enableEntitlement),
   removeEntitlement: platformWriteService(implementation.removeEntitlement),
-  listEntitlements: (
-    db: Database,
-    org: string,
-    arg1: Parameters<typeof implementation.listEntitlements>[1],
-  ) =>
-    inTenantRead(db, org, "directory", (context) =>
-      implementation.listEntitlements(context, arg1),
-    ),
+  listEntitlements: bindTenantQuery(
+    "directory",
+    entitlementQueries.listEntitlements,
+  ),
   getEntitlement: (
     db: Database,
     org: string,

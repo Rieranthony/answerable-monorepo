@@ -21,6 +21,10 @@ import { z } from "zod";
 import { slugPattern } from "../../db/schema/columns.ts";
 import { lifecycleStatuses } from "../../db/schema/vocabulary.ts";
 import { platformCommand } from "./command.ts";
+import {
+  listOrganizations,
+  readOrganization,
+} from "../../db/queries/organizations.ts";
 import * as service from "../../services/organizations.ts";
 import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
@@ -213,7 +217,7 @@ export function register(app: Hono<AppEnvironment>) {
       const query = querySchema.parse(context.req.query());
       return context.json(
         await platformRead(context, (platform) =>
-          service.listOrganizations(platform, query),
+          listOrganizations(platform, query),
         ),
       );
     },
@@ -238,11 +242,7 @@ export function register(app: Hono<AppEnvironment>) {
     routes.getOrganization,
     validate("param", paramSchema),
     async (context) => {
-      const result = await tenantRead(
-        context,
-        "directory",
-        service.getOrganization,
-      );
+      const result = await tenantRead(context, "directory", readOrganization);
       context.header("ETag", revisionTag(result));
       return context.json(result);
     },

@@ -10,12 +10,6 @@ import { recordCommandEvent } from "./audit.ts";
 import { found } from "../http/problem.ts";
 import { assertRevision } from "../http/admin/revision.ts";
 const notFound = "Organisation or member not found";
-export async function listMembers(
-  context: TenantReadContext<"directory">,
-  query: queries.MemberQuery,
-) {
-  return queries.listMembers(context, query);
-}
 export async function getMember(
   context: TenantReadContext<"directory">,
   memberId: string,

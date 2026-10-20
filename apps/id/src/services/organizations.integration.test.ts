@@ -30,6 +30,8 @@ import {
 import { createId } from "../lib/id.ts";
 import type { Actor } from "./actor.ts";
 import { listUserAuditEvents } from "./audit.ts";
+import { bindQuery } from "../__tests__/bind-query.ts";
+import * as organizationQueries from "../db/queries/organizations.ts";
 import * as implementation from "./organizations.ts";
 const service = {
   ...implementation,
@@ -79,15 +81,11 @@ const service = {
       (context) => implementation.eraseOrganization(context, id, confirm),
       actor,
     ),
-  listOrganizations: (
-    db: Database,
-    query: Parameters<typeof implementation.listOrganizations>[1],
-  ) =>
-    inPlatformRead(db, (context) =>
-      implementation.listOrganizations(context, query),
-    ),
+  listOrganizations: bindQuery(inPlatformRead)(
+    organizationQueries.listOrganizations,
+  ),
   getOrganization: (db: Database, org: string) =>
-    inTenantRead(db, org, "directory", implementation.getOrganization),
+    inTenantRead(db, org, "directory", organizationQueries.readOrganization),
 };
 
 let connection: DatabaseConnection;

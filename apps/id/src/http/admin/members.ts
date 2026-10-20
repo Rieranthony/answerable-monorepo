@@ -15,6 +15,7 @@ import {
   revisionParameter,
   revisionResponseHeaders,
 } from "./revision.ts";
+import { listMembers } from "../../db/queries/members.ts";
 import * as service from "../../services/members.ts";
 import type { Hono } from "hono";
 import { tenantMemberCommand } from "./command.ts";
@@ -219,7 +220,7 @@ export function register(app: Hono<AppEnvironment>) {
       const query = querySchema.parse(context.req.query());
       return context.json(
         await tenantRead(context, "directory", (tenant) =>
-          service.listMembers(tenant, {
+          listMembers(tenant, {
             ...query,
             effective:
               query.effective === undefined

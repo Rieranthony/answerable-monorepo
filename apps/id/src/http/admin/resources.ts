@@ -17,6 +17,7 @@ import {
   revisionParameter,
   revisionResponseHeaders,
 } from "./revision.ts";
+import { listResources } from "../../db/queries/oauth-resources.ts";
 import * as service from "../../services/resources.ts";
 import { resourceClassifications } from "../../db/schema/vocabulary.ts";
 import type { AppEnvironment } from "../context.ts";
@@ -238,7 +239,7 @@ export function register(app: Hono<AppEnvironment>) {
       const query = querySchema.parse(context.req.query());
       return context.json(
         await platformRead(context, (platform) =>
-          service.listResources(platform, {
+          listResources(platform, {
             ...query,
             disabled:
               query.disabled === undefined

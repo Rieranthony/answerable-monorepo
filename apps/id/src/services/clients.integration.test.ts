@@ -36,11 +36,7 @@ const service = {
   linkResource: platformWriteService(implementation.linkResource),
   unlinkResource: platformWriteService(implementation.unlinkResource),
   eraseClient: platformWriteService(implementation.eraseClient),
-  listClients: (
-    db: Database,
-    query: Parameters<typeof implementation.listClients>[1],
-  ) =>
-    inPlatformRead(db, (context) => implementation.listClients(context, query)),
+  listClients: queries.listClients,
   getClient: (db: Database, id: string) =>
     inPlatformRead(db, (context) => implementation.getClient(context, id)),
 };

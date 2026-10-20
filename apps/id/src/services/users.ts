@@ -24,12 +24,6 @@ function state(row: NonNullable<Awaited<ReturnType<typeof queries.lockUser>>>) {
     emailRetired: row.retiredEmail !== null,
   };
 }
-export async function listUsers(
-  context: PlatformReadContext,
-  query: queries.UserQuery,
-) {
-  return queries.listUsers(context, query);
-}
 export async function getUser(context: PlatformReadContext, userId: string) {
   return found(await queries.findUser(context, userId), notFound);
 }

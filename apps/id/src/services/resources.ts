@@ -43,12 +43,6 @@ async function protect(tx: Executor, resourceId: string) {
       "The bound admin resource is protected",
     );
 }
-export async function listResources(
-  context: PlatformReadContext,
-  query: queries.ResourceQuery,
-) {
-  return queries.listResources(context, query);
-}
 export async function getResource(
   context: PlatformReadContext,
   identifier: string,

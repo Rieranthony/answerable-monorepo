@@ -18,6 +18,7 @@ import { registerRoute, type AdminRoute } from "./route-table.ts";
 import { lifecycleStatuses } from "../../db/schema/vocabulary.ts";
 import { hostnamePattern } from "../../db/schema/columns.ts";
 import { pageQuerySchema } from "../pagination.ts";
+import { listOrganizationDomains } from "../../db/queries/organization-domains.ts";
 import * as service from "../../services/domains.ts";
 
 export const hostSchema = z
@@ -183,7 +184,10 @@ export function register(app: Hono<AppEnvironment>) {
     async (context) =>
       context.json(
         await tenantRead(context, "directory", (tenant) =>
-          service.listDomains(tenant, querySchema.parse(context.req.query())),
+          listOrganizationDomains(
+            tenant,
+            querySchema.parse(context.req.query()),
+          ),
         ),
       ),
   );

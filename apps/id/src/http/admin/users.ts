@@ -16,6 +16,7 @@ import { pageQuerySchema } from "../pagination.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
+import { listUsers } from "../../db/queries/users.ts";
 import * as service from "../../services/users.ts";
 import { userStatuses } from "../../db/schema/vocabulary.ts";
 const userSchema = z.object({
@@ -181,9 +182,7 @@ export function register(app: Hono<AppEnvironment>) {
     async (context) => {
       const query = querySchema.parse(context.req.query());
       return context.json(
-        await platformRead(context, (platform) =>
-          service.listUsers(platform, query),
-        ),
+        await platformRead(context, (platform) => listUsers(platform, query)),
         200,
       );
     },

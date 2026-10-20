@@ -204,12 +204,6 @@ function validateClient(
       { errors },
     );
 }
-export async function listClients(
-  context: PlatformReadContext,
-  query: queries.ClientQuery,
-) {
-  return queries.listClients(context, query);
-}
 export async function getClient(
   context: PlatformReadContext,
   clientId: string,

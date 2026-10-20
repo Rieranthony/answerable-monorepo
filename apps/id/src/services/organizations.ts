@@ -1,9 +1,5 @@
 import { revokeOrganizationGrantContexts } from "../db/queries/grant-contexts.ts";
-import {
-  type PlatformWriteContext,
-  type PlatformReadContext,
-} from "./platform-context.ts";
-import { type TenantReadContext } from "./tenant-context.ts";
+import { type PlatformWriteContext } from "./platform-context.ts";
 import * as queries from "../db/queries/organizations.ts";
 import { recordCommandEvent } from "./audit.ts";
 import { revokeOrganizationMachineTokens } from "../db/queries/oauth-tokens.ts";
@@ -25,17 +21,6 @@ function configuration(
     authorizationVersion: row.authorizationVersion,
     disabledAt: row.disabledAt,
   };
-}
-
-export async function listOrganizations(
-  context: PlatformReadContext,
-  query: queries.OrganizationQuery,
-) {
-  return queries.listOrganizations(context, query);
-}
-
-export async function getOrganization(context: TenantReadContext<"directory">) {
-  return queries.readOrganization(context);
 }
 
 export async function createOrganization(
