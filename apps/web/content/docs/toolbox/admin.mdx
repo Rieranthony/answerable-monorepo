@@ -63,7 +63,7 @@ The call needs the registrations in [Register the Toolbox in ID](#register-the-t
 
 ## Register the Toolbox in ID
 
-Set `TOKEN` to a [staff token for ID](/docs/id/onboard#get-a-staff-token) and `PLATFORM_ORG` to the platform organisation. The commands that call ID use `TOKEN`; the ones that call the Toolbox use `TOOLBOX_TOKEN`. Each write needs its own `Idempotency-Key`. The Toolbox's resource URL is its audience: it must match `TOOLBOX_RESOURCE_URL` exactly.
+Set `TOKEN` to a [staff token for ID](/docs/id/onboard#get-a-staff-token) and `PLATFORM_ORG` to the platform organisation. The commands that call ID use `TOKEN`; the ones that call the Toolbox use `TOOLBOX_TOKEN`. Each write sends its own `Idempotency-Key`, so a lost answer can be retried. The Toolbox's resource URL is its audience: it must match `TOOLBOX_RESOURCE_URL` exactly.
 
 ```bash
 export TOKEN=...            # ID staff token

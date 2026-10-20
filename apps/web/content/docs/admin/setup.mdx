@@ -13,7 +13,7 @@ The lane starts a throwaway ID, the admin MCP and the Toolbox, registers them as
 
 ## Register the admin MCP
 
-**Who.** Answerable staff, once per ID. Use the root secret as `TOKEN` while no person is a platform administrator; ID then answers `403 root_locked` and `TOKEN` is a [staff token](/docs/id/onboard#get-a-staff-token). Every write needs its own `Idempotency-Key`.
+**Who.** Answerable staff, once per ID. Use the root secret as `TOKEN` while no person is a platform administrator; ID then answers `403 root_locked` and `TOKEN` is a [staff token](/docs/id/onboard#get-a-staff-token). Each write sends its own `Idempotency-Key`, so a lost answer can be retried.
 
 ```bash
 export ID=http://localhost:47300

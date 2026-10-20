@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2
+
+The fake ID follows ID's admin API:
+
+- A write without an `Idempotency-Key` is journalled under a key of its own, as in ID: a new command each time. An empty or over-long key still answers `400 invalid_idempotency_key`.
+
 ## 0.5.1
 
 The fake ID's clients no longer carry `contacts`, `responseTypes` and `requirePKCE`, nor its resources `signingAlgorithm`, which ID's admin API dropped.

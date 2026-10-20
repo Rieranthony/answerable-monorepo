@@ -302,9 +302,9 @@ export function createFakeId({
       })
     }
     if (!write) return route(request, url, path, body)
-    // A write is a command: it needs an Idempotency-Key, and the same key with the same input answers what the first call answered.
-    const key = request.headers.get("Idempotency-Key")
-    if (!key) return problem(400, "invalid_idempotency_key", "A 1–256 character Idempotency-Key is required")
+    // A write is a command: the same Idempotency-Key with the same input answers what the first call answered; without a key, as in ID, it is journalled under one of its own.
+    const key = request.headers.get("Idempotency-Key") ?? `server:${crypto.randomUUID()}`
+    if (!key || key.length > 256) return problem(400, "invalid_idempotency_key", "An Idempotency-Key has 1–256 characters")
     if (failing && --failing.remaining === 0) {
       const { status } = failing
       failing = undefined

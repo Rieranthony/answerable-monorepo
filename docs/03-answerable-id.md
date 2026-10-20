@@ -122,7 +122,7 @@ Browser authorisation and callbacks must be reachable from the browser. Public/t
 
 Sensitive human commands and linking require verified upstream authentication within five minutes. Reauthentication uses `POST /auth/sso/reauthenticate` with native `prompt=login`, `max_age=0`. Authority/freshness is checked before replay and after relevant waits. Ordinary display edits and reads follow route metadata; machines/root retain their own authority contracts.
 
-All 48 mutations require idempotency keys. Conditional changes require current revisions. Replay still requires current authority. Audit covers successful effects and bounded rejection facts without attributing unverified client claims. See the [mutation inventory](../reports/answerable-id-mutation-inventory.md).
+All 48 mutations accept an idempotency key; a mutation without one is journalled under a server key. Conditional changes require current revisions. Replay still requires current authority. Audit covers successful effects and bounded rejection facts without attributing unverified client claims. See the [mutation inventory](../reports/answerable-id-mutation-inventory.md).
 
 ## Omni Accelerator / Circle consolidation
 

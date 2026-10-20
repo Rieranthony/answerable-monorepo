@@ -58,15 +58,15 @@ function standardResponses(
 }
 
 const idempotency =
-  "Requires Idempotency-Key. Identical authorised retries return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused.";
+  "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command.";
 
 const idempotencyParameter = {
   in: "header" as const,
   name: "Idempotency-Key",
-  required: true,
+  required: false,
   schema: { type: "string" as const, minLength: 1, maxLength: 256 },
   description:
-    "Stable key for this logical command. Reuse it with identical input after a lost response.",
+    "A new key for this logical command. Reuse it with identical input to retry after a lost response; never to repeat the command later.",
 };
 
 const commandResponseHeaders = {

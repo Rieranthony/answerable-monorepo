@@ -50,7 +50,7 @@ Current grant authentication and policy are checked under the grant's locks befo
 
 ## 4. Idempotency and concurrency contract
 
-All 48 mutations require idempotency keys and expose operation/replay headers. Seven PATCH routes accept If-Match; SSO and assignment replacement PUTs also accept optional revision preconditions. Without If-Match, commands use the current row. Keep actor, tenant, command, target and normalised input fixed when retrying.
+All 48 mutations accept idempotency keys (a mutation without one is journalled under a server key) and expose operation/replay headers. Seven PATCH routes accept If-Match; SSO and assignment replacement PUTs also accept optional revision preconditions. Without If-Match, commands use the current row. Keep actor, tenant, command, target and normalised input fixed when retrying.
 
 - Before commit, interruption leaves no successful effect, fact or completed receipt.
 - After commit, the same key/input and current authority return a receipt with the original status code; 204 stays empty. Read the current representation through the result reference.

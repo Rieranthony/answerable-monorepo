@@ -50,7 +50,7 @@ test("every answer the fake gives is one Answerable ID's admin contract declares
     [401, "GET", "/organizations", { token: null }],
     [401, "GET", "/organizations", { token: "other" }],
     [403, "POST", "/organizations", { token: "read", body: { slug: "acme", name: "Acme" } }],
-    [400, "POST", "/organizations", { key: null, body: { slug: "acme", name: "Acme" } }],
+    [400, "POST", "/organizations", { key: "", body: { slug: "acme", name: "Acme" } }],
     [200, "GET", "/me"],
     [405, "POST", "/me"],
     [200, "GET", "/organizations?q=newco"],
@@ -58,6 +58,9 @@ test("every answer the fake gives is one Answerable ID's admin contract declares
     [201, "POST", "/organizations", { key: "create-acme", body: { slug: "acme", name: "Acme" } }, receipt("applied", "organization")],
     [409, "POST", "/organizations", { key: "create-acme", body: { slug: "acme", name: "Acme Ltd" } }],
     [409, "POST", "/organizations", { body: { slug: "acme", name: "Acme" } }],
+    // Without a key, a write is a new command each time: the second is refused as the duplicate it is, not replayed.
+    [201, "POST", "/organizations", { key: null, body: { slug: "keyless", name: "Keyless" } }],
+    [409, "POST", "/organizations", { key: null, body: { slug: "keyless", name: "Keyless" } }],
     [400, "POST", "/organizations", { body: { slug: "Not a slug", name: "Acme" } }],
     [200, "GET", at("")],
     [404, "GET", `/organizations/${missing}`],

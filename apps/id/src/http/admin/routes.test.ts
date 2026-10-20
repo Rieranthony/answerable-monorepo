@@ -71,7 +71,7 @@ test("administrative command contract gaps cannot grow unnoticed", async () => {
     if (
       !headers.some(
         (parameter) =>
-          parameter.name === "Idempotency-Key" && parameter.required === true,
+          parameter.name === "Idempotency-Key" && parameter.required === false,
       )
     )
       missingReplay.push(route.operationId);
@@ -159,7 +159,7 @@ test("admin route tables equal the OpenAPI operation union", async () => {
       expect(operation?.operationId, label).toBe(label);
       if (route.kind !== "read") {
         expect(operation?.description, label).toStartWith(
-          "Requires Idempotency-Key. ",
+          "Accepts Idempotency-Key. ",
         );
         expect(operation?.responses).not.toHaveProperty("410");
         for (const [status, response] of Object.entries(operation!.responses)) {

@@ -869,12 +869,11 @@ test.each(firstOfFamily.map((row) => [label(row), row] as const))(
   },
 );
 
-test("a missing or over-long key is refused before any reservation", async () => {
+test("an empty or over-long key is refused before any reservation", async () => {
   const before = await fixture.db.select().from(adminOperations);
-  for (const key of [undefined, "x".repeat(257)]) {
+  for (const key of ["", "x".repeat(257)]) {
     const headers = fixture.headers("platformAdmin");
-    if (key === undefined) headers.delete("Idempotency-Key");
-    else headers.set("Idempotency-Key", key);
+    headers.set("Idempotency-Key", key);
     const response = await fixture.app.request(
       `/api/admin/v1/users/${createId()}/sessions`,
       { method: "DELETE", headers },
@@ -885,4 +884,35 @@ test("a missing or over-long key is refused before any reservation", async () =>
     });
   }
   expect(await fixture.db.select().from(adminOperations)).toEqual(before);
+});
+
+test("a command without a key is journalled under a key of its own: each send is a new command with its receipt", async () => {
+  const { id: userId } = await person(true);
+  const send = () => {
+    const headers = fixture.headers("platformAdmin");
+    headers.delete("Idempotency-Key");
+    return fixture.app.request(`/api/admin/v1/users/${userId}/sessions`, {
+      method: "DELETE",
+      headers,
+    });
+  };
+  const first = await send();
+  expect(first.status).toBe(200);
+  expect(first.headers.get("Idempotency-Replayed")).toBe("false");
+  const second = await send();
+  expect(second.status).toBe(200);
+  expect(second.headers.get("Idempotency-Replayed")).toBe("false");
+  const operations = await fixture.db
+    .select()
+    .from(adminOperations)
+    .where(
+      sql`${adminOperations.id} in (${first.headers.get("Operation-Id")}, ${second.headers.get("Operation-Id")})`,
+    );
+  expect(operations.map((operation) => operation.outcome).sort()).toEqual([
+    "applied",
+    "noop",
+  ]);
+  expect(new Set(operations.map((operation) => operation.keyDigest)).size).toBe(
+    2,
+  );
 });

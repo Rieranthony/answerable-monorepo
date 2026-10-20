@@ -18,6 +18,7 @@ import type { AppEnvironment } from "../context.ts";
 import { ProblemError } from "../problem.ts";
 import { revisionSchema, revisionTag } from "./revision.ts";
 import { freshAuthenticationGuard } from "../../auth/fresh-authentication.ts";
+import { createId } from "../../lib/id.ts";
 
 /** A value's HTTP JSON representation: dates become strings, undefined fields go. */
 const operationJson = (value: unknown): OperationJson =>
@@ -46,12 +47,14 @@ async function httpCommand<T>(
   mutate: (tx: Executor, actor: Actor, authority: T) => Promise<CommandResult>,
   options: CommandOptions,
 ) {
-  const key = context.req.header("Idempotency-Key");
+  // Without a key the command is journalled under one of its own: it keeps
+  // its receipt and Operation-Id, and a resend is a new command.
+  const key = context.req.header("Idempotency-Key") ?? `server:${createId()}`;
   if (!key || key.length > 256)
     throw new ProblemError(
       400,
       "invalid_idempotency_key",
-      "A 1–256 character Idempotency-Key is required",
+      "An Idempotency-Key has 1–256 characters",
     );
   const actor = actorFromContext(context);
   const freshnessPolicy = context.get("freshAuthentication");

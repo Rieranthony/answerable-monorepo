@@ -338,7 +338,7 @@ curl "$ID_ORIGIN/api/admin/v1/operations/$OPERATION_ID" \
 
 **Unknown operations** return `not_found`. This does not prove that a concurrent request is not running. Status remains available after the referenced entity is erased, subject to current platform audit authority.
 
-**Client creation and secret rotation** require `Idempotency-Key`. Reuse the same key and validated input after a lost response to obtain the receipt, subject to current authority. The secret is returned only in the first response. If it is lost, rotate again with a new key. `Operation-Id` identifies the journal record; `Idempotency-Replayed: true` marks a retry. Status uses `/api/admin/v1/operations/{operationId}`.
+**Client creation and secret rotation** accept `Idempotency-Key`; without one, every request is a new command. Reuse the same key and validated input after a lost response to obtain the receipt, subject to current authority. The secret is returned only in the first response. If it is lost, rotate again with a new key. `Operation-Id` identifies the journal record; `Idempotency-Replayed: true` marks a retry. Status uses `/api/admin/v1/operations/{operationId}`.
 
 ```bash
 curl -X POST "$ID_ORIGIN/api/admin/v1/clients/$CLIENT_ID/rotate-secret" \
@@ -350,7 +350,7 @@ curl -X POST "$ID_ORIGIN/api/admin/v1/clients/$CLIENT_ID/rotate-secret" \
 
 | Code                           | Meaning                                                                                     | What to do                                                                       |
 | ------------------------------ | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `invalid_idempotency_key`      | The required key is absent or longer than 256 characters.                                   | Supply a stable key for the logical command.                                     |
+| `invalid_idempotency_key`      | The key is empty or longer than 256 characters.                                             | Send a key of 1–256 characters, or none.                                         |
 | `idempotency_key_reused`       | The key was committed with different input or target.                                       | Correct the input or choose a new key for a deliberate new command.              |
 | `database_busy`                | A connection checkout/lock/statement timed out, or PostgreSQL aborted a deadlocked command. | Wait for Retry-After, then retry the same key and input with backoff.            |
 | `operation_in_progress`        | A duplicate command is executing.                                                           | Retry the same key and input.                                                    |
@@ -377,11 +377,11 @@ curl -X PATCH "$ID_ORIGIN/api/admin/v1/clients/$CLIENT_ID" \
 | `invalid_revision`  | The tag is malformed, weak, a wildcard or a list (400).                | Supply one quoted ETag exactly as returned.                              |
 | `revision_mismatch` | A new command used an outdated revision or another client's tag (412). | Read current state, reconcile the patch and issue a new logical command. |
 
-**All other client mutations** require `Idempotency-Key` and return receipts: enable, disable, resource link/unlink and erasure. Enable/disable and link/unlink return success with a `noop` operation, and record no audit event, when the requested state already holds. Ownership cannot be changed: create a replacement client under the new owner.
+**All other client mutations** accept `Idempotency-Key` and return receipts: enable, disable, resource link/unlink and erasure. Enable/disable and link/unlink return success with a `noop` operation, and record no audit event, when the requested state already holds. Ownership cannot be changed: create a replacement client under the new owner.
 
 **A retry preserves history.** Replaying a link after it was removed returns its receipt without restoring it. Replaying disable after enable does not disable the client again. Unlink and erasure replay their original bodyless `204`, even after client deletion. A new erasure key against a missing client returns `404`.
 
-**Resource mutations** also require `Idempotency-Key`, with receipt replay for creation, patches, enable/disable and erasure. Resource PATCH accepts the optional ETag from `GET /resources/{resource}` in If-Match. URL-encode the resource identifier in the path. The same precondition errors and historical replay rules apply. Resource enable/disable commands record noops when the state already holds; the admin resource remains protected from disable and erasure. Link changes and client erasure advance affected resource revisions.
+**Resource mutations** also accept `Idempotency-Key`, with receipt replay for creation, patches, enable/disable and erasure. Resource PATCH accepts the optional ETag from `GET /resources/{resource}` in If-Match. URL-encode the resource identifier in the path. The same precondition errors and historical replay rules apply. Resource enable/disable commands record noops when the state already holds; the admin resource remains protected from disable and erasure. Link changes and client erasure advance affected resource revisions.
 
 **Administrative mutations.** All 48 current administrative mutations require operation keys and return receipts on retry. Revision checks apply to client, resource, member, organisation, group and entitlement patches.
 
@@ -427,7 +427,7 @@ See the [admin API reference](/docs/id/admin-api) for request and response schem
 
 **Resource erasure requires unlinking.** Inspect the resource's client list, then use the [client unlink operation](/docs/id/admin-api/clients/unlinkClientResource) for each link before erasing the resource. `resource_has_clients` returns 409 and leaves the resource and its links intact. A failed erase does not reserve its operation key, so retrying that command after unlinking can commit normally. Client deletion retires that client's links with `deletedAt`.
 
-**Member write authority.** Updating, removing or reinstating a member rechecks current authority inside the database transaction. The caller needs `platform:users`, or `org:users` for that organisation. A membership revoked after request admission cannot authorise the pending write. These member operations require `Idempotency-Key`; member PATCH also accepts optional `If-Match` from the configuration read.
+**Member write authority.** Updating, removing or reinstating a member rechecks current authority inside the database transaction. The caller needs `platform:users`, or `org:users` for that organisation. A membership revoked after request admission cannot authorise the pending write. These member operations accept `Idempotency-Key`; member PATCH also accepts optional `If-Match` from the configuration read.
 
 ## Retrying member commands
 
@@ -443,7 +443,7 @@ Reuse the same operation key and input after a lost response. Member update, rem
 
 | Code                           | Meaning                                     | Action                                                                     |
 | ------------------------------ | ------------------------------------------- | -------------------------------------------------------------------------- |
-| `invalid_idempotency_key`      | Missing or invalid key                      | Supply a stable key of 1–256 characters                                    |
+| `invalid_idempotency_key`      | Empty or over-long key                      | Send a key of 1–256 characters, or none                                    |
 | `operation_in_progress`        | The same command is still executing         | Retry the same key and input with backoff                                  |
 | `idempotency_key_reused`       | That key was committed for different input  | Recover the original command, or use a new key for a deliberate new change |
 
@@ -468,9 +468,9 @@ Reuse the original key, body and ETag after response loss: a committed replay is
 
 See [member operations](/docs/id/admin-api/members/updateMember) and [operation status](/docs/id/admin-api/operations/getOperationStatus).
 
-**Domain command retries.** Create, enable, disable and delete require `Idempotency-Key` and return receipts on replay. Reuse the key and identical input after response loss. Lifecycle requests with a new key return unchanged state when already enabled/disabled and record a no-op. A committed deletion can be replayed after the row is gone. Creation still rejects an existing conflicting assignment; replay returns the receipt and does not adopt another organisation's domain. Domain writes remain platform-only.
+**Domain command retries.** Create, enable, disable and delete accept `Idempotency-Key` and return receipts on replay. Reuse the key and identical input after response loss. Lifecycle requests with a new key return unchanged state when already enabled/disabled and record a no-op. A committed deletion can be replayed after the row is gone. Creation still rejects an existing conflicting assignment; replay returns the receipt and does not adopt another organisation's domain. Domain writes remain platform-only.
 
-**Organisation command retries.** Platform staff must send a stable `Idempotency-Key` for create, PATCH, enable, disable and erase. Identical authorised retries return the receipt, including after erasure; they do not recreate the organisation. New-key unchanged state records a noop. No-op disable preserves the existing tenant epoch and does not repeat revocation. Organisation PATCH accepts the optional strong If-Match ETag returned by getOrganization; stale new commands return 412. Keep the original tag with the original key on retry. Use the platform operation-status route for these receipts.
+**Organisation command retries.** Platform staff send a new `Idempotency-Key` with create, PATCH, enable, disable and erase to retry them safely. Identical authorised retries return the receipt, including after erasure; they do not recreate the organisation. New-key unchanged state records a noop. No-op disable preserves the existing tenant epoch and does not repeat revocation. Organisation PATCH accepts the optional strong If-Match ETag returned by getOrganization; stale new commands return 412. Keep the original tag with the original key on retry. Use the platform operation-status route for these receipts.
 
 **Edit organisation configuration.** Platform staff read the current ETag before a new PATCH. Copy the returned `ETag` into `ORGANISATION_ETAG`, including its quotes, and set `ORGANISATION_PATCH_KEY` once for this intended edit:
 
@@ -490,7 +490,7 @@ An unchanged patch preserves its ETag. Lifecycle and metadata changes invalidate
 
 
 
-**SSO command retries.** Platform staff must send Idempotency-Key for SSO PUT and delete. A retry returns the receipt; it does not replace later credentials or delete a newly recreated provider. Platform rows hold no secret; credentials come from the service environment. For own-credential rows, omitting `clientSecret` on a new PUT keeps the current secret. Repeating equivalent configuration under a new key records a noop and preserves timestamps. A different supplied secret under an existing key conflicts. PUT accepts optional If-Match with the current provider ETag. Without a precondition it uses the current row; stale supplied state returns 412. Keep the original header with its operation key on retry.
+**SSO command retries.** SSO PUT and delete accept Idempotency-Key. A retry returns the receipt; it does not replace later credentials or delete a newly recreated provider. Platform rows hold no secret; credentials come from the service environment. For own-credential rows, omitting `clientSecret` on a new PUT keeps the current secret. Repeating equivalent configuration under a new key records a noop and preserves timestamps. A different supplied secret under an existing key conflicts. PUT accepts optional If-Match with the current provider ETag. Without a precondition it uses the current row; stale supplied state returns 412. Keep the original header with its operation key on retry.
 
 **Replace SSO configuration.** Read the redacted provider and copy its `ETag`, including quotes, into `SSO_ETAG`. Set `SSO_OPERATION_KEY` once for this intended replacement. For own credentials, omitting the secret retains the stored value:
 
@@ -508,7 +508,7 @@ curl -X PUT "$ID_URL/api/admin/v1/organizations/$ORG_ID/sso-provider" \
 
 For first creation, use `If-None-Match: *` instead of `If-Match`. Sending both headers is an error. On 412, read and review the current provider before a new command; old tags also fail after deletion and recreation. Own-credential secret changes advance the revision even though responses remain redacted. Platform secret rotation uses the environment and restart only; it changes no rows, revisions or grants.
 
-**Group command retries.** Platform staff must send Idempotency-Key for group create, PATCH, enable, disable and erase, and for group membership PUT/delete. A retry returns the receipt. New-key unchanged configuration, lifecycle state or membership windows records a noop. Omitted window fields retain existing values. A removal retry cannot delete a later re-added assignment. Membership result references identify the group/member pair as `<group UUID>:<member UUID>`; these receipts use the platform operation-status route. Group PATCH accepts the optional strong If-Match ETag from getGroup. Membership PUT accepts optional If-Match from getGroupMember; omitted preconditions use the current row.
+**Group command retries.** Group create, PATCH, enable, disable and erase, and group membership PUT/delete, accept Idempotency-Key. A retry returns the receipt. New-key unchanged configuration, lifecycle state or membership windows records a noop. Omitted window fields retain existing values. A removal retry cannot delete a later re-added assignment. Membership result references identify the group/member pair as `<group UUID>:<member UUID>`; these receipts use the platform operation-status route. Group PATCH accepts the optional strong If-Match ETag from getGroup. Membership PUT accepts optional If-Match from getGroupMember; omitted preconditions use the current row.
 
 **Edit a group.** Read the group's ETag and copy it, including quotes, into `GROUP_ETAG`. Set `GROUP_PATCH_KEY` once for this intended edit:
 
@@ -549,7 +549,7 @@ Set `ASSIGNMENT_UPDATE_KEY` once for this command. Retain the same supplied prec
 
 ### Entitlement retries
 
-Platform staff must send `Idempotency-Key` when creating, updating, enabling, disabling or removing entitlements. An authorised retry returns its receipt, including after removal. Reusing a key with different input returns 409. A new command with unchanged scopes, windows or status records a noop and preserves timestamps. Scopes are treated as a set.
+Creating, updating, enabling, disabling and removing entitlements accept `Idempotency-Key`. An authorised retry returns its receipt, including after removal. Reusing a key with different input returns 409. A new command with unchanged scopes, windows or status records a noop and preserves timestamps. Scopes are treated as a set.
 
 Entitlement PATCH accepts the optional strong ETag from [getEntitlement](/docs/id/admin-api/entitlements/getEntitlement) in `If-Match`. Malformed tags return 400; stale or wrong-instance state returns 412. Noops preserve revisions. Lifecycle changes advance them. Keep the original tag, key and body on retry: recovery returns the receipt before checking its old revision.
 
@@ -608,7 +608,7 @@ A new revoke-all command returns the number of sessions removed. Zero can still 
 
 ### Global user retries
 
-Disable, enable and email retirement require `platform:users`. Erasure requires `platform:write` and its `confirm` query parameter. Each command also requires `Idempotency-Key`.
+Disable, enable and email retirement require `platform:users`. Erasure requires `platform:write` and its `confirm` query parameter. Each command also accepts `Idempotency-Key`.
 
 ```bash
 curl -X POST "https://id.answerable.org/api/admin/v1/users/$USER/disable" \
