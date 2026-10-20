@@ -80,7 +80,7 @@ Soft-deleted entitlements, group assignments and memberships have one evidence s
 | `admin.denied` | `organizationId` when the path names an organisation the principal holds no grant for, otherwise null. |
 | `admin.root_request` | `organizationId` from the path, otherwise null. |
 | `auth.signin.succeeded` | `userId`, `authenticationAccountId`, `authenticationProviderId`, `authenticationProviderRevision`, `upstreamAuthTime`. |
-| `auth.signin.rejected`, `auth.signout` | Null. |
+| `auth.signout` | Null. |
 | `bootstrap.applied` | Recorded only when a start created or changed something. `created` (true on the first start, which provisioned the platform), `resource` (the admin resource's `name`, `accessTokenTtl` and `allowedScopes` `before`, null on creation, and `after`), `capability` (the platform ceiling the first start seeded, otherwise null). |
 | `capability.created`, `capability.updated` | `before` (null on creation), `after`. |
 | `capability.removed`, `domain.deleted`, `group_member.removed` | `before`, `after`, `deletionMode: "soft"`; `group_member.removed` adds `groupId`. |
@@ -105,7 +105,7 @@ Soft-deleted entitlements, group assignments and memberships have one evidence s
 | `member.removed` | `userId`, `reason`, `before`, `after` (with `access`), `effects` (`removedGrants`, `softDeletedAssignments`, `revokedGrantContexts`). |
 | `member.reinstated` | `userId`, `reason`, `before`, `after` (with `access`). |
 | `oauth.token.issued` | `decision`, `issuedAt`, `expiresAt`. |
-| `oauth.token.rejected` | `grantType`, `stage`, `authenticatedClient` and `decision` (both null when client authentication failed). |
+| `oauth.token.rejected` | `grantType`, `stage`, `authenticatedClient` and `decision`. Written only once the client authenticated; a failed client authentication is the log line `token_rejected`. |
 | `oauth.user.authorized`, `oauth.user.denied` | `scopes`, `decision`. |
 | `oauth.user.issued` | Recorded for the code exchange only, not for a refresh. `grantType`, `scopes`, `decision`. |
 | `oauth.user.revoked` | `reason` (`authorization_code_replay`, `refresh_token_replay`, `revocation_request`), `effect` (`grant`, `refresh_family`, `access_token`). |
@@ -172,7 +172,7 @@ Links have immutable UUIDs and terminal tombstones. Relinking creates a new rela
 
 ## Machine issuance evidence
 
-Issue facts retain approved identity/policy and actual issue/expiry times. Rejection facts distinguish authenticated attribution from unattributed credential failures. Audit failure cannot turn refusal into success.
+Issue facts retain approved identity/policy and actual issue/expiry times. Rejection facts are written only after client authentication; failed credentials and refused SSO callbacks are log lines (`token_rejected`, `signin_rejected`), not rows. Audit failure cannot turn refusal into success.
 
 ## Member command receipts
 

@@ -14,7 +14,7 @@ import { isAllowedAuthRoute } from "./http/auth-allowlist.ts";
 import type { AppEnvironment } from "./http/context.ts";
 import { buildPublicOpenApiDocument } from "./http/openapi.ts";
 import { problemHandler } from "./http/problem.ts";
-import { recordRejectedSignIn } from "./http/signin-audit.ts";
+import { logRejectedSignIn } from "./http/signin-rejection.ts";
 import { createId } from "./lib/id.ts";
 import { limitRequestBody } from "./http/request-limits.ts";
 import { checkDatabase } from "./db/queries/health.ts";
@@ -200,7 +200,7 @@ export function createApp(services: AppServices, testing: AppTesting = {}) {
     const response = await context
       .get("auth")
       .handler(new Request(context.req.raw, { headers }));
-    await recordRejectedSignIn(context, response);
+    logRejectedSignIn(context, response);
     if (
       context.req.path === "/auth/oauth2/token" &&
       !response.headers.has("cache-control")

@@ -90,47 +90,57 @@ const rejectionReasons = z.enum([
   "temporarily_unavailable",
 ]);
 
-/** Failed authentication has no attributable client or tenant. */
-export async function recordMachineRejection(
-  tx: Executor,
-  input: {
-    client: unknown;
-    stage: "authentication" | "request" | "authorization" | "issuance";
-    error: unknown;
-    decision: Awaited<ReturnType<typeof machineCapability>> | null;
-    requestId?: string | null;
-  },
+/** Whether a refusal is the caller's fault, and its reason: a known protocol
+ * code, never the error's text. */
+export function machineRejection(
+  error: unknown,
+  stage: "authentication" | "request" | "authorization" | "issuance",
 ) {
-  const client =
-    input.stage === "authentication"
-      ? null
-      : authenticatedClient.parse(input.client);
-  const protocolError = isAPIError(input.error) ? input.error : null;
+  const protocolError = isAPIError(error) ? error : null;
   const denied =
     protocolError !== null &&
     protocolError.statusCode >= 400 &&
     protocolError.statusCode < 500;
   const reason = rejectionReasons.safeParse(protocolError?.body?.error);
-  await recordAuditEvent(tx, {
-    actorType: client ? "client" : "system",
-    actorId: client?.clientId ?? "oauth-client-authentication",
-    organizationId: client?.organizationId ?? null,
-    action: "oauth.token.rejected",
-    targetType: "oauth_request",
-    outcome: denied ? "denied" : "failure",
+  return {
+    denied,
     reason: reason.success
       ? reason.data
       : denied
         ? "request_rejected"
-        : input.stage === "authentication"
+        : stage === "authentication"
           ? "authentication_failed"
           : "issuance_failed",
+  };
+}
+
+/** A refusal after client authentication: tenant evidence, attributed to the client. */
+export async function recordMachineRejection(
+  tx: Executor,
+  input: {
+    client: unknown;
+    stage: "request" | "authorization" | "issuance";
+    error: unknown;
+    decision: Awaited<ReturnType<typeof machineCapability>> | null;
+    requestId?: string | null;
+  },
+) {
+  const client = authenticatedClient.parse(input.client);
+  const { denied, reason } = machineRejection(input.error, input.stage);
+  await recordAuditEvent(tx, {
+    actorType: "client",
+    actorId: client.clientId,
+    organizationId: client.organizationId,
+    action: "oauth.token.rejected",
+    targetType: "oauth_request",
+    outcome: denied ? "denied" : "failure",
+    reason,
     requestId: input.requestId ?? null,
     data: {
       grantType: "client_credentials",
       stage: input.stage,
       authenticatedClient: client,
-      decision: client ? input.decision : null,
+      decision: input.decision,
     },
   });
 }

@@ -947,18 +947,6 @@ describe("integration: federated sign-in", () => {
         );
       for (const table of [users, accounts, sessions])
         expect(await connection.db.select().from(table)).toHaveLength(0);
-      const rejected = await connection.db
-        .select()
-        .from(auditEvents)
-        .where(eq(auditEvents.action, "auth.signin.rejected"));
-      expect(rejected).toHaveLength(1);
-      expect(rejected[0]).toMatchObject({
-        reason:
-          code === "SSO_USER_RESOLUTION_FAILED" ? "sso_callback_failed" : code,
-        outcome: "failure",
-        schemaVersion: 1,
-        data: null,
-      });
     },
   );
 

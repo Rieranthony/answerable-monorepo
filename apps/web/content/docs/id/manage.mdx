@@ -101,7 +101,7 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORGANIZATION_ID/memb
 
 **Removal history.** Member-removal audits retain this public access projection under `data.before.access`, so allowed snapshots include these identity fields. Internal denied snapshots are not copied into that public projection.
 
-**Unattributed machine attempts.** `oauth.token.rejected` records failed client authentication with system actor `oauth-client-authentication`, no tenant, and null `data.authenticatedClient` and `data.decision`. Invalid credentials produce a denial; authentication infrastructure errors produce a failure. These events are platform-only and omit supplied identity, credentials, scope/resource values and exception details. Audit-storage failure preserves rejection and emits the fixed operational signal `token_rejection_audit_unavailable`. Requests rejected by parsing, route filtering or provider rate limiting before this handler are outside this event contract.
+**Unauthenticated machine attempts.** A token request whose client authentication fails writes no audit event. ID logs one line, `[id] auth` with event `token_rejected`, holding the request ID, the resolved client address and the reason: `invalid_client` for wrong credentials, `authentication_failed` for an infrastructure failure. The line never holds the supplied identity, credentials, scope or resource values, or exception details. Requests refused by parsing, route filtering or rate limiting before this handler log nothing.
 
 **Membership history.** `member.updated`, `member.reinstated` and `member.removed` events retain this access projection under both `data.before.access` and `data.after.access`. `permission.scopes` is the approved intersection; top-level target scopes remain assignments. Removal records ineffective access after revocation even if organisation-wide assignments survive; its actual deletion/revocation effects remain separately recorded. Reinstatement can restore an organisation-wide permission without recreating removed direct assignments. An unchanged reinstatement means the membership was already active, not that every permission was unchanged.
 
@@ -131,7 +131,7 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORGANIZATION_ID/audi
   -H "Authorization: Bearer $TOKEN"
 ```
 
-**Filters.** Use `actorId`, `action`, `targetType`, `targetId` and `outcome` (`success`, `failure`, `denied`). Rejected sign-ins carry no organisation and do not appear in this organisation-scoped list.
+**Filters.** Use `actorId`, `action`, `targetType`, `targetId` and `outcome` (`success`, `failure`, `denied`). Refused SSO callbacks are log lines, not events.
 
 **Time filter.** `from` accepts a UTC timestamp. The response contains only your organisation's events.
 
@@ -185,9 +185,9 @@ These transport errors can be plain text rather than OAuth JSON or problem detai
 
 **Correlation IDs.** `x-request-id` accepts 1–128 ASCII letters, digits, dots, underscores, colons or hyphens. Missing, empty, oversized or otherwise invalid values are replaced with a UUIDv7. The accepted/generated value is used consistently by the response, provider and application audit context. It is caller-controlled correlation, not proof of identity or an idempotency key.
 
-**Rejected callback attribution.** A failed SSO callback does not verify the `providerId` query parameter, so rejection events leave `targetId` null. Client addresses use the configured trusted ingress boundary, as described in [Network attribution](/docs/id/sign-in). Administrative and sign-in events record that address. Sign-out leaves IP null. User-agent is caller-supplied metadata.
+**Refused callbacks.** A failed SSO callback verified no identity, provider or tenant, so it writes no event: ID logs one line, `[id] auth` with event `signin_rejected`, holding the request ID, the resolved client address and the reason. Client addresses use the configured trusted ingress boundary, as described in [Network attribution](/docs/id/sign-in). Administrative and sign-in events record that address. Sign-out leaves IP null. User-agent is caller-supplied metadata.
 
-**Bounded audit metadata.** HTTP/session audit user-agent values contain at most 512 printable ASCII characters. Empty, oversized, control-character and non-ASCII values are omitted, not truncated; user-agent never proves identity. Callback rejection events contain a recognised failure category or `sso_callback_failed` for an unknown error. Free-form `error_description` is not retained. These categories describe reported callback failures, not a verified provider identity or independently established root cause.
+**Bounded audit metadata.** HTTP/session audit user-agent values contain at most 512 printable ASCII characters. Empty, oversized, control-character and non-ASCII values are omitted, not truncated; user-agent never proves identity. A `signin_rejected` line holds a recognised failure category or `sso_callback_failed` for an unknown error, never the free-form `error_description`. These categories describe reported callback failures, not a verified provider identity or independently established root cause.
 
 **Not yet.** Body limits do not establish tenant/client/IP rates or overall cluster capacity. Separate pool/statement deadlines apply as documented in [sign-in](/docs/id/sign-in). Transport rejections are outside durable failed-attempt auditing.
 

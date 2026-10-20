@@ -1,6 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { describeRoute } from "hono-openapi";
-import type { Database } from "./db/client.ts";
 
 import {
   isUuidV7,
@@ -263,46 +262,43 @@ test("mounted me runs principal resolution and the root problem handler", async 
   expect(calls).toHaveLength(1);
 });
 
-test("auth catch-all propagates request ids and audits rejection redirects", async () => {
-  for (const requestId of [undefined, "ingress-id"]) {
-    const rows: unknown[] = [];
-    let received: string | null = null;
-    const auth = stubAuth();
-    auth.handler = async (request: Request) => {
-      received = request.headers.get("x-request-id");
-      return Response.redirect(
-        "https://example.com/error?error=directory_mismatch&error_description=x",
-        302,
+test("auth catch-all propagates request ids and logs rejection redirects with them", async () => {
+  const log = spyOn(console, "error").mockImplementation(() => {});
+  try {
+    for (const requestId of [undefined, "ingress-id"]) {
+      log.mockClear();
+      let received: string | null = null;
+      const auth = stubAuth();
+      auth.handler = async (request: Request) => {
+        received = request.headers.get("x-request-id");
+        return Response.redirect(
+          "https://example.com/error?error=directory_mismatch&error_description=x",
+          302,
+        );
+      };
+      const app = createApp({
+        auth,
+        db: stubDatabase(),
+        environment: testEnvironment(),
+      });
+      const response = await app.request("/auth/sso/callback", {
+        headers: requestId ? { "x-request-id": requestId } : {},
+      });
+      expect(response.status).toBe(302);
+      expect(received as string | null).toBe(
+        response.headers.get("x-request-id"),
       );
-    };
-    const db = {
-      ...stubDatabase(),
-      execute: async () => ({ rows: [{ occurredAt: "2026-09-11T00:00:00Z" }] }),
-      insert: () => ({
-        values: (row: unknown) => {
-          rows.push(row);
-          return Promise.resolve();
-        },
-      }),
-    } as unknown as Database;
-    const app = createApp({ auth, db, environment: testEnvironment() });
-    const response = await app.request("/auth/sso/callback", {
-      headers: requestId ? { "x-request-id": requestId } : {},
-    });
-    expect(response.status).toBe(302);
-    expect(received as string | null).toBe(
-      response.headers.get("x-request-id"),
-    );
-    expect(received).toBeTruthy();
-    expect(rows[0]).toHaveProperty("data", null);
-    expect(rows).toEqual([
-      expect.objectContaining({
-        action: "auth.signin.rejected",
-        reason: "directory_mismatch",
-        requestId: received,
-        schemaVersion: 1,
-      }),
-    ]);
+      expect(received).toBeTruthy();
+      expect(log.mock.calls.map(([, json]) => JSON.parse(json))).toEqual([
+        expect.objectContaining({
+          event: "signin_rejected",
+          reason: "directory_mismatch",
+          requestId: received,
+        }),
+      ]);
+    }
+  } finally {
+    log.mockRestore();
   }
 });
 

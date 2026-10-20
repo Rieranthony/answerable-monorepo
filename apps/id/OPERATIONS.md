@@ -51,14 +51,15 @@ An unexpected request error writes `[id] error` with `unexpected_error`; a sign-
 whose in-process authentication call throws writes `[id] page` with
 `page_auth_call_failed` and the auth path, then shows its friendly message. These,
 `provider_diagnostic` for a thrown error, `protocol_sweep_failed`, `shutdown_failed`
-and the `admin_denial_audit_unavailable`, `token_rejection_audit_unavailable` and
-`signin_rejection_audit_unavailable` events name the error's class as `name` and, for
+and the `admin_denial_audit_unavailable` and `token_rejection_audit_unavailable`
+events name the error's class as `name` and, for
 a database error, its SQLSTATE as `code` and any `constraint`, never its message.
 
 | Signal                                                                  | Operator check                                                                                                                               |
 | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | Rising 503 counts, active work and pool waiters                         | Compare with traffic and database limits; inspect authorised audit/history for context                                                       |
-| `admin_denial_audit_unavailable`, `token_rejection_audit_unavailable` or `signin_rejection_audit_unavailable` | Investigate database/audit availability; refusal remains refusal                                                                             |
+| `admin_denial_audit_unavailable` or `token_rejection_audit_unavailable` | Investigate database/audit availability; refusal remains refusal                                                                             |
+| Rising `token_rejected` or `signin_rejected` (`[id] auth`)              | Refusals that verified no client or identity, logged instead of audited: a misconfigured client or directory, or credential stuffing; compare with 429s and the edge rate limits |
 | `SigningKeyCustodyError` at startup                                    | The configured application secrets cannot decrypt the newest signing key: deliver the version that encrypted it; never delete the key       |
 | `protocol_sweep_failed`, repeated                                       | Check database availability and lock waits; expired protocol rows accumulate until a sweep succeeds                                          |
 | Missing process summaries                                               | Check process health and collector delivery before interpreting demand                                                                       |

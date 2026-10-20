@@ -16,7 +16,6 @@ export const auditActions = [
   "admin.auth_failed",
   "admin.denied",
   "admin.root_request",
-  "auth.signin.rejected",
   "auth.signin.succeeded",
   "auth.signout",
   "bootstrap.applied",

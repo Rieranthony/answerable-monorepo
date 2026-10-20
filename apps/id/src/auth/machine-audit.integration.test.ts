@@ -12,7 +12,6 @@ import { createAuth } from "../auth.ts";
 import { createApp } from "../app.ts";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
-import { createRuntimeLogin } from "../__tests__/runtime-role.ts";
 import {
   auditEvents,
   auditEventUsers,
@@ -451,34 +450,38 @@ test("verified client denial is durable and does not attribute a claimed client"
     "untrusted-marker",
   ])
     expect(encoded).not.toContain(secret);
-  const forged = await mint("forged-client", { secret: "wrong-credential" });
-  expect(forged.status).toBeGreaterThanOrEqual(400);
-  const attempts = await rejectedEvents();
-  expect(attempts).toHaveLength(2);
-  const unauthenticated = attempts.find(
-    (event) => event.requestId === "forged-client",
-  )!;
-  expect(unauthenticated).toMatchObject({
-    schemaVersion: 1,
-    actorType: "system",
-    actorId: "oauth-client-authentication",
-    organizationId: null,
-    outcome: "denied",
-    reason: "invalid_client",
-    data: {
-      stage: "authentication",
-      authenticatedClient: null,
-      decision: null,
-    },
-  });
-  for (const secret of [
-    client.clientId,
-    tenantId,
-    "wrong-credential",
-    client.clientSecret!,
-  ])
-    expect(JSON.stringify(unauthenticated)).not.toContain(secret);
   expect(await issuedEvents()).toHaveLength(0);
+});
+
+test("a caller that fails client authentication is logged, not audited", async () => {
+  const log = spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const forged = await mint("forged-client", { secret: "wrong-credential" });
+    expect(forged.status).toBe(401);
+    expect(await rejectedEvents()).toHaveLength(0);
+    expect(log.mock.calls).toEqual([
+      [
+        "[id] auth",
+        JSON.stringify({
+          level: "error",
+          event: "token_rejected",
+          requestId: "forged-client",
+          // Better Auth's address outside production, with no proxy header.
+          ip: "127.0.0.1",
+          reason: "invalid_client",
+        }),
+      ],
+    ]);
+    for (const secret of [
+      client.clientId,
+      tenantId,
+      "wrong-credential",
+      client.clientSecret!,
+    ])
+      expect(JSON.stringify(log.mock.calls)).not.toContain(secret);
+  } finally {
+    log.mockRestore();
+  }
 });
 
 test("rejection audit failure keeps the original denial and emits only a safe operational signal", async () => {
@@ -587,71 +590,43 @@ test("tenant denial history exposes no foreign resource configuration", async ()
   ).toBe(false);
 });
 
-test("client authentication storage failure is unattributed and excludes exception details", async () => {
+test("client authentication storage failure is logged without exception details", async () => {
   const adapter = (await auth.$context).adapter;
   const lookup = spyOn(adapter, "findOne").mockRejectedValue(
     new Error("private-authentication-storage-detail"),
   );
+  const log = spyOn(console, "error").mockImplementation(() => {});
   try {
     const response = await mint("authentication-storage-failure");
     expect(response.status).toBe(500);
-    const events = await rejectedEvents();
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({
-      schemaVersion: 1,
-      actorType: "system",
-      actorId: "oauth-client-authentication",
-      organizationId: null,
-      outcome: "failure",
-      reason: "authentication_failed",
-      data: {
-        stage: "authentication",
-        authenticatedClient: null,
-        decision: null,
-      },
-    });
+    expect(await rejectedEvents()).toHaveLength(0);
+    const lines = log.mock.calls.filter(([, json]) =>
+      String(json).includes('"token_rejected"'),
+    );
+    expect(lines).toEqual([
+      [
+        "[id] auth",
+        JSON.stringify({
+          level: "error",
+          event: "token_rejected",
+          requestId: "authentication-storage-failure",
+          // Better Auth's address outside production, with no proxy header.
+          ip: "127.0.0.1",
+          reason: "authentication_failed",
+        }),
+      ],
+    ]);
     for (const value of [
       client.clientId,
       tenantId,
       client.clientSecret!,
       "private-authentication-storage-detail",
     ])
-      expect(JSON.stringify(events)).not.toContain(value);
+      expect(JSON.stringify(log.mock.calls)).not.toContain(value);
     expect(await issuedEvents()).toHaveLength(0);
   } finally {
     lookup.mockRestore();
-  }
-});
-
-test("restricted runtime records failed authentication without a claimed-client subject", async () => {
-  const login = await createRuntimeLogin(connection.db, environment);
-  const runtime = login.connection;
-  try {
-    app = createApp({
-      db: runtime.db,
-      auth: createAuth(runtime.db, login.environment),
-      environment: login.environment,
-    });
-    expect(
-      (await mint("restricted-auth-denial", { secret: "wrong-credential" }))
-        .status,
-    ).toBe(401);
-    const [event] = await rejectedEvents();
-    expect(event).toMatchObject({
-      schemaVersion: 1,
-      organizationId: null,
-      outcome: "denied",
-    });
-    expect(
-      await connection.db
-        .select()
-        .from(auditEventUsers)
-        .where(eq(auditEventUsers.eventId, event!.id)),
-    ).toEqual([]);
-    expect(JSON.stringify(event)).not.toContain(client.clientId);
-    expect(await issuedEvents()).toHaveLength(0);
-  } finally {
-    await login.drop();
+    log.mockRestore();
   }
 });
 

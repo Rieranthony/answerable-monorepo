@@ -11,9 +11,11 @@ import { logEvent } from "../lib/log.ts";
 import { parseScope } from "../lib/scopes.ts";
 import { grantTransaction, withAdapter } from "./database-adapter.ts";
 import {
+  machineRejection,
   recordMachineIssuance,
   recordMachineRejection,
 } from "./machine-audit.ts";
+import { getIP } from "@better-auth/core/utils/ip";
 import { prepareMachineGrant } from "./machine-identity.ts";
 
 /** Authenticate once; keep issuance and policy evidence in one transaction. */
@@ -132,15 +134,29 @@ export function machineOAuthProvider(
               },
             );
           } catch (error) {
+            const requestId = ctx.headers?.get("x-request-id") ?? null;
+            const failed = stage;
+            if (failed === "authentication") {
+              // No verified client or tenant: a log line, not an audit row,
+              // so an unauthenticated flood writes nothing to the database.
+              logEvent("auth", "token_rejected", {
+                requestId,
+                ip: ctx.request
+                  ? getIP(ctx.request, ctx.context.options)
+                  : null,
+                reason: machineRejection(error, failed).reason,
+              });
+              throw error;
+            }
             // The issuance transaction has exited. Record the request failure independently.
             try {
               await db.transaction(async (tx) => {
                 await recordMachineRejection(tx, {
                   client: authenticatedClient,
-                  stage,
+                  stage: failed,
                   error,
                   decision: evaluatedDecision,
-                  requestId: ctx.headers?.get("x-request-id"),
+                  requestId,
                 });
               });
             } catch (auditError) {

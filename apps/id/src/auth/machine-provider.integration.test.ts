@@ -157,20 +157,8 @@ for (const failure of ["none", "policy", "signing", "credentials"] as const) {
       .select()
       .from(schema.auditEvents)
       .where(eq(schema.auditEvents.requestId, marker));
-    expect(events).toHaveLength(1);
-    if (failure === "credentials")
-      expect(events[0]).toMatchObject({
-        schemaVersion: 1,
-        action: "oauth.token.rejected",
-        organizationId: null,
-        outcome: "denied",
-        reason: "invalid_client",
-        data: {
-          stage: "authentication",
-          authenticatedClient: null,
-          decision: null,
-        },
-      });
+    // A caller that never authenticated is a log line, not an audit row.
+    expect(events).toHaveLength(failure === "credentials" ? 0 : 1);
     if (failure === "policy" || failure === "signing")
       expect(events[0]).toMatchObject({
         action: "oauth.token.rejected",
