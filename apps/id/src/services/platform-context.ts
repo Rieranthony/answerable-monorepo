@@ -44,7 +44,6 @@ export function withPlatformRead<T>(
 const platformMutation = Symbol("platformMutation");
 export type PlatformMutationContext<Access extends "users" | "write"> =
   Readonly<{
-    revalidate: () => Promise<void>;
     [platformMutation]: true;
     access: Access;
     actor: Readonly<Actor>;
@@ -58,15 +57,14 @@ export async function authorizePlatformMutation<
   Access extends "users" | "write",
 >(tx: Executor, caller: PlatformCaller, access: Access) {
   const identity = actorIdentity(caller.principal);
-  const authorize = () =>
-    authorizeCommand(
-      tx,
-      caller.principal,
-      caller.environment,
-      { platform: access === "users" ? "platform:users" : "platform:write" },
-      caller.claims,
-    );
-  await authorize();
+  // Checked once: its share locks block a revocation until the command commits.
+  await authorizeCommand(
+    tx,
+    caller.principal,
+    caller.environment,
+    { platform: access === "users" ? "platform:users" : "platform:write" },
+    caller.claims,
+  );
   // platform:users commands are authorised separately but share the write scope.
   await setDatabaseScope(tx, { kind: "platform", access: "write" });
   return {
@@ -80,9 +78,6 @@ export async function authorizePlatformMutation<
         access,
         actor: commandActor(identity, metadata),
         tx,
-        async revalidate() {
-          if (caller.principal.type === "user") await authorize();
-        },
       });
     },
   };

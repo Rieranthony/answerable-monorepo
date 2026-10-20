@@ -151,7 +151,6 @@ export async function findEntitlementForCommand(
     organizationId,
     entitlementId,
   ).for("update");
-  await context.revalidate();
   return row ?? null;
 }
 export async function updateEntitlement(
@@ -260,7 +259,6 @@ export async function readEntitlementAudience(
       )
       .orderBy(members.id)
       .for("share", { of: [members, groupMembers] });
-    await context.revalidate();
     return rows;
   }
   const rows = await tx
@@ -275,7 +273,6 @@ export async function readEntitlementAudience(
     )
     .orderBy(members.id)
     .for("share");
-  await context.revalidate();
   return rows;
 }
 

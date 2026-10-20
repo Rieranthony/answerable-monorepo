@@ -4,7 +4,6 @@ export const adminScopes = [
   "platform:write",
   "org:read",
   "org:users",
-  "org:write",
 ] as const;
 
 export type AdminScope = (typeof adminScopes)[number];

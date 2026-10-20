@@ -374,7 +374,7 @@ test("direct-session ceilings narrow assignments and can be removed/recreated wi
   const approved = await request("POST", base(), {
     resource: fixture.platform.adminResource,
     grantKind: "admin_session",
-    scopes: ["org:read", "org:users", "org:write"],
+    scopes: ["org:read", "org:users"],
   });
   expect(approved.status).toBe(201);
   const row = await approved.json();

@@ -58,19 +58,13 @@ export async function readResourceForPolicy(
   context: PlatformWriteContext,
   identifier: string,
 ) {
-  const { tx } = context;
-  const row = await lockResource(tx, identifier, "share");
-  await context.revalidate();
-  return row;
+  return lockResource(context.tx, identifier, "share");
 }
 export async function lockResourceForCommand(
   context: PlatformWriteContext,
   identifier: string,
 ) {
-  const { tx } = context;
-  const row = await lockResource(tx, identifier);
-  await context.revalidate();
-  return row;
+  return lockResource(context.tx, identifier);
 }
 
 /** Shared resources and this tenant's private resources only; registration is not permission. */

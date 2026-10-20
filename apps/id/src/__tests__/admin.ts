@@ -174,7 +174,7 @@ export async function createAdminFixture(
       await approveAdminCapability(db, {
         organizationId: org.organizationId,
         resource: environment.adminResourceIdentifier,
-        scopes: ["org:read", "org:users", "org:write"],
+        scopes: ["org:read", "org:users"],
       });
     const principals = {} as Record<Name, FixturePrincipal>;
     const shapes: {
@@ -199,7 +199,7 @@ export async function createAdminFixture(
         name: "tenantAdmin",
         org: tenant,
         domain: "tenant.example.com",
-        scopes: ["org:read", "org:users", "org:write"],
+        scopes: ["org:read", "org:users"],
       },
       {
         name: "tenantReader",
@@ -217,7 +217,7 @@ export async function createAdminFixture(
         name: "outsider",
         org: outsider,
         domain: "outsider.example.com",
-        scopes: ["org:read", "org:users", "org:write"],
+        scopes: ["org:read", "org:users"],
       },
       {
         name: "noGrant",
@@ -229,7 +229,7 @@ export async function createAdminFixture(
         name: "expiredMember",
         org: tenant,
         domain: "tenant.example.com",
-        scopes: ["org:write"],
+        scopes: ["org:read"],
       },
       {
         name: "disabledUser",

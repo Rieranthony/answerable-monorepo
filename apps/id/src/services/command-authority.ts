@@ -8,7 +8,24 @@ import type { Principal, BearerClaims } from "../http/principal.ts";
 import { ProblemError } from "../http/problem.ts";
 import type { AdminScope } from "../http/admin/scopes.ts";
 
-/** Re-evaluate current database authority and return the tier that admitted the caller. */
+/**
+ * Current authority refused the caller: `403 insufficient_scope`, or
+ * `404 not_found` when the path names an organisation the caller holds no
+ * grant in and it holds no platform grant, so that organisation stays hidden.
+ * Thrown inside the transaction; the route records `admin.denied` once it
+ * has rolled back.
+ */
+export class AuthorityDenied extends ProblemError {
+  constructor(hidden: boolean) {
+    super(
+      hidden ? 404 : 403,
+      hidden ? "not_found" : "insufficient_scope",
+      hidden ? "Not found" : "Current command authority is required",
+    );
+  }
+}
+
+/** Evaluate current database authority, the admin API's one authorisation layer, and return the tier that admitted the caller. */
 export async function authorizeCommand(
   tx: Executor,
   principal: Principal,
@@ -87,6 +104,14 @@ export async function authorizeCommand(
       )
     )
       return "tenant";
+    throw new AuthorityDenied(
+      !!required.tenant &&
+        !grants.some(
+          (grant) =>
+            grant.isPlatform ||
+            grant.organizationId === required.tenant?.organizationId,
+        ),
+    );
   } else {
     const client = await findClientPrincipal(
       tx,
@@ -122,10 +147,10 @@ export async function authorizeCommand(
       allowed(required.tenant.scope)
     )
       return "tenant";
+    throw new AuthorityDenied(
+      !!required.tenant &&
+        !client.isPlatform &&
+        client.organizationId !== required.tenant.organizationId,
+    );
   }
-  throw new ProblemError(
-    403,
-    "insufficient_scope",
-    "Current command authority is required",
-  );
 }

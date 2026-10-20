@@ -107,7 +107,7 @@ test("a user's tenant grant admits only its own organisation", async () => {
   ).toBe("tenant");
   await expect(
     authorize(principal, tenantUsers(fixture.outsider.organizationId)),
-  ).rejects.toMatchObject({ status: 403, code: "insufficient_scope" });
+  ).rejects.toMatchObject({ status: 404, code: "not_found" });
 });
 
 test("a tenant machine admits only its own organisation", async () => {
@@ -121,7 +121,7 @@ test("a tenant machine admits only its own organisation", async () => {
   ).toBe("tenant");
   await expect(
     authorize(principal, tenantUsers(fixture.outsider.organizationId), claims),
-  ).rejects.toMatchObject({ status: 403, code: "insufficient_scope" });
+  ).rejects.toMatchObject({ status: 404, code: "not_found" });
 });
 
 test("root is refused once a platform writer exists unless break-glass is set", async () => {

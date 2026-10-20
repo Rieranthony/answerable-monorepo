@@ -404,9 +404,10 @@ test.each(["PATCH", "DELETE", "POST"])(
               : undefined,
         },
       );
-      expect(response.status).toBe(403);
+      // Revoked, the actor holds no grant in the organisation: it is hidden.
+      expect(response.status).toBe(404);
       expect(await response.json()).toMatchObject({
-        code: "insufficient_scope",
+        code: "not_found",
       });
       const [unchanged] = await fixture.db
         .select()

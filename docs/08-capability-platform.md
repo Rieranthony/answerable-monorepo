@@ -115,7 +115,7 @@ A principal is the organisation, one group or one member, as today. Rows are add
 
 **Catalogue.** `organisation_catalogue` rows name the organisation, the provider pack, its enabled state and per-capability overrides (`disabled`, `policy_class`). Platform staff write them through the hub's platform-tier admin API; the seed of a future Answerable Control system. **Not yet:** self-service purchase.
 
-**What ID must add.** A tenant-tier write surface for groups, group members and entitlements (`org:write`, which exists and is unused), so an organisation administrator can grant and revoke; this extends the planned step 2c. Registration of DCR and CIMD hosts: see Hosts. Nothing changes in ID's schema or token claims.
+**What ID must add.** A tenant-tier write surface for groups, group members and entitlements (a new organisation write scope), so an organisation administrator can grant and revoke; this extends the planned step 2c. Registration of DCR and CIMD hosts: see Hosts. Nothing changes in ID's schema or token claims.
 
 ## Projections
 

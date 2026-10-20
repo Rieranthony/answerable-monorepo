@@ -180,7 +180,7 @@ export function createApp(services: AppServices, testing: AppTesting = {}) {
             title: "Answerable ID Admin API",
             version: "1.0.0",
             description:
-              "Platform-tier operations serve Answerable staff and tenant-tier operations serve an organisation, as indicated by x-tier. The six scopes are platform:read, platform:users, platform:write, org:read, org:users and org:write; x-scopes identifies fixed platform or organisation scopes. The x-kind extension marks read, write and erase operations; erase requires confirm equal to the target id, and operation ids are the tool names.",
+              "Operations serve Answerable staff with a platform scope and, where x-scopes names an organisation scope, an organisation's administrators. The five scopes are platform:read, platform:users, platform:write, org:read and org:users. The x-kind extension marks read, write and erase operations; erase requires confirm equal to the target id.",
           },
           components: { securitySchemes: adminSecuritySchemes },
           tags: adminTags,

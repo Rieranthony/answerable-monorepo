@@ -1,7 +1,7 @@
 import { describeRoute, type DescribeRouteOptions } from "hono-openapi";
 import { problemResponses } from "../problem.ts";
 import { requestBoundaryResponses } from "../request-limits.ts";
-import { tierOf, type AdminRoute } from "./route-table.ts";
+import type { AdminRoute } from "./route-table.ts";
 
 export const adminSecuritySchemes = {
   cookieAuth: {
@@ -137,7 +137,6 @@ export function adminRoute(adminRoute: AdminRoute) {
           }
         : route.requestBody,
     security: [{ cookieAuth: [] }, { bearerAuth: [] }],
-    "x-tier": tierOf(route),
     "x-kind": route.kind,
     "x-fresh-authentication": route.freshAuthentication ?? false,
     "x-scopes": route.open

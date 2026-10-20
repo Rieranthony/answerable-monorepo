@@ -787,8 +787,13 @@ test.each(rows.map((row) => [label(row), row] as const))(
     }) as typeof original);
     try {
       const denied = await send();
-      expect(denied.status).toBe(403);
-      expect(await denied.json()).toMatchObject({ code: "insufficient_scope" });
+      // Without its membership a tenant administrator holds no grant in the
+      // organisation, which current authority hides.
+      const hidden = actor === "tenantAdmin";
+      expect(denied.status).toBe(hidden ? 404 : 403);
+      expect(await denied.json()).toMatchObject({
+        code: hidden ? "not_found" : "insufficient_scope",
+      });
     } finally {
       fixture.appDb.transaction = original;
       await fixture.db

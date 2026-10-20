@@ -43,7 +43,6 @@ export type Principal =
       organizationId: string;
       grants: Grant[];
     };
-export type Tier = "platform" | "tenant";
 export type BearerClaims = {
   expiresAt: number;
   clientInstance: string;

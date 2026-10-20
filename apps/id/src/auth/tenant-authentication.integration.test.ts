@@ -484,7 +484,7 @@ for (const consumer of ["grant", "human"] as const) {
               error:
                 consumer === "grant"
                   ? { body: { error: "access_denied" } }
-                  : { code: "insufficient_scope" },
+                  : { code: "not_found" },
             },
       );
       const grants = await fixture.db.select().from(grantContexts);
@@ -595,7 +595,7 @@ test("same-key human replay rechecks current SSO after middleware admission", as
   try {
     expect(
       (await app.request(path, { method: "DELETE", headers })).status,
-    ).toBe(403);
+    ).toBe(404);
   } finally {
     hook.mockRestore();
   }
@@ -692,7 +692,7 @@ test("human permissions expiring during a provider lock wait cannot authorise a 
   }
   expect(await pending).toMatchObject({
     allowed: false,
-    error: { code: "insufficient_scope" },
+    error: { code: "not_found" },
   });
 });
 
@@ -867,7 +867,7 @@ for (const missing of [
         ),
       ),
     ).rejects.toMatchObject({
-      code: missing === "user" ? "unauthenticated" : "insufficient_scope",
+      code: missing === "user" ? "unauthenticated" : "not_found",
     });
   });
 }

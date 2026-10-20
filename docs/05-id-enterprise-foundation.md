@@ -57,7 +57,7 @@ All 48 mutations accept idempotency keys (a mutation without one is journalled u
 - Mismatched input conflicts; a stale supplied revision fails without overwrite.
 - A matching key never repeats later effects, even after enable/delete/replacement.
 - Reservations are permanent. Response bodies are not stored. A lost client creation or rotation secret requires another rotation with a new key.
-- Replays recheck current authority and required human freshness, including after lock waits.
+- Authority is checked once, inside the command's transaction, under share locks that block a revocation until the command commits; replays recheck it, and required human freshness, the same way. A validity window that ends while the command waits on a row lock is accepted for at most `lock_timeout` (2 s) per wait.
 
 Native client assertions remain consumed even when later issuance rolls back. Grant/security changes share deterministic lock ordering; revocation-first denies, while issuance-first retains the documented offline-token exposure. See [mutation inventory](../reports/answerable-id-mutation-inventory.md).
 

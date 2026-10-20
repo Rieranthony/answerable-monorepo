@@ -6,14 +6,23 @@ import type { Database } from "../../db/client.ts";
 import { testEnvironment } from "../../__tests__/support.ts";
 import type { AppEnvironment } from "../context.ts";
 import { problemHandler } from "../problem.ts";
+import { AuthorityDenied } from "../../services/command-authority.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 import { adminScopes } from "./scopes.ts";
 import { register as registerMe } from "./me.ts";
 import { responseSchema } from "../../__tests__/openapi-response.ts";
 const meSchema = responseSchema("getAdminMe", 200);
-test("registerRoute describes, authorises and handles a route", async () => {
+test("registerRoute describes and handles a route, audits root, and records a refusal by current authority", async () => {
   const app = new Hono<AppEnvironment>();
   const rows: unknown[] = [];
+  const grants = [
+    {
+      organizationId: "own",
+      organizationSlug: "tenant",
+      isPlatform: false,
+      scopes: ["org:read"],
+    },
+  ];
   app.use("*", async (c, next) => {
     c.set("environment", testEnvironment());
     c.set("requestId", "request");
@@ -26,20 +35,26 @@ test("registerRoute describes, authorises and handles a route", async () => {
         },
       }),
     } as unknown as Database);
-    c.set("principal", {
-      type: "user",
-      userId: "user",
-      email: "user@example.com",
-      sessionId: "session",
-      grants: [
-        {
-          organizationId: "own",
-          organizationSlug: "tenant",
-          isPlatform: false,
-          scopes: ["org:read"],
-        },
-      ],
-    });
+    const kind = c.req.header("x-principal");
+    c.set(
+      "principal",
+      kind === "root"
+        ? { type: "root", grants: [] }
+        : kind === "client"
+          ? {
+              type: "client",
+              clientId: "client",
+              organizationId: "own",
+              grants,
+            }
+          : {
+              type: "user",
+              userId: "user",
+              email: "user@example.com",
+              sessionId: "session",
+              grants,
+            },
+    );
     await next();
   });
   const route = {
@@ -64,25 +79,70 @@ test("registerRoute describes, authorises and handles a route", async () => {
       },
     ],
   } satisfies AdminRoute;
-  let handled = 0;
+  // As authorizeCommand answers: its own organisation admitted, another
+  // hidden, and a write refused for want of scope.
   registerRoute(app, route, (c) => {
-    handled++;
-    return c.json({ tier: c.get("tier") });
+    if (c.req.query("write") !== undefined) throw new AuthorityDenied(false);
+    if (c.req.param("organizationId") !== "own")
+      throw new AuthorityDenied(true);
+    return c.json({ ok: true });
   });
   app.onError(problemHandler);
-  expect(await (await app.request("/orgs/own")).json()).toEqual({
-    tier: "tenant",
-  });
-  expect((await app.request("/orgs/other")).status).toBe(404);
-  expect(handled).toBe(1);
+  const send = (path: string, principal = "user") =>
+    app.request(path, { headers: { "x-principal": principal } });
+  expect(await (await send("/orgs/own")).json()).toEqual({ ok: true });
+  expect(rows).toEqual([]);
+
+  const hidden = await send("/orgs/other");
+  expect(hidden.status).toBe(404);
+  expect(await hidden.json()).toMatchObject({ code: "not_found" });
+  const refused = await send("/orgs/own?write", "client");
+  expect(refused.status).toBe(403);
+  expect(refused.headers.get("WWW-Authenticate")).toBe(
+    'Bearer error="insufficient_scope"',
+  );
+  expect((await send("/orgs/own?write")).headers.get("WWW-Authenticate")).toBe(
+    null,
+  );
   expect(rows).toEqual([
-    expect.objectContaining({ targetId: "getOrg", reason: "not_found" }),
+    expect.objectContaining({
+      action: "admin.denied",
+      outcome: "denied",
+      actorType: "user",
+      organizationId: null,
+      data: { organizationId: "other" },
+      targetType: "route",
+      targetId: "getOrg",
+      reason: "not_found",
+    }),
+    expect.objectContaining({
+      action: "admin.denied",
+      actorType: "client",
+      organizationId: "own",
+      data: null,
+      reason: "insufficient_scope",
+    }),
+    expect.objectContaining({ actorType: "user", organizationId: "own" }),
   ]);
+
+  rows.length = 0;
+  expect((await send("/orgs/own", "root")).status).toBe(200);
+  expect(rows).toEqual([
+    expect.objectContaining({
+      action: "admin.root_request",
+      outcome: "success",
+      actorType: "system",
+      actorId: "root",
+      organizationId: null,
+      data: { organizationId: "own" },
+      targetId: "getOrg",
+    }),
+  ]);
+
   const spec = await generateSpecs(app);
   expect(spec.paths?.["/orgs/{organizationId}"]?.get).toMatchObject({
     operationId: "getOrg",
     security: [{ cookieAuth: [] }, { bearerAuth: [] }],
-    "x-tier": "tenant",
     responses: {
       "200": { description: "OK" },
       "401": {},

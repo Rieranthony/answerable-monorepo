@@ -93,17 +93,13 @@ export async function readClient(
   clientId: string,
 ) {
   const [row] = await publicClientQuery(context.tx, clientId);
-  if ("revalidate" in context) await context.revalidate();
   return row ?? null;
 }
 export async function lockClientForCommand(
   context: PlatformWriteContext,
   clientId: string,
 ) {
-  const { tx } = context;
-  const row = await lockClient(tx, clientId);
-  await context.revalidate();
-  return row;
+  return lockClient(context.tx, clientId);
 }
 /** Unowned clients and this tenant's own only; registration is not permission. */
 export async function findClientForAccess(

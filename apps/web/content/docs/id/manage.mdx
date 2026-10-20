@@ -34,9 +34,8 @@ See [fresh authentication](#fresh-authentication) for the additional requirement
 | `platform:write` | Staff: manage organisations, domains, SSO, groups, clients, resources and entitlements.              |
 | `org:read`       | Read your organisation, domains, SSO, members, groups, entitlements, target access and audit events. |
 | `org:users`      | Change member windows, revoke or reinstate membership, and read member access.                       |
-| `org:write`      | Reserved for organisation configuration; self-service writes: [Not yet.](/docs/id#today-and-next)    |
 
-**Route tiers.** `x-tier: platform` means staff only; `x-tier: tenant` permits an organisation to reach the route for itself. Scopes are separate: request each scope you need. Every write is audited.
+**Who may call a route.** `x-scopes.platform` is the staff scope. When `x-scopes.org` is present, an organisation's administrator holding that scope may call the route for their own organisation. Anyone else gets `403 insufficient_scope`, or `404 not_found` for an organisation they hold no grant in. Request each scope you need. Every write is audited.
 
 ## Fresh authentication
 

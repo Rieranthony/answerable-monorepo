@@ -17,7 +17,7 @@ import {
 import { createId } from "../../lib/id.ts";
 import * as clients from "../../services/clients.ts";
 import { adminRouteTables } from "./index.ts";
-import { tierOf, type AdminRoute } from "./route-table.ts";
+import type { AdminRoute } from "./route-table.ts";
 
 const createClient = platformWriteService(clients.createClient);
 const linkResource = platformWriteService(clients.linkResource);
@@ -153,7 +153,7 @@ beforeAll(async () => {
     tokenEndpointAuthMethod: "client_secret_basic",
     grantTypes: ["client_credentials"],
     redirectUris: [],
-    clientCredentialsScopes: ["org:read", "org:users", "org:write"],
+    clientCredentialsScopes: ["org:read", "org:users"],
   });
   await linkResource(
     fixture.db,
@@ -165,7 +165,7 @@ beforeAll(async () => {
     organizationId: a.organizationId!,
     clientId: machine.clientId,
     resource: fixture.platform.adminResource,
-    scopes: ["org:read", "org:users", "org:write"],
+    scopes: ["org:read", "org:users"],
   });
   const issued = await fixture.app.request("/auth/oauth2/token", {
     method: "POST",
@@ -175,7 +175,7 @@ beforeAll(async () => {
     },
     body: new URLSearchParams({
       grant_type: "client_credentials",
-      scope: "org:read org:users org:write",
+      scope: "org:read org:users",
       resource: fixture.platform.adminResource,
     }),
   });
@@ -227,7 +227,7 @@ async function call(route: AdminRoute, ids: Record<string, string>) {
 const tenantRoutes = () =>
   routes().filter(
     (route) =>
-      tierOf(route) === "tenant" && route.path.includes(":organizationId"),
+      route.orgScope !== undefined && route.path.includes(":organizationId"),
   );
 
 test("tenant routes answer 404 for another tenant's organisation and its rows", async () => {
@@ -254,7 +254,9 @@ test("tenant routes answer 404 for one of another tenant's rows under the caller
 
 test("platform routes refuse a tenant bearer", async () => {
   const results = [];
-  for (const route of routes().filter((route) => tierOf(route) === "platform"))
+  for (const route of routes().filter(
+    (route) => !route.orgScope && !route.open,
+  ))
     results.push(await call(route, b));
   expect(results.length).toBeGreaterThan(50);
   expect(

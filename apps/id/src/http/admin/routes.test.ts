@@ -6,7 +6,6 @@ import {
   testEnvironment,
 } from "../../__tests__/support.ts";
 import { adminRouteTables } from "./index.ts";
-import { tierOf } from "./route-table.ts";
 
 type Parameter = {
   in: string;
@@ -18,7 +17,6 @@ type Operation = {
   operationId?: string;
   description?: string;
   security?: unknown;
-  "x-tier"?: string;
   "x-kind"?: string;
   "x-scopes"?: unknown;
   parameters?: Parameter[];
@@ -185,7 +183,6 @@ test("admin route tables equal the OpenAPI operation union", async () => {
         { cookieAuth: [] },
         { bearerAuth: [] },
       ]);
-      expect(operation?.["x-tier"], `${label}: tier`).toBe(tierOf(route));
       expect(operation?.description?.trim().length, label).toBeGreaterThan(0);
       expect(operation?.description, label).toEndWith(route.description);
       expect(["read", "write", "erase"], label).toContain(

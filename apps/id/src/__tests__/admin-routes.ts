@@ -148,7 +148,7 @@ export function describeAdminRoutes(
       );
       expect(events).toHaveLength(1);
       // The path's organisation is attributed by id only when the principal
-      // holds a grant there; otherwise it is kept in data (see authorize.ts).
+      // holds a grant there; otherwise it is kept in data (see route-table.ts).
       const names = route.path.includes(":organizationId");
       const known = names && !hidden;
       expect(events[0]).toMatchObject({

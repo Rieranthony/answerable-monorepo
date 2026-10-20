@@ -84,9 +84,10 @@ test("every tenant read route rechecks membership inside its read transaction", 
       return original(...args);
     }) as typeof original);
     try {
+      // Revoked, the reader holds no grant in the organisation: it is hidden.
       const denied = await send();
-      expect(denied.status, suffix).toBe(403);
-      expect(await denied.json()).toMatchObject({ code: "insufficient_scope" });
+      expect(denied.status, suffix).toBe(404);
+      expect(await denied.json()).toMatchObject({ code: "not_found" });
     } finally {
       fixture.appDb.transaction = original;
       await fixture.db

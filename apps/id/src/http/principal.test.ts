@@ -44,7 +44,7 @@ const client: ClientPrincipalRow = {
     status: "active",
     authorizationVersion: 1,
   },
-  clientCredentialsScopes: ["org:read", "org:write", "unknown"],
+  clientCredentialsScopes: ["org:read", "org:users", "unknown"],
   resourceScopes: null,
 };
 const grants = [
@@ -167,7 +167,7 @@ describe("unit: principal", () => {
         ...verifiedIdentity,
         clientId: "client",
         scopes: [
-          "org:write",
+          "org:users",
           "unknown",
           "platform:read",
           "org:read",
@@ -184,7 +184,7 @@ describe("unit: principal", () => {
       type: "client",
       clientId: "client",
       organizationId: "org",
-      grants: [{ ...grants[0], scopes: ["org:read", "org:write"] }],
+      grants: [{ ...grants[0], scopes: ["org:read", "org:users"] }],
     });
     expect(deps.findClient).toHaveBeenCalledWith(
       db,

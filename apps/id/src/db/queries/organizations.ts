@@ -116,10 +116,7 @@ export async function lockOrganizationForCommand(
   context: PlatformWriteContext,
   organizationId: string,
 ) {
-  const { tx } = context;
-  const row = await lockOrganization(tx, organizationId);
-  await context.revalidate();
-  return row;
+  return lockOrganization(context.tx, organizationId);
 }
 
 export async function createOrganization(

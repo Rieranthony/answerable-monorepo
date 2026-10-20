@@ -112,10 +112,7 @@ export async function lockUser(
   context: PlatformUsersContext | PlatformWriteContext,
   userId: string,
 ) {
-  const { tx: executor } = context;
-  const row = await lockUserRow(executor, userId);
-  await context.revalidate();
-  return row;
+  return lockUserRow(context.tx, userId);
 }
 
 /** Existence checks must not load the user's profile and identity graph. */

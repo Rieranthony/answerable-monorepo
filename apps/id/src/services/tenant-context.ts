@@ -21,7 +21,6 @@ type ScopedContext<Access extends string> = Readonly<{
 }>;
 
 export type TenantMemberContext = ScopedContext<"command"> & {
-  readonly revalidate: () => Promise<void>;
   readonly actor: Readonly<Actor>;
 };
 const readScopes = {
@@ -50,18 +49,17 @@ export async function authorizeTenantMemberCommand(
   // Serialise member writes with other tenant authority changes.
   // Re-read authority after any preceding tenant revocation has committed.
   const organization = await lockOrganization(tx, input.organizationId);
-  const authorize = () =>
-    authorizeCommand(
-      tx,
-      input.principal,
-      input.environment,
-      {
-        platform: "platform:users",
-        tenant: { organizationId: input.organizationId, scope: "org:users" },
-      },
-      input.claims,
-    );
-  await authorize();
+  // Checked once: its share locks block a revocation until the command commits.
+  await authorizeCommand(
+    tx,
+    input.principal,
+    input.environment,
+    {
+      platform: "platform:users",
+      tenant: { organizationId: input.organizationId, scope: "org:users" },
+    },
+    input.claims,
+  );
   found(organization, "Organisation not found");
   await setDatabaseScope(tx, {
     kind: "tenant",
@@ -80,9 +78,6 @@ export async function authorizeTenantMemberCommand(
         tx,
         organizationId: input.organizationId,
         actor: commandActor(identity, metadata),
-        async revalidate() {
-          if (input.principal.type === "user") await authorize();
-        },
       });
     },
   };

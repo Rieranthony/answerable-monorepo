@@ -126,10 +126,17 @@ test("staff filter all audit events and walk pages without gaps", async () => {
 test("tenant readers see their sign-ins and denied attempts only", async () => {
   const org = fixture.tenant.organizationId;
   const path = `/organizations/${org}/audit-events`;
-  await fixture.app.request(`/api/admin/v1/organizations/${org}`, {
-    method: "PATCH",
-    headers: fixture.headers("tenantReader"),
-  });
+  const headers = fixture.headers("tenantReader");
+  headers.set("Content-Type", "application/json");
+  expect(
+    (
+      await fixture.app.request(`/api/admin/v1/organizations/${org}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ name: "Not allowed" }),
+      })
+    ).status,
+  ).toBe(403);
   const result = await read(path, {}, "tenantReader");
   expect(result.items.length).toBeGreaterThan(0);
   expect(result.items.every((row) => row.organizationId === org)).toBe(true);
