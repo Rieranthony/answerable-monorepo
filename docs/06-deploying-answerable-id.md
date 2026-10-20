@@ -1,7 +1,7 @@
 # Deploying Answerable ID
 
 > **TL;DR**
-> - **Decides:** what a production deployment of `apps/id` needs, in what order, and why each piece exists.
+> - **Decides:** what a production deployment of `apps/id` needs and why each piece exists. The install itself is automated: [`infra/README.md`](../infra/README.md) runs it.
 > - **Rule:** the service is reachable only through the ingress proxies you list; the application never runs as the database owner; the three deployment secret families are independent and live outside Postgres; Google and Entra use platform applications by default.
 > - **Not here:** the design (`03-answerable-id.md`), the schema (`04-answerable-id-schema.md`), day-two operations (`../apps/id/OPERATIONS.md`), the release gate (`../reports/answerable-id-release-decision-plan.md`).
 
@@ -15,6 +15,7 @@ Everything below is derived from the code on this branch: `apps/id/src/env.ts` (
 | `apps/web` | Next.js site and docs | Public website |
 | PostgreSQL 17 | The only state: users, sessions, native OAuth state, policy, audit, command receipts | Local compose uses `postgres:17-alpine`; production needs your own instance with backups |
 | Ingress | TLS termination and the `x-forwarded-for` header | The **only** network path to `apps/id`; see the first requirement below |
+
 ID serves its own login, selection, consent, error and security pages at `BETTER_AUTH_URL` (`/login`, `/authorize`, `/consent`, `/error`, `/security`).
 
 Answerable's own deployment of ID, the Toolbox and the admin MCP (Civo, Kubernetes, Cloudflare in front) is described in [`12-deployment.md`](12-deployment.md), and operated with [`infra/README.md`](../infra/README.md).
@@ -57,12 +58,7 @@ Every SSO row, platform or own credentials, defaults to `email openid profile` w
 
 ## Configuration
 
-Required in production. Generate secrets on a machine you trust and deliver them through your secret store; nothing here reads a file.
-
-```bash
-# 48 random bytes for the application and root secrets
-openssl rand -base64 48
-```
+Required in production. In Answerable's deployment the Bootstrap workflow generates the application and root secrets and the deploy delivers every value ([`12-deployment.md`](12-deployment.md#secrets)); nothing here reads a file.
 
 | Variable | Value | Why |
 | --- | --- | --- |
@@ -72,8 +68,8 @@ openssl rand -base64 48
 | `BETTER_AUTH_TRUSTED_ORIGINS` | `https://login.microsoftonline.com,https://graph.microsoft.com,https://accounts.google.com,https://oauth2.googleapis.com,https://www.googleapis.com,https://openidconnect.googleapis.com`; use the IdP origins in use, with no paths or trailing slash | Browser CORS/CSRF and IdP endpoint trust |
 | `TRUSTED_PROXY_CIDRS` | comma-separated IPv4/IPv6 networks of the ingress proxies | Client address resolution |
 | `DATABASE_URL` | `postgres://answerable_id_runtime:…@host/answerable_id` | Application connection, restricted role |
-| `DATABASE_MIGRATION_URL` | owner login, used only by `db:migrate` runs you start by hand; never given to the service | DDL and permission provisioning |
-| `DATABASE_RUNTIME_ROLE` | `answerable_id_runtime` unless you named it differently | Which role `db:migrate` provisions |
+| `DATABASE_MIGRATION_URL` | owner login, used only by the migration Job; never given to the service | DDL and permission provisioning |
+| `DATABASE_RUNTIME_ROLE` | `answerable_id_runtime` unless you named it differently | Which role migration provisions |
 | `BETTER_AUTH_SECRET` | ≥ 32 characters, high entropy | Cookie signing, JWKS private-key encryption |
 | `GOOGLE_CLIENT_ID` | Google Web application client ID | Set together with `GOOGLE_CLIENT_SECRET` when using Google platform credentials |
 | `GOOGLE_CLIENT_SECRET` | Google client secret from the secret store | Environment only; never stored in platform SSO rows |
@@ -86,91 +82,27 @@ Optional, with defaults that hold for a first deployment: `BETTER_AUTH_SECRETS` 
 
 Fixed in `apps/id/src/env.ts`, not configurable: the admin API's resource `${BETTER_AUTH_URL}/api/admin`; the platform organisation's slug `answerable` and name `Answerable`, seeded at first boot and bound by immutable id afterwards; statement timeout 10 s, lock timeout 2 s, idle-in-transaction timeout 15 s, pool checkout 5 s and pool idle 10 s; operational log every 30 s; protocol sweep every 60 s in batches of 1,000; OpenAPI routes outside production only.
 
-## Install, in order
+## Install
 
-**1. Database.** Create the database and the runtime login on your PostgreSQL 17 instance. The login has no privileges yet; `db:migrate` grants them.
+Answerable installs ID from CI, never by hand: [`infra/README.md`](../infra/README.md#first-run) is the procedure and [`12-deployment.md`](12-deployment.md) the design. What each step does, so a failure reads plainly:
 
-```sql
-CREATE DATABASE answerable_id;
-CREATE ROLE answerable_id_runtime LOGIN PASSWORD '<strong password>'
-  NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
-```
-
-**2. Migrate and provision.** Two migrations install the whole schema in one transaction: `0000_initial.sql`, generated from the schema modules, and `0001_invariants.sql`, the functions, triggers, a deferred foreign key, two null-safe unique indexes and execution grants. The run then provisions the runtime role and revokes `TEMP` on the database from `PUBLIC`, so the owner login must own the database; startup refuses a runtime role that can still create temporary tables. Repeating it is safe: applied migrations are skipped. A migration file that changed after this database applied it stops the run with its name.
-
-```bash
-DATABASE_MIGRATION_URL='postgres://<owner>:…@host/answerable_id' \
-DATABASE_RUNTIME_ROLE=answerable_id_runtime \
-bun --filter @answerable/id db:migrate
-```
-
-The migration connection waits at most 5 s for a lock and 5 minutes for a statement. While DDL waits for a table lock, every later query on that table queues behind it, so on a live database a migration gives up rather than stall the service; rerun it once the blocking transaction ends. The statement bound stops a runaway statement from holding its locks indefinitely.
-
-**3. Start `apps/id`** with the configuration above. Startup verifies the runtime role and, on an empty database, seeds the platform organisation, admin resource, `platform-admins` group, its entitlement and the platform capability, then listens. Later starts verify that binding, refuse a changed admin resource identifier (a changed `BETTER_AUTH_URL`) and restore only the admin resource's definition; the rest belongs to operators. An unsafe role, a missing variable or application secrets that cannot decrypt the newest stored signing key fail the process before it listens; read the error, it names the variable, the privilege or the key.
-
-```bash
-bun --filter @answerable/id build && bun --no-install apps/id/dist/server.js
-```
-
-The build compiles the sign-in pages' stylesheet into `apps/id/dist/tailwind.css`, which the bundle serves as it is; `apps/id/dist` runs without `node_modules`. Run it with `--no-install`: without a `node_modules`, Bun otherwise tries to install the optional packages a library imports on demand.
-
-**4. Check it is up** through the ingress, not the pod.
-
-```bash
-curl -s https://id.answerable.org/healthz      # {"status":"ok"} without touching the database
-curl -s https://id.answerable.org/readyz       # {"status":"ok"} after one select 1
-curl -s https://id.answerable.org/.well-known/openid-configuration | jq .issuer
-curl -s https://id.answerable.org/auth/jwks    # first call generates the signing key
-```
-
-**5. Deploy `apps/web`** for the site and docs.
-
-**6. First run with the root bearer.** The steps of [`onboard.mdx` § First run](../apps/web/content/docs/id/onboard.mdx#first-run), steps 2 to 5. Each write sends a new `Idempotency-Key`: a key retries one attempt after a lost answer and never repeats a step later. `ID=https://id.answerable.org`, `ROOT=$ROOT_ADMIN_SECRET`, `STAFF_DOMAIN` your company email domain, `STAFF_ISSUER` your directory's issuer (Entra: `https://login.microsoftonline.com/<tenant-id>/v2.0`).
-
-```bash
-# The platform organisation and its platform-admins group
-PLATFORM_ORG=$(curl -s -H "Authorization: Bearer $ROOT" "$ID/api/admin/v1/organizations?q=answerable" | jq -r '.items[] | select(.slug=="answerable") | .id')
-PLATFORM_GROUP=$(curl -s -H "Authorization: Bearer $ROOT" "$ID/api/admin/v1/organizations/$PLATFORM_ORG/groups?q=platform-admins" | jq -r '.items[] | select(.slug=="platform-admins") | .id')
-
-# Your company email domain
-curl -s -X POST -H "Authorization: Bearer $ROOT" -H "Idempotency-Key: $(uuidgen)" \
-  -H "Content-Type: application/json" -d '{"domain":"'"$STAFF_DOMAIN"'"}' \
-  "$ID/api/admin/v1/organizations/$PLATFORM_ORG/domains"
-
-# Your identity provider
-curl -s -X PUT -H "Authorization: Bearer $ROOT" -H "Idempotency-Key: $(uuidgen)" -H "If-None-Match: *" \
-  -H "Content-Type: application/json" \
-  -d '{"issuer":"'"$STAFF_ISSUER"'","domain":"'"$STAFF_DOMAIN"'"}' \
-  "$ID/api/admin/v1/organizations/$PLATFORM_ORG/sso-provider"
-
-# Prove discovery and JWKS are reachable from the server before anyone signs in
-curl -s -H "Authorization: Bearer $ROOT" "$ID/api/admin/v1/organizations/$PLATFORM_ORG/sso-provider/test"
-```
-
-Now sign in once through the web login page with that provider. That creates your user and platform membership. Then make yourself a platform administrator; root locks itself as soon as a human holds `platform:write`.
-
-```bash
-STAFF_MEMBER=$(curl -s --get -H "Authorization: Bearer $ROOT" --data-urlencode "email=you@answerable.org" \
-  "$ID/api/admin/v1/organizations/$PLATFORM_ORG/members" | jq -r '.items[0].id')
-curl -s -X PUT -H "Authorization: Bearer $ROOT" -H "Idempotency-Key: $(uuidgen)" -H "If-None-Match: *" \
-  -H "Content-Type: application/json" -d '{}' \
-  "$ID/api/admin/v1/organizations/$PLATFORM_ORG/groups/$PLATFORM_GROUP/members/$STAFF_MEMBER"
-```
-
-If you ever remove the last platform administrator, set `ROOT_ADMIN_BREAK_GLASS=true`, restart, run the two `PLATFORM_*` lookups and the membership commands again (each sends a new key), then set it back to `false`.
-
-**7. Register the first application** as a client and grant its entitlements through the admin API; the public guide is at `apps/web/content/docs/id/oauth.mdx` and the admin reference at `/docs/id/admin-api`.
+- **Database roles.** The `ops-bootstrap` Job creates the database and the logins; the migration Job applies the committed migrations as the owner login and provisions the runtime role (`scripts/migrate.ts`). Repeating it is safe: applied migrations are skipped, and a migration file that changed after the database applied it stops the run with its name. The migration connection waits at most 5 s for a lock and 5 minutes for a statement: while DDL waits for a table lock, every later query on that table queues behind it, so on a live database a migration gives up rather than stall the service; rerun it once the blocking transaction ends.
+- **Startup.** ID verifies the runtime role, then on an empty database seeds the platform organisation, admin resource, `platform-admins` group, its entitlement and the platform capability. Later starts verify that binding, refuse a changed admin resource identifier (a changed `BETTER_AUTH_URL`) and restore only the admin resource's definition. An unsafe role, a missing variable or application secrets that cannot decrypt the newest stored signing key stop the process before it listens; the error names the variable, the privilege or the key.
+- **The image.** `apps/id/dist` runs without `node_modules`: the build bundles the server and the migration script and compiles the sign-in pages' stylesheet into `dist/tailwind.css`. Run it with `bun --no-install`, or Bun tries to install the optional packages a library imports on demand.
+- **Smoke test.** Through the ingress, not the pod: `/healthz` answers without touching the database, `/readyz` after one `select 1`, `/.well-known/openid-configuration` names the issuer and `/auth/jwks` (the first call generates the signing key). `bun infra/pipeline/src/cli.ts smoke` runs these.
+- **First run.** The root bearer adds the staff domain and directory, a person signs in and joins `platform-admins`, and root locks itself: [`onboard.mdx` § First run](../apps/web/content/docs/id/onboard.mdx#first-run). Each write sends a new `Idempotency-Key`, or none.
+- **The first application.** Register it as a client and grant its entitlements through the admin API: [`oauth.mdx`](../apps/web/content/docs/id/oauth.mdx) and the admin reference at `/docs/id/admin-api`.
 
 ## Operating it
 
 - **Health.** `/healthz` is liveness only. `/readyz` runs one query and is the signal for the load balancer.
-- **Logs.** Every 30 seconds each process prints `[id] operations` followed by JSON with request counts by route class and status, plus pool counts. Provider diagnostics print a severity, the event name `provider_diagnostic` and, for a thrown error, its class and SQLSTATE, never message text, so a failing sign-in shows up in audit (`auth.signin.failed`), not in logs. The operator signals table is in `../apps/id/OPERATIONS.md`.
+- **Logs.** Every 30 seconds each process prints `[id] operations` followed by JSON with request counts by route class and status, plus pool counts. Provider diagnostics print a severity, the event name `provider_diagnostic` and, for a thrown error, its class and SQLSTATE, never message text. A refused sign-in or token request that verified no identity is the log line `signin_rejected` or `token_rejected`, not an audit event. The signals and what to do about each are in [`OPERATIONS.md`](../apps/id/OPERATIONS.md#signals).
 - **Rate limits.** In production Better Auth refuses a client address with `429` past these bursts: `POST /auth/sign-in/sso` 60 per 10 s, `GET /auth/sso/callback` 300 per 10 s, `/auth/oauth2/authorize` 300 a minute, `POST /auth/oauth2/token` 600 a minute; other routes keep Better Auth's defaults (`src/auth.ts`). They are sized for shared addresses: an office signs in through one egress address, and a server-side host refreshes every user's token from one address, so 600 token calls a minute serve 9,000 users on 900 s tokens from one host address. Buckets live in memory, keyed per client address per process, so each replica adds its own allowance. They are not a volumetric defence; that is Cloudflare's rate limiting in front (`Q-ADMIN-API-RATE-LIMIT`).
 - **Scaling.** Add replicas; nothing is process-local except rate-limit buckets and the JWKS cache. Size `max_connections` from the pool formula above. Long lock waits fail at 2 s and stuck transactions at 15 s by design; raise them only with evidence.
-- **Backups.** Back up PostgreSQL with your provider's tooling and keep `BETTER_AUTH_SECRET` and `BETTER_AUTH_SECRETS` in the secret store with their own retention: a restored database is unreadable without the keys that were active when its rows were written. There is no restore drill in the repository any more; run one against a copy of production data before relying on backups.
+- **Backups.** Back up PostgreSQL with your provider's tooling and keep `BETTER_AUTH_SECRET` and `BETTER_AUTH_SECRETS` in the secret store with their own retention: a restored database is unreadable without the keys that were active when its rows were written. The restore procedure is in [the runbook](../infra/README.md#restore); its drill is E7 below.
 - **Storage growth.** `admin_operations` keeps one receipt per administrative command and `audit_events` one row per recorded event, both permanently: nothing prunes them, so plan their disk and index growth with the database. Expired sessions, OAuth access and refresh tokens and client assertions do not accumulate: every 60 seconds ID deletes them in batches of 1,000 rows, an advisory lock keeps two replicas from deleting at once, and a run that deleted rows prints `[id] protocol sweep` with the count per table.
 - **Platform application rotation.** Create a new secret in the provider console, update the environment and rolling-restart every replica while both secrets remain valid; retire the old secret afterwards. No SSO rows, revisions or grants change. Replacing a platform client ID interrupts in-flight sign-ins with `?error=invalid_state&error_description=sso_provider_changed_during_authentication`: the SSO plugin detects the changed application, without a row revision change, so `SSO_PROVIDER_CHANGED` does not apply. For Entra it also changes every user’s pairwise `sub`, so existing accounts stop matching. See [sign-in errors](../apps/web/content/docs/id/sign-in.mdx#when-sign-in-is-refused).
-- **Rotation.** Application secret rotation is documented in the ID README. Promoting a new head application secret signs every browser session out.
+- **Rotation.** Application secret rotation is in [ID's README](../apps/id/README.md#application-secret-rotation), and every family's in [the runbook](../infra/README.md#rotate). Promoting a new head application secret signs every browser session out.
 
 ## Not ready yet
 

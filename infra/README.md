@@ -205,7 +205,7 @@ Useful reads: `kubectl -n answerable logs deploy/id`, `kubectl -n answerable log
 When nobody can administer ID ([`onboard.mdx`](../apps/web/content/docs/id/onboard.mdx#first-run), step 7):
 
 1. Add `ROOT_ADMIN_BREAK_GLASS: "true"` under `id.env` in `charts/answerable/values-civo-staging.yaml`, and tag (for production, tag and approve).
-2. Repair access with the root secret. Read it into your shell without printing it: `ROOT=$(kubectl -n answerable get secret id-env -o jsonpath='{.data.ROOT_ADMIN_SECRET}' | base64 --decode)`, then run the membership commands of [`docs/06`](../docs/06-deploying-answerable-id.md#install-in-order) step 6 against the environment's host, each with a new key.
+2. Repair access with the root secret. Read it into your shell without printing it: `ROOT=$(kubectl -n answerable get secret id-env -o jsonpath='{.data.ROOT_ADMIN_SECRET}' | base64 --decode)`, then run steps 2 and 5 of [`onboard.mdx` § First run](../apps/web/content/docs/id/onboard.mdx#first-run) against the environment's host, each write with a new key.
 3. Remove the line and tag again. Every use of the root secret is in the audit log as `admin.root_request`.
 
 ## Destroy an environment
