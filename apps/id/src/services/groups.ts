@@ -4,37 +4,10 @@ import * as queries from "../db/queries/groups.ts";
 import { findMemberForAssignment } from "../db/queries/members.ts";
 import type { PageQuery } from "../http/pagination.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
-import { recordCommandEvent, statusAction } from "./audit.ts";
+import { recordCommandEvent, statusAction, evidence } from "./audit.ts";
 import { found, ProblemError } from "../http/problem.ts";
 import { assertRevision } from "../http/admin/revision.ts";
 const notFound = "Organisation or group not found";
-function configuration(
-  row: NonNullable<Awaited<ReturnType<typeof queries.findGroup>>>,
-) {
-  return {
-    id: row.id,
-    deletedAt: row.deletedAt,
-    revision: row.revision,
-    organizationId: row.organizationId,
-    slug: row.slug,
-    name: row.name,
-    status: row.status,
-  };
-}
-function assignment(
-  row: NonNullable<Awaited<ReturnType<typeof queries.findGroupMember>>>,
-) {
-  return {
-    id: row.id,
-    deletedAt: row.deletedAt,
-    revision: row.revision,
-    organizationId: row.organizationId,
-    groupId: row.groupId,
-    memberId: row.memberId,
-    validFrom: row.validFrom,
-    validUntil: row.validUntil,
-  };
-}
 async function lockedGroup(
   context: PlatformWriteContext,
   organizationId: string,
@@ -66,7 +39,7 @@ export async function createGroup(
     action: "group.created",
     data: {
       before: null,
-      after: configuration(row),
+      after: evidence(row),
     },
   });
   return row;
@@ -98,7 +71,7 @@ export async function updateGroup(
       targetType: "group",
       targetId: groupId,
       action: "group.updated",
-      data: { before: configuration(before), after: configuration(row) },
+      data: { before: evidence(before), after: evidence(row) },
     });
   return { row, changed };
 }
@@ -127,8 +100,8 @@ async function setStatus(
     targetId: groupId,
     action: statusAction("group", status),
     data: {
-      before: configuration(existing),
-      after: configuration(row),
+      before: evidence(existing),
+      after: evidence(row),
       policySources,
     },
   });
@@ -172,8 +145,8 @@ export async function eraseGroup(
     targetId: groupId,
     action: "group.erased",
     data: {
-      before: configuration(before),
-      after: configuration(row),
+      before: evidence(before),
+      after: evidence(row),
       deletionMode: "soft",
       effects,
     },
@@ -250,8 +223,8 @@ export async function putMember(
       action: result.created ? "group_member.added" : "group_member.updated",
       data: {
         groupId,
-        before: before ? assignment(before) : null,
-        after: assignment(result.row),
+        before: before ? evidence(before) : null,
+        after: evidence(result.row),
       },
     });
   return { ...result, changed };
@@ -285,8 +258,8 @@ export async function removeMember(
     action: "group_member.removed",
     data: {
       groupId,
-      before: assignment(before),
-      after: assignment(row!),
+      before: evidence(before),
+      after: evidence(row!),
       deletionMode: "soft",
     },
   });

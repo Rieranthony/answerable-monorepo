@@ -1,27 +1,12 @@
 import { revokeOrganizationGrantContexts } from "../db/queries/grant-contexts.ts";
 import { type PlatformWriteContext } from "./platform-context.ts";
 import * as queries from "../db/queries/organizations.ts";
-import { recordCommandEvent } from "./audit.ts";
+import { recordCommandEvent, evidence } from "./audit.ts";
 import { revokeOrganizationMachineTokens } from "../db/queries/oauth-tokens.ts";
 import { found, ProblemError } from "../http/problem.ts";
 import { assertRevision } from "../http/admin/revision.ts";
 
 const notFound = "Organisation not found";
-
-function configuration(
-  row: Awaited<ReturnType<typeof queries.readOrganization>>,
-) {
-  return {
-    id: row.id,
-    deletedAt: row.deletedAt,
-    revision: row.revision,
-    slug: row.slug,
-    name: row.name,
-    status: row.status,
-    authorizationVersion: row.authorizationVersion,
-    disabledAt: row.disabledAt,
-  };
-}
 
 export async function createOrganization(
   context: PlatformWriteContext,
@@ -35,7 +20,7 @@ export async function createOrganization(
     action: "organization.created",
     data: {
       before: null,
-      after: configuration(row),
+      after: evidence(row),
     },
   });
   return row;
@@ -69,7 +54,7 @@ export async function updateOrganization(
       targetType: "organization",
       targetId: id,
       action: "organization.updated",
-      data: { before: configuration(before), after: configuration(row) },
+      data: { before: evidence(before), after: evidence(row) },
     });
   return { row, changed };
 }
@@ -135,8 +120,8 @@ export async function enableOrganization(
       targetId: id,
       action: "organization.enabled",
       data: {
-        before: configuration(existing),
-        after: configuration(row),
+        before: evidence(existing),
+        after: evidence(row),
       },
     });
   return { row, changed };
@@ -174,8 +159,8 @@ export async function eraseOrganization(
     targetId: id,
     action: "organization.erased",
     data: {
-      before: configuration(before),
-      after: configuration(row),
+      before: evidence(before),
+      after: evidence(row),
       deletionMode: "soft",
       revokedGrantContexts: revokedGrantContexts.map((row) => ({
         ...row,

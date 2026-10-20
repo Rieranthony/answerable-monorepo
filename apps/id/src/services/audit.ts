@@ -17,6 +17,19 @@ export function statusAction(
   return `${entity}.${status === "active" ? "enabled" : "disabled"}`;
 }
 
+const bookkeeping = new Set(["live", "createdAt", "updatedAt"]);
+
+/** A row as audit evidence: the row without the columns that only keep books. */
+export type Evidence<Row> = Omit<Row, "live" | "createdAt" | "updatedAt">;
+
+/** Project a row to audit evidence: every column but `live`, `createdAt` and
+ * `updatedAt`, so a command's before and after carry the same keys. */
+export function evidence<Row extends object>(row: Row): Evidence<Row> {
+  return Object.fromEntries(
+    Object.entries(row).filter(([key]) => !bookkeeping.has(key)),
+  ) as Evidence<Row>;
+}
+
 /** Record a command's successful effect as the command's actor. */
 export function recordCommandEvent(
   context: { tx: Executor; actor: Readonly<Actor> },

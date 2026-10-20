@@ -8,28 +8,13 @@ import {
 } from "./platform-context.ts";
 import type { Executor } from "../db/client.ts";
 import * as queries from "../db/queries/oauth-resources.ts";
-import { recordCommandEvent } from "./audit.ts";
+import { recordCommandEvent, evidence } from "./audit.ts";
 import { found, ProblemError } from "../http/problem.ts";
 import { assertRevision } from "../http/admin/revision.ts";
 
 type ResourceRow = NonNullable<
   Awaited<ReturnType<typeof queries.readResource>>
 >;
-function auditResource(row: ResourceRow) {
-  return {
-    id: row.id,
-    deletedAt: row.deletedAt,
-    identifier: row.identifier,
-    classification: row.classification,
-    organizationId: row.organizationId,
-    name: row.name,
-    revision: row.revision,
-    accessTokenTtl: row.accessTokenTtl,
-    refreshTokenTtl: row.refreshTokenTtl,
-    allowedScopes: row.allowedScopes,
-    disabled: row.disabled,
-  };
-}
 const notFound = "Resource not found";
 async function protect(tx: Executor, resourceId: string) {
   const [binding] = await tx
@@ -66,7 +51,7 @@ export async function createResource(
     action: "resource.created",
     data: {
       before: null,
-      after: auditResource(row),
+      after: evidence(row),
     },
   });
   return row;
@@ -105,8 +90,8 @@ export async function updateResource(
       action: "resource.updated",
       data: {
         requestedFields: Object.keys(patch).sort(),
-        before: auditResource(existing),
-        after: auditResource(row!),
+        before: evidence(existing),
+        after: evidence(row!),
       },
     });
   return { row: row!, changed };
@@ -148,8 +133,8 @@ async function setDisabled(
       targetId: identifier,
       action: disabled ? "resource.disabled" : "resource.enabled",
       data: {
-        before: auditResource(existing),
-        after: auditResource(row),
+        before: evidence(existing),
+        after: evidence(row),
         effects: { revokedGrantContexts },
       },
     });
@@ -195,8 +180,8 @@ export async function eraseResource(
     targetId: identifier,
     action: "resource.erased",
     data: {
-      before: auditResource(existing),
-      after: auditResource(row),
+      before: evidence(existing),
+      after: evidence(row),
       deletionMode: "soft",
       revokedGrantContexts,
     },

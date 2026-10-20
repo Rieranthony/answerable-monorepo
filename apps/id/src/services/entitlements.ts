@@ -7,30 +7,19 @@ import { readClient } from "../db/queries/oauth-clients.ts";
 import { readResourceForPolicy } from "../db/queries/oauth-resources.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import type { AuditAction } from "../db/queries/audit.ts";
-import { recordCommandEvent, statusAction } from "./audit.ts";
+import {
+  type Evidence,
+  evidence,
+  recordCommandEvent,
+  statusAction,
+} from "./audit.ts";
 import { found, ProblemError } from "../http/problem.ts";
 import { assertRevision } from "../http/admin/revision.ts";
 import { uniqueSorted } from "../lib/scopes.ts";
-function configuration(
-  row: NonNullable<Awaited<ReturnType<typeof queries.findEntitlement>>>,
-) {
-  return {
-    id: row.id,
-    deletedAt: row.deletedAt,
-    revision: row.revision,
-    organizationId: row.organizationId,
-    memberId: row.memberId,
-    groupId: row.groupId,
-    clientId: row.clientId,
-    resource: row.resource,
-    scopes: row.scopes,
-    status: row.status,
-    validFrom: row.validFrom,
-    validUntil: row.validUntil,
-  };
-}
 
-type Configuration = ReturnType<typeof configuration>;
+type Configuration = Evidence<
+  NonNullable<Awaited<ReturnType<typeof queries.findEntitlement>>>
+>;
 async function audit(
   context: PlatformWriteContext,
   action: AuditAction,
@@ -110,7 +99,7 @@ export async function createEntitlement(
   });
   await audit(context, "entitlement.created", {
     before: null,
-    after: configuration(row),
+    after: evidence(row),
   });
   return row;
 }
@@ -152,8 +141,8 @@ export async function updateEntitlement(
   // An unchanged command's receipt is its record; it writes no audit event.
   if (changed)
     await audit(context, "entitlement.updated", {
-      before: configuration(existing),
-      after: configuration(row),
+      before: evidence(existing),
+      after: evidence(row),
     });
   return { row, changed };
 }
@@ -179,8 +168,8 @@ async function setStatus(
     : existing;
   if (changed)
     await audit(context, statusAction("entitlement", status), {
-      before: configuration(existing),
-      after: configuration(row),
+      before: evidence(existing),
+      after: evidence(row),
     });
   return { row, changed };
 }
@@ -214,8 +203,8 @@ export async function removeEntitlement(
     entitlementId,
   );
   await audit(context, "entitlement.removed", {
-    before: configuration(before),
-    after: configuration(row!),
+    before: evidence(before),
+    after: evidence(row!),
     deletionMode: "soft",
   });
 }

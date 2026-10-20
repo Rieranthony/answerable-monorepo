@@ -1,23 +1,10 @@
 import { type PlatformWriteContext } from "./platform-context.ts";
 import * as queries from "../db/queries/organization-domains.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
-import { recordCommandEvent, statusAction } from "./audit.ts";
+import { recordCommandEvent, statusAction, evidence } from "./audit.ts";
 import { found } from "../http/problem.ts";
 
 const notFound = "Organisation or domain not found";
-function auditDomain(
-  row: NonNullable<
-    Awaited<ReturnType<typeof queries.findOrganizationDomainForCommand>>
-  >,
-) {
-  return {
-    id: row.id,
-    deletedAt: row.deletedAt,
-    organizationId: row.organizationId,
-    domain: row.domain,
-    status: row.status,
-  };
-}
 export async function createDomain(
   context: PlatformWriteContext,
   organizationId: string,
@@ -36,7 +23,7 @@ export async function createDomain(
     data: {
       domain: row.domain,
       before: null,
-      after: auditDomain(row),
+      after: evidence(row),
     },
   });
   return row;
@@ -72,7 +59,7 @@ async function setStatus(
       targetType: "domain",
       targetId: domainId,
       action: statusAction("domain", status),
-      data: { status, before: auditDomain(existing), after: auditDomain(row!) },
+      data: { status, before: evidence(existing), after: evidence(row!) },
     });
   return { row: row!, changed };
 }
@@ -116,8 +103,8 @@ export async function deleteOrganizationDomain(
     targetId: domainId,
     action: "domain.deleted",
     data: {
-      before: auditDomain(before),
-      after: auditDomain(row!),
+      before: evidence(before),
+      after: evidence(row!),
       deletionMode: "soft",
     },
   });
