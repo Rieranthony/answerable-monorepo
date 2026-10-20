@@ -65,7 +65,7 @@ select 'trigger ' || pg_get_triggerdef(t.oid) || ' enabled=' || t.tgenabled::tex
 order by 1`;
 
 /** The catalogue of the database as it stands. */
-export async function readCatalogue(
+async function readCatalogue(
   client: Pool | PoolClient,
 ): Promise<string[]> {
   const { rows } = await client.query<{ line: string }>(catalogue);

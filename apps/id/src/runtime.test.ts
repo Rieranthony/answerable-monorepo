@@ -245,7 +245,7 @@ test("runtime caps declared and streamed request bodies before provider work", a
         method: "POST",
         // Bun 1.3.1 can reuse a rejected chunked upload before finishing its
         // framing. Keep this deliberately aborted upload out of its client pool.
-        // Evidence: reports/answerable-id-request-reuse.md.
+        // Measured on Bun 1.3.1 in the V0 request-reuse spike (the report is retired).
         keepalive: false,
         body: new ReadableStream({
           pull(controller) {

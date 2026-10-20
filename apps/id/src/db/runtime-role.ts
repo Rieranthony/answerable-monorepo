@@ -110,7 +110,7 @@ export function configureRuntimeRole(db: Database, roleName: string) {
   });
 }
 
-export const unsafeRuntimeRole =
+const unsafeRuntimeRole =
   "Unsafe database runtime role: use a non-owner role with protected audit permissions";
 
 /** Refuse an owner or a writer capable of changing the retained evidence. */

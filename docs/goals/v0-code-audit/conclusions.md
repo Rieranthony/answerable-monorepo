@@ -27,7 +27,7 @@ Fourteen assumptions written down first, then five audits in isolated worktrees,
 | Default rate limits per address per process | sign-in 3 per 10 s, authorize 30 and token 20 a minute | sign-in 60 per 10 s, callback 300 per 10 s, authorize 300 and token 600 a minute |
 | `hono-tailwind` and `tailwindcss` | runtime dependencies | build-time only; `dist` runs without `node_modules` |
 | Reports in `reports/` | 11 | 7 (four deleted, three trimmed, the mutation inventory corrected) |
-| ID suite | 1,558 tests at 100% line and function coverage | <!-- COORDINATOR: final gate line (tests, files, coverage, time; mcp:test, acceptance, web, typecheck, lint, build, infra:check, infra:test) --> |
+| ID suite | 1,558 tests at 100% line and function coverage | 1,488 tests in 130 files at 100% line and function coverage in 342 s; `mcp:test` 0 fail across 11 workspaces (auth 62, id-admin 17, infra-ops 61, infra-pipeline 89, mcp 112, admin 123, e2e 19, example 14, mcp-postgres 42, toolbox 81, scripts 16); acceptance 57 journeys in 129 s; web 88; countries 5; typecheck and lint 17/17; build 3/3; `infra:check` with Terraform 1.16.5; `infra:test` 105 on the image without `node_modules` |
 
 ¹ The coordinator's baseline, as audit D measured it with `find`. The files git tracks at `60c98f65` count 22,762 lines in 161 files by the same filter, so the tracked change is −791 lines (+635 / −1,426).
 

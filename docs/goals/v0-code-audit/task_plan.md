@@ -16,7 +16,7 @@
 | 2 | Five audits in isolated worktrees: A auth layer (Opus), B1 admin API contract (Opus), B2 services, queries, database runtime (Opus), C shell, operations, pages, scripts, packages, docs (Opus), D mechanical baseline and consumer map (Sonnet); throwaway Postgres 17 on 47433–47436 | complete (audits in `audits/`) |
 | 3 | Consolidate: one verdict table; re-run the probes the report leans on; cross-check contradictions and consumers | complete (U1 re-run and read in the dist; U3, U2, U4 logs read; U5, U6, the tier readers and `/auth/ok` verified by grep; no contradiction between the five: B1 keeps the in-transaction layer that B2 trims, A and B1 agree on refusal rows, A4 and C2 interlock) |
 | 4 | Report with decisions and recommendations for the owner; no code before the owner decides | complete: [report.md](report.md), decisions D1–D13 |
-| 5 | After approval: implementation briefs, gates, land on main, docs/02, memory | pending the owner |
+| 5 | After approval: implementation briefs, gates, land on main, docs/02, memory | in progress: owner took D1–D13 as recommended (Opus 5.5); change sets 1–3 running, 4 after |
 
 ## Layout
 
