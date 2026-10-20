@@ -2,8 +2,6 @@
 
 These commands cover repository-owned checks. Production topology, traffic targets,
 secret delivery, backup retention and recovery objectives have not been supplied.
-The [local evidence](../../reports/id-operations.md) cannot establish production capacity or readiness.
-
 ## Runtime bounds
 
 | Boundary            | Repository default or behaviour                                            | Limit of the claim                                                         |

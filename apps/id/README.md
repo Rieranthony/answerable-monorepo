@@ -1,6 +1,6 @@
 # Answerable ID
 
-Identity and authorisation service for Answerable. Own-tenant SSO, verified linking, fresh sensitive authority, production user/machine OAuth, repeat-safe administration and terminal product deletion are implemented. ID has never shipped; see the [local acceptance](../../reports/id-release-acceptance.md) and [production no-go conditions](../../reports/answerable-id-release-decision-plan.md).
+Identity and authorisation service for Answerable. Own-tenant SSO, verified linking, fresh sensitive authority, production user/machine OAuth, repeat-safe administration and terminal product deletion are implemented. ID has never shipped; the [release checklist](../../reports/answerable-id-release-decision-plan.md) lists what production still needs.
 
 ## HTTP surface
 
@@ -103,4 +103,4 @@ The integration test proves staged cookie continuity, cookie refusal after promo
 
 Fifteen product tables use terminal `deletedAt`. Ordinary reads and eligibility exclude deleted rows; credential material is cleared/revoked and grant contexts retain revocation. Product data, UUID audit and command recovery remain. This is not anonymisation. Physical product purge jobs and their duration are deferred; no named-identity recovery feature is required.
 
-Explicit membership reinstatement remains supported for revoked, undeleted memberships and never restores removed assignments or revoked grants. Organisation deletion preserves global people/sessions and clears tenant selection. See [deletion effects](../../reports/id-soft-deletion.md) and [operations](OPERATIONS.md).
+Explicit membership reinstatement remains supported for revoked, undeleted memberships and never restores removed assignments or revoked grants. Organisation deletion preserves global people/sessions and clears tenant selection. See [soft deletion](../../docs/04-answerable-id-schema.md#soft-deletion) and the [deletion table](../web/content/docs/id/manage.mdx#deletion-and-retained-data).

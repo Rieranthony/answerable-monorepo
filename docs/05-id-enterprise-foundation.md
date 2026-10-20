@@ -1,6 +1,6 @@
 # Enterprise ID foundation
 
-The F0–F7 contract governs the first Answerable ID release. T1–T5 implementation is integrated. [Final local acceptance](../reports/id-release-acceptance.md) records the candidate, checks and limits. The [release decision](../reports/answerable-id-release-decision-plan.md) remains **no-go for production** until the finite consumer/deployment requirements pass. No production deployment has occurred.
+The F0–F7 contract governs the first Answerable ID release. T1–T5 implementation is integrated and ID's suite holds it locally. Production waits for the [release checklist](../reports/answerable-id-release-decision-plan.md) (E1 to E8). No production deployment has occurred.
 
 ## 1. Scope and design rules
 
@@ -71,7 +71,7 @@ Every audit event is schema version 1 with one `data` shape per action; the firs
 
 Product deletion uses terminal `deletedAt` on 15 tables, ordinary read/eligibility denial and credential clearing/revocation. Retained rows may contain identifying fields: this is not anonymisation. UUID audit remains queryable with current authority. No named-identity recovery feature is required. Domain purge jobs and their retention duration are deferred; native protocol expiry remains a separate contract.
 
-Current user/organisation/group/client deletion facts use version 3; smaller product deletion facts and relationship/member removals use their documented versions. [T3's report](../reports/id-soft-deletion.md) defines exact manifests and reader compatibility.
+Every deletion action has one version 1 payload, listed in the [audit actions](04-answerable-id-schema.md#audit-actions).
 
 ## 6. Interruption, external effects and money
 

@@ -1,5 +1,7 @@
 # Answerable ID: authorisation and entitlement model (as of main d55220d, 2026-09-28)
 
+**Superseded in part (v0 code audit, 20 October 2026).** The issuance assertions (`user-token-assertions.ts`), the refresh reuse variable, the tier middleware with `tierOf` and `x-tier`, the `org:write` scope, `revokeUserSession` and the sign-in rejection audit (`signin-audit.ts`) no longer exist; the admin API authorises once, inside the command's transaction. This survey is a snapshot of that tree; current behaviour is in [docs/03](../../docs/03-answerable-id.md) and [docs/04](../../docs/04-answerable-id-schema.md).
+
 Read-only survey of `apps/id` for the Toolbox hub architecture report. Every fact cites `path:line`. Sections are filled in as files are read.
 
 ## Status (sections appear in the order 1, 2, 3, 4, 7, 5, 6, 8)

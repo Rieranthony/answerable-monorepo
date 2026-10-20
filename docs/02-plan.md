@@ -1,6 +1,6 @@
 # Plan
 
-This is the dependency order, not a deployment claim. The [design](03-answerable-id.md) is current behaviour; the [foundation acceptance](../reports/id-release-acceptance.md) and [release decision](../reports/answerable-id-release-decision-plan.md) hold evidence and the remaining gates.
+This is the dependency order, not a deployment claim. The [design](03-answerable-id.md) is current behaviour; the [release checklist](../reports/answerable-id-release-decision-plan.md) holds the remaining gates.
 
 **MCP kit and Toolbox:** [The capability platform](08-capability-platform.md) is implemented as far as the goal of [its plan](10-capability-platform-plan.md) goes, and locally accepted: `bun run mcp:test:e2e` signs organisations into the e2e MCP and the Toolbox through real ID with the official MCP OAuth client. The [foundation decisions](07-mcp-platform-draft.md) still hold, and the [evidence](../reports/mcp-foundation-evidence.md) records the tested scope. Not yet: what [the design](08-capability-platform.md#not-yet) lists, including automatic client registration for hosts (its policy is in the design; the open questions are in the [register](#open-register)).
 

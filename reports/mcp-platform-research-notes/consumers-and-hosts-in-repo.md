@@ -1,5 +1,7 @@
 # Consumers of Answerable's MCP servers and hub: what the repo says
 
+**Superseded in part (v0 code audit, 20 October 2026).** The admin API's `x-tier` extension and the reports this survey cites as `reports/id-operations.md` and `reports/id-release-acceptance.md` no longer exist. This survey is a snapshot of `main` d55220d.
+
 Read-only survey of `/Users/anthonyriera/code/answerable` at `main` d55220d (2026-09-28). Every path below is absolute unless it is a documented URL. Duplicate checkouts under `.claude/worktrees/*` were excluded from the sweeps; two untracked scratch notes in those worktrees are cited once, clearly labelled, because they hold measured facts that exist nowhere else. Lines marked **Inference** are mine, not the repo's.
 
 Companion files in this folder: `id-authz-model.md` (ID's capability/entitlement model) and `mcp-packages.md` (`packages/auth`, `packages/mcp-base`, `mcps/e2e`). This file does not repeat them.

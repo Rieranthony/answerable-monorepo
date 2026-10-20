@@ -68,4 +68,4 @@ Restricted tests cover missing/wrong scope, foreign IDs, code/refresh, current p
 
 ## Evidence and limits
 
-The [acceptance report](id-release-acceptance.md) maps F0–F7 tests and final gates. T4's synthetic workload is not a tenant-fairness guarantee; the [external checklist](answerable-id-release-decision-plan.md#external-input-and-test-checklist) retains actual deployment, workload and consumer requirements. Historical migration-specific slice notes remain in the execution reports and Git history; they are not installation instructions.
+These tests are local. The [external checklist](answerable-id-release-decision-plan.md#external-input-and-test-checklist) retains actual deployment, workload and consumer requirements.
