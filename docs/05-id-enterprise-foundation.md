@@ -65,7 +65,7 @@ Native client assertions remain consumed even when later issuance rolls back. Gr
 
 Successful effects, audit events, durable subjects and command receipts share the transaction. Runtime cannot alter facts. Typed payloads retain allowlisted before/after policy and actual affected UUIDs. Observation is not an isolated causal delta or proof of remote delivery. A failed audit/subject write rolls back success; rejection-audit failure preserves denial and emits an operational signal.
 
-Every audit event is schema version 1 with one `data` shape per action; the first change after launch adds version 2. Unauthenticated attempt facts do not infer tenant/client identity from claims. Tenant client lifecycle history contains counts and a link to the restricted cross-tenant effect manifest.
+Every audit event is schema version 1 with one `data` shape per action; the first change after launch adds version 2. An admin API request whose credential is missing or invalid writes no event, only a log line; refusals after the credential verified are events and never infer tenant/client identity from unverified claims. Tenant client lifecycle history contains counts and a link to the restricted cross-tenant effect manifest.
 
 ### Erasure and identifying a person
 

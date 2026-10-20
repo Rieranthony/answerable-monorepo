@@ -528,24 +528,14 @@ test("HTTP admission rejects a verified token that expires during principal look
 });
 
 for (const reason of [
-  "invalid_token",
-  "unauthenticated",
   "user_disabled",
   "untrusted_origin",
   "origin_required",
   "client_unowned",
   "organization_disabled",
 ] as const)
-  test(`administrative ${reason} denial records bounded attribution without credentials`, async () => {
+  test(`administrative ${reason} denial, after the credential verified, records bounded attribution without credentials`, async () => {
     const { app, rows } = setup({
-      ...(reason === "invalid_token"
-        ? {
-            verifyBearer: async () => {
-              throw new Error("bad token");
-            },
-          }
-        : {}),
-      ...(reason === "unauthenticated" ? { getSession: async () => null } : {}),
       ...(reason === "user_disabled"
         ? {
             getSession: async () => ({
@@ -567,9 +557,7 @@ for (const reason of [
     const response = await app.request("/", {
       method: reason === "origin_required" ? "POST" : "GET",
       headers: {
-        ...(clientFailure || reason === "invalid_token"
-          ? bearer
-          : { Cookie: "private-cookie" }),
+        ...(clientFailure ? bearer : { Cookie: "private-cookie" }),
         ...(reason === "untrusted_origin"
           ? { Origin: "https://evil.example" }
           : {}),
@@ -620,22 +608,44 @@ test("unknown keys reload at most once per thirty seconds", async () => {
   }
 });
 
-test("invalid bearer denial keeps the claimed client identity as unverified metadata", async () => {
-  const { app, rows } = setup({
-    verifyBearer: async () => {
-      throw new Error("invalid signature");
-    },
+test("an anonymous refusal writes no audit row: one log line with the request, address, path and reason, without the credential or its claims", async () => {
+  const lines: unknown[][] = [];
+  const log = spyOn(console, "error").mockImplementation((...line) => {
+    lines.push(line);
   });
-  const token = `${Buffer.from('{"alg":"none"}').toString("base64url")}.${Buffer.from('{"client_id":"claimed-client","private":"secret"}').toString("base64url")}.`;
-  expect(
-    (await app.request("/", { headers: { Authorization: `Bearer ${token}` } }))
-      .status,
-  ).toBe(401);
-  expect(rows[0]).toMatchObject({
-    actorType: "system",
-    actorId: "anonymous",
-    reason: "invalid_token",
-    data: { claimedClientId: "claimed-client" },
-  });
-  expect(JSON.stringify(rows)).not.toContain("secret");
+  try {
+    for (const reason of ["invalid_token", "unauthenticated"] as const) {
+      const { app, rows } = setup({
+        verifyBearer: async () => {
+          throw new Error("invalid signature");
+        },
+        getSession: async () => null,
+      });
+      const token = `${Buffer.from('{"alg":"none"}').toString("base64url")}.${Buffer.from('{"client_id":"claimed-client","private":"secret"}').toString("base64url")}.`;
+      const response = await app.request("/", {
+        headers:
+          reason === "invalid_token"
+            ? { Authorization: `Bearer ${token}` }
+            : { Cookie: "private-cookie" },
+      });
+      expect((await response.json()).code).toBe(reason);
+      expect(rows).toEqual([]);
+      expect(lines.at(-1)).toEqual([
+        "[id] admin",
+        JSON.stringify({
+          level: "error",
+          event: "admin_auth_refused",
+          requestId: "request",
+          ip: "192.0.2.1",
+          path: "/",
+          reason,
+        }),
+      ]);
+    }
+    const printed = JSON.stringify(lines);
+    for (const value of ["claimed-client", "secret", "private-cookie"])
+      expect(printed).not.toContain(value);
+  } finally {
+    log.mockRestore();
+  }
 });

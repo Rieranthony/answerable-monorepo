@@ -1,4 +1,5 @@
 import { recordAdministrativeDenial } from "./denial-audit.ts";
+import { logEvent } from "../lib/log.ts";
 import { uniqueSorted } from "../lib/scopes.ts";
 import { boundedUserAgent } from "../lib/user-agent.ts";
 import { APIError } from "better-auth/api";
@@ -6,7 +7,6 @@ import type { MiddlewareHandler } from "hono";
 import { machineIdentitySchema } from "../auth/machine-identity.ts";
 import {
   createLocalJWKSet,
-  decodeJwt,
   errors,
   jwtVerify,
   type JWTVerifyGetKey,
@@ -199,7 +199,6 @@ export function createPrincipalMiddleware(
     const db = context.get("db");
     const authorization = context.req.header("Authorization");
     let clientId: string | undefined;
-    let claimedClientId: string | undefined;
     let principal: Principal;
     try {
       if (authorization && /^Bearer(?:\s|$)/i.test(authorization)) {
@@ -245,15 +244,6 @@ export function createPrincipalMiddleware(
           }
           principal = { type: "root", grants: [] };
         } else {
-          // An unverified claim is recorded as metadata only; the actor is
-          // attributed solely after signature verification.
-          try {
-            const claimed = decodeJwt(token).client_id;
-            if (typeof claimed === "string" && claimed)
-              claimedClientId = claimed;
-          } catch {
-            /* Malformed credentials remain anonymous. */
-          }
           let claims: BearerClaims;
           try {
             claims = await deps.verifyBearer(token);
@@ -366,11 +356,21 @@ export function createPrincipalMiddleware(
         };
       }
     } catch (error) {
+      // No credential verified: a log line, not a row, so a flood of bad
+      // bearers writes nothing that lasts. Never the token or its claims.
+      if (
+        error instanceof ProblemError &&
+        ["invalid_token", "unauthenticated"].includes(error.code)
+      )
+        logEvent("admin", "admin_auth_refused", {
+          requestId: context.get("requestId"),
+          ip: context.get("clientIp"),
+          path: context.req.path,
+          reason: error.code,
+        });
       if (
         error instanceof ProblemError &&
         [
-          "invalid_token",
-          "unauthenticated",
           "user_disabled",
           "untrusted_origin",
           "origin_required",
@@ -388,7 +388,6 @@ export function createPrincipalMiddleware(
           requestId: context.get("requestId"),
           ip: context.get("clientIp"),
           userAgent: boundedUserAgent(context.req.header("user-agent")),
-          data: claimedClientId ? { claimedClientId } : undefined,
         });
       }
       throw error;

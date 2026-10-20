@@ -76,7 +76,7 @@ Soft-deleted entitlements, group assignments and memberships have one evidence s
 
 | Action | `data` |
 | ------ | ------ |
-| `admin.auth_failed` | `claimedClientId` when a bearer named a client, otherwise null. |
+| `admin.auth_failed` | Null. Written only once the credential verified: a disabled user, an untrusted or missing `Origin`, a client without an organisation, a disabled organisation. A missing or invalid credential writes no event, only the log line `admin_auth_refused` (request id, address, path, reason). |
 | `admin.denied` | `organizationId` when the path names an organisation the principal holds no grant for, otherwise null. |
 | `admin.root_request` | `organizationId` from the path, otherwise null. |
 | `auth.signin.succeeded` | `userId`, `authenticationAccountId`, `authenticationProviderId`, `authenticationProviderRevision`, `upstreamAuthTime`. |
