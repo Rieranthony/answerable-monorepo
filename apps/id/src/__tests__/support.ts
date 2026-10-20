@@ -26,7 +26,6 @@ export function testEnvironment(
     trustedOrigins: [],
     platformApplications: {},
     trustedProxyCidrs: [],
-    oauthRefreshReuseIntervalSeconds: 0,
     operationalLogIntervalMs: 0,
     protocolSweepIntervalMs: 0,
     protocolSweepBatchSize: 1_000,

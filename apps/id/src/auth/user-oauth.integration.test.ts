@@ -1,10 +1,5 @@
 import { createIdVerifier } from "@answerable/auth";
-import {
-  makeSignature,
-  symmetricDecrypt,
-  symmetricEncrypt,
-} from "better-auth/crypto";
-import type { jwt } from "better-auth/plugins/jwt";
+import { makeSignature } from "better-auth/crypto";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import {
   and,
@@ -525,93 +520,6 @@ test("expired, unselected and caller-supplied flows cannot authorise", async () 
   expect(await fixture.db.$count(grantContexts)).toBe(0);
 });
 
-test("divergent native access and ID tokens preserve the code", async () => {
-  const code = await authorize();
-  const signer = auth.options.plugins.find(
-    (plugin) => plugin.id === "jwt",
-  ) as ReturnType<typeof jwt>;
-  const { privateKey } = await generateKeyPair("EdDSA");
-  signer.options.jwks = {
-    ...signer.options.jwks,
-    keyPairConfig: { alg: "EdDSA" },
-  };
-  const input = {
-    grant_type: "authorization_code",
-    code,
-    redirect_uri: redirect,
-    code_verifier: verifier,
-    resource,
-  };
-  for (const fault of ["access-scope", "id-nonce"] as const) {
-    signer.options.jwt!.sign = async (payload, header) => {
-      const changed = { ...payload };
-      const isId = payload.nonce !== undefined;
-      if (!isId && fault === "access-scope") changed.scope = "email";
-      if (isId && fault === "id-nonce") changed.nonce = "wrong-nonce";
-      return new SignJWT(changed)
-        .setProtectedHeader({ alg: "EdDSA", ...header })
-        .sign(privateKey);
-    };
-    expect((await exchange(input)).status, fault).toBe(400);
-    expect(await fixture.db.$count(oauthRefreshTokens), fault).toBe(0);
-    expect(
-      await fixture.db.$count(
-        auditEvents,
-        eq(auditEvents.action, "oauth.user.issued"),
-      ),
-      fault,
-    ).toBe(0);
-  }
-  signer.options.jwt!.sign = undefined;
-  expect((await exchange(input)).status).toBe(200);
-});
-
-test("opaque and refresh rows must match the returned grant and authentication", async () => {
-  const code = await authorize("openid email offline_access", null);
-  const input = {
-    grant_type: "authorization_code",
-    code,
-    redirect_uri: redirect,
-    code_verifier: verifier,
-  };
-  for (const [table, assignment] of [
-    ["oauth_access_tokens", "NEW.scopes := ARRAY['openid']"],
-    ["oauth_refresh_tokens", "NEW.reference_id := 'wrong-grant'"],
-    [
-      "oauth_refresh_tokens",
-      "NEW.auth_time := NEW.auth_time - interval '1 second'",
-    ],
-  ]) {
-    await fixture.db.execute(
-      sql.raw(
-        `create function corrupt_stored_output() returns trigger language plpgsql as $$ begin ${assignment}; return NEW; end $$`,
-      ),
-    );
-    await fixture.db.execute(
-      sql.raw(
-        `create trigger corrupt_stored_output before insert on ${table} for each row execute function corrupt_stored_output()`,
-      ),
-    );
-    try {
-      expect((await exchange(input)).status, assignment).toBe(400);
-      expect(await fixture.db.$count(oauthAccessTokens)).toBe(0);
-      expect(await fixture.db.$count(oauthRefreshTokens)).toBe(0);
-      expect(
-        await fixture.db.$count(
-          auditEvents,
-          eq(auditEvents.action, "oauth.user.issued"),
-        ),
-      ).toBe(0);
-    } finally {
-      await fixture.db.execute(
-        sql.raw(`drop trigger corrupt_stored_output on ${table}`),
-      );
-      await fixture.db.execute(sql`drop function corrupt_stored_output()`);
-    }
-  }
-  expect((await exchange(input)).status).toBe(200);
-});
-
 test("consent narrowing is authorised and audited before native resource filtering", async () => {
   const consent = await select(await start());
   const input = { oauth_query: consent.search.slice(1), accept: true };
@@ -656,86 +564,6 @@ test("consent narrowing is authorised and audited before native resource filteri
   });
   expect(outcome!.targetId).toBe(event!.targetId);
   expect(outcome!.data).not.toHaveProperty("decision.grant");
-});
-
-test("cached output and returned refresh rows are checked again without an audit event", async () => {
-  const provider = createAuth(runtime.db, {
-    ...fixture.environment,
-    oauthRefreshReuseIntervalSeconds: 60,
-  });
-  const app = createApp({
-    auth: provider,
-    db: runtime.db,
-    environment: fixture.environment,
-  });
-  auth = { ...provider, handler: async (request) => app.fetch(request) };
-  const issued = await issue();
-  const audited = await fixture.db.$count(auditEvents);
-  const input = {
-    grant_type: "refresh_token",
-    refresh_token: issued.refresh_token,
-    resource,
-    scope: "mail:read",
-  };
-  const first = await exchange(input);
-  expect(first.status).toBe(200);
-  const saved = await first.json();
-  const [original] = await fixture.db
-    .select()
-    .from(oauthRefreshTokens)
-    .where(sql`${oauthRefreshTokens.rotatedAt} is not null`);
-  const [replacement] = await fixture.db
-    .select()
-    .from(oauthRefreshTokens)
-    .where(sql`${oauthRefreshTokens.rotatedAt} is null`);
-  const key = fixture.environment.betterAuthSecret;
-  const replay = JSON.parse(
-    await symmetricDecrypt({ key, data: original!.rotationReplayResponse! }),
-  );
-  for (const fault of [
-    "unexpected-id",
-    "unknown-refresh",
-    "token-type",
-    "stored-scope",
-  ] as const) {
-    const changed = structuredClone(replay);
-    if (fault === "unexpected-id") changed.response.id_token = issued.id_token;
-    if (fault === "unknown-refresh")
-      changed.response.refresh_token = "not-a-stored-token";
-    if (fault === "token-type") changed.response.token_type = "DPoP";
-    if (fault === "stored-scope")
-      await fixture.db
-        .update(oauthRefreshTokens)
-        .set({ scopes: ["email"] })
-        .where(eq(oauthRefreshTokens.id, replacement!.id));
-    await fixture.db
-      .update(oauthRefreshTokens)
-      .set({
-        rotationReplayResponse: await symmetricEncrypt({
-          key,
-          data: JSON.stringify(changed),
-        }),
-      })
-      .where(eq(oauthRefreshTokens.id, original!.id));
-    expect((await exchange(input)).status, fault).toBe(400);
-    expect(await fixture.db.$count(oauthRefreshTokens)).toBe(2);
-    await fixture.db
-      .update(oauthRefreshTokens)
-      .set({ scopes: replacement!.scopes })
-      .where(eq(oauthRefreshTokens.id, replacement!.id));
-  }
-  await fixture.db
-    .update(oauthRefreshTokens)
-    .set({ rotationReplayResponse: original!.rotationReplayResponse })
-    .where(eq(oauthRefreshTokens.id, original!.id));
-  const valid = await exchange(input);
-  expect(valid.status).toBe(200);
-  expect(await valid.json()).toMatchObject({
-    access_token: saved.access_token,
-    refresh_token: saved.refresh_token,
-    scope: "mail:read",
-  });
-  expect(await fixture.db.$count(auditEvents)).toBe(audited);
 });
 
 test("inconsistent or revoked authentication evidence cannot establish current authority", async () => {
@@ -1218,43 +1046,6 @@ test("a consumer verifies production user tokens using public discovery and JWKS
   );
   for (const claim of ["sub", "organization_id", "membership_id", "grant_id"])
     expect(next.payload[claim]).toBe(payload[claim]);
-});
-
-test("cached native refresh responses recheck policy and write no audit event", async () => {
-  const provider = createAuth(runtime.db, {
-    ...fixture.environment,
-    oauthRefreshReuseIntervalSeconds: 60,
-  });
-  const app = createApp({
-    auth: provider,
-    db: runtime.db,
-    environment: fixture.environment,
-  });
-  auth = { ...provider, handler: async (request) => app.fetch(request) };
-  const issued = await issue();
-  const audited = await fixture.db.$count(auditEvents);
-  const input = {
-    grant_type: "refresh_token",
-    refresh_token: issued.refresh_token,
-    resource,
-  };
-  const first = await exchange(input);
-  expect(first.status).toBe(200);
-  const saved = await first.json();
-  const replay = await exchange(input);
-  expect(replay.status).toBe(200);
-  expect(await replay.json()).toEqual(saved);
-  expect(await fixture.db.$count(auditEvents)).toBe(audited);
-  await fixture.db
-    .update(entitlements)
-    .set({ status: "disabled" })
-    .where(
-      and(
-        eq(entitlements.clientId, clientId),
-        eq(entitlements.resource, resource),
-      ),
-    );
-  expect((await exchange(input)).status).toBe(400);
 });
 
 test("simultaneous consent and code submissions cannot create duplicate grants or active families", async () => {

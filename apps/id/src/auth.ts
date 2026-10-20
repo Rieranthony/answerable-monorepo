@@ -235,8 +235,9 @@ export function createAuth(db: Database, environment: Environment) {
         db,
         {
           refreshTokenExpiresIn: grantLifetimeSeconds,
-          refreshTokenReuseInterval:
-            environment.oauthRefreshReuseIntervalSeconds,
+          // A reused rotated refresh token revokes its family. Parallel
+          // refreshes by one host are open as Q-REFRESH-PARALLEL (docs/02).
+          refreshTokenReuseInterval: 0,
           // Client creation and rotation store hashClientSecret digests.
           storeClientSecret: "hashed",
           rateLimit: {

@@ -111,11 +111,6 @@ const environmentSchema = z
         "Expected valid proxy IP addresses or CIDRs",
       )
       .optional(),
-    OAUTH_REFRESH_REUSE_INTERVAL_SECONDS: z.coerce
-      .number()
-      .int()
-      .min(0)
-      .default(0),
     OPERATIONAL_LOG_INTERVAL_MS: intervalMs(30_000),
     PROTOCOL_SWEEP_INTERVAL_MS: intervalMs(60_000),
     PROTOCOL_SWEEP_BATCH: positiveInt32(1_000),
@@ -216,8 +211,6 @@ const environmentSchema = z
     rootAdminSecret: environment.ROOT_ADMIN_SECRET,
     rootAdminBreakGlass: environment.ROOT_ADMIN_BREAK_GLASS === "true",
     trustedProxyCidrs: environment.TRUSTED_PROXY_CIDRS ?? [],
-    oauthRefreshReuseIntervalSeconds:
-      environment.OAUTH_REFRESH_REUSE_INTERVAL_SECONDS,
     operationalLogIntervalMs: environment.OPERATIONAL_LOG_INTERVAL_MS,
     protocolSweepIntervalMs: environment.PROTOCOL_SWEEP_INTERVAL_MS,
     protocolSweepBatchSize: environment.PROTOCOL_SWEEP_BATCH,

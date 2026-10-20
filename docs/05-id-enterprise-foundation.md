@@ -46,7 +46,7 @@ Required truth table: A allows OmniChat→M365 and denies OpenCode→M365; B may
 
 The actual `createAuth` composition exposes authorisation code, refresh and machine grants. A server-bound flow retains canonical request, selected membership, one grant and terminal consent state. Consent is explicit on each new flow unless configured first-party bypass applies. Native code/refresh consumption and cached replay recheck current policy.
 
-Actual signed/opaque token outputs and persisted token/grant state must agree before commit, with the mandatory user outcome fact of a code exchange; a successful refresh records no fact. Restricted-role production HTTP tests cover nonce/PKCE, flows, consent, policy changes, refresh, failures and concurrency. The separate public-JWKS acceptance test verifies signatures without using the issuer's claim-building helper as its oracle. Real consumer-library proof remains external.
+Current grant authentication and policy are checked under the grant's locks before native issuance, and the claims callback refuses a grant or client that differs from that decision; token persistence commits with the mandatory user outcome fact of a code exchange; a successful refresh records no fact. Restricted-role production HTTP tests cover nonce/PKCE, flows, consent, policy changes, refresh, failures and concurrency. The separate public-JWKS acceptance test verifies signatures without using the issuer's claim-building helper as its oracle. Real consumer-library proof remains external.
 
 ## 4. Idempotency and concurrency contract
 

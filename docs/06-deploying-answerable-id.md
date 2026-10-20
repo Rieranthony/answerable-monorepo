@@ -88,7 +88,7 @@ openssl rand -base64 48
 | `ROOT_ADMIN_BREAK_GLASS` | `false` (set `true` only during a recovery) | Root stops working once a human holds `platform:write` |
 | `PLATFORM_ORGANIZATION_SLUG`, `PLATFORM_ORGANIZATION_NAME` | `answerable`, `Answerable` | Seeded at first boot, bound by immutable id afterwards |
 
-Optional, with defaults that hold for a first deployment: `ADMIN_RESOURCE_IDENTIFIER` (defaults to `${BETTER_AUTH_URL}/api/admin`), `BETTER_AUTH_SECRETS` (versioned ring for rotation; promotion signs everyone out, see the ID README), `DATABASE_POOL_MAX` 20, `DATABASE_STATEMENT_TIMEOUT_MS` 10000, `DATABASE_LOCK_TIMEOUT_MS` 2000, `DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS` 15000, `DATABASE_CONNECTION_TIMEOUT_MS` 5000, `DATABASE_POOL_IDLE_TIMEOUT_MS` 10000, `OPERATIONAL_LOG_INTERVAL_MS` 30000, `PROTOCOL_SWEEP_INTERVAL_MS` 60000 (0 disables the sweep), `PROTOCOL_SWEEP_BATCH` 1000, `OAUTH_REFRESH_REUSE_INTERVAL_SECONDS` 0, `OPENAPI_ENABLED` (off in production).
+Optional, with defaults that hold for a first deployment: `ADMIN_RESOURCE_IDENTIFIER` (defaults to `${BETTER_AUTH_URL}/api/admin`), `BETTER_AUTH_SECRETS` (versioned ring for rotation; promotion signs everyone out, see the ID README), `DATABASE_POOL_MAX` 20, `DATABASE_STATEMENT_TIMEOUT_MS` 10000, `DATABASE_LOCK_TIMEOUT_MS` 2000, `DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS` 15000, `DATABASE_CONNECTION_TIMEOUT_MS` 5000, `DATABASE_POOL_IDLE_TIMEOUT_MS` 10000, `OPERATIONAL_LOG_INTERVAL_MS` 30000, `PROTOCOL_SWEEP_INTERVAL_MS` 60000 (0 disables the sweep), `PROTOCOL_SWEEP_BATCH` 1000, `OPENAPI_ENABLED` (off in production).
 
 ## Install, in order
 

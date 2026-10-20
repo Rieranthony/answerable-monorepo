@@ -18,7 +18,6 @@ import {
   withAdapter,
 } from "./database-adapter.ts";
 import { currentGrantAuthentication } from "./grant-authentication.ts";
-import { assertUserTokenResponse } from "./user-token-assertions.ts";
 import { lockResourceGrantPolicy } from "./lock-resource-grant-policy.ts";
 import { bindGrantCode, withNativeCodeReplay } from "./native-code-replay.ts";
 import {
@@ -42,7 +41,6 @@ const codeSchema = z.object({
   query: z.object({
     client_id: z.string(),
     scope: z.string(),
-    nonce: z.string().optional(),
   }),
   resource: z.array(z.string()),
 });
@@ -55,10 +53,7 @@ const refreshSchema = z.object({
 });
 
 export function createUserTokenBoundary() {
-  const issuing = new AsyncLocalStorage<{
-    decision: UserResourceDecision;
-    minted: boolean;
-  }>();
+  const issuing = new AsyncLocalStorage<{ decision: UserResourceDecision }>();
   function identity(decision: UserResourceDecision) {
     return {
       subject_type: "user",
@@ -121,13 +116,11 @@ export function createUserTokenBoundary() {
     scopes,
     grantType,
   }) => {
-    const issuance = issuing.getStore();
     const decision =
-      issuance?.decision ??
+      issuing.getStore()?.decision ??
       (!grantType && user && referenceId
         ? await readDecision(ctx, user.id, client.clientId, referenceId, scopes)
         : null);
-    if (issuance && grantType) issuance.minted = true;
     const current = z.object({ id: z.uuid() }).safeParse(client);
     if (
       !decision ||
@@ -192,19 +185,9 @@ export function createUserTokenBoundary() {
               kind: "grant-client",
               clientId: authenticated.clientId,
             });
-            const create = nativeCreate(adapter);
-            let storedTokens = false;
             const bound = withAdapter(ctx, {
               ...adapter,
-              create: (async (input: Parameters<typeof create>[0]) => {
-                if (
-                  ["oauthAccessToken", "oauthRefreshToken"].includes(
-                    input.model,
-                  )
-                )
-                  storedTokens = true;
-                return create(input);
-              }) as typeof create,
+              create: nativeCreate(adapter),
             });
             const api = getOAuthProviderApi(bound, options);
             const hash = await api.hashToken(
@@ -219,7 +202,6 @@ export function createUserTokenBoundary() {
               scopes: string[];
               resources: string[];
               sessionId?: string;
-              nonce?: string;
             } | null = null;
             if (kind === "authorization_code") {
               const row = await adapter.findOne<{ value: string }>({
@@ -235,7 +217,6 @@ export function createUserTokenBoundary() {
                   sessionId: code.data.sessionId,
                   scopes: parseScope(code.data.query.scope),
                   resources: code.data.resource,
-                  nonce: code.data.query.nonce,
                 };
               }
             } else {
@@ -337,10 +318,8 @@ export function createUserTokenBoundary() {
                     },
                     execute,
                   );
-            const issuance = decision ? { decision, minted: false } : null;
-            const startedAt = Math.floor(Date.now() / 1000);
-            const result = issuance
-              ? await issuing.run(issuance, run)
+            const result = decision
+              ? await issuing.run({ decision }, run)
               : await run();
             if ("error" in result) {
               const [revoked] = await tx
@@ -364,24 +343,6 @@ export function createUserTokenBoundary() {
             }
             if (!decision) throw invalid();
             const response = result.value.response;
-            const replayed = !(issuance?.minted || storedTokens);
-            const returnedScopes = await assertUserTokenResponse({
-              ctx: bound,
-              options,
-              decision,
-              identity: identity(decision),
-              response,
-              reference: reference!,
-              clientAllowsRefresh:
-                authenticated.client.grantTypes?.includes("refresh_token") ??
-                false,
-              authorizationCodeId:
-                kind === "authorization_code"
-                  ? hash
-                  : decision.grant.authorizationCodeId!,
-              replayed,
-              startedAt,
-            });
             // The code exchange is the grant's issuance evidence; a refresh
             // writes none (docs/04, "Authentication transaction boundary").
             if (kind === "authorization_code") {
@@ -394,7 +355,7 @@ export function createUserTokenBoundary() {
                 requestId: ctx.headers?.get("x-request-id"),
                 data: {
                   grantType: kind,
-                  scopes: returnedScopes,
+                  scopes: parseScope(response.scope),
                   decision: evidence,
                 },
               });

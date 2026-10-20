@@ -91,7 +91,7 @@ The integration test proves staged cookie continuity, cookie refusal after promo
 ## Boundaries
 
 - Public discovery and `/auth/jwks` describe production code/refresh/machine grants. Login-only access is opaque; resource access uses signed audience-bound JWTs. [OAuth guide](../web/content/docs/id/oauth.mdx).
-- One server-bound flow fixes tenant/client/resource/consent. Every new flow requests consent except explicit first-party bypass. Native replay rechecks current policy; actual token output, persistence and user audit commit together.
+- One server-bound flow fixes tenant/client/resource/consent. Every new flow requests consent except explicit first-party bypass. Every exchange and refresh rechecks current policy before native issuance; token persistence and user audit commit together. A reused rotated refresh token revokes its family.
 - Human tenant authority requires that tenant's current SSO. Sensitive commands/linking require five-minute verified upstream freshness, including replay and post-lock checks. Unknown upstream time stays unknown.
 - RLS protects ten tables with transaction-local scopes; administrative contexts and trusted native broker checks remain necessary. Native adapter transactions and standalone membership operations use protocol scope; routing reads and audit inserts are available without scope. [Isolation inventory](../../reports/answerable-id-isolation-inventory.md).
 - All administrative mutations use an idempotency key with a permanent reservation; a retry returns the receipt. [Mutation inventory](../../reports/answerable-id-mutation-inventory.md).

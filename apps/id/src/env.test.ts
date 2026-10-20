@@ -74,7 +74,6 @@ describe("unit: environment", () => {
       trustedOrigins: [],
       platformApplications: {},
       trustedProxyCidrs: [],
-      oauthRefreshReuseIntervalSeconds: 0,
       operationalLogIntervalMs: 30_000,
       protocolSweepIntervalMs: 60_000,
       protocolSweepBatchSize: 1_000,
