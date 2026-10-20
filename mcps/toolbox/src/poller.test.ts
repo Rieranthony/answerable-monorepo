@@ -27,8 +27,13 @@ test("the first poll only records the newest event; later polls invalidate the o
     ["capability.updated", delta], ["user.disabled", null, ada], ["user.erased", null, grace],
     ["client.created", gamma], ["session.revoked_all", null, alan], ["entitlement.removed", null],
   ] as const) id.event(action, organisation, { targetId })
+  // A refusal changes nothing a member may use: the poller asks ID for successes only.
+  const epsilon = crypto.randomUUID()
+  id.event("admin.denied", epsilon, { outcome: "denied", targetType: "route" })
+  id.event("entitlement.updated", epsilon, { outcome: "denied" })
   await poller.poll()
   expect(invalidated.at(-1)).toEqual({ organisations: [alpha, beta, delta], users: [ada, grace] })
+  expect(id.requests.filter(request => request.includes("/audit-events")).at(-1)).toBe("GET /api/admin/v1/audit-events?outcome=success&limit=200")
   await poller.poll()
   expect(invalidated.at(-1)).toEqual(none)
   poller.stop()
@@ -42,7 +47,7 @@ test("a poll pages back through more than 200 events until it meets the last one
   for (const organisation of organisations) id.event("entitlement.created", organisation)
   await poller.poll()
   expect(invalidated.at(-1)!.organisations).toEqual(organisations.toSorted())
-  expect(id.requests.filter(request => request.includes("/audit-events")).at(-1)).toMatch(/^GET \/api\/admin\/v1\/audit-events\?limit=200&cursor=[0-9a-f-]{36}$/)
+  expect(id.requests.filter(request => request.includes("/audit-events")).at(-1)).toMatch(/^GET \/api\/admin\/v1\/audit-events\?outcome=success&limit=200&cursor=[0-9a-f-]{36}$/)
   poller.stop()
 })
 
