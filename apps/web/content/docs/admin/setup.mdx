@@ -116,7 +116,7 @@ export TOOLBOX_ADMIN_PATH=http%3A%2F%2Flocalhost%3A47400%2Fadmin
      -H "Authorization: Bearer $TOKEN" --data-urlencode "email=you@answerable.org"
 
    curl -X PUT "$ID/api/admin/v1/organizations/$PLATFORM_ORG/groups/$OWNER_GROUP/members/$MEMBER" \
-     -H "Idempotency-Key: admin-first-owner-v1" -H "If-None-Match: *" -H "Authorization: Bearer $TOKEN" \
+     -H "Idempotency-Key: $(uuidgen)" -H "If-None-Match: *" -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" -d '{}'
    ```
 

@@ -68,14 +68,14 @@ The calls and the `Idempotency-Key`s of `apps/web/content/docs/toolbox/admin.mdx
 
 ## Make-admin
 
-`onboard.mdx` § First run, step 5, with the root secret: the member whose email is `OPS_ADMIN_EMAIL` goes into `answerable-owner` (key `admin-first-owner-v1`), the admin MCP's owner role, and then into `platform-admins` (key `platform-admin-membership-setup`), which carries every platform scope. The owner group comes first because nothing can use the root secret afterwards. One more call confirms that ID refuses the root secret now.
+`onboard.mdx` § First run, step 5, with the root secret: the member whose email is `OPS_ADMIN_EMAIL` goes into `answerable-owner`, the admin MCP's owner role, and then into `platform-admins`, which carries every platform scope. The owner group comes first because nothing can use the root secret afterwards. One more call confirms that ID refuses the root secret now. Each run sends new `Idempotency-Key`s: ID keeps a key's first answer for ever, so with a fixed key a run after break glass would replay the first run and add nobody.
 
 | Error | Meaning | What to do |
 | --- | --- | --- |
 | `No member of the platform organisation has the email …` | That person has not signed in yet | Sign in once at ID's `/login`, then run again |
 | `… no answerable-owner group: run register first` | `register` has not run | Run `register`, then this |
 | `ID refuses the root secret already (root_locked)` | A person is a platform administrator: the first run is over | Add more staff with your own session (`docs/id/onboard`, The next staff member) |
-| `… ID still accepts the root secret` | `ROOT_ADMIN_BREAK_GLASS` is on | Unset it and deploy |
+| `… ID still accepts the root secret` | `ROOT_ADMIN_BREAK_GLASS` is on (after a break-glass recovery, the membership is in place) | Unset it and deploy |
 
 ## Develop
 

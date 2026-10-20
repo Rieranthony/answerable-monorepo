@@ -126,38 +126,39 @@ curl -s https://id.answerable.org/auth/jwks    # first call generates the signin
 
 **5. Deploy `apps/web`** for the site and docs.
 
-**6. First run with the root bearer.** Every mutation needs an `Idempotency-Key` header; reuse the same key to retry. `ID=https://id.answerable.org`, `ROOT=$ROOT_ADMIN_SECRET`.
+**6. First run with the root bearer.** The steps of [`onboard.mdx` § First run](../apps/web/content/docs/id/onboard.mdx#first-run), steps 2 to 5. Each write sends a new `Idempotency-Key`: a key retries one attempt after a lost answer and never repeats a step later. `ID=https://id.answerable.org`, `ROOT=$ROOT_ADMIN_SECRET`, `STAFF_DOMAIN` your company email domain, `STAFF_ISSUER` your directory's issuer (Entra: `https://login.microsoftonline.com/<tenant-id>/v2.0`).
 
 ```bash
-# The platform organisation id
-ORG=$(curl -s -H "Authorization: Bearer $ROOT" "$ID/api/admin/v1/organizations" | jq -r '.items[] | select(.slug=="answerable") | .id')
+# The platform organisation and its platform-admins group
+PLATFORM_ORG=$(curl -s -H "Authorization: Bearer $ROOT" "$ID/api/admin/v1/organizations?q=answerable" | jq -r '.items[] | select(.slug=="answerable") | .id')
+PLATFORM_GROUP=$(curl -s -H "Authorization: Bearer $ROOT" "$ID/api/admin/v1/organizations/$PLATFORM_ORG/groups?q=platform-admins" | jq -r '.items[] | select(.slug=="platform-admins") | .id')
 
 # Your company email domain
-curl -s -X POST -H "Authorization: Bearer $ROOT" -H "Idempotency-Key: platform-domain-1" \
-  -H "Content-Type: application/json" -d '{"domain":"answerable.org"}' \
-  "$ID/api/admin/v1/organizations/$ORG/domains"
+curl -s -X POST -H "Authorization: Bearer $ROOT" -H "Idempotency-Key: $(uuidgen)" \
+  -H "Content-Type: application/json" -d '{"domain":"'"$STAFF_DOMAIN"'"}' \
+  "$ID/api/admin/v1/organizations/$PLATFORM_ORG/domains"
 
-# Your identity provider (Entra example: tenant-specific issuer)
-curl -s -X PUT -H "Authorization: Bearer $ROOT" -H "Idempotency-Key: platform-sso-1" \
+# Your identity provider
+curl -s -X PUT -H "Authorization: Bearer $ROOT" -H "Idempotency-Key: $(uuidgen)" -H "If-None-Match: *" \
   -H "Content-Type: application/json" \
-  -d '{"issuer":"https://login.microsoftonline.com/<tenant-id>/v2.0","domain":"answerable.org"}' \
-  "$ID/api/admin/v1/organizations/$ORG/sso-provider"
+  -d '{"issuer":"'"$STAFF_ISSUER"'","domain":"'"$STAFF_DOMAIN"'"}' \
+  "$ID/api/admin/v1/organizations/$PLATFORM_ORG/sso-provider"
 
 # Prove discovery and JWKS are reachable from the server before anyone signs in
-curl -s -H "Authorization: Bearer $ROOT" "$ID/api/admin/v1/organizations/$ORG/sso-provider/test"
+curl -s -H "Authorization: Bearer $ROOT" "$ID/api/admin/v1/organizations/$PLATFORM_ORG/sso-provider/test"
 ```
 
 Now sign in once through the web login page with that provider. That creates your user and platform membership. Then make yourself a platform administrator; root locks itself as soon as a human holds `platform:write`.
 
 ```bash
-MEMBER=$(curl -s -H "Authorization: Bearer $ROOT" "$ID/api/admin/v1/organizations/$ORG/members" | jq -r '.items[0].id')
-GROUP=$(curl -s -H "Authorization: Bearer $ROOT" "$ID/api/admin/v1/organizations/$ORG/groups" | jq -r '.items[] | select(.slug=="platform-admins") | .id')
-curl -s -X PUT -H "Authorization: Bearer $ROOT" -H "Idempotency-Key: platform-admin-1" \
+STAFF_MEMBER=$(curl -s --get -H "Authorization: Bearer $ROOT" --data-urlencode "email=you@answerable.org" \
+  "$ID/api/admin/v1/organizations/$PLATFORM_ORG/members" | jq -r '.items[0].id')
+curl -s -X PUT -H "Authorization: Bearer $ROOT" -H "Idempotency-Key: $(uuidgen)" -H "If-None-Match: *" \
   -H "Content-Type: application/json" -d '{}' \
-  "$ID/api/admin/v1/organizations/$ORG/groups/$GROUP/members/$MEMBER"
+  "$ID/api/admin/v1/organizations/$PLATFORM_ORG/groups/$PLATFORM_GROUP/members/$STAFF_MEMBER"
 ```
 
-If you ever remove the last platform administrator, set `ROOT_ADMIN_BREAK_GLASS=true`, restart, repeat this step, then set it back to `false`.
+If you ever remove the last platform administrator, set `ROOT_ADMIN_BREAK_GLASS=true`, restart, run the two `PLATFORM_*` lookups and the membership commands again (each sends a new key), then set it back to `false`.
 
 **7. Register the first application** as a client and grant its entitlements through the admin API; the public guide is at `apps/web/content/docs/id/oauth.mdx` and the admin reference at `/docs/id/admin-api`.
 

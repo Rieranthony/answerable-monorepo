@@ -22,6 +22,8 @@ description: "How Answerable staff create an organisation, connect its directory
 
 A new service has no accounts at all. You get in with the root secret, sign in with your work account, give that account admin rights, and the root secret locks itself. Seven steps.
 
+Each write below sends a new `Idempotency-Key`. A key retries one attempt after a lost answer, and never repeats a step later: ID keeps its first answer for ever, so a step repeated under an old key does nothing.
+
 **Before you start.** Make the secret and keep it somewhere safe for the next hour:
 
 ```bash
@@ -40,13 +42,15 @@ openssl rand -base64 48
 
    Give the runtime role login credentials through deployment tooling, then set the application's `DATABASE_URL` to that role. Keep `DATABASE_MIGRATION_URL` available only to migration.
 
-2. **Write down two IDs.** The secret works as a bearer token. Ask the service for its summary and copy `platform.organizationId` into `PLATFORM_ORG` and `platform.groupId` into `PLATFORM_GROUP`; the next steps use both.
+2. **Write down two IDs.** The secret works as a bearer token. Ask the service for the platform organisation (slug `answerable`) and its `platform-admins` group; the next steps use both.
 
    ```bash
    export ROOT_ADMIN_SECRET="paste the secret here"
 
-   curl https://id.answerable.org/api/admin/v1/organizations \
-     -H "Authorization: Bearer $ROOT_ADMIN_SECRET"
+   PLATFORM_ORG=$(curl -s "https://id.answerable.org/api/admin/v1/organizations?q=answerable" \
+     -H "Authorization: Bearer $ROOT_ADMIN_SECRET" | jq -r '.items[] | select(.slug=="answerable") | .id')
+   PLATFORM_GROUP=$(curl -s "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/groups?q=platform-admins" \
+     -H "Authorization: Bearer $ROOT_ADMIN_SECRET" | jq -r '.items[] | select(.slug=="platform-admins") | .id')
    ```
 
 3. **Say which work accounts are staff.** The first says that emails on our domain belong to the platform organisation. The second says which directory checks those accounts: Google Workspace or Microsoft Entra, using Answerable’s platform application from the service environment. A third call checks that the directory answers.
@@ -55,13 +59,13 @@ openssl rand -base64 48
 
    ```bash
    curl "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/domains" \
-     -H "Idempotency-Key: platform-domain-setup" \
+     -H "Idempotency-Key: $(uuidgen)" \
      -H "Authorization: Bearer $ROOT_ADMIN_SECRET" \
      -H "Content-Type: application/json" \
      -d '{"domain":"'"$STAFF_DOMAIN"'"}'
 
    curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/sso-provider" \
-     -H "Idempotency-Key: platform-sso-setup" \
+     -H "Idempotency-Key: $(uuidgen)" \
      -H "If-None-Match: *" \
      -H "Authorization: Bearer $ROOT_ADMIN_SECRET" \
      -H "Content-Type: application/json" \
@@ -83,7 +87,7 @@ openssl rand -base64 48
      --data-urlencode "email=you@answerable.org"
 
    curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/groups/$PLATFORM_GROUP/members/$STAFF_MEMBER" \
-     -H "Idempotency-Key: platform-admin-membership-setup" \
+     -H "Idempotency-Key: $(uuidgen)" \
      -H "If-None-Match: *" \
      -H "Authorization: Bearer $ROOT_ADMIN_SECRET" \
      -H "Content-Type: application/json" \
