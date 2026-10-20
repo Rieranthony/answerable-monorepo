@@ -168,8 +168,6 @@ spec:
             {{- end }}
             - name: OPS_ID_URL
               value: {{ include "answerable.idUrl" $ | quote }}
-            - name: OPS_PLATFORM_SLUG
-              value: {{ $.Values.id.platformOrganization.slug | quote }}
             - name: OPS_ID_ROOT_SECRET
               valueFrom:
                 secretKeyRef:

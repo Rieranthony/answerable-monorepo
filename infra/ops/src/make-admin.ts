@@ -7,7 +7,7 @@ type Options = {
   rootSecret: string
   /** The staff member's email: they have signed in once, which made them a member of the platform organisation. */
   email: string
-  /** The platform organisation's slug (ID's PLATFORM_ORGANIZATION_SLUG). */
+  /** The platform organisation's slug, `answerable` in ID. */
   platformSlug: string
   fetch?: typeof globalThis.fetch
   log?: (line: string) => void

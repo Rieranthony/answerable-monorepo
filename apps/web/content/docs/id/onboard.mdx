@@ -32,7 +32,7 @@ openssl rand -base64 48
 
 1. **Start the service with the secret.** Set `ROOT_ADMIN_SECRET` to that value.
 
-   Apply the migrations before starting the service; migration also provisions the restricted runtime database role (`DATABASE_RUNTIME_ROLE`, default `answerable_id_runtime`). On an empty database, startup creates and binds the platform organisation, the admin API resource and the `platform-admins` group. Repeated migration and startup preserve those IDs. `PLATFORM_ORGANIZATION_NAME` names the organisation at that first start; the default is `Answerable`. Rename it later through the admin API: a restart does not change it back. Production key delivery, capacity and recovery objectives remain release work.
+   Apply the migrations before starting the service; migration also provisions the restricted runtime database role (`DATABASE_RUNTIME_ROLE`, default `answerable_id_runtime`). On an empty database, startup creates and binds the platform organisation, the admin API resource and the `platform-admins` group. Repeated migration and startup preserve those IDs. The first start names the organisation `Answerable`, with the slug `answerable`. Rename it later through the admin API: a restart does not change it back. Production key delivery, capacity and recovery objectives remain release work.
 
    ```bash
    bun --filter @answerable/id db:migrate

@@ -260,7 +260,7 @@ Read from the root `.env` by `bun run admin:dev`; every variable is listed in `d
 | `ADMIN_DATABASE_RUNTIME_ROLE` | The role `db:migrate` provisions: the user of `ADMIN_DATABASE_URL` | `answerable_admin_runtime` (the default) |
 | `ADMIN_TEST_DATABASE_URL` | The test database, reset by `db:test:migrate` | `postgres://answerable:answerable@localhost:47432/answerable_admin_test` (the default) |
 | `ADMIN_ID_CLIENT_ID`, `ADMIN_ID_CLIENT_SECRET` | The machine client, owned by the platform organisation | `admin-mcp` and its secret |
-| `ADMIN_ID_ADMIN_RESOURCE` | ID's admin resource, ID's `ADMIN_RESOURCE_IDENTIFIER` | `http://localhost:47300/api/admin` |
+| `ADMIN_ID_ADMIN_RESOURCE` | ID's admin resource: ID's `BETTER_AUTH_URL` with `/api/admin` | `http://localhost:47300/api/admin` |
 | `ADMIN_TOOLBOX_ADMIN_RESOURCE` | The Toolbox's admin resource: the audience of the `toolbox:admin` token, and the API's base with `/v1`. Unset, `toolbox_enable` stays listed and answers `PRECONDITION_FAILED` | `http://localhost:47400/admin` |
 | `ADMIN_FRESH_SECONDS` | How recent a directory sign-in the [critical operations](#critical-operations) need, in seconds | `1800` (the default) |
 

@@ -10,10 +10,6 @@
     configMapKeyRef:
       name: {{ .Values.trustedProxies.configMap }}
       key: cidrs
-- name: PLATFORM_ORGANIZATION_SLUG
-  value: {{ .Values.id.platformOrganization.slug | quote }}
-- name: PLATFORM_ORGANIZATION_NAME
-  value: {{ .Values.id.platformOrganization.name | quote }}
 {{ include "answerable.secretEnv" (dict "name" "DATABASE_URL" "secret" "id-database" "key" "DATABASE_URL") }}
 {{- end -}}
 {{- /*

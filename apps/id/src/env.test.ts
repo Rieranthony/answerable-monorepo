@@ -53,48 +53,7 @@ describe("unit: environment", () => {
     });
   });
 
-  test("operational reporting is disabled by zero or runs at least once a second", () => {
-    for (const value of ["0", "1000"]) {
-      expect(
-        parseEnvironment({
-          ...requiredEnvironment,
-          OPERATIONAL_LOG_INTERVAL_MS: value,
-        }).operationalLogIntervalMs,
-      ).toBe(Number(value));
-    }
-    expect(() =>
-      parseEnvironment({
-        ...requiredEnvironment,
-        OPERATIONAL_LOG_INTERVAL_MS: "999",
-      }),
-    ).toThrow(EnvironmentValidationError);
-  });
-
-  test("the protocol sweep is disabled by zero or runs at least once a second, in positive batches", () => {
-    for (const value of ["0", "1000"]) {
-      expect(
-        parseEnvironment({
-          ...requiredEnvironment,
-          PROTOCOL_SWEEP_INTERVAL_MS: value,
-        }).protocolSweepIntervalMs,
-      ).toBe(Number(value));
-    }
-    expect(
-      parseEnvironment({ ...requiredEnvironment, PROTOCOL_SWEEP_BATCH: "1" })
-        .protocolSweepBatchSize,
-    ).toBe(1);
-    for (const [name, value] of [
-      ["PROTOCOL_SWEEP_INTERVAL_MS", "999"],
-      ["PROTOCOL_SWEEP_INTERVAL_MS", "-1"],
-      ["PROTOCOL_SWEEP_BATCH", "0"],
-      ["PROTOCOL_SWEEP_BATCH", "1.5"],
-    ])
-      expect(() =>
-        parseEnvironment({ ...requiredEnvironment, [name]: value }),
-      ).toThrow(EnvironmentValidationError);
-  });
-
-  test("normalises the ID URL and the default resource URL and rejects invalid admin configuration", () => {
+  test("normalises the ID URL and derives the admin resource from it", () => {
     // The issuer, the pages and the admin audience must spell the origin alike.
     for (const suffix of ["", "/", "///"])
       expect(
@@ -106,20 +65,6 @@ describe("unit: environment", () => {
         betterAuthUrl: "https://id.example.com",
         adminResourceIdentifier: "https://id.example.com/api/admin",
       });
-    for (const slug of ["Bad", "-bad", "bad-", "bad--slug", "bad_slug", ""]) {
-      expect(() =>
-        parseEnvironment({
-          ...requiredEnvironment,
-          PLATFORM_ORGANIZATION_SLUG: slug,
-        }),
-      ).toThrow(EnvironmentValidationError);
-    }
-    expect(() =>
-      parseEnvironment({
-        ...requiredEnvironment,
-        ADMIN_RESOURCE_IDENTIFIER: "bad",
-      }),
-    ).toThrow(EnvironmentValidationError);
   });
 
   test("names every missing required variable", () => {
@@ -205,32 +150,18 @@ const production = {
   BETTER_AUTH_TRUSTED_ORIGINS: "https://auth.example.com",
   TRUSTED_PROXY_CIDRS: "10.0.0.0/8, 2001:db8::/32",
 };
-test("production defaults the ID origin and admin audience when the URL is unset or blank", () => {
-  for (const value of [undefined, "", "   "]) {
-    const environment = parseEnvironment({
-      ...production,
-      BETTER_AUTH_URL: value,
-    });
-    expect(environment.betterAuthUrl).toBe("https://id.answerable.org");
-    expect(environment.adminResourceIdentifier).toBe(
-      "https://id.answerable.org/api/admin",
-    );
-  }
-});
-
-test("production preserves explicit ID origins and rejects invalid overrides", () => {
+test("every environment requires an explicit, valid ID origin", () => {
   expect(
     parseEnvironment({
       ...production,
       BETTER_AUTH_URL: "https://id.example.com",
     }).betterAuthUrl,
   ).toBe("https://id.example.com");
-  expect(() =>
-    parseEnvironment({ ...production, BETTER_AUTH_URL: "invalid" }),
-  ).toThrow("BETTER_AUTH_URL");
-});
-
-test("development and test still require an explicit ID origin", () => {
+  // No default: a staging pod with the variable unset must not name production's issuer.
+  for (const value of [undefined, "", "   ", "invalid"])
+    expect(() =>
+      parseEnvironment({ ...production, BETTER_AUTH_URL: value }),
+    ).toThrow("BETTER_AUTH_URL");
   for (const nodeEnv of [undefined, "development", "test"]) {
     expect(() =>
       parseEnvironment({
@@ -242,11 +173,8 @@ test("development and test still require an explicit ID origin", () => {
   }
 });
 
-test("production disables OpenAPI unless explicitly enabled", () => {
+test("production serves no OpenAPI routes", () => {
   expect(parseEnvironment(production).openApiEnabled).toBe(false);
-  expect(
-    parseEnvironment({ ...production, OPENAPI_ENABLED: "true" }).openApiEnabled,
-  ).toBe(true);
 });
 for (const key of ["BETTER_AUTH_TRUSTED_ORIGINS", "TRUSTED_PROXY_CIDRS"])
   test(`production requires ${key}`, () => {

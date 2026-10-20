@@ -1,7 +1,6 @@
 import { findInvalidTrustedProxies } from "@better-auth/core/utils/ip";
 import { z } from "zod";
 import type { PlatformApplications } from "./auth/platform-applications.ts";
-import { slugPattern } from "./db/schema/columns.ts";
 
 const applicationSecrets = z.string().transform((value, context) => {
   const entries = value.split(",").map((entry) => {
@@ -33,25 +32,31 @@ const applicationSecrets = z.string().transform((value, context) => {
   return z.NEVER;
 });
 
-/** The largest delay setTimeout honours; above it the timer fires at once. */
-const maxTimerMs = 2_147_483_647;
+/** The largest value a Postgres integer setting accepts. */
+const maxInt32 = 2_147_483_647;
 
-/** A timer interval: zero disables it, otherwise at least a second. */
-const intervalMs = (fallback: number) =>
-  z.coerce
-    .number()
-    .int()
-    .min(0)
-    .max(maxTimerMs)
-    .refine(
-      (value) => value === 0 || value >= 1000,
-      "Use zero to disable or at least 1000 milliseconds",
-    )
-    .default(fallback);
-
-/** A positive count or duration that a timer or the database accepts. */
-const positiveInt32 = (fallback: number) =>
-  z.coerce.number().int().min(1).max(maxTimerMs).default(fallback);
+// Fixed settings. Every deployment ran the same values, and a change ships as a
+// release either way, so they are constants rather than variables.
+/** Twice a minute: often enough to see pool waits and 503s in the logs, rarely enough not to flood them. */
+const OPERATIONAL_LOG_INTERVAL_MS = 30_000;
+/** Expired rows are refused already; a minute keeps the tables small at one sweep per replica. */
+const PROTOCOL_SWEEP_INTERVAL_MS = 60_000;
+/** Rows per delete transaction: short row locks, far inside the statement timeout. */
+const PROTOCOL_SWEEP_BATCH = 1_000;
+/** Hands idle connections back to the database soon after a burst. */
+const DATABASE_POOL_IDLE_TIMEOUT_MS = 10_000;
+/** A request that cannot get a pooled connection in this time fails instead of queueing. */
+const DATABASE_CONNECTION_TIMEOUT_MS = 5_000;
+/** No request needs a longer statement; a runaway one is cancelled. */
+const DATABASE_STATEMENT_TIMEOUT_MS = 10_000;
+/** A command waiting on a row lock fails fast instead of holding its connection. */
+const DATABASE_LOCK_TIMEOUT_MS = 2_000;
+/** Ends a transaction a failed handler left open, and releases its locks. */
+const DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS = 15_000;
+/** The slug the first start seeds; the persisted binding is the authority afterwards. */
+const PLATFORM_ORGANIZATION_SLUG = "answerable";
+/** The platform organisation's display name at the first start; operators own it afterwards. */
+const PLATFORM_ORGANIZATION_NAME = "Answerable";
 
 const optionalCredential = z.preprocess(
   (value) =>
@@ -75,15 +80,6 @@ const environmentSchema = z
     MICROSOFT_CLIENT_ID: optionalCredential,
     MICROSOFT_CLIENT_SECRET: optionalCredential,
     BETTER_AUTH_TRUSTED_ORIGINS: z.string().default(""),
-    /** Initial platform slug; persisted system bindings determine authority afterwards. */
-    PLATFORM_ORGANIZATION_SLUG: z
-      .string()
-      .regex(slugPattern)
-      .default("answerable"),
-    /** Display name of the platform organisation the first start seeds; operators own it afterwards. */
-    PLATFORM_ORGANIZATION_NAME: z.string().trim().min(1).default("Answerable"),
-    /** The RFC 8707 resource indicator (aud) of the admin API itself. */
-    ADMIN_RESOURCE_IDENTIFIER: z.url().optional(),
     /** Break-glass principal satisfying every platform scope; stops working once a human holds platform:write unless break-glass is set. */
     ROOT_ADMIN_SECRET: z.string().min(32).optional(),
     /** Override the human platform administrator lockout for break-glass use. */
@@ -96,16 +92,8 @@ const environmentSchema = z
         "Expected valid proxy IP addresses or CIDRs",
       )
       .optional(),
-    OPERATIONAL_LOG_INTERVAL_MS: intervalMs(30_000),
-    PROTOCOL_SWEEP_INTERVAL_MS: intervalMs(60_000),
-    PROTOCOL_SWEEP_BATCH: positiveInt32(1_000),
-    DATABASE_POOL_MAX: positiveInt32(20),
-    DATABASE_POOL_IDLE_TIMEOUT_MS: positiveInt32(10_000),
-    DATABASE_STATEMENT_TIMEOUT_MS: positiveInt32(10_000),
-    DATABASE_LOCK_TIMEOUT_MS: positiveInt32(2_000),
-    DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS: positiveInt32(15_000),
-    DATABASE_CONNECTION_TIMEOUT_MS: positiveInt32(5_000),
-    OPENAPI_ENABLED: z.enum(["true", "false"]).optional(),
+    /** Connections per process; size it with docs/06's formula against the database's limit. */
+    DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(maxInt32).default(20),
   })
   .refine(
     (environment) =>
@@ -186,29 +174,24 @@ const environmentSchema = z
     trustedOrigins: environment.BETTER_AUTH_TRUSTED_ORIGINS.split(",")
       .map((origin) => origin.trim())
       .filter(Boolean),
-    platformOrganizationSlug: environment.PLATFORM_ORGANIZATION_SLUG,
-    platformOrganizationName: environment.PLATFORM_ORGANIZATION_NAME,
-    adminResourceIdentifier: (
-      environment.ADMIN_RESOURCE_IDENTIFIER ??
-      `${environment.BETTER_AUTH_URL}/api/admin`
-    ).replace(/\/+$/, ""),
+    platformOrganizationSlug: PLATFORM_ORGANIZATION_SLUG,
+    platformOrganizationName: PLATFORM_ORGANIZATION_NAME,
+    /** The RFC 8707 resource indicator (aud) of the admin API itself. */
+    adminResourceIdentifier: `${environment.BETTER_AUTH_URL}/api/admin`,
     rootAdminSecret: environment.ROOT_ADMIN_SECRET,
     rootAdminBreakGlass: environment.ROOT_ADMIN_BREAK_GLASS === "true",
     trustedProxyCidrs: environment.TRUSTED_PROXY_CIDRS ?? [],
-    operationalLogIntervalMs: environment.OPERATIONAL_LOG_INTERVAL_MS,
-    protocolSweepIntervalMs: environment.PROTOCOL_SWEEP_INTERVAL_MS,
-    protocolSweepBatchSize: environment.PROTOCOL_SWEEP_BATCH,
+    operationalLogIntervalMs: OPERATIONAL_LOG_INTERVAL_MS,
+    protocolSweepIntervalMs: PROTOCOL_SWEEP_INTERVAL_MS,
+    protocolSweepBatchSize: PROTOCOL_SWEEP_BATCH,
     databasePoolMax: environment.DATABASE_POOL_MAX,
-    databasePoolIdleTimeoutMs: environment.DATABASE_POOL_IDLE_TIMEOUT_MS,
-    databaseConnectionTimeoutMs: environment.DATABASE_CONNECTION_TIMEOUT_MS,
-    databaseStatementTimeoutMs: environment.DATABASE_STATEMENT_TIMEOUT_MS,
-    databaseLockTimeoutMs: environment.DATABASE_LOCK_TIMEOUT_MS,
-    databaseIdleInTransactionTimeoutMs:
-      environment.DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS,
-    openApiEnabled:
-      environment.OPENAPI_ENABLED === undefined
-        ? environment.NODE_ENV !== "production"
-        : environment.OPENAPI_ENABLED === "true",
+    databasePoolIdleTimeoutMs: DATABASE_POOL_IDLE_TIMEOUT_MS,
+    databaseConnectionTimeoutMs: DATABASE_CONNECTION_TIMEOUT_MS,
+    databaseStatementTimeoutMs: DATABASE_STATEMENT_TIMEOUT_MS,
+    databaseLockTimeoutMs: DATABASE_LOCK_TIMEOUT_MS,
+    databaseIdleInTransactionTimeoutMs: DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS,
+    /** Outside production only: production's contract is the committed snapshots, not a live route. */
+    openApiEnabled: environment.NODE_ENV !== "production",
   }));
 
 /** Every variable the service reads; default.env at the repository root lists each one. */
@@ -232,13 +215,7 @@ export class EnvironmentValidationError extends Error {
 export function parseEnvironment(
   source: Record<string, string | undefined>,
 ): Environment {
-  const result = environmentSchema.safeParse({
-    ...source,
-    BETTER_AUTH_URL:
-      source.NODE_ENV === "production" && !source.BETTER_AUTH_URL?.trim()
-        ? "https://id.answerable.org"
-        : source.BETTER_AUTH_URL,
-  });
+  const result = environmentSchema.safeParse(source);
 
   if (!result.success) throw new EnvironmentValidationError(result.error);
 

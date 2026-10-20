@@ -72,9 +72,6 @@ id:
     requests: { cpu: 250m, memory: 256Mi }
     limits: { memory: 768Mi }
   runtimeRole: answerable_id_runtime
-  platformOrganization:
-    slug: answerable
-    name: Answerable
   # BETTER_AUTH_TRUSTED_ORIGINS: origin-only URLs; production requires at least one. A company directory on a private
   # network must be listed here, and reachable through extraEgress.
   trustedOrigins: []

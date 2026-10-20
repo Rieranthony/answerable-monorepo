@@ -294,7 +294,7 @@ Read from the root `.env` by `bun run toolbox:dev`; every variable is listed in 
 | `TOOLBOX_HOST` | The address to listen on. The container image sets `0.0.0.0` | `127.0.0.1` (the default) |
 | `TOOLBOX_PORT` | The port | `47400` (the default) |
 | `TOOLBOX_ID_CLIENT_ID`, `TOOLBOX_ID_CLIENT_SECRET` | The Toolbox's machine client in ID, with `platform:read` and `platform:write` | `toolbox-hub` and its secret |
-| `TOOLBOX_ID_ADMIN_RESOURCE` | ID's admin resource, ID's `ADMIN_RESOURCE_IDENTIFIER` | `http://localhost:47300/api/admin` |
+| `TOOLBOX_ID_ADMIN_RESOURCE` | ID's admin resource: ID's `BETTER_AUTH_URL` with `/api/admin` | `http://localhost:47300/api/admin` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Optional OTLP/HTTP collector | `http://localhost:4318` |
 
 The admin API's audience is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`, such as `http://localhost:47400/admin`; it has no variable. `GET /health` answers `{ "status": "ok" }` while the database answers `select 1`, and `503` with `{ "status": "unavailable" }` otherwise, whatever the `Host` header.

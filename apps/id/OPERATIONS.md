@@ -13,8 +13,7 @@ The [local evidence](../../reports/id-operations.md) cannot establish production
 | Request body        | 256 KiB; acquisition deadline 5 seconds                                    | Does not bound response streaming or socket count                          |
 | Forwarded IP        | Rightmost untrusted address after listed ingress proxies                   | Requires proxy-only network access and TRUSTED_PROXY_CIDRS                 |
 
-**Runtime summaries.** `OPERATIONAL_LOG_INTERVAL_MS` defaults to 30000; zero disables
-reporting, otherwise the minimum is 1000. Each process writes `[id] operations`
+**Runtime summaries.** Every 30 seconds each process writes `[id] operations`
 followed by JSON. Route classes and HTTP statuses are the only request dimensions.
 There are no URLs, queries, tenant/user IDs, credentials or per-request buffers.
 `requests` contains completed handler count, total duration and maximum duration per
@@ -28,11 +27,10 @@ derive latency percentiles, tenant fairness or peak pool usage from these aggreg
 An absent summary requires checking the process and collector; it is not zero load.
 Measure representative traffic and database sizing before changing existing limits.
 
-**Protocol sweep.** `PROTOCOL_SWEEP_INTERVAL_MS` defaults to 60000; zero disables the
-sweep, otherwise the minimum is 1000. Each run deletes rows whose `expires_at` has
+**Protocol sweep.** Every 60 seconds each run deletes rows whose `expires_at` has
 passed from `oauth_access_tokens`, `oauth_refresh_tokens` (with the access tokens
 that name them), `oauth_client_assertions` and `sessions`, as the runtime role, in
-transactions of at most `PROTOCOL_SWEEP_BATCH` rows (default 1000). Rotated refresh
+transactions of at most 1,000 rows. Rotated refresh
 tokens stay until their own expiry. An advisory lock lets one process delete at a
 time; a process that finds it taken skips the rest of that run. A run that deleted
 rows writes `[id] protocol sweep` followed by JSON with the count per table; expiry

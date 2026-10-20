@@ -3,7 +3,7 @@ import { z } from "zod"
 /** How a server reaches Answerable ID's admin API: ID's origin, the admin resource and the server's machine client. */
 export type IdConfig = {
   issuer: string
-  /** The identifier of ID's admin resource, ID's `ADMIN_RESOURCE_IDENTIFIER`. */
+  /** The identifier of ID's admin resource: ID's `BETTER_AUTH_URL` with `/api/admin`. */
   adminResource: string
   clientId: string
   clientSecret: string

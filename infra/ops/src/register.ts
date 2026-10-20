@@ -10,7 +10,7 @@ type Options = {
   toolbox: string
   /** The admin MCP's origin: `/mcp` is its resource. */
   adminMcp: string
-  /** The platform organisation's slug (ID's PLATFORM_ORGANIZATION_SLUG). */
+  /** The platform organisation's slug, `answerable` in ID. */
   platformSlug: string
   /** Claude Code's `--callback-port`, in the host clients' redirect URI. */
   callbackPort: number
