@@ -41,6 +41,7 @@ import { createOrganizationDomain } from "../__tests__/domain-queries.ts";
 import { createSsoProvider } from "../__tests__/sso-queries.ts";
 import {
   auditEvents,
+  auditEventUsers,
   accounts,
   members,
   organizations,
@@ -1031,6 +1032,43 @@ describe("integration: federated sign-in", () => {
       email: "person@contoso.com",
       status: "active",
     });
+    // The takeover is recorded for the holder, as the admin route records it.
+    const events = await connection.db
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.action, "user.email_retired"));
+    expect(events).toEqual([
+      expect.objectContaining({
+        actorType: "system",
+        actorId: "sso-sign-in",
+        organizationId: null,
+        targetType: "user",
+        targetId: oldUser.id,
+        outcome: "success",
+        data: {
+          before: {
+            id: oldUser.id,
+            deletedAt: null,
+            status: "disabled",
+            disabledAt: oldUser.disabledAt!.toISOString(),
+            emailRetired: false,
+          },
+          after: {
+            id: oldUser.id,
+            deletedAt: null,
+            status: "disabled",
+            disabledAt: oldUser.disabledAt!.toISOString(),
+            emailRetired: true,
+          },
+        },
+      }),
+    ]);
+    expect(
+      await connection.db
+        .select({ userId: auditEventUsers.userId })
+        .from(auditEventUsers)
+        .where(eq(auditEventUsers.eventId, events[0]!.id)),
+    ).toEqual([{ userId: oldUser.id }]);
   });
 
   test("rejects a recycled email held by an active user without changing it", async () => {

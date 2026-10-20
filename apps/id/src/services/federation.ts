@@ -4,7 +4,29 @@ import type {
 } from "@better-auth/sso";
 import type { DBTransactionAdapter } from "better-auth";
 
+import { tryGetCurrentAuthEndpointContext } from "@better-auth/core/context";
+import { eq } from "drizzle-orm";
+import { authTransaction } from "../auth/database-adapter.ts";
+import type { Executor } from "../db/client.ts";
+import { recordAuditEvent } from "../db/queries/audit.ts";
 import { retiredEmailFor } from "../db/queries/users.ts";
+import { users } from "../db/schema/index.ts";
+
+/** The user fields an email retirement records, as `services/users.ts` does. */
+async function userState(tx: Executor, id: string) {
+  const [row] = await tx
+    .select({
+      id: users.id,
+      deletedAt: users.deletedAt,
+      status: users.status,
+      disabledAt: users.disabledAt,
+      retiredEmail: users.retiredEmail,
+    })
+    .from(users)
+    .where(eq(users.id, id));
+  const { retiredEmail, ...state } = row!;
+  return { ...state, emailRetired: retiredEmail !== null };
+}
 
 type ProviderRow = {
   id: string;
@@ -225,7 +247,11 @@ export async function resolveFederatedUser(
     model: "user",
     where: [{ field: "email", value: email }],
   });
-  if (emailUser?.deletedAt || emailUser?.status === "disabled") {
+  if (emailUser?.status === "disabled") {
+    // A disabled holder gives the address up, recorded as the admin route
+    // records retiring it.
+    const tx = authTransaction(database);
+    const before = await userState(tx, emailUser.id);
     await database.update({
       model: "user",
       where: [{ field: "id", value: emailUser.id }],
@@ -233,6 +259,19 @@ export async function resolveFederatedUser(
         email: retiredEmailFor(emailUser.id),
         retiredEmail: emailUser.email,
       },
+    });
+    await recordAuditEvent(tx, {
+      actorType: "system",
+      actorId: "sso-sign-in",
+      organizationId: null,
+      action: "user.email_retired",
+      targetType: "user",
+      targetId: emailUser.id,
+      outcome: "success",
+      requestId:
+        tryGetCurrentAuthEndpointContext()?.headers?.get("x-request-id") ??
+        null,
+      data: { before, after: await userState(tx, emailUser.id) },
     });
   } else if (emailUser) {
     return reject("email_conflict", "Email is already in use");
