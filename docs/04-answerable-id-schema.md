@@ -163,7 +163,7 @@ Browser sessions are global. Tenant APIs cannot enumerate/revoke them globally. 
 
 ## Authentication transaction boundary
 
-Verified SSO provenance enters the session through the native callback transaction. Production OAuth binds current policy, actual signed/opaque output and persistence before success, and mandatory user OAuth audit to each authorisation, code exchange and revocation; a successful refresh records no audit event. Client assertion replay protection stays consumed if later issuance rolls back.
+Verified SSO provenance enters the session through the native callback transaction. Production OAuth checks current policy under the grant's locks before native issuance, the claims callback refuses a grant or client that differs from that decision, and mandatory user OAuth audit commits with each authorisation, code exchange and revocation; a successful refresh records no audit event. Client assertion replay protection stays consumed if later issuance rolls back.
 
 ## Resource link deletion boundary
 
@@ -217,9 +217,9 @@ Revocation records actual session/token/grant effects. Old keys recover old comm
 
 Disable reconciles remaining local credentials even for an already-disabled user. Deletion retains UUID history and denies authority atomically with its receipt.
 
-### Operation status
+### Tracing a command
 
-Receipt inspection requires current platform audit authority and exposes the outcome, status and result reference.
+A command's `Operation-Id` filters the audit event lists (`?operationId=`); the receipt itself is read only through a replay with the same key.
 
 ## Organisation capability ceilings
 

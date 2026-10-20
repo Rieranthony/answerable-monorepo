@@ -44,7 +44,7 @@ Required truth table: A allows OmniChat→M365 and denies OpenCode→M365; B may
 
 ### Provider integration proof
 
-The actual `createAuth` composition exposes authorisation code, refresh and machine grants. A server-bound flow retains canonical request, selected membership, one grant and terminal consent state. Consent is explicit on each new flow unless configured first-party bypass applies. Native code/refresh consumption and cached replay recheck current policy.
+The actual `createAuth` composition exposes authorisation code, refresh and machine grants. A server-bound flow retains canonical request, selected membership, one grant and terminal consent state. Consent is explicit on each new flow unless configured first-party bypass applies. Native code and refresh consumption recheck current policy; a reused rotated refresh token revokes its family.
 
 Current grant authentication and policy are checked under the grant's locks before native issuance, and the claims callback refuses a grant or client that differs from that decision; token persistence commits with the mandatory user outcome fact of a code exchange; a successful refresh records no fact. Restricted-role production HTTP tests cover nonce/PKCE, flows, consent, policy changes, refresh, failures and concurrency. The separate public-JWKS acceptance test verifies signatures without using the issuer's claim-building helper as its oracle. Real consumer-library proof remains external.
 
@@ -99,7 +99,7 @@ Upstream-disable detection, downstream logout and actual consumer cache/session 
 | F3  | All 47 mutations, current-authority replay, revisions and crash proof               | Route inventory and command/process tests; intended-environment recovery remains.     |
 | F4  | Own-tenant SSO, deliberate linking, tenant-local lifecycle and ten-table RLS        | T1/T2/T3 restricted A/B tests; real multi-provider acceptance remains.                |
 | F5  | Shared exact-pair evaluator, scope narrowing and actual claim/audit binding         | Production code/refresh/machine and access tests; consumer denial matrix remains.     |
-| F6  | Fresh sensitive authority, local revocation, body limits, custody tooling | T1–T4 tests and measured limits; remote offboarding, capacity/ingress/custody remain. |
+| F6  | Fresh sensitive authority, local revocation, body and rate limits, startup key check | T1–T4 tests and measured limits; remote offboarding, capacity/ingress/custody remain. |
 | F7  | One initial install, installation proof, reconciled docs and local gates            | Final report; production remains no-go until the external checklist closes.           |
 
 Mandatory fixtures remain two unrelated tenants, shared A+B user, platform staff, private/shared resources, shared login client, separate machine clients, unowned external registration, disabled/revoked/expired rows and duplicate display names with distinct IDs. Apply each where relevant; do not generate a redundant Cartesian product. Include duplicate commands, both grant/revocation orders, process death, pool reuse and restored state.

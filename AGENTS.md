@@ -84,4 +84,4 @@ Read `docs/12-deployment.md` (what runs where and why) and `infra/README.md` (th
 
 ## ID and consumer boundaries
 
-All ID login, consent, organisation selection, security and error pages are Hono server-rendered pages in `apps/id`, using `hono-tailwind` and shared UI definitions. Never put identity-provider pages in `apps/web`. The web app is a separate OAuth consumer through its development-only `/oauth-test` page; it must not read ID cookies, root credentials or the ID database.
+All ID login, consent, organisation selection, security and error pages are Hono server-rendered pages in `apps/id`, using shared UI definitions and a stylesheet `hono-tailwind` compiles at build time, never at runtime. Never put identity-provider pages in `apps/web`. The web app is a separate OAuth consumer through its development-only `/oauth-test` page; it must not read ID cookies, root credentials or the ID database.
