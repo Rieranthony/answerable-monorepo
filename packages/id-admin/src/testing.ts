@@ -45,7 +45,10 @@ const tagged = (row: Stored, status = 200) => Response.json(row, { status, heade
 const contains = (value: unknown, text: string) => String(value).toLowerCase().includes(text.toLowerCase())
 const slug = /^[a-z0-9]+(-[a-z0-9]+)*$/
 const host = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/
-const invalid = (title: string) => problem(400, "validation_failed", title)
+// As ID's validator answers: its title, and each field's problem in errors.
+const invalid = (path: string, message = "Invalid input") => problem(400, "validation_failed", "The request is invalid", { errors: [{ path, message }] })
+// As ID answers a unique violation: the constraint names the row that exists.
+const conflict = (constraint: string) => problem(409, "conflict", "Conflict", { detail: `A row already exists for ${constraint}.` })
 // The issuers ID signs in through Answerable's own Google or Microsoft application (services/federation.ts classifyIssuer).
 const platformIssuer = (value: unknown) => value === "https://accounts.google.com" || /^https:\/\/login\.microsoftonline\.com\/[0-9a-f-]{36}\/v2\.0$/.test(String(value))
 
@@ -196,8 +199,8 @@ export function createFakeId({
       if (refusedMethod) return refusedMethod
       if (request.method === "GET") return newest(matching(rows(domains, organisation), url, ["status"]), url)
       const domain = String(body.domain).trim().toLowerCase()
-      if (!host.test(domain)) return invalid("The request is invalid")
-      if ([...domains.values()].flat().some(existing => existing.domain === domain)) return problem(409, "conflict", "Conflict")
+      if (!host.test(domain)) return invalid("domain")
+      if ([...domains.values()].flat().some(existing => existing.domain === domain)) return conflict("organization_domains_active_domain_idx")
       const created = { id: Bun.randomUUIDv7(), organizationId: organisation, domain, status: "active", createdAt: now(), updatedAt: now() }
       rows(domains, organisation).push(created)
       changes++
@@ -252,7 +255,7 @@ export function createFakeId({
       if (refusedMethod) return refusedMethod
       const resource = url.searchParams.get("resource")
       const client = url.searchParams.get("clientId")
-      if (!resource && !client) return problem(400, "validation_failed", "A client, resource or exact pair is required")
+      if (!resource && !client) return invalid("", "A client, resource or exact pair is required")
       const kind = !client ? "resource" : resource ? "client_resource" : "client"
       const fits = (target: Target) => target.kind === kind && target.id === (client ?? resource) && (kind !== "client_resource" || target.resource === resource)
       const items = rows(members, organisation).filter(row => row.effective).flatMap(row => {
@@ -268,8 +271,8 @@ export function createFakeId({
         const q = url.searchParams.get("q")
         return newest(matching(rows(groups, organisation), url, ["status"]).filter(group => !q || contains(group.name, q) || contains(group.slug, q)), url)
       }
-      if (!slug.test(String(body.slug)) || typeof body.name !== "string" || !body.name) return invalid("The request is invalid")
-      if (rows(groups, organisation).some(group => group.slug === body.slug)) return problem(409, "conflict", "Conflict")
+      if (!slug.test(String(body.slug)) || typeof body.name !== "string" || !body.name) return invalid(slug.test(String(body.slug)) ? "name" : "slug")
+      if (rows(groups, organisation).some(group => group.slug === body.slug)) return conflict("groups_organization_id_slug_unique")
       const created = { id: Bun.randomUUIDv7(), revision: 1, organizationId: organisation, slug: body.slug, name: body.name, status: "active", createdAt: now(), updatedAt: now() }
       rows(groups, organisation).push(created)
       changes++
@@ -292,7 +295,8 @@ export function createFakeId({
     const token = tokens.get(request.headers.get("Authorization")!.slice(7))!
     if (token.resource !== adminResource) return invalidToken()
     const write = request.method !== "GET"
-    if (write && !token.scope.includes("platform:write")) return problem(403, "forbidden", "The principal is not allowed")
+    if (write && !token.scope.includes("platform:write"))
+      return problem(403, "insufficient_scope", "Current command authority is required", {}, { "WWW-Authenticate": 'Bearer error="insufficient_scope"' })
     const body = write && request.headers.get("Content-Type") ? await request.json() as Record<string, unknown> : {}
     if (path === "/me") {
       return unsupported(request, "GET") ?? Response.json({
@@ -373,8 +377,8 @@ export function createFakeId({
         const q = url.searchParams.get("q")
         return newest(matching([...organisations.values()], url, ["status"]).filter(row => !q || contains(row.name, q) || contains(row.slug, q)), url)
       }
-      if (!slug.test(String(body.slug)) || typeof body.name !== "string" || !body.name || body.name.length > 200) return invalid("The request is invalid")
-      if ([...organisations.values()].some(row => row.slug === body.slug)) return problem(409, "conflict", "Conflict")
+      if (!slug.test(String(body.slug)) || typeof body.name !== "string" || !body.name || body.name.length > 200) return invalid(slug.test(String(body.slug)) ? "name" : "slug")
+      if ([...organisations.values()].some(row => row.slug === body.slug)) return conflict("organizations_slug_unique")
       changes++
       return Response.json(organisation(Bun.randomUUIDv7(), { slug: body.slug, name: body.name }), { status: 201 })
     }
@@ -389,8 +393,8 @@ export function createFakeId({
       const scopes = body.scopes as string[]
       const key = (row: Record<string, unknown>) => ["clientId", "resource", "grantKind", "memberId", "groupId"].map(field => row[field] ?? null).join("|")
       if (outsideVocabulary(body.resource, scopes)) return problem(400, "validation_failed", "Capability scopes exceed the client/resource ceiling or mix login and resource scopes")
-      // One row per principal and target (entitlements_principal_target_unique), whatever its scopes or status.
-      if (held.some(row => key(row) === key(body))) return problem(409, "conflict", "A row already exists")
+      // One row per principal and target, whatever its scopes or status.
+      if (held.some(row => key(row) === key(body))) return conflict(table === capabilities ? "organization_capabilities_target_kind_unique" : "entitlements_principal_target_unique")
       const row = {
         id: Bun.randomUUIDv7(), revision: 1, organizationId: organisationTable[1], memberId: null, groupId: null, clientId: null, resource: null, status: "active",
         validFrom: null, validUntil: null, createdAt: now(), updatedAt: now(), ...body, scopes,
