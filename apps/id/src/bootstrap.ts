@@ -110,11 +110,7 @@ async function provision(
     })
     .returning();
   const organizationId = organization!.id;
-  await setDatabaseScope(tx, {
-    kind: "tenant",
-    access: "write",
-    organizationId,
-  });
+  await setDatabaseScope(tx, { kind: "platform", access: "write" });
   const [identified] = await tx
     .select({ id: oauthResources.id })
     .from(oauthResources)
@@ -151,7 +147,6 @@ async function provision(
     groupId: group!.id,
   });
   // The ceiling of every platform admin session; operators own it afterwards.
-  await setDatabaseScope(tx, { kind: "platform", access: "write" });
   const [capability] = await tx
     .insert(organizationCapabilities)
     .values({
@@ -162,11 +157,6 @@ async function provision(
       scopes: [...adminScopes],
     })
     .returning();
-  await setDatabaseScope(tx, {
-    kind: "tenant",
-    access: "write",
-    organizationId,
-  });
   await recordApplied(tx, actor, organizationId, {
     created: true,
     resource: { before: null, after: adminResource },
@@ -192,11 +182,6 @@ async function verify(
     .select({ slug: organizations.slug })
     .from(organizations)
     .where(eq(organizations.id, binding.organizationId));
-  await setDatabaseScope(tx, {
-    kind: "tenant",
-    access: "write",
-    organizationId: binding.organizationId,
-  });
   const [resource] = await tx
     .select()
     .from(oauthResources)
