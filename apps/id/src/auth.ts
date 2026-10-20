@@ -12,6 +12,7 @@ import { answerableSchema } from "./auth/answerable-schema.ts";
 import type { Environment } from "./env.ts";
 import { errorFields } from "./http/problem.ts";
 import { createId } from "./lib/id.ts";
+import { hashClientSecret } from "./services/client-secrets.ts";
 import { logEvent } from "./lib/log.ts";
 import { createSsoOriginBoundary } from "./auth/sso-origin.ts";
 import { createVerifiedSso } from "./auth/verified-sso.ts";
@@ -198,8 +199,11 @@ export function createAuth(db: Database, environment: Environment) {
           // A reused rotated refresh token revokes its family. Parallel
           // refreshes by one host are open as Q-REFRESH-PARALLEL (docs/02).
           refreshTokenReuseInterval: 0,
-          // Client creation and rotation store hashClientSecret digests.
-          storeClientSecret: "hashed",
+          // Client creation and rotation store hashClientSecret digests;
+          // verification uses the same function, so the two cannot drift.
+          storeClientSecret: {
+            hash: async (secret: string) => hashClientSecret(secret),
+          },
           rateLimit: {
             authorize: { window: 60, max: 300 },
             token: { window: 60, max: 600 },

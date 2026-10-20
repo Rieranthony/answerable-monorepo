@@ -23,6 +23,7 @@ import {
 import { createOrganization } from "../__tests__/organization-queries.ts";
 import { createResource } from "../__tests__/resource-queries.ts";
 import * as clientsImplementation from "../services/clients.ts";
+import * as clientSecrets from "../services/client-secrets.ts";
 const clients = {
   ...clientsImplementation,
   createClient: platformWriteService(clientsImplementation.createClient),
@@ -118,6 +119,16 @@ function issuedEvents() {
     .from(auditEvents)
     .where(eq(auditEvents.action, "oauth.token.issued"));
 }
+
+test("client authentication verifies the secret with the hasher ID stores it with", async () => {
+  const hasher = spyOn(clientSecrets, "hashClientSecret");
+  try {
+    expect((await mint("hasher-proof")).status).toBe(200);
+    expect(hasher).toHaveBeenCalledWith(client.clientSecret!);
+  } finally {
+    hasher.mockRestore();
+  }
+});
 
 test("successful machine issuance commits one attributed, secret-free audit fact", async () => {
   const response = await mint();
