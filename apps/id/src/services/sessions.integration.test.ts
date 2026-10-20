@@ -161,7 +161,9 @@ test("revoke-all includes persistent grants whose browser sessions have already 
     revoked: 0,
     changed: false,
   });
+  // The second, a no-op, records no event.
   const audit = await events(userId);
+  expect(audit).toHaveLength(1);
   expect(audit[0]!.data).toMatchObject({
     revokedGrantContexts: expect.arrayContaining(
       contexts
@@ -169,7 +171,6 @@ test("revoke-all includes persistent grants whose browser sessions have already 
         .map(({ id, organizationId }) => ({ id, organizationId })),
     ),
   });
-  expect(audit[1]!.data).toMatchObject({ revokedGrantContexts: [] });
 });
 
 test("session audit failure restores grant contexts", async () => {

@@ -28,25 +28,25 @@ export async function revokeUserSessions(
   const revoked = sessionIds.length;
   const tokens = await revokeUserTokens(context, userId);
   const revokedGrantContexts = await revokeUserGrantContexts(context, userId);
-  await recordCommandEvent(context, {
-    organizationId: null,
-    targetType: "user",
-    targetId: userId,
-    action: "session.revoked_all",
-    data: {
-      userId,
-      sessions: revoked,
-      sessionIds,
-      revokedGrantContexts,
-      ...tokens,
-    },
-  });
-  return {
-    revoked,
-    changed:
-      revoked > 0 ||
-      tokens.refreshTokens > 0 ||
-      tokens.accessTokens > 0 ||
-      revokedGrantContexts.length > 0,
-  };
+  const changed =
+    revoked > 0 ||
+    tokens.refreshTokens > 0 ||
+    tokens.accessTokens > 0 ||
+    revokedGrantContexts.length > 0;
+  // A no-op records no event: its receipt is the record.
+  if (changed)
+    await recordCommandEvent(context, {
+      organizationId: null,
+      targetType: "user",
+      targetId: userId,
+      action: "session.revoked_all",
+      data: {
+        userId,
+        sessions: revoked,
+        sessionIds,
+        revokedGrantContexts,
+        ...tokens,
+      },
+    });
+  return { revoked, changed };
 }

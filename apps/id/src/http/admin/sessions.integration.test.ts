@@ -5,6 +5,7 @@ import {
   type AdminFixture,
 } from "../../__tests__/admin.ts";
 import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
+import { expectNoop } from "../../__tests__/operation-receipt.ts";
 import { signInThroughIdp } from "../../__tests__/federation.ts";
 import {
   auditEvents,
@@ -29,13 +30,14 @@ async function request(
   method = "GET",
   body?: unknown,
   kind: Kind = "platformAdmin",
+  /** The expected audit event; null for a no-op, which records none. */
   audit?: {
     action: string;
     targetId: string;
     targetType: string;
     organizationId: string | null;
     data?: Record<string, unknown>;
-  },
+  } | null,
 ) {
   const headers = fixture.headers(kind);
   const requestId = createId();
@@ -58,6 +60,11 @@ async function request(
       );
     if (response.ok) {
       expect(audit, "Every write asserts its audit").toBeDefined();
+      // A no-op records no event: its receipt is the record.
+      if (audit === null) {
+        await expectNoop(fixture.db, response);
+        return response;
+      }
       expect(events).toHaveLength(1);
       expect(events[0]).toMatchObject({
         ...audit,
@@ -139,19 +146,28 @@ test("platform administrator and machine revoke global user sessions", async () 
     const fresh = await freshUser();
     const path = `/users/${fresh.userId}/sessions`;
     expect((await request(path, "GET", undefined, kind)).status).toBe(200);
+    // The second revocation finds nothing left: a no-op, with no event.
     for (const count of [1, 0]) {
-      const response = await request(path, "DELETE", undefined, kind, {
-        action: "session.revoked_all",
-        targetType: "user",
-        targetId: fresh.userId,
-        organizationId: null,
-        data: {
-          userId: fresh.userId,
-          sessions: count,
-          refreshTokens: count,
-          accessTokens: count,
-        },
-      });
+      const response = await request(
+        path,
+        "DELETE",
+        undefined,
+        kind,
+        count
+          ? {
+              action: "session.revoked_all",
+              targetType: "user",
+              targetId: fresh.userId,
+              organizationId: null,
+              data: {
+                userId: fresh.userId,
+                sessions: count,
+                refreshTokens: count,
+                accessTokens: count,
+              },
+            }
+          : null,
+      );
       expect(response.status).toBe(200);
       expect(await response.json()).toEqual({ revoked: count });
     }
