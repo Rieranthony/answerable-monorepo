@@ -17,6 +17,52 @@ export function answerableSchema(): BetterAuthPlugin {
           },
         },
       },
+      // Federation reads organisations and memberships through the adapter;
+      // ID writes them itself, so no organisation plugin or routes.
+      organization: {
+        fields: {
+          name: { type: "string", required: true },
+          slug: { type: "string", required: true, unique: true },
+          status: {
+            type: "string",
+            required: true,
+            defaultValue: "active",
+            input: false,
+          },
+          deletedAt: {
+            type: "date",
+            required: false,
+            input: false,
+            returned: false,
+          },
+        },
+      },
+      member: {
+        fields: {
+          organizationId: {
+            type: "string",
+            required: true,
+            references: { model: "organization", field: "id" },
+          },
+          userId: {
+            type: "string",
+            required: true,
+            references: { model: "user", field: "id" },
+          },
+          status: {
+            type: "string",
+            required: true,
+            defaultValue: "active",
+            input: false,
+          },
+          deletedAt: {
+            type: "date",
+            required: false,
+            input: false,
+            returned: false,
+          },
+        },
+      },
       ssoProvider: {
         fields: {
           deletedAt: {

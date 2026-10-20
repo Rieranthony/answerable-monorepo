@@ -158,18 +158,6 @@ describe("integration: PostgreSQL schema", () => {
 
     expect(isUuidV7(organization.id)).toBe(true);
     expect(organization.status).toBe("active");
-    // Memberships come from Answerable ID alone: the organisation plugin's
-    // member writes need the role column it declares, which ID does not keep.
-    await expect(
-      auth.api.addMember({
-        body: {
-          userId: user.id,
-          organizationId: organization.id,
-          role: "member",
-        },
-      }),
-    ).rejects.toThrow('The field "role" does not exist');
-
     // Federation reads a membership's status and deletion through Better Auth.
     const membership = await insertMember(organization.id, user.id);
     expect(
@@ -180,7 +168,12 @@ describe("integration: PostgreSQL schema", () => {
     ).toMatchObject({ status: "active", deletedAt: null });
 
     const openApi = await auth.api.generateOpenAPISchema();
-    expect(Object.keys(openApi.paths)).toContain("/organization/create");
+    // ID declares the two models federation reads; no organisation routes exist.
+    expect(
+      Object.keys(openApi.paths).filter((path) =>
+        path.startsWith("/organization"),
+      ),
+    ).toEqual([]);
     expect(Object.keys(openApi.paths)).toContain("/oauth2/token");
   });
 

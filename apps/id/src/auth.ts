@@ -5,7 +5,6 @@ import { betterAuth } from "better-auth";
 import { APIError, isAPIError } from "better-auth/api";
 import { openAPI } from "better-auth/plugins";
 import { jwt } from "better-auth/plugins/jwt";
-import { organization } from "better-auth/plugins/organization";
 
 import { sessionAuditHooks } from "./auth/audit-hooks.ts";
 import type { Database } from "./db/client.ts";
@@ -180,43 +179,6 @@ export function createAuth(db: Database, environment: Environment) {
     },
     plugins: [
       answerableSchema(),
-      organization({
-        allowUserToCreateOrganization: false,
-        schema: {
-          organization: {
-            additionalFields: {
-              deletedAt: {
-                type: "date",
-                required: false,
-                input: false,
-                returned: false,
-              },
-              status: {
-                type: "string",
-                required: true,
-                defaultValue: "active",
-                input: false,
-              },
-            },
-          },
-          member: {
-            additionalFields: {
-              deletedAt: {
-                type: "date",
-                required: false,
-                input: false,
-                returned: false,
-              },
-              status: {
-                type: "string",
-                required: true,
-                defaultValue: "active",
-                input: false,
-              },
-            },
-          },
-        },
-      }),
       // Token-signing keys for ID tokens and JWT access tokens. The model is
       // named in the singular so the plural table is `jwks`, not `jwkss`.
       // The issuer is the bare origin (id.answerable.org), not the /auth

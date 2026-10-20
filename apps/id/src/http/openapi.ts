@@ -85,14 +85,12 @@ export async function buildPublicOpenApiDocument(input: {
   const routeByMethodAndPath = new Map(
     publicAuthRoutes.map((route) => [`${route.method} ${route.path}`, route]),
   );
-  // The native generator includes fields hidden by its runtime response filter,
-  // and the organisation plugin's session selection, which ID does not store.
+  // The native generator includes fields hidden by its runtime response filter.
   const sessionSchema = authDocument.components.schemas.Session!;
   for (const name of [
     ...Object.entries(input.auth.options.session.additionalFields)
       .filter(([, field]) => field.returned === false)
       .map(([name]) => name),
-    "activeOrganizationId",
   ]) {
     delete sessionSchema.properties[name];
     sessionSchema.required = sessionSchema.required?.filter(
