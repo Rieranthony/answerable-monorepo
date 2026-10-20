@@ -246,7 +246,7 @@ export function createFakeId({
         const assignment = assignments(group.id).get(found.id)
         return assignment ? [{ groupId: group.id, slug: group.slug, name: group.name, validFrom: assignment.validFrom, validUntil: assignment.validUntil }] : []
       })
-      return Response.json({ ...found, groups: held })
+      return tagged({ ...found, groups: held })
     }
     if (rest === "/access") {
       const refusedMethod = unsupported(request, "GET")

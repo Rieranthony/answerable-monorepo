@@ -5,6 +5,7 @@
 The fake ID follows ID's admin API:
 
 - A write without an `Idempotency-Key` is journalled under a key of its own, as in ID: a new command each time. An empty or over-long key still answers `400 invalid_idempotency_key`.
+- A member's read sends its `ETag`, as ID's `getMember` now does; ID dropped the member configuration read.
 
 ## 0.5.1
 
