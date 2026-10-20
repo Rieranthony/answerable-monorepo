@@ -93,6 +93,22 @@ async function inPod(deployment: string, directory: string, script: string) {
   return JSON.parse(stdout.trim().split("\n").at(-1)!)
 }
 
+/** A script in ID's pod. ID's image carries its bundles and no node_modules, so the script is bundled here, from apps/id
+ * (its imports resolve to the versions ID bundles), and read from standard input. */
+async function inIdPod(script: string) {
+  const entry = new URL(`../../../apps/id/.stack-probe-${crypto.randomUUID()}.ts`, import.meta.url).pathname
+  await Bun.write(entry, script)
+  try {
+    const build = await Bun.build({ entrypoints: [entry], target: "bun" })
+    if (!build.success) throw new AggregateError(build.logs, "Bundling the probe for ID's pod failed")
+    const program = await build.outputs[0]!.text()
+    const { stdout } = await stack!.kubectl(["exec", "-i", "-n", "answerable", "deploy/id", "-c", "id", "--", "bun", "--no-install", "run", "-"], { stdin: program })
+    return JSON.parse(stdout.trim().split("\n").at(-1)!)
+  } finally {
+    await Bun.file(entry).delete()
+  }
+}
+
 describe("the images", () => {
   test("run as bun, not root, and carry no test, environment, coverage or documentation file", async () => {
     for (const { name } of images) {
@@ -258,7 +274,7 @@ describe("inside the cluster", () => {
   })
 
   test("Postgres takes TLS only: pg in ID verifies the server with verify-full and the URL's sslrootcert; plain and a wrong authority fail", async () => {
-    const result = await inPod("id", "/app/apps/id", `
+    const result = await inIdPod(`
       import pg from "pg"
       const url = process.env.DATABASE_URL
       const probe = async connectionString => {

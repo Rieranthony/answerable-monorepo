@@ -60,7 +60,7 @@ automountServiceAccountToken: false
   "name" "id-migrate"
   "image" "id"
   "weight" -10
-  "command" (list "bun" "apps/id/scripts/migrate.ts")
+  "command" (list "bun" "--no-install" "apps/id/dist/scripts/migrate.js")
   "env" (printf "%s\n- name: DATABASE_RUNTIME_ROLE\n  value: %s" (include "answerable.secretEnv" (dict "name" "DATABASE_MIGRATION_URL" "secret" "id-database-owner" "key" "DATABASE_MIGRATION_URL")) (.Values.id.runtimeRole | quote))) }}
 ---
 {{ include "answerable.migration" (dict

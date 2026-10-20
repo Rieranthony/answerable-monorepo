@@ -7,6 +7,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import type { Database } from "./client.ts";
 
 const committedFolder = fileURLToPath(
+  // apps/id/drizzle from src/db, and from the image's bundled dist/scripts/migrate.js alike.
   new URL("../../drizzle", import.meta.url),
 );
 

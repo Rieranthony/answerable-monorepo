@@ -111,10 +111,10 @@ The migration connection waits at most 5 s for a lock and 5 minutes for a statem
 **3. Start `apps/id`** with the configuration above. Startup verifies the runtime role and, on an empty database, seeds the platform organisation, admin resource, `platform-admins` group, its entitlement and the platform capability, then listens. Later starts verify that binding, refuse a changed admin resource identifier (a changed `BETTER_AUTH_URL`) and restore only the admin resource's definition; the rest belongs to operators. An unsafe role, a missing variable or application secrets that cannot decrypt the newest stored signing key fail the process before it listens; read the error, it names the variable, the privilege or the key.
 
 ```bash
-bun --filter @answerable/id build && bun apps/id/dist/server.js
+bun --filter @answerable/id build && bun --no-install apps/id/dist/server.js
 ```
 
-The build compiles the sign-in pages' stylesheet into `apps/id/dist/tailwind.css`, which the bundle serves as it is; `apps/id/dist` runs without `node_modules`.
+The build compiles the sign-in pages' stylesheet into `apps/id/dist/tailwind.css`, which the bundle serves as it is; `apps/id/dist` runs without `node_modules`. Run it with `--no-install`: without a `node_modules`, Bun otherwise tries to install the optional packages a library imports on demand.
 
 **4. Check it is up** through the ingress, not the pod.
 

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun scripts/build-css.ts && bun --env-file=../../.env --hot src/server.ts",
-    "build": "bun scripts/build-css.ts dist/tailwind.css && bun build src/server.ts --outdir dist --target bun",
+    "build": "bun scripts/build-css.ts dist/tailwind.css && bun build src/server.ts --outdir dist --target bun && bun build scripts/migrate.ts --outdir dist/scripts --target bun",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src scripts drizzle.config.ts --max-warnings 0",
     "test": "bun run db:test:migrate && bun run test:coverage",
