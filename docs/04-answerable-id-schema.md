@@ -135,7 +135,7 @@ Reservations are permanent. Replays return receipts at the original status code,
 
 ## Contract test
 
-`test:migrations` proves an empty installation and a repeated run that applies nothing and preserves real writes. The catalogue-equivalence test covers tables, constraints, indexes, functions, triggers, policies and permissions. Bootstrap tests cover concurrent first starts; migration refuses an applied file that changed. Statement failure and process death need no proof of ours: the migrator applies every pending file in one transaction. A restore drill against production-shaped data remains a release input.
+`db:test:migrate` installs every migration on an empty database before each suite, and the migration-script test proves a repeated run applies nothing. The catalogue-equivalence test covers tables, constraints, indexes, functions, triggers, policies and permissions. Bootstrap tests cover concurrent first starts; migration refuses an applied file that changed. Statement failure and process death need no proof of ours: the migrator applies every pending file in one transaction. A restore drill against production-shaped data remains a release input.
 
 ## Deferred
 

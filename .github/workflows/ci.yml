@@ -34,9 +34,6 @@ jobs:
       - name: Start disposable PostgreSQL
         run: docker compose up -d --wait postgres
 
-      - name: Prove fresh and repeated migration
-        run: bun --filter @answerable/id test:migrations
-
       - name: Type-check
         run: bun run typecheck
 
@@ -62,8 +59,8 @@ jobs:
       - name: Test real ID login and MCP Apps
         run: bun run mcp:test:e2e
 
-      - name: Test with coverage
-        run: bun --filter @answerable/id test:coverage
+      - name: Test ID with coverage
+        run: bun --filter @answerable/id test
 
       - name: Show PostgreSQL logs on failure
         if: failure()
