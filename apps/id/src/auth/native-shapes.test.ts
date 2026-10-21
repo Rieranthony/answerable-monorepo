@@ -1,11 +1,13 @@
 import { expect, test } from "bun:test";
 
+// The installed provider's built files, wherever the linker put the package.
+const directory = new URL(
+  "./",
+  import.meta.resolve("@better-auth/oauth-provider"),
+);
+
 // A failure means the adapter interceptors must be re-verified before upgrading Better Auth.
 test("the pinned native provider retains the query shapes intercepted by grant boundaries", async () => {
-  const directory = new URL(
-    "../../node_modules/@better-auth/oauth-provider/dist/",
-    import.meta.url,
-  );
   const files = [
     ...new Bun.Glob("introspect-*.mjs").scanSync(directory.pathname),
   ];
@@ -23,10 +25,6 @@ test("the pinned native provider retains the query shapes intercepted by grant b
 });
 
 test("native revocation retains token-only reads scoped by user-token-revocation", async () => {
-  const directory = new URL(
-    "../../node_modules/@better-auth/oauth-provider/dist/",
-    import.meta.url,
-  );
   const files = [
     ...new Bun.Glob("authorize-*.mjs").scanSync(directory.pathname),
   ];

@@ -35,3 +35,9 @@
 - The Toolbox's and the admin MCP's Dockerfiles copy the whole workspace directory (`COPY mcps/toolbox mcps/toolbox`), so `drizzle/` ships with the sources; `.dockerignore` excludes tests, markdown and local installs only. The ops image copies `packages/mcp-postgres` whole; its comment about `connect()` being the only runtime import changes, since the package now needs drizzle-orm and pg, which the production install of a workspace's dependencies brings in (the Toolbox image already relies on this for `@answerable/mcp`).
 - The chart's Jobs run `bun mcps/toolbox/scripts/migrate.ts` and `bun mcps/admin/scripts/migrate.ts` with `*_DATABASE_MIGRATION_URL` and `*_DATABASE_RUNTIME_ROLE`: unchanged.
 - The kind stack's TLS probe in the toolbox pod uses `connect` and Bun.SQL; it becomes pg through `connect`, as ID's probe is.
+
+## Bun's linker
+
+- Bun 1.3.1 installed this repository with the isolated linker (no `bunfig.toml`; `node_modules/.bun/<name>@<version>+<hash>` per instance). An instance is keyed by the optional peers resolved from the dependent's direct dependencies: `drizzle-orm@0.45.4+fb0578cf…` held `pg` and `@types/pg` (the package and ID), `+e40b0dfd…` held `@opentelemetry/api` (the Toolbox), and a bare one served the admin MCP. Runtime tolerated it (drizzle's `is()` compares entity kinds by name) but the types did not.
+- With `linker = "hoisted"` every workspace's `node_modules` is empty but for version conflicts (`apps/id` keeps `jose` and `zod`), and `node_modules/drizzle-orm` is the one copy. The lockfile changed by 21 insertions and 13 deletions (resolution order), not by versions.
+- `bunx knip` printed `Saved lockfile` and left the lockfile unchanged.
