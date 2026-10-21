@@ -39,7 +39,7 @@ Claude Code (public client, PKCE) --OAuth 2.1, audience = the admin MCP--> mcps/
 | --- | --- | --- |
 | The server | `mcps/admin` (`@answerable/mcp-admin`), provider `admin`, port 47520 | `createAdminMcp`: `createMcpServer` with `allow` (the authority below), every mutation controlled class, intents in Postgres, evidence for every call and refusal, `GET /health` from the database. Its README maps each file |
 | The ID client | `packages/id-admin` (`@answerable/id-admin`), extracted from the Toolbox | `createIdAdmin`: `platform:read` tokens for reads, `platform:read platform:write` for writes, `withToken` for another audience; `x-request-id`, a caller-chosen `Idempotency-Key`, `If-Match` and `If-None-Match`; a 401 renewed once; 5 seconds per call. `@answerable/id-admin/testing` is the fake ID both servers test against |
-| Intents and evidence | `packages/mcp-postgres` (`@answerable/mcp-postgres`), extracted from the Toolbox | The Postgres intent store, the hash-chained evidence and the migrator. The admin MCP has no tables of its own |
+| Intents and evidence | `packages/mcp-postgres` (`@answerable/mcp-postgres`), extracted from the Toolbox | The Postgres intent store, the hash-chained evidence and the drizzle base schema. The admin MCP has no tables of its own: its drizzle journal is generated from the package's |
 | The sign-in time | `packages/auth` 0.5.0 | `UserPrincipal.upstreamAuthTime`, the token's `upstream_auth_time` |
 | The proof | `packages/acceptance` | `src/admin-mcp.ts` registers the admin MCP and the Toolbox in a real ID as the setup page does; the admin journeys and the admin lane start from it |
 

@@ -109,7 +109,7 @@ RFC 8693 token exchange (built off the critical path, contributed upstream) · S
 - Embedding Executor's SDK or adopting ToolHive, Temporal or a separate Control service before their triggers fire.
 - Trusting annotations for authorisation.
 - Evidence columns or kinds that nothing writes yet: a new fact goes in the chained `data`, and a new kind is a `CHECK` change, not a new layout.
-- Ordering MCP migrations by file name across directories: `migrate` applies the directories in the order given, and a changed applied file refuses the run.
+- A second migration model beside drizzle. The SQL-file migrator and its `schema_migrations` were removed on 21 October 2026: every database, ID's, the Toolbox's and the admin MCP's, has one drizzle journal generated from its schema and applied by the same migrator, and an applied migration is never edited, regenerated or removed.
 - Meta-tools as the only projection: hosts govern by tool name and need the direct list where it fits.
 - A second definition API beside `defineTool`: capabilities are tools with defaults, not a new vocabulary for authors.
 - Replacing the e2e MCP: it stays the reference server, the first mounted provider and the acceptance.

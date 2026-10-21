@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.0
+
+The package moves onto drizzle, the model Answerable ID uses: drizzle-orm over `pg` with drizzle-kit migrations, one model for every database. Breaking: `connect` returns a drizzle database over a `pg` pool, `migrate` takes a drizzle folder, the SQL-file migrator, its `migrations/` directory and `schema_migrations` are gone, and a database the file migrator built is adopted on the next `migrate`.
+
+- `connect(url, options?)` returns a drizzle `Database` over a `pg.Pool`, `db.$client`; close it with `db.$client.end()`. `pg` reads `sslmode` and `sslrootcert` from the URL; a URL with `sslrootcert` still needs `sslmode=verify-full` or `verify-ca`. `Executor` is a database or a transaction on one.
+- The tables are drizzle schema: `evidencePayloads`, `evidenceEvents` and `intents`, from the package and from `@answerable/mcp-postgres/schema`, with every constraint named as Postgres named it under the SQL files. A server's `src/db/schema.ts` re-exports them beside its own tables and generates one journal; `evidenceChainSql` (`sql/evidence-chain.sql`) is its custom migration `0001_evidence_chain.sql`.
+- `migrate(db, { folder, legacy? })` is ID's migrator: drizzle's, refusing an applied file that was edited, regenerated or removed, naming it. With `legacy` (`legacyBaseline` for this package's own file), a database whose `schema_migrations` lists exactly the legacy files is adopted: drizzle's receipts for the journal's first entries are recorded and the table dropped, without DDL; anything else there refuses the run.
+- `configureRuntimeRole` also revokes the role on schema `drizzle`; `assertRuntimeRole` refuses `USAGE` on schema `drizzle` and any write privilege on `drizzle.__drizzle_migrations`, in place of `schema_migrations`.
+- `@answerable/mcp-postgres/testing`: `testDatabase(...).scratch(suffix)` makes an empty database beside the test database; `rowsOf(db)` runs a tagged query and returns its rows; `refusalOf(query)` gives the database's message from drizzle's query error.
+- Two migrators at once are no longer tested; Helm runs one Job per database.
+
 ## 0.6.0
 
 The migrations reset to one file. Breaking: recreate a database migrated before this version (drop its `public` schema, then migrate).

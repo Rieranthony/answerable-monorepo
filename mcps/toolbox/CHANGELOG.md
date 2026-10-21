@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+No tool changes. The Toolbox's storage moves onto drizzle, with `@answerable/mcp-postgres` 0.7.0: drizzle-orm over `pg`, the catalogue, the host clients and the search as drizzle queries, and drizzle-kit migrations in `drizzle/`, generated from `src/db/schema.ts` (the package's tables and the Toolbox's own). `db:migrate` adopts a database the file migrator built, without re-running DDL; a database migrated by another set of files refuses, naming it. `TOOLBOX_DATABASE_URL` and `TOOLBOX_DATABASE_MIGRATION_URL` are unchanged.
+
+- `createToolbox` takes a drizzle `Database` from `connect`; `migrate(db)` applies `drizzle/` and returns nothing; `runtimeGrants` are unchanged.
+- `db:generate` writes the next migration after a schema change; a test fails when the schema drifts from the committed migrations.
+
 ## 0.3.7
 
 No tool changes. `@answerable/mcp-postgres` 0.6.0 squashes its migrations into `mcp-postgres/0001_initial.sql`. Recreate a database migrated before this version: drop its `public` schema, then run `db:migrate`; otherwise `db:migrate` refuses it, naming `mcp-postgres/0001_evidence.sql`.

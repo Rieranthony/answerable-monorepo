@@ -20,7 +20,7 @@ The Toolbox serves as a restricted login and refuses to start as the owner, or a
 
 Register the Toolbox in ID, then enable an organisation with one call to the admin API: [Administer the Toolbox](../../apps/web/content/docs/toolbox/admin.mdx). To mount another provider: [Add tools to the Toolbox](../../apps/web/content/docs/toolbox/add-tools.mdx). The variables are listed in `default.env`. Changes: [CHANGELOG](CHANGELOG.md).
 
-It builds on two shared packages: `@answerable/id-admin` (`createIdAdmin`, the Toolbox's one machine client on ID's admin API, shared by the grants reader, the poller and the enable operation: reads with `platform:read`, the enable operation with `platform:read platform:write`; `found` makes ID's 404 an answer; the fake ID for tests) and `@answerable/mcp-postgres` (`createEvidence`, `createPostgresIntentStore`, which records every step of an intent as evidence, and the migrator).
+It builds on two shared packages: `@answerable/id-admin` (`createIdAdmin`, the Toolbox's one machine client on ID's admin API, shared by the grants reader, the poller and the enable operation: reads with `platform:read`, the enable operation with `platform:read platform:write`; `found` makes ID's 404 an answer; the fake ID for tests) and `@answerable/mcp-postgres` (`connect`, `createEvidence`, `createPostgresIntentStore`, which records every step of an intent as evidence, the drizzle base schema and `migrate`).
 
 | File | Job |
 | --- | --- |
@@ -36,7 +36,8 @@ It builds on two shared packages: `@answerable/id-admin` (`createIdAdmin`, the T
 | `src/search.ts` | Postgres full-text ranking over `capabilities.search` |
 | `src/spans.ts` | One server span per call; OTLP/HTTP export when `OTEL_EXPORTER_OTLP_ENDPOINT` is set |
 | `src/environment.ts` | `readToolboxEnvironment` |
-| `src/db/migrate.ts`, `migrations/` | `0001_initial.sql`, the catalogue and the host clients; `migrate(db)` applies the migrations of `@answerable/mcp-postgres` first, then the Toolbox's, recorded as `mcp-postgres/<file>` and `toolbox/<file>`; `runtimeGrants`, the runtime role's grants on every table |
+| `src/db/schema.ts`, `drizzle/` | The drizzle schema: `@answerable/mcp-postgres`'s tables and the Toolbox's own (providers, capabilities, organisation_catalogue, host_clients); `drizzle/0000_initial.sql` is generated from it and `0001_evidence_chain.sql` is the package's trigger SQL. `db:generate` writes the next migration after a change; a test fails when the schema drifts |
+| `src/db/migrate.ts` | `migrate(db)`: the folder through the package's migrator, adopting a database the file migrator built; `runtimeGrants`, the runtime role's grants on every table |
 | `scripts/migrate.ts` | `db:migrate` and `db:test:migrate`: the migrations, then `configureRuntimeRole` with `runtimeGrants` |
 | `src/server.ts` | The entry point: `assertRuntimeRole` before the boot's ingest; `src/server.test.ts` starts it against the test database, as a runtime login and as the owner, which it refuses |
 

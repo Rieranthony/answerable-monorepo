@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0
+
+No tool changes. The admin MCP's storage moves onto drizzle, with `@answerable/mcp-postgres` 0.7.0: drizzle-kit migrations in `drizzle/`, generated from `src/db/schema.ts` (the package's tables, its only ones). `db:migrate` adopts a database the file migrator built, without re-running DDL. `ADMIN_DATABASE_URL` and `ADMIN_DATABASE_MIGRATION_URL` are unchanged. The package exports `./migrate` for the acceptance.
+
 ## 0.2.8
 
 `members_list` and `members_get` answer a person's `status` as `active` or `disabled`: ID removed `inert`, which nothing wrote.

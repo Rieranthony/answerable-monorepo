@@ -15,7 +15,7 @@ The [enterprise foundation](docs/05-id-enterprise-foundation.md) implementation 
 | `packages/auth` | Verify Answerable ID access tokens, for a person or a machine client, in any service; an in-process test issuer | Locally tested |
 | `packages/mcp` | The SDK for MCP servers, on the official MCP TypeScript SDK: `defineTool`, `defineMutation`, `defineProvider`, `createMcpServer`, the error envelope, the manifest, the conformance kit and the in-process test client | Locally tested |
 | `packages/id-admin` | A server's machine client on ID's admin API (`createIdAdmin`, with `x-request-id` and a caller-chosen `Idempotency-Key`) and the fake ID for tests | Locally tested |
-| `packages/mcp-postgres` | Postgres storage for MCP servers: the intent store, the hash-chained evidence and the migrator, shared by the Toolbox | Locally tested |
+| `packages/mcp-postgres` | Postgres storage for MCP servers: the intent store, the hash-chained evidence and the drizzle base schema, shared by the Toolbox and the admin MCP | Locally tested |
 | `mcps/e2e` | Reference MCP: five tools (one a prepared mutation), a prompt, a resource and an MCP Apps view; every new MCP is compared with it | Local acceptance passes |
 | `mcps/toolbox` | The Toolbox: one MCP endpoint serving each person the capabilities their organisation granted, with intents, evidence, spans and an admin API | Local acceptance passes |
 | `mcps/admin` | The admin MCP: a staff-only server that reads and changes organisations, domains, SSO providers, groups, access and staff roles in ID, and enables the Toolbox, each tool behind a role read live from ID and each change a prepared intent the person confirms | Local acceptance passes |
@@ -80,7 +80,7 @@ The development-only [OAuth test](apps/web/README.md#local-oauth-test) lets the 
 - [`packages/auth`](packages/auth/README.md) verifies Answerable ID access tokens.
 - [`packages/mcp`](packages/mcp/README.md) is the SDK: define tools, mutations and providers, serve them on the official MCP TypeScript SDK, check them with the conformance kit and test them in-process.
 - [`packages/id-admin`](packages/id-admin/README.md) is the machine client on ID's admin API, with the fake ID for tests.
-- [`packages/mcp-postgres`](packages/mcp-postgres/README.md) is the Postgres intent store, evidence chain and migrator that servers with a database share.
+- [`packages/mcp-postgres`](packages/mcp-postgres/README.md) is the Postgres intent store, evidence chain and drizzle base schema that servers with a database share, on the model Answerable ID uses.
 - [`mcps/e2e`](mcps/e2e/README.md) is the reference server.
 - [`mcps/toolbox`](mcps/toolbox/README.md) is the Toolbox, with its own Postgres databases `answerable_toolbox` and `answerable_toolbox_test`.
 - [`mcps/admin`](mcps/admin/README.md) is the admin MCP for Answerable staff, with its own databases `answerable_admin` and `answerable_admin_test`.

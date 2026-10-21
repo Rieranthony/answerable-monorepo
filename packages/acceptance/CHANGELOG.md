@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1
+
+`createDatabase` returns drizzle databases from `@answerable/mcp-postgres` 0.7.0's `connect`, and the stacks migrate each server's database with its own `migrate`; the journeys read what the servers wrote through `rowsOf`.
+
 ## 0.6.0
 
 The Toolbox and the admin MCP serve as restricted runtime logins in the journeys and the lanes, as they do from their entry points. Breaking: `createDatabase` returns connections and a role name instead of one connection.
