@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test"
+import { existsSync } from "node:fs"
 import { mkdir, mkdtemp, readdir, rm, symlink } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -77,11 +78,13 @@ test("the README runs and tests the server, and points at the guides for the res
   for (const [, link] of readme.matchAll(/\]\(([^)#]+)[^)]*\)/g)) expect(await Bun.file(join(root, "mcps/acme", link!)).exists() || await Bun.file(join(repo, "mcps/e2e", link!)).exists(), link).toBe(true)
 })
 
-// bun install links a workspace's dependencies; in the temporary directory the e2e server's stand in.
+// bun install links a workspace's dependencies: with the repository's hoisted linker, in the root's node_modules, and in the workspace's own only
+// where a version differs. In the temporary directory the repository's and the e2e server's stand in.
 async function scaffoldLinked(name: string) {
   await scaffold(name, { root, date })
   const cwd = join(root, "mcps", name)
-  await symlink(join(repo, "mcps/e2e/node_modules"), join(cwd, "node_modules"))
+  if (!existsSync(join(root, "node_modules"))) await symlink(join(repo, "node_modules"), join(root, "node_modules"))
+  if (existsSync(join(repo, "mcps/e2e/node_modules"))) await symlink(join(repo, "mcps/e2e/node_modules"), join(cwd, "node_modules"))
   return cwd
 }
 
